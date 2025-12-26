@@ -121,7 +121,6 @@ class OCRManager: ObservableObject {
     // MARK: - 解析识别结果
 
     private func parseRecognizedText(_ observations: [VNRecognizedTextObservation]) -> [RecognizedBeadItem] {
-        var items: [RecognizedBeadItem] = []
         var allTexts: [(String, CGRect)] = []
 
         // 收集所有识别的文本和位置
@@ -130,58 +129,8 @@ class OCRManager: ObservableObject {
             allTexts.append((candidate.string, observation.boundingBox))
         }
 
-        // 按Y坐标（行）分组
-        let sortedByY = allTexts.sorted { $0.1.minY > $1.1.minY }
-
-        // 解析表格结构
-        // 查找包含品牌关键词的行
-        var currentBrand = "MARD"
-        var colorCodePattern = try? NSRegularExpression(pattern: "^[A-Z]\\d+$|^\\d+$", options: .caseInsensitive)
-        var quantityPattern = try? NSRegularExpression(pattern: "^\\d{1,4}$", options: [])
-
-        for (text, _) in sortedByY {
-            let trimmedText = text.trimmingCharacters(in: .whitespaces)
-
-            // 检测品牌行
-            if trimmedText.contains("MARD") {
-                currentBrand = "MARD"
-            } else if trimmedText.lowercased().contains("vivid") {
-                currentBrand = "vivid"
-            } else if trimmedText.contains("漫漫") {
-                currentBrand = "漫漫"
-            } else if trimmedText.contains("卡卡") {
-                currentBrand = "卡卡"
-            } else if trimmedText.contains("豆量") || trimmedText.contains("数量") {
-                // 这是豆量行，尝试提取数字
-                let numbers = extractNumbers(from: trimmedText)
-                // 将数字与之前识别的色号配对
-                continue
-            }
-
-            // 尝试解析整行数据（可能包含多个色号或数量）
-            let components = trimmedText.components(separatedBy: CharacterSet.whitespaces)
-
-            for component in components {
-                let clean = component.trimmingCharacters(in: .punctuationCharacters)
-
-                // 检查是否是色号格式 (如 F8, A17, B195, 81, 213)
-                if isColorCode(clean) {
-                    // 暂存色号，等待配对数量
-                    continue
-                }
-
-                // 检查是否是数量 (纯数字，通常1-4位)
-                if let quantity = Int(clean), quantity > 0 && quantity < 10000 {
-                    // 这可能是豆量
-                    continue
-                }
-            }
-        }
-
-        // 简化解析：提取所有可能的色号-数量对
-        items = parseTableData(from: allTexts)
-
-        return items
+        // 使用基于列的解析方法
+        return parseTableByColumns(from: allTexts)
     }
 
     private func isColorCode(_ text: String) -> Bool {
@@ -204,58 +153,216 @@ class OCRManager: ObservableObject {
         return false
     }
 
-    private func extractNumbers(from text: String) -> [Int] {
-        let pattern = "\\d+"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return [] }
+    // MARK: - 基于列的表格解析（核心修复）
 
-        let range = NSRange(text.startIndex..., in: text)
-        let matches = regex.matches(in: text, options: [], range: range)
-
-        return matches.compactMap { match in
-            guard let range = Range(match.range, in: text) else { return nil }
-            return Int(text[range])
-        }
-    }
-
-    private func parseTableData(from texts: [(String, CGRect)]) -> [RecognizedBeadItem] {
+    private func parseTableByColumns(from texts: [(String, CGRect)]) -> [RecognizedBeadItem] {
         var items: [RecognizedBeadItem] = []
 
-        // 按位置分组，尝试匹配同一列的色号和数量
-        let sortedTexts = texts.sorted { $0.1.minX < $1.1.minX }
+        // 按Y坐标分组（Y坐标相近的在同一行）
+        // 注意：Vision框架的Y坐标是从下往上的（0在底部）
+        let yTolerance: CGFloat = 0.03
+        var rows: [[((String, CGRect))]] = []
+        let sortedByY = texts.sorted { $0.1.midY > $1.1.midY } // 从上到下
 
-        var colorCodes: [String] = []
-        var quantities: [Int] = []
-        var currentBrand = "MARD"
+        var currentRow: [(String, CGRect)] = []
+        var lastY: CGFloat = -1
 
-        for (text, _) in sortedTexts {
-            let components = text.components(separatedBy: CharacterSet.whitespaces)
-
-            for component in components {
-                let clean = component.trimmingCharacters(in: .punctuationCharacters)
-
-                if isColorCode(clean) && clean.count <= 5 {
-                    colorCodes.append(clean.uppercased())
-                } else if let num = Int(clean), num > 0 && num < 5000 {
-                    quantities.append(num)
+        for item in sortedByY {
+            if lastY < 0 || abs(item.1.midY - lastY) < yTolerance {
+                currentRow.append(item)
+                lastY = item.1.midY
+            } else {
+                if !currentRow.isEmpty {
+                    rows.append(currentRow)
                 }
+                currentRow = [item]
+                lastY = item.1.midY
+            }
+        }
+        if !currentRow.isEmpty {
+            rows.append(currentRow)
+        }
 
-                // 检测品牌
-                if clean.uppercased().contains("MARD") {
-                    currentBrand = "MARD"
-                } else if clean.lowercased().contains("vivid") {
-                    currentBrand = "vivid"
+        // 2. 识别每行的类型
+        var brandRows: [String: [(String, CGRect)]] = [:]
+        var quantityRow: [(String, CGRect)] = []
+
+        for row in rows {
+            // 合并同一行的所有文本来判断行类型
+            let rowText = row.map { $0.0 }.joined(separator: " ")
+
+            if rowText.contains("MARD") || rowText.contains("mard") {
+                brandRows["MARD"] = row
+            } else if rowText.lowercased().contains("vivid") {
+                brandRows["vivid"] = row
+            } else if rowText.contains("漫漫") || rowText.contains("渡渡") {
+                brandRows["漫漫"] = row
+            } else if rowText.contains("卡卡") {
+                brandRows["卡卡"] = row
+            } else if rowText.contains("豆量") || rowText.contains("数量") || rowText.contains("豆数") {
+                quantityRow = row
+            }
+        }
+
+        // 3. 如果没找到明确的品牌行标记，尝试根据位置推断
+        // 通常表格结构是：第一行色号，最后一行数量
+        if brandRows.isEmpty && rows.count >= 2 {
+            // 假设第一个包含色号的行是MARD
+            for row in rows {
+                let hasColorCodes = row.contains { isColorCode(cleanText($0.0)) }
+                if hasColorCodes {
+                    brandRows["MARD"] = row
+                    break
                 }
             }
         }
 
-        // 配对色号和数量
-        // 假设豆量行在最后，与色号一一对应
-        let pairCount = min(colorCodes.count, quantities.count)
+        // 4. 如果没找到豆量行，找最后一行包含纯数字的行
+        if quantityRow.isEmpty {
+            for row in rows.reversed() {
+                let numbers = row.filter {
+                    let clean = cleanText($0.0)
+                    if let num = Int(clean), num > 0 && num < 10000 {
+                        return true
+                    }
+                    return false
+                }
+                if numbers.count >= 2 {  // 至少有2个数量
+                    quantityRow = row
+                    break
+                }
+            }
+        }
+
+        // 5. 按X坐标对齐列，配对色号和数量
+        guard let primaryBrand = brandRows.first else {
+            // 回退到简单解析
+            return fallbackParsing(from: texts)
+        }
+
+        let brandName = primaryBrand.key
+        var brandColorCodes = primaryBrand.value
+            .sorted { $0.1.midX < $1.1.midX }  // 按X坐标排序
+            .compactMap { item -> (String, CGFloat)? in
+                let clean = cleanText(item.0)
+                if isColorCode(clean) {
+                    return (clean.uppercased(), item.1.midX)
+                }
+                return nil
+            }
+
+        var quantities = quantityRow
+            .sorted { $0.1.midX < $1.1.midX }
+            .compactMap { item -> (Int, CGFloat)? in
+                let clean = cleanText(item.0)
+                if let num = Int(clean), num > 0 && num < 10000 {
+                    return (num, item.1.midX)
+                }
+                return nil
+            }
+
+        // 6. 根据X坐标对齐配对
+        let xTolerance: CGFloat = 0.05
+
+        for (colorCode, colorX) in brandColorCodes {
+            // 找到X坐标最接近的数量
+            var bestMatch: (Int, CGFloat)? = nil
+            var bestDistance: CGFloat = CGFloat.greatestFiniteMagnitude
+
+            for (quantity, quantityX) in quantities {
+                let distance = abs(colorX - quantityX)
+                if distance < bestDistance {
+                    bestDistance = distance
+                    bestMatch = (quantity, quantityX)
+                }
+            }
+
+            if let match = bestMatch, bestDistance < xTolerance * 3 {
+                items.append(RecognizedBeadItem(
+                    colorCode: colorCode,
+                    quantity: match.0,
+                    brand: brandName
+                ))
+                // 移除已配对的数量
+                quantities.removeAll { $0.1 == match.1 }
+            }
+        }
+
+        // 7. 如果列对齐配对结果太少，尝试顺序配对
+        if items.count < 3 && brandColorCodes.count > 0 && quantities.count > 0 {
+            items.removeAll()
+            // 重新获取数量（因为之前可能被移除了）
+            quantities = quantityRow
+                .sorted { $0.1.midX < $1.1.midX }
+                .compactMap { item -> (Int, CGFloat)? in
+                    let clean = cleanText(item.0)
+                    if let num = Int(clean), num > 0 && num < 10000 {
+                        return (num, item.1.midX)
+                    }
+                    return nil
+                }
+
+            let pairCount = min(brandColorCodes.count, quantities.count)
+            for i in 0..<pairCount {
+                items.append(RecognizedBeadItem(
+                    colorCode: brandColorCodes[i].0,
+                    quantity: quantities[i].0,
+                    brand: brandName
+                ))
+            }
+        }
+
+        return items
+    }
+
+    // 清理文本，去除多余字符
+    private func cleanText(_ text: String) -> String {
+        return text.trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: .punctuationCharacters)
+            .replacingOccurrences(of: "*", with: "")
+    }
+
+    // 回退解析方法：当表格结构识别失败时使用
+    private func fallbackParsing(from texts: [(String, CGRect)]) -> [RecognizedBeadItem] {
+        var items: [RecognizedBeadItem] = []
+        var allColorCodes: [(String, CGFloat)] = []
+        var allQuantities: [(Int, CGFloat)] = []
+
+        for (text, rect) in texts {
+            let components = text.components(separatedBy: CharacterSet.whitespaces)
+
+            for component in components {
+                let clean = cleanText(component)
+
+                if isColorCode(clean) && clean.count <= 5 {
+                    allColorCodes.append((clean.uppercased(), rect.midX))
+                } else if let num = Int(clean), num > 0 && num < 5000 {
+                    allQuantities.append((num, rect.midX))
+                }
+            }
+        }
+
+        // 按X坐标排序
+        allColorCodes.sort { $0.1 < $1.1 }
+        allQuantities.sort { $0.1 < $1.1 }
+
+        // 去重色号（同一列可能有多个品牌的色号）
+        var seenCodes = Set<String>()
+        var uniqueColorCodes: [(String, CGFloat)] = []
+        for code in allColorCodes {
+            if !seenCodes.contains(code.0) {
+                seenCodes.insert(code.0)
+                uniqueColorCodes.append(code)
+            }
+        }
+
+        // 配对
+        let pairCount = min(uniqueColorCodes.count, allQuantities.count)
         for i in 0..<pairCount {
             items.append(RecognizedBeadItem(
-                colorCode: colorCodes[i],
-                quantity: quantities[i],
-                brand: currentBrand
+                colorCode: uniqueColorCodes[i].0,
+                quantity: allQuantities[i].0,
+                brand: "MARD"
             ))
         }
 
