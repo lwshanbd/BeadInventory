@@ -1,0 +1,58 @@
+//
+//  ContentView.swift
+//  BeadInventory
+//
+//  主界面 - TabView导航
+//
+
+import SwiftUI
+
+struct ContentView: View {
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var selectedTab = 0
+
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            // 库存管理
+            InventoryView()
+                .tabItem {
+                    Label("库存", systemImage: "square.grid.3x3.fill")
+                }
+                .tag(0)
+
+            // 图纸导入
+            ScanView()
+                .tabItem {
+                    Label("扫描", systemImage: "doc.text.viewfinder")
+                }
+                .tag(1)
+
+            // 色号转换
+            ColorConverterView()
+                .tabItem {
+                    Label("色号", systemImage: "paintpalette.fill")
+                }
+                .tag(2)
+
+            // 统计
+            StatisticsView()
+                .tabItem {
+                    Label("统计", systemImage: "chart.bar.fill")
+                }
+                .tag(3)
+
+            // 设置
+            SettingsView()
+                .tabItem {
+                    Label("设置", systemImage: "gearshape.fill")
+                }
+                .tag(4)
+        }
+        .tint(Color("AccentColor"))
+    }
+}
+
+#Preview {
+    ContentView()
+        .environmentObject(InventoryManager())
+}
