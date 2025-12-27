@@ -18,6 +18,7 @@
 		A01234560009 /* ColorConverterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560019 /* ColorConverterView.swift */; };
 		A0123456000A /* StatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001A /* StatisticsView.swift */; };
 		A0123456000B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001B /* SettingsView.swift */; };
+		A0123456000C /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001C /* AIService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +34,7 @@
 		A01234560019 /* ColorConverterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorConverterView.swift; sourceTree = "<group>"; };
 		A0123456001A /* StatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsView.swift; sourceTree = "<group>"; };
 		A0123456001B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A0123456001C /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -88,6 +90,7 @@
 			children = (
 				A01234560015 /* InventoryManager.swift */,
 				A01234560016 /* OCRManager.swift */,
+				A0123456001C /* AIService.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -179,6 +182,7 @@
 				A01234560004 /* BeadColor.swift in Sources */,
 				A01234560005 /* InventoryManager.swift in Sources */,
 				A01234560006 /* OCRManager.swift in Sources */,
+				A0123456000C /* AIService.swift in Sources */,
 				A01234560007 /* InventoryView.swift in Sources */,
 				A01234560008 /* ScanView.swift in Sources */,
 				A01234560009 /* ColorConverterView.swift in Sources */,

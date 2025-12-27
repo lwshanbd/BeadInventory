@@ -9,6 +9,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
+    @StateObject private var aiService = AIServiceManager()
     @State private var showingResetAlert = false
     @State private var showingResetUsageAlert = false
     @State private var defaultStock = "1000"
@@ -17,6 +18,48 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                // AI 识别设置
+                Section {
+                    Picker("AI 提供商", selection: $aiService.config.provider) {
+                        ForEach(AIProvider.allCases, id: \.self) { provider in
+                            Text(provider.rawValue).tag(provider)
+                        }
+                    }
+
+                    SecureField("API Key", text: $aiService.config.apiKey)
+                        .textContentType(.password)
+                        .autocapitalization(.none)
+
+                    TextField("API 地址（可选）", text: $aiService.config.baseURL)
+                        .autocapitalization(.none)
+                        .keyboardType(.URL)
+
+                    Picker("模型", selection: $aiService.config.model) {
+                        if aiService.config.provider == .openai {
+                            ForEach(AIConfig.openAIModels, id: \.self) { model in
+                                Text(model).tag(model)
+                            }
+                        } else {
+                            ForEach(AIConfig.anthropicModels, id: \.self) { model in
+                                Text(model).tag(model)
+                            }
+                        }
+                    }
+
+                    // 配置状态提示
+                    HStack {
+                        Image(systemName: aiService.isConfigured ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                            .foregroundColor(aiService.isConfigured ? .green : .orange)
+                        Text(aiService.isConfigured ? "已配置" : "请填写 API Key")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } header: {
+                    Text("AI 图像识别")
+                } footer: {
+                    Text("使用 AI 识别色号表格图片。支持 OpenAI GPT-4o 和 Claude。如需代理可填写自定义 API 地址。")
+                }
+
                 // 库存设置
                 Section {
                     HStack {

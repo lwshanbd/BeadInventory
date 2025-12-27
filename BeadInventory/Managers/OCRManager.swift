@@ -121,7 +121,6 @@ class OCRManager: ObservableObject {
     // MARK: - 解析识别结果
 
     private func parseRecognizedText(_ observations: [VNRecognizedTextObservation]) -> [RecognizedBeadItem] {
-        var items: [RecognizedBeadItem] = []
         var allTexts: [(String, CGRect)] = []
 
         // 收集所有识别的文本和位置
@@ -130,67 +129,104 @@ class OCRManager: ObservableObject {
             allTexts.append((candidate.string, observation.boundingBox))
         }
 
-        // 按Y坐标（行）分组
-        let sortedByY = allTexts.sorted { $0.1.minY > $1.1.minY }
+        // 使用新的表格解析逻辑
+        return parseTableData(from: allTexts)
+    }
 
-        // 解析表格结构
-        // 查找包含品牌关键词的行
-        var currentBrand = "MARD"
-        var colorCodePattern = try? NSRegularExpression(pattern: "^[A-Z]\\d+$|^\\d+$", options: .caseInsensitive)
-        var quantityPattern = try? NSRegularExpression(pattern: "^\\d{1,4}$", options: [])
+    private func parseTableData(from texts: [(String, CGRect)]) -> [RecognizedBeadItem] {
+        var items: [RecognizedBeadItem] = []
 
-        for (text, _) in sortedByY {
-            let trimmedText = text.trimmingCharacters(in: .whitespaces)
+        // 收集所有色号和数量
+        var colorCodes: [(text: String, x: CGFloat, y: CGFloat)] = []
+        var quantities: [(value: Int, x: CGFloat, y: CGFloat)] = []
 
-            // 检测品牌行
-            if trimmedText.contains("MARD") {
-                currentBrand = "MARD"
-            } else if trimmedText.lowercased().contains("vivid") {
-                currentBrand = "vivid"
-            } else if trimmedText.contains("漫漫") {
-                currentBrand = "漫漫"
-            } else if trimmedText.contains("卡卡") {
-                currentBrand = "卡卡"
-            } else if trimmedText.contains("豆量") || trimmedText.contains("数量") {
-                // 这是豆量行，尝试提取数字
-                let numbers = extractNumbers(from: trimmedText)
-                // 将数字与之前识别的色号配对
-                continue
-            }
+        for (text, rect) in texts {
+            let components = text.components(separatedBy: CharacterSet.whitespaces)
+                .map { $0.trimmingCharacters(in: .punctuationCharacters) }
+                .filter { !$0.isEmpty }
 
-            // 尝试解析整行数据（可能包含多个色号或数量）
-            let components = trimmedText.components(separatedBy: CharacterSet.whitespaces)
+            let width = rect.width / max(CGFloat(components.count), 1)
 
-            for component in components {
-                let clean = component.trimmingCharacters(in: .punctuationCharacters)
+            for (index, component) in components.enumerated() {
+                let centerX = components.count == 1 ? rect.midX : rect.minX + width * (CGFloat(index) + 0.5)
+                let centerY = rect.midY
 
-                // 检查是否是色号格式 (如 F8, A17, B195, 81, 213)
-                if isColorCode(clean) {
-                    // 暂存色号，等待配对数量
+                // 跳过关键词
+                let upper = component.uppercased()
+                if upper.contains("MARD") || upper.contains("VIVID") ||
+                   component.contains("漫漫") || component.contains("卡卡") ||
+                   component.contains("豆量") || component.contains("数量") ||
+                   component.contains("色号") || component.contains("合计") {
                     continue
                 }
 
-                // 检查是否是数量 (纯数字，通常1-4位)
-                if let quantity = Int(clean), quantity > 0 && quantity < 10000 {
-                    // 这可能是豆量
-                    continue
+                // 判断是色号还是数量
+                // MARD色号格式：字母+数字（如F8, A17, B195）或纯小数字（1-9）
+                if isMardStyleCode(component) {
+                    // 明确的MARD格式（字母+数字）
+                    colorCodes.append((component.uppercased(), centerX, centerY))
+                } else if let num = Int(component), num > 0 && num < 10000 {
+                    // 纯数字：根据大小判断
+                    if num >= 10 {
+                        // 10以上更可能是数量
+                        quantities.append((num, centerX, centerY))
+                    } else {
+                        // 1-9可能是色号也可能是数量，暂时都保存
+                        colorCodes.append((component, centerX, centerY))
+                        quantities.append((num, centerX, centerY))
+                    }
                 }
             }
         }
 
-        // 简化解析：提取所有可能的色号-数量对
-        items = parseTableData(from: allTexts)
+        print("[OCR Debug] 找到 \(colorCodes.count) 个色号, \(quantities.count) 个数量")
 
+        guard !colorCodes.isEmpty && !quantities.isEmpty else { return items }
+
+        // 策略：按X坐标配对（最近邻匹配）
+        // 数量应该在色号的下方（Y坐标更小），且X坐标接近
+        var usedColorIndices = Set<Int>()
+
+        for qty in quantities {
+            var bestMatchIndex: Int?
+            var bestScore: CGFloat = .greatestFiniteMagnitude
+
+            for (index, code) in colorCodes.enumerated() {
+                if usedColorIndices.contains(index) { continue }
+
+                // 色号应该在数量上方（Y更大）
+                guard code.y > qty.y else { continue }
+
+                // 计算匹配分数：X距离越小越好
+                let xDistance = abs(code.x - qty.x)
+                if xDistance < bestScore {
+                    bestScore = xDistance
+                    bestMatchIndex = index
+                }
+            }
+
+            // 放宽匹配阈值到15%
+            if let matchIndex = bestMatchIndex, bestScore < 0.15 {
+                usedColorIndices.insert(matchIndex)
+                items.append(RecognizedBeadItem(
+                    colorCode: colorCodes[matchIndex].text,
+                    quantity: qty.value,
+                    brand: "MARD"
+                ))
+            }
+        }
+
+        print("[OCR Debug] 成功配对 \(items.count) 个结果")
         return items
     }
 
-    private func isColorCode(_ text: String) -> Bool {
-        // 色号格式: 字母+数字 (如F8, A17) 或 纯数字 (如81, 213)
+    // 判断是否是MARD风格的色号（字母+数字）
+    private func isMardStyleCode(_ text: String) -> Bool {
         let patterns = [
             "^[A-Za-z]\\d{1,3}$",           // F8, A17, B195
             "^[A-Za-z]{2}\\d{1,3}$",        // DH01, IC09
             "^\\*?[A-Za-z]\\d{1,3}$",       // *B195
-            "^\\d{1,3}$"                     // 81, 213 (vivid)
+            "^[A-Za-z]\\d{1,3}[A-Za-z]?$"   // A17B 等变体
         ]
 
         for pattern in patterns {
@@ -202,64 +238,6 @@ class OCRManager: ObservableObject {
             }
         }
         return false
-    }
-
-    private func extractNumbers(from text: String) -> [Int] {
-        let pattern = "\\d+"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return [] }
-
-        let range = NSRange(text.startIndex..., in: text)
-        let matches = regex.matches(in: text, options: [], range: range)
-
-        return matches.compactMap { match in
-            guard let range = Range(match.range, in: text) else { return nil }
-            return Int(text[range])
-        }
-    }
-
-    private func parseTableData(from texts: [(String, CGRect)]) -> [RecognizedBeadItem] {
-        var items: [RecognizedBeadItem] = []
-
-        // 按位置分组，尝试匹配同一列的色号和数量
-        let sortedTexts = texts.sorted { $0.1.minX < $1.1.minX }
-
-        var colorCodes: [String] = []
-        var quantities: [Int] = []
-        var currentBrand = "MARD"
-
-        for (text, _) in sortedTexts {
-            let components = text.components(separatedBy: CharacterSet.whitespaces)
-
-            for component in components {
-                let clean = component.trimmingCharacters(in: .punctuationCharacters)
-
-                if isColorCode(clean) && clean.count <= 5 {
-                    colorCodes.append(clean.uppercased())
-                } else if let num = Int(clean), num > 0 && num < 5000 {
-                    quantities.append(num)
-                }
-
-                // 检测品牌
-                if clean.uppercased().contains("MARD") {
-                    currentBrand = "MARD"
-                } else if clean.lowercased().contains("vivid") {
-                    currentBrand = "vivid"
-                }
-            }
-        }
-
-        // 配对色号和数量
-        // 假设豆量行在最后，与色号一一对应
-        let pairCount = min(colorCodes.count, quantities.count)
-        for i in 0..<pairCount {
-            items.append(RecognizedBeadItem(
-                colorCode: colorCodes[i],
-                quantity: quantities[i],
-                brand: currentBrand
-            ))
-        }
-
-        return items
     }
 
     // MARK: - 手动添加/编辑识别结果
