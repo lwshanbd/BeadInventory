@@ -280,7 +280,12 @@ struct QuantityControl: View {
             // 增加按钮
             Button {
                 isFocused = false
-                quantity += 1
+                // 如果是小数，先取整到下一个整数；如果是整数，则+1
+                if quantity == Double(Int(quantity)) {
+                    quantity += 1
+                } else {
+                    quantity = ceil(quantity)
+                }
                 editText = displayText
             } label: {
                 Image(systemName: "plus")
