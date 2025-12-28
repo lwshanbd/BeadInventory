@@ -11,20 +11,33 @@ struct AddInventoryView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
-    // 色系列表
-    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
+    // 色系列表（"其他"包含特殊色号如 Any）
+    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他"]
 
     @State private var selectedSeries = "A"
     @State private var selectedColors: Set<UUID> = []
     @State private var quantities: [UUID: Double] = [:]  // 数量（单位：千颗）
 
+    // 已知的标准色系前缀
+    let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
+
     var colorsInSeries: [BeadColor] {
         inventoryManager.beadColors.filter { color in
-            if selectedSeries == "ZG" {
-                return color.mardCode.hasPrefix("ZG")
+            let code = color.mardCode
+
+            if selectedSeries == "其他" {
+                // "其他"系列：不属于任何标准色系的颜色
+                return !standardPrefixes.contains { prefix in
+                    if prefix == "ZG" {
+                        return code.hasPrefix("ZG")
+                    } else {
+                        return code.hasPrefix(prefix) && !code.hasPrefix("ZG")
+                    }
+                }
+            } else if selectedSeries == "ZG" {
+                return code.hasPrefix("ZG")
             } else {
                 // 确保不匹配 ZG 系列
-                let code = color.mardCode
                 if code.hasPrefix("ZG") { return false }
                 return code.hasPrefix(selectedSeries)
             }

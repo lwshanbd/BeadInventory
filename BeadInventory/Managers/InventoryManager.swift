@@ -518,5 +518,8 @@ struct DefaultBeadColors {
         BeadColor(colorHex: "94BFE2", mardCode: "ZG6"),
         BeadColor(colorHex: "E2A9D2", mardCode: "ZG7"),
         BeadColor(colorHex: "AB91C0", mardCode: "ZG8"),
+
+        // 特殊色号
+        BeadColor(colorHex: "CCCCCC", mardCode: "Any", colorName: "任意色"),
     ]
 }
