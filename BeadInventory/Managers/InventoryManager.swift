@@ -81,11 +81,10 @@ class InventoryManager: ObservableObject {
     func deductFromStock(colorCode: String, amount: Int) -> Bool {
         // 尝试通过各种色号匹配
         if let index = findColorIndex(byCode: colorCode) {
-            if beadColors[index].available >= amount {
-                beadColors[index].used += amount
-                saveData()
-                return true
-            }
+            // 允许库存变为负数（消耗量大于库存）
+            beadColors[index].used += amount
+            saveData()
+            return true
         }
         return false
     }
