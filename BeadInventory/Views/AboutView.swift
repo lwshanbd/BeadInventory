@@ -15,7 +15,7 @@ struct AboutView: View {
             VStack(spacing: 32) {
                 // App 图标和名称
                 VStack(spacing: 16) {
-                    Image("AppIcon")
+                    Image("AppIconImage")
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 120, height: 120)
