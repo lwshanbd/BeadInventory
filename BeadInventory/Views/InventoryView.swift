@@ -67,7 +67,7 @@ struct InventoryView: View {
                         GridItem(.flexible())
                     ], spacing: 12) {
                         ForEach(filteredColors) { color in
-                            ColorCardView(color: color)
+                            ColorCardView(color: color, sortOption: sortOption)
                             .onTapGesture {
                                 selectedColor = color
                                 showingEditSheet = true
@@ -176,6 +176,7 @@ struct SortChip: View {
 // MARK: - 颜色卡片
 struct ColorCardView: View {
     let color: BeadColor
+    var sortOption: InventoryView.SortOption = .code
 
     var body: some View {
         VStack(spacing: 8) {
@@ -193,16 +194,30 @@ struct ColorCardView: View {
                 .font(.system(.caption, design: .monospaced))
                 .fontWeight(.medium)
 
-            // 库存数量
-            HStack(spacing: 4) {
-                Text("\(color.available)")
-                    .font(.caption2)
-                    .foregroundColor(color.available < 100 ? .red : .secondary)
-
-                if color.used > 0 {
-                    Text("(-\(color.used))")
+            // 根据排序方式显示不同数值
+            if sortOption == .used {
+                // 按用量排序时显示用量
+                HStack(spacing: 4) {
+                    Text("用量:")
                         .font(.caption2)
-                        .foregroundColor(.orange)
+                        .foregroundColor(.secondary)
+                    Text("\(color.used)")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundColor(color.used > 0 ? .orange : .secondary)
+                }
+            } else {
+                // 其他排序显示剩余量
+                HStack(spacing: 4) {
+                    Text("\(color.available)")
+                        .font(.caption2)
+                        .foregroundColor(color.available < 100 ? .red : .secondary)
+
+                    if color.used > 0 {
+                        Text("(-\(color.used))")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
                 }
             }
         }
