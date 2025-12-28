@@ -12,6 +12,7 @@ struct InventoryView: View {
     @State private var searchText = ""
     @State private var selectedColor: BeadColor?
     @State private var showingEditSheet = false
+    @State private var showingBrandSettings = false
     @State private var sortOption: SortOption = .code
 
     enum SortOption: String, CaseIterable {
@@ -35,7 +36,7 @@ struct InventoryView: View {
             return colors.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
         case .stock:
             return colors.sorted {
-                (stockDict[$0.mardCode]?.available ?? 0) > (stockDict[$1.mardCode]?.available ?? 0)
+                (stockDict[$0.mardCode]?.available ?? 0) < (stockDict[$1.mardCode]?.available ?? 0)
             }
         case .used:
             return colors.sorted {
@@ -52,6 +53,20 @@ struct InventoryView: View {
                 // 品牌选择器
                 HStack {
                     BrandPicker()
+
+                    if inventoryManager.currentBrandId != nil {
+                        Button {
+                            showingBrandSettings = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 18))
+                                .foregroundColor(.accentColor)
+                                .padding(8)
+                                .background(Color.accentColor.opacity(0.1))
+                                .cornerRadius(8)
+                        }
+                    }
+
                     Spacer()
                 }
                 .padding(.horizontal)
@@ -125,6 +140,9 @@ struct InventoryView: View {
                 if let color = selectedColor {
                     EditStockSheet(color: color, stock: stockDict[color.mardCode])
                 }
+            }
+            .sheet(isPresented: $showingBrandSettings) {
+                BrandSettingsView()
             }
         }
     }

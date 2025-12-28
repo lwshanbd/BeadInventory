@@ -15,6 +15,7 @@
 		38B1A0012F01000100000003 /* DataMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000013 /* DataMigration.swift */; };
 		38B1A0012F01000100000004 /* BrandPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000014 /* BrandPicker.swift */; };
 		38B1A0012F01000100000005 /* BrandManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000015 /* BrandManagerView.swift */; };
+		38B1A0012F01000100000006 /* BrandSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000016 /* BrandSettingsView.swift */; };
 		A01234560001 /* BeadInventoryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560011 /* BeadInventoryApp.swift */; };
 		A01234560002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560012 /* ContentView.swift */; };
 		A01234560003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A01234560013 /* Assets.xcassets */; };
@@ -51,6 +52,7 @@
 		38B1A0012F01000100000013 /* DataMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataMigration.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000014 /* BrandPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandPicker.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000015 /* BrandManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandManagerView.swift; sourceTree = "<group>"; };
+		38B1A0012F01000100000016 /* BrandSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -138,6 +140,7 @@
 				38B1A0012F01000100000020 /* Components */,
 				3806E5052F00F94200187AA7 /* AddInventoryView.swift */,
 				38B1A0012F01000100000015 /* BrandManagerView.swift */,
+				38B1A0012F01000100000016 /* BrandSettingsView.swift */,
 				A01234560017 /* InventoryView.swift */,
 				A01234560018 /* ScanView.swift */,
 				A01234560019 /* ColorConverterView.swift */,
@@ -244,6 +247,7 @@
 				A0123456000B /* SettingsView.swift in Sources */,
 				38B1A0012F01000100000004 /* BrandPicker.swift in Sources */,
 				38B1A0012F01000100000005 /* BrandManagerView.swift in Sources */,
+				38B1A0012F01000100000006 /* BrandSettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

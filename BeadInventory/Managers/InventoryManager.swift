@@ -74,6 +74,13 @@ class InventoryManager: ObservableObject {
         }
     }
 
+    func updateBrand(_ brandId: UUID, name: String) {
+        if let index = brands.firstIndex(where: { $0.id == brandId }) {
+            brands[index].name = name
+            saveData()
+        }
+    }
+
     func deleteBrand(_ brandId: UUID) -> Bool {
         // 删除品牌及其库存
         brands.removeAll { $0.id == brandId }

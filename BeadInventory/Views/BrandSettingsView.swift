@@ -1,0 +1,192 @@
+//
+//  BrandSettingsView.swift
+//  BeadInventory
+//
+//  品牌设置视图 - 针对当前选中品牌的设置
+//
+
+import SwiftUI
+
+struct BrandSettingsView: View {
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @Environment(\.dismiss) var dismiss
+
+    @State private var showingResetAlert = false
+    @State private var showingResetUsageAlert = false
+    @State private var showingDeleteBrandAlert = false
+    @State private var defaultStock = "1000"
+    @State private var isEditingName = false
+    @State private var editedName = ""
+
+    var brand: Brand? {
+        inventoryManager.currentBrand
+    }
+
+    var brandStockCount: Int {
+        guard let brandId = inventoryManager.currentBrandId else { return 0 }
+        return inventoryManager.brandStocks.filter { $0.brandId == brandId }.count
+    }
+
+    var body: some View {
+        NavigationStack {
+            if let brand = brand {
+                List {
+                    // 品牌信息
+                    Section {
+                        if isEditingName {
+                            HStack {
+                                TextField("品牌名称", text: $editedName)
+                                    .textFieldStyle(.roundedBorder)
+
+                                Button("保存") {
+                                    if !editedName.isEmpty {
+                                        inventoryManager.updateBrand(brand.id, name: editedName)
+                                    }
+                                    isEditingName = false
+                                }
+                                .buttonStyle(.borderedProminent)
+                            }
+                        } else {
+                            HStack {
+                                Text("品牌名称")
+                                Spacer()
+                                Text(brand.name)
+                                    .foregroundColor(.secondary)
+                                Button {
+                                    editedName = brand.name
+                                    isEditingName = true
+                                } label: {
+                                    Image(systemName: "pencil")
+                                        .foregroundColor(.accentColor)
+                                }
+                            }
+                        }
+
+                        HStack {
+                            Text("已有库存颜色")
+                            Spacer()
+                            Text("\(brandStockCount) 色")
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("创建时间")
+                            Spacer()
+                            Text(brand.createdAt.formatted(date: .abbreviated, time: .omitted))
+                                .foregroundColor(.secondary)
+                        }
+                    } header: {
+                        Text("品牌信息")
+                    }
+
+                    // 库存操作
+                    Section {
+                        HStack {
+                            Text("重置库存数量")
+                            Spacer()
+                            TextField("1000", text: $defaultStock)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 80)
+                        }
+
+                        Button {
+                            showingResetAlert = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "arrow.counterclockwise")
+                                Text("重置所有库存")
+                            }
+                            .foregroundColor(.orange)
+                        }
+
+                        Button {
+                            showingResetUsageAlert = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "xmark.circle")
+                                Text("清除使用记录")
+                            }
+                            .foregroundColor(.red)
+                        }
+                    } header: {
+                        Text("库存操作")
+                    } footer: {
+                        Text("重置库存会将所有颜色的库存设为指定数量并清零使用记录。清除使用记录只会重置已使用数量。")
+                    }
+
+                    // 危险操作
+                    Section {
+                        Button {
+                            showingDeleteBrandAlert = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "trash")
+                                Text("删除此品牌")
+                            }
+                            .foregroundColor(.red)
+                        }
+                    } header: {
+                        Text("危险操作")
+                    } footer: {
+                        Text("删除品牌将同时删除该品牌下的所有库存数据，此操作不可撤销。")
+                    }
+                }
+                .navigationTitle("\(brand.name) 设置")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("完成") { dismiss() }
+                    }
+                }
+                .alert("重置库存", isPresented: $showingResetAlert) {
+                    Button("取消", role: .cancel) { }
+                    Button("重置", role: .destructive) {
+                        let stock = Int(defaultStock) ?? 1000
+                        inventoryManager.resetAllStock(to: stock)
+                    }
+                } message: {
+                    Text("将「\(brand.name)」所有颜色的库存重置为 \(defaultStock) 颗，使用记录也将清零。此操作不可撤销。")
+                }
+                .alert("清除使用记录", isPresented: $showingResetUsageAlert) {
+                    Button("取消", role: .cancel) { }
+                    Button("清除", role: .destructive) {
+                        inventoryManager.resetUsage()
+                    }
+                } message: {
+                    Text("将清除「\(brand.name)」所有颜色的使用记录，库存数量不变。此操作不可撤销。")
+                }
+                .alert("删除品牌", isPresented: $showingDeleteBrandAlert) {
+                    Button("取消", role: .cancel) { }
+                    Button("删除", role: .destructive) {
+                        _ = inventoryManager.deleteBrand(brand.id)
+                        dismiss()
+                    }
+                } message: {
+                    Text("确定要删除「\(brand.name)」吗？该品牌下的所有库存数据将被永久删除。")
+                }
+            } else {
+                VStack(spacing: 16) {
+                    Image(systemName: "building.2")
+                        .font(.system(size: 50))
+                        .foregroundColor(.secondary.opacity(0.5))
+                    Text("请先选择品牌")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                }
+                .navigationTitle("品牌设置")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("完成") { dismiss() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#Preview {
+    BrandSettingsView()
+        .environmentObject(InventoryManager())
+}
