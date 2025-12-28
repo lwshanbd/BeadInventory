@@ -15,15 +15,8 @@ struct AboutView: View {
             VStack(spacing: 32) {
                 // App 图标和名称
                 VStack(spacing: 16) {
-                    Image(systemName: "circle.grid.3x3.fill")
-                        .font(.system(size: 80))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.pink, .purple, .blue],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                    AppIconView(size: 120)
+                        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
 
                     Text("啃豆小仓")
                         .font(.largeTitle)
