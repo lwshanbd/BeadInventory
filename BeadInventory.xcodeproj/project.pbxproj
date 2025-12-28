@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		3806E5062F00F94200187AA7 /* AddInventoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3806E5052F00F94200187AA7 /* AddInventoryView.swift */; };
+		3806E50A2F00FB3900187AA7 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3806E5082F00FB3900187AA7 /* InfoPlist.strings */; };
+		3806E50E2F00FB4300187AA7 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3806E50C2F00FB4300187AA7 /* InfoPlist.strings */; };
 		A01234560001 /* BeadInventoryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560011 /* BeadInventoryApp.swift */; };
 		A01234560002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560012 /* ContentView.swift */; };
 		A01234560003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A01234560013 /* Assets.xcassets */; };
@@ -24,6 +26,8 @@
 
 /* Begin PBXFileReference section */
 		3806E5052F00F94200187AA7 /* AddInventoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddInventoryView.swift; sourceTree = "<group>"; };
+		3806E5072F00FB3900187AA7 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = InfoPlist.strings; sourceTree = "<group>"; };
+		3806E50B2F00FB4300187AA7 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = InfoPlist.strings; sourceTree = "<group>"; };
 		A01234560010 /* BeadInventory.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BeadInventory.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A01234560011 /* BeadInventoryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeadInventoryApp.swift; sourceTree = "<group>"; };
 		A01234560012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -50,6 +54,22 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		3806E5092F00FB3900187AA7 /* zh-Hans.lproj */ = {
+			isa = PBXGroup;
+			children = (
+				3806E5082F00FB3900187AA7 /* InfoPlist.strings */,
+			);
+			path = "zh-Hans.lproj";
+			sourceTree = "<group>";
+		};
+		3806E50D2F00FB4300187AA7 /* en.lproj */ = {
+			isa = PBXGroup;
+			children = (
+				3806E50C2F00FB4300187AA7 /* InfoPlist.strings */,
+			);
+			path = en.lproj;
+			sourceTree = "<group>";
+		};
 		A01234560030 = {
 			isa = PBXGroup;
 			children = (
@@ -61,6 +81,8 @@
 		A01234560031 /* BeadInventory */ = {
 			isa = PBXGroup;
 			children = (
+				3806E50D2F00FB4300187AA7 /* en.lproj */,
+				3806E5092F00FB3900187AA7 /* zh-Hans.lproj */,
 				A01234560011 /* BeadInventoryApp.swift */,
 				A01234560012 /* ContentView.swift */,
 				A01234560033 /* Models */,
@@ -170,6 +192,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A01234560003 /* Assets.xcassets in Resources */,
+				3806E50E2F00FB4300187AA7 /* InfoPlist.strings in Resources */,
+				3806E50A2F00FB3900187AA7 /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -196,6 +220,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		3806E5082F00FB3900187AA7 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				3806E5072F00FB3900187AA7 /* zh-Hans */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+		3806E50C2F00FB4300187AA7 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				3806E50B2F00FB4300187AA7 /* en */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		A01234560080 /* Debug */ = {

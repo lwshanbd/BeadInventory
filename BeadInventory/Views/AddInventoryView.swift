@@ -175,9 +175,6 @@ struct ColorAddRow: View {
     @Binding var quantity: Double
     let onToggle: () -> Void
 
-    @State private var isEditing = false
-    @State private var editText = ""
-
     var body: some View {
         HStack(spacing: 12) {
             // 选择按钮
@@ -218,11 +215,7 @@ struct ColorAddRow: View {
 
             // 数量控制（仅在选中时显示）
             if isSelected {
-                QuantityControl(
-                    quantity: $quantity,
-                    isEditing: $isEditing,
-                    editText: $editText
-                )
+                QuantityControl(quantity: $quantity)
             }
         }
         .padding(12)
@@ -234,8 +227,7 @@ struct ColorAddRow: View {
 // MARK: - 数量控制器
 struct QuantityControl: View {
     @Binding var quantity: Double
-    @Binding var isEditing: Bool
-    @Binding var editText: String
+    @FocusState private var isFocused: Bool
 
     var displayText: String {
         if quantity == Double(Int(quantity)) {
@@ -245,14 +237,18 @@ struct QuantityControl: View {
         }
     }
 
+    @State private var editText: String = ""
+
     var body: some View {
         HStack(spacing: 8) {
             // 减少按钮
             Button {
+                isFocused = false
                 if quantity > 0.5 {
                     quantity -= 1
                     if quantity < 0.5 { quantity = 0.5 }
                 }
+                editText = displayText
             } label: {
                 Image(systemName: "minus")
                     .font(.caption)
@@ -263,44 +259,36 @@ struct QuantityControl: View {
                     .cornerRadius(14)
             }
 
-            // 数量显示/输入
-            if isEditing {
-                TextField("", text: $editText)
-                    .font(.system(.body, design: .monospaced))
-                    .keyboardType(.decimalPad)
-                    .multilineTextAlignment(.center)
-                    .frame(width: 60)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
-                    .onSubmit {
-                        finishEditing()
+            // 数量输入框
+            TextField("1", text: $editText)
+                .font(.system(.body, design: .monospaced))
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.center)
+                .frame(width: 50)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+                .focused($isFocused)
+                .onChange(of: editText) { _, newValue in
+                    // 实时更新 quantity
+                    if let value = Double(newValue), value > 0 {
+                        quantity = value
                     }
-            } else {
-                Button {
-                    editText = displayText
-                    isEditing = true
-                } label: {
-                    HStack(spacing: 2) {
-                        Text(displayText)
-                            .font(.system(.body, design: .monospaced))
-                            .fontWeight(.medium)
-                        Text("×1000")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
                 }
-                .foregroundColor(.primary)
-            }
+                .overlay(alignment: .trailing) {
+                    Text("×1000")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.trailing, 4)
+                        .allowsHitTesting(false)
+                }
 
             // 增加按钮
             Button {
+                isFocused = false
                 quantity += 1
+                editText = displayText
             } label: {
                 Image(systemName: "plus")
                     .font(.caption)
@@ -311,18 +299,14 @@ struct QuantityControl: View {
                     .cornerRadius(14)
             }
         }
-        .onChange(of: isEditing) { _, newValue in
-            if !newValue {
-                finishEditing()
+        .onAppear {
+            editText = displayText
+        }
+        .onChange(of: quantity) { _, _ in
+            if !isFocused {
+                editText = displayText
             }
         }
-    }
-
-    func finishEditing() {
-        if let value = Double(editText), value > 0 {
-            quantity = value
-        }
-        isEditing = false
     }
 }
 
