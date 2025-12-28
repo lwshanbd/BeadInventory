@@ -83,6 +83,7 @@ struct AddInventoryView: View {
                     .padding(.horizontal)
                     .padding(.bottom, 100)
                 }
+                .scrollDismissesKeyboard(.interactively)
 
                 // 底部确认栏
                 if !selectedColors.isEmpty {
@@ -264,12 +265,18 @@ struct QuantityControl: View {
                 .font(.system(.body, design: .monospaced))
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.center)
-                .frame(width: 50)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .frame(width: 60, height: 32)
                 .background(Color(.systemGray6))
                 .cornerRadius(8)
                 .focused($isFocused)
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("完成") {
+                            isFocused = false
+                        }
+                    }
+                }
                 .onChange(of: editText) { _, newValue in
                     // 实时更新 quantity
                     if let value = Double(newValue), value > 0 {
