@@ -800,7 +800,7 @@ struct AISettingsView: View {
             } header: {
                 Text("AI 配置")
             } footer: {
-                Text("支持 OpenAI GPT-4o 和 Anthropic Claude。如需代理可填写自定义 API 地址。")
+                Text("支持 OpenAI GPT 和 Anthropic Claude。如需代理可填写自定义 API 地址。")
             }
 
             Section {
