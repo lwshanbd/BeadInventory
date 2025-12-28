@@ -56,6 +56,24 @@ struct AddInventoryView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // 显示当前品牌
+                if let brandName = inventoryManager.currentBrand?.name {
+                    HStack {
+                        Text("为品牌")
+                            .foregroundColor(.secondary)
+                        Text(brandName)
+                            .fontWeight(.bold)
+                            .foregroundColor(.accentColor)
+                        Text("增加库存")
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .font(.subheadline)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(Color(.systemGray6))
+                }
+
                 // 色系选择器
                 SeriesSelector(
                     series: colorSeries,
@@ -132,10 +150,12 @@ struct AddInventoryView: View {
     }
 
     func confirmAddStock() {
+        guard let brandId = inventoryManager.currentBrandId else { return }
         for colorId in selectedColors {
+            guard let color = inventoryManager.beadColors.first(where: { $0.id == colorId }) else { continue }
             let qty = quantities[colorId] ?? 1.0
             let amount = Int(qty * 1000)
-            inventoryManager.addStock(for: colorId, amount: amount)
+            inventoryManager.addStock(brandId: brandId, mardCode: color.mardCode, amount: amount)
         }
         dismiss()
     }

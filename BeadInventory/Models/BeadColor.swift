@@ -58,13 +58,15 @@ struct ProjectRecord: Identifiable, Codable {
     var date: Date
     var beadUsage: [BeadUsage]    // 各颜色用量
     var totalBeads: Int
+    var brandId: UUID?            // 项目关联的品牌 ID
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = []) {
+    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil) {
         self.id = id
         self.name = name
         self.date = date
         self.beadUsage = beadUsage
         self.totalBeads = beadUsage.reduce(0) { $0 + $1.quantity }
+        self.brandId = brandId
     }
 }
 
@@ -72,12 +74,14 @@ struct ProjectRecord: Identifiable, Codable {
 struct BeadUsage: Identifiable, Codable, Hashable {
     let id: UUID
     let colorCode: String          // 色号（MARD为主）
+    let brandId: UUID?             // 关联的品牌 ID
     var quantity: Int              // 用量
     var isDeducted: Bool           // 是否已从库存扣除
 
-    init(id: UUID = UUID(), colorCode: String, quantity: Int, isDeducted: Bool = false) {
+    init(id: UUID = UUID(), colorCode: String, brandId: UUID? = nil, quantity: Int, isDeducted: Bool = false) {
         self.id = id
         self.colorCode = colorCode
+        self.brandId = brandId
         self.quantity = quantity
         self.isDeducted = isDeducted
     }

@@ -14,6 +14,14 @@ struct StatisticsView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // 品牌选择器
+                HStack {
+                    BrandPicker()
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+
                 // 分段选择器
                 Picker("", selection: $selectedSegment) {
                     Text("使用统计").tag(0)
@@ -39,51 +47,84 @@ struct UsageStatisticsView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showLowStockOnly = false
 
-    var displayColors: [BeadColor] {
-        let colors = showLowStockOnly
-            ? inventoryManager.lowStockColors
-            : inventoryManager.beadColors.filter { $0.used > 0 }
-        return colors.sorted { $0.used > $1.used }
+    var stockDict: [String: BrandStock] {
+        guard let brandId = inventoryManager.currentBrandId else { return [:] }
+        let stocks = inventoryManager.brandStocks.filter { $0.brandId == brandId }
+        return Dictionary(uniqueKeysWithValues: stocks.map { ($0.mardCode, $0) })
+    }
+
+    var displayItems: [(color: BeadColor, stock: BrandStock)] {
+        guard let brandId = inventoryManager.currentBrandId else { return [] }
+
+        if showLowStockOnly {
+            let lowStocks = inventoryManager.lowStockColors(for: brandId)
+            return lowStocks.compactMap { stock in
+                if let color = inventoryManager.beadColors.first(where: { $0.mardCode == stock.mardCode }) {
+                    return (color, stock)
+                }
+                return nil
+            }.sorted { $0.stock.available < $1.stock.available }
+        } else {
+            let usedStocks = inventoryManager.brandStocks.filter { $0.brandId == brandId && $0.used > 0 }
+            return usedStocks.compactMap { stock in
+                if let color = inventoryManager.beadColors.first(where: { $0.mardCode == stock.mardCode }) {
+                    return (color, stock)
+                }
+                return nil
+            }.sorted { $0.stock.used > $1.stock.used }
+        }
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // 总览卡片
-                OverviewCard()
-
-                // 筛选开关
-                Toggle("仅显示低库存", isOn: $showLowStockOnly)
-                    .padding()
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
-                    .padding(.horizontal)
-
-                // 使用排行
-                if !displayColors.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(showLowStockOnly ? "低库存颜色" : "使用排行")
-                            .font(.headline)
-                            .padding(.horizontal)
-
-                        ForEach(Array(displayColors.prefix(20).enumerated()), id: \.element.id) { index, color in
-                            UsageRankRow(rank: index + 1, color: color)
-                        }
-                    }
-                } else {
-                    VStack(spacing: 16) {
-                        Image(systemName: showLowStockOnly ? "checkmark.circle" : "chart.bar.xaxis")
-                            .font(.system(size: 40))
-                            .foregroundColor(.secondary.opacity(0.5))
-
-                        Text(showLowStockOnly ? "没有低库存颜色" : "暂无使用记录")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(height: 200)
-                }
+        if inventoryManager.currentBrandId == nil {
+            VStack(spacing: 16) {
+                Image(systemName: "building.2")
+                    .font(.system(size: 50))
+                    .foregroundColor(.secondary.opacity(0.5))
+                Text("请先创建品牌")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
             }
-            .padding(.vertical)
+            .frame(maxHeight: .infinity)
+        } else {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // 总览卡片
+                    OverviewCard()
+
+                    // 筛选开关
+                    Toggle("仅显示低库存", isOn: $showLowStockOnly)
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+
+                    // 使用排行
+                    if !displayItems.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(showLowStockOnly ? "低库存颜色" : "使用排行")
+                                .font(.headline)
+                                .padding(.horizontal)
+
+                            ForEach(Array(displayItems.prefix(20).enumerated()), id: \.element.color.id) { index, item in
+                                UsageRankRow(rank: index + 1, color: item.color, stock: item.stock)
+                            }
+                        }
+                    } else {
+                        VStack(spacing: 16) {
+                            Image(systemName: showLowStockOnly ? "checkmark.circle" : "chart.bar.xaxis")
+                                .font(.system(size: 40))
+                                .foregroundColor(.secondary.opacity(0.5))
+
+                            Text(showLowStockOnly ? "没有低库存颜色" : "暂无使用记录")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(height: 200)
+                    }
+                }
+                .padding(.vertical)
+            }
         }
     }
 }
@@ -92,9 +133,24 @@ struct UsageStatisticsView: View {
 struct OverviewCard: View {
     @EnvironmentObject var inventoryManager: InventoryManager
 
+    var totalStock: Int {
+        guard let brandId = inventoryManager.currentBrandId else { return 0 }
+        return inventoryManager.totalStock(for: brandId)
+    }
+
+    var totalUsed: Int {
+        guard let brandId = inventoryManager.currentBrandId else { return 0 }
+        return inventoryManager.totalUsed(for: brandId)
+    }
+
+    var totalAvailable: Int {
+        guard let brandId = inventoryManager.currentBrandId else { return 0 }
+        return inventoryManager.totalAvailable(for: brandId)
+    }
+
     var usagePercentage: Double {
-        guard inventoryManager.totalStock > 0 else { return 0 }
-        return Double(inventoryManager.totalUsed) / Double(inventoryManager.totalStock) * 100
+        guard totalStock > 0 else { return 0 }
+        return Double(totalUsed) / Double(totalStock) * 100
     }
 
     var body: some View {
@@ -133,17 +189,17 @@ struct OverviewCard: View {
             HStack(spacing: 30) {
                 StatItem(
                     title: "总库存",
-                    value: "\(inventoryManager.totalStock)",
+                    value: "\(totalStock)",
                     color: .blue
                 )
                 StatItem(
                     title: "已使用",
-                    value: "\(inventoryManager.totalUsed)",
+                    value: "\(totalUsed)",
                     color: .orange
                 )
                 StatItem(
                     title: "剩余",
-                    value: "\(inventoryManager.totalAvailable)",
+                    value: "\(totalAvailable)",
                     color: .green
                 )
             }
@@ -178,15 +234,17 @@ struct StatItem: View {
 struct UsageRankRow: View {
     let rank: Int
     let color: BeadColor
+    let stock: BrandStock
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var maxUsed: Int {
-        inventoryManager.beadColors.map { $0.used }.max() ?? 1
+        guard let brandId = inventoryManager.currentBrandId else { return 1 }
+        return inventoryManager.brandStocks.filter { $0.brandId == brandId }.map { $0.used }.max() ?? 1
     }
 
     var progress: Double {
         guard maxUsed > 0 else { return 0 }
-        return Double(color.used) / Double(maxUsed)
+        return Double(stock.used) / Double(maxUsed)
     }
 
     var body: some View {
@@ -218,13 +276,13 @@ struct UsageRankRow: View {
 
                     Spacer()
 
-                    Text("已用 \(color.used)")
+                    Text("已用 \(stock.used)")
                         .font(.caption)
                         .foregroundColor(.secondary)
 
-                    Text("剩余 \(color.available)")
+                    Text("剩余 \(stock.available)")
                         .font(.caption)
-                        .foregroundColor(color.available < 100 ? .red : .green)
+                        .foregroundColor(stock.available < 100 ? .red : .green)
                 }
 
                 GeometryReader { geometry in
@@ -296,6 +354,12 @@ struct ProjectHistoryView: View {
 
 struct ProjectRow: View {
     let project: ProjectRecord
+    @EnvironmentObject var inventoryManager: InventoryManager
+
+    var brandName: String? {
+        guard let brandId = project.brandId else { return nil }
+        return inventoryManager.brands.first { $0.id == brandId }?.name
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -311,6 +375,16 @@ struct ProjectRow: View {
             }
 
             HStack {
+                if let brandName = brandName {
+                    Text(brandName)
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.1))
+                        .foregroundColor(.purple)
+                        .cornerRadius(4)
+                }
+
                 Label("\(project.beadUsage.count) 色", systemImage: "paintpalette")
                     .font(.caption)
                     .foregroundColor(.secondary)

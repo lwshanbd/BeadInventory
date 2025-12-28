@@ -10,6 +10,11 @@
 		3806E5062F00F94200187AA7 /* AddInventoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3806E5052F00F94200187AA7 /* AddInventoryView.swift */; };
 		3806E50A2F00FB3900187AA7 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3806E5082F00FB3900187AA7 /* InfoPlist.strings */; };
 		3806E50E2F00FB4300187AA7 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3806E50C2F00FB4300187AA7 /* InfoPlist.strings */; };
+		38B1A0012F01000100000001 /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000011 /* Brand.swift */; };
+		38B1A0012F01000100000002 /* BrandStock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000012 /* BrandStock.swift */; };
+		38B1A0012F01000100000003 /* DataMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000013 /* DataMigration.swift */; };
+		38B1A0012F01000100000004 /* BrandPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000014 /* BrandPicker.swift */; };
+		38B1A0012F01000100000005 /* BrandManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000015 /* BrandManagerView.swift */; };
 		A01234560001 /* BeadInventoryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560011 /* BeadInventoryApp.swift */; };
 		A01234560002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560012 /* ContentView.swift */; };
 		A01234560003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A01234560013 /* Assets.xcassets */; };
@@ -41,6 +46,11 @@
 		A0123456001A /* StatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsView.swift; sourceTree = "<group>"; };
 		A0123456001B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A0123456001C /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
+		38B1A0012F01000100000011 /* Brand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brand.swift; sourceTree = "<group>"; };
+		38B1A0012F01000100000012 /* BrandStock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandStock.swift; sourceTree = "<group>"; };
+		38B1A0012F01000100000013 /* DataMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataMigration.swift; sourceTree = "<group>"; };
+		38B1A0012F01000100000014 /* BrandPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandPicker.swift; sourceTree = "<group>"; };
+		38B1A0012F01000100000015 /* BrandManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandManagerView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -105,6 +115,8 @@
 			isa = PBXGroup;
 			children = (
 				A01234560014 /* BeadColor.swift */,
+				38B1A0012F01000100000011 /* Brand.swift */,
+				38B1A0012F01000100000012 /* BrandStock.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -115,6 +127,7 @@
 				A01234560015 /* InventoryManager.swift */,
 				A01234560016 /* OCRManager.swift */,
 				A0123456001C /* AIService.swift */,
+				38B1A0012F01000100000013 /* DataMigration.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -122,7 +135,9 @@
 		A01234560035 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				38B1A0012F01000100000020 /* Components */,
 				3806E5052F00F94200187AA7 /* AddInventoryView.swift */,
+				38B1A0012F01000100000015 /* BrandManagerView.swift */,
 				A01234560017 /* InventoryView.swift */,
 				A01234560018 /* ScanView.swift */,
 				A01234560019 /* ColorConverterView.swift */,
@@ -130,6 +145,14 @@
 				A0123456001B /* SettingsView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		38B1A0012F01000100000020 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				38B1A0012F01000100000014 /* BrandPicker.swift */,
+			);
+			path = Components;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -207,15 +230,20 @@
 				A01234560001 /* BeadInventoryApp.swift in Sources */,
 				A01234560002 /* ContentView.swift in Sources */,
 				A01234560004 /* BeadColor.swift in Sources */,
+				38B1A0012F01000100000001 /* Brand.swift in Sources */,
+				38B1A0012F01000100000002 /* BrandStock.swift in Sources */,
 				3806E5062F00F94200187AA7 /* AddInventoryView.swift in Sources */,
 				A01234560005 /* InventoryManager.swift in Sources */,
 				A01234560006 /* OCRManager.swift in Sources */,
 				A0123456000C /* AIService.swift in Sources */,
+				38B1A0012F01000100000003 /* DataMigration.swift in Sources */,
 				A01234560007 /* InventoryView.swift in Sources */,
 				A01234560008 /* ScanView.swift in Sources */,
 				A01234560009 /* ColorConverterView.swift in Sources */,
 				A0123456000A /* StatisticsView.swift in Sources */,
 				A0123456000B /* SettingsView.swift in Sources */,
+				38B1A0012F01000100000004 /* BrandPicker.swift in Sources */,
+				38B1A0012F01000100000005 /* BrandManagerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

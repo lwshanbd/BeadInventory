@@ -80,6 +80,7 @@ struct SettingsView: View {
                         }
                         .foregroundColor(.orange)
                     }
+                    .disabled(inventoryManager.currentBrandId == nil)
 
                     Button {
                         showingResetUsageAlert = true
@@ -90,8 +91,17 @@ struct SettingsView: View {
                         }
                         .foregroundColor(.red)
                     }
+                    .disabled(inventoryManager.currentBrandId == nil)
                 } header: {
-                    Text("库存设置")
+                    if let brandName = inventoryManager.currentBrand?.name {
+                        Text("库存设置 - \(brandName)")
+                    } else {
+                        Text("库存设置")
+                    }
+                } footer: {
+                    if inventoryManager.currentBrandId == nil {
+                        Text("请先选择或创建一个品牌")
+                    }
                 }
 
                 // 数据管理
@@ -163,7 +173,11 @@ struct SettingsView: View {
                     inventoryManager.resetAllStock(to: stock)
                 }
             } message: {
-                Text("将所有颜色的库存重置为 \(defaultStock) 颗，使用记录也将清零。此操作不可撤销。")
+                if let brandName = inventoryManager.currentBrand?.name {
+                    Text("将「\(brandName)」所有颜色的库存重置为 \(defaultStock) 颗，使用记录也将清零。此操作不可撤销。")
+                } else {
+                    Text("将所有颜色的库存重置为 \(defaultStock) 颗，使用记录也将清零。此操作不可撤销。")
+                }
             }
             .alert("清除使用记录", isPresented: $showingResetUsageAlert) {
                 Button("取消", role: .cancel) { }
@@ -171,7 +185,11 @@ struct SettingsView: View {
                     inventoryManager.resetUsage()
                 }
             } message: {
-                Text("将清除所有颜色的使用记录，库存数量不变。此操作不可撤销。")
+                if let brandName = inventoryManager.currentBrand?.name {
+                    Text("将清除「\(brandName)」所有颜色的使用记录，库存数量不变。此操作不可撤销。")
+                } else {
+                    Text("将清除所有颜色的使用记录，库存数量不变。此操作不可撤销。")
+                }
             }
             .sheet(isPresented: $showingImportSheet) {
                 ImportColorSheet()

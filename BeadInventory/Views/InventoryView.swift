@@ -21,15 +21,26 @@ struct InventoryView: View {
         case name = "名称"
     }
 
+    // 获取当前品牌的库存字典
+    var stockDict: [String: BrandStock] {
+        guard let brandId = inventoryManager.currentBrandId else { return [:] }
+        let stocks = inventoryManager.brandStocks.filter { $0.brandId == brandId }
+        return Dictionary(uniqueKeysWithValues: stocks.map { ($0.mardCode, $0) })
+    }
+
     var filteredColors: [BeadColor] {
         let colors = inventoryManager.searchColors(searchText)
         switch sortOption {
         case .code:
-            return colors.sorted { $0.mardCode < $1.mardCode }
+            return colors.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
         case .stock:
-            return colors.sorted { $0.available > $1.available }
+            return colors.sorted {
+                (stockDict[$0.mardCode]?.available ?? 0) > (stockDict[$1.mardCode]?.available ?? 0)
+            }
         case .used:
-            return colors.sorted { $0.used > $1.used }
+            return colors.sorted {
+                (stockDict[$0.mardCode]?.used ?? 0) > (stockDict[$1.mardCode]?.used ?? 0)
+            }
         case .name:
             return colors.sorted { $0.colorName < $1.colorName }
         }
@@ -38,44 +49,73 @@ struct InventoryView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // 顶部统计卡片
-                StatsHeaderView()
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-
-                // 排序选项
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(SortOption.allCases, id: \.self) { option in
-                            SortChip(
-                                title: option.rawValue,
-                                isSelected: sortOption == option
-                            ) {
-                                withAnimation { sortOption = option }
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
+                // 品牌选择器
+                HStack {
+                    BrandPicker()
+                    Spacer()
                 }
-                .padding(.bottom, 8)
+                .padding(.horizontal)
+                .padding(.top, 8)
 
-                // 颜色列表
-                ScrollView {
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 12) {
-                        ForEach(filteredColors) { color in
-                            ColorCardView(color: color, sortOption: sortOption)
-                            .onTapGesture {
-                                selectedColor = color
-                                showingEditSheet = true
+                // 顶部统计卡片
+                if inventoryManager.currentBrandId != nil {
+                    StatsHeaderView()
+                        .padding(.horizontal)
+                        .padding(.top, 8)
+
+                    // 排序选项
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(SortOption.allCases, id: \.self) { option in
+                                SortChip(
+                                    title: option.rawValue,
+                                    isSelected: sortOption == option
+                                ) {
+                                    withAnimation { sortOption = option }
+                                }
                             }
                         }
+                        .padding(.horizontal)
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom, 20)
+                    .padding(.bottom, 8)
+
+                    // 颜色列表
+                    ScrollView {
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 12) {
+                            ForEach(filteredColors) { color in
+                                ColorCardView(
+                                    color: color,
+                                    stock: stockDict[color.mardCode],
+                                    sortOption: sortOption
+                                )
+                                .onTapGesture {
+                                    selectedColor = color
+                                    showingEditSheet = true
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 20)
+                    }
+                } else {
+                    // 没有品牌时的提示
+                    Spacer()
+                    VStack(spacing: 16) {
+                        Image(systemName: "building.2")
+                            .font(.system(size: 64))
+                            .foregroundColor(.secondary)
+                        Text("请先创建品牌")
+                            .font(.title2)
+                            .fontWeight(.medium)
+                        Text("点击上方按钮创建您的第一个品牌")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
                 }
             }
             .background(Color(.systemGroupedBackground))
@@ -83,7 +123,7 @@ struct InventoryView: View {
             .searchable(text: $searchText, prompt: "搜索色号或名称")
             .sheet(isPresented: $showingEditSheet) {
                 if let color = selectedColor {
-                    EditStockSheet(color: color)
+                    EditStockSheet(color: color, stock: stockDict[color.mardCode])
                 }
             }
         }
@@ -95,25 +135,27 @@ struct StatsHeaderView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var body: some View {
-        HStack(spacing: 12) {
-            StatCard(
-                title: "总库存",
-                value: formatNumber(inventoryManager.totalAvailable),
-                icon: "cube.fill",
-                color: .blue
-            )
-            StatCard(
-                title: "已使用",
-                value: formatNumber(inventoryManager.totalUsed),
-                icon: "checkmark.circle.fill",
-                color: .green
-            )
-            StatCard(
-                title: "低库存",
-                value: "\(inventoryManager.lowStockColors.count)",
-                icon: "exclamationmark.triangle.fill",
-                color: .orange
-            )
+        if let brandId = inventoryManager.currentBrandId {
+            HStack(spacing: 12) {
+                StatCard(
+                    title: "总库存",
+                    value: formatNumber(inventoryManager.totalAvailable(for: brandId)),
+                    icon: "cube.fill",
+                    color: .blue
+                )
+                StatCard(
+                    title: "已使用",
+                    value: formatNumber(inventoryManager.totalUsed(for: brandId)),
+                    icon: "checkmark.circle.fill",
+                    color: .green
+                )
+                StatCard(
+                    title: "低库存",
+                    value: "\(inventoryManager.lowStockColors(for: brandId).count)",
+                    icon: "exclamationmark.triangle.fill",
+                    color: .orange
+                )
+            }
         }
     }
 
@@ -176,7 +218,11 @@ struct SortChip: View {
 // MARK: - 颜色卡片
 struct ColorCardView: View {
     let color: BeadColor
+    let stock: BrandStock?
     var sortOption: InventoryView.SortOption = .code
+
+    var available: Int { stock?.available ?? 0 }
+    var used: Int { stock?.used ?? 0 }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -201,20 +247,20 @@ struct ColorCardView: View {
                     Text("用量:")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    Text("\(color.used)")
+                    Text("\(used)")
                         .font(.caption2)
                         .fontWeight(.medium)
-                        .foregroundColor(color.used > 0 ? .orange : .secondary)
+                        .foregroundColor(used > 0 ? .orange : .secondary)
                 }
             } else {
                 // 其他排序显示剩余量
                 HStack(spacing: 4) {
-                    Text("\(color.available)")
+                    Text("\(available)")
                         .font(.caption2)
-                        .foregroundColor(color.available < 100 ? .red : .secondary)
+                        .foregroundColor(available < 100 ? .red : .secondary)
 
-                    if color.used > 0 {
-                        Text("(-\(color.used))")
+                    if used > 0 {
+                        Text("(-\(used))")
                             .font(.caption2)
                             .foregroundColor(.orange)
                     }
@@ -231,6 +277,7 @@ struct ColorCardView: View {
 // MARK: - 编辑库存弹窗
 struct EditStockSheet: View {
     let color: BeadColor
+    let stock: BrandStock?
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
@@ -238,9 +285,20 @@ struct EditStockSheet: View {
     @State private var adjustAmount: String = ""
     @State private var isAdding = true
 
+    var currentStock: Int { stock?.stock ?? 0 }
+    var currentUsed: Int { stock?.used ?? 0 }
+    var currentAvailable: Int { stock?.available ?? 0 }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 24) {
+                // 品牌名称
+                if let brandName = inventoryManager.currentBrand?.name {
+                    Text("品牌: \(brandName)")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+
                 // 颜色预览
                 VStack(spacing: 12) {
                     RoundedRectangle(cornerRadius: 16)
@@ -262,9 +320,9 @@ struct EditStockSheet: View {
 
                 // 当前库存信息
                 HStack(spacing: 20) {
-                    InfoBlock(title: "总库存", value: "\(color.stock)")
-                    InfoBlock(title: "已使用", value: "\(color.used)")
-                    InfoBlock(title: "可用", value: "\(color.available)", highlight: color.available < 100)
+                    InfoBlock(title: "总库存", value: "\(currentStock)")
+                    InfoBlock(title: "已使用", value: "\(currentUsed)")
+                    InfoBlock(title: "可用", value: "\(currentAvailable)", highlight: currentAvailable < 100)
                 }
 
                 // 调整库存
@@ -340,24 +398,32 @@ struct EditStockSheet: View {
             }
         }
         .onAppear {
-            stockAmount = "\(color.stock)"
+            stockAmount = "\(currentStock)"
         }
     }
 
     func applyAdjustment() {
-        guard let amount = Int(adjustAmount), amount > 0 else { return }
+        guard let amount = Int(adjustAmount), amount > 0,
+              let brandId = inventoryManager.currentBrandId else { return }
         if isAdding {
-            inventoryManager.addStock(for: color.id, amount: amount)
+            inventoryManager.addStock(brandId: brandId, mardCode: color.mardCode, amount: amount)
         } else {
-            inventoryManager.useBeads(for: color.id, amount: amount)
+            // 减少库存 = 增加 used
+            if let index = inventoryManager.brandStocks.firstIndex(where: {
+                $0.brandId == brandId && $0.mardCode == color.mardCode
+            }) {
+                inventoryManager.brandStocks[index].used += amount
+                inventoryManager.saveData()
+            }
         }
         adjustAmount = ""
         dismiss()
     }
 
     func setStock() {
-        guard let newStock = Int(stockAmount), newStock >= 0 else { return }
-        inventoryManager.updateStock(for: color.id, newStock: newStock)
+        guard let newStock = Int(stockAmount), newStock >= 0,
+              let brandId = inventoryManager.currentBrandId else { return }
+        inventoryManager.updateStock(brandId: brandId, mardCode: color.mardCode, newStock: newStock)
         dismiss()
     }
 }

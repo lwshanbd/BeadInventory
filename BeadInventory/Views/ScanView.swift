@@ -129,6 +129,31 @@ struct ScanView: View {
                     // 确认扣减按钮
                     if !recognizedItems.isEmpty {
                         VStack(spacing: 12) {
+                            // 显示扣减品牌
+                            if let brandName = inventoryManager.currentBrand?.name {
+                                HStack {
+                                    Text("扣减品牌:")
+                                        .foregroundColor(.secondary)
+                                    Text(brandName)
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.accentColor)
+                                    Spacer()
+                                    BrandPicker()
+                                }
+                                .font(.subheadline)
+                                .padding(.horizontal)
+                            } else {
+                                HStack {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.orange)
+                                    Text("请先创建品牌才能扣减库存")
+                                        .font(.subheadline)
+                                    Spacer()
+                                    BrandPicker()
+                                }
+                                .padding(.horizontal)
+                            }
+
                             TextField("项目名称（可选）", text: $projectName)
                                 .textFieldStyle(.roundedBorder)
                                 .padding(.horizontal)
@@ -221,19 +246,22 @@ struct ScanView: View {
     }
 
     func applyToInventory() {
+        guard let brandId = inventoryManager.currentBrandId else { return }
+
         // 创建项目记录
         let beadUsages = recognizedItems.map { item in
-            BeadUsage(colorCode: item.colorCode, quantity: item.quantity)
+            BeadUsage(colorCode: item.colorCode, brandId: brandId, quantity: item.quantity)
         }
         let project = ProjectRecord(
             name: projectName.isEmpty ? "图纸\(Date().formatted(date: .numeric, time: .omitted))" : projectName,
-            beadUsage: beadUsages
+            beadUsage: beadUsages,
+            brandId: brandId
         )
         inventoryManager.addProject(project)
 
-        // 从库存扣减
+        // 从当前品牌库存扣减
         for item in recognizedItems {
-            _ = inventoryManager.deductFromStock(colorCode: item.colorCode, amount: item.quantity)
+            _ = inventoryManager.deductFromStock(brandId: brandId, colorCode: item.colorCode, amount: item.quantity)
         }
 
         // 清除结果

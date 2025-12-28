@@ -11,16 +11,28 @@ import SwiftUI
 class InventoryManager: ObservableObject {
     @Published var beadColors: [BeadColor] = []
     @Published var projects: [ProjectRecord] = []
-    @Published var selectedBrand: BrandType = .mard
+
+    // 品牌相关
+    @Published var brands: [Brand] = []
+    @Published var brandStocks: [BrandStock] = []
+    @Published var currentBrandId: UUID?
 
     private let beadColorsKey = "beadColors"
     private let projectsKey = "projects"
+    private let brandsKey = "brands"
+    private let brandStocksKey = "brandStocks"
+    private let currentBrandIdKey = "currentBrandId"
 
-    enum BrandType: String, CaseIterable {
-        case mard = "MARD"
-        case vivid = "vivid"
-        case manman = "漫漫"
-        case kaka = "卡卡"
+    // 计算属性：当前选中的品牌
+    var currentBrand: Brand? {
+        guard let id = currentBrandId else { return nil }
+        return brands.first { $0.id == id }
+    }
+
+    // 计算属性：当前品牌的库存
+    var currentBrandStocks: [BrandStock] {
+        guard let brandId = currentBrandId else { return [] }
+        return brandStocks.filter { $0.brandId == brandId }
     }
 
     init() {
@@ -28,6 +40,127 @@ class InventoryManager: ObservableObject {
         if beadColors.isEmpty {
             initializeDefaultColors()
         }
+        // 数据迁移
+        DataMigration.migrateIfNeeded(manager: self)
+    }
+
+    // MARK: - 品牌管理
+
+    @discardableResult
+    func addBrand(name: String) -> Brand {
+        let maxOrder = brands.map { $0.sortOrder }.max() ?? -1
+        let brand = Brand(
+            name: name,
+            sortOrder: maxOrder + 1
+        )
+        brands.append(brand)
+
+        // 为新品牌初始化库存
+        initializeStockForBrand(brand.id)
+
+        // 如果没有当前品牌，设为当前品牌
+        if currentBrandId == nil {
+            currentBrandId = brand.id
+        }
+
+        saveData()
+        return brand
+    }
+
+    func updateBrand(_ brand: Brand) {
+        if let index = brands.firstIndex(where: { $0.id == brand.id }) {
+            brands[index] = brand
+            saveData()
+        }
+    }
+
+    func deleteBrand(_ brandId: UUID) -> Bool {
+        // 删除品牌及其库存
+        brands.removeAll { $0.id == brandId }
+        brandStocks.removeAll { $0.brandId == brandId }
+
+        // 如果删除的是当前选中的品牌，切换到第一个品牌
+        if currentBrandId == brandId {
+            currentBrandId = brands.first?.id
+        }
+
+        saveData()
+        return true
+    }
+
+    func selectBrand(_ brandId: UUID) {
+        if brands.contains(where: { $0.id == brandId }) {
+            currentBrandId = brandId
+            saveData()
+        }
+    }
+
+    // MARK: - 品牌库存操作
+
+    func initializeStockForBrand(_ brandId: UUID, defaultStock: Int = 1000) {
+        for color in beadColors {
+            let stock = BrandStock(
+                brandId: brandId,
+                mardCode: color.mardCode,
+                stock: defaultStock,
+                used: 0
+            )
+            brandStocks.append(stock)
+        }
+    }
+
+    func getStock(brandId: UUID, mardCode: String) -> BrandStock? {
+        return brandStocks.first { $0.brandId == brandId && $0.mardCode == mardCode }
+    }
+
+    func updateStock(brandId: UUID, mardCode: String, newStock: Int) {
+        if let index = brandStocks.firstIndex(where: {
+            $0.brandId == brandId && $0.mardCode == mardCode
+        }) {
+            brandStocks[index].stock = max(0, newStock)
+            saveData()
+        }
+    }
+
+    func addStock(brandId: UUID, mardCode: String, amount: Int) {
+        if let index = brandStocks.firstIndex(where: {
+            $0.brandId == brandId && $0.mardCode == mardCode
+        }) {
+            brandStocks[index].stock += amount
+            saveData()
+        }
+    }
+
+    func deductFromStock(brandId: UUID, colorCode: String, amount: Int) -> Bool {
+        // 先找到对应的 mardCode
+        guard let color = findColor(byCode: colorCode) else { return false }
+
+        if let index = brandStocks.firstIndex(where: {
+            $0.brandId == brandId && $0.mardCode == color.mardCode
+        }) {
+            brandStocks[index].used += amount
+            saveData()
+            return true
+        }
+        return false
+    }
+
+    // MARK: - 品牌统计
+
+    func totalStock(for brandId: UUID) -> Int {
+        brandStocks.filter { $0.brandId == brandId }.reduce(0) { $0 + $1.stock }
+    }
+
+    func totalUsed(for brandId: UUID) -> Int {
+        brandStocks.filter { $0.brandId == brandId }.reduce(0) { $0 + $1.used }
+    }
+
+    func totalAvailable(for brandId: UUID) -> Int {
+        brandStocks.filter { $0.brandId == brandId }.reduce(0) { $0 + $1.available }
+    }
+
+    func lowStockColors(for brandId: UUID) -> [BrandStock] {
+        brandStocks.filter { $0.brandId == brandId && $0.available < 100 }
     }
 
     // MARK: - 数据持久化
@@ -44,6 +177,24 @@ class InventoryManager: ObservableObject {
            let records = try? JSONDecoder().decode([ProjectRecord].self, from: data) {
             projects = records
         }
+
+        // 加载品牌
+        if let data = UserDefaults.standard.data(forKey: brandsKey),
+           let decoded = try? JSONDecoder().decode([Brand].self, from: data) {
+            brands = decoded
+        }
+
+        // 加载品牌库存
+        if let data = UserDefaults.standard.data(forKey: brandStocksKey),
+           let decoded = try? JSONDecoder().decode([BrandStock].self, from: data) {
+            brandStocks = decoded
+        }
+
+        // 加载当前品牌
+        if let idString = UserDefaults.standard.string(forKey: currentBrandIdKey),
+           let id = UUID(uuidString: idString) {
+            currentBrandId = id
+        }
     }
 
     func saveData() {
@@ -52,6 +203,18 @@ class InventoryManager: ObservableObject {
         }
         if let data = try? JSONEncoder().encode(projects) {
             UserDefaults.standard.set(data, forKey: projectsKey)
+        }
+        // 保存品牌
+        if let data = try? JSONEncoder().encode(brands) {
+            UserDefaults.standard.set(data, forKey: brandsKey)
+        }
+        // 保存品牌库存
+        if let data = try? JSONEncoder().encode(brandStocks) {
+            UserDefaults.standard.set(data, forKey: brandStocksKey)
+        }
+        // 保存当前品牌 ID
+        if let id = currentBrandId {
+            UserDefaults.standard.set(id.uuidString, forKey: currentBrandIdKey)
         }
     }
 
@@ -123,15 +286,6 @@ class InventoryManager: ObservableObject {
         }
     }
 
-    func getCode(for color: BeadColor, brand: BrandType) -> String {
-        switch brand {
-        case .mard: return color.mardCode
-        case .vivid: return color.vividCode
-        case .manman: return color.manmanCode
-        case .kaka: return color.kakaCode
-        }
-    }
-
     // MARK: - 项目管理
 
     func addProject(_ project: ProjectRecord) {
@@ -171,17 +325,33 @@ class InventoryManager: ObservableObject {
     // MARK: - 重置
 
     func resetAllStock(to amount: Int = 1000) {
-        for index in beadColors.indices {
-            beadColors[index].stock = amount
-            beadColors[index].used = 0
+        guard let brandId = currentBrandId else { return }
+        // 清除当前品牌的所有库存记录
+        brandStocks.removeAll { $0.brandId == brandId }
+        // 为每个颜色创建新的库存记录
+        for color in beadColors {
+            let newStock = BrandStock(brandId: brandId, mardCode: color.mardCode, stock: amount, used: 0)
+            brandStocks.append(newStock)
         }
         saveData()
     }
 
     func resetUsage() {
-        for index in beadColors.indices {
-            beadColors[index].used = 0
+        guard let brandId = currentBrandId else { return }
+        // 重置当前品牌所有颜色的使用记录
+        for index in brandStocks.indices {
+            if brandStocks[index].brandId == brandId {
+                brandStocks[index].used = 0
+            }
         }
+        saveData()
+    }
+
+    func clearAllData() {
+        // 清除所有品牌库存数据
+        brandStocks.removeAll()
+        // 清除所有项目记录
+        projects.removeAll()
         saveData()
     }
 
