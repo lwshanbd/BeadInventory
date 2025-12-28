@@ -43,11 +43,6 @@ struct InventoryView: View {
                     .padding(.horizontal)
                     .padding(.top, 8)
 
-                // 品牌选择器
-                BrandPicker(selectedBrand: $inventoryManager.selectedBrand)
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-
                 // 排序选项
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -72,10 +67,7 @@ struct InventoryView: View {
                         GridItem(.flexible())
                     ], spacing: 12) {
                         ForEach(filteredColors) { color in
-                            ColorCardView(
-                                color: color,
-                                brand: inventoryManager.selectedBrand
-                            )
+                            ColorCardView(color: color)
                             .onTapGesture {
                                 selectedColor = color
                                 showingEditSheet = true
@@ -162,32 +154,6 @@ struct StatCard: View {
     }
 }
 
-// MARK: - 品牌选择器
-struct BrandPicker: View {
-    @Binding var selectedBrand: InventoryManager.BrandType
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(InventoryManager.BrandType.allCases, id: \.self) { brand in
-                    Button {
-                        withAnimation { selectedBrand = brand }
-                    } label: {
-                        Text(brand.rawValue)
-                            .font(.subheadline)
-                            .fontWeight(selectedBrand == brand ? .semibold : .regular)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(selectedBrand == brand ? Color.accentColor : Color(.systemGray5))
-                            .foregroundColor(selectedBrand == brand ? .white : .primary)
-                            .cornerRadius(20)
-                    }
-                }
-            }
-        }
-    }
-}
-
 // MARK: - 排序选项
 struct SortChip: View {
     let title: String
@@ -210,12 +176,6 @@ struct SortChip: View {
 // MARK: - 颜色卡片
 struct ColorCardView: View {
     let color: BeadColor
-    let brand: InventoryManager.BrandType
-    @EnvironmentObject var inventoryManager: InventoryManager
-
-    var displayCode: String {
-        inventoryManager.getCode(for: color, brand: brand)
-    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -228,8 +188,8 @@ struct ColorCardView: View {
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
-            // 色号
-            Text(displayCode)
+            // MARD 色号
+            Text(color.mardCode)
                 .font(.system(.caption, design: .monospaced))
                 .fontWeight(.medium)
 
@@ -276,16 +236,10 @@ struct EditStockSheet: View {
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
 
-                    Text(color.colorName)
-                        .font(.headline)
-
-                    // 各品牌色号
-                    HStack(spacing: 16) {
-                        CodeBadge(brand: "MARD", code: color.mardCode)
-                        CodeBadge(brand: "vivid", code: color.vividCode)
-                        CodeBadge(brand: "漫漫", code: color.manmanCode)
-                        CodeBadge(brand: "卡卡", code: color.kakaCode)
-                    }
+                    // MARD 色号
+                    Text(color.mardCode)
+                        .font(.title2)
+                        .fontWeight(.bold)
                 }
                 .padding()
                 .background(Color(.systemGray6))
@@ -390,22 +344,6 @@ struct EditStockSheet: View {
         guard let newStock = Int(stockAmount), newStock >= 0 else { return }
         inventoryManager.updateStock(for: color.id, newStock: newStock)
         dismiss()
-    }
-}
-
-struct CodeBadge: View {
-    let brand: String
-    let code: String
-
-    var body: some View {
-        VStack(spacing: 2) {
-            Text(brand)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            Text(code.isEmpty ? "-" : code)
-                .font(.caption)
-                .fontWeight(.medium)
-        }
     }
 }
 

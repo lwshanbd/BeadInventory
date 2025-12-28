@@ -11,13 +11,14 @@ import UIKit
 
 struct ScanView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
-    @StateObject private var aiService = AIServiceManager()
+    @ObservedObject private var aiService = AIServiceManager.shared
 
     @State private var selectedImage: UIImage?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var showingCamera = false
     @State private var showingManualEntry = false
     @State private var showingConfirmation = false
+    @State private var showingCropView = false
     @State private var projectName = ""
     @State private var isLoadingImage = false
     @State private var isRecognizing = false
@@ -44,7 +45,8 @@ struct ScanView: View {
                         selectedImage: $selectedImage,
                         selectedPhotoItem: $selectedPhotoItem,
                         showingCamera: $showingCamera,
-                        isLoadingImage: $isLoadingImage
+                        isLoadingImage: $isLoadingImage,
+                        showingCropView: $showingCropView
                     )
 
                     // AI 配置状态提示
@@ -178,6 +180,13 @@ struct ScanView: View {
             .sheet(isPresented: $showingManualEntry) {
                 ManualEntrySheetNew(onAdd: addManualItem)
             }
+            .fullScreenCover(isPresented: $showingCropView) {
+                if let image = selectedImage {
+                    ImageCropView(image: image) { croppedImage in
+                        selectedImage = croppedImage
+                    }
+                }
+            }
             .alert("确认扣减", isPresented: $showingConfirmation) {
                 Button("取消", role: .cancel) { }
                 Button("确认扣减") {
@@ -260,6 +269,7 @@ struct ImageSelectionSection: View {
     @Binding var selectedPhotoItem: PhotosPickerItem?
     @Binding var showingCamera: Bool
     @Binding var isLoadingImage: Bool
+    @Binding var showingCropView: Bool
 
     var body: some View {
         VStack(spacing: 16) {
@@ -284,12 +294,21 @@ struct ImageSelectionSection: View {
                     .cornerRadius(12)
                     .shadow(radius: 4)
 
-                Button("重新选择") {
-                    selectedImage = nil
-                    selectedPhotoItem = nil
+                HStack(spacing: 16) {
+                    Button {
+                        showingCropView = true
+                    } label: {
+                        Label("裁切", systemImage: "crop")
+                            .font(.caption)
+                    }
+
+                    Button("重新选择") {
+                        selectedImage = nil
+                        selectedPhotoItem = nil
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 }
-                .font(.caption)
-                .foregroundColor(.secondary)
             } else {
                 // 占位区域
                 VStack(spacing: 16) {
@@ -794,6 +813,407 @@ struct AISettingsView: View {
             }
         }
         .navigationTitle("AI 设置")
+    }
+}
+
+// MARK: - 图片裁切视图
+struct ImageCropView: View {
+    let image: UIImage
+    let onCrop: (UIImage) -> Void
+    @Environment(\.dismiss) var dismiss
+
+    // 裁切框状态
+    @State private var cropRect: CGRect = .zero
+    @State private var imageRect: CGRect = .zero
+
+    // 预览状态
+    @State private var croppedPreview: UIImage? = nil
+    @State private var showingPreview = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                if showingPreview, let preview = croppedPreview {
+                    // 预览裁剪结果
+                    CropPreviewView(
+                        croppedImage: preview,
+                        onConfirm: {
+                            onCrop(preview)
+                            dismiss()
+                        },
+                        onRetry: {
+                            showingPreview = false
+                            croppedPreview = nil
+                        }
+                    )
+                } else {
+                    // 裁切界面
+                    GeometryReader { geometry in
+                        let containerSize = geometry.size
+
+                        // 计算图片显示区域
+                        let imageAspect = image.size.width / image.size.height
+                        let containerAspect = containerSize.width / containerSize.height
+
+                        let displaySize: CGSize = {
+                            if imageAspect > containerAspect {
+                                let w = containerSize.width
+                                let h = w / imageAspect
+                                return CGSize(width: w, height: h)
+                            } else {
+                                let h = containerSize.height
+                                let w = h * imageAspect
+                                return CGSize(width: w, height: h)
+                            }
+                        }()
+
+                        let imageOrigin = CGPoint(
+                            x: (containerSize.width - displaySize.width) / 2,
+                            y: (containerSize.height - displaySize.height) / 2
+                        )
+
+                        let currentImageRect = CGRect(origin: imageOrigin, size: displaySize)
+
+                        ZStack {
+                            Color.black.ignoresSafeArea()
+
+                            // 图片
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: displaySize.width, height: displaySize.height)
+                                .position(x: containerSize.width / 2, y: containerSize.height / 2)
+
+                            // 遮罩和裁切框
+                            CropOverlayView(
+                                cropRect: $cropRect,
+                                imageRect: currentImageRect,
+                                containerSize: containerSize
+                            )
+                        }
+                        .onChange(of: geometry.size) { _ in
+                            initializeCropRect(imageRect: currentImageRect)
+                        }
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                initializeCropRect(imageRect: currentImageRect)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(showingPreview ? "预览" : "裁切图片")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(showingPreview ? "重新裁切" : "取消") {
+                        if showingPreview {
+                            showingPreview = false
+                            croppedPreview = nil
+                        } else {
+                            dismiss()
+                        }
+                    }
+                    .foregroundColor(.white)
+                }
+                if !showingPreview {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("预览") {
+                            performCrop()
+                        }
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    }
+                }
+            }
+            .toolbarBackground(.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+        }
+    }
+
+    func initializeCropRect(imageRect: CGRect) {
+        guard imageRect.width > 0, imageRect.height > 0 else { return }
+
+        self.imageRect = imageRect
+
+        // 初始化裁切框为图片中心区域的 80%
+        let initialWidth = imageRect.width * 0.8
+        let initialHeight = imageRect.height * 0.8
+        cropRect = CGRect(
+            x: imageRect.minX + (imageRect.width - initialWidth) / 2,
+            y: imageRect.minY + (imageRect.height - initialHeight) / 2,
+            width: initialWidth,
+            height: initialHeight
+        )
+    }
+
+    func performCrop() {
+        guard imageRect.width > 0, imageRect.height > 0,
+              cropRect.width > 0, cropRect.height > 0 else {
+            return
+        }
+
+        // 将裁切框坐标转换为相对于显示图片的坐标
+        let relativeX = cropRect.minX - imageRect.minX
+        let relativeY = cropRect.minY - imageRect.minY
+
+        // 计算缩放比例
+        let scaleX = image.size.width / imageRect.width
+        let scaleY = image.size.height / imageRect.height
+
+        // 转换为原图坐标
+        let cropX = max(0, relativeX * scaleX)
+        let cropY = max(0, relativeY * scaleY)
+        let cropWidth = min(cropRect.width * scaleX, image.size.width - cropX)
+        let cropHeight = min(cropRect.height * scaleY, image.size.height - cropY)
+
+        let cropCGRect = CGRect(x: cropX, y: cropY, width: cropWidth, height: cropHeight)
+
+        // 执行裁切
+        if let cgImage = image.cgImage?.cropping(to: cropCGRect) {
+            let cropped = UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
+            croppedPreview = cropped
+            showingPreview = true
+        }
+    }
+}
+
+// MARK: - 裁切预览视图
+struct CropPreviewView: View {
+    let croppedImage: UIImage
+    let onConfirm: () -> Void
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            // 预览图片
+            Image(uiImage: croppedImage)
+                .resizable()
+                .scaledToFit()
+                .cornerRadius(12)
+                .padding(.horizontal, 20)
+
+            // 尺寸信息
+            Text("尺寸: \(Int(croppedImage.size.width)) × \(Int(croppedImage.size.height))")
+                .font(.caption)
+                .foregroundColor(.gray)
+
+            Spacer()
+
+            // 按钮
+            HStack(spacing: 20) {
+                Button {
+                    onRetry()
+                } label: {
+                    Text("重新裁切")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.gray.opacity(0.3))
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+
+                Button {
+                    onConfirm()
+                } label: {
+                    Text("使用此图片")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 30)
+        }
+        .background(Color.black)
+    }
+}
+
+// MARK: - 裁切遮罩和框
+struct CropOverlayView: View {
+    @Binding var cropRect: CGRect
+    let imageRect: CGRect
+    let containerSize: CGSize
+
+    @State private var dragStart: CGPoint = .zero
+    @State private var initialRect: CGRect = .zero
+
+    let minSize: CGFloat = 60
+    let handleSize: CGFloat = 44
+
+    var body: some View {
+        ZStack {
+            // 半透明遮罩（裁切区域外）
+            CropMaskShape(cropRect: cropRect)
+                .fill(Color.black.opacity(0.6))
+                .allowsHitTesting(false)
+
+            // 裁切框边框
+            Rectangle()
+                .stroke(Color.white, lineWidth: 2)
+                .frame(width: cropRect.width, height: cropRect.height)
+                .position(x: cropRect.midX, y: cropRect.midY)
+                .allowsHitTesting(false)
+
+            // 网格线
+            CropGridShape()
+                .stroke(Color.white.opacity(0.4), lineWidth: 1)
+                .frame(width: cropRect.width, height: cropRect.height)
+                .position(x: cropRect.midX, y: cropRect.midY)
+                .allowsHitTesting(false)
+
+            // 中心拖拽区域
+            Rectangle()
+                .fill(Color.white.opacity(0.001)) // 几乎透明但可点击
+                .frame(width: max(0, cropRect.width - handleSize * 2), height: max(0, cropRect.height - handleSize * 2))
+                .position(x: cropRect.midX, y: cropRect.midY)
+                .gesture(dragGesture(for: .center))
+
+            // 四个角的手柄
+            cornerHandle(at: .topLeft)
+            cornerHandle(at: .topRight)
+            cornerHandle(at: .bottomLeft)
+            cornerHandle(at: .bottomRight)
+        }
+    }
+
+    enum DragLocation {
+        case center, topLeft, topRight, bottomLeft, bottomRight
+    }
+
+    func cornerHandle(at location: DragLocation) -> some View {
+        let position: CGPoint = {
+            switch location {
+            case .topLeft: return CGPoint(x: cropRect.minX, y: cropRect.minY)
+            case .topRight: return CGPoint(x: cropRect.maxX, y: cropRect.minY)
+            case .bottomLeft: return CGPoint(x: cropRect.minX, y: cropRect.maxY)
+            case .bottomRight: return CGPoint(x: cropRect.maxX, y: cropRect.maxY)
+            case .center: return CGPoint(x: cropRect.midX, y: cropRect.midY)
+            }
+        }()
+
+        return Circle()
+            .fill(Color.white)
+            .frame(width: 24, height: 24)
+            .overlay(Circle().stroke(Color.black.opacity(0.3), lineWidth: 1))
+            .position(position)
+            .gesture(dragGesture(for: location))
+    }
+
+    func dragGesture(for location: DragLocation) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                if dragStart == .zero {
+                    dragStart = value.startLocation
+                    initialRect = cropRect
+                }
+
+                let translation = CGSize(
+                    width: value.location.x - dragStart.x,
+                    height: value.location.y - dragStart.y
+                )
+
+                var newRect = initialRect
+
+                switch location {
+                case .center:
+                    newRect.origin.x = initialRect.origin.x + translation.width
+                    newRect.origin.y = initialRect.origin.y + translation.height
+
+                case .topLeft:
+                    newRect.origin.x = initialRect.origin.x + translation.width
+                    newRect.origin.y = initialRect.origin.y + translation.height
+                    newRect.size.width = initialRect.width - translation.width
+                    newRect.size.height = initialRect.height - translation.height
+
+                case .topRight:
+                    newRect.origin.y = initialRect.origin.y + translation.height
+                    newRect.size.width = initialRect.width + translation.width
+                    newRect.size.height = initialRect.height - translation.height
+
+                case .bottomLeft:
+                    newRect.origin.x = initialRect.origin.x + translation.width
+                    newRect.size.width = initialRect.width - translation.width
+                    newRect.size.height = initialRect.height + translation.height
+
+                case .bottomRight:
+                    newRect.size.width = initialRect.width + translation.width
+                    newRect.size.height = initialRect.height + translation.height
+                }
+
+                // 约束最小尺寸
+                if newRect.width < minSize {
+                    if location == .topLeft || location == .bottomLeft {
+                        newRect.origin.x = initialRect.maxX - minSize
+                    }
+                    newRect.size.width = minSize
+                }
+                if newRect.height < minSize {
+                    if location == .topLeft || location == .topRight {
+                        newRect.origin.y = initialRect.maxY - minSize
+                    }
+                    newRect.size.height = minSize
+                }
+
+                // 约束在图片范围内
+                newRect.origin.x = max(imageRect.minX, min(newRect.origin.x, imageRect.maxX - newRect.width))
+                newRect.origin.y = max(imageRect.minY, min(newRect.origin.y, imageRect.maxY - newRect.height))
+
+                if newRect.maxX > imageRect.maxX {
+                    newRect.size.width = imageRect.maxX - newRect.origin.x
+                }
+                if newRect.maxY > imageRect.maxY {
+                    newRect.size.height = imageRect.maxY - newRect.origin.y
+                }
+
+                cropRect = newRect
+            }
+            .onEnded { _ in
+                dragStart = .zero
+                initialRect = .zero
+            }
+    }
+}
+
+// MARK: - 裁切遮罩形状
+struct CropMaskShape: Shape {
+    let cropRect: CGRect
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.addRect(rect)
+        path.addRect(cropRect)
+        return path
+    }
+}
+
+// MARK: - 网格线形状
+struct CropGridShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+
+        // 垂直线 (三分法)
+        let thirdW = rect.width / 3
+        path.move(to: CGPoint(x: thirdW, y: 0))
+        path.addLine(to: CGPoint(x: thirdW, y: rect.height))
+        path.move(to: CGPoint(x: thirdW * 2, y: 0))
+        path.addLine(to: CGPoint(x: thirdW * 2, y: rect.height))
+
+        // 水平线 (三分法)
+        let thirdH = rect.height / 3
+        path.move(to: CGPoint(x: 0, y: thirdH))
+        path.addLine(to: CGPoint(x: rect.width, y: thirdH))
+        path.move(to: CGPoint(x: 0, y: thirdH * 2))
+        path.addLine(to: CGPoint(x: rect.width, y: thirdH * 2))
+
+        return path
     }
 }
 

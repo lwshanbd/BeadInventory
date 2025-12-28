@@ -9,7 +9,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
-    @StateObject private var aiService = AIServiceManager()
+    @ObservedObject private var aiService = AIServiceManager.shared
     @State private var showingResetAlert = false
     @State private var showingResetUsageAlert = false
     @State private var defaultStock = "1000"

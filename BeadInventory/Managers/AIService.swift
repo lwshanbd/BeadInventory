@@ -26,14 +26,18 @@ struct AIConfig: Codable {
     static let defaultOpenAIURL = "https://api.openai.com/v1"
     static let defaultAnthropicURL = "https://api.anthropic.com"
 
-    static let openAIModels = ["gpt-4o", "gpt-5-mini-2025-08-07", "gpt-4-turbo"]
+    static let openAIModels = ["gpt-5-mini-2025-08-07", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo"]
     static let anthropicModels = ["claude-sonnet-4-5-20250929", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"]
 
-    init(provider: AIProvider = .anthropic, apiKey: String = "", baseURL: String = "", model: String = "") {
-        self.provider = provider 
+    static func defaultModel(for provider: AIProvider) -> String {
+        provider == .openai ? "gpt-5-mini-2025-08-07" : "claude-sonnet-4-5-20250929"
+    }
+
+    init(provider: AIProvider = .openai, apiKey: String = "", baseURL: String = "", model: String = "") {
+        self.provider = provider
         self.apiKey = apiKey
         self.baseURL = baseURL
-        self.model = model.isEmpty ? (provider == .openai ? "gpt-5-mini-2025-08-07" : "claude-sonnet-4-5-20250929") : model
+        self.model = model.isEmpty ? AIConfig.defaultModel(for: provider) : model
     }
 
     var effectiveBaseURL: String {
@@ -63,8 +67,18 @@ struct AIRecognitionResult: Codable {
 // MARK: - AI 服务管理器
 
 class AIServiceManager: ObservableObject {
+    // 单例模式，确保所有视图共享同一配置
+    static let shared = AIServiceManager()
+
     @Published var config: AIConfig {
-        didSet { saveConfig() }
+        didSet {
+            saveConfig()
+            // 当 provider 改变时，如果当前模型不在新 provider 的模型列表中，则重置为默认模型
+            let validModels = config.provider == .openai ? AIConfig.openAIModels : AIConfig.anthropicModels
+            if !validModels.contains(config.model) {
+                config.model = AIConfig.defaultModel(for: config.provider)
+            }
+        }
     }
     @Published var isProcessing = false
     @Published var errorMessage: String?
@@ -84,6 +98,12 @@ class AIServiceManager: ObservableObject {
         if let data = try? JSONEncoder().encode(config) {
             UserDefaults.standard.set(data, forKey: configKey)
         }
+    }
+
+    /// 切换 provider 并重置模型为对应的默认值
+    func switchProvider(to provider: AIProvider) {
+        config.provider = provider
+        config.model = AIConfig.defaultModel(for: provider)
     }
 
     var isConfigured: Bool {
