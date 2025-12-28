@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3806E5062F00F94200187AA7 /* AddInventoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3806E5052F00F94200187AA7 /* AddInventoryView.swift */; };
 		A01234560001 /* BeadInventoryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560011 /* BeadInventoryApp.swift */; };
 		A01234560002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560012 /* ContentView.swift */; };
 		A01234560003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A01234560013 /* Assets.xcassets */; };
@@ -22,6 +23,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		3806E5052F00F94200187AA7 /* AddInventoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddInventoryView.swift; sourceTree = "<group>"; };
 		A01234560010 /* BeadInventory.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BeadInventory.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A01234560011 /* BeadInventoryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeadInventoryApp.swift; sourceTree = "<group>"; };
 		A01234560012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -98,6 +100,7 @@
 		A01234560035 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				3806E5052F00F94200187AA7 /* AddInventoryView.swift */,
 				A01234560017 /* InventoryView.swift */,
 				A01234560018 /* ScanView.swift */,
 				A01234560019 /* ColorConverterView.swift */,
@@ -180,6 +183,7 @@
 				A01234560001 /* BeadInventoryApp.swift in Sources */,
 				A01234560002 /* ContentView.swift in Sources */,
 				A01234560004 /* BeadColor.swift in Sources */,
+				3806E5062F00F94200187AA7 /* AddInventoryView.swift in Sources */,
 				A01234560005 /* InventoryManager.swift in Sources */,
 				A01234560006 /* OCRManager.swift in Sources */,
 				A0123456000C /* AIService.swift in Sources */,

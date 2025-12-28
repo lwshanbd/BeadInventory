@@ -10,45 +10,75 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var selectedTab = 0
+    @State private var showingAddInventory = false
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            // 库存管理
-            InventoryView()
-                .tabItem {
-                    Label("库存", systemImage: "square.grid.3x3.fill")
-                }
-                .tag(0)
+        ZStack(alignment: .bottom) {
+            TabView(selection: $selectedTab) {
+                // 库存管理
+                InventoryView()
+                    .tabItem {
+                        Label("库存", systemImage: "square.grid.3x3.fill")
+                    }
+                    .tag(0)
 
-            // 图纸导入
-            ScanView()
-                .tabItem {
-                    Label("扫描", systemImage: "doc.text.viewfinder")
-                }
-                .tag(1)
+                // 图纸导入
+                ScanView()
+                    .tabItem {
+                        Label("扫描", systemImage: "doc.text.viewfinder")
+                    }
+                    .tag(1)
 
-            // 色号转换
-            ColorConverterView()
-                .tabItem {
-                    Label("色号", systemImage: "paintpalette.fill")
-                }
-                .tag(2)
+                // 色号转换
+                ColorConverterView()
+                    .tabItem {
+                        Label("色号", systemImage: "paintpalette.fill")
+                    }
+                    .tag(2)
 
-            // 统计
-            StatisticsView()
-                .tabItem {
-                    Label("统计", systemImage: "chart.bar.fill")
-                }
-                .tag(3)
+                // 统计
+                StatisticsView()
+                    .tabItem {
+                        Label("统计", systemImage: "chart.bar.fill")
+                    }
+                    .tag(3)
 
-            // 设置
-            SettingsView()
-                .tabItem {
-                    Label("设置", systemImage: "gearshape.fill")
+                // 设置
+                SettingsView()
+                    .tabItem {
+                        Label("设置", systemImage: "gearshape.fill")
+                    }
+                    .tag(4)
+            }
+            .tint(Color("AccentColor"))
+
+            // 右侧浮动加号按钮
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button {
+                        showingAddInventory = true
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(Color.accentColor)
+                                .frame(width: 60, height: 60)
+                                .shadow(color: Color.accentColor.opacity(0.4), radius: 8, x: 0, y: 4)
+
+                            Image(systemName: "plus")
+                                .font(.system(size: 26, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 80)
                 }
-                .tag(4)
+            }
         }
-        .tint(Color("AccentColor"))
+        .sheet(isPresented: $showingAddInventory) {
+            AddInventoryView()
+        }
     }
 }
 
