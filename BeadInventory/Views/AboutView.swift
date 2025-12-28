@@ -25,7 +25,7 @@ struct AboutView: View {
                             )
                         )
 
-                    Text("豆子库存")
+                    Text("啃豆小仓")
                         .font(.largeTitle)
                         .fontWeight(.bold)
 
@@ -123,9 +123,38 @@ struct AboutView: View {
                 .cornerRadius(16)
                 .padding(.horizontal)
 
+                // 特别感谢
+                VStack(spacing: 12) {
+                    Text("特别感谢")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "pawprint.fill")
+                            .foregroundColor(.orange)
+                        Text("啃宝")
+                            .fontWeight(.medium)
+                        Text("&")
+                            .foregroundColor(.secondary)
+                        Text("Timea")
+                            .fontWeight(.medium)
+                        Image(systemName: "pawprint.fill")
+                            .foregroundColor(.orange)
+                    }
+                    .font(.subheadline)
+
+                    Text("感谢两位猫猫的陪伴")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(16)
+                .padding(.horizontal)
+
                 // 致谢
                 VStack(spacing: 8) {
-                    Text("感谢使用豆子库存")
+                    Text("感谢使用啃豆小仓")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                     Text("2024")

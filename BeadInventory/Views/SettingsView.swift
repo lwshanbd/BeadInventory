@@ -134,7 +134,7 @@ struct SettingsView: View {
                     } label: {
                         HStack {
                             Image(systemName: "info.circle")
-                            Text("关于豆子库存")
+                            Text("关于啃豆小仓")
                         }
                     }
                 } header: {

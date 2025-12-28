@@ -134,7 +134,7 @@ struct InventoryView: View {
                 }
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("豆子库存")
+            .navigationTitle("啃豆小仓")
             .searchable(text: $searchText, prompt: "搜索色号或名称")
             .sheet(isPresented: $showingEditSheet) {
                 if let color = selectedColor {
