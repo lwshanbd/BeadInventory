@@ -15,8 +15,12 @@ struct AboutView: View {
             VStack(spacing: 32) {
                 // App 图标和名称
                 VStack(spacing: 16) {
-                    AppIconView(size: 120)
-                        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                    Image("AppIcon")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 120, height: 120)
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
 
                     Text("啃豆小仓")
                         .font(.largeTitle)
@@ -150,7 +154,7 @@ struct AboutView: View {
                     Text("感谢使用啃豆小仓")
                         .font(.footnote)
                         .foregroundColor(.secondary)
-                    Text("2024")
+                    Text("2025")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                 }
