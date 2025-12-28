@@ -276,13 +276,6 @@ struct QuantityControl: View {
                         quantity = value
                     }
                 }
-                .overlay(alignment: .trailing) {
-                    Text("×1000")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .padding(.trailing, 4)
-                        .allowsHitTesting(false)
-                }
 
             // 增加按钮
             Button {
@@ -298,6 +291,11 @@ struct QuantityControl: View {
                     .background(Color.accentColor)
                     .cornerRadius(14)
             }
+
+            // 单位标签
+            Text("×1000")
+                .font(.caption2)
+                .foregroundColor(.secondary)
         }
         .onAppear {
             editText = displayText
