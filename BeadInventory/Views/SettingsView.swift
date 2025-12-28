@@ -129,25 +129,13 @@ struct SettingsView: View {
 
                 // 关于
                 Section {
-                    HStack {
-                        Text("版本")
-                        Spacer()
-                        Text("1.0.0")
-                            .foregroundColor(.secondary)
-                    }
-
-                    HStack {
-                        Text("颜色数量")
-                        Spacer()
-                        Text("\(inventoryManager.beadColors.count) 色")
-                            .foregroundColor(.secondary)
-                    }
-
-                    HStack {
-                        Text("项目数量")
-                        Spacer()
-                        Text("\(inventoryManager.projects.count) 个")
-                            .foregroundColor(.secondary)
+                    NavigationLink {
+                        AboutView()
+                    } label: {
+                        HStack {
+                            Image(systemName: "info.circle")
+                            Text("关于豆子库存")
+                        }
                     }
                 } header: {
                     Text("关于")
