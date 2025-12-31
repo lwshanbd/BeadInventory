@@ -99,6 +99,16 @@ struct BeadUsage: Identifiable, Codable, Hashable {
         self.quantity = quantity
         self.isDeducted = isDeducted
     }
+
+    // 自定义解码器，兼容旧数据（没有 brandId 和 isDeducted 字段）
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        colorCode = try container.decode(String.self, forKey: .colorCode)
+        brandId = try container.decodeIfPresent(UUID.self, forKey: .brandId)
+        quantity = try container.decode(Int.self, forKey: .quantity)
+        isDeducted = try container.decodeIfPresent(Bool.self, forKey: .isDeducted) ?? false
+    }
 }
 
 // MARK: - Color Extension
