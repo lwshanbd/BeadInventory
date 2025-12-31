@@ -53,7 +53,7 @@ struct ColorConverterView: View {
                             .font(.headline)
                             .foregroundColor(.secondary)
 
-                        Text("支持 MARD、vivid、漫漫、卡卡 色号")
+                        Text("支持 MARD、COCO、漫漫、盼盼、咪小窝 色号")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -108,18 +108,16 @@ struct ColorConversionCard: View {
                 )
 
             // 各品牌色号
-            VStack(alignment: .leading, spacing: 8) {
-                Text(color.colorName)
-                    .font(.headline)
-
-                HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
                     BrandCodeLabel(brand: "MARD", code: color.mardCode, color: .blue)
-                    BrandCodeLabel(brand: "vivid", code: color.vividCode, color: .purple)
+                    BrandCodeLabel(brand: "COCO", code: color.cocoCode, color: .purple)
+                    BrandCodeLabel(brand: "漫漫", code: color.manmanCode, color: .orange)
                 }
 
-                HStack(spacing: 12) {
-                    BrandCodeLabel(brand: "漫漫", code: color.manmanCode, color: .orange)
-                    BrandCodeLabel(brand: "卡卡", code: color.kakaCode, color: .green)
+                HStack(spacing: 8) {
+                    BrandCodeLabel(brand: "盼盼", code: color.panpanCode, color: .green)
+                    BrandCodeLabel(brand: "咪小窝", code: color.mixiaowoCode, color: .pink)
                 }
             }
 
@@ -193,11 +191,13 @@ struct ColorDetailSheet: View {
                     VStack(spacing: 0) {
                         ConversionRow(brand: "MARD", code: color.mardCode, brandColor: .blue)
                         Divider()
-                        ConversionRow(brand: "vivid", code: color.vividCode, brandColor: .purple)
+                        ConversionRow(brand: "COCO", code: color.cocoCode, brandColor: .purple)
                         Divider()
                         ConversionRow(brand: "漫漫", code: color.manmanCode, brandColor: .orange)
                         Divider()
-                        ConversionRow(brand: "卡卡", code: color.kakaCode, brandColor: .green)
+                        ConversionRow(brand: "盼盼", code: color.panpanCode, brandColor: .green)
+                        Divider()
+                        ConversionRow(brand: "咪小窝", code: color.mixiaowoCode, brandColor: .pink)
                     }
                     .background(Color(.systemBackground))
                     .cornerRadius(16)

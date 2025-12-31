@@ -13,9 +13,10 @@ struct BeadColor: Identifiable, Codable, Hashable {
     let id: UUID
     let colorHex: String           // 颜色十六进制值
     let mardCode: String           // MARD色号
-    let vividCode: String          // vivid色号
+    let cocoCode: String           // COCO色号
     let manmanCode: String         // 漫漫色号
-    let kakaCode: String           // 卡卡色号
+    let panpanCode: String         // 盼盼色号
+    let mixiaowoCode: String       // 咪小窝色号
     let colorName: String          // 颜色名称
     var stock: Int                 // 库存数量
     var used: Int                  // 已使用数量
@@ -24,9 +25,10 @@ struct BeadColor: Identifiable, Codable, Hashable {
         id: UUID = UUID(),
         colorHex: String,
         mardCode: String,
-        vividCode: String = "",
+        cocoCode: String = "",
         manmanCode: String = "",
-        kakaCode: String = "",
+        panpanCode: String = "",
+        mixiaowoCode: String = "",
         colorName: String = "",
         stock: Int = 1000,
         used: Int = 0
@@ -34,9 +36,10 @@ struct BeadColor: Identifiable, Codable, Hashable {
         self.id = id
         self.colorHex = colorHex
         self.mardCode = mardCode
-        self.vividCode = vividCode
+        self.cocoCode = cocoCode
         self.manmanCode = manmanCode
-        self.kakaCode = kakaCode
+        self.panpanCode = panpanCode
+        self.mixiaowoCode = mixiaowoCode
         self.colorName = colorName
         self.stock = stock
         self.used = used
