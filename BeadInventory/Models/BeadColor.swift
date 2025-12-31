@@ -70,6 +70,18 @@ struct ProjectRecord: Identifiable, Codable {
         self.brandId = brandId
         self.isArchived = isArchived
     }
+
+    // 自定义解码器，兼容旧数据（没有 isArchived 字段）
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        date = try container.decode(Date.self, forKey: .date)
+        beadUsage = try container.decode([BeadUsage].self, forKey: .beadUsage)
+        totalBeads = try container.decode(Int.self, forKey: .totalBeads)
+        brandId = try container.decodeIfPresent(UUID.self, forKey: .brandId)
+        isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+    }
 }
 
 // MARK: - 单色用量
