@@ -180,9 +180,20 @@ class InventoryManager: ObservableObject {
         }
 
         // 加载项目记录
-        if let data = UserDefaults.standard.data(forKey: projectsKey),
-           let records = try? JSONDecoder().decode([ProjectRecord].self, from: data) {
-            projects = records
+        if let data = UserDefaults.standard.data(forKey: projectsKey) {
+            do {
+                let records = try JSONDecoder().decode([ProjectRecord].self, from: data)
+                projects = records
+                print("✅ 成功加载 \(records.count) 个项目记录")
+            } catch {
+                print("❌ 项目记录解码失败: \(error)")
+                // 打印原始 JSON 便于调试
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("📄 原始数据: \(jsonString.prefix(500))...")
+                }
+            }
+        } else {
+            print("⚠️ 没有找到项目记录数据")
         }
 
         // 加载品牌
