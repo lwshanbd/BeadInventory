@@ -372,31 +372,33 @@ struct ProjectHistoryView: View {
 
                 List {
                     ForEach(displayedProjects) { project in
-                        ProjectRow(project: project)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button(role: .destructive) {
-                                    inventoryManager.deleteProject(id: project.id)
+                        NavigationLink(destination: ProjectDetailView(project: project)) {
+                            ProjectRow(project: project)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                inventoryManager.deleteProject(id: project.id)
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            if project.isArchived {
+                                Button {
+                                    inventoryManager.unarchiveProject(id: project.id)
                                 } label: {
-                                    Label("删除", systemImage: "trash")
+                                    Label("取消归档", systemImage: "tray.and.arrow.up")
                                 }
-                            }
-                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                if project.isArchived {
-                                    Button {
-                                        inventoryManager.unarchiveProject(id: project.id)
-                                    } label: {
-                                        Label("取消归档", systemImage: "tray.and.arrow.up")
-                                    }
-                                    .tint(.blue)
-                                } else {
-                                    Button {
-                                        inventoryManager.archiveProject(id: project.id)
-                                    } label: {
-                                        Label("归档", systemImage: "archivebox")
-                                    }
-                                    .tint(.orange)
+                                .tint(.blue)
+                            } else {
+                                Button {
+                                    inventoryManager.archiveProject(id: project.id)
+                                } label: {
+                                    Label("归档", systemImage: "archivebox")
                                 }
+                                .tint(.orange)
                             }
+                        }
                     }
                 }
                 .listStyle(.insetGrouped)
