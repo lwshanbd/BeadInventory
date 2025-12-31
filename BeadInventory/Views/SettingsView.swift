@@ -14,6 +14,8 @@ struct SettingsView: View {
     @State private var showingResetUsageAlert = false
     @State private var defaultStock = "1000"
     @State private var showingImportSheet = false
+    @State private var showingExportSheet = false
+    @State private var exportURL: URL?
 
     var body: some View {
         NavigationStack {
@@ -116,7 +118,7 @@ struct SettingsView: View {
                     }
 
                     Button {
-                        exportData()
+                        showingExportSheet = true
                     } label: {
                         HStack {
                             Image(systemName: "square.and.arrow.up")
@@ -182,21 +184,273 @@ struct SettingsView: View {
             .sheet(isPresented: $showingImportSheet) {
                 ImportColorSheet()
             }
+            .sheet(isPresented: $showingExportSheet) {
+                ExportDataSheet(inventoryManager: inventoryManager)
+            }
+        }
+    }
+}
+
+// MARK: - 导出数据页面
+struct ExportDataSheet: View {
+    @Environment(\.dismiss) var dismiss
+    @ObservedObject var inventoryManager: InventoryManager
+    @State private var exportType: ExportType = .currentBrand
+    @State private var includeProjects = true
+    @State private var isExporting = false
+    @State private var showingShareSheet = false
+    @State private var exportURL: URL?
+
+    enum ExportType: String, CaseIterable {
+        case currentBrand = "当前品牌"
+        case allBrands = "所有品牌"
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Picker("导出范围", selection: $exportType) {
+                        ForEach(ExportType.allCases, id: \.self) { type in
+                            Text(type.rawValue).tag(type)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    if exportType == .currentBrand {
+                        if let brand = inventoryManager.currentBrand {
+                            HStack {
+                                Text("当前品牌")
+                                Spacer()
+                                Text(brand.name)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else {
+                            Text("请先选择一个品牌")
+                                .foregroundColor(.orange)
+                        }
+                    }
+                } header: {
+                    Text("库存数据")
+                }
+
+                Section {
+                    Toggle("包含项目记录", isOn: $includeProjects)
+                } header: {
+                    Text("项目数据")
+                } footer: {
+                    Text("导出所有项目的使用记录")
+                }
+
+                Section {
+                    Button {
+                        exportToCSV()
+                    } label: {
+                        HStack {
+                            Image(systemName: "doc.text")
+                            Text("导出为 CSV")
+                            Spacer()
+                            if isExporting {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isExporting || (exportType == .currentBrand && inventoryManager.currentBrandId == nil))
+
+                    Button {
+                        exportToJSON()
+                    } label: {
+                        HStack {
+                            Image(systemName: "doc.badge.gearshape")
+                            Text("导出为 JSON")
+                            Spacer()
+                            if isExporting {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isExporting || (exportType == .currentBrand && inventoryManager.currentBrandId == nil))
+                } header: {
+                    Text("导出格式")
+                }
+            }
+            .navigationTitle("导出数据")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { dismiss() }
+                }
+            }
+            .sheet(isPresented: $showingShareSheet) {
+                if let url = exportURL {
+                    ShareSheet(items: [url])
+                }
+            }
         }
     }
 
-    func exportData() {
-        // 生成CSV格式数据
-        var csv = "MARD色号,vivid色号,漫漫色号,卡卡色号,颜色名称,库存,已用,可用\n"
-        for color in inventoryManager.beadColors {
-            csv += "\(color.mardCode),\(color.vividCode),\(color.manmanCode),\(color.kakaCode),\(color.colorName),\(color.stock),\(color.used),\(color.available)\n"
+    func exportToCSV() {
+        isExporting = true
+
+        var csv = ""
+
+        // 导出库存数据
+        csv += "# 库存数据\n"
+        csv += "品牌,MARD色号,库存,已用,可用\n"
+
+        let brandsToExport: [Brand]
+        if exportType == .currentBrand, let brand = inventoryManager.currentBrand {
+            brandsToExport = [brand]
+        } else {
+            brandsToExport = inventoryManager.brands
         }
 
-        // 复制到剪贴板
-        UIPasteboard.general.string = csv
+        for brand in brandsToExport {
+            let stocks = inventoryManager.brandStocks.filter { $0.brandId == brand.id }
+            for stock in stocks {
+                csv += "\(brand.name),\(stock.mardCode),\(stock.stock),\(stock.used),\(stock.available)\n"
+            }
+        }
 
-        // 实际应用中可以使用UIActivityViewController分享
+        // 导出项目记录
+        if includeProjects {
+            csv += "\n# 项目记录\n"
+            csv += "项目名称,日期,总用量,品牌,状态\n"
+
+            for project in inventoryManager.projects {
+                let brandName = inventoryManager.brands.first { $0.id == project.brandId }?.name ?? "未知"
+                let status = project.isArchived ? "已归档" : "进行中"
+                let dateStr = formatDate(project.date)
+                csv += "\(project.name),\(dateStr),\(project.totalBeads),\(brandName),\(status)\n"
+            }
+
+            csv += "\n# 项目详细用量\n"
+            csv += "项目名称,色号,用量\n"
+
+            for project in inventoryManager.projects {
+                for usage in project.beadUsage {
+                    csv += "\(project.name),\(usage.colorCode),\(usage.quantity)\n"
+                }
+            }
+        }
+
+        // 保存到临时文件
+        let fileName = "BeadInventory_\(formatDateForFile(Date())).csv"
+        saveAndShare(content: csv, fileName: fileName)
     }
+
+    func exportToJSON() {
+        isExporting = true
+
+        var exportData: [String: Any] = [:]
+        exportData["exportDate"] = ISO8601DateFormatter().string(from: Date())
+        exportData["appVersion"] = "1.0"
+
+        // 导出品牌
+        let brandsToExport: [Brand]
+        if exportType == .currentBrand, let brand = inventoryManager.currentBrand {
+            brandsToExport = [brand]
+        } else {
+            brandsToExport = inventoryManager.brands
+        }
+
+        exportData["brands"] = brandsToExport.map { brand in
+            [
+                "id": brand.id.uuidString,
+                "name": brand.name,
+                "sortOrder": brand.sortOrder
+            ]
+        }
+
+        // 导出库存
+        var stocksData: [[String: Any]] = []
+        for brand in brandsToExport {
+            let stocks = inventoryManager.brandStocks.filter { $0.brandId == brand.id }
+            for stock in stocks {
+                stocksData.append([
+                    "brandId": stock.brandId.uuidString,
+                    "brandName": brand.name,
+                    "mardCode": stock.mardCode,
+                    "stock": stock.stock,
+                    "used": stock.used,
+                    "available": stock.available
+                ])
+            }
+        }
+        exportData["stocks"] = stocksData
+
+        // 导出项目记录
+        if includeProjects {
+            exportData["projects"] = inventoryManager.projects.map { project in
+                var projectData: [String: Any] = [
+                    "id": project.id.uuidString,
+                    "name": project.name,
+                    "date": ISO8601DateFormatter().string(from: project.date),
+                    "totalBeads": project.totalBeads,
+                    "isArchived": project.isArchived
+                ]
+                if let brandId = project.brandId {
+                    projectData["brandId"] = brandId.uuidString
+                    projectData["brandName"] = inventoryManager.brands.first { $0.id == brandId }?.name ?? ""
+                }
+                projectData["beadUsage"] = project.beadUsage.map { usage in
+                    [
+                        "colorCode": usage.colorCode,
+                        "quantity": usage.quantity,
+                        "isDeducted": usage.isDeducted
+                    ]
+                }
+                return projectData
+            }
+        }
+
+        // 转换为 JSON
+        if let jsonData = try? JSONSerialization.data(withJSONObject: exportData, options: [.prettyPrinted, .sortedKeys]),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            let fileName = "BeadInventory_\(formatDateForFile(Date())).json"
+            saveAndShare(content: jsonString, fileName: fileName)
+        } else {
+            isExporting = false
+        }
+    }
+
+    func saveAndShare(content: String, fileName: String) {
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent(fileName)
+
+        do {
+            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            exportURL = fileURL
+            isExporting = false
+            showingShareSheet = true
+        } catch {
+            print("导出失败: \(error)")
+            isExporting = false
+        }
+    }
+
+    func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter.string(from: date)
+    }
+
+    func formatDateForFile(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - 分享Sheet
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - 导入色号表
