@@ -250,7 +250,7 @@ struct ScanView: View {
 
         // 创建项目记录
         let beadUsages = recognizedItems.map { item in
-            BeadUsage(colorCode: item.colorCode, brandId: brandId, quantity: item.quantity)
+            BeadUsage(colorCode: item.colorCode, brandId: brandId, quantity: item.quantity, isDeducted: true)
         }
         let project = ProjectRecord(
             name: projectName.isEmpty ? "图纸\(Date().formatted(date: .numeric, time: .omitted))" : projectName,
@@ -768,8 +768,7 @@ struct ManualEntrySheetNew: View {
                     Button {
                         if let qty = Int(quantity), qty > 0 {
                             onAdd(colorCode, qty)
-                            colorCode = ""
-                            quantity = ""
+                            dismiss()
                         }
                     } label: {
                         HStack {

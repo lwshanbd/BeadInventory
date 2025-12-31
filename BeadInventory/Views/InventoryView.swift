@@ -11,9 +11,9 @@ struct InventoryView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var searchText = ""
     @State private var selectedColor: BeadColor?
-    @State private var showingEditSheet = false
     @State private var showingBrandSettings = false
     @State private var sortOption: SortOption = .code
+    @State private var sortAscending: Bool = true
 
     enum SortOption: String, CaseIterable {
         case code = "色号"
@@ -31,20 +31,22 @@ struct InventoryView: View {
 
     var filteredColors: [BeadColor] {
         let colors = inventoryManager.searchColors(searchText)
+        let sorted: [BeadColor]
         switch sortOption {
         case .code:
-            return colors.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
+            sorted = colors.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
         case .stock:
-            return colors.sorted {
+            sorted = colors.sorted {
                 (stockDict[$0.mardCode]?.available ?? 0) < (stockDict[$1.mardCode]?.available ?? 0)
             }
         case .used:
-            return colors.sorted {
-                (stockDict[$0.mardCode]?.used ?? 0) > (stockDict[$1.mardCode]?.used ?? 0)
+            sorted = colors.sorted {
+                (stockDict[$0.mardCode]?.used ?? 0) < (stockDict[$1.mardCode]?.used ?? 0)
             }
         case .name:
-            return colors.sorted { $0.colorName < $1.colorName }
+            sorted = colors.sorted { $0.colorName < $1.colorName }
         }
+        return sortAscending ? sorted : sorted.reversed()
     }
 
     var body: some View {
@@ -86,8 +88,32 @@ struct InventoryView: View {
                                     title: option.rawValue,
                                     isSelected: sortOption == option
                                 ) {
-                                    withAnimation { sortOption = option }
+                                    withAnimation {
+                                        if sortOption == option {
+                                            // 点击已选中的选项时切换排序方向
+                                            sortAscending.toggle()
+                                        } else {
+                                            sortOption = option
+                                            sortAscending = true
+                                        }
+                                    }
                                 }
+                            }
+
+                            // 排序方向按钮
+                            Button {
+                                withAnimation { sortAscending.toggle() }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
+                                    Text(sortAscending ? "升序" : "降序")
+                                }
+                                .font(.caption)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.accentColor.opacity(0.2))
+                                .foregroundColor(.accentColor)
+                                .cornerRadius(16)
                             }
                         }
                         .padding(.horizontal)
@@ -109,7 +135,6 @@ struct InventoryView: View {
                                 )
                                 .onTapGesture {
                                     selectedColor = color
-                                    showingEditSheet = true
                                 }
                             }
                         }
@@ -136,10 +161,8 @@ struct InventoryView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("啃豆小仓")
             .searchable(text: $searchText, prompt: "搜索色号或名称")
-            .sheet(isPresented: $showingEditSheet) {
-                if let color = selectedColor {
-                    EditStockSheet(color: color, stock: stockDict[color.mardCode])
-                }
+            .sheet(item: $selectedColor) { color in
+                EditStockSheet(color: color, stock: stockDict[color.mardCode])
             }
             .sheet(isPresented: $showingBrandSettings) {
                 BrandSettingsView()
@@ -300,6 +323,7 @@ struct EditStockSheet: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var stockAmount: String = ""
+    @State private var usedAmount: String = ""
     @State private var adjustAmount: String = ""
     @State private var isAdding = true
 
@@ -383,10 +407,13 @@ struct EditStockSheet: View {
                         .font(.headline)
 
                     HStack {
-                        TextField("新库存数量", text: $stockAmount)
+                        Text("库存")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .frame(width: 50, alignment: .leading)
+                        TextField("数量", text: $stockAmount)
                             .keyboardType(.numberPad)
                             .textFieldStyle(.roundedBorder)
-
                         Button {
                             setStock()
                         } label: {
@@ -395,6 +422,27 @@ struct EditStockSheet: View {
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
                                 .background(Color.orange)
+                                .foregroundColor(.white)
+                                .cornerRadius(8)
+                        }
+                    }
+
+                    HStack {
+                        Text("已用")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .frame(width: 50, alignment: .leading)
+                        TextField("数量", text: $usedAmount)
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(.roundedBorder)
+                        Button {
+                            setUsed()
+                        } label: {
+                            Text("设置")
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.green)
                                 .foregroundColor(.white)
                                 .cornerRadius(8)
                         }
@@ -417,6 +465,7 @@ struct EditStockSheet: View {
         }
         .onAppear {
             stockAmount = "\(currentStock)"
+            usedAmount = "\(currentUsed)"
         }
     }
 
@@ -442,6 +491,18 @@ struct EditStockSheet: View {
         guard let newStock = Int(stockAmount), newStock >= 0,
               let brandId = inventoryManager.currentBrandId else { return }
         inventoryManager.updateStock(brandId: brandId, mardCode: color.mardCode, newStock: newStock)
+        dismiss()
+    }
+
+    func setUsed() {
+        guard let newUsed = Int(usedAmount), newUsed >= 0,
+              let brandId = inventoryManager.currentBrandId else { return }
+        if let index = inventoryManager.brandStocks.firstIndex(where: {
+            $0.brandId == brandId && $0.mardCode == color.mardCode
+        }) {
+            inventoryManager.brandStocks[index].used = newUsed
+            inventoryManager.saveData()
+        }
         dismiss()
     }
 }

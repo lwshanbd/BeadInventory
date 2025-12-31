@@ -323,6 +323,19 @@ struct UsageRankRow: View {
 // MARK: - 项目历史视图
 struct ProjectHistoryView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var showArchived = false
+
+    var displayedProjects: [ProjectRecord] {
+        if showArchived {
+            return inventoryManager.projects
+        } else {
+            return inventoryManager.projects.filter { !$0.isArchived }
+        }
+    }
+
+    var archivedCount: Int {
+        inventoryManager.projects.filter { $0.isArchived }.count
+    }
 
     var body: some View {
         if inventoryManager.projects.isEmpty {
@@ -341,13 +354,53 @@ struct ProjectHistoryView: View {
             }
             .frame(maxHeight: .infinity)
         } else {
-            List {
-                ForEach(inventoryManager.projects) { project in
-                    ProjectRow(project: project)
+            VStack(spacing: 0) {
+                // 显示全部/隐藏归档按钮
+                if archivedCount > 0 || showArchived {
+                    Button {
+                        withAnimation { showArchived.toggle() }
+                    } label: {
+                        HStack {
+                            Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
+                            Text(showArchived ? "隐藏已归档 (\(archivedCount))" : "显示全部 (含 \(archivedCount) 个归档)")
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.accentColor)
+                        .padding(.vertical, 8)
+                    }
                 }
-                .onDelete(perform: inventoryManager.deleteProject)
+
+                List {
+                    ForEach(displayedProjects) { project in
+                        ProjectRow(project: project)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    inventoryManager.deleteProject(id: project.id)
+                                } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
+                            }
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                if project.isArchived {
+                                    Button {
+                                        inventoryManager.unarchiveProject(id: project.id)
+                                    } label: {
+                                        Label("取消归档", systemImage: "tray.and.arrow.up")
+                                    }
+                                    .tint(.blue)
+                                } else {
+                                    Button {
+                                        inventoryManager.archiveProject(id: project.id)
+                                    } label: {
+                                        Label("归档", systemImage: "archivebox")
+                                    }
+                                    .tint(.orange)
+                                }
+                            }
+                    }
+                }
+                .listStyle(.insetGrouped)
             }
-            .listStyle(.insetGrouped)
         }
     }
 }
@@ -366,6 +419,12 @@ struct ProjectRow: View {
             HStack {
                 Text(project.name)
                     .font(.headline)
+
+                if project.isArchived {
+                    Image(systemName: "archivebox.fill")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
 
                 Spacer()
 

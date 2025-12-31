@@ -59,14 +59,16 @@ struct ProjectRecord: Identifiable, Codable {
     var beadUsage: [BeadUsage]    // 各颜色用量
     var totalBeads: Int
     var brandId: UUID?            // 项目关联的品牌 ID
+    var isArchived: Bool          // 是否已归档
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil) {
+    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false) {
         self.id = id
         self.name = name
         self.date = date
         self.beadUsage = beadUsage
         self.totalBeads = beadUsage.reduce(0) { $0 + $1.quantity }
         self.brandId = brandId
+        self.isArchived = isArchived
     }
 }
 

@@ -301,8 +301,50 @@ class InventoryManager: ObservableObject {
     }
 
     func deleteProject(at offsets: IndexSet) {
+        // 删除项目时，回退库存
+        for index in offsets {
+            let project = projects[index]
+            restoreStockFromProject(project)
+        }
         projects.remove(atOffsets: offsets)
         saveData()
+    }
+
+    func deleteProject(id: UUID) {
+        if let index = projects.firstIndex(where: { $0.id == id }) {
+            let project = projects[index]
+            restoreStockFromProject(project)
+            projects.remove(at: index)
+            saveData()
+        }
+    }
+
+    func archiveProject(id: UUID) {
+        // 归档项目，不回退库存
+        if let index = projects.firstIndex(where: { $0.id == id }) {
+            projects[index].isArchived = true
+            saveData()
+        }
+    }
+
+    func unarchiveProject(id: UUID) {
+        // 取消归档
+        if let index = projects.firstIndex(where: { $0.id == id }) {
+            projects[index].isArchived = false
+            saveData()
+        }
+    }
+
+    private func restoreStockFromProject(_ project: ProjectRecord) {
+        // 回退项目中已扣除的库存
+        guard let brandId = project.brandId else { return }
+        for usage in project.beadUsage where usage.isDeducted {
+            if let stockIndex = brandStocks.firstIndex(where: {
+                $0.brandId == brandId && $0.mardCode == usage.colorCode
+            }) {
+                brandStocks[stockIndex].used = max(0, brandStocks[stockIndex].used - usage.quantity)
+            }
+        }
     }
 
     func applyProjectToInventory(_ project: ProjectRecord) {
