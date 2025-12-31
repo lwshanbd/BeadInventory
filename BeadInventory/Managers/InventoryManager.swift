@@ -2,11 +2,12 @@
 //  InventoryManager.swift
 //  BeadInventory
 //
-//  库存管理器 - 处理数据持久化和业务逻辑
+//  库存管理器 - 使用 SwiftData 进行数据持久化
 //
 
 import Foundation
 import SwiftUI
+import SwiftData
 
 class InventoryManager: ObservableObject {
     @Published var beadColors: [BeadColor] = []
@@ -17,11 +18,16 @@ class InventoryManager: ObservableObject {
     @Published var brandStocks: [BrandStock] = []
     @Published var currentBrandId: UUID?
 
+    // SwiftData ModelContext
+    private var modelContext: ModelContext?
+
+    // UserDefaults keys (用于迁移和当前品牌ID)
     private let beadColorsKey = "beadColors"
     private let projectsKey = "projects"
     private let brandsKey = "brands"
     private let brandStocksKey = "brandStocks"
     private let currentBrandIdKey = "currentBrandId"
+    private let migrationCompletedKey = "swiftDataMigrationCompleted"
 
     // 计算属性：当前选中的品牌
     var currentBrand: Brand? {
@@ -35,13 +41,21 @@ class InventoryManager: ObservableObject {
         return brandStocks.filter { $0.brandId == brandId }
     }
 
-    init() {
+    // 带 ModelContext 的初始化器
+    init(modelContext: ModelContext) {
+        self.modelContext = modelContext
         loadData()
         if beadColors.isEmpty {
             initializeDefaultColors()
         }
-        // 数据迁移
-        DataMigration.migrateIfNeeded(manager: self)
+    }
+
+    // 默认初始化器（用于 Preview）
+    init() {
+        loadDataFromUserDefaults()
+        if beadColors.isEmpty {
+            initializeDefaultColors()
+        }
     }
 
     // MARK: - 品牌管理
@@ -98,7 +112,7 @@ class InventoryManager: ObservableObject {
     func selectBrand(_ brandId: UUID) {
         if brands.contains(where: { $0.id == brandId }) {
             currentBrandId = brandId
-            saveData()
+            saveCurrentBrandId()
         }
     }
 
@@ -170,32 +184,139 @@ class InventoryManager: ObservableObject {
         brandStocks.filter { $0.brandId == brandId && $0.available < 100 }
     }
 
-    // MARK: - 数据持久化
+    // MARK: - 数据持久化 (SwiftData)
 
     func loadData() {
-        // 加载颜色数据
-        if let data = UserDefaults.standard.data(forKey: beadColorsKey),
-           let colors = try? JSONDecoder().decode([BeadColor].self, from: data) {
-            beadColors = colors
+        guard let context = modelContext else {
+            loadDataFromUserDefaults()
+            return
         }
 
-        // 加载项目记录
-        if let data = UserDefaults.standard.data(forKey: projectsKey) {
-            // 打印原始数据长度和内容
-            print("📦 项目记录数据大小: \(data.count) bytes")
-            if let jsonString = String(data: data, encoding: .utf8) {
-                print("📄 原始 JSON: \(jsonString)")
-            }
-            do {
-                let records = try JSONDecoder().decode([ProjectRecord].self, from: data)
-                projects = records
-                print("✅ 成功加载 \(records.count) 个项目记录")
-            } catch {
-                print("❌ 项目记录解码失败: \(error)")
-            }
-        } else {
-            print("⚠️ 没有找到项目记录数据")
+        // 检查是否需要迁移
+        let needsMigration = !UserDefaults.standard.bool(forKey: migrationCompletedKey)
+        if needsMigration {
+            migrateFromUserDefaults()
         }
+
+        // 从 SwiftData 加载品牌
+        let brandDescriptor = FetchDescriptor<SDBrand>(sortBy: [SortDescriptor(\.sortOrder)])
+        if let sdBrands = try? context.fetch(brandDescriptor) {
+            brands = sdBrands.map { $0.toStruct() }
+        }
+
+        // 从 SwiftData 加载品牌库存
+        let stockDescriptor = FetchDescriptor<SDBrandStock>()
+        if let sdStocks = try? context.fetch(stockDescriptor) {
+            brandStocks = sdStocks.map { $0.toStruct() }
+        }
+
+        // 从 SwiftData 加载项目记录
+        let projectDescriptor = FetchDescriptor<SDProjectRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        if let sdProjects = try? context.fetch(projectDescriptor) {
+            projects = sdProjects.map { $0.toStruct() }
+        }
+
+        // 加载当前品牌 ID
+        if let idString = UserDefaults.standard.string(forKey: currentBrandIdKey),
+           let id = UUID(uuidString: idString) {
+            currentBrandId = id
+        }
+
+        // 初始化颜色数据
+        beadColors = DefaultBeadColors.colors
+    }
+
+    func saveData() {
+        guard let context = modelContext else { return }
+
+        do {
+            // 删除旧的品牌数据
+            try context.delete(model: SDBrand.self)
+            // 保存新的品牌数据
+            for brand in brands {
+                let sdBrand = SDBrand(from: brand)
+                context.insert(sdBrand)
+            }
+
+            // 删除旧的库存数据
+            try context.delete(model: SDBrandStock.self)
+            // 保存新的库存数据
+            for stock in brandStocks {
+                let sdStock = SDBrandStock(from: stock)
+                context.insert(sdStock)
+            }
+
+            // 删除旧的项目数据
+            try context.delete(model: SDProjectRecord.self)
+            // 保存新的项目数据
+            for project in projects {
+                let sdProject = SDProjectRecord(from: project)
+                context.insert(sdProject)
+            }
+
+            try context.save()
+            saveCurrentBrandId()
+        } catch {
+            print("保存数据失败: \(error)")
+        }
+    }
+
+    private func saveCurrentBrandId() {
+        if let id = currentBrandId {
+            UserDefaults.standard.set(id.uuidString, forKey: currentBrandIdKey)
+        }
+    }
+
+    // MARK: - 从 UserDefaults 迁移
+
+    private func migrateFromUserDefaults() {
+        guard let context = modelContext else { return }
+
+        print("开始从 UserDefaults 迁移数据到 SwiftData...")
+
+        // 迁移品牌
+        if let data = UserDefaults.standard.data(forKey: brandsKey),
+           let decoded = try? JSONDecoder().decode([Brand].self, from: data) {
+            for brand in decoded {
+                let sdBrand = SDBrand(from: brand)
+                context.insert(sdBrand)
+            }
+            print("迁移了 \(decoded.count) 个品牌")
+        }
+
+        // 迁移品牌库存
+        if let data = UserDefaults.standard.data(forKey: brandStocksKey),
+           let decoded = try? JSONDecoder().decode([BrandStock].self, from: data) {
+            for stock in decoded {
+                let sdStock = SDBrandStock(from: stock)
+                context.insert(sdStock)
+            }
+            print("迁移了 \(decoded.count) 条库存记录")
+        }
+
+        // 迁移项目记录
+        if let data = UserDefaults.standard.data(forKey: projectsKey),
+           let decoded = try? JSONDecoder().decode([ProjectRecord].self, from: data) {
+            for project in decoded {
+                let sdProject = SDProjectRecord(from: project)
+                context.insert(sdProject)
+            }
+            print("迁移了 \(decoded.count) 个项目记录")
+        }
+
+        do {
+            try context.save()
+            UserDefaults.standard.set(true, forKey: migrationCompletedKey)
+            print("数据迁移完成！")
+        } catch {
+            print("数据迁移失败: \(error)")
+        }
+    }
+
+    // 从 UserDefaults 加载（用于 Preview 或无 ModelContext 时）
+    private func loadDataFromUserDefaults() {
+        // 加载颜色数据
+        beadColors = DefaultBeadColors.colors
 
         // 加载品牌
         if let data = UserDefaults.standard.data(forKey: brandsKey),
@@ -209,31 +330,16 @@ class InventoryManager: ObservableObject {
             brandStocks = decoded
         }
 
+        // 加载项目记录
+        if let data = UserDefaults.standard.data(forKey: projectsKey),
+           let records = try? JSONDecoder().decode([ProjectRecord].self, from: data) {
+            projects = records
+        }
+
         // 加载当前品牌
         if let idString = UserDefaults.standard.string(forKey: currentBrandIdKey),
            let id = UUID(uuidString: idString) {
             currentBrandId = id
-        }
-    }
-
-    func saveData() {
-        if let data = try? JSONEncoder().encode(beadColors) {
-            UserDefaults.standard.set(data, forKey: beadColorsKey)
-        }
-        if let data = try? JSONEncoder().encode(projects) {
-            UserDefaults.standard.set(data, forKey: projectsKey)
-        }
-        // 保存品牌
-        if let data = try? JSONEncoder().encode(brands) {
-            UserDefaults.standard.set(data, forKey: brandsKey)
-        }
-        // 保存品牌库存
-        if let data = try? JSONEncoder().encode(brandStocks) {
-            UserDefaults.standard.set(data, forKey: brandStocksKey)
-        }
-        // 保存当前品牌 ID
-        if let id = currentBrandId {
-            UserDefaults.standard.set(id.uuidString, forKey: currentBrandIdKey)
         }
     }
 
@@ -421,7 +527,6 @@ class InventoryManager: ObservableObject {
     private func initializeDefaultColors() {
         // 初始化221个常用实色 (示例数据，实际使用时可以从文件导入)
         beadColors = DefaultBeadColors.colors
-        saveData()
     }
 }
 
