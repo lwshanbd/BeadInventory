@@ -460,8 +460,11 @@ class InventoryManager: ObservableObject {
         // 回退项目中已扣除的库存
         guard let brandId = project.brandId else { return }
         for usage in project.beadUsage where usage.isDeducted {
+            // 先将色号转换为 mardCode（与 deductFromStock 保持一致）
+            guard let color = findColor(byCode: usage.colorCode) else { continue }
+
             if let stockIndex = brandStocks.firstIndex(where: {
-                $0.brandId == brandId && $0.mardCode == usage.colorCode
+                $0.brandId == brandId && $0.mardCode == color.mardCode
             }) {
                 brandStocks[stockIndex].used = max(0, brandStocks[stockIndex].used - usage.quantity)
             }
