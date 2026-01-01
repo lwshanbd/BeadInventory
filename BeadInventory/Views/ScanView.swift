@@ -752,6 +752,11 @@ struct ManualEntrySheetNew: View {
 
     @State private var colorCode = ""
     @State private var quantity = ""
+    @FocusState private var focusedField: Field?
+
+    enum Field {
+        case colorCode, quantity
+    }
 
     var body: some View {
         NavigationStack {
@@ -759,9 +764,15 @@ struct ManualEntrySheetNew: View {
                 Section("色号信息") {
                     TextField("MARD色号", text: $colorCode)
                         .textInputAutocapitalization(.characters)
+                        .focused($focusedField, equals: .colorCode)
+                        .submitLabel(.next)
+                        .onSubmit {
+                            focusedField = .quantity
+                        }
 
                     TextField("数量", text: $quantity)
                         .keyboardType(.numberPad)
+                        .focused($focusedField, equals: .quantity)
                 }
 
                 Section {
@@ -787,8 +798,18 @@ struct ManualEntrySheetNew: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") { dismiss() }
                 }
+                ToolbarItem(placement: .keyboard) {
+                    HStack {
+                        Spacer()
+                        Button("完成") {
+                            focusedField = nil
+                        }
+                    }
+                }
             }
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
 

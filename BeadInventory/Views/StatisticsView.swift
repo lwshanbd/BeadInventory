@@ -324,12 +324,20 @@ struct UsageRankRow: View {
 struct ProjectHistoryView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showArchived = false
+    @State private var expandedProjects: Set<UUID> = []
+    @State private var isSelectMode = false
+    @State private var selectedProjects: Set<UUID> = []
+    @State private var showMergeSheet = false
+    @State private var showDeleteParentAlert = false
+    @State private var projectToDelete: ProjectRecord?
 
+    // 只显示顶级项目
     var displayedProjects: [ProjectRecord] {
+        let topLevel = inventoryManager.topLevelProjects()
         if showArchived {
-            return inventoryManager.projects
+            return topLevel
         } else {
-            return inventoryManager.projects.filter { !$0.isArchived }
+            return topLevel.filter { !$0.isArchived }
         }
     }
 
@@ -338,46 +346,115 @@ struct ProjectHistoryView: View {
     }
 
     var body: some View {
-        if inventoryManager.projects.isEmpty {
-            VStack(spacing: 16) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 50))
-                    .foregroundColor(.secondary.opacity(0.5))
+        Group {
+            if inventoryManager.projects.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 50))
+                        .foregroundColor(.secondary.opacity(0.5))
 
-                Text("暂无项目记录")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
+                    Text("暂无项目记录")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
 
-                Text("扫描图纸后会自动记录")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxHeight: .infinity)
-        } else {
+                    Text("扫描图纸后会自动记录")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxHeight: .infinity)
+            } else {
             VStack(spacing: 0) {
-                // 显示全部/隐藏归档按钮
-                if archivedCount > 0 || showArchived {
+                // 工具栏
+                HStack {
+                    // 显示全部/隐藏归档按钮
+                    if archivedCount > 0 || showArchived {
+                        Button {
+                            withAnimation { showArchived.toggle() }
+                        } label: {
+                            HStack {
+                                Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
+                                Text(showArchived ? "隐藏归档" : "显示归档(\(archivedCount))")
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+
+                    Spacer()
+
+                    // 合并模式按钮
                     Button {
-                        withAnimation { showArchived.toggle() }
+                        withAnimation {
+                            isSelectMode.toggle()
+                            if !isSelectMode {
+                                selectedProjects.removeAll()
+                            }
+                        }
+                    } label: {
+                        Text(isSelectMode ? "取消" : "合并")
+                            .font(.subheadline)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+
+                // 合并确认按钮
+                if isSelectMode && selectedProjects.count >= 2 {
+                    Button {
+                        showMergeSheet = true
                     } label: {
                         HStack {
-                            Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
-                            Text(showArchived ? "隐藏已归档 (\(archivedCount))" : "显示全部 (含 \(archivedCount) 个归档)")
+                            Image(systemName: "arrow.triangle.merge")
+                            Text("合并 \(selectedProjects.count) 个项目")
                         }
-                        .font(.subheadline)
-                        .foregroundColor(.accentColor)
-                        .padding(.vertical, 8)
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.accentColor)
+                        .cornerRadius(10)
                     }
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
                 }
 
                 List {
                     ForEach(displayedProjects) { project in
-                        NavigationLink(destination: ProjectDetailView(project: project)) {
-                            ProjectRow(project: project)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        let isParent = inventoryManager.isParentProject(project.id)
+                        let isExpanded = expandedProjects.contains(project.id)
+
+                        // 项目行
+                        ProjectRowWithHierarchy(
+                            project: project,
+                            isParent: isParent,
+                            isExpanded: isExpanded,
+                            isSelectMode: isSelectMode,
+                            isSelected: selectedProjects.contains(project.id),
+                            isChild: false,
+                            onToggleExpand: {
+                                withAnimation {
+                                    if isExpanded {
+                                        expandedProjects.remove(project.id)
+                                    } else {
+                                        expandedProjects.insert(project.id)
+                                    }
+                                }
+                            },
+                            onToggleSelect: {
+                                if selectedProjects.contains(project.id) {
+                                    selectedProjects.remove(project.id)
+                                } else {
+                                    selectedProjects.insert(project.id)
+                                }
+                            }
+                        )
+                        .swipeActions(edge: .trailing, allowsFullSwipe: !isParent) {
                             Button(role: .destructive) {
-                                inventoryManager.deleteProject(id: project.id)
+                                if isParent {
+                                    projectToDelete = project
+                                    showDeleteParentAlert = true
+                                } else {
+                                    inventoryManager.deleteProject(id: project.id)
+                                }
                             } label: {
                                 Label("删除", systemImage: "trash")
                             }
@@ -385,30 +462,103 @@ struct ProjectHistoryView: View {
                         .swipeActions(edge: .leading, allowsFullSwipe: true) {
                             if project.isArchived {
                                 Button {
-                                    inventoryManager.unarchiveProject(id: project.id)
+                                    if isParent {
+                                        inventoryManager.unarchiveProjectWithChildren(id: project.id)
+                                    } else {
+                                        inventoryManager.unarchiveProject(id: project.id)
+                                    }
                                 } label: {
                                     Label("取消归档", systemImage: "tray.and.arrow.up")
                                 }
                                 .tint(.blue)
                             } else {
                                 Button {
-                                    inventoryManager.archiveProject(id: project.id)
+                                    if isParent {
+                                        inventoryManager.archiveProjectWithChildren(id: project.id)
+                                    } else {
+                                        inventoryManager.archiveProject(id: project.id)
+                                    }
                                 } label: {
                                     Label("归档", systemImage: "archivebox")
                                 }
                                 .tint(.orange)
                             }
                         }
+
+                        // 子项目
+                        if isParent && isExpanded {
+                            let children = inventoryManager.childProjects(of: project.id)
+                            ForEach(children) { child in
+                                ProjectRowWithHierarchy(
+                                    project: child,
+                                    isParent: false,
+                                    isExpanded: false,
+                                    isSelectMode: false,
+                                    isSelected: false,
+                                    isChild: true,
+                                    onToggleExpand: {},
+                                    onToggleSelect: {}
+                                )
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        inventoryManager.deleteProject(id: child.id)
+                                    } label: {
+                                        Label("删除", systemImage: "trash")
+                                    }
+                                }
+                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                    Button {
+                                        inventoryManager.detachProject(child.id)
+                                    } label: {
+                                        Label("独立", systemImage: "arrow.up.forward.square")
+                                    }
+                                    .tint(.green)
+                                }
+                            }
+                        }
                     }
                 }
                 .listStyle(.insetGrouped)
             }
+            }
+        }
+        // 合并项目弹窗
+        .sheet(isPresented: $showMergeSheet) {
+            MergeProjectsSheet(projectIds: Array(selectedProjects)) {
+                isSelectMode = false
+                selectedProjects.removeAll()
+            }
+        }
+        // 删除父项目确认
+        .alert("删除父项目", isPresented: $showDeleteParentAlert) {
+            Button("取消", role: .cancel) { }
+            Button("删除全部", role: .destructive) {
+                if let project = projectToDelete {
+                    inventoryManager.deleteParentProjectCascade(id: project.id)
+                }
+            }
+            Button("仅删除父项目") {
+                if let project = projectToDelete {
+                    inventoryManager.deleteParentProjectDetach(id: project.id)
+                }
+            }
+        } message: {
+            Text("该项目包含子项目，请选择处理方式：\n• 删除全部：同时删除所有子项目\n• 仅删除父项目：子项目变为独立项目")
         }
     }
 }
 
-struct ProjectRow: View {
+// MARK: - 带层级的项目行
+struct ProjectRowWithHierarchy: View {
     let project: ProjectRecord
+    let isParent: Bool
+    let isExpanded: Bool
+    let isSelectMode: Bool
+    let isSelected: Bool
+    let isChild: Bool
+    let onToggleExpand: () -> Void
+    let onToggleSelect: () -> Void
+
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var brandName: String? {
@@ -416,68 +566,191 @@ struct ProjectRow: View {
         return inventoryManager.brands.first { $0.id == brandId }?.name
     }
 
+    var colorCount: Int {
+        if isParent {
+            return inventoryManager.aggregatedColorCount(for: project.id)
+        }
+        return project.beadUsage.count
+    }
+
+    var totalBeads: Int {
+        if isParent {
+            return inventoryManager.aggregatedTotalBeads(for: project.id)
+        }
+        return project.totalBeads
+    }
+
+    var childCount: Int {
+        inventoryManager.childProjects(of: project.id).count
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(project.name)
-                    .font(.headline)
-
-                if project.isArchived {
-                    Image(systemName: "archivebox.fill")
-                        .font(.caption)
-                        .foregroundColor(.orange)
+        HStack(spacing: 8) {
+            // 选择模式复选框
+            if isSelectMode && !isChild {
+                Button {
+                    onToggleSelect()
+                } label: {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .foregroundColor(isSelected ? .accentColor : .secondary)
+                        .font(.title2)
                 }
-
-                Spacer()
-
-                Text(project.date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                .buttonStyle(.plain)
             }
 
-            HStack {
-                if let brandName = brandName {
-                    Text(brandName)
-                        .font(.caption)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.purple.opacity(0.1))
-                        .foregroundColor(.purple)
-                        .cornerRadius(4)
-                }
-
-                Label("\(project.beadUsage.count) 色", systemImage: "paintpalette")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                Spacer()
-
-                Label("\(project.totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
-                    .font(.caption)
-                    .foregroundColor(.accentColor)
+            // 子项目缩进
+            if isChild {
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(width: 20)
             }
 
-            // 颜色预览
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
-                    ForEach(project.beadUsage.prefix(10)) { usage in
-                        Text(usage.colorCode)
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.accentColor.opacity(0.1))
-                            .cornerRadius(4)
-                    }
+            // 展开/折叠按钮
+            if isParent && !isSelectMode {
+                Button {
+                    onToggleExpand()
+                } label: {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(width: 20)
+                }
+                .buttonStyle(.plain)
+            }
 
-                    if project.beadUsage.count > 10 {
-                        Text("+\(project.beadUsage.count - 10)")
-                            .font(.caption2)
+            // 项目内容
+            NavigationLink(destination: ProjectDetailView(project: project)) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        if isParent {
+                            Image(systemName: "folder.fill")
+                                .font(.caption)
+                                .foregroundColor(.accentColor)
+                        }
+
+                        Text(project.name)
+                            .font(.headline)
+
+                        if project.isArchived {
+                            Image(systemName: "archivebox.fill")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+
+                        Spacer()
+
+                        Text(project.date.formatted(date: .abbreviated, time: .omitted))
+                            .font(.caption)
                             .foregroundColor(.secondary)
                     }
+
+                    HStack {
+                        if let brandName = brandName {
+                            Text(brandName)
+                                .font(.caption)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.purple.opacity(0.1))
+                                .foregroundColor(.purple)
+                                .cornerRadius(4)
+                        }
+
+                        if isParent {
+                            Text("\(childCount) 个子项目")
+                                .font(.caption)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.blue.opacity(0.1))
+                                .foregroundColor(.blue)
+                                .cornerRadius(4)
+                        }
+
+                        Label("\(colorCount) 色", systemImage: "paintpalette")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        Label("\(totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
+                            .font(.caption)
+                            .foregroundColor(.accentColor)
+                    }
+
+                    // 颜色预览（仅子项目和独立项目显示）
+                    if !isParent {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 4) {
+                                ForEach(project.beadUsage.prefix(10)) { usage in
+                                    Text(usage.colorCode)
+                                        .font(.caption2)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.accentColor.opacity(0.1))
+                                        .cornerRadius(4)
+                                }
+
+                                if project.beadUsage.count > 10 {
+                                    Text("+\(project.beadUsage.count - 10)")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+}
+
+// MARK: - 合并项目弹窗
+struct MergeProjectsSheet: View {
+    let projectIds: [UUID]
+    let onComplete: () -> Void
+
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @Environment(\.dismiss) var dismiss
+    @State private var newName = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("新父项目名称") {
+                    TextField("输入名称", text: $newName)
+                }
+
+                Section("将合并以下项目") {
+                    ForEach(projectIds, id: \.self) { id in
+                        if let project = inventoryManager.projects.first(where: { $0.id == id }) {
+                            HStack {
+                                Text(project.name)
+                                Spacer()
+                                Text("\(project.totalBeads) 颗")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("合并项目")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("确认") {
+                        let name = newName.isEmpty ? "合并项目 \(Date().formatted(date: .numeric, time: .omitted))" : newName
+                        inventoryManager.mergeProjects(projectIds, newName: name)
+                        dismiss()
+                        onComplete()
+                    }
+                    .disabled(projectIds.count < 2)
                 }
             }
         }
-        .padding(.vertical, 4)
+        .presentationDetents([.medium])
     }
 }
 

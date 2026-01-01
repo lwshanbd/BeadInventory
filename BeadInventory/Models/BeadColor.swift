@@ -63,8 +63,9 @@ struct ProjectRecord: Identifiable, Codable {
     var totalBeads: Int
     var brandId: UUID?            // 项目关联的品牌 ID
     var isArchived: Bool          // 是否已归档
+    var parentId: UUID?           // 父项目ID，nil表示顶级项目
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false) {
+    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil) {
         self.id = id
         self.name = name
         self.date = date
@@ -72,9 +73,10 @@ struct ProjectRecord: Identifiable, Codable {
         self.totalBeads = beadUsage.reduce(0) { $0 + $1.quantity }
         self.brandId = brandId
         self.isArchived = isArchived
+        self.parentId = parentId
     }
 
-    // 自定义解码器，兼容旧数据（没有 isArchived 字段）
+    // 自定义解码器，兼容旧数据
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -84,6 +86,7 @@ struct ProjectRecord: Identifiable, Codable {
         totalBeads = try container.decode(Int.self, forKey: .totalBeads)
         brandId = try container.decodeIfPresent(UUID.self, forKey: .brandId)
         isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+        parentId = try container.decodeIfPresent(UUID.self, forKey: .parentId)
     }
 }
 

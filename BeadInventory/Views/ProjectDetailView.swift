@@ -11,32 +11,97 @@ struct ProjectDetailView: View {
     let project: ProjectRecord
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var sortByQuantity = true
+    @State private var showChildrenSection = true
+
+    var isParentProject: Bool {
+        inventoryManager.isParentProject(project.id)
+    }
+
+    var childProjects: [ProjectRecord] {
+        inventoryManager.childProjects(of: project.id)
+    }
 
     var brandName: String? {
         guard let brandId = project.brandId else { return nil }
         return inventoryManager.brands.first { $0.id == brandId }?.name
     }
 
+    // 父项目显示汇总数据，普通项目显示自己的数据
+    var displayUsage: [BeadUsage] {
+        if isParentProject {
+            return inventoryManager.aggregatedBeadUsage(for: project.id)
+        }
+        return project.beadUsage
+    }
+
     var sortedUsage: [BeadUsage] {
         if sortByQuantity {
-            return project.beadUsage.sorted { $0.quantity > $1.quantity }
+            return displayUsage.sorted { $0.quantity > $1.quantity }
         } else {
-            return project.beadUsage.sorted { $0.colorCode < $1.colorCode }
+            return displayUsage.sorted { $0.colorCode < $1.colorCode }
         }
+    }
+
+    var colorCount: Int {
+        if isParentProject {
+            return inventoryManager.aggregatedColorCount(for: project.id)
+        }
+        return project.beadUsage.count
+    }
+
+    var totalBeads: Int {
+        if isParentProject {
+            return inventoryManager.aggregatedTotalBeads(for: project.id)
+        }
+        return project.totalBeads
     }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 // 项目信息卡片
-                ProjectInfoCard(
+                ProjectInfoCardEnhanced(
                     project: project,
-                    brandName: brandName
+                    brandName: brandName,
+                    isParent: isParentProject,
+                    colorCount: colorCount,
+                    totalBeads: totalBeads,
+                    childCount: childProjects.count
                 )
+
+                // 子项目列表（仅父项目显示）
+                if isParentProject && !childProjects.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Button {
+                            withAnimation { showChildrenSection.toggle() }
+                        } label: {
+                            HStack {
+                                Text("子项目 (\(childProjects.count))")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Image(systemName: showChildrenSection ? "chevron.up" : "chevron.down")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        if showChildrenSection {
+                            ForEach(childProjects) { child in
+                                NavigationLink(destination: ProjectDetailView(project: child)) {
+                                    ChildProjectRow(project: child)
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+                }
 
                 // 排序选择
                 HStack {
-                    Text("颜色用量")
+                    Text(isParentProject ? "汇总颜色用量" : "颜色用量")
                         .font(.headline)
 
                     Spacer()
@@ -81,15 +146,68 @@ struct ProjectDetailView: View {
     }
 }
 
-// MARK: - 项目信息卡片
-struct ProjectInfoCard: View {
+// MARK: - 子项目行
+struct ChildProjectRow: View {
+    let project: ProjectRecord
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(project.name)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+
+                Text(project.date.formatted(date: .abbreviated, time: .omitted))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 4) {
+                Text("\(project.beadUsage.count) 色")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Text("\(project.totalBeads) 颗")
+                    .font(.caption)
+                    .foregroundColor(.accentColor)
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
+    }
+}
+
+// MARK: - 项目信息卡片（增强版）
+struct ProjectInfoCardEnhanced: View {
     let project: ProjectRecord
     let brandName: String?
+    let isParent: Bool
+    let colorCount: Int
+    let totalBeads: Int
+    let childCount: Int
 
     var body: some View {
         VStack(spacing: 16) {
             // 日期和状态
             HStack {
+                if isParent {
+                    Label("父项目", systemImage: "folder.fill")
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.accentColor.opacity(0.1))
+                        .cornerRadius(6)
+                }
+
                 Label(project.date.formatted(date: .long, time: .omitted), systemImage: "calendar")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
@@ -110,19 +228,31 @@ struct ProjectInfoCard: View {
             Divider()
 
             // 统计信息
-            HStack(spacing: 24) {
+            HStack(spacing: 20) {
+                if isParent {
+                    VStack(spacing: 4) {
+                        Text("\(childCount)")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.orange)
+                        Text("子项目")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
                 VStack(spacing: 4) {
-                    Text("\(project.beadUsage.count)")
+                    Text("\(colorCount)")
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.purple)
-                    Text("颜色数")
+                    Text(isParent ? "总颜色" : "颜色数")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
 
                 VStack(spacing: 4) {
-                    Text("\(project.totalBeads)")
+                    Text("\(totalBeads)")
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.blue)

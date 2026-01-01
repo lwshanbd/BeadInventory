@@ -73,28 +73,30 @@ final class SDProjectRecord {
     var totalBeads: Int
     var brandId: UUID?
     var isArchived: Bool
+    var parentId: UUID?           // 父项目ID，nil表示顶级项目
 
     @Relationship(deleteRule: .cascade)
     var beadUsages: [SDBeadUsage]
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), totalBeads: Int = 0, brandId: UUID? = nil, isArchived: Bool = false, beadUsages: [SDBeadUsage] = []) {
+    init(id: UUID = UUID(), name: String, date: Date = Date(), totalBeads: Int = 0, brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, beadUsages: [SDBeadUsage] = []) {
         self.id = id
         self.name = name
         self.date = date
         self.totalBeads = totalBeads
         self.brandId = brandId
         self.isArchived = isArchived
+        self.parentId = parentId
         self.beadUsages = beadUsages
     }
 
     convenience init(from record: ProjectRecord) {
         let usages = record.beadUsage.map { SDBeadUsage(from: $0) }
-        self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, beadUsages: usages)
+        self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, parentId: record.parentId, beadUsages: usages)
     }
 
     func toStruct() -> ProjectRecord {
         let usages = beadUsages.map { $0.toStruct() }
-        return ProjectRecord(id: id, name: name, date: date, beadUsage: usages, brandId: brandId, isArchived: isArchived)
+        return ProjectRecord(id: id, name: name, date: date, beadUsage: usages, brandId: brandId, isArchived: isArchived, parentId: parentId)
     }
 }
 

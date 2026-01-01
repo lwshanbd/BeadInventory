@@ -326,6 +326,7 @@ struct EditStockSheet: View {
     @State private var usedAmount: String = ""
     @State private var adjustAmount: String = ""
     @State private var isAdding = true
+    @FocusState private var isInputFocused: Bool
 
     var currentStock: Int { stock?.stock ?? 0 }
     var currentUsed: Int { stock?.used ?? 0 }
@@ -333,6 +334,7 @@ struct EditStockSheet: View {
 
     var body: some View {
         NavigationStack {
+            ScrollView {
             VStack(spacing: 24) {
                 // 品牌名称
                 if let brandName = inventoryManager.currentBrand?.name {
@@ -383,6 +385,7 @@ struct EditStockSheet: View {
                         TextField("数量", text: $adjustAmount)
                             .keyboardType(.numberPad)
                             .textFieldStyle(.roundedBorder)
+                            .focused($isInputFocused)
 
                         Button {
                             applyAdjustment()
@@ -414,6 +417,7 @@ struct EditStockSheet: View {
                         TextField("数量", text: $stockAmount)
                             .keyboardType(.numberPad)
                             .textFieldStyle(.roundedBorder)
+                            .focused($isInputFocused)
                         Button {
                             setStock()
                         } label: {
@@ -435,6 +439,7 @@ struct EditStockSheet: View {
                         TextField("数量", text: $usedAmount)
                             .keyboardType(.numberPad)
                             .textFieldStyle(.roundedBorder)
+                            .focused($isInputFocused)
                         Button {
                             setUsed()
                         } label: {
@@ -451,18 +456,27 @@ struct EditStockSheet: View {
                 .padding()
                 .background(Color(.systemGray6))
                 .cornerRadius(16)
-
-                Spacer()
             }
             .padding()
+            }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("编辑库存")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成") { dismiss() }
                 }
+                ToolbarItem(placement: .keyboard) {
+                    HStack {
+                        Spacer()
+                        Button("收起键盘") {
+                            isInputFocused = false
+                        }
+                    }
+                }
             }
         }
+        .presentationDetents([.large])
         .onAppear {
             stockAmount = "\(currentStock)"
             usedAmount = "\(currentUsed)"

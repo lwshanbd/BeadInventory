@@ -212,8 +212,13 @@ class InventoryManager: ObservableObject {
 
         // 从 SwiftData 加载项目记录
         let projectDescriptor = FetchDescriptor<SDProjectRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
-        if let sdProjects = try? context.fetch(projectDescriptor) {
+        do {
+            let sdProjects = try context.fetch(projectDescriptor)
             projects = sdProjects.map { $0.toStruct() }
+            print("成功加载 \(projects.count) 个项目记录")
+        } catch {
+            print("加载项目记录失败: \(error)")
+            // 不覆盖现有数据，保持 projects 为空数组（初始状态）
         }
 
         // 加载当前品牌 ID
@@ -476,6 +481,163 @@ class InventoryManager: ObservableObject {
         for usage in project.beadUsage where !usage.isDeducted {
             _ = deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity)
         }
+    }
+
+    // MARK: - 项目层级管理
+
+    /// 获取所有顶级项目（parentId == nil）
+    func topLevelProjects() -> [ProjectRecord] {
+        projects.filter { $0.parentId == nil }
+    }
+
+    /// 获取指定项目的子项目
+    func childProjects(of parentId: UUID) -> [ProjectRecord] {
+        projects.filter { $0.parentId == parentId }
+    }
+
+    /// 判断项目是否为父项目（有子项目）
+    func isParentProject(_ projectId: UUID) -> Bool {
+        projects.contains { $0.parentId == projectId }
+    }
+
+    /// 获取父项目的汇总 beadUsage（合并所有子项目）
+    func aggregatedBeadUsage(for parentId: UUID) -> [BeadUsage] {
+        let children = childProjects(of: parentId)
+        var usageDict: [String: Int] = [:]  // colorCode -> quantity
+
+        for child in children {
+            for usage in child.beadUsage {
+                usageDict[usage.colorCode, default: 0] += usage.quantity
+            }
+        }
+
+        return usageDict.map { colorCode, quantity in
+            BeadUsage(colorCode: colorCode, quantity: quantity, isDeducted: true)
+        }.sorted { $0.colorCode < $1.colorCode }
+    }
+
+    /// 获取父项目的汇总总颗数
+    func aggregatedTotalBeads(for parentId: UUID) -> Int {
+        childProjects(of: parentId).reduce(0) { $0 + $1.totalBeads }
+    }
+
+    /// 获取父项目的汇总颜色数
+    func aggregatedColorCount(for parentId: UUID) -> Int {
+        let children = childProjects(of: parentId)
+        var colorCodes = Set<String>()
+        for child in children {
+            for usage in child.beadUsage {
+                colorCodes.insert(usage.colorCode)
+            }
+        }
+        return colorCodes.count
+    }
+
+    /// 合并多个项目为一个新的父项目
+    @discardableResult
+    func mergeProjects(_ projectIds: [UUID], newName: String) -> UUID? {
+        guard projectIds.count > 1 else { return nil }
+
+        // 确保选中的项目都是顶级项目
+        let validProjects = projectIds.filter { id in
+            projects.first { $0.id == id }?.parentId == nil
+        }
+        guard validProjects.count == projectIds.count else { return nil }
+
+        // 创建新的父项目（beadUsage 为空）
+        let parentProject = ProjectRecord(
+            name: newName,
+            date: Date(),
+            beadUsage: [],
+            brandId: nil,
+            isArchived: false,
+            parentId: nil
+        )
+
+        // 将选中的项目设置为子项目
+        for id in projectIds {
+            if let index = projects.firstIndex(where: { $0.id == id }) {
+                projects[index].parentId = parentProject.id
+            }
+        }
+
+        // 添加父项目
+        projects.insert(parentProject, at: 0)
+        saveData()
+
+        return parentProject.id
+    }
+
+    /// 将子项目独立为顶级项目
+    func detachProject(_ projectId: UUID) {
+        if let index = projects.firstIndex(where: { $0.id == projectId }) {
+            projects[index].parentId = nil
+            saveData()
+        }
+    }
+
+    /// 删除父项目（级联删除所有子项目）
+    func deleteParentProjectCascade(id: UUID) {
+        // 先删除所有子项目
+        let children = childProjects(of: id)
+        for child in children {
+            restoreStockFromProject(child)
+        }
+        projects.removeAll { $0.parentId == id }
+
+        // 再删除父项目本身
+        if let index = projects.firstIndex(where: { $0.id == id }) {
+            restoreStockFromProject(projects[index])
+            projects.remove(at: index)
+        }
+        saveData()
+    }
+
+    /// 删除父项目（子项目变为独立项目）
+    func deleteParentProjectDetach(id: UUID) {
+        // 将子项目独立
+        for index in projects.indices {
+            if projects[index].parentId == id {
+                projects[index].parentId = nil
+            }
+        }
+
+        // 删除父项目本身
+        if let index = projects.firstIndex(where: { $0.id == id }) {
+            restoreStockFromProject(projects[index])
+            projects.remove(at: index)
+        }
+        saveData()
+    }
+
+    /// 归档父项目及其所有子项目
+    func archiveProjectWithChildren(id: UUID) {
+        // 归档父项目
+        if let index = projects.firstIndex(where: { $0.id == id }) {
+            projects[index].isArchived = true
+        }
+        // 归档所有子项目
+        for index in projects.indices {
+            if projects[index].parentId == id {
+                projects[index].isArchived = true
+            }
+        }
+        saveData()
+    }
+
+    /// 取消归档父项目及其所有子项目
+    func unarchiveProjectWithChildren(id: UUID) {
+        // 取消归档父项目
+        if let index = projects.firstIndex(where: { $0.id == id }) {
+            projects[index].isArchived = false
+        }
+        // 取消归档所有子项目
+        for index in projects.indices {
+            if projects[index].parentId == id {
+                projects[index].isArchived = false
+            }
+        }
+        saveData()
     }
 
     // MARK: - 统计
