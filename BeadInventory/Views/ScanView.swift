@@ -945,13 +945,42 @@ struct ImageCropView: View {
     let onCrop: (UIImage) -> Void
     @Environment(\.dismiss) var dismiss
 
-    // 裁切框状态
+    // 状态
+    @State private var containerSize: CGSize = .zero
     @State private var cropRect: CGRect = .zero
-    @State private var imageRect: CGRect = .zero
+    @State private var isInitialized = false
 
     // 预览状态
     @State private var croppedPreview: UIImage? = nil
     @State private var showingPreview = false
+
+    // 计算图片显示区域
+    var imageRect: CGRect {
+        guard containerSize.width > 0, containerSize.height > 0 else {
+            return .zero
+        }
+
+        let imageAspect = image.size.width / image.size.height
+        let containerAspect = containerSize.width / containerSize.height
+
+        let displaySize: CGSize
+        if imageAspect > containerAspect {
+            let w = containerSize.width
+            let h = w / imageAspect
+            displaySize = CGSize(width: w, height: h)
+        } else {
+            let h = containerSize.height
+            let w = h * imageAspect
+            displaySize = CGSize(width: w, height: h)
+        }
+
+        let origin = CGPoint(
+            x: (containerSize.width - displaySize.width) / 2,
+            y: (containerSize.height - displaySize.height) / 2
+        )
+
+        return CGRect(origin: origin, size: displaySize)
+    }
 
     var body: some View {
         NavigationStack {
@@ -972,31 +1001,6 @@ struct ImageCropView: View {
                 } else {
                     // 裁切界面
                     GeometryReader { geometry in
-                        let containerSize = geometry.size
-
-                        // 计算图片显示区域
-                        let imageAspect = image.size.width / image.size.height
-                        let containerAspect = containerSize.width / containerSize.height
-
-                        let displaySize: CGSize = {
-                            if imageAspect > containerAspect {
-                                let w = containerSize.width
-                                let h = w / imageAspect
-                                return CGSize(width: w, height: h)
-                            } else {
-                                let h = containerSize.height
-                                let w = h * imageAspect
-                                return CGSize(width: w, height: h)
-                            }
-                        }()
-
-                        let imageOrigin = CGPoint(
-                            x: (containerSize.width - displaySize.width) / 2,
-                            y: (containerSize.height - displaySize.height) / 2
-                        )
-
-                        let currentImageRect = CGRect(origin: imageOrigin, size: displaySize)
-
                         ZStack {
                             Color.black.ignoresSafeArea()
 
@@ -1004,27 +1008,26 @@ struct ImageCropView: View {
                             Image(uiImage: image)
                                 .resizable()
                                 .scaledToFit()
-                                .frame(width: displaySize.width, height: displaySize.height)
-                                .position(x: containerSize.width / 2, y: containerSize.height / 2)
+                                .frame(width: imageRect.width, height: imageRect.height)
+                                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
 
                             // 遮罩和裁切框
-                            CropOverlayView(
-                                cropRect: $cropRect,
-                                imageRect: currentImageRect,
-                                containerSize: containerSize
-                            )
-                        }
-                        .onChange(of: geometry.size) { _ in
-                            // 更新 imageRect 并重新初始化裁切框
-                            imageRect = currentImageRect
-                            if cropRect == .zero {
-                                initializeCropRect(imageRect: currentImageRect)
+                            if cropRect != .zero {
+                                CropOverlayView(
+                                    cropRect: $cropRect,
+                                    imageRect: imageRect,
+                                    containerSize: geometry.size
+                                )
                             }
                         }
                         .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                imageRect = currentImageRect
-                                initializeCropRect(imageRect: currentImageRect)
+                            containerSize = geometry.size
+                            initializeCropRect()
+                        }
+                        .onChange(of: geometry.size) { newSize in
+                            containerSize = newSize
+                            if !isInitialized {
+                                initializeCropRect()
                             }
                         }
                     }
@@ -1060,10 +1063,9 @@ struct ImageCropView: View {
         }
     }
 
-    func initializeCropRect(imageRect: CGRect) {
+    func initializeCropRect() {
         guard imageRect.width > 0, imageRect.height > 0 else { return }
-
-        self.imageRect = imageRect
+        guard !isInitialized else { return }
 
         // 初始化裁切框为图片中心区域的 80%
         let initialWidth = imageRect.width * 0.8
@@ -1074,6 +1076,7 @@ struct ImageCropView: View {
             width: initialWidth,
             height: initialHeight
         )
+        isInitialized = true
     }
 
     func performCrop() {
@@ -1088,8 +1091,7 @@ struct ImageCropView: View {
         let relativeWidth = cropRect.width / imageRect.width
         let relativeHeight = cropRect.height / imageRect.height
 
-        // 使用 UIGraphicsImageRenderer 正确处理图片方向
-        // 首先将图片绘制为正确方向的版本
+        // 首先将图片方向正规化
         let normalizedImage = normalizeImageOrientation(image)
 
         // 计算在正确方向图片上的裁切区域
@@ -1113,7 +1115,7 @@ struct ImageCropView: View {
         }
     }
 
-    /// 将图片方向正规化（处理相机拍摄的旋转图片）
+    /// 将图片方向正规化
     func normalizeImageOrientation(_ image: UIImage) -> UIImage {
         if image.imageOrientation == .up {
             return image
