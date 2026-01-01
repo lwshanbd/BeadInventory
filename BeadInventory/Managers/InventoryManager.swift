@@ -472,8 +472,9 @@ class InventoryManager: ObservableObject {
     }
 
     func applyProjectToInventory(_ project: ProjectRecord) {
+        guard let brandId = project.brandId else { return }
         for usage in project.beadUsage where !usage.isDeducted {
-            _ = deductFromStock(colorCode: usage.colorCode, amount: usage.quantity)
+            _ = deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity)
         }
     }
 
