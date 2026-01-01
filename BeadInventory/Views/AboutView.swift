@@ -26,7 +26,7 @@ struct AboutView: View {
                         .font(.largeTitle)
                         .fontWeight(.bold)
 
-                    Text("版本 1.0.0")
+                    Text("版本 1.0.0 Beta")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -43,7 +43,7 @@ struct AboutView: View {
                             .foregroundColor(.pink)
                         Text("for")
                             .foregroundColor(.secondary)
-                        Text("Yujia")
+                        Text("YJ")
                             .fontWeight(.semibold)
                             .foregroundColor(.pink)
                     }
@@ -95,24 +95,13 @@ struct AboutView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    VStack(spacing: 12) {
-                        HStack {
-                            Image(systemName: "person.fill")
-                                .foregroundColor(.accentColor)
-                                .frame(width: 24)
-                            Text("Baodi Shan")
-                                .fontWeight(.medium)
-                            Spacer()
-                        }
-
-                        HStack {
-                            Image(systemName: "envelope.fill")
-                                .foregroundColor(.accentColor)
-                                .frame(width: 24)
-                            Link("lwshanbd@gmail.com", destination: URL(string: "mailto:lwshanbd@gmail.com")!)
-                                .foregroundColor(.accentColor)
-                            Spacer()
-                        }
+                    HStack {
+                        Image(systemName: "person.fill")
+                            .foregroundColor(.accentColor)
+                            .frame(width: 24)
+                        Text("BD")
+                            .fontWeight(.medium)
+                        Spacer()
                     }
                 }
                 .padding()
