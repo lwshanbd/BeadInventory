@@ -1015,10 +1015,15 @@ struct ImageCropView: View {
                             )
                         }
                         .onChange(of: geometry.size) { _ in
-                            initializeCropRect(imageRect: currentImageRect)
+                            // 更新 imageRect 并重新初始化裁切框
+                            imageRect = currentImageRect
+                            if cropRect == .zero {
+                                initializeCropRect(imageRect: currentImageRect)
+                            }
                         }
                         .onAppear {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                imageRect = currentImageRect
                                 initializeCropRect(imageRect: currentImageRect)
                             }
                         }
@@ -1077,28 +1082,49 @@ struct ImageCropView: View {
             return
         }
 
-        // 将裁切框坐标转换为相对于显示图片的坐标
-        let relativeX = cropRect.minX - imageRect.minX
-        let relativeY = cropRect.minY - imageRect.minY
+        // 将裁切框坐标转换为相对于显示图片的坐标（0-1 范围）
+        let relativeX = (cropRect.minX - imageRect.minX) / imageRect.width
+        let relativeY = (cropRect.minY - imageRect.minY) / imageRect.height
+        let relativeWidth = cropRect.width / imageRect.width
+        let relativeHeight = cropRect.height / imageRect.height
 
-        // 计算缩放比例
-        let scaleX = image.size.width / imageRect.width
-        let scaleY = image.size.height / imageRect.height
+        // 使用 UIGraphicsImageRenderer 正确处理图片方向
+        // 首先将图片绘制为正确方向的版本
+        let normalizedImage = normalizeImageOrientation(image)
 
-        // 转换为原图坐标
-        let cropX = max(0, relativeX * scaleX)
-        let cropY = max(0, relativeY * scaleY)
-        let cropWidth = min(cropRect.width * scaleX, image.size.width - cropX)
-        let cropHeight = min(cropRect.height * scaleY, image.size.height - cropY)
+        // 计算在正确方向图片上的裁切区域
+        let cropX = relativeX * normalizedImage.size.width
+        let cropY = relativeY * normalizedImage.size.height
+        let cropWidth = relativeWidth * normalizedImage.size.width
+        let cropHeight = relativeHeight * normalizedImage.size.height
 
-        let cropCGRect = CGRect(x: cropX, y: cropY, width: cropWidth, height: cropHeight)
+        let cropCGRect = CGRect(
+            x: max(0, cropX),
+            y: max(0, cropY),
+            width: min(cropWidth, normalizedImage.size.width - max(0, cropX)),
+            height: min(cropHeight, normalizedImage.size.height - max(0, cropY))
+        )
 
         // 执行裁切
-        if let cgImage = image.cgImage?.cropping(to: cropCGRect) {
-            let cropped = UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
+        if let cgImage = normalizedImage.cgImage?.cropping(to: cropCGRect) {
+            let cropped = UIImage(cgImage: cgImage, scale: image.scale, orientation: .up)
             croppedPreview = cropped
             showingPreview = true
         }
+    }
+
+    /// 将图片方向正规化（处理相机拍摄的旋转图片）
+    func normalizeImageOrientation(_ image: UIImage) -> UIImage {
+        if image.imageOrientation == .up {
+            return image
+        }
+
+        UIGraphicsBeginImageContextWithOptions(image.size, false, image.scale)
+        image.draw(in: CGRect(origin: .zero, size: image.size))
+        let normalizedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+
+        return normalizedImage ?? image
     }
 }
 
@@ -1175,7 +1201,7 @@ struct CropOverlayView: View {
         ZStack {
             // 半透明遮罩（裁切区域外）
             CropMaskShape(cropRect: cropRect)
-                .fill(Color.black.opacity(0.6))
+                .fill(Color.black.opacity(0.6), style: FillStyle(eoFill: true))
                 .allowsHitTesting(false)
 
             // 裁切框边框
