@@ -533,39 +533,121 @@ class InventoryManager: ObservableObject {
         return colorCodes.count
     }
 
-    /// 合并多个项目为一个新的父项目
+    /// 合并多个项目
+    /// - 一个父项目 + 独立项目：独立项目成为父项目的子项目
+    /// - 多个父项目：创建新父项目，包含所有子项目（扁平化）
+    /// - 多个独立项目：创建新父项目，独立项目成为子项目
+    /// - 不允许计划项目与已执行项目混合合并
     @discardableResult
     func mergeProjects(_ projectIds: [UUID], newName: String) -> UUID? {
-        guard projectIds.count > 1 else { return nil }
+        guard projectIds.count > 1 else {
+            print("合并失败：项目数量不足")
+            return nil
+        }
 
         // 确保选中的项目都是顶级项目
-        let validProjects = projectIds.filter { id in
-            projects.first { $0.id == id }?.parentId == nil
+        let validProjects = projectIds.compactMap { id in
+            projects.first { $0.id == id && $0.parentId == nil }
         }
-        guard validProjects.count == projectIds.count else { return nil }
+        guard validProjects.count == projectIds.count else {
+            print("合并失败：找到 \(validProjects.count) 个有效项目，期望 \(projectIds.count) 个")
+            return nil
+        }
 
-        // 创建新的父项目（beadUsage 为空）
-        let parentProject = ProjectRecord(
+        // 检查是否都是计划项目或都是已执行项目
+        let allPlanned = validProjects.allSatisfy { $0.isPlanned }
+        let allExecuted = validProjects.allSatisfy { !$0.isPlanned }
+
+        print("合并检查：\(validProjects.count) 个项目")
+        for p in validProjects {
+            print("  - \(p.name): isPlanned=\(p.isPlanned)")
+        }
+        print("  allPlanned=\(allPlanned), allExecuted=\(allExecuted)")
+
+        guard allPlanned || allExecuted else {
+            print("合并失败：项目类型不一致")
+            return nil
+        }
+
+        // 区分父项目和独立项目
+        let parentProjects = validProjects.filter { isParentProject($0.id) }
+        let independentProjects = validProjects.filter { !isParentProject($0.id) }
+
+        // 情况1：只有一个父项目 + 一个或多个独立项目
+        if parentProjects.count == 1 && !independentProjects.isEmpty {
+            let existingParentId = parentProjects[0].id
+            // 将独立项目设为该父项目的子项目
+            for project in independentProjects {
+                if let index = projects.firstIndex(where: { $0.id == project.id }) {
+                    projects[index].parentId = existingParentId
+                }
+            }
+            saveData()
+            return existingParentId
+        }
+
+        // 情况2：多个父项目（可能还有独立项目）→ 创建新父项目，扁平化所有子项目
+        if parentProjects.count > 1 {
+            // 收集所有子项目
+            var allChildren: [UUID] = []
+            for parent in parentProjects {
+                let children = childProjects(of: parent.id)
+                allChildren.append(contentsOf: children.map { $0.id })
+            }
+            // 加上独立项目
+            allChildren.append(contentsOf: independentProjects.map { $0.id })
+
+            // 创建新的父项目
+            let newParentProject = ProjectRecord(
+                name: newName,
+                date: Date(),
+                beadUsage: [],
+                brandId: nil,
+                isArchived: false,
+                parentId: nil,
+                isPlanned: allPlanned
+            )
+
+            // 将所有子项目设为新父项目的子项目
+            for childId in allChildren {
+                if let index = projects.firstIndex(where: { $0.id == childId }) {
+                    projects[index].parentId = newParentProject.id
+                }
+            }
+
+            // 删除旧的父项目
+            for parent in parentProjects {
+                projects.removeAll { $0.id == parent.id }
+            }
+
+            // 添加新父项目
+            projects.insert(newParentProject, at: 0)
+            saveData()
+            return newParentProject.id
+        }
+
+        // 情况3：只有独立项目 → 创建新父项目
+        let newParentProject = ProjectRecord(
             name: newName,
             date: Date(),
             beadUsage: [],
             brandId: nil,
             isArchived: false,
-            parentId: nil
+            parentId: nil,
+            isPlanned: allPlanned
         )
 
-        // 将选中的项目设置为子项目
-        for id in projectIds {
-            if let index = projects.firstIndex(where: { $0.id == id }) {
-                projects[index].parentId = parentProject.id
+        // 将独立项目设为新父项目的子项目
+        for project in independentProjects {
+            if let index = projects.firstIndex(where: { $0.id == project.id }) {
+                projects[index].parentId = newParentProject.id
             }
         }
 
-        // 添加父项目
-        projects.insert(parentProject, at: 0)
+        // 添加新父项目
+        projects.insert(newParentProject, at: 0)
         saveData()
-
-        return parentProject.id
+        return newParentProject.id
     }
 
     /// 将子项目独立为顶级项目
@@ -638,6 +720,126 @@ class InventoryManager: ObservableObject {
             }
         }
         saveData()
+    }
+
+    // MARK: - 计划项目管理
+
+    /// 获取所有计划中的顶级项目
+    func plannedProjects() -> [ProjectRecord] {
+        projects.filter { $0.isPlanned && $0.parentId == nil && !$0.isArchived }
+    }
+
+    /// 获取计划项目数量（用于 Tab Badge）
+    func plannedProjectCount() -> Int {
+        // 只统计顶级计划项目（与 plannedProjects() 一致）
+        projects.filter { $0.isPlanned && $0.parentId == nil && !$0.isArchived }.count
+    }
+
+    /// 判断项目是否为计划项目
+    func isPlannedProject(_ projectId: UUID) -> Bool {
+        projects.first { $0.id == projectId }?.isPlanned ?? false
+    }
+
+    /// 创建计划项目（扫描后不选择品牌时调用）
+    func addPlannedProject(_ project: ProjectRecord) {
+        var plannedProject = project
+        plannedProject.isPlanned = true
+        plannedProject.brandId = nil
+        // 确保 beadUsage 的 isDeducted 都为 false
+        plannedProject.beadUsage = plannedProject.beadUsage.map { usage in
+            BeadUsage(id: usage.id, colorCode: usage.colorCode, brandId: nil,
+                      quantity: usage.quantity, isDeducted: false)
+        }
+        projects.insert(plannedProject, at: 0)
+        saveData()
+    }
+
+    /// 执行计划项目：选择品牌后一次性扣减库存
+    @discardableResult
+    func executePlannedProject(_ projectId: UUID, withBrand brandId: UUID) -> Bool {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else {
+            return false
+        }
+
+        let project = projects[index]
+        guard project.isPlanned else { return false }
+
+        // 如果是父项目，递归执行所有子项目
+        if isParentProject(projectId) {
+            return executePlannedParentProject(projectId, withBrand: brandId)
+        }
+
+        // 执行库存扣减
+        for usage in project.beadUsage {
+            _ = deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity)
+        }
+
+        // 更新项目状态
+        projects[index].isPlanned = false
+        projects[index].brandId = brandId
+        projects[index].executedDate = Date()
+        // 更新 beadUsage 的 isDeducted 状态
+        projects[index].beadUsage = project.beadUsage.map { usage in
+            BeadUsage(id: usage.id, colorCode: usage.colorCode, brandId: brandId,
+                      quantity: usage.quantity, isDeducted: true)
+        }
+
+        saveData()
+        return true
+    }
+
+    /// 执行计划父项目及其所有子项目
+    private func executePlannedParentProject(_ parentId: UUID, withBrand brandId: UUID) -> Bool {
+        guard let parentIndex = projects.firstIndex(where: { $0.id == parentId }) else {
+            return false
+        }
+
+        // 获取所有子项目
+        let children = childProjects(of: parentId)
+
+        // 执行所有子项目的库存扣减
+        for child in children {
+            if let childIndex = projects.firstIndex(where: { $0.id == child.id }) {
+                for usage in child.beadUsage {
+                    _ = deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity)
+                }
+
+                // 更新子项目状态
+                projects[childIndex].isPlanned = false
+                projects[childIndex].brandId = brandId
+                projects[childIndex].executedDate = Date()
+                projects[childIndex].beadUsage = child.beadUsage.map { usage in
+                    BeadUsage(id: usage.id, colorCode: usage.colorCode, brandId: brandId,
+                              quantity: usage.quantity, isDeducted: true)
+                }
+            }
+        }
+
+        // 更新父项目状态
+        projects[parentIndex].isPlanned = false
+        projects[parentIndex].brandId = brandId
+        projects[parentIndex].executedDate = Date()
+
+        saveData()
+        return true
+    }
+
+    /// 删除计划项目（不回退库存，因为还未扣减）
+    func deletePlannedProject(_ projectId: UUID) {
+        // 如果是父项目，也删除子项目
+        if isParentProject(projectId) {
+            projects.removeAll { $0.parentId == projectId }
+        }
+        projects.removeAll { $0.id == projectId }
+        saveData()
+    }
+
+    /// 更新计划项目名称
+    func updatePlannedProjectName(_ projectId: UUID, newName: String) {
+        if let index = projects.firstIndex(where: { $0.id == projectId && $0.isPlanned }) {
+            projects[index].name = newName
+            saveData()
+        }
     }
 
     // MARK: - 统计

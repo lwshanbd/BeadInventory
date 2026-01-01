@@ -12,6 +12,10 @@ struct ContentView: View {
     @State private var selectedTab = 0
     @State private var showingAddInventory = false
 
+    var plannedCount: Int {
+        inventoryManager.plannedProjectCount()
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             TabView(selection: $selectedTab) {
@@ -29,11 +33,12 @@ struct ContentView: View {
                     }
                     .tag(1)
 
-                // 色号转换
-                ColorConverterView()
+                // 计划项目
+                PlannedProjectsView()
                     .tabItem {
-                        Label("色号", systemImage: "paintpalette.fill")
+                        Label("计划", systemImage: "calendar.badge.clock")
                     }
+                    .badge(plannedCount > 0 ? plannedCount : 0)
                     .tag(2)
 
                 // 统计
@@ -43,10 +48,10 @@ struct ContentView: View {
                     }
                     .tag(3)
 
-                // 设置
-                SettingsView()
+                // 更多（包含色号转换和设置）
+                MoreView()
                     .tabItem {
-                        Label("设置", systemImage: "gearshape.fill")
+                        Label("更多", systemImage: "ellipsis.circle.fill")
                     }
                     .tag(4)
             }

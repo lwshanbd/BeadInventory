@@ -87,9 +87,15 @@ struct ProjectDetailView: View {
 
                         if showChildrenSection {
                             ForEach(childProjects) { child in
-                                NavigationLink(destination: ProjectDetailView(project: child)) {
-                                    ChildProjectRow(project: child)
-                                }
+                                ChildProjectRowWithActions(
+                                    project: child,
+                                    onDelete: {
+                                        inventoryManager.deleteProject(id: child.id)
+                                    },
+                                    onDetach: {
+                                        inventoryManager.detachProject(child.id)
+                                    }
+                                )
                             }
                         }
                     }
@@ -178,6 +184,64 @@ struct ChildProjectRow: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
+    }
+}
+
+// MARK: - 带操作的子项目行
+struct ChildProjectRowWithActions: View {
+    let project: ProjectRecord
+    let onDelete: () -> Void
+    let onDetach: () -> Void
+
+    var body: some View {
+        HStack {
+            NavigationLink(destination: ProjectDetailView(project: project)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(project.name)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+
+                    HStack {
+                        Text(project.date.formatted(date: .abbreviated, time: .omitted))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        Text("\(project.beadUsage.count) 色")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Text("\(project.totalBeads) 颗")
+                            .font(.caption)
+                            .foregroundColor(.accentColor)
+                    }
+                }
+            }
+
+            // 操作按钮
+            Menu {
+                Button {
+                    onDetach()
+                } label: {
+                    Label("独立为顶级项目", systemImage: "arrow.up.forward.square")
+                }
+
+                Button(role: .destructive) {
+                    onDelete()
+                } label: {
+                    Label("删除子项目", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.title3)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding()
         .background(Color(.systemGray6))

@@ -24,6 +24,7 @@ struct ScanView: View {
     @State private var isRecognizing = false
     @State private var recognizedItems: [RecognizedItem] = []
     @State private var errorMessage: String?
+    @State private var showingCreatePlan = false
 
     // 识别结果项
     struct RecognizedItem: Identifiable {
@@ -126,15 +127,57 @@ struct ScanView: View {
                     }
                     .padding(.top, 8)
 
-                    // 确认扣减按钮
+                    // 确认操作按钮区域
                     if !recognizedItems.isEmpty {
-                        VStack(spacing: 12) {
-                            // 显示扣减品牌
-                            if let brandName = inventoryManager.currentBrand?.name {
+                        VStack(spacing: 16) {
+                            // 项目名称输入
+                            TextField("项目名称（可选）", text: $projectName)
+                                .textFieldStyle(.roundedBorder)
+                                .padding(.horizontal)
+
+                            // 两个操作按钮
+                            HStack(spacing: 12) {
+                                // 创建计划按钮（不需要选择品牌）
+                                Button {
+                                    showingCreatePlan = true
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "calendar.badge.plus")
+                                        Text("创建计划")
+                                    }
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.orange)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(12)
+                                }
+
+                                // 扣减库存按钮（需要选择品牌）
+                                Button {
+                                    showingConfirmation = true
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "minus.circle.fill")
+                                        Text("扣减库存")
+                                    }
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(inventoryManager.currentBrandId != nil ? Color.green : Color.gray)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(12)
+                                }
+                                .disabled(inventoryManager.currentBrandId == nil)
+                            }
+                            .padding(.horizontal)
+
+                            // 品牌选择提示（仅扣减时需要）
+                            if inventoryManager.currentBrandId != nil {
                                 HStack {
                                     Text("扣减品牌:")
                                         .foregroundColor(.secondary)
-                                    Text(brandName)
+                                    Text(inventoryManager.currentBrand?.name ?? "")
                                         .fontWeight(.medium)
                                         .foregroundColor(.accentColor)
                                     Spacer()
@@ -144,35 +187,14 @@ struct ScanView: View {
                                 .padding(.horizontal)
                             } else {
                                 HStack {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundColor(.orange)
-                                    Text("请先创建品牌才能扣减库存")
-                                        .font(.subheadline)
-                                    Spacer()
-                                    BrandPicker()
+                                    Image(systemName: "info.circle")
+                                        .foregroundColor(.blue)
+                                    Text("创建计划无需选择品牌，执行时再选择")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
                                 .padding(.horizontal)
                             }
-
-                            TextField("项目名称（可选）", text: $projectName)
-                                .textFieldStyle(.roundedBorder)
-                                .padding(.horizontal)
-
-                            Button {
-                                showingConfirmation = true
-                            } label: {
-                                HStack {
-                                    Image(systemName: "checkmark.circle.fill")
-                                    Text("确认并从库存扣减")
-                                }
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.green)
-                                .foregroundColor(.white)
-                                .cornerRadius(12)
-                            }
-                            .padding(.horizontal)
                         }
                     }
 
@@ -220,6 +242,14 @@ struct ScanView: View {
             } message: {
                 Text("将从库存中扣减 \(totalBeads) 颗豆子，共 \(recognizedItems.count) 种颜色。此操作不可撤销。")
             }
+            .alert("创建计划", isPresented: $showingCreatePlan) {
+                Button("取消", role: .cancel) { }
+                Button("确认") {
+                    createPlannedProject()
+                }
+            } message: {
+                Text("将创建包含 \(totalBeads) 颗豆子（\(recognizedItems.count) 种颜色）的计划项目。执行时需要选择品牌。")
+            }
         }
     }
 
@@ -263,6 +293,26 @@ struct ScanView: View {
         for item in recognizedItems {
             _ = inventoryManager.deductFromStock(brandId: brandId, colorCode: item.colorCode, amount: item.quantity)
         }
+
+        // 清除结果
+        recognizedItems = []
+        selectedImage = nil
+        selectedPhotoItem = nil
+        projectName = ""
+    }
+
+    func createPlannedProject() {
+        // 创建计划项目（不扣减库存）
+        let beadUsages = recognizedItems.map { item in
+            BeadUsage(colorCode: item.colorCode, brandId: nil, quantity: item.quantity, isDeducted: false)
+        }
+        let project = ProjectRecord(
+            name: projectName.isEmpty ? "计划\(Date().formatted(date: .numeric, time: .omitted))" : projectName,
+            beadUsage: beadUsages,
+            brandId: nil,
+            isPlanned: true
+        )
+        inventoryManager.addPlannedProject(project)
 
         // 清除结果
         recognizedItems = []

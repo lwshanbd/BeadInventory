@@ -20,6 +20,8 @@
 		38B1A0012F01000100000008 /* AppIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000018 /* AppIconView.swift */; };
 		38B1A0012F01000100000009 /* SwiftDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000019 /* SwiftDataModels.swift */; };
 		38B1A0012F0100010000000A /* ProjectDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000001A /* ProjectDetailView.swift */; };
+		38B1A0012F0100010000000B /* PlannedProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000001B /* PlannedProjectsView.swift */; };
+		38B1A0012F0100010000000C /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000001C /* MoreView.swift */; };
 		A01234560001 /* BeadInventoryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560011 /* BeadInventoryApp.swift */; };
 		A01234560002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560012 /* ContentView.swift */; };
 		A01234560003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A01234560013 /* Assets.xcassets */; };
@@ -61,6 +63,8 @@
 		38B1A0012F01000100000018 /* AppIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconView.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000019 /* SwiftDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftDataModels.swift; sourceTree = "<group>"; };
 		38B1A0012F0100010000001A /* ProjectDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDetailView.swift; sourceTree = "<group>"; };
+		38B1A0012F0100010000001B /* PlannedProjectsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannedProjectsView.swift; sourceTree = "<group>"; };
+		38B1A0012F0100010000001C /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -153,6 +157,8 @@
 				38B1A0012F01000100000015 /* BrandManagerView.swift */,
 				38B1A0012F01000100000016 /* BrandSettingsView.swift */,
 				A01234560017 /* InventoryView.swift */,
+				38B1A0012F0100010000001C /* MoreView.swift */,
+				38B1A0012F0100010000001B /* PlannedProjectsView.swift */,
 				38B1A0012F0100010000001A /* ProjectDetailView.swift */,
 				A01234560018 /* ScanView.swift */,
 				A01234560019 /* ColorConverterView.swift */,
@@ -264,6 +270,8 @@
 				38B1A0012F01000100000008 /* AppIconView.swift in Sources */,
 				38B1A0012F01000100000009 /* SwiftDataModels.swift in Sources */,
 				38B1A0012F0100010000000A /* ProjectDetailView.swift in Sources */,
+				38B1A0012F0100010000000B /* PlannedProjectsView.swift in Sources */,
+				38B1A0012F0100010000000C /* MoreView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

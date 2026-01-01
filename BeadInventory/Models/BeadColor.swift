@@ -64,8 +64,10 @@ struct ProjectRecord: Identifiable, Codable {
     var brandId: UUID?            // 项目关联的品牌 ID
     var isArchived: Bool          // 是否已归档
     var parentId: UUID?           // 父项目ID，nil表示顶级项目
+    var isPlanned: Bool           // 是否为计划项目（true=计划中，false=已执行）
+    var executedDate: Date?       // 执行日期（计划项目执行后记录）
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil) {
+    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil) {
         self.id = id
         self.name = name
         self.date = date
@@ -74,6 +76,8 @@ struct ProjectRecord: Identifiable, Codable {
         self.brandId = brandId
         self.isArchived = isArchived
         self.parentId = parentId
+        self.isPlanned = isPlanned
+        self.executedDate = executedDate
     }
 
     // 自定义解码器，兼容旧数据
@@ -87,6 +91,9 @@ struct ProjectRecord: Identifiable, Codable {
         brandId = try container.decodeIfPresent(UUID.self, forKey: .brandId)
         isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
         parentId = try container.decodeIfPresent(UUID.self, forKey: .parentId)
+        // 向后兼容：旧数据没有 isPlanned 字段，默认为 false（已执行状态）
+        isPlanned = try container.decodeIfPresent(Bool.self, forKey: .isPlanned) ?? false
+        executedDate = try container.decodeIfPresent(Date.self, forKey: .executedDate)
     }
 }
 

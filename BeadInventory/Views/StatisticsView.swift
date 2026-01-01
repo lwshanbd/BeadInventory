@@ -528,6 +528,7 @@ struct ProjectHistoryView: View {
                 isSelectMode = false
                 selectedProjects.removeAll()
             }
+            .environmentObject(inventoryManager)
         }
         // 删除父项目确认
         .alert("删除父项目", isPresented: $showDeleteParentAlert) {
@@ -712,18 +713,47 @@ struct MergeProjectsSheet: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
     @State private var newName = ""
+    @State private var showMergeError = false
+
+    // 检查是否只有一个父项目（此时不需要输入新名称）
+    var singleParentMerge: (isSimple: Bool, parentName: String?) {
+        let validProjects = projectIds.compactMap { id in
+            inventoryManager.projects.first { $0.id == id && $0.parentId == nil }
+        }
+        let parentProjects = validProjects.filter { inventoryManager.isParentProject($0.id) }
+        if parentProjects.count == 1 {
+            return (true, parentProjects.first?.name)
+        }
+        return (false, nil)
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("新父项目名称") {
-                    TextField("输入名称", text: $newName)
+                if singleParentMerge.isSimple {
+                    Section {
+                        HStack {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundColor(.blue)
+                            Text("将添加到「\(singleParentMerge.parentName ?? "")」")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                } else {
+                    Section("新父项目名称") {
+                        TextField("输入名称", text: $newName)
+                    }
                 }
 
-                Section("将合并以下项目") {
+                Section(singleParentMerge.isSimple ? "将添加以下项目" : "将合并以下项目") {
                     ForEach(projectIds, id: \.self) { id in
                         if let project = inventoryManager.projects.first(where: { $0.id == id }) {
                             HStack {
+                                if inventoryManager.isParentProject(project.id) {
+                                    Image(systemName: "folder.fill")
+                                        .foregroundColor(.accentColor)
+                                        .font(.caption)
+                                }
                                 Text(project.name)
                                 Spacer()
                                 Text("\(project.totalBeads) 颗")
@@ -733,7 +763,7 @@ struct MergeProjectsSheet: View {
                     }
                 }
             }
-            .navigationTitle("合并项目")
+            .navigationTitle(singleParentMerge.isSimple ? "添加到项目" : "合并项目")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -742,12 +772,20 @@ struct MergeProjectsSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("确认") {
                         let name = newName.isEmpty ? "合并项目 \(Date().formatted(date: .numeric, time: .omitted))" : newName
-                        inventoryManager.mergeProjects(projectIds, newName: name)
-                        dismiss()
-                        onComplete()
+                        if inventoryManager.mergeProjects(projectIds, newName: name) != nil {
+                            dismiss()
+                            onComplete()
+                        } else {
+                            showMergeError = true
+                        }
                     }
                     .disabled(projectIds.count < 2)
                 }
+            }
+            .alert("无法合并", isPresented: $showMergeError) {
+                Button("知道了", role: .cancel) { }
+            } message: {
+                Text("计划项目与已执行项目不能混合合并。请确保选择的项目都是计划中或都是已执行的。")
             }
         }
         .presentationDetents([.medium])
