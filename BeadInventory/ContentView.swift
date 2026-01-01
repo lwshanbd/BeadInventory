@@ -12,10 +12,6 @@ struct ContentView: View {
     @State private var selectedTab = 0
     @State private var showingAddInventory = false
 
-    var plannedCount: Int {
-        inventoryManager.plannedProjectCount()
-    }
-
     var body: some View {
         ZStack(alignment: .bottom) {
             TabView(selection: $selectedTab) {
@@ -38,7 +34,6 @@ struct ContentView: View {
                     .tabItem {
                         Label("计划", systemImage: "calendar.badge.clock")
                     }
-                    .badge(plannedCount > 0 ? plannedCount : 0)
                     .tag(2)
 
                 // 统计
