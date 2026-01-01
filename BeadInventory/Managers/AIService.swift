@@ -348,6 +348,7 @@ class AIServiceManager: ObservableObject {
 
         let body: [String: Any] = [
             "model": config.effectiveModel,
+            "max_tokens": 8192,  // 设置足够大的输出限制，避免颜色多时被截断
             "messages": [
                 ["role": "system", "content": systemPrompt],
                 [
@@ -389,6 +390,14 @@ class AIServiceManager: ObservableObject {
               let message = firstChoice["message"] as? [String: Any],
               let content = message["content"] as? String else {
             throw AIError.parseError("Failed to parse OpenAI response")
+        }
+
+        // 检查是否被截断
+        if let finishReason = firstChoice["finish_reason"] as? String {
+            print("[AI Debug] 完成原因: \(finishReason)")
+            if finishReason == "length" {
+                print("[AI Debug] ⚠️ 警告：输出因长度限制被截断！")
+            }
         }
 
         print("[AI Debug] GPT原始回复:\n\(content)")
@@ -480,7 +489,7 @@ class AIServiceManager: ObservableObject {
 
         let body: [String: Any] = [
             "model": config.model,
-            "max_tokens": 4096,
+            "max_tokens": 8192,  // 设置足够大的输出限制，避免颜色多时被截断
             "system": systemPrompt,
             "messages": [
                 [
