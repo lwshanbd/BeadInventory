@@ -28,38 +28,54 @@ struct SettingsView: View {
                         }
                     }
 
-                    SecureField("API Key", text: $aiService.config.apiKey)
-                        .textContentType(.password)
-                        .autocapitalization(.none)
+                    // 仅在非默认模式下显示 API 配置
+                    if aiService.config.provider != .builtIn {
+                        SecureField("API Key", text: $aiService.config.apiKey)
+                            .textContentType(.password)
+                            .autocapitalization(.none)
 
-                    TextField("API 地址（可选）", text: $aiService.config.baseURL)
-                        .autocapitalization(.none)
-                        .keyboardType(.URL)
+                        TextField("API 地址（可选）", text: $aiService.config.baseURL)
+                            .autocapitalization(.none)
+                            .keyboardType(.URL)
 
-                    Picker("模型", selection: $aiService.config.model) {
-                        if aiService.config.provider == .openai {
-                            ForEach(AIConfig.openAIModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        } else {
-                            ForEach(AIConfig.anthropicModels, id: \.self) { model in
-                                Text(model).tag(model)
+                        Picker("模型", selection: $aiService.config.model) {
+                            if aiService.config.provider == .openai {
+                                ForEach(AIConfig.openAIModels, id: \.self) { model in
+                                    Text(model).tag(model)
+                                }
+                            } else {
+                                ForEach(AIConfig.anthropicModels, id: \.self) { model in
+                                    Text(model).tag(model)
+                                }
                             }
                         }
-                    }
 
-                    // 配置状态提示
-                    HStack {
-                        Image(systemName: aiService.isConfigured ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                            .foregroundColor(aiService.isConfigured ? .green : .orange)
-                        Text(aiService.isConfigured ? "已配置" : "请填写 API Key")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        // 配置状态提示
+                        HStack {
+                            Image(systemName: aiService.isConfigured ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                                .foregroundColor(aiService.isConfigured ? .green : .orange)
+                            Text(aiService.isConfigured ? "已配置" : "请填写 API Key")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        // 默认模式显示已配置
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("使用内置 AI 服务")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 } header: {
                     Text("AI 图像识别")
                 } footer: {
-                    Text("使用 AI 识别色号表格图片。支持 OpenAI GPT-4o 和 Claude。如需代理可填写自定义 API 地址。")
+                    if aiService.config.provider == .builtIn {
+                        Text("默认模式使用内置 AI 服务，无需配置。")
+                    } else {
+                        Text("使用 AI 识别色号表格图片。支持 OpenAI GPT-4o 和 Claude。如需代理可填写自定义 API 地址。")
+                    }
                 }
 
                 // 库存设置
