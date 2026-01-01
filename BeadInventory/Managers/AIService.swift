@@ -226,7 +226,14 @@ class AIServiceManager: ObservableObject {
 
         // 预处理图片（减少水印影响）
         let processedImage = preprocessImage(image)
-        print("[AI Debug] 原图尺寸: \(image.size), 处理后: \(processedImage.size), 模式: \(mode)")
+
+        // 打印 AI 配置信息
+        print("[AI Debug] ========== AI 识别开始 ==========")
+        print("[AI Debug] AI 提供商: \(config.provider.rawValue)")
+        print("[AI Debug] 模型: \(config.effectiveModel)")
+        print("[AI Debug] API 地址: \(config.effectiveBaseURL)")
+        print("[AI Debug] 原图尺寸: \(image.size), 处理后: \(processedImage.size)")
+        print("[AI Debug] 识别模式: \(mode == .table ? "表格识别" : "图纸识别")")
 
         // 优先使用PNG格式（无损），如果太大则使用高质量JPEG
         // PNG对于表格文字识别效果更好，不会有JPEG压缩伪影
