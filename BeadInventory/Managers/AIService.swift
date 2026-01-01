@@ -104,6 +104,8 @@ class AIServiceManager: ObservableObject {
     @Published var config: AIConfig {
         didSet {
             saveConfig()
+            // 内置模式不需要验证模型
+            guard config.provider != .builtIn else { return }
             // 当 provider 改变时，如果当前模型不在新 provider 的模型列表中，则重置为默认模型
             let validModels = config.provider == .openai ? AIConfig.openAIModels : AIConfig.anthropicModels
             if !validModels.contains(config.model) {
@@ -274,7 +276,7 @@ class AIServiceManager: ObservableObject {
 
         表格结构说明：
         - 这是一个多行多列的表格，每一列代表一种颜色
-        - 第一行是MARD品牌的色号（格式如：F8, A17, B195, DH01, IC09等，通常是字母+数字）
+        - 第一行或者其中某一行是MARD品牌的色号（格式如：F8, A17, B195, DH01, IC09等，通常是字母+数字）
         - 最后一行是该颜色需要的豆子数量（纯数字）
         - 中间可能有其他品牌的色号（vivid, 漫漫, 卡卡），请忽略这些行
 
