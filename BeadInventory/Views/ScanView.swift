@@ -71,26 +71,51 @@ struct ScanView: View {
 
                     // 识别按钮
                     if selectedImage != nil {
-                        Button {
-                            recognizeImage()
-                        } label: {
-                            HStack {
-                                if isRecognizing {
-                                    ProgressView()
-                                        .tint(.white)
-                                } else {
-                                    Image(systemName: "sparkles")
+                        HStack(spacing: 12) {
+                            // 表格识别按钮
+                            Button {
+                                recognizeImage(mode: .table)
+                            } label: {
+                                HStack {
+                                    if isRecognizing {
+                                        ProgressView()
+                                            .tint(.white)
+                                    } else {
+                                        Image(systemName: "tablecells")
+                                    }
+                                    Text(isRecognizing ? "识别中..." : "表格识别")
                                 }
-                                Text(isRecognizing ? "AI 识别中..." : "AI 识别")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(aiService.isConfigured ? Color.accentColor : Color.gray)
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
                             }
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(aiService.isConfigured ? Color.accentColor : Color.gray)
-                            .foregroundColor(.white)
-                            .cornerRadius(12)
+                            .disabled(isRecognizing || !aiService.isConfigured)
+
+                            // 图纸识别按钮
+                            Button {
+                                recognizeImage(mode: .blueprint)
+                            } label: {
+                                HStack {
+                                    if isRecognizing {
+                                        ProgressView()
+                                            .tint(.white)
+                                    } else {
+                                        Image(systemName: "doc.richtext")
+                                    }
+                                    Text(isRecognizing ? "识别中..." : "图纸识别")
+                                }
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(aiService.isConfigured ? Color.orange : Color.gray)
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
+                            }
+                            .disabled(isRecognizing || !aiService.isConfigured)
                         }
-                        .disabled(isRecognizing || !aiService.isConfigured)
                         .padding(.horizontal)
                     }
 
@@ -253,7 +278,7 @@ struct ScanView: View {
         }
     }
 
-    func recognizeImage() {
+    func recognizeImage(mode: RecognitionMode) {
         guard let image = selectedImage else { return }
 
         isRecognizing = true
@@ -261,7 +286,7 @@ struct ScanView: View {
 
         Task {
             do {
-                let items = try await aiService.recognizeImage(image)
+                let items = try await aiService.recognizeImage(image, mode: mode)
                 await MainActor.run {
                     recognizedItems = items.map { RecognizedItem(colorCode: $0.colorCode, quantity: $0.quantity) }
                     isRecognizing = false

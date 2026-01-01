@@ -79,6 +79,13 @@ struct AIConfig: Codable {
     }
 }
 
+// MARK: - 识别模式
+
+enum RecognitionMode {
+    case table      // 表格识别
+    case blueprint  // 图纸识别
+}
+
 // MARK: - 识别结果
 
 struct AIRecognizedItem: Codable {
@@ -212,14 +219,14 @@ class AIServiceManager: ObservableObject {
 
     // MARK: - 图像识别
 
-    func recognizeImage(_ image: UIImage) async throws -> [AIRecognizedItem] {
+    func recognizeImage(_ image: UIImage, mode: RecognitionMode = .table) async throws -> [AIRecognizedItem] {
         guard isConfigured else {
             throw AIError.notConfigured
         }
 
         // 预处理图片（减少水印影响）
         let processedImage = preprocessImage(image)
-        print("[AI Debug] 原图尺寸: \(image.size), 处理后: \(processedImage.size)")
+        print("[AI Debug] 原图尺寸: \(image.size), 处理后: \(processedImage.size), 模式: \(mode)")
 
         // 优先使用PNG格式（无损），如果太大则使用高质量JPEG
         // PNG对于表格文字识别效果更好，不会有JPEG压缩伪影
@@ -255,15 +262,15 @@ class AIServiceManager: ObservableObject {
         switch config.provider {
         case .builtIn, .openai:
             // 内置 Kimi 和 OpenAI 使用相同的 API 格式
-            return try await recognizeWithOpenAI(base64Image: base64Image, mediaType: mediaType)
+            return try await recognizeWithOpenAI(base64Image: base64Image, mediaType: mediaType, mode: mode)
         case .anthropic:
-            return try await recognizeWithAnthropic(base64Image: base64Image, mediaType: mediaType)
+            return try await recognizeWithAnthropic(base64Image: base64Image, mediaType: mediaType, mode: mode)
         }
     }
 
     // MARK: - OpenAI 实现
 
-    private func recognizeWithOpenAI(base64Image: String, mediaType: String) async throws -> [AIRecognizedItem] {
+    private func recognizeWithOpenAI(base64Image: String, mediaType: String, mode: RecognitionMode) async throws -> [AIRecognizedItem] {
         let url = URL(string: "\(config.effectiveBaseURL)/chat/completions")!
 
         var request = URLRequest(url: url)
@@ -271,31 +278,66 @@ class AIServiceManager: ObservableObject {
         request.setValue("Bearer \(config.effectiveAPIKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let systemPrompt = """
-        你是一个珠子色号表格识别助手。请仔细分析图片中的表格。
+        let systemPrompt: String
+        let userPrompt: String
 
-        表格结构说明：
-        - 这是一个多行多列的表格，每一列代表一种颜色
-        - 第一行或者其中某一行是MARD品牌的色号（格式如：F8, A17, B195, DH01, IC09等，通常是字母+数字）
-        - 最后一行是该颜色需要的豆子数量（纯数字）
-        - 中间可能有其他品牌的色号（vivid, 漫漫, 卡卡），请忽略这些行
+        switch mode {
+        case .table:
+            systemPrompt = """
+            你是一个珠子色号图表识别助手。请仔细分析图片中的表格。
 
-        你的任务：
-        1. 仔细观察图片中的表格
-        2. 识别每一列的MARD色号（第一行）和对应数量（最后一行）
-        3. 只返回JSON格式结果，不要其他文字
-        4. 如果检测到"任意色"，color_code应当叫做"any"
+            表格结构说明：
+            - 这是一个多行多列的表格，每一列代表一种颜色
+            - 第一行或者其中某一行是MARD品牌的色号（格式如：F8, A17, B195, DH01, IC09等，通常是字母+数字）
+            - 最后一行是该颜色需要的豆子数量（纯数字）
+            - 中间可能有其他品牌的色号（vivid, 漫漫, 卡卡），请忽略这些行
 
-        输出格式（严格JSON）：
-        {"items":[{"color_code":"F8","quantity":100},{"color_code":"A17","quantity":50}]}
+            你的任务：
+            1. 仔细观察图片中的表格
+            2. 识别每一列的MARD色号和对应数量（最后一行）
+            3. 只返回JSON格式结果，不要其他文字
+            4. 如果检测到"任意色"，color_code应当叫做"any"
 
-        注意：
-        - 只返回MARD色号，忽略其他品牌行
-        - color_code是字符串，quantity是整数
-        - 如果某列无法识别，跳过该列
-        - 只输出JSON，不要解释
-        - 图片可能有水印干扰，请仔细辨认文字
-        """
+            输出格式（严格JSON）：
+            {"items":[{"color_code":"F8","quantity":100},{"color_code":"A17","quantity":50}]}
+
+            注意：
+            - 只返回MARD色号，忽略其他品牌行
+            - color_code是字符串，quantity是整数
+            - 如果某列无法识别，跳过该列
+            - 只输出JSON，不要解释
+            - 图片可能有水印干扰，请仔细辨认文字
+            """
+            userPrompt = "请识别这张色号表格图片，提取所有MARD色号和对应的数量。注意图片可能有水印，请仔细辨认。只返回JSON。"
+
+        case .blueprint:
+            systemPrompt = """
+            你是一个珠子图纸识别助手。请仔细分析图片中的拼豆图纸。
+
+            图纸结构说明：
+            - 这是一张拼豆图纸，上面标注了各种颜色的色号和对应数量
+            - 色号格式通常是字母+数字的组合（如：F8, A17, B195, DH01, IC09等）
+            - 每个色号旁边（下方、侧面或附近）会标注该颜色需要的豆子数量（纯数字）
+            - 色号和数量可能以各种方式排列：横排、竖排、分散在图纸各处
+
+            你的任务：
+            1. 仔细扫描整张图纸
+            2. 找出所有的色号及其对应的数量
+            3. 只返回JSON格式结果，不要其他文字
+            4. 如果检测到"任意色"，color_code应当叫做"any"
+
+            输出格式（严格JSON）：
+            {"items":[{"color_code":"F8","quantity":100},{"color_code":"A17","quantity":50}]}
+
+            注意：
+            - color_code是字符串（字母+数字），quantity是整数
+            - 如果某个色号无法识别数量，跳过该项
+            - 只输出JSON，不要解释
+            - 图片可能有水印干扰，请仔细辨认文字
+            - 数量通常在色号的下方或旁边
+            """
+            userPrompt = "请识别这张拼豆图纸，找出所有色号和对应的数量。色号通常是字母+数字，数量在色号附近。只返回JSON。"
+        }
 
         let body: [String: Any] = [
             "model": config.effectiveModel,
@@ -312,7 +354,7 @@ class AIServiceManager: ObservableObject {
                         ],
                         [
                             "type": "text",
-                            "text": "请识别这张色号表格图片，提取所有MARD色号和对应的数量。注意图片可能有水印，请仔细辨认。只返回JSON。"
+                            "text": userPrompt
                         ]
                     ]
                 ]
@@ -359,7 +401,7 @@ class AIServiceManager: ObservableObject {
 
     // MARK: - Anthropic 实现
 
-    private func recognizeWithAnthropic(base64Image: String, mediaType: String) async throws -> [AIRecognizedItem] {
+    private func recognizeWithAnthropic(base64Image: String, mediaType: String, mode: RecognitionMode) async throws -> [AIRecognizedItem] {
         let url = URL(string: "\(config.effectiveBaseURL)/v1/messages")!
 
         var request = URLRequest(url: url)
@@ -368,31 +410,66 @@ class AIServiceManager: ObservableObject {
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let systemPrompt = """
-        你是一个珠子色号表格识别助手。请仔细分析图片中的表格。
+        let systemPrompt: String
+        let userPrompt: String
 
-        表格结构说明：
-        - 这是一个多行多列的表格，每一列代表一种颜色
-        - 第一行是MARD品牌的色号（格式如：F8, A17, B195, DH01, IC09等，通常是字母+数字）
-        - 最后一行是该颜色需要的豆子数量（纯数字）
-        - 中间可能有其他品牌的色号（vivid, 漫漫, 卡卡），请忽略这些行
+        switch mode {
+        case .table:
+            systemPrompt = """
+            你是一个珠子色号表格识别助手。请仔细分析图片中的表格。
 
-        你的任务：
-        1. 仔细观察图片中的表格
-        2. 识别每一列的MARD色号（第一行）和对应数量（最后一行）
-        3. 只返回JSON格式结果，不要其他文字
-        4. 如果检测到"任意色"，color_code应当叫做"any"
+            表格结构说明：
+            - 这是一个多行多列的表格，每一列代表一种颜色
+            - 第一行是MARD品牌的色号（格式如：F8, A17, B195, DH01, IC09等，通常是字母+数字）
+            - 最后一行是该颜色需要的豆子数量（纯数字）
+            - 中间可能有其他品牌的色号（vivid, 漫漫, 卡卡），请忽略这些行
 
-        输出格式（严格JSON）：
-        {"items":[{"color_code":"F8","quantity":100},{"color_code":"A17","quantity":50}]}
+            你的任务：
+            1. 仔细观察图片中的表格
+            2. 识别每一列的MARD色号（第一行）和对应数量（最后一行）
+            3. 只返回JSON格式结果，不要其他文字
+            4. 如果检测到"任意色"，color_code应当叫做"any"
 
-        注意：
-        - 只返回MARD色号，忽略其他品牌行
-        - color_code是字符串，quantity是整数
-        - 如果某列无法识别，跳过该列
-        - 只输出JSON，不要解释
-        - 图片可能有水印干扰，请仔细辨认文字
-        """
+            输出格式（严格JSON）：
+            {"items":[{"color_code":"F8","quantity":100},{"color_code":"A17","quantity":50}]}
+
+            注意：
+            - 只返回MARD色号，忽略其他品牌行
+            - color_code是字符串，quantity是整数
+            - 如果某列无法识别，跳过该列
+            - 只输出JSON，不要解释
+            - 图片可能有水印干扰，请仔细辨认文字
+            """
+            userPrompt = "请识别这张色号表格图片，提取所有MARD色号和对应的数量。注意图片可能有水印，请仔细辨认。只返回JSON。"
+
+        case .blueprint:
+            systemPrompt = """
+            你是一个珠子图纸识别助手。请仔细分析图片中的拼豆图纸。
+
+            图纸结构说明：
+            - 这是一张拼豆图纸，上面标注了各种颜色的色号和对应数量
+            - 色号格式通常是字母+数字的组合（如：F8, A17, B195, DH01, IC09等）
+            - 每个色号旁边（下方、侧面或附近）会标注该颜色需要的豆子数量（纯数字）
+            - 色号和数量可能以各种方式排列：横排、竖排、分散在图纸各处
+
+            你的任务：
+            1. 仔细扫描整张图纸
+            2. 找出所有的色号及其对应的数量
+            3. 只返回JSON格式结果，不要其他文字
+            4. 如果检测到"任意色"，color_code应当叫做"any"
+
+            输出格式（严格JSON）：
+            {"items":[{"color_code":"F8","quantity":100},{"color_code":"A17","quantity":50}]}
+
+            注意：
+            - color_code是字符串（字母+数字），quantity是整数
+            - 如果某个色号无法识别数量，跳过该项
+            - 只输出JSON，不要解释
+            - 图片可能有水印干扰，请仔细辨认文字
+            - 数量通常在色号的下方或旁边
+            """
+            userPrompt = "请识别这张拼豆图纸，找出所有色号和对应的数量。色号通常是字母+数字，数量在色号附近。只返回JSON。"
+        }
 
         let body: [String: Any] = [
             "model": config.model,
@@ -412,7 +489,7 @@ class AIServiceManager: ObservableObject {
                         ],
                         [
                             "type": "text",
-                            "text": "请识别这张色号表格图片，提取所有MARD色号和对应的数量。注意图片可能有水印，请仔细辨认。只返回JSON。"
+                            "text": userPrompt
                         ]
                     ]
                 ]
