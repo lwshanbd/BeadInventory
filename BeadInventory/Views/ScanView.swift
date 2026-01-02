@@ -833,40 +833,68 @@ struct ManualEntrySheetNew: View {
         case colorCode, quantity
     }
 
+    private var isValid: Bool {
+        !colorCode.trimmingCharacters(in: .whitespaces).isEmpty &&
+        Int(quantity) != nil &&
+        (Int(quantity) ?? 0) > 0
+    }
+
     var body: some View {
         NavigationStack {
-            Form {
-                Section("色号信息") {
-                    TextField("MARD色号", text: $colorCode)
+            VStack(spacing: 20) {
+                // 色号输入
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("MARD 色号")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    TextField("例如: A1, B23, IC09", text: $colorCode)
                         .textInputAutocapitalization(.characters)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
                         .focused($focusedField, equals: .colorCode)
                         .submitLabel(.next)
                         .onSubmit {
                             focusedField = .quantity
                         }
+                }
 
-                    TextField("数量", text: $quantity)
+                // 数量输入
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("数量")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    TextField("输入数量", text: $quantity)
                         .keyboardType(.numberPad)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
                         .focused($focusedField, equals: .quantity)
                 }
 
-                Section {
-                    Button {
-                        if let qty = Int(quantity), qty > 0 {
-                            onAdd(colorCode, qty)
-                            dismiss()
-                        }
-                    } label: {
-                        HStack {
-                            Spacer()
-                            Text("添加")
-                                .fontWeight(.medium)
-                            Spacer()
-                        }
+                Spacer()
+
+                // 添加按钮
+                Button {
+                    let trimmedCode = colorCode.trimmingCharacters(in: .whitespaces)
+                    if let qty = Int(quantity), qty > 0, !trimmedCode.isEmpty {
+                        onAdd(trimmedCode, qty)
+                        dismiss()
                     }
-                    .disabled(colorCode.isEmpty || quantity.isEmpty)
+                } label: {
+                    Text("添加")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(isValid ? Color.blue : Color.gray)
+                        .cornerRadius(12)
                 }
+                .disabled(!isValid)
             }
+            .padding()
             .navigationTitle("手动添加")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -882,8 +910,14 @@ struct ManualEntrySheetNew: View {
                     }
                 }
             }
+            .onAppear {
+                // 自动聚焦到色号输入框
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    focusedField = .colorCode
+                }
+            }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
     }
 }
