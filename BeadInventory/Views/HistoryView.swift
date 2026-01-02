@@ -108,7 +108,6 @@ struct HistoryRowView: View {
                 Text(record.operationType.displayName)
                     .font(.subheadline)
                     .fontWeight(.medium)
-                    .foregroundColor(record.isReverted ? .secondary : .primary)
 
                 Text(record.entityName)
                     .font(.caption)
@@ -118,23 +117,14 @@ struct HistoryRowView: View {
 
             Spacer()
 
-            // 时间和状态
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(record.formattedTime)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                if record.isReverted {
-                    Text("已撤回")
-                        .font(.caption2)
-                        .foregroundColor(.orange)
-                }
-            }
+            // 时间
+            Text(record.formattedTime)
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
         .padding(.vertical, 4)
-        .opacity(record.isReverted ? 0.6 : 1.0)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if !record.isReverted && canRevert(record) {
+            if canRevert(record) {
                 Button {
                     showingRevertAlert = true
                 } label: {
@@ -163,10 +153,6 @@ struct HistoryRowView: View {
 
     // 图标颜色
     private var iconColor: Color {
-        if record.isReverted {
-            return .secondary
-        }
-
         switch record.operationType.iconColor {
         case "green": return .green
         case "blue": return .blue

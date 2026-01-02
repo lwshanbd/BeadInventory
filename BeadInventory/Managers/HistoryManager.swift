@@ -23,6 +23,9 @@ class HistoryManager: ObservableObject {
     // 对 InventoryManager 的引用（用于撤回操作）
     weak var inventoryManager: InventoryManager?
 
+    // 是否正在执行撤回操作（撤回时不记录新的历史）
+    private var isReverting = false
+
     private init() {}
 
     // 设置 ModelContext
@@ -40,6 +43,9 @@ class HistoryManager: ObservableObject {
         before: (any Encodable)? = nil,
         after: (any Encodable)? = nil
     ) {
+        // 撤回操作时不记录新的历史
+        guard !isReverting else { return }
+
         let beforeData = before.flatMap { try? JSONEncoder().encode(AnyEncodable($0)) }
         let afterData = after.flatMap { try? JSONEncoder().encode(AnyEncodable($0)) }
 
@@ -66,6 +72,9 @@ class HistoryManager: ObservableObject {
         newValue: Int,
         changeAmount: Int
     ) {
+        // 撤回操作时不记录新的历史
+        guard !isReverting else { return }
+
         let snapshot = StockChangeSnapshot(
             brandId: brandId,
             mardCode: mardCode,
@@ -96,6 +105,9 @@ class HistoryManager: ObservableObject {
         brand: Brand,
         oldName: String? = nil
     ) {
+        // 撤回操作时不记录新的历史
+        guard !isReverting else { return }
+
         let snapshot = BrandSnapshot(id: brand.id, name: brand.name, sortOrder: brand.sortOrder)
         let beforeData: Data?
         let afterData: Data?
@@ -135,6 +147,9 @@ class HistoryManager: ObservableObject {
         type: HistoryOperationType,
         project: ProjectRecord
     ) {
+        // 撤回操作时不记录新的历史
+        guard !isReverting else { return }
+
         let usageSnapshots = project.beadUsage.map {
             BeadUsageSnapshot(colorCode: $0.colorCode, brandId: $0.brandId, quantity: $0.quantity, isDeducted: $0.isDeducted)
         }
@@ -208,12 +223,16 @@ class HistoryManager: ObservableObject {
             return false
         }
 
+        // 设置撤回标志，防止撤回操作被记录为新的历史
+        isReverting = true
         let success = performRevert(record: record, manager: manager)
+        isReverting = false
 
         if success {
-            records[index].isReverted = true
+            // 撤回成功后直接删除该记录
+            records.remove(at: index)
             saveData()
-            print("[History] 撤回成功: \(record.fullDescription)")
+            print("[History] 撤回成功并删除记录: \(record.fullDescription)")
         } else {
             print("[History] 撤回失败: \(record.fullDescription)")
         }
