@@ -21,6 +21,9 @@ class InventoryManager: ObservableObject {
     // SwiftData ModelContext
     private var modelContext: ModelContext?
 
+    // 历史记录管理器
+    private var historyManager: HistoryManager { HistoryManager.shared }
+
     // UserDefaults keys (用于迁移和当前品牌ID)
     private let beadColorsKey = "beadColors"
     private let projectsKey = "projects"
@@ -78,6 +81,10 @@ class InventoryManager: ObservableObject {
         }
 
         saveData()
+
+        // 记录历史
+        historyManager.recordBrand(type: .brandAdd, brand: brand)
+
         return brand
     }
 
@@ -90,12 +97,21 @@ class InventoryManager: ObservableObject {
 
     func updateBrand(_ brandId: UUID, name: String) {
         if let index = brands.firstIndex(where: { $0.id == brandId }) {
+            let oldName = brands[index].name
             brands[index].name = name
             saveData()
+
+            // 记录历史
+            historyManager.recordBrand(type: .brandUpdate, brand: brands[index], oldName: oldName)
         }
     }
 
     func deleteBrand(_ brandId: UUID) -> Bool {
+        // 记录历史（在删除前获取品牌信息）
+        if let brand = brands.first(where: { $0.id == brandId }) {
+            historyManager.recordBrand(type: .brandDelete, brand: brand)
+        }
+
         // 删除品牌及其库存
         brands.removeAll { $0.id == brandId }
         brandStocks.removeAll { $0.brandId == brandId }
@@ -138,8 +154,20 @@ class InventoryManager: ObservableObject {
         if let index = brandStocks.firstIndex(where: {
             $0.brandId == brandId && $0.mardCode == mardCode
         }) {
-            brandStocks[index].stock = max(0, newStock)
+            let oldStock = brandStocks[index].stock
+            let newValue = max(0, newStock)
+            brandStocks[index].stock = newValue
             saveData()
+
+            // 记录历史
+            historyManager.recordStockChange(
+                type: .stockUpdate,
+                brandId: brandId,
+                mardCode: mardCode,
+                oldValue: oldStock,
+                newValue: newValue,
+                changeAmount: newValue - oldStock
+            )
         }
     }
 
@@ -147,8 +175,21 @@ class InventoryManager: ObservableObject {
         if let index = brandStocks.firstIndex(where: {
             $0.brandId == brandId && $0.mardCode == mardCode
         }) {
+            let oldStock = brandStocks[index].stock
             brandStocks[index].stock += amount
             saveData()
+
+            // 记录历史（仅当不是撤回操作导致的负数调整时）
+            if amount > 0 {
+                historyManager.recordStockChange(
+                    type: .stockAdd,
+                    brandId: brandId,
+                    mardCode: mardCode,
+                    oldValue: oldStock,
+                    newValue: brandStocks[index].stock,
+                    changeAmount: amount
+                )
+            }
         }
     }
 
@@ -424,6 +465,9 @@ class InventoryManager: ObservableObject {
     func addProject(_ project: ProjectRecord) {
         projects.insert(project, at: 0)
         saveData()
+
+        // 记录历史
+        historyManager.recordProject(type: .projectAdd, project: project)
     }
 
     func deleteProject(at offsets: IndexSet) {
@@ -439,6 +483,10 @@ class InventoryManager: ObservableObject {
     func deleteProject(id: UUID) {
         if let index = projects.firstIndex(where: { $0.id == id }) {
             let project = projects[index]
+
+            // 记录历史（在删除前）
+            historyManager.recordProject(type: .projectDelete, project: project)
+
             restoreStockFromProject(project)
             projects.remove(at: index)
             saveData()
@@ -448,6 +496,9 @@ class InventoryManager: ObservableObject {
     func archiveProject(id: UUID) {
         // 归档项目，不回退库存
         if let index = projects.firstIndex(where: { $0.id == id }) {
+            // 记录历史（在归档前）
+            historyManager.recordProject(type: .projectArchive, project: projects[index])
+
             projects[index].isArchived = true
             saveData()
         }
@@ -456,6 +507,9 @@ class InventoryManager: ObservableObject {
     func unarchiveProject(id: UUID) {
         // 取消归档
         if let index = projects.firstIndex(where: { $0.id == id }) {
+            // 记录历史（在取消归档前）
+            historyManager.recordProject(type: .projectUnarchive, project: projects[index])
+
             projects[index].isArchived = false
             saveData()
         }
@@ -752,6 +806,9 @@ class InventoryManager: ObservableObject {
         }
         projects.insert(plannedProject, at: 0)
         saveData()
+
+        // 记录历史
+        historyManager.recordProject(type: .planAdd, project: plannedProject)
     }
 
     /// 执行计划项目：选择品牌后一次性扣减库存
@@ -785,6 +842,10 @@ class InventoryManager: ObservableObject {
         }
 
         saveData()
+
+        // 记录历史
+        historyManager.recordProject(type: .planExecute, project: projects[index])
+
         return true
     }
 
@@ -826,6 +887,11 @@ class InventoryManager: ObservableObject {
 
     /// 删除计划项目（不回退库存，因为还未扣减）
     func deletePlannedProject(_ projectId: UUID) {
+        // 记录历史（在删除前）
+        if let project = projects.first(where: { $0.id == projectId }) {
+            historyManager.recordProject(type: .planDelete, project: project)
+        }
+
         // 如果是父项目，也删除子项目
         if isParentProject(projectId) {
             projects.removeAll { $0.parentId == projectId }
@@ -837,6 +903,9 @@ class InventoryManager: ObservableObject {
     /// 更新计划项目名称
     func updatePlannedProjectName(_ projectId: UUID, newName: String) {
         if let index = projects.firstIndex(where: { $0.id == projectId && $0.isPlanned }) {
+            // 记录历史（在修改前）
+            historyManager.recordProject(type: .planUpdate, project: projects[index])
+
             projects[index].name = newName
             saveData()
         }
@@ -864,6 +933,10 @@ class InventoryManager: ObservableObject {
 
     func resetAllStock(to amount: Int = 1000) {
         guard let brandId = currentBrandId else { return }
+
+        // 获取当前品牌名称用于历史记录
+        let brandName = brands.first(where: { $0.id == brandId })?.name ?? "未知品牌"
+
         // 清除当前品牌的所有库存记录
         brandStocks.removeAll { $0.brandId == brandId }
         // 为每个颜色创建新的库存记录
@@ -872,6 +945,9 @@ class InventoryManager: ObservableObject {
             brandStocks.append(newStock)
         }
         saveData()
+
+        // 记录历史
+        historyManager.record(type: .stockReset, entityName: "\(brandName) → \(amount)")
     }
 
     func resetUsage() {

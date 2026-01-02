@@ -11,6 +11,25 @@ struct MoreView: View {
     var body: some View {
         NavigationStack {
             List {
+                // 历史记录
+                Section {
+                    NavigationLink {
+                        HistoryView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("历史记录")
+                                Text("查看操作记录，支持撤回")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .foregroundColor(.orange)
+                        }
+                    }
+                }
+
                 // 色号转换
                 Section {
                     NavigationLink {

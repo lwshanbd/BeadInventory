@@ -134,3 +134,60 @@ final class SDBeadUsage {
         BeadUsage(id: id, colorCode: colorCode, brandId: brandId, quantity: quantity, isDeducted: isDeducted)
     }
 }
+
+// MARK: - 历史记录模型
+@Model
+final class SDHistoryRecord {
+    @Attribute(.unique) var id: UUID
+    var timestamp: Date
+    var operationType: String        // 存储 HistoryOperationType.rawValue
+    var entityName: String
+    var beforeSnapshot: Data?
+    var afterSnapshot: Data?
+    var isReverted: Bool
+
+    init(
+        id: UUID = UUID(),
+        timestamp: Date = Date(),
+        operationType: String,
+        entityName: String,
+        beforeSnapshot: Data? = nil,
+        afterSnapshot: Data? = nil,
+        isReverted: Bool = false
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.operationType = operationType
+        self.entityName = entityName
+        self.beforeSnapshot = beforeSnapshot
+        self.afterSnapshot = afterSnapshot
+        self.isReverted = isReverted
+    }
+
+    convenience init(from record: HistoryRecord) {
+        self.init(
+            id: record.id,
+            timestamp: record.timestamp,
+            operationType: record.operationType.rawValue,
+            entityName: record.entityName,
+            beforeSnapshot: record.beforeSnapshot,
+            afterSnapshot: record.afterSnapshot,
+            isReverted: record.isReverted
+        )
+    }
+
+    func toStruct() -> HistoryRecord? {
+        guard let opType = HistoryOperationType(rawValue: operationType) else {
+            return nil
+        }
+        return HistoryRecord(
+            id: id,
+            timestamp: timestamp,
+            operationType: opType,
+            entityName: entityName,
+            beforeSnapshot: beforeSnapshot,
+            afterSnapshot: afterSnapshot,
+            isReverted: isReverted
+        )
+    }
+}

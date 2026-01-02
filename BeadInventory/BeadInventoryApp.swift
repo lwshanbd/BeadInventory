@@ -20,7 +20,8 @@ struct BeadInventoryApp: App {
             SDBrand.self,
             SDBrandStock.self,
             SDProjectRecord.self,
-            SDBeadUsage.self
+            SDBeadUsage.self,
+            SDHistoryRecord.self
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -30,6 +31,10 @@ struct BeadInventoryApp: App {
             // 创建 InventoryManager 并传入 ModelContext
             let manager = InventoryManager(modelContext: container.mainContext)
             self._inventoryManager = StateObject(wrappedValue: manager)
+
+            // 初始化 HistoryManager
+            HistoryManager.shared.setModelContext(container.mainContext)
+            HistoryManager.shared.inventoryManager = manager
         } catch {
             fatalError("无法创建 ModelContainer: \(error)")
         }
