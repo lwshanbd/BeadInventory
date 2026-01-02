@@ -22,6 +22,9 @@
 		38B1A0012F0100010000000A /* ProjectDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000001A /* ProjectDetailView.swift */; };
 		38B1A0012F0100010000000B /* PlannedProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000001B /* PlannedProjectsView.swift */; };
 		38B1A0012F0100010000000C /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000001C /* MoreView.swift */; };
+		38B1A0012F0100010000000D /* HistoryRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000021 /* HistoryRecord.swift */; };
+		38B1A0012F0100010000000E /* HistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000022 /* HistoryManager.swift */; };
+		38B1A0012F0100010000000F /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000023 /* HistoryView.swift */; };
 		A01234560001 /* BeadInventoryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560011 /* BeadInventoryApp.swift */; };
 		A01234560002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560012 /* ContentView.swift */; };
 		A01234560003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A01234560013 /* Assets.xcassets */; };
@@ -65,6 +68,9 @@
 		38B1A0012F0100010000001A /* ProjectDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDetailView.swift; sourceTree = "<group>"; };
 		38B1A0012F0100010000001B /* PlannedProjectsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannedProjectsView.swift; sourceTree = "<group>"; };
 		38B1A0012F0100010000001C /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
+		38B1A0012F01000100000021 /* HistoryRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryRecord.swift; sourceTree = "<group>"; };
+		38B1A0012F01000100000022 /* HistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryManager.swift; sourceTree = "<group>"; };
+		38B1A0012F01000100000023 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -131,6 +137,7 @@
 				A01234560014 /* BeadColor.swift */,
 				38B1A0012F01000100000011 /* Brand.swift */,
 				38B1A0012F01000100000012 /* BrandStock.swift */,
+				38B1A0012F01000100000021 /* HistoryRecord.swift */,
 				38B1A0012F01000100000019 /* SwiftDataModels.swift */,
 			);
 			path = Models;
@@ -143,6 +150,7 @@
 				A01234560016 /* OCRManager.swift */,
 				A0123456001C /* AIService.swift */,
 				38B1A0012F01000100000013 /* DataMigration.swift */,
+				38B1A0012F01000100000022 /* HistoryManager.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -156,6 +164,7 @@
 				38B1A0012F01000100000018 /* AppIconView.swift */,
 				38B1A0012F01000100000015 /* BrandManagerView.swift */,
 				38B1A0012F01000100000016 /* BrandSettingsView.swift */,
+				38B1A0012F01000100000023 /* HistoryView.swift */,
 				A01234560017 /* InventoryView.swift */,
 				38B1A0012F0100010000001C /* MoreView.swift */,
 				38B1A0012F0100010000001B /* PlannedProjectsView.swift */,
@@ -272,6 +281,9 @@
 				38B1A0012F0100010000000A /* ProjectDetailView.swift in Sources */,
 				38B1A0012F0100010000000B /* PlannedProjectsView.swift in Sources */,
 				38B1A0012F0100010000000C /* MoreView.swift in Sources */,
+				38B1A0012F0100010000000D /* HistoryRecord.swift in Sources */,
+				38B1A0012F0100010000000E /* HistoryManager.swift in Sources */,
+				38B1A0012F0100010000000F /* HistoryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
