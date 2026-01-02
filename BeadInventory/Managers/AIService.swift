@@ -346,9 +346,9 @@ class AIServiceManager: ObservableObject {
             userPrompt = "请识别这张拼豆图纸，找出所有色号和对应的数量。色号通常是字母+数字，数量在色号附近。只返回JSON。"
         }
 
-        let body: [String: Any] = [
+        // OpenAI 使用 max_completion_tokens，Kimi 使用 max_tokens
+        var body: [String: Any] = [
             "model": config.effectiveModel,
-            "max_tokens": 8192,  // 设置足够大的输出限制，避免颜色多时被截断
             "messages": [
                 ["role": "system", "content": systemPrompt],
                 [
@@ -368,6 +368,13 @@ class AIServiceManager: ObservableObject {
                 ]
             ]
         ]
+
+        // 根据提供商设置不同的 token 限制参数
+        if config.provider == .openai {
+            body["max_completion_tokens"] = 8192
+        } else {
+            body["max_tokens"] = 8192
+        }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
