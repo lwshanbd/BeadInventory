@@ -2,7 +2,7 @@
 //  AIService.swift
 //  BeadInventory
 //
-//  AI图像识别服务 - 支持 OpenAI 和 Anthropic
+//  AI图像识别服务 - 支持 Kimi、OpenAI 和 Anthropic
 //
 
 import Foundation
@@ -106,12 +106,18 @@ class AIServiceManager: ObservableObject {
     @Published var config: AIConfig {
         didSet {
             saveConfig()
-            // Kimi 只有一个模型，不需要验证
-            guard config.provider != .kimi else { return }
-            // 当 provider 改变时，如果当前模型不在新 provider 的模型列表中，则重置为默认模型
-            let validModels = config.provider == .openai ? AIConfig.openAIModels : AIConfig.anthropicModels
-            if !validModels.contains(config.model) {
-                config.model = AIConfig.defaultModel(for: config.provider)
+            // 当 provider 改变时，重置模型为对应的默认模型
+            if config.provider == .kimi {
+                // Kimi 只有一个模型，强制设置
+                if config.model != AIConfig.kimiModel {
+                    config.model = AIConfig.kimiModel
+                }
+            } else {
+                // OpenAI/Anthropic：如果当前模型不在新 provider 的模型列表中，则重置
+                let validModels = config.provider == .openai ? AIConfig.openAIModels : AIConfig.anthropicModels
+                if !validModels.contains(config.model) {
+                    config.model = AIConfig.defaultModel(for: config.provider)
+                }
             }
         }
     }

@@ -943,12 +943,15 @@ struct AISettingsView: View {
                     .autocapitalization(.none)
                     .keyboardType(.URL)
 
-                Picker("模型", selection: $aiService.config.model) {
-                    if aiService.config.provider == .openai {
+                // Kimi 只有一个模型，不显示选择器
+                if aiService.config.provider == .openai {
+                    Picker("模型", selection: $aiService.config.model) {
                         ForEach(AIConfig.openAIModels, id: \.self) { model in
                             Text(model).tag(model)
                         }
-                    } else {
+                    }
+                } else if aiService.config.provider == .anthropic {
+                    Picker("模型", selection: $aiService.config.model) {
                         ForEach(AIConfig.anthropicModels, id: \.self) { model in
                             Text(model).tag(model)
                         }
@@ -957,7 +960,13 @@ struct AISettingsView: View {
             } header: {
                 Text("AI 配置")
             } footer: {
-                Text("支持 OpenAI GPT 和 Anthropic Claude。如需代理可填写自定义 API 地址。")
+                if aiService.config.provider == .kimi {
+                    Text("Kimi API Key 可从 platform.moonshot.cn 获取")
+                } else if aiService.config.provider == .openai {
+                    Text("OpenAI API Key 可从 platform.openai.com 获取。如需代理可填写自定义 API 地址。")
+                } else {
+                    Text("Anthropic API Key 可从 console.anthropic.com 获取。")
+                }
             }
 
             Section {
