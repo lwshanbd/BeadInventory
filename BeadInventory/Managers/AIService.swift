@@ -13,7 +13,7 @@ import CoreImage.CIFilterBuiltins
 // MARK: - AI 配置
 
 enum AIProvider: String, CaseIterable, Codable {
-    case builtIn = "默认"
+    case kimi = "Kimi"
     case openai = "OpenAI"
     case anthropic = "Anthropic"
 }
@@ -24,21 +24,19 @@ struct AIConfig: Codable {
     var baseURL: String  // 自定义API地址，空则使用默认
     var model: String
 
+    static let defaultKimiURL = "https://api.moonshot.cn/v1"
     static let defaultOpenAIURL = "https://api.openai.com/v1"
     static let defaultAnthropicURL = "https://api.anthropic.com"
 
-    // 内置 Kimi API 配置（用户不可见）
-    static let builtInBaseURL = "https://api.moonshot.cn/v1"
-    static let builtInModel = "kimi-latest"
-    static let builtInAPIKey = "sk-BjdA5dEnGUHxjLQvDb3pi93xaYyGdMpMwZdWxXutMnJiimsH"
-
+    // Kimi 仅支持一个模型
+    static let kimiModel = "kimi-latest"
     static let openAIModels = ["gpt-5-mini-2025-08-07", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo"]
     static let anthropicModels = ["claude-sonnet-4-5-20250929", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"]
 
     static func defaultModel(for provider: AIProvider) -> String {
         switch provider {
-        case .builtIn:
-            return builtInModel
+        case .kimi:
+            return kimiModel
         case .openai:
             return "gpt-5-mini-2025-08-07"
         case .anthropic:
@@ -46,7 +44,7 @@ struct AIConfig: Codable {
         }
     }
 
-    init(provider: AIProvider = .builtIn, apiKey: String = "", baseURL: String = "", model: String = "") {
+    init(provider: AIProvider = .kimi, apiKey: String = "", baseURL: String = "", model: String = "") {
         self.provider = provider
         self.apiKey = apiKey
         self.baseURL = baseURL
@@ -55,8 +53,8 @@ struct AIConfig: Codable {
 
     var effectiveBaseURL: String {
         switch provider {
-        case .builtIn:
-            return AIConfig.builtInBaseURL
+        case .kimi:
+            return baseURL.isEmpty ? AIConfig.defaultKimiURL : baseURL
         case .openai:
             return baseURL.isEmpty ? AIConfig.defaultOpenAIURL : baseURL
         case .anthropic:
@@ -65,15 +63,12 @@ struct AIConfig: Codable {
     }
 
     var effectiveAPIKey: String {
-        if provider == .builtIn {
-            return AIConfig.builtInAPIKey
-        }
         return apiKey
     }
 
     var effectiveModel: String {
-        if provider == .builtIn {
-            return AIConfig.builtInModel
+        if provider == .kimi {
+            return AIConfig.kimiModel
         }
         return model
     }
@@ -111,8 +106,8 @@ class AIServiceManager: ObservableObject {
     @Published var config: AIConfig {
         didSet {
             saveConfig()
-            // 内置模式不需要验证模型
-            guard config.provider != .builtIn else { return }
+            // Kimi 只有一个模型，不需要验证
+            guard config.provider != .kimi else { return }
             // 当 provider 改变时，如果当前模型不在新 provider 的模型列表中，则重置为默认模型
             let validModels = config.provider == .openai ? AIConfig.openAIModels : AIConfig.anthropicModels
             if !validModels.contains(config.model) {
@@ -147,10 +142,7 @@ class AIServiceManager: ObservableObject {
     }
 
     var isConfigured: Bool {
-        // 内置模式始终已配置
-        if config.provider == .builtIn {
-            return true
-        }
+        // 所有提供商都需要 API Key
         return !config.apiKey.isEmpty
     }
 
@@ -267,8 +259,8 @@ class AIServiceManager: ObservableObject {
         print("[AI Debug] Base64长度: \(base64Image.count)")
 
         switch config.provider {
-        case .builtIn, .openai:
-            // 内置 Kimi 和 OpenAI 使用相同的 API 格式
+        case .kimi, .openai:
+            // Kimi 和 OpenAI 使用相同的 API 格式
             return try await recognizeWithOpenAI(base64Image: base64Image, mediaType: mediaType, mode: mode)
         case .anthropic:
             return try await recognizeWithAnthropic(base64Image: base64Image, mediaType: mediaType, mode: mode)
