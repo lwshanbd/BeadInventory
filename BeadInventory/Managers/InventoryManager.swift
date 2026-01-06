@@ -427,8 +427,14 @@ class InventoryManager: ObservableObject {
 
     func findColor(byCode code: String) -> BeadColor? {
         let code = code.uppercased().trimmingCharacters(in: .whitespaces)
+
+        // 优先精确匹配 MARD 色号（避免与其他品牌色号冲突）
+        if let mardMatch = beadColors.first(where: { $0.mardCode.uppercased() == code }) {
+            return mardMatch
+        }
+
+        // 再匹配其他品牌色号
         return beadColors.first { color in
-            color.mardCode.uppercased() == code ||
             color.cocoCode.uppercased() == code ||
             color.manmanCode.uppercased() == code ||
             color.panpanCode.uppercased() == code ||
@@ -438,8 +444,14 @@ class InventoryManager: ObservableObject {
 
     func findColorIndex(byCode code: String) -> Int? {
         let code = code.uppercased().trimmingCharacters(in: .whitespaces)
+
+        // 优先精确匹配 MARD 色号（避免与其他品牌色号冲突）
+        if let mardIndex = beadColors.firstIndex(where: { $0.mardCode.uppercased() == code }) {
+            return mardIndex
+        }
+
+        // 再匹配其他品牌色号
         return beadColors.firstIndex { color in
-            color.mardCode.uppercased() == code ||
             color.cocoCode.uppercased() == code ||
             color.manmanCode.uppercased() == code ||
             color.panpanCode.uppercased() == code ||
