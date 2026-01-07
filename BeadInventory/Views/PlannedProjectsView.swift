@@ -735,184 +735,209 @@ struct PlannedProjectDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // 计划状态提示
-                HStack {
-                    Image(systemName: "calendar.badge.clock")
-                        .foregroundColor(.orange)
-                    Text("计划中 - 尚未扣减库存")
-                        .font(.subheadline)
-                        .foregroundColor(.orange)
-                    Spacer()
-                }
-                .padding()
-                .background(Color.orange.opacity(0.1))
-                .cornerRadius(10)
-                .padding(.horizontal)
-
-                // 项目信息卡片
-                PlannedProjectInfoCard(
-                    project: project,
-                    isParent: isParentProject,
-                    colorCount: colorCount,
-                    totalBeads: totalBeads,
-                    childCount: childProjects.count
-                )
-
-                // 操作按钮
-                HStack(spacing: 12) {
-                    // 库存确认按钮
-                    Button {
-                        showStockCheckSheet = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "checklist")
-                            Text("库存确认")
-                        }
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(12)
-                    }
-
-                    // 执行按钮
-                    Button {
-                        showExecuteSheet = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "play.fill")
-                            Text("执行扣减")
-                        }
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.green)
-                        .cornerRadius(12)
-                    }
-                }
-                .padding(.horizontal)
-
-                // 子项目列表
-                if isParentProject && !childProjects.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Button {
-                            withAnimation { showChildrenSection.toggle() }
-                        } label: {
-                            HStack {
-                                Text("子项目 (\(childProjects.count))")
-                                    .font(.headline)
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                Image(systemName: showChildrenSection ? "chevron.up" : "chevron.down")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        if showChildrenSection {
-                            ForEach(childProjects) { child in
-                                PlannedChildProjectRowWithActions(
-                                    project: child,
-                                    onDelete: {
-                                        inventoryManager.deletePlannedProject(child.id)
-                                    },
-                                    onDetach: {
-                                        inventoryManager.detachProject(child.id)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    .padding()
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
-                    .padding(.horizontal)
-                }
-
-                // 排序选择
-                HStack {
-                    Text(isParentProject ? "汇总颜色用量" : "颜色用量")
-                        .font(.headline)
-
-                    Spacer()
-
-                    Menu {
-                        Button {
-                            sortByQuantity = true
-                        } label: {
-                            Label("按用量排序", systemImage: sortByQuantity ? "checkmark" : "")
-                        }
-
-                        Button {
-                            sortByQuantity = false
-                        } label: {
-                            Label("按色号排序", systemImage: sortByQuantity ? "" : "checkmark")
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(sortByQuantity ? "按用量" : "按色号")
-                                .font(.subheadline)
-                            Image(systemName: "arrow.up.arrow.down")
-                                .font(.caption)
-                        }
-                        .foregroundColor(.accentColor)
-                    }
-                }
-                .padding(.horizontal)
-
-                // 颜色用量列表
-                LazyVStack(spacing: 8) {
-                    ForEach(sortedUsage) { usage in
-                        PlannedBeadUsageRow(usage: usage)
-                    }
-                }
-                .padding(.horizontal)
+                statusBannerView
+                infoCardView
+                actionButtonsView
+                childProjectsView
+                sortHeaderView
+                usageListView
             }
             .padding(.vertical)
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle(currentProject?.name ?? project.name)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if !isParentProject {
-                    Button {
-                        showEditSheet = true
-                    } label: {
-                        Text("编辑")
+        .toolbar { toolbarContent }
+        .sheet(isPresented: $showExecuteSheet) { executeSheet }
+        .sheet(isPresented: $showStockCheckSheet) { stockCheckSheet }
+        .sheet(isPresented: $showEditSheet) { editSheet }
+        .onChange(of: currentProject?.isPlanned) { _, isPlanned in
+            if isPlanned == false { dismiss() }
+        }
+        .onChange(of: currentProject) { _, newProject in
+            if newProject == nil { dismiss() }
+        }
+    }
+
+    // MARK: - 子视图
+
+    private var statusBannerView: some View {
+        HStack {
+            Image(systemName: "calendar.badge.clock")
+                .foregroundColor(.orange)
+            Text("计划中 - 尚未扣减库存")
+                .font(.subheadline)
+                .foregroundColor(.orange)
+            Spacer()
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(10)
+        .padding(.horizontal)
+    }
+
+    private var infoCardView: some View {
+        PlannedProjectInfoCard(
+            project: project,
+            isParent: isParentProject,
+            colorCount: colorCount,
+            totalBeads: totalBeads,
+            childCount: childProjects.count
+        )
+    }
+
+    private var actionButtonsView: some View {
+        HStack(spacing: 12) {
+            stockCheckButton
+            executeButton
+        }
+        .padding(.horizontal)
+    }
+
+    private var stockCheckButton: some View {
+        Button {
+            showStockCheckSheet = true
+        } label: {
+            HStack {
+                Image(systemName: "checklist")
+                Text("库存确认")
+            }
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.blue)
+            .cornerRadius(12)
+        }
+    }
+
+    private var executeButton: some View {
+        Button {
+            showExecuteSheet = true
+        } label: {
+            HStack {
+                Image(systemName: "play.fill")
+                Text("执行扣减")
+            }
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.green)
+            .cornerRadius(12)
+        }
+    }
+
+    @ViewBuilder
+    private var childProjectsView: some View {
+        if isParentProject && !childProjects.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Button {
+                    withAnimation { showChildrenSection.toggle() }
+                } label: {
+                    HStack {
+                        Text("子项目 (\(childProjects.count))")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Image(systemName: showChildrenSection ? "chevron.up" : "chevron.down")
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                if showChildrenSection {
+                    ForEach(childProjects) { child in
+                        PlannedChildProjectRowWithActions(
+                            project: child,
+                            onDelete: { inventoryManager.deletePlannedProject(child.id) },
+                            onDetach: { inventoryManager.detachProject(child.id) }
+                        )
                     }
                 }
             }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .padding(.horizontal)
         }
-        .sheet(isPresented: $showExecuteSheet) {
-            ExecutePlannedProjectSheet(project: currentProject ?? project) {
-                // 执行成功后返回
-                dismiss()
+    }
+
+    private var sortHeaderView: some View {
+        HStack {
+            Text(isParentProject ? "汇总颜色用量" : "颜色用量")
+                .font(.headline)
+            Spacer()
+            sortMenu
+        }
+        .padding(.horizontal)
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            Button {
+                sortByQuantity = true
+            } label: {
+                Label("按用量排序", systemImage: sortByQuantity ? "checkmark" : "")
             }
+            Button {
+                sortByQuantity = false
+            } label: {
+                Label("按色号排序", systemImage: sortByQuantity ? "" : "checkmark")
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(sortByQuantity ? "按用量" : "按色号")
+                    .font(.subheadline)
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.caption)
+            }
+            .foregroundColor(.accentColor)
+        }
+    }
+
+    private var usageListView: some View {
+        LazyVStack(spacing: 8) {
+            ForEach(sortedUsage) { usage in
+                PlannedBeadUsageRow(usage: usage)
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            if !isParentProject {
+                Button {
+                    showEditSheet = true
+                } label: {
+                    Text("编辑")
+                }
+            }
+        }
+    }
+
+    // MARK: - Sheets
+
+    private var executeSheet: some View {
+        ExecutePlannedProjectSheet(project: currentProject ?? project) {
+            dismiss()
+        }
+        .environmentObject(inventoryManager)
+    }
+
+    private var stockCheckSheet: some View {
+        StockCheckSheet(project: currentProject ?? project)
             .environmentObject(inventoryManager)
-        }
-        .sheet(isPresented: $showStockCheckSheet) {
-            StockCheckSheet(project: currentProject ?? project)
+    }
+
+    @ViewBuilder
+    private var editSheet: some View {
+        if let proj = currentProject, !isParentProject {
+            EditPlannedProjectSheet(project: proj)
                 .environmentObject(inventoryManager)
-        }
-        .sheet(isPresented: $showEditSheet) {
-            if let proj = currentProject, !isParentProject {
-                EditPlannedProjectSheet(project: proj)
-                    .environmentObject(inventoryManager)
-            }
-        }
-        .onChange(of: currentProject?.isPlanned) { _, isPlanned in
-            // 项目被执行后自动返回
-            if isPlanned == false {
-                dismiss()
-            }
-        }
-        .onChange(of: currentProject) { _, newProject in
-            // 项目被删除后自动返回
-            if newProject == nil {
-                dismiss()
-            }
         }
     }
 }
