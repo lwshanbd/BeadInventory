@@ -96,7 +96,9 @@ struct HistoryRowView: View {
     let record: HistoryRecord
     let onRevert: () -> Void
 
+    @ObservedObject private var historyManager = HistoryManager.shared
     @State private var showingRevertAlert = false
+    @State private var showingDisabledAlert = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -105,9 +107,18 @@ struct HistoryRowView: View {
 
             // 内容
             VStack(alignment: .leading, spacing: 4) {
-                Text(record.operationType.displayName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                HStack(spacing: 4) {
+                    Text(record.operationType.displayName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+
+                    // 显示不可撤回标记
+                    if !historyManager.canRevert(record) {
+                        Image(systemName: "lock.fill")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
 
                 Text(record.entityName)
                     .font(.caption)
@@ -124,13 +135,21 @@ struct HistoryRowView: View {
         }
         .padding(.vertical, 4)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if canRevert(record) {
+            if historyManager.canRevert(record) {
                 Button {
                     showingRevertAlert = true
                 } label: {
                     Label("撤回", systemImage: "arrow.uturn.backward")
                 }
                 .tint(.orange)
+            } else if let reason = historyManager.revertDisabledReason(record) {
+                // 显示禁用原因的按钮
+                Button {
+                    showingDisabledAlert = true
+                } label: {
+                    Label("不可撤回", systemImage: "lock.fill")
+                }
+                .tint(.gray)
             }
         }
         .alert("确认撤回", isPresented: $showingRevertAlert) {
@@ -139,7 +158,22 @@ struct HistoryRowView: View {
                 onRevert()
             }
         } message: {
-            Text("确定要撤回「\(record.operationType.displayName): \(record.entityName)」吗？")
+            Text(revertConfirmMessage)
+        }
+        .alert("无法撤回", isPresented: $showingDisabledAlert) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(historyManager.revertDisabledReason(record) ?? "此操作不支持撤回")
+        }
+    }
+
+    // 撤回确认消息
+    private var revertConfirmMessage: String {
+        switch record.operationType {
+        case .planExecute:
+            return "确定要撤回执行「\(record.entityName)」吗？\n\n库存将恢复，项目将变回计划状态。"
+        default:
+            return "确定要撤回「\(record.operationType.displayName): \(record.entityName)」吗？"
         }
     }
 
@@ -162,17 +196,6 @@ struct HistoryRowView: View {
         case "indigo": return .indigo
         case "teal": return .teal
         default: return .primary
-        }
-    }
-
-    // 判断是否可以撤回
-    private func canRevert(_ record: HistoryRecord) -> Bool {
-        switch record.operationType {
-        case .stockReset, .projectMerge, .planExecute:
-            // 这些操作不支持撤回
-            return false
-        default:
-            return true
         }
     }
 }

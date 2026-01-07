@@ -207,6 +207,44 @@ class InventoryManager: ObservableObject {
         return false
     }
 
+    /// 撤回库存扣减（不记录历史）
+    func revertFromStock(brandId: UUID, colorCode: String, amount: Int) -> Bool {
+        guard let color = findColor(byCode: colorCode) else { return false }
+
+        if let index = brandStocks.firstIndex(where: {
+            $0.brandId == brandId && $0.mardCode == color.mardCode
+        }) {
+            brandStocks[index].used -= amount
+            saveData()
+            return true
+        }
+        return false
+    }
+
+    /// 撤回计划执行：恢复项目状态和库存
+    func revertPlanExecute(projectId: UUID, brandId: UUID, beadUsages: [(colorCode: String, quantity: Int)]) -> Bool {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else {
+            return false
+        }
+
+        // 恢复库存（把扣减的库存加回去）
+        for usage in beadUsages {
+            _ = revertFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity)
+        }
+
+        // 恢复项目状态
+        projects[index].isPlanned = true
+        projects[index].brandId = nil
+        projects[index].executedDate = nil
+        projects[index].beadUsage = projects[index].beadUsage.map { usage in
+            BeadUsage(id: usage.id, colorCode: usage.colorCode, brandId: nil,
+                      quantity: usage.quantity, isDeducted: false)
+        }
+
+        saveData()
+        return true
+    }
+
     // MARK: - 品牌统计
 
     func totalStock(for brandId: UUID) -> Int {
@@ -838,6 +876,9 @@ class InventoryManager: ObservableObject {
             return executePlannedParentProject(projectId, withBrand: brandId)
         }
 
+        // 保存执行前的项目状态（用于撤回）
+        let beforeProject = project
+
         // 执行库存扣减
         for usage in project.beadUsage {
             _ = deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity)
@@ -855,8 +896,8 @@ class InventoryManager: ObservableObject {
 
         saveData()
 
-        // 记录历史
-        historyManager.recordProject(type: .planExecute, project: projects[index])
+        // 记录历史（保存执行前和执行后的状态）
+        historyManager.recordPlanExecute(beforeProject: beforeProject, afterProject: projects[index])
 
         return true
     }

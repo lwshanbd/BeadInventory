@@ -179,7 +179,12 @@ class HistoryManager: ObservableObject {
         case .projectDelete, .planDelete:
             beforeData = snapshotData
             afterData = nil
-        case .projectArchive, .projectUnarchive, .planExecute, .planUpdate:
+        case .projectArchive, .projectUnarchive, .planUpdate:
+            beforeData = snapshotData
+            afterData = snapshotData
+        case .planExecute:
+            // planExecute 应该使用 recordPlanExecute 方法
+            // 这里保持向后兼容，但快照不完整
             beforeData = snapshotData
             afterData = snapshotData
         default:
@@ -201,7 +206,142 @@ class HistoryManager: ObservableObject {
         print("[History] 记录项目操作: \(type.displayName) - \(project.name)")
     }
 
+    /// 记录计划执行操作（需要同时保存执行前和执行后的状态）
+    func recordPlanExecute(
+        beforeProject: ProjectRecord,
+        afterProject: ProjectRecord
+    ) {
+        // 撤回操作时不记录新的历史
+        guard !isReverting else { return }
+
+        // 执行前快照
+        let beforeUsages = beforeProject.beadUsage.map {
+            BeadUsageSnapshot(colorCode: $0.colorCode, brandId: $0.brandId, quantity: $0.quantity, isDeducted: $0.isDeducted)
+        }
+        let beforeSnapshot = ProjectSnapshot(
+            id: beforeProject.id,
+            name: beforeProject.name,
+            date: beforeProject.date,
+            totalBeads: beforeProject.totalBeads,
+            brandId: beforeProject.brandId,
+            isArchived: beforeProject.isArchived,
+            parentId: beforeProject.parentId,
+            isPlanned: beforeProject.isPlanned,
+            executedDate: beforeProject.executedDate,
+            beadUsages: beforeUsages
+        )
+
+        // 执行后快照
+        let afterUsages = afterProject.beadUsage.map {
+            BeadUsageSnapshot(colorCode: $0.colorCode, brandId: $0.brandId, quantity: $0.quantity, isDeducted: $0.isDeducted)
+        }
+        let afterSnapshot = ProjectSnapshot(
+            id: afterProject.id,
+            name: afterProject.name,
+            date: afterProject.date,
+            totalBeads: afterProject.totalBeads,
+            brandId: afterProject.brandId,
+            isArchived: afterProject.isArchived,
+            parentId: afterProject.parentId,
+            isPlanned: afterProject.isPlanned,
+            executedDate: afterProject.executedDate,
+            beadUsages: afterUsages
+        )
+
+        let beforeData = try? JSONEncoder().encode(beforeSnapshot)
+        let afterData = try? JSONEncoder().encode(afterSnapshot)
+
+        let record = HistoryRecord(
+            operationType: .planExecute,
+            entityName: afterProject.name,
+            beforeSnapshot: beforeData,
+            afterSnapshot: afterData
+        )
+
+        records.insert(record, at: 0)
+        trimRecords()
+        saveData()
+
+        print("[History] 记录计划执行: \(afterProject.name)")
+    }
+
     // MARK: - 撤回操作
+
+    /// 检查某个记录是否可以撤回
+    func canRevert(_ record: HistoryRecord) -> Bool {
+        switch record.operationType {
+        case .stockReset, .projectMerge:
+            // 这些操作不支持撤回
+            return false
+
+        case .planExecute:
+            // 现在支持撤回执行操作
+            // 检查是否有足够的快照信息
+            guard let afterData = record.afterSnapshot,
+                  let afterSnapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: afterData),
+                  afterSnapshot.brandId != nil else {
+                return false
+            }
+            // 检查项目是否还存在
+            guard let manager = inventoryManager,
+                  manager.projects.contains(where: { $0.id == afterSnapshot.id }) else {
+                return false
+            }
+            return true
+
+        case .planAdd:
+            // 如果计划已执行，不能直接撤回添加计划
+            guard let afterData = record.afterSnapshot,
+                  let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: afterData) else {
+                return false
+            }
+            // 检查项目当前状态
+            if let manager = inventoryManager,
+               let currentProject = manager.projects.first(where: { $0.id == snapshot.id }) {
+                if !currentProject.isPlanned {
+                    // 项目已执行，不能撤回添加计划
+                    return false
+                }
+            }
+            return true
+
+        default:
+            return true
+        }
+    }
+
+    /// 获取不能撤回的原因
+    func revertDisabledReason(_ record: HistoryRecord) -> String? {
+        switch record.operationType {
+        case .stockReset:
+            return "库存重置影响范围太大，不支持撤回"
+        case .projectMerge:
+            return "项目合并操作过于复杂，不支持撤回"
+        case .planAdd:
+            if let afterData = record.afterSnapshot,
+               let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: afterData),
+               let manager = inventoryManager,
+               let currentProject = manager.projects.first(where: { $0.id == snapshot.id }),
+               !currentProject.isPlanned {
+                return "计划已执行，请先撤回「执行计划」操作"
+            }
+            return nil
+        case .planExecute:
+            if let afterData = record.afterSnapshot,
+               let afterSnapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: afterData) {
+                if afterSnapshot.brandId == nil {
+                    return "缺少品牌信息，无法撤回"
+                }
+                if let manager = inventoryManager,
+                   !manager.projects.contains(where: { $0.id == afterSnapshot.id }) {
+                    return "项目已被删除，无法撤回"
+                }
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
 
     /// 撤回一个操作
     @discardableResult
@@ -345,17 +485,42 @@ class HistoryManager: ObservableObject {
 
         // 计划操作撤回
         case .planAdd:
-            // 撤回添加 = 删除
+            // 撤回添加 = 删除（但需要检查是否已执行）
             if let afterData = record.afterSnapshot,
                let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: afterData) {
+                // 检查项目当前是否已执行
+                if let currentProject = manager.projects.first(where: { $0.id == snapshot.id }) {
+                    if !currentProject.isPlanned {
+                        // 项目已执行，不能直接撤回添加计划，需要先撤回执行
+                        print("[History] 计划已执行，请先撤回执行操作")
+                        return false
+                    }
+                }
                 manager.deletePlannedProject(snapshot.id)
                 return true
             }
             return false
 
         case .planExecute:
-            // 执行计划的撤回比较复杂，需要恢复库存和状态
-            // 暂不支持
+            // 撤回执行 = 恢复库存 + 恢复项目状态
+            if let afterData = record.afterSnapshot,
+               let afterSnapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: afterData) {
+                // 使用执行后快照中的 brandId 和 beadUsages
+                guard let brandId = afterSnapshot.brandId else {
+                    print("[History] 无法撤回执行：缺少品牌信息")
+                    return false
+                }
+
+                // 提取需要恢复的库存信息
+                let beadUsages = afterSnapshot.beadUsages.map { (colorCode: $0.colorCode, quantity: $0.quantity) }
+
+                // 调用 InventoryManager 的撤回方法
+                return manager.revertPlanExecute(
+                    projectId: afterSnapshot.id,
+                    brandId: brandId,
+                    beadUsages: beadUsages
+                )
+            }
             return false
 
         case .planDelete:

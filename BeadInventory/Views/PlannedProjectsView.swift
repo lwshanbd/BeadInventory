@@ -575,7 +575,7 @@ struct ExecutePlannedProjectSheet: View {
                 }
             } message: {
                 if let brand = selectedBrand {
-                    Text("将从「\(brand.name)」品牌库存中扣减 \(totalBeads) 颗豆子（\(colorCount) 种颜色）。此操作不可撤销。")
+                    Text("将从「\(brand.name)」品牌库存中扣减 \(totalBeads) 颗豆子（\(colorCount) 种颜色）。可在历史记录中撤回此操作。")
                 }
             }
         }
