@@ -37,20 +37,22 @@ struct InventoryView: View {
 
     var filteredColors: [BeadColor] {
         let colors = inventoryManager.searchColors(searchText)
+        // 过滤掉隐藏的色号（只显示在 stockDict 中存在的颜色）
+        let visibleColors = colors.filter { stockDict[$0.mardCode] != nil }
         let sorted: [BeadColor]
         switch sortOption {
         case .code:
-            sorted = colors.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
+            sorted = visibleColors.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
         case .stock:
-            sorted = colors.sorted {
+            sorted = visibleColors.sorted {
                 (stockDict[$0.mardCode]?.available ?? 0) < (stockDict[$1.mardCode]?.available ?? 0)
             }
         case .used:
-            sorted = colors.sorted {
+            sorted = visibleColors.sorted {
                 (stockDict[$0.mardCode]?.used ?? 0) < (stockDict[$1.mardCode]?.used ?? 0)
             }
         case .name:
-            sorted = colors.sorted { $0.colorName < $1.colorName }
+            sorted = visibleColors.sorted { $0.colorName < $1.colorName }
         }
         return sortAscending ? sorted : sorted.reversed()
     }
