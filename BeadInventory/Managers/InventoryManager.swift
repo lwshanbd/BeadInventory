@@ -157,6 +157,10 @@ class InventoryManager: ObservableObject {
             let oldStock = brandStocks[index].stock
             let newValue = max(0, newStock)
             brandStocks[index].stock = newValue
+            // 如果是隐藏的色号，自动取消隐藏
+            if brandStocks[index].isHidden {
+                brandStocks[index].isHidden = false
+            }
             saveData()
 
             // 记录历史
@@ -177,6 +181,10 @@ class InventoryManager: ObservableObject {
         }) {
             let oldStock = brandStocks[index].stock
             brandStocks[index].stock += amount
+            // 如果是隐藏的色号，自动取消隐藏
+            if brandStocks[index].isHidden {
+                brandStocks[index].isHidden = false
+            }
             saveData()
 
             // 记录历史（仅当不是撤回操作导致的负数调整时）
@@ -201,6 +209,10 @@ class InventoryManager: ObservableObject {
             $0.brandId == brandId && $0.mardCode == color.mardCode
         }) {
             brandStocks[index].used += amount
+            // 如果是隐藏的色号，自动取消隐藏
+            if brandStocks[index].isHidden {
+                brandStocks[index].isHidden = false
+            }
             saveData()
             return true
         }
@@ -248,19 +260,73 @@ class InventoryManager: ObservableObject {
     // MARK: - 品牌统计
 
     func totalStock(for brandId: UUID) -> Int {
-        brandStocks.filter { $0.brandId == brandId }.reduce(0) { $0 + $1.stock }
+        brandStocks.filter { $0.brandId == brandId && !$0.isHidden }.reduce(0) { $0 + $1.stock }
     }
 
     func totalUsed(for brandId: UUID) -> Int {
-        brandStocks.filter { $0.brandId == brandId }.reduce(0) { $0 + $1.used }
+        brandStocks.filter { $0.brandId == brandId && !$0.isHidden }.reduce(0) { $0 + $1.used }
     }
 
     func totalAvailable(for brandId: UUID) -> Int {
-        brandStocks.filter { $0.brandId == brandId }.reduce(0) { $0 + $1.available }
+        brandStocks.filter { $0.brandId == brandId && !$0.isHidden }.reduce(0) { $0 + $1.available }
     }
 
     func lowStockColors(for brandId: UUID) -> [BrandStock] {
-        brandStocks.filter { $0.brandId == brandId && $0.available < 100 }
+        brandStocks.filter { $0.brandId == brandId && !$0.isHidden && $0.available < 100 }
+    }
+
+    // MARK: - 隐藏色号管理
+
+    /// 隐藏指定品牌的色号（清零库存）
+    func hideColor(brandId: UUID, mardCode: String) {
+        guard let index = brandStocks.firstIndex(where: {
+            $0.brandId == brandId && $0.mardCode == mardCode
+        }) else { return }
+
+        // 清零库存并标记隐藏
+        brandStocks[index].stock = 0
+        brandStocks[index].used = 0
+        brandStocks[index].isHidden = true
+
+        saveData()
+    }
+
+    /// 取消隐藏指定品牌的色号（恢复默认库存）
+    func unhideColor(brandId: UUID, mardCode: String, defaultStock: Int = 1000) {
+        guard let index = brandStocks.firstIndex(where: {
+            $0.brandId == brandId && $0.mardCode == mardCode
+        }) else { return }
+
+        // 取消隐藏并恢复默认库存
+        brandStocks[index].isHidden = false
+        brandStocks[index].stock = defaultStock
+        brandStocks[index].used = 0
+
+        saveData()
+    }
+
+    /// 批量取消隐藏色号
+    func unhideColors(brandId: UUID, mardCodes: [String], defaultStock: Int = 1000) {
+        for mardCode in mardCodes {
+            if let index = brandStocks.firstIndex(where: {
+                $0.brandId == brandId && $0.mardCode == mardCode
+            }) {
+                brandStocks[index].isHidden = false
+                brandStocks[index].stock = defaultStock
+                brandStocks[index].used = 0
+            }
+        }
+        saveData()
+    }
+
+    /// 获取指定品牌的隐藏色号列表
+    func hiddenColors(for brandId: UUID) -> [BrandStock] {
+        brandStocks.filter { $0.brandId == brandId && $0.isHidden }
+    }
+
+    /// 获取指定品牌隐藏色号的数量
+    func hiddenColorCount(for brandId: UUID) -> Int {
+        brandStocks.filter { $0.brandId == brandId && $0.isHidden }.count
     }
 
     // MARK: - 数据持久化 (SwiftData)

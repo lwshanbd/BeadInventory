@@ -42,25 +42,27 @@ final class SDBrandStock {
     var mardCode: String
     var stock: Int
     var used: Int
+    var isHidden: Bool = false  // 是否隐藏（隐藏的色号不显示在库存列表中）
 
     var available: Int {
         stock - used
     }
 
-    init(id: UUID = UUID(), brandId: UUID, mardCode: String, stock: Int = 1000, used: Int = 0) {
+    init(id: UUID = UUID(), brandId: UUID, mardCode: String, stock: Int = 1000, used: Int = 0, isHidden: Bool = false) {
         self.id = id
         self.brandId = brandId
         self.mardCode = mardCode
         self.stock = stock
         self.used = used
+        self.isHidden = isHidden
     }
 
     convenience init(from brandStock: BrandStock) {
-        self.init(id: brandStock.id, brandId: brandStock.brandId, mardCode: brandStock.mardCode, stock: brandStock.stock, used: brandStock.used)
+        self.init(id: brandStock.id, brandId: brandStock.brandId, mardCode: brandStock.mardCode, stock: brandStock.stock, used: brandStock.used, isHidden: brandStock.isHidden)
     }
 
     func toStruct() -> BrandStock {
-        BrandStock(id: id, brandId: brandId, mardCode: mardCode, stock: stock, used: used)
+        BrandStock(id: id, brandId: brandId, mardCode: mardCode, stock: stock, used: used, isHidden: isHidden)
     }
 }
 

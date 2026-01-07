@@ -115,6 +115,30 @@ struct BrandSettingsView: View {
                         Text("重置库存会将所有颜色的库存设为指定数量并清零使用记录。清除使用记录只会重置已使用数量。")
                     }
 
+                    // 色号管理
+                    Section {
+                        NavigationLink {
+                            HiddenColorsManageView()
+                        } label: {
+                            HStack {
+                                Image(systemName: "eye.slash")
+                                Text("隐藏色号管理")
+                                Spacer()
+                                if let brandId = inventoryManager.currentBrandId {
+                                    let count = inventoryManager.hiddenColorCount(for: brandId)
+                                    if count > 0 {
+                                        Text("\(count) 个")
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("色号管理")
+                    } footer: {
+                        Text("隐藏不需要的色号，它们不会出现在库存列表和低库存提醒中。")
+                    }
+
                     // 危险操作
                     Section {
                         Button {

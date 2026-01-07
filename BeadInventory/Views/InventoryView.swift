@@ -22,10 +22,10 @@ struct InventoryView: View {
         case name = "名称"
     }
 
-    // 获取当前品牌的库存字典
+    // 获取当前品牌的库存字典（排除隐藏的色号）
     var stockDict: [String: BrandStock] {
         guard let brandId = inventoryManager.currentBrandId else { return [:] }
-        let stocks = inventoryManager.brandStocks.filter { $0.brandId == brandId }
+        let stocks = inventoryManager.brandStocks.filter { $0.brandId == brandId && !$0.isHidden }
         return Dictionary(uniqueKeysWithValues: stocks.map { ($0.mardCode, $0) })
     }
 
@@ -326,6 +326,7 @@ struct EditStockSheet: View {
     @State private var usedAmount: String = ""
     @State private var adjustAmount: String = ""
     @State private var isAdding = true
+    @State private var showingHideAlert = false
     @FocusState private var isInputFocused: Bool
 
     var currentStock: Int { stock?.stock ?? 0 }
@@ -456,6 +457,33 @@ struct EditStockSheet: View {
                 .padding()
                 .background(Color(.systemGray6))
                 .cornerRadius(16)
+
+                // 隐藏色号
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("色号管理")
+                        .font(.headline)
+
+                    Button {
+                        showingHideAlert = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "eye.slash")
+                            Text("隐藏此色号")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .foregroundColor(.orange)
+                    }
+
+                    Text("隐藏后该色号不会出现在库存列表中，库存将被清零。可在品牌设置中恢复。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(16)
             }
             .padding()
             }
@@ -480,6 +508,14 @@ struct EditStockSheet: View {
         .onAppear {
             stockAmount = "\(currentStock)"
             usedAmount = "\(currentUsed)"
+        }
+        .alert("隐藏色号", isPresented: $showingHideAlert) {
+            Button("取消", role: .cancel) { }
+            Button("隐藏", role: .destructive) {
+                hideCurrentColor()
+            }
+        } message: {
+            Text("确定要隐藏 \(color.mardCode) 吗？\n\n库存将被清零，该色号不会出现在库存列表和低库存提醒中。可在品牌设置 > 隐藏色号管理中恢复。")
         }
     }
 
@@ -517,6 +553,12 @@ struct EditStockSheet: View {
             inventoryManager.brandStocks[index].used = newUsed
             inventoryManager.saveData()
         }
+        dismiss()
+    }
+
+    func hideCurrentColor() {
+        guard let brandId = inventoryManager.currentBrandId else { return }
+        inventoryManager.hideColor(brandId: brandId, mardCode: color.mardCode)
         dismiss()
     }
 }
