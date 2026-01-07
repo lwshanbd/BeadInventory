@@ -14,6 +14,12 @@ struct InventoryView: View {
     @State private var showingBrandSettings = false
     @State private var sortOption: SortOption = .code
     @State private var sortAscending: Bool = true
+    @AppStorage("inventoryViewMode") private var viewMode: ViewMode = .list
+
+    enum ViewMode: String {
+        case list = "list"
+        case grid = "grid"
+    }
 
     enum SortOption: String, CaseIterable {
         case code = "色号"
@@ -121,25 +127,45 @@ struct InventoryView: View {
                     .padding(.bottom, 8)
 
                     // 颜色列表
-                    ScrollView {
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible()),
-                            GridItem(.flexible())
-                        ], spacing: 12) {
+                    if viewMode == .grid {
+                        // 网格模式
+                        ScrollView {
+                            LazyVGrid(columns: [
+                                GridItem(.flexible()),
+                                GridItem(.flexible()),
+                                GridItem(.flexible())
+                            ], spacing: 12) {
+                                ForEach(filteredColors) { color in
+                                    ColorCardView(
+                                        color: color,
+                                        stock: stockDict[color.mardCode],
+                                        sortOption: sortOption
+                                    )
+                                    .onTapGesture {
+                                        selectedColor = color
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 20)
+                        }
+                    } else {
+                        // 列表模式
+                        List {
                             ForEach(filteredColors) { color in
-                                ColorCardView(
+                                ColorRowView(
                                     color: color,
                                     stock: stockDict[color.mardCode],
                                     sortOption: sortOption
                                 )
+                                .contentShape(Rectangle())
                                 .onTapGesture {
                                     selectedColor = color
                                 }
+                                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                             }
                         }
-                        .padding(.horizontal)
-                        .padding(.bottom, 20)
+                        .listStyle(.plain)
                     }
                 } else {
                     // 没有品牌时的提示
@@ -161,6 +187,17 @@ struct InventoryView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("啃豆小仓")
             .searchable(text: $searchText, prompt: "搜索色号或名称")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation {
+                            viewMode = viewMode == .list ? .grid : .list
+                        }
+                    } label: {
+                        Image(systemName: viewMode == .list ? "square.grid.3x3" : "list.bullet")
+                    }
+                }
+            }
             .sheet(item: $selectedColor) { color in
                 EditStockSheet(color: color, stock: stockDict[color.mardCode])
             }
@@ -312,6 +349,83 @@ struct ColorCardView: View {
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+    }
+}
+
+// MARK: - 颜色行视图（列表模式）
+struct ColorRowView: View {
+    let color: BeadColor
+    let stock: BrandStock?
+    var sortOption: InventoryView.SortOption = .code
+
+    var available: Int { stock?.available ?? 0 }
+    var used: Int { stock?.used ?? 0 }
+    var totalStock: Int { stock?.stock ?? 0 }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // 颜色块
+            RoundedRectangle(cornerRadius: 8)
+                .fill(color.color)
+                .frame(width: 44, height: 44)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+
+            // 色号和名称
+            VStack(alignment: .leading, spacing: 4) {
+                Text(color.mardCode)
+                    .font(.system(.headline, design: .monospaced))
+
+                Text(color.colorName)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            // 库存信息
+            VStack(alignment: .trailing, spacing: 4) {
+                if sortOption == .used {
+                    // 按用量排序时显示用量
+                    Text("\(used)")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundColor(used > 0 ? .orange : .secondary)
+                    Text("已用")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    // 其他排序显示剩余量
+                    Text("\(available)")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundColor(available < 100 ? .red : .primary)
+                    if used > 0 {
+                        Text("-\(used)")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    } else {
+                        Text("可用")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            // 低库存标识
+            if available < 100 {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                    .font(.subheadline)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
     }
 }
 
