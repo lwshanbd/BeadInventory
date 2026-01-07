@@ -964,6 +964,63 @@ class InventoryManager: ObservableObject {
         }
     }
 
+    /// 更新计划项目内容（名称和用量）
+    func updatePlannedProject(_ projectId: UUID, newName: String, newBeadUsage: [BeadUsage]) {
+        if let index = projects.firstIndex(where: { $0.id == projectId && $0.isPlanned }) {
+            // 记录历史（在修改前）
+            historyManager.recordProject(type: .planUpdate, project: projects[index])
+
+            projects[index].name = newName
+            projects[index].beadUsage = newBeadUsage
+            saveData()
+        }
+    }
+
+    /// 更新计划项目单个颜色的数量
+    func updatePlannedProjectUsage(_ projectId: UUID, colorCode: String, newQuantity: Int) {
+        if let index = projects.firstIndex(where: { $0.id == projectId && $0.isPlanned }) {
+            // 记录历史（在修改前）
+            historyManager.recordProject(type: .planUpdate, project: projects[index])
+
+            if let usageIndex = projects[index].beadUsage.firstIndex(where: { $0.colorCode == colorCode }) {
+                if newQuantity <= 0 {
+                    // 数量为0或负数时删除该颜色
+                    projects[index].beadUsage.remove(at: usageIndex)
+                } else {
+                    projects[index].beadUsage[usageIndex].quantity = newQuantity
+                }
+                saveData()
+            }
+        }
+    }
+
+    /// 删除计划项目中的单个颜色
+    func deletePlannedProjectUsage(_ projectId: UUID, colorCode: String) {
+        if let index = projects.firstIndex(where: { $0.id == projectId && $0.isPlanned }) {
+            // 记录历史（在修改前）
+            historyManager.recordProject(type: .planUpdate, project: projects[index])
+
+            projects[index].beadUsage.removeAll { $0.colorCode == colorCode }
+            saveData()
+        }
+    }
+
+    /// 添加计划项目中的颜色
+    func addPlannedProjectUsage(_ projectId: UUID, colorCode: String, quantity: Int) {
+        if let index = projects.firstIndex(where: { $0.id == projectId && $0.isPlanned }) {
+            // 检查是否已存在该颜色
+            if let usageIndex = projects[index].beadUsage.firstIndex(where: { $0.colorCode == colorCode }) {
+                // 已存在，增加数量
+                projects[index].beadUsage[usageIndex].quantity += quantity
+            } else {
+                // 不存在，添加新颜色
+                let newUsage = BeadUsage(colorCode: colorCode, brandId: nil, quantity: quantity, isDeducted: false)
+                projects[index].beadUsage.append(newUsage)
+            }
+            saveData()
+        }
+    }
+
     // MARK: - 统计
 
     var totalStock: Int {

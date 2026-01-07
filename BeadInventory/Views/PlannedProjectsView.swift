@@ -454,6 +454,7 @@ struct PlannedChildProjectRow: View {
 // MARK: - 执行计划弹窗
 struct ExecutePlannedProjectSheet: View {
     let project: ProjectRecord
+    var onExecuted: (() -> Void)? = nil
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
     @State private var selectedBrandId: UUID?
@@ -571,6 +572,7 @@ struct ExecutePlannedProjectSheet: View {
                     if let brandId = selectedBrandId {
                         inventoryManager.executePlannedProject(project.id, withBrand: brandId)
                         dismiss()
+                        onExecuted?()
                     }
                 }
             } message: {
@@ -681,10 +683,17 @@ struct MergePlannedProjectsSheet: View {
 struct PlannedProjectDetailView: View {
     let project: ProjectRecord
     @EnvironmentObject var inventoryManager: InventoryManager
+    @Environment(\.dismiss) var dismiss
     @State private var showExecuteSheet = false
     @State private var showStockCheckSheet = false
+    @State private var showEditSheet = false
     @State private var sortByQuantity = true
     @State private var showChildrenSection = true
+
+    // 获取当前项目的最新状态
+    var currentProject: ProjectRecord? {
+        inventoryManager.projects.first { $0.id == project.id }
+    }
 
     var isParentProject: Bool {
         inventoryManager.isParentProject(project.id)
@@ -863,15 +872,47 @@ struct PlannedProjectDetailView: View {
             .padding(.vertical)
         }
         .background(Color(.systemGroupedBackground))
-        .navigationTitle(project.name)
+        .navigationTitle(currentProject?.name ?? project.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if !isParentProject {
+                    Button {
+                        showEditSheet = true
+                    } label: {
+                        Text("编辑")
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $showExecuteSheet) {
-            ExecutePlannedProjectSheet(project: project)
-                .environmentObject(inventoryManager)
+            ExecutePlannedProjectSheet(project: currentProject ?? project) {
+                // 执行成功后返回
+                dismiss()
+            }
+            .environmentObject(inventoryManager)
         }
         .sheet(isPresented: $showStockCheckSheet) {
-            StockCheckSheet(project: project)
+            StockCheckSheet(project: currentProject ?? project)
                 .environmentObject(inventoryManager)
+        }
+        .sheet(isPresented: $showEditSheet) {
+            if let proj = currentProject, !isParentProject {
+                EditPlannedProjectSheet(project: proj)
+                    .environmentObject(inventoryManager)
+            }
+        }
+        .onChange(of: currentProject?.isPlanned) { _, isPlanned in
+            // 项目被执行后自动返回
+            if isPlanned == false {
+                dismiss()
+            }
+        }
+        .onChange(of: currentProject) { _, newProject in
+            // 项目被删除后自动返回
+            if newProject == nil {
+                dismiss()
+            }
         }
     }
 }
@@ -1311,6 +1352,416 @@ struct InsufficientColorRow: View {
         .padding(.horizontal, 8)
         .background(Color(.systemBackground))
         .cornerRadius(6)
+    }
+}
+
+// MARK: - 编辑计划项目弹窗
+struct EditPlannedProjectSheet: View {
+    let project: ProjectRecord
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @Environment(\.dismiss) var dismiss
+
+    @State private var projectName: String = ""
+    @State private var beadUsages: [EditableBeadUsage] = []
+    @State private var showAddColorSheet = false
+    @State private var editingUsageId: UUID?
+
+    // 可编辑的用量结构
+    struct EditableBeadUsage: Identifiable {
+        let id: UUID
+        var colorCode: String
+        var quantity: Int
+
+        init(from usage: BeadUsage) {
+            self.id = usage.id
+            self.colorCode = usage.colorCode
+            self.quantity = usage.quantity
+        }
+    }
+
+    var hasChanges: Bool {
+        if projectName != project.name { return true }
+        if beadUsages.count != project.beadUsage.count { return true }
+        for (index, usage) in beadUsages.enumerated() {
+            if index >= project.beadUsage.count { return true }
+            let original = project.beadUsage[index]
+            if usage.colorCode != original.colorCode || usage.quantity != original.quantity {
+                return true
+            }
+        }
+        return false
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                // 名称编辑
+                Section("项目名称") {
+                    TextField("输入名称", text: $projectName)
+                }
+
+                // 颜色用量编辑
+                Section {
+                    ForEach($beadUsages) { $usage in
+                        EditableUsageRow(
+                            usage: $usage,
+                            onDelete: {
+                                beadUsages.removeAll { $0.id == usage.id }
+                            }
+                        )
+                    }
+                    .onDelete { indexSet in
+                        beadUsages.remove(atOffsets: indexSet)
+                    }
+
+                    // 添加颜色按钮
+                    Button {
+                        showAddColorSheet = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(.green)
+                            Text("添加颜色")
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text("颜色用量")
+                        Spacer()
+                        Text("\(beadUsages.count) 色 · \(beadUsages.reduce(0) { $0 + $1.quantity }) 颗")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("编辑计划")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("保存") {
+                        saveChanges()
+                        dismiss()
+                    }
+                    .disabled(!hasChanges || projectName.isEmpty || beadUsages.isEmpty)
+                    .fontWeight(.semibold)
+                }
+            }
+            .sheet(isPresented: $showAddColorSheet) {
+                AddColorToProjectSheet { colorCode, quantity in
+                    // 检查是否已存在
+                    if let index = beadUsages.firstIndex(where: { $0.colorCode == colorCode }) {
+                        beadUsages[index].quantity += quantity
+                    } else {
+                        beadUsages.append(EditableBeadUsage(from: BeadUsage(
+                            colorCode: colorCode,
+                            brandId: nil,
+                            quantity: quantity,
+                            isDeducted: false
+                        )))
+                    }
+                }
+                .environmentObject(inventoryManager)
+            }
+        }
+        .onAppear {
+            projectName = project.name
+            beadUsages = project.beadUsage.map { EditableBeadUsage(from: $0) }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func saveChanges() {
+        let newUsages = beadUsages.map { usage in
+            BeadUsage(
+                id: usage.id,
+                colorCode: usage.colorCode,
+                brandId: nil,
+                quantity: usage.quantity,
+                isDeducted: false
+            )
+        }
+        inventoryManager.updatePlannedProject(project.id, newName: projectName, newBeadUsage: newUsages)
+    }
+}
+
+// MARK: - 可编辑用量行
+struct EditableUsageRow: View {
+    @Binding var usage: EditPlannedProjectSheet.EditableBeadUsage
+    let onDelete: () -> Void
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var quantityText: String = ""
+    @FocusState private var isQuantityFocused: Bool
+
+    var beadColor: BeadColor? {
+        inventoryManager.beadColors.first { $0.mardCode == usage.colorCode }
+    }
+
+    var displayColor: Color {
+        beadColor?.color ?? .gray
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // 颜色预览
+            RoundedRectangle(cornerRadius: 6)
+                .fill(displayColor)
+                .frame(width: 36, height: 36)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+
+            // 色号
+            Text(usage.colorCode)
+                .font(.system(.body, design: .monospaced))
+                .fontWeight(.medium)
+
+            Spacer()
+
+            // 数量输入
+            HStack(spacing: 8) {
+                Button {
+                    if usage.quantity > 1 {
+                        usage.quantity -= 1
+                        quantityText = "\(usage.quantity)"
+                    }
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(usage.quantity > 1 ? .orange : .gray)
+                }
+                .buttonStyle(.plain)
+                .disabled(usage.quantity <= 1)
+
+                TextField("数量", text: $quantityText)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.center)
+                    .frame(width: 60)
+                    .padding(.vertical, 6)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(8)
+                    .focused($isQuantityFocused)
+                    .onChange(of: quantityText) { _, newValue in
+                        if let value = Int(newValue), value > 0 {
+                            usage.quantity = value
+                        }
+                    }
+                    .onChange(of: isQuantityFocused) { _, focused in
+                        if !focused {
+                            // 失去焦点时验证并恢复
+                            if let value = Int(quantityText), value > 0 {
+                                usage.quantity = value
+                            }
+                            quantityText = "\(usage.quantity)"
+                        }
+                    }
+
+                Button {
+                    usage.quantity += 1
+                    quantityText = "\(usage.quantity)"
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.green)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // 删除按钮
+            Button {
+                onDelete()
+            } label: {
+                Image(systemName: "trash.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.red.opacity(0.8))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 4)
+        .onAppear {
+            quantityText = "\(usage.quantity)"
+        }
+    }
+}
+
+// MARK: - 添加颜色到项目弹窗
+struct AddColorToProjectSheet: View {
+    let onAdd: (String, Int) -> Void
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var inventoryManager: InventoryManager
+
+    @State private var searchText = ""
+    @State private var selectedColorCode: String?
+    @State private var quantity: Int = 1
+    @State private var quantityText: String = "1"
+    @FocusState private var isSearchFocused: Bool
+
+    var filteredColors: [BeadColor] {
+        if searchText.isEmpty {
+            return Array(inventoryManager.beadColors.prefix(50))
+        }
+        let search = searchText.uppercased()
+        return inventoryManager.beadColors.filter { color in
+            color.mardCode.uppercased().contains(search) ||
+            color.colorName.uppercased().contains(search) ||
+            color.cocoCode.uppercased().contains(search) ||
+            color.manmanCode.uppercased().contains(search)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // 搜索框
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    TextField("搜索色号或颜色名称", text: $searchText)
+                        .focused($isSearchFocused)
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+                .padding()
+
+                // 已选择的颜色和数量
+                if let colorCode = selectedColorCode,
+                   let color = inventoryManager.beadColors.first(where: { $0.mardCode == colorCode }) {
+                    VStack(spacing: 12) {
+                        HStack(spacing: 12) {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(color.color)
+                                .frame(width: 50, height: 50)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                )
+
+                            VStack(alignment: .leading) {
+                                Text(color.mardCode)
+                                    .font(.headline)
+                                Text(color.colorName)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            // 数量选择
+                            HStack(spacing: 8) {
+                                Button {
+                                    if quantity > 1 {
+                                        quantity -= 1
+                                        quantityText = "\(quantity)"
+                                    }
+                                } label: {
+                                    Image(systemName: "minus.circle.fill")
+                                        .font(.title2)
+                                        .foregroundColor(quantity > 1 ? .orange : .gray)
+                                }
+                                .disabled(quantity <= 1)
+
+                                TextField("数量", text: $quantityText)
+                                    .keyboardType(.numberPad)
+                                    .multilineTextAlignment(.center)
+                                    .frame(width: 60)
+                                    .padding(.vertical, 6)
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(8)
+                                    .onChange(of: quantityText) { _, newValue in
+                                        if let value = Int(newValue), value > 0 {
+                                            quantity = value
+                                        }
+                                    }
+
+                                Button {
+                                    quantity += 1
+                                    quantityText = "\(quantity)"
+                                } label: {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.title2)
+                                        .foregroundColor(.green)
+                                }
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                        .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
+                    }
+                    .padding(.horizontal)
+                }
+
+                // 颜色列表
+                List {
+                    ForEach(filteredColors) { color in
+                        Button {
+                            selectedColorCode = color.mardCode
+                        } label: {
+                            HStack(spacing: 12) {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(color.color)
+                                    .frame(width: 32, height: 32)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                    )
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(color.mardCode)
+                                        .font(.system(.subheadline, design: .monospaced))
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.primary)
+                                    Text(color.colorName)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Spacer()
+
+                                if selectedColorCode == color.mardCode {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.accentColor)
+                                }
+                            }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+            .navigationTitle("添加颜色")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("添加") {
+                        if let colorCode = selectedColorCode {
+                            onAdd(colorCode, quantity)
+                            dismiss()
+                        }
+                    }
+                    .disabled(selectedColorCode == nil)
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .onAppear {
+            isSearchFocused = true
+        }
     }
 }
 
