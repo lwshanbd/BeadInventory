@@ -55,7 +55,7 @@ struct BeadColor: Identifiable, Codable, Hashable {
 }
 
 // MARK: - 图纸记录模型
-struct ProjectRecord: Identifiable, Codable {
+struct ProjectRecord: Identifiable, Codable, Equatable {
     let id: UUID
     var name: String
     var date: Date
