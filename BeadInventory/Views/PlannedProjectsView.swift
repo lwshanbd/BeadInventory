@@ -707,7 +707,7 @@ struct PlannedProjectDetailView: View {
         if isParentProject {
             return inventoryManager.aggregatedBeadUsage(for: project.id)
         }
-        return project.beadUsage
+        return currentProject?.beadUsage ?? project.beadUsage
     }
 
     var sortedUsage: [BeadUsage] {
@@ -722,14 +722,14 @@ struct PlannedProjectDetailView: View {
         if isParentProject {
             return inventoryManager.aggregatedColorCount(for: project.id)
         }
-        return project.beadUsage.count
+        return currentProject?.beadUsage.count ?? project.beadUsage.count
     }
 
     var totalBeads: Int {
         if isParentProject {
             return inventoryManager.aggregatedTotalBeads(for: project.id)
         }
-        return project.totalBeads
+        return currentProject?.totalBeads ?? project.totalBeads
     }
 
     var body: some View {
@@ -778,7 +778,7 @@ struct PlannedProjectDetailView: View {
 
     private var infoCardView: some View {
         PlannedProjectInfoCard(
-            project: project,
+            project: currentProject ?? project,
             isParent: isParentProject,
             colorCount: colorCount,
             totalBeads: totalBeads,

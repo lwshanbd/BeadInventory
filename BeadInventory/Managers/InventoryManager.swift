@@ -972,6 +972,8 @@ class InventoryManager: ObservableObject {
 
             projects[index].name = newName
             projects[index].beadUsage = newBeadUsage
+            // 重新计算 totalBeads
+            projects[index].totalBeads = newBeadUsage.reduce(0) { $0 + $1.quantity }
             saveData()
         }
     }
@@ -989,6 +991,8 @@ class InventoryManager: ObservableObject {
                 } else {
                     projects[index].beadUsage[usageIndex].quantity = newQuantity
                 }
+                // 重新计算 totalBeads
+                projects[index].totalBeads = projects[index].beadUsage.reduce(0) { $0 + $1.quantity }
                 saveData()
             }
         }
@@ -1001,6 +1005,8 @@ class InventoryManager: ObservableObject {
             historyManager.recordProject(type: .planUpdate, project: projects[index])
 
             projects[index].beadUsage.removeAll { $0.colorCode == colorCode }
+            // 重新计算 totalBeads
+            projects[index].totalBeads = projects[index].beadUsage.reduce(0) { $0 + $1.quantity }
             saveData()
         }
     }
@@ -1017,6 +1023,8 @@ class InventoryManager: ObservableObject {
                 let newUsage = BeadUsage(colorCode: colorCode, brandId: nil, quantity: quantity, isDeducted: false)
                 projects[index].beadUsage.append(newUsage)
             }
+            // 重新计算 totalBeads
+            projects[index].totalBeads = projects[index].beadUsage.reduce(0) { $0 + $1.quantity }
             saveData()
         }
     }
