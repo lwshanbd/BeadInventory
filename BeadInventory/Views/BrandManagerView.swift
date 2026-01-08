@@ -10,7 +10,6 @@ import SwiftUI
 struct BrandManagerView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
-    @State private var newBrandName = ""
     @State private var showingAddBrand = false
     @State private var brandToDelete: Brand?
     @State private var brandToEdit: Brand?
@@ -80,17 +79,8 @@ struct BrandManagerView: View {
                     Button("完成") { dismiss() }
                 }
             }
-            .alert("添加品牌", isPresented: $showingAddBrand) {
-                TextField("品牌名称", text: $newBrandName)
-                Button("取消", role: .cancel) { newBrandName = "" }
-                Button("添加") {
-                    if !newBrandName.trimmingCharacters(in: .whitespaces).isEmpty {
-                        inventoryManager.addBrand(name: newBrandName.trimmingCharacters(in: .whitespaces))
-                        newBrandName = ""
-                    }
-                }
-            } message: {
-                Text("请输入品牌/供应商名称")
+            .sheet(isPresented: $showingAddBrand) {
+                AddBrandView()
             }
             .alert("编辑品牌", isPresented: Binding(
                 get: { brandToEdit != nil },

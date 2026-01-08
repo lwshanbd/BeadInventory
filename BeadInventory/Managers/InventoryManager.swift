@@ -64,7 +64,7 @@ class InventoryManager: ObservableObject {
     // MARK: - 品牌管理
 
     @discardableResult
-    func addBrand(name: String) -> Brand {
+    func addBrand(name: String, defaultStock: Int = 1000, selectedColors: Set<String>? = nil) -> Brand {
         let maxOrder = brands.map { $0.sortOrder }.max() ?? -1
         let brand = Brand(
             name: name,
@@ -73,7 +73,7 @@ class InventoryManager: ObservableObject {
         brands.append(brand)
 
         // 为新品牌初始化库存
-        initializeStockForBrand(brand.id)
+        initializeStockForBrand(brand.id, defaultStock: defaultStock, selectedColors: selectedColors)
 
         // 如果没有当前品牌，设为当前品牌
         if currentBrandId == nil {
@@ -134,13 +134,16 @@ class InventoryManager: ObservableObject {
 
     // MARK: - 品牌库存操作
 
-    func initializeStockForBrand(_ brandId: UUID, defaultStock: Int = 1000) {
+    func initializeStockForBrand(_ brandId: UUID, defaultStock: Int = 1000, selectedColors: Set<String>? = nil) {
         for color in beadColors {
+            // 如果指定了 selectedColors，则只有选中的颜色才有库存，未选中的标记为隐藏
+            let isSelected = selectedColors?.contains(color.mardCode) ?? true
             let stock = BrandStock(
                 brandId: brandId,
                 mardCode: color.mardCode,
-                stock: defaultStock,
-                used: 0
+                stock: isSelected ? defaultStock : 0,
+                used: 0,
+                isHidden: !isSelected
             )
             brandStocks.append(stock)
         }

@@ -38,6 +38,9 @@
 		A0123456000B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001B /* SettingsView.swift */; };
 		A0123456000C /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001C /* AIService.swift */; };
 		38B1A0012F01000100000030 /* HiddenColorsManageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000031 /* HiddenColorsManageView.swift */; };
+		38B1A0012F01000100000040 /* ColorPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000041 /* ColorPresets.swift */; };
+		38B1A0012F01000100000042 /* AddBrandView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000043 /* AddBrandView.swift */; };
+		38B1A0012F01000100000044 /* ColorSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000045 /* ColorSelectionView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -60,6 +63,9 @@
 		38B1A0012F01000100000022 /* HistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryManager.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000023 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000031 /* HiddenColorsManageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiddenColorsManageView.swift; sourceTree = "<group>"; };
+		38B1A0012F01000100000041 /* ColorPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorPresets.swift; sourceTree = "<group>"; };
+		38B1A0012F01000100000043 /* AddBrandView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddBrandView.swift; sourceTree = "<group>"; };
+		38B1A0012F01000100000045 /* ColorSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorSelectionView.swift; sourceTree = "<group>"; };
 		A01234560010 /* BeadInventory.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BeadInventory.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A01234560011 /* BeadInventoryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeadInventoryApp.swift; sourceTree = "<group>"; };
 		A01234560012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -147,6 +153,7 @@
 				A01234560014 /* BeadColor.swift */,
 				38B1A0012F01000100000011 /* Brand.swift */,
 				38B1A0012F01000100000012 /* BrandStock.swift */,
+				38B1A0012F01000100000041 /* ColorPresets.swift */,
 				38B1A0012F01000100000021 /* HistoryRecord.swift */,
 				38B1A0012F01000100000019 /* SwiftDataModels.swift */,
 			);
@@ -170,10 +177,12 @@
 			children = (
 				38B1A0012F01000100000020 /* Components */,
 				38B1A0012F01000100000017 /* AboutView.swift */,
+				38B1A0012F01000100000043 /* AddBrandView.swift */,
 				3806E5052F00F94200187AA7 /* AddInventoryView.swift */,
 				38B1A0012F01000100000018 /* AppIconView.swift */,
 				38B1A0012F01000100000015 /* BrandManagerView.swift */,
 				38B1A0012F01000100000016 /* BrandSettingsView.swift */,
+				38B1A0012F01000100000045 /* ColorSelectionView.swift */,
 				38B1A0012F01000100000023 /* HistoryView.swift */,
 				38B1A0012F01000100000031 /* HiddenColorsManageView.swift */,
 				A01234560017 /* InventoryView.swift */,
@@ -288,6 +297,9 @@
 				38B1A0012F0100010000000E /* HistoryManager.swift in Sources */,
 				38B1A0012F0100010000000F /* HistoryView.swift in Sources */,
 				38B1A0012F01000100000030 /* HiddenColorsManageView.swift in Sources */,
+				38B1A0012F01000100000040 /* ColorPresets.swift in Sources */,
+				38B1A0012F01000100000042 /* AddBrandView.swift in Sources */,
+				38B1A0012F01000100000044 /* ColorSelectionView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
