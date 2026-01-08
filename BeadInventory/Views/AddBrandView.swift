@@ -89,8 +89,8 @@ struct AddBrandView: View {
                         Button {
                             selectedPreset = preset
                             if preset.isCustom && customSelectedColors.isEmpty {
-                                // 自定义模式默认选中全部
-                                customSelectedColors = ColorPresetData.colors221
+                                // 自定义模式默认选中全部 291 色
+                                customSelectedColors = Set(inventoryManager.beadColors.map { $0.mardCode })
                             }
                         } label: {
                             HStack {

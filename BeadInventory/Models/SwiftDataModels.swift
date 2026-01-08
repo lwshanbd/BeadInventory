@@ -143,7 +143,8 @@ final class SDHistoryRecord {
     @Attribute(.unique) var id: UUID
     var timestamp: Date
     var operationType: String        // 存储 HistoryOperationType.rawValue
-    var entityName: String
+    @Attribute(originalName: "entityName")
+    var targetName: String           // 注意：避免使用 entityName（与 SwiftData 系统属性冲突），使用 originalName 保持数据兼容
     var beforeSnapshot: Data?
     var afterSnapshot: Data?
     var isReverted: Bool
@@ -152,7 +153,7 @@ final class SDHistoryRecord {
         id: UUID = UUID(),
         timestamp: Date = Date(),
         operationType: String,
-        entityName: String,
+        targetName: String,
         beforeSnapshot: Data? = nil,
         afterSnapshot: Data? = nil,
         isReverted: Bool = false
@@ -160,7 +161,7 @@ final class SDHistoryRecord {
         self.id = id
         self.timestamp = timestamp
         self.operationType = operationType
-        self.entityName = entityName
+        self.targetName = targetName
         self.beforeSnapshot = beforeSnapshot
         self.afterSnapshot = afterSnapshot
         self.isReverted = isReverted
@@ -171,7 +172,7 @@ final class SDHistoryRecord {
             id: record.id,
             timestamp: record.timestamp,
             operationType: record.operationType.rawValue,
-            entityName: record.entityName,
+            targetName: record.entityName,
             beforeSnapshot: record.beforeSnapshot,
             afterSnapshot: record.afterSnapshot,
             isReverted: record.isReverted
@@ -186,7 +187,7 @@ final class SDHistoryRecord {
             id: id,
             timestamp: timestamp,
             operationType: opType,
-            entityName: entityName,
+            entityName: targetName,
             beforeSnapshot: beforeSnapshot,
             afterSnapshot: afterSnapshot,
             isReverted: isReverted

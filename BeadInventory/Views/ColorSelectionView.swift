@@ -11,37 +11,70 @@ struct ColorSelectionView: View {
     @Binding var selectedColors: Set<String>
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
-    @State private var searchText = ""
 
-    var filteredColors: [BeadColor] {
-        if searchText.isEmpty {
-            return inventoryManager.beadColors.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
-        }
-        return inventoryManager.searchColors(searchText).sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
+    // 色系列表
+    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他"]
+    let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
+
+    @State private var selectedSeries = "A"
+
+    var colorsInSeries: [BeadColor] {
+        inventoryManager.beadColors.filter { color in
+            let code = color.mardCode
+
+            if selectedSeries == "其他" {
+                return !standardPrefixes.contains { prefix in
+                    if prefix == "ZG" {
+                        return code.hasPrefix("ZG")
+                    } else {
+                        return code.hasPrefix(prefix) && !code.hasPrefix("ZG")
+                    }
+                }
+            } else if selectedSeries == "ZG" {
+                return code.hasPrefix("ZG")
+            } else {
+                if code.hasPrefix("ZG") { return false }
+                return code.hasPrefix(selectedSeries)
+            }
+        }.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
+    }
+
+    // 当前色系的选中数量
+    var selectedInSeriesCount: Int {
+        colorsInSeries.filter { selectedColors.contains($0.mardCode) }.count
+    }
+
+    // 当前色系是否全选
+    var isAllSelectedInSeries: Bool {
+        !colorsInSeries.isEmpty && selectedInSeriesCount == colorsInSeries.count
     }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // 顶部统计和快速选择
+                // 顶部统计
                 HStack {
-                    Text("已选 \(selectedColors.count) / \(inventoryManager.beadColors.count) 色")
-                        .font(.subheadline)
+                    Text("已选择")
                         .foregroundColor(.secondary)
-
+                    Text("\(selectedColors.count)")
+                        .fontWeight(.bold)
+                        .foregroundColor(.accentColor)
+                    Text("/ \(inventoryManager.beadColors.count) 色")
+                        .foregroundColor(.secondary)
                     Spacer()
 
+                    // 快速选择菜单
                     Menu {
                         Button {
                             selectAll()
                         } label: {
-                            Label("全选", systemImage: "checkmark.circle.fill")
+                            Label("全选所有 (\(inventoryManager.beadColors.count)色)", systemImage: "checkmark.circle.fill")
                         }
 
                         Button {
                             selectedColors.removeAll()
                         } label: {
-                            Label("全不选", systemImage: "circle")
+                            Label("全部取消", systemImage: "circle")
                         }
 
                         Divider()
@@ -61,33 +94,53 @@ struct ColorSelectionView: View {
                         .font(.subheadline)
                     }
                 }
+                .font(.subheadline)
                 .padding(.horizontal)
-                .padding(.vertical, 12)
-                .background(Color(.systemGroupedBackground))
+                .padding(.vertical, 10)
+                .background(Color(.systemGray6))
 
-                // 颜色网格
+                // 色系选择器
+                SeriesSelector(
+                    series: colorSeries,
+                    selectedSeries: $selectedSeries
+                )
+                .padding(.vertical, 8)
+
+                // 颜色列表
                 ScrollView {
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 12) {
-                        ForEach(filteredColors) { color in
-                            SelectableColorCard(
+                    LazyVStack(spacing: 8) {
+                        ForEach(colorsInSeries) { color in
+                            ColorSelectRow(
                                 color: color,
                                 isSelected: selectedColors.contains(color.mardCode),
-                                onToggle: { toggleColor(color.mardCode) }
+                                onToggle: {
+                                    toggleColor(color.mardCode)
+                                }
                             )
                         }
                     }
-                    .padding()
+                    .padding(.horizontal)
+                    .padding(.bottom, 20)
                 }
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("选择颜色")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "搜索色号或名称")
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button(isAllSelectedInSeries ? "取消本系" : "全选本系") {
+                        if isAllSelectedInSeries {
+                            deselectAllInSeries()
+                        } else {
+                            selectAllInSeries()
+                        }
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") {
                         dismiss()
@@ -103,11 +156,22 @@ struct ColorSelectionView: View {
         }
     }
 
+    private func selectAllInSeries() {
+        for color in colorsInSeries {
+            selectedColors.insert(color.mardCode)
+        }
+    }
+
+    private func deselectAllInSeries() {
+        for color in colorsInSeries {
+            selectedColors.remove(color.mardCode)
+        }
+    }
+
     private func selectPreset(_ preset: ColorPreset) {
         if let colors = preset.colorCodes {
             selectedColors = colors
         } else {
-            // 如果是全选模式，选中所有颜色
             selectAll()
         }
     }
@@ -121,51 +185,69 @@ struct ColorSelectionView: View {
     }
 }
 
-// MARK: - 可选择的颜色卡片
-struct SelectableColorCard: View {
+// MARK: - 颜色选择行
+struct ColorSelectRow: View {
     let color: BeadColor
     let isSelected: Bool
     let onToggle: () -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
-            ZStack(alignment: .topTrailing) {
-                // 颜色块
-                RoundedRectangle(cornerRadius: 8)
+        Button(action: onToggle) {
+            HStack(spacing: 12) {
+                // 选择按钮
+                ZStack {
+                    Circle()
+                        .stroke(isSelected ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 2)
+                        .frame(width: 28, height: 28)
+
+                    if isSelected {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 20, height: 20)
+
+                        Image(systemName: "checkmark")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                    }
+                }
+
+                // 颜色预览
+                RoundedRectangle(cornerRadius: 6)
                     .fill(color.color)
-                    .frame(height: 50)
+                    .frame(width: 40, height: 40)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(isSelected ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: isSelected ? 2 : 1)
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
+
+                // 色号和名称
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(color.mardCode)
+                        .font(.system(.body, design: .monospaced))
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+
+                    Text(color.colorName)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
 
                 // 选中标记
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.accentColor)
-                        .background(Circle().fill(.white))
-                        .offset(x: 4, y: -4)
+                        .font(.title3)
                 }
             }
-
-            // 色号
-            Text(color.mardCode)
-                .font(.system(.caption, design: .monospaced))
-                .fontWeight(.medium)
-
-            // 颜色名称
-            Text(color.colorName)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
+            .padding(12)
+            .background(isSelected ? Color.accentColor.opacity(0.08) : Color(.systemBackground))
+            .cornerRadius(12)
         }
-        .padding(8)
-        .background(isSelected ? Color.accentColor.opacity(0.1) : Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-        .onTapGesture {
-            onToggle()
-        }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 
