@@ -17,6 +17,7 @@ struct AddInventoryView: View {
     @State private var selectedSeries = "A"
     @State private var selectedColors: Set<UUID> = []
     @State private var quantities: [UUID: Double] = [:]  // 数量（单位：千颗）
+    @State private var showingImportStock = false
 
     // 已知的标准色系前缀
     let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
@@ -150,6 +151,14 @@ struct AddInventoryView: View {
                                 }
                             }
                         }
+
+                        Divider()
+
+                        Button {
+                            showingImportStock = true
+                        } label: {
+                            Label("从 CSV 导入", systemImage: "doc.text")
+                        }
                     } label: {
                         HStack(spacing: 4) {
                             Text("快速选择")
@@ -157,6 +166,11 @@ struct AddInventoryView: View {
                                 .font(.caption2)
                         }
                     }
+                }
+            }
+            .sheet(isPresented: $showingImportStock) {
+                if let brandId = inventoryManager.currentBrandId {
+                    ImportStockView(mode: .forExistingBrand(brandId))
                 }
             }
         }
