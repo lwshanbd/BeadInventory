@@ -120,8 +120,42 @@ struct AddInventoryView: View {
                     Button("取消") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("全选") {
-                        selectAllInSeries()
+                    Menu {
+                        Button {
+                            selectAllInSeries()
+                        } label: {
+                            Label("全选本色系", systemImage: "checkmark.circle")
+                        }
+
+                        Button {
+                            selectAllColors()
+                        } label: {
+                            Label("全选所有 (\(inventoryManager.beadColors.count)色)", systemImage: "checkmark.circle.fill")
+                        }
+
+                        Button {
+                            selectedColors.removeAll()
+                        } label: {
+                            Label("全部取消", systemImage: "circle")
+                        }
+
+                        Divider()
+
+                        Section("预设颜色包") {
+                            ForEach(ColorPreset.allCases.filter { !$0.isCustom && !$0.isAll }) { preset in
+                                Button {
+                                    selectPreset(preset)
+                                } label: {
+                                    Label("选中 \(preset.count) 色", systemImage: "checkmark.square.fill")
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("快速选择")
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
                     }
                 }
             }
@@ -145,6 +179,33 @@ struct AddInventoryView: View {
             selectedColors.insert(color.id)
             if quantities[color.id] == nil {
                 quantities[color.id] = 1.0
+            }
+        }
+    }
+
+    func selectAllColors() {
+        for color in inventoryManager.beadColors {
+            selectedColors.insert(color.id)
+            if quantities[color.id] == nil {
+                quantities[color.id] = 1.0
+            }
+        }
+    }
+
+    func selectPreset(_ preset: ColorPreset) {
+        // 先清空选择
+        selectedColors.removeAll()
+
+        // 获取预设的色号集合
+        guard let presetCodes = preset.colorCodes else { return }
+
+        // 选中预设中的颜色
+        for color in inventoryManager.beadColors {
+            if presetCodes.contains(color.mardCode) {
+                selectedColors.insert(color.id)
+                if quantities[color.id] == nil {
+                    quantities[color.id] = 1.0
+                }
             }
         }
     }

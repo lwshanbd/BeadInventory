@@ -79,11 +79,14 @@ struct ColorSelectionView: View {
 
                         Divider()
 
-                        ForEach(ColorPreset.allCases.filter { !$0.isCustom && !$0.isAll }) { preset in
-                            Button {
-                                selectPreset(preset)
-                            } label: {
-                                Label("\(preset.rawValue) (\(preset.count)色)", systemImage: "square.grid.2x2")
+                        // 预设颜色一键选中
+                        Section("预设颜色包") {
+                            ForEach(ColorPreset.allCases.filter { !$0.isCustom && !$0.isAll }) { preset in
+                                Button {
+                                    selectPreset(preset)
+                                } label: {
+                                    Label("选中 \(preset.count) 色", systemImage: "checkmark.square.fill")
+                                }
                             }
                         }
                     } label: {

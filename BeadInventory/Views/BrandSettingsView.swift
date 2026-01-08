@@ -17,6 +17,7 @@ struct BrandSettingsView: View {
     @State private var defaultStock = "1000"
     @State private var isEditingName = false
     @State private var editedName = ""
+    @State private var showingImportStock = false
 
     var brand: Brand? {
         inventoryManager.currentBrand
@@ -81,6 +82,19 @@ struct BrandSettingsView: View {
 
                     // 库存操作
                     Section {
+                        Button {
+                            showingImportStock = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "square.and.arrow.down")
+                                Text("导入库存")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
                         HStack {
                             Text("重置库存数量")
                             Spacer()
@@ -112,7 +126,7 @@ struct BrandSettingsView: View {
                     } header: {
                         Text("库存操作")
                     } footer: {
-                        Text("重置库存会将所有颜色的库存设为指定数量并清零使用记录。清除使用记录只会重置已使用数量。")
+                        Text("导入库存会累加到现有库存。重置库存会将所有颜色的库存设为指定数量并清零使用记录。")
                     }
 
                     // 色号管理
@@ -188,6 +202,9 @@ struct BrandSettingsView: View {
                     }
                 } message: {
                     Text("确定要删除「\(brand.name)」吗？该品牌下的所有库存数据将被永久删除。")
+                }
+                .sheet(isPresented: $showingImportStock) {
+                    ImportStockView(mode: .forExistingBrand(brand.id))
                 }
             } else {
                 VStack(spacing: 16) {

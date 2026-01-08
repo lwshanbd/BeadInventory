@@ -204,6 +204,51 @@ class InventoryManager: ObservableObject {
         }
     }
 
+    /// 批量导入库存（累加模式）
+    /// - Parameters:
+    ///   - brandId: 目标品牌 ID
+    ///   - items: 导入条目列表 [(色号, 数量)]
+    ///   - unhideColors: 是否自动取消隐藏（默认 true）
+    /// - Returns: 成功导入的条目数
+    @discardableResult
+    func importStock(brandId: UUID, items: [(colorCode: String, quantity: Int)], unhideColors: Bool = true) -> Int {
+        var successCount = 0
+        var totalAdded = 0
+
+        for item in items {
+            if let index = brandStocks.firstIndex(where: {
+                $0.brandId == brandId && $0.mardCode == item.colorCode
+            }) {
+                let oldStock = brandStocks[index].stock
+                brandStocks[index].stock += item.quantity
+                totalAdded += item.quantity
+
+                // 自动取消隐藏
+                if unhideColors && brandStocks[index].isHidden {
+                    brandStocks[index].isHidden = false
+                }
+
+                successCount += 1
+
+                // 记录历史
+                historyManager.recordStockChange(
+                    type: .stockAdd,
+                    brandId: brandId,
+                    mardCode: item.colorCode,
+                    oldValue: oldStock,
+                    newValue: brandStocks[index].stock,
+                    changeAmount: item.quantity
+                )
+            }
+        }
+
+        if successCount > 0 {
+            saveData()
+        }
+
+        return successCount
+    }
+
     func deductFromStock(brandId: UUID, colorCode: String, amount: Int) -> Bool {
         // 先找到对应的 mardCode
         guard let color = findColor(byCode: colorCode) else { return false }
