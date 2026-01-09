@@ -15,22 +15,25 @@ final class SDBrand {
     var name: String
     var sortOrder: Int
     var createdAt: Date
+    var lowStockThreshold: Int?  // 低库存阈值，可选以兼容旧数据，默认为100
 
-    init(id: UUID = UUID(), name: String, sortOrder: Int = 0, createdAt: Date = Date()) {
+    init(id: UUID = UUID(), name: String, sortOrder: Int = 0, createdAt: Date = Date(), lowStockThreshold: Int = 100) {
         self.id = id
         self.name = name
         self.sortOrder = sortOrder
         self.createdAt = createdAt
+        self.lowStockThreshold = lowStockThreshold
     }
 
     // 从 struct 转换
     convenience init(from brand: Brand) {
-        self.init(id: brand.id, name: brand.name, sortOrder: brand.sortOrder, createdAt: brand.createdAt)
+        self.init(id: brand.id, name: brand.name, sortOrder: brand.sortOrder, createdAt: brand.createdAt, lowStockThreshold: brand.lowStockThreshold)
     }
 
     // 转换为 struct
     func toStruct() -> Brand {
-        Brand(id: id, name: name, sortOrder: sortOrder, createdAt: createdAt)
+        // 兼容旧数据：如果 lowStockThreshold 为 nil，使用默认值 100
+        Brand(id: id, name: name, sortOrder: sortOrder, createdAt: createdAt, lowStockThreshold: lowStockThreshold ?? 100)
     }
 }
 

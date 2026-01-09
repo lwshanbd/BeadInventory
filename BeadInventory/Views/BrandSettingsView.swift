@@ -18,6 +18,7 @@ struct BrandSettingsView: View {
     @State private var isEditingName = false
     @State private var editedName = ""
     @State private var showingImportStock = false
+    @State private var lowStockThreshold = "100"
 
     var brand: Brand? {
         inventoryManager.currentBrand
@@ -78,6 +79,29 @@ struct BrandSettingsView: View {
                         }
                     } header: {
                         Text("品牌信息")
+                    }
+
+                    // 低库存设置
+                    Section {
+                        HStack {
+                            Text("低库存阈值")
+                            Spacer()
+                            TextField("100", text: $lowStockThreshold)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 80)
+                                .onChange(of: lowStockThreshold) { _, newValue in
+                                    if let threshold = Int(newValue), threshold >= 0 {
+                                        inventoryManager.updateBrandLowStockThreshold(brand.id, threshold: threshold)
+                                    }
+                                }
+                            Text("颗")
+                                .foregroundColor(.secondary)
+                        }
+                    } header: {
+                        Text("库存提醒")
+                    } footer: {
+                        Text("当库存低于此阈值时，会在库存列表中以红色标识提醒。")
                     }
 
                     // 库存操作
@@ -205,6 +229,9 @@ struct BrandSettingsView: View {
                 }
                 .sheet(isPresented: $showingImportStock) {
                     ImportStockView(mode: .forExistingBrand(brand.id))
+                }
+                .onAppear {
+                    lowStockThreshold = "\(brand.lowStockThreshold)"
                 }
             } else {
                 VStack(spacing: 16) {

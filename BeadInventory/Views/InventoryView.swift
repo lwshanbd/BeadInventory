@@ -35,6 +35,12 @@ struct InventoryView: View {
         return Dictionary(uniqueKeysWithValues: stocks.map { ($0.mardCode, $0) })
     }
 
+    // 获取当前品牌的低库存阈值
+    var lowStockThreshold: Int {
+        guard let brandId = inventoryManager.currentBrandId else { return 100 }
+        return inventoryManager.getLowStockThreshold(for: brandId)
+    }
+
     var filteredColors: [BeadColor] {
         let colors = inventoryManager.searchColors(searchText)
         // 过滤掉隐藏的色号（只显示在 stockDict 中存在的颜色）
@@ -141,7 +147,8 @@ struct InventoryView: View {
                                     ColorCardView(
                                         color: color,
                                         stock: stockDict[color.mardCode],
-                                        sortOption: sortOption
+                                        sortOption: sortOption,
+                                        lowStockThreshold: lowStockThreshold
                                     )
                                     .onTapGesture {
                                         selectedColor = color
@@ -158,7 +165,8 @@ struct InventoryView: View {
                                 ColorRowView(
                                     color: color,
                                     stock: stockDict[color.mardCode],
-                                    sortOption: sortOption
+                                    sortOption: sortOption,
+                                    lowStockThreshold: lowStockThreshold
                                 )
                                 .contentShape(Rectangle())
                                 .onTapGesture {
@@ -300,9 +308,11 @@ struct ColorCardView: View {
     let color: BeadColor
     let stock: BrandStock?
     var sortOption: InventoryView.SortOption = .code
+    var lowStockThreshold: Int = 100
 
     var available: Int { stock?.available ?? 0 }
     var used: Int { stock?.used ?? 0 }
+    var isLowStock: Bool { available < lowStockThreshold }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -337,7 +347,7 @@ struct ColorCardView: View {
                 HStack(spacing: 4) {
                     Text("\(available)")
                         .font(.caption2)
-                        .foregroundColor(available < 100 ? .red : .secondary)
+                        .foregroundColor(isLowStock ? .red : .secondary)
 
                     if used > 0 {
                         Text("(-\(used))")
@@ -359,10 +369,13 @@ struct ColorRowView: View {
     let color: BeadColor
     let stock: BrandStock?
     var sortOption: InventoryView.SortOption = .code
+    var lowStockThreshold: Int = 100
 
     var available: Int { stock?.available ?? 0 }
     var used: Int { stock?.used ?? 0 }
     var totalStock: Int { stock?.stock ?? 0 }
+
+    var isLowStock: Bool { available < lowStockThreshold }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -404,7 +417,7 @@ struct ColorRowView: View {
                     Text("\(available)")
                         .font(.title3)
                         .fontWeight(.semibold)
-                        .foregroundColor(available < 100 ? .red : .primary)
+                        .foregroundColor(isLowStock ? .red : .primary)
                     if used > 0 {
                         Text("-\(used)")
                             .font(.caption)
@@ -418,7 +431,7 @@ struct ColorRowView: View {
             }
 
             // 低库存标识
-            if available < 100 {
+            if isLowStock {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundColor(.orange)
                     .font(.subheadline)
@@ -448,6 +461,10 @@ struct EditStockSheet: View {
     var currentStock: Int { stock?.stock ?? 0 }
     var currentUsed: Int { stock?.used ?? 0 }
     var currentAvailable: Int { stock?.available ?? 0 }
+    var lowStockThreshold: Int {
+        guard let brandId = inventoryManager.currentBrandId else { return 100 }
+        return inventoryManager.getLowStockThreshold(for: brandId)
+    }
 
     var body: some View {
         NavigationStack {
@@ -483,7 +500,7 @@ struct EditStockSheet: View {
                 HStack(spacing: 20) {
                     InfoBlock(title: "总库存", value: "\(currentStock)")
                     InfoBlock(title: "已使用", value: "\(currentUsed)")
-                    InfoBlock(title: "可用", value: "\(currentAvailable)", highlight: currentAvailable < 100)
+                    InfoBlock(title: "可用", value: "\(currentAvailable)", highlight: currentAvailable < lowStockThreshold)
                 }
 
                 // 调整库存

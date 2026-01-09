@@ -16,6 +16,11 @@ struct ColorConverterView: View {
         inventoryManager.searchColors(searchText)
     }
 
+    var lowStockThreshold: Int {
+        guard let brandId = inventoryManager.currentBrandId else { return 100 }
+        return inventoryManager.getLowStockThreshold(for: brandId)
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -73,7 +78,7 @@ struct ColorConverterView: View {
                     ScrollView {
                         LazyVStack(spacing: 12) {
                             ForEach(searchResults) { color in
-                                ColorConversionCard(color: color)
+                                ColorConversionCard(color: color, lowStockThreshold: lowStockThreshold)
                                     .onTapGesture {
                                         selectedColor = color
                                     }
@@ -86,7 +91,7 @@ struct ColorConverterView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("色号转换")
             .sheet(item: $selectedColor) { color in
-                ColorDetailSheet(color: color)
+                ColorDetailSheet(color: color, lowStockThreshold: lowStockThreshold)
             }
         }
     }
@@ -95,6 +100,9 @@ struct ColorConverterView: View {
 // MARK: - 色号转换卡片
 struct ColorConversionCard: View {
     let color: BeadColor
+    var lowStockThreshold: Int = 100
+
+    var isLowStock: Bool { color.available < lowStockThreshold }
 
     var body: some View {
         HStack(spacing: 16) {
@@ -128,7 +136,7 @@ struct ColorConversionCard: View {
                 Text("\(color.available)")
                     .font(.title3)
                     .fontWeight(.bold)
-                    .foregroundColor(color.available < 100 ? .red : .primary)
+                    .foregroundColor(isLowStock ? .red : .primary)
 
                 Text("可用")
                     .font(.caption2)
@@ -167,7 +175,10 @@ struct BrandCodeLabel: View {
 // MARK: - 颜色详情弹窗
 struct ColorDetailSheet: View {
     let color: BeadColor
+    var lowStockThreshold: Int = 100
     @Environment(\.dismiss) var dismiss
+
+    var isLowStock: Bool { color.available < lowStockThreshold }
 
     var body: some View {
         NavigationStack {
@@ -230,7 +241,7 @@ struct ColorDetailSheet: View {
                             Spacer()
                             Text("\(color.available)")
                                 .fontWeight(.bold)
-                                .foregroundColor(color.available < 100 ? .red : .green)
+                                .foregroundColor(isLowStock ? .red : .green)
                         }
                         .padding()
                     }

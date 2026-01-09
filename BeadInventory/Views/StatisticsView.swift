@@ -247,6 +247,13 @@ struct UsageRankRow: View {
         return Double(stock.used) / Double(maxUsed)
     }
 
+    var lowStockThreshold: Int {
+        guard let brandId = inventoryManager.currentBrandId else { return 100 }
+        return inventoryManager.getLowStockThreshold(for: brandId)
+    }
+
+    var isLowStock: Bool { stock.available < lowStockThreshold }
+
     var body: some View {
         HStack(spacing: 12) {
             // 排名
@@ -282,7 +289,7 @@ struct UsageRankRow: View {
 
                     Text("剩余 \(stock.available)")
                         .font(.caption)
-                        .foregroundColor(stock.available < 100 ? .red : .green)
+                        .foregroundColor(isLowStock ? .red : .green)
                 }
 
                 GeometryReader { geometry in

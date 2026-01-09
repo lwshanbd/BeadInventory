@@ -139,13 +139,13 @@ struct ScanView: View {
                         )
                     }
 
-                    // 手动添加按钮
+                    // 手动添加/编辑按钮
                     Button {
                         showingManualEntry = true
                     } label: {
                         HStack {
-                            Image(systemName: "plus.circle")
-                            Text("手动添加")
+                            Image(systemName: recognizedItems.isEmpty ? "plus.circle" : "pencil.circle")
+                            Text(recognizedItems.isEmpty ? "手动添加" : "编辑颜色")
                         }
                         .font(.subheadline)
                         .foregroundColor(.accentColor)
@@ -250,7 +250,8 @@ struct ScanView: View {
                 }
             }
             .sheet(isPresented: $showingManualEntry) {
-                ManualEntrySheetNew(onAdd: addManualItem)
+                ManualEntrySheetNew(recognizedItems: $recognizedItems)
+                    .environmentObject(inventoryManager)
             }
             .fullScreenCover(isPresented: $showingCropView) {
                 if let image = selectedImage {
@@ -344,10 +345,6 @@ struct ScanView: View {
         selectedImage = nil
         selectedPhotoItem = nil
         projectName = ""
-    }
-
-    func addManualItem(colorCode: String, quantity: Int) {
-        recognizedItems.append(RecognizedItem(colorCode: colorCode.uppercased(), quantity: quantity))
     }
 
     func removeItem(id: UUID) {
@@ -820,105 +817,404 @@ struct RecognizedItemRowNew: View {
     }
 }
 
-// MARK: - 新版手动添加弹窗
+// MARK: - 新版手动添加弹窗（类似添加库存的UI，支持多选，与已有结果同步）
 struct ManualEntrySheetNew: View {
-    let onAdd: (String, Int) -> Void
+    @Binding var recognizedItems: [ScanView.RecognizedItem]
+    @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
-    @State private var colorCode = ""
-    @State private var quantity = ""
-    @FocusState private var focusedField: Field?
+    // 色系列表
+    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他"]
+    let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
 
-    enum Field {
-        case colorCode, quantity
+    @State private var selectedSeries = "A"
+    @State private var selectedColors: Set<UUID> = []
+    @State private var quantities: [UUID: Int] = [:]  // 每个颜色的数量（以颜色ID为key）
+    @State private var isInitialized = false
+
+    var colorsInSeries: [BeadColor] {
+        inventoryManager.beadColors.filter { color in
+            let code = color.mardCode
+
+            if selectedSeries == "其他" {
+                return !standardPrefixes.contains { prefix in
+                    if prefix == "ZG" {
+                        return code.hasPrefix("ZG")
+                    } else {
+                        return code.hasPrefix(prefix) && !code.hasPrefix("ZG")
+                    }
+                }
+            } else if selectedSeries == "ZG" {
+                return code.hasPrefix("ZG")
+            } else {
+                if code.hasPrefix("ZG") { return false }
+                return code.hasPrefix(selectedSeries)
+            }
+        }.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
     }
 
-    private var isValid: Bool {
-        !colorCode.trimmingCharacters(in: .whitespaces).isEmpty &&
-        Int(quantity) != nil &&
-        (Int(quantity) ?? 0) > 0
+    var totalToAdd: Int {
+        var total = 0
+        for colorId in selectedColors {
+            let qty = quantities[colorId] ?? 1
+            total += qty
+        }
+        return total
     }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                // 色号输入
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("MARD 色号")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+            VStack(spacing: 0) {
+                // 色系选择器
+                ManualEntrySeriesSelector(
+                    series: colorSeries,
+                    selectedSeries: $selectedSeries
+                )
+                .padding(.vertical, 8)
 
-                    TextField("例如: A1, B23, IC09", text: $colorCode)
-                        .textInputAutocapitalization(.characters)
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                        .focused($focusedField, equals: .colorCode)
-                        .submitLabel(.next)
-                        .onSubmit {
-                            focusedField = .quantity
+                // 颜色列表
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(colorsInSeries) { color in
+                            ManualEntryColorRow(
+                                color: color,
+                                isSelected: selectedColors.contains(color.id),
+                                quantity: Binding(
+                                    get: { quantities[color.id] ?? 1 },
+                                    set: { quantities[color.id] = $0 }
+                                ),
+                                onToggle: {
+                                    toggleSelection(color.id)
+                                }
+                            )
                         }
-                }
-
-                // 数量输入
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("数量")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    TextField("输入数量", text: $quantity)
-                        .keyboardType(.numberPad)
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                        .focused($focusedField, equals: .quantity)
-                }
-
-                Spacer()
-
-                // 添加按钮
-                Button {
-                    let trimmedCode = colorCode.trimmingCharacters(in: .whitespaces)
-                    if let qty = Int(quantity), qty > 0, !trimmedCode.isEmpty {
-                        onAdd(trimmedCode, qty)
-                        dismiss()
                     }
-                } label: {
-                    Text("添加")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(isValid ? Color.blue : Color.gray)
-                        .cornerRadius(12)
+                    .padding(.horizontal)
+                    .padding(.bottom, !selectedColors.isEmpty ? 100 : 20)
                 }
-                .disabled(!isValid)
+                .scrollDismissesKeyboard(.interactively)
+
+                // 底部确认栏
+                if !selectedColors.isEmpty {
+                    ManualEntryConfirmBar(
+                        selectedCount: selectedColors.count,
+                        totalQuantity: totalToAdd,
+                        onConfirm: confirmAdd
+                    )
+                }
             }
-            .padding()
-            .navigationTitle("手动添加")
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("编辑颜色")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") { dismiss() }
                 }
-                ToolbarItem(placement: .keyboard) {
-                    HStack {
-                        Spacer()
-                        Button("完成") {
-                            focusedField = nil
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !selectedColors.isEmpty {
+                        Button("清空") {
+                            selectedColors.removeAll()
+                            quantities.removeAll()
                         }
+                        .foregroundColor(.red)
                     }
                 }
             }
             .onAppear {
-                // 自动聚焦到色号输入框
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    focusedField = .colorCode
+                initializeFromRecognizedItems()
+            }
+        }
+    }
+
+    /// 从已有的识别结果初始化选择状态
+    func initializeFromRecognizedItems() {
+        guard !isInitialized else { return }
+        isInitialized = true
+
+        for item in recognizedItems {
+            // 根据色号找到对应的颜色
+            if let color = inventoryManager.beadColors.first(where: { $0.mardCode.uppercased() == item.colorCode.uppercased() }) {
+                selectedColors.insert(color.id)
+                quantities[color.id] = item.quantity
+            }
+        }
+    }
+
+    func toggleSelection(_ colorId: UUID) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if selectedColors.contains(colorId) {
+                selectedColors.remove(colorId)
+                quantities.removeValue(forKey: colorId)
+            } else {
+                selectedColors.insert(colorId)
+                if quantities[colorId] == nil {
+                    quantities[colorId] = 1
                 }
             }
         }
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.visible)
+    }
+
+    func confirmAdd() {
+        // 用新的选择替换原来的 recognizedItems
+        var newItems: [ScanView.RecognizedItem] = []
+        for colorId in selectedColors {
+            guard let color = inventoryManager.beadColors.first(where: { $0.id == colorId }) else { continue }
+            let qty = quantities[colorId] ?? 1
+            newItems.append(ScanView.RecognizedItem(colorCode: color.mardCode, quantity: qty))
+        }
+        recognizedItems = newItems
+        dismiss()
+    }
+}
+
+// MARK: - 手动添加色系选择器
+struct ManualEntrySeriesSelector: View {
+    let series: [String]
+    @Binding var selectedSeries: String
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(series, id: \.self) { s in
+                    Button {
+                        withAnimation { selectedSeries = s }
+                    } label: {
+                        Text(s)
+                            .font(.system(.subheadline, design: .rounded))
+                            .fontWeight(.medium)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(selectedSeries == s ? Color.accentColor : Color(.systemGray5))
+                            .foregroundColor(selectedSeries == s ? .white : .primary)
+                            .cornerRadius(20)
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+}
+
+// MARK: - 手动添加颜色行
+struct ManualEntryColorRow: View {
+    let color: BeadColor
+    let isSelected: Bool
+    @Binding var quantity: Int
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // 选择按钮
+            Button(action: onToggle) {
+                ZStack {
+                    Circle()
+                        .stroke(isSelected ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 2)
+                        .frame(width: 28, height: 28)
+
+                    if isSelected {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 20, height: 20)
+
+                        Image(systemName: "checkmark")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                    }
+                }
+            }
+
+            // 颜色预览
+            RoundedRectangle(cornerRadius: 6)
+                .fill(color.color)
+                .frame(width: 40, height: 40)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+
+            // 色号
+            Text(color.mardCode)
+                .font(.system(.body, design: .monospaced))
+                .fontWeight(.medium)
+
+            Spacer()
+
+            // 数量控制（仅在选中时显示）
+            if isSelected {
+                ManualEntryQuantityControl(quantity: $quantity)
+            }
+        }
+        .padding(12)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - 手动添加数量控制器（以1为单位）
+struct ManualEntryQuantityControl: View {
+    @Binding var quantity: Int
+    @State private var editText: String = ""
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // 减少按钮
+            Button {
+                hideKeyboard()
+                if quantity > 1 {
+                    quantity -= 1
+                }
+                editText = "\(quantity)"
+            } label: {
+                Image(systemName: "minus")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .frame(width: 28, height: 28)
+                    .background(quantity > 1 ? Color.gray.opacity(0.6) : Color.gray.opacity(0.3))
+                    .cornerRadius(14)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .disabled(quantity <= 1)
+
+            // 数量输入框
+            ManualEntryNumberField(text: $editText, onCommit: {
+                if let value = Int(editText), value > 0 {
+                    quantity = value
+                }
+                editText = "\(quantity)"
+            })
+            .frame(width: 60, height: 32)
+            .onChange(of: editText) { _, newValue in
+                if let value = Int(newValue), value > 0 {
+                    quantity = value
+                }
+            }
+
+            // 增加按钮
+            Button {
+                hideKeyboard()
+                quantity += 1
+                editText = "\(quantity)"
+            } label: {
+                Image(systemName: "plus")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .frame(width: 28, height: 28)
+                    .background(Color.accentColor)
+                    .cornerRadius(14)
+            }
+            .buttonStyle(PlainButtonStyle())
+
+            // 单位标签
+            Text("颗")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .onAppear {
+            editText = "\(quantity)"
+        }
+        .onChange(of: quantity) { _, newValue in
+            editText = "\(newValue)"
+        }
+    }
+
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
+// MARK: - 手动添加数字输入框
+struct ManualEntryNumberField: UIViewRepresentable {
+    @Binding var text: String
+    var onCommit: () -> Void
+
+    func makeUIView(context: Context) -> UITextField {
+        let textField = UITextField()
+        textField.keyboardType = .numberPad
+        textField.textAlignment = .center
+        textField.font = UIFont.monospacedSystemFont(ofSize: 16, weight: .regular)
+        textField.backgroundColor = UIColor.systemGray6
+        textField.layer.cornerRadius = 8
+        textField.delegate = context.coordinator
+
+        let toolbar = UIToolbar()
+        toolbar.sizeToFit()
+        let flexSpace = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
+        let doneButton = UIBarButtonItem(title: "完成", style: .done, target: context.coordinator, action: #selector(Coordinator.donePressed))
+        toolbar.items = [flexSpace, doneButton]
+        textField.inputAccessoryView = toolbar
+
+        return textField
+    }
+
+    func updateUIView(_ uiView: UITextField, context: Context) {
+        if uiView.text != text {
+            uiView.text = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: ManualEntryNumberField
+
+        init(_ parent: ManualEntryNumberField) {
+            self.parent = parent
+        }
+
+        func textFieldDidChangeSelection(_ textField: UITextField) {
+            parent.text = textField.text ?? ""
+        }
+
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            parent.onCommit()
+        }
+
+        @objc func donePressed() {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+    }
+}
+
+// MARK: - 手动添加确认栏（多选模式）
+struct ManualEntryConfirmBar: View {
+    let selectedCount: Int
+    let totalQuantity: Int
+    let onConfirm: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider()
+
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("已选择 \(selectedCount) 色")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Text("共 \(totalQuantity) 颗")
+                        .font(.headline)
+                        .foregroundColor(.accentColor)
+                }
+
+                Spacer()
+
+                Button(action: onConfirm) {
+                    Text("添加")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, 12)
+                        .background(Color.accentColor)
+                        .cornerRadius(24)
+                }
+            }
+            .padding()
+            .background(Color(.systemBackground))
+        }
     }
 }
 

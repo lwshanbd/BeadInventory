@@ -106,6 +106,18 @@ class InventoryManager: ObservableObject {
         }
     }
 
+    func updateBrandLowStockThreshold(_ brandId: UUID, threshold: Int) {
+        if let index = brands.firstIndex(where: { $0.id == brandId }) {
+            brands[index].lowStockThreshold = threshold
+            saveData()
+        }
+    }
+
+    /// 获取品牌的低库存阈值，如果品牌不存在则返回默认值100
+    func getLowStockThreshold(for brandId: UUID) -> Int {
+        brands.first(where: { $0.id == brandId })?.lowStockThreshold ?? 100
+    }
+
     func deleteBrand(_ brandId: UUID) -> Bool {
         // 记录历史（在删除前获取品牌信息）
         if let brand = brands.first(where: { $0.id == brandId }) {
@@ -320,7 +332,8 @@ class InventoryManager: ObservableObject {
     }
 
     func lowStockColors(for brandId: UUID) -> [BrandStock] {
-        brandStocks.filter { $0.brandId == brandId && !$0.isHidden && $0.available < 100 }
+        let threshold = getLowStockThreshold(for: brandId)
+        return brandStocks.filter { $0.brandId == brandId && !$0.isHidden && $0.available < threshold }
     }
 
     // MARK: - 隐藏色号管理
