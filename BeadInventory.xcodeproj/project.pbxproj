@@ -466,6 +466,7 @@
 				DEVELOPMENT_TEAM = S4BS47942Q;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "需要访问相机来拍摄色号表格图片";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "需要访问相册来选择色号表格图片";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -496,6 +497,7 @@
 				DEVELOPMENT_TEAM = S4BS47942Q;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "需要访问相机来拍摄色号表格图片";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "需要访问相册来选择色号表格图片";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
