@@ -58,6 +58,14 @@ SwiftData  HistoryManager  AIServiceManager
 - `color.json`: MARD color codes → hex mappings
 - `convert.csv`: Cross-brand color code conversion table
 
+## Git 操作规则
+
+**重要：未经用户明确允许，禁止执行 `git push`！**
+
+- 可以自由执行 `git commit`
+- 执行 `git push` 前必须征得用户同意
+- 用户说 "push" 或 "推送" 时才可以推送
+
 ## Code Conventions
 
 - All user-facing strings use localization (zh-Hans primary, English secondary)
