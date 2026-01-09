@@ -592,6 +592,12 @@ struct ProjectRowWithHierarchy: View {
         inventoryManager.childProjects(of: project.id).count
     }
 
+    // 从 thumbnail Data 创建 UIImage
+    var thumbnailImage: UIImage? {
+        guard let data = project.thumbnail else { return nil }
+        return UIImage(data: data)
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             // 选择模式复选框
@@ -624,6 +630,19 @@ struct ProjectRowWithHierarchy: View {
                         .frame(width: 20)
                 }
                 .buttonStyle(.plain)
+            }
+
+            // 缩略图（如果有）
+            if let image = thumbnailImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: isChild ? 40 : 50, height: isChild ? 40 : 50)
+                    .clipShape(RoundedRectangle(cornerRadius: isChild ? 6 : 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: isChild ? 6 : 8)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
             }
 
             // 项目内容

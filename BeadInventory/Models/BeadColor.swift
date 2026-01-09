@@ -66,8 +66,9 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
     var parentId: UUID?           // 父项目ID，nil表示顶级项目
     var isPlanned: Bool           // 是否为计划项目（true=计划中，false=已执行）
     var executedDate: Date?       // 执行日期（计划项目执行后记录）
+    var thumbnail: Data?          // 缩略图数据（可选，压缩后的JPEG）
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil) {
+    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil) {
         self.id = id
         self.name = name
         self.date = date
@@ -78,6 +79,7 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
         self.parentId = parentId
         self.isPlanned = isPlanned
         self.executedDate = executedDate
+        self.thumbnail = thumbnail
     }
 
     // 自定义解码器，兼容旧数据
@@ -94,6 +96,8 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
         // 向后兼容：旧数据没有 isPlanned 字段，默认为 false（已执行状态）
         isPlanned = try container.decodeIfPresent(Bool.self, forKey: .isPlanned) ?? false
         executedDate = try container.decodeIfPresent(Date.self, forKey: .executedDate)
+        // 向后兼容：旧数据没有 thumbnail 字段
+        thumbnail = try container.decodeIfPresent(Data.self, forKey: .thumbnail)
     }
 }
 

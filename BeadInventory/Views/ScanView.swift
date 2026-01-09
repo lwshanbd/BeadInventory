@@ -26,6 +26,11 @@ struct ScanView: View {
     @State private var errorMessage: String?
     @State private var showingCreatePlan = false
 
+    // 缩略图相关
+    @State private var originalImage: UIImage?       // 原始图片（裁剪前）
+    @State private var thumbnailImage: UIImage?      // 缩略图（可裁切）
+    @State private var showingThumbnailCrop = false  // 显示缩略图裁切视图
+
     // 识别结果项
     struct RecognizedItem: Identifiable {
         let id = UUID()
@@ -160,6 +165,14 @@ struct ScanView: View {
                                 .textFieldStyle(.roundedBorder)
                                 .padding(.horizontal)
 
+                            // 缩略图预览和裁切
+                            ThumbnailPreviewSection(
+                                thumbnailImage: $thumbnailImage,
+                                originalImage: originalImage,
+                                showingThumbnailCrop: $showingThumbnailCrop
+                            )
+                            .padding(.horizontal)
+
                             // 两个操作按钮
                             HStack(spacing: 12) {
                                 // 创建计划按钮（不需要选择品牌）
@@ -240,6 +253,9 @@ struct ScanView: View {
                        let image = UIImage(data: data) {
                         await MainActor.run {
                             selectedImage = image
+                            // 保存原图作为缩略图来源
+                            originalImage = image
+                            thumbnailImage = image
                             isLoadingImage = false
                         }
                     } else {
@@ -247,6 +263,13 @@ struct ScanView: View {
                             isLoadingImage = false
                         }
                     }
+                }
+            }
+            .onChange(of: selectedImage) { _, newImage in
+                // 当从相机获取图片时，也设置原图和缩略图
+                if let image = newImage, originalImage == nil {
+                    originalImage = image
+                    thumbnailImage = image
                 }
             }
             .sheet(isPresented: $showingManualEntry) {
@@ -257,6 +280,14 @@ struct ScanView: View {
                 if let image = selectedImage {
                     ImageCropView(image: image) { croppedImage in
                         selectedImage = croppedImage
+                    }
+                }
+            }
+            .fullScreenCover(isPresented: $showingThumbnailCrop) {
+                // 优先使用当前缩略图（可能是用户上传的新图片），否则使用原始图
+                if let image = thumbnailImage ?? originalImage {
+                    ImageCropView(image: image) { croppedImage in
+                        thumbnailImage = croppedImage
                     }
                 }
             }
@@ -304,6 +335,9 @@ struct ScanView: View {
     func applyToInventory() {
         guard let brandId = inventoryManager.currentBrandId else { return }
 
+        // 生成压缩的缩略图数据
+        let thumbnailData = generateThumbnailData()
+
         // 创建项目记录
         let beadUsages = recognizedItems.map { item in
             BeadUsage(colorCode: item.colorCode, brandId: brandId, quantity: item.quantity, isDeducted: true)
@@ -311,7 +345,8 @@ struct ScanView: View {
         let project = ProjectRecord(
             name: projectName.isEmpty ? "图纸\(Date().formatted(date: .numeric, time: .omitted))" : projectName,
             beadUsage: beadUsages,
-            brandId: brandId
+            brandId: brandId,
+            thumbnail: thumbnailData
         )
         inventoryManager.addProject(project)
 
@@ -321,13 +356,13 @@ struct ScanView: View {
         }
 
         // 清除结果
-        recognizedItems = []
-        selectedImage = nil
-        selectedPhotoItem = nil
-        projectName = ""
+        clearState()
     }
 
     func createPlannedProject() {
+        // 生成压缩的缩略图数据
+        let thumbnailData = generateThumbnailData()
+
         // 创建计划项目（不扣减库存）
         let beadUsages = recognizedItems.map { item in
             BeadUsage(colorCode: item.colorCode, brandId: nil, quantity: item.quantity, isDeducted: false)
@@ -336,15 +371,42 @@ struct ScanView: View {
             name: projectName.isEmpty ? "计划\(Date().formatted(date: .numeric, time: .omitted))" : projectName,
             beadUsage: beadUsages,
             brandId: nil,
-            isPlanned: true
+            isPlanned: true,
+            thumbnail: thumbnailData
         )
         inventoryManager.addPlannedProject(project)
 
         // 清除结果
+        clearState()
+    }
+
+    /// 生成压缩的缩略图数据（最大200x200像素，JPEG压缩）
+    func generateThumbnailData() -> Data? {
+        guard let image = thumbnailImage else { return nil }
+
+        // 计算缩放后的尺寸（最大200x200）
+        let maxSize: CGFloat = 200
+        let scale = min(maxSize / image.size.width, maxSize / image.size.height, 1.0)
+        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+
+        // 绘制缩略图
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: newSize))
+        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+
+        // 压缩为JPEG（质量0.6）
+        return resizedImage?.jpegData(compressionQuality: 0.6)
+    }
+
+    /// 清除所有状态
+    func clearState() {
         recognizedItems = []
         selectedImage = nil
         selectedPhotoItem = nil
         projectName = ""
+        originalImage = nil
+        thumbnailImage = nil
     }
 
     func removeItem(id: UUID) {
@@ -1176,6 +1238,161 @@ struct ManualEntryNumberField: UIViewRepresentable {
 
         @objc func donePressed() {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+    }
+}
+
+// MARK: - 缩略图预览区域
+struct ThumbnailPreviewSection: View {
+    @Binding var thumbnailImage: UIImage?
+    let originalImage: UIImage?
+    @Binding var showingThumbnailCrop: Bool
+
+    // 上传新封面相关
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var uploadedImage: UIImage?  // 用户上传的新图片
+    @State private var showingUploadedImageCrop = false
+    @State private var isLoadingImage = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("项目缩略图")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                // 上传新封面按钮
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "photo.badge.plus")
+                        Text(thumbnailImage == nil ? "上传封面" : "更换")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.accentColor)
+                }
+                .onChange(of: selectedPhotoItem) { _, newItem in
+                    if let newItem = newItem {
+                        isLoadingImage = true
+                        Task {
+                            if let data = try? await newItem.loadTransferable(type: Data.self),
+                               let image = UIImage(data: data) {
+                                await MainActor.run {
+                                    uploadedImage = image
+                                    isLoadingImage = false
+                                    showingUploadedImageCrop = true
+                                }
+                            } else {
+                                await MainActor.run {
+                                    isLoadingImage = false
+                                }
+                            }
+                        }
+                        selectedPhotoItem = nil
+                    }
+                }
+
+                if thumbnailImage != nil {
+                    Button {
+                        showingThumbnailCrop = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "crop")
+                            Text("裁切")
+                        }
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                    }
+                    .padding(.leading, 8)
+
+                    Button {
+                        thumbnailImage = nil
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "xmark.circle")
+                            Text("移除")
+                        }
+                        .font(.caption)
+                        .foregroundColor(.red)
+                    }
+                    .padding(.leading, 8)
+                }
+            }
+
+            if isLoadingImage {
+                HStack {
+                    ProgressView()
+                        .frame(width: 80, height: 80)
+                    Text("加载图片中...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+            } else if let image = thumbnailImage {
+                HStack {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 80, height: 80)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("将保存为项目封面")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("点击裁切可调整，或上传新封面")
+                            .font(.caption2)
+                            .foregroundColor(.secondary.opacity(0.7))
+                    }
+
+                    Spacer()
+                }
+            } else {
+                HStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(width: 80, height: 80)
+                        .overlay(
+                            Image(systemName: "photo.badge.plus")
+                                .font(.title2)
+                                .foregroundColor(.gray)
+                        )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("暂无封面图")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("点击「上传封面」添加")
+                            .font(.caption2)
+                            .foregroundColor(.secondary.opacity(0.7))
+                    }
+
+                    Spacer()
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        // 上传图片的裁切视图
+        .fullScreenCover(isPresented: $showingUploadedImageCrop) {
+            if let image = uploadedImage {
+                ImageCropView(image: image) { croppedImage in
+                    thumbnailImage = croppedImage
+                    uploadedImage = nil
+                }
+            }
+        }
+        .onChange(of: showingUploadedImageCrop) { _, isShowing in
+            // 如果裁切视图关闭且没有设置缩略图，清理上传的图片
+            if !isShowing && uploadedImage != nil {
+                uploadedImage = nil
+            }
         }
     }
 }

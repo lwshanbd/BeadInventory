@@ -81,6 +81,7 @@ final class SDProjectRecord {
     var parentId: UUID?           // 父项目ID，nil表示顶级项目
     var isPlanned: Bool?          // 是否为计划项目（可选，nil视为false）
     var executedDate: Date?       // 执行日期
+    var thumbnail: Data?          // 缩略图数据（可选，压缩后的JPEG）
 
     @Relationship(deleteRule: .cascade)
     var beadUsages: [SDBeadUsage]
@@ -90,7 +91,7 @@ final class SDProjectRecord {
         isPlanned ?? false
     }
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), totalBeads: Int = 0, brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, beadUsages: [SDBeadUsage] = []) {
+    init(id: UUID = UUID(), name: String, date: Date = Date(), totalBeads: Int = 0, brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, beadUsages: [SDBeadUsage] = []) {
         self.id = id
         self.name = name
         self.date = date
@@ -100,17 +101,18 @@ final class SDProjectRecord {
         self.parentId = parentId
         self.isPlanned = isPlanned
         self.executedDate = executedDate
+        self.thumbnail = thumbnail
         self.beadUsages = beadUsages
     }
 
     convenience init(from record: ProjectRecord) {
         let usages = record.beadUsage.map { SDBeadUsage(from: $0) }
-        self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, parentId: record.parentId, isPlanned: record.isPlanned, executedDate: record.executedDate, beadUsages: usages)
+        self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, parentId: record.parentId, isPlanned: record.isPlanned, executedDate: record.executedDate, thumbnail: record.thumbnail, beadUsages: usages)
     }
 
     func toStruct() -> ProjectRecord {
         let usages = beadUsages.map { $0.toStruct() }
-        return ProjectRecord(id: id, name: name, date: date, beadUsage: usages, brandId: brandId, isArchived: isArchived, parentId: parentId, isPlanned: isPlannedValue, executedDate: executedDate)
+        return ProjectRecord(id: id, name: name, date: date, beadUsage: usages, brandId: brandId, isArchived: isArchived, parentId: parentId, isPlanned: isPlannedValue, executedDate: executedDate, thumbnail: thumbnail)
     }
 }
 

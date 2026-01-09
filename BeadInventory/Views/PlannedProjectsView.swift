@@ -301,6 +301,12 @@ struct PlannedProjectRow: View {
         inventoryManager.childProjects(of: project.id).count
     }
 
+    // 从 thumbnail Data 创建 UIImage
+    var thumbnailImage: UIImage? {
+        guard let data = project.thumbnail else { return nil }
+        return UIImage(data: data)
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             // 选择模式复选框
@@ -326,6 +332,19 @@ struct PlannedProjectRow: View {
                         .frame(width: 20)
                 }
                 .buttonStyle(.plain)
+            }
+
+            // 缩略图（如果有）
+            if let image = thumbnailImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 50, height: 50)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
             }
 
             // 项目内容
@@ -418,11 +437,30 @@ struct PlannedProjectRow: View {
 struct PlannedChildProjectRow: View {
     let project: ProjectRecord
 
+    // 从 thumbnail Data 创建 UIImage
+    var thumbnailImage: UIImage? {
+        guard let data = project.thumbnail else { return nil }
+        return UIImage(data: data)
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             Rectangle()
                 .fill(Color.clear)
                 .frame(width: 20)
+
+            // 缩略图（如果有）
+            if let image = thumbnailImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 40, height: 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+            }
 
             NavigationLink(destination: PlannedProjectDetailView(project: project)) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -950,8 +988,27 @@ struct PlannedProjectInfoCard: View {
     let totalBeads: Int
     let childCount: Int
 
+    // 从 thumbnail Data 创建 UIImage
+    var thumbnailImage: UIImage? {
+        guard let data = project.thumbnail else { return nil }
+        return UIImage(data: data)
+    }
+
     var body: some View {
         VStack(spacing: 16) {
+            // 缩略图（如果有）
+            if let image = thumbnailImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 150)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+            }
+
             HStack {
                 Label(project.date.formatted(date: .long, time: .omitted), systemImage: "calendar")
                     .font(.subheadline)

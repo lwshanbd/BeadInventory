@@ -156,8 +156,27 @@ struct ProjectDetailView: View {
 struct ChildProjectRow: View {
     let project: ProjectRecord
 
+    // 从 thumbnail Data 创建 UIImage
+    var thumbnailImage: UIImage? {
+        guard let data = project.thumbnail else { return nil }
+        return UIImage(data: data)
+    }
+
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
+            // 缩略图（如果有）
+            if let image = thumbnailImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 40, height: 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+            }
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(project.name)
                     .font(.subheadline)
@@ -197,8 +216,27 @@ struct ChildProjectRowWithActions: View {
     let onDelete: () -> Void
     let onDetach: () -> Void
 
+    // 从 thumbnail Data 创建 UIImage
+    var thumbnailImage: UIImage? {
+        guard let data = project.thumbnail else { return nil }
+        return UIImage(data: data)
+    }
+
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
+            // 缩略图（如果有）
+            if let image = thumbnailImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 40, height: 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+            }
+
             NavigationLink(destination: ProjectDetailView(project: project)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(project.name)
@@ -258,8 +296,27 @@ struct ProjectInfoCardEnhanced: View {
     let totalBeads: Int
     let childCount: Int
 
+    // 从 thumbnail Data 创建 UIImage
+    var thumbnailImage: UIImage? {
+        guard let data = project.thumbnail else { return nil }
+        return UIImage(data: data)
+    }
+
     var body: some View {
         VStack(spacing: 16) {
+            // 缩略图（如果有）
+            if let image = thumbnailImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 150)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+            }
+
             // 日期和状态
             HStack {
                 if isParent {
