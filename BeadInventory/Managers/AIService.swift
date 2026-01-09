@@ -383,6 +383,7 @@ class AIServiceManager: ObservableObject {
         }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 180  // AI 视觉识别可能需要较长时间，设置 3 分钟超时
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -534,6 +535,7 @@ class AIServiceManager: ObservableObject {
         ]
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 180  // AI 视觉识别可能需要较长时间，设置 3 分钟超时
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
