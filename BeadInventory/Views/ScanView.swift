@@ -140,7 +140,8 @@ struct ScanView: View {
                         RecognizedResultsSectionNew(
                             items: $recognizedItems,
                             totalBeads: totalBeads,
-                            inventoryManager: inventoryManager
+                            inventoryManager: inventoryManager,
+                            onClear: clearState
                         )
                     }
 
@@ -746,6 +747,9 @@ struct RecognizedResultsSectionNew: View {
     @Binding var items: [ScanView.RecognizedItem]
     let totalBeads: Int
     let inventoryManager: InventoryManager
+    var onClear: (() -> Void)? = nil
+
+    @State private var showingClearAlert = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -756,6 +760,26 @@ struct RecognizedResultsSectionNew: View {
                 Text("共 \(items.count) 色 / \(totalBeads) 颗")
                     .font(.caption)
                     .foregroundColor(.secondary)
+
+                // 清空按钮
+                if onClear != nil {
+                    Button {
+                        showingClearAlert = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.subheadline)
+                            .foregroundColor(.red)
+                    }
+                    .padding(.leading, 8)
+                }
+            }
+            .alert("清空确认", isPresented: $showingClearAlert) {
+                Button("取消", role: .cancel) { }
+                Button("清空", role: .destructive) {
+                    onClear?()
+                }
+            } message: {
+                Text("确定要清空所有已添加的颜色吗？")
             }
 
             ForEach(items) { item in
