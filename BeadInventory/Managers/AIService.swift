@@ -308,20 +308,21 @@ class AIServiceManager: ObservableObject {
             1. 先观察表格最左侧列的行标签，确定哪一行是MARD、哪一行是数量
             2. 根据行标签识别每一列的MARD色号和对应数量
             3. 如果有多个表格区块，分别识别后合并结果
-            4. 只返回JSON格式结果，不要其他文字
-            5. 如果检测到"任意色"，color_code应当叫做"any"
+            4. 如果检测到"任意色"，color_code应当叫做"any"
 
-            输出格式（严格JSON）：
-            {"items":[{"color_code":"F8","quantity":100},{"color_code":"A17","quantity":50}]}
+            【重要】输出格式要求：
+            - 必须严格按照以下JSON格式输出，不要添加任何其他文字、解释或markdown标记
+            - 格式：{"items":[{"color_code":"色号","quantity":数量},...]}
+            - 示例：{"items":[{"color_code":"F8","quantity":100},{"color_code":"A17","quantity":50}]}
+            - color_code必须是字符串，quantity必须是整数
+            - 直接输出JSON，不要用```包裹
 
             注意：
             - 只返回MARD色号，忽略其他品牌行
-            - color_code是字符串，quantity是整数
             - 如果某列无法识别，跳过该列
-            - 只输出JSON，不要解释
             - 图片可能有水印干扰，请仔细辨认文字
             """
-            userPrompt = "请识别这张色号表格图片，提取所有MARD色号和对应的数量。先查看最左侧列的行标签，确定MARD行和数量行。如有多个表格区块请全部识别。只返回JSON。"
+            userPrompt = "请识别这张色号表格图片，提取所有MARD色号和对应的数量。先查看最左侧列的行标签，确定MARD行和数量行。如有多个表格区块请全部识别。直接返回JSON格式：{\"items\":[{\"color_code\":\"...\",\"quantity\":...},...]}"
 
         case .blueprint:
             systemPrompt = """
@@ -465,20 +466,21 @@ class AIServiceManager: ObservableObject {
             1. 先观察表格最左侧列的行标签，确定哪一行是MARD、哪一行是数量
             2. 根据行标签识别每一列的MARD色号和对应数量
             3. 如果有多个表格区块，分别识别后合并结果
-            4. 只返回JSON格式结果，不要其他文字
-            5. 如果检测到"任意色"，color_code应当叫做"any"
+            4. 如果检测到"任意色"，color_code应当叫做"any"
 
-            输出格式（严格JSON）：
-            {"items":[{"color_code":"F8","quantity":100},{"color_code":"A17","quantity":50}]}
+            【重要】输出格式要求：
+            - 必须严格按照以下JSON格式输出，不要添加任何其他文字、解释或markdown标记
+            - 格式：{"items":[{"color_code":"色号","quantity":数量},...]}
+            - 示例：{"items":[{"color_code":"F8","quantity":100},{"color_code":"A17","quantity":50}]}
+            - color_code必须是字符串，quantity必须是整数
+            - 直接输出JSON，不要用```包裹
 
             注意：
             - 只返回MARD色号，忽略其他品牌行
-            - color_code是字符串，quantity是整数
             - 如果某列无法识别，跳过该列
-            - 只输出JSON，不要解释
             - 图片可能有水印干扰，请仔细辨认文字
             """
-            userPrompt = "请识别这张色号表格图片，提取所有MARD色号和对应的数量。先查看最左侧列的行标签，确定MARD行和数量行。如有多个表格区块请全部识别。只返回JSON。"
+            userPrompt = "请识别这张色号表格图片，提取所有MARD色号和对应的数量。先查看最左侧列的行标签，确定MARD行和数量行。如有多个表格区块请全部识别。直接返回JSON格式：{\"items\":[{\"color_code\":\"...\",\"quantity\":...},...]}"
 
         case .blueprint:
             systemPrompt = """
