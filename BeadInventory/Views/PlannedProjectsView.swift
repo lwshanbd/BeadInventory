@@ -521,6 +521,28 @@ struct ExecutePlannedProjectSheet: View {
         return project.beadUsage.count
     }
 
+    /// 获取当前项目的所有 beadUsage（父项目则聚合子项目）
+    var allBeadUsages: [BeadUsage] {
+        if isParent {
+            return inventoryManager.aggregatedBeadUsage(for: project.id)
+        }
+        return project.beadUsage
+    }
+
+    /// 检查扣除后库存会变为负数的颜色
+    var insufficientStockItems: [(colorCode: String, currentStock: Int, deductAmount: Int)] {
+        guard let brandId = selectedBrandId else { return [] }
+        var result: [(colorCode: String, currentStock: Int, deductAmount: Int)] = []
+        for usage in allBeadUsages {
+            let stock = inventoryManager.getStock(brandId: brandId, mardCode: usage.colorCode)
+            let currentStock = stock?.stock ?? 0
+            if currentStock < usage.quantity {
+                result.append((colorCode: usage.colorCode, currentStock: currentStock, deductAmount: usage.quantity))
+            }
+        }
+        return result
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -606,7 +628,7 @@ struct ExecutePlannedProjectSheet: View {
             }
             .alert("确认执行", isPresented: $showConfirmation) {
                 Button("取消", role: .cancel) { }
-                Button("确认") {
+                Button("确认", role: insufficientStockItems.isEmpty ? .none : .destructive) {
                     if let brandId = selectedBrandId {
                         inventoryManager.executePlannedProject(project.id, withBrand: brandId)
                         dismiss()
@@ -615,7 +637,11 @@ struct ExecutePlannedProjectSheet: View {
                 }
             } message: {
                 if let brand = selectedBrand {
-                    Text("将从「\(brand.name)」品牌库存中扣减 \(totalBeads) 颗豆子（\(colorCount) 种颜色）。可在历史记录中撤回此操作。")
+                    if insufficientStockItems.isEmpty {
+                        Text("将从「\(brand.name)」品牌库存中扣减 \(totalBeads) 颗豆子（\(colorCount) 种颜色）。")
+                    } else {
+                        Text("将从「\(brand.name)」品牌库存中扣减 \(totalBeads) 颗豆子（\(colorCount) 种颜色）。\n\n⚠️ 以下 \(insufficientStockItems.count) 种颜色扣除后库存将为负数：\n\(insufficientStockItems.map { "\($0.colorCode): \($0.currentStock) - \($0.deductAmount) = \($0.currentStock - $0.deductAmount)" }.joined(separator: "\n"))")
+                    }
                 }
             }
         }

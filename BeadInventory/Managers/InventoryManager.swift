@@ -807,6 +807,10 @@ class InventoryManager: ObservableObject {
         // 情况1：只有一个父项目 + 一个或多个独立项目
         if parentProjects.count == 1 && !independentProjects.isEmpty {
             let existingParentId = parentProjects[0].id
+
+            // 记录合并前的状态（只记录独立项目，因为父项目不变）
+            let originalProjects = independentProjects
+
             // 将独立项目设为该父项目的子项目
             for project in independentProjects {
                 if let index = projects.firstIndex(where: { $0.id == project.id }) {
@@ -814,19 +818,32 @@ class InventoryManager: ObservableObject {
                 }
             }
             saveData()
+
+            // 记录合并历史
+            HistoryManager.shared.recordProjectMerge(
+                originalProjects: originalProjects,
+                newParentId: nil,
+                isSimpleMerge: true,
+                existingParentId: existingParentId,
+                mergedName: parentProjects[0].name
+            )
+
             return existingParentId
         }
 
         // 情况2：多个父项目（可能还有独立项目）→ 创建新父项目，扁平化所有子项目
         if parentProjects.count > 1 {
-            // 收集所有子项目
-            var allChildren: [UUID] = []
+            // 收集所有子项目及其当前状态
+            var allChildrenProjects: [ProjectRecord] = []
             for parent in parentProjects {
                 let children = childProjects(of: parent.id)
-                allChildren.append(contentsOf: children.map { $0.id })
+                allChildrenProjects.append(contentsOf: children)
             }
             // 加上独立项目
-            allChildren.append(contentsOf: independentProjects.map { $0.id })
+            allChildrenProjects.append(contentsOf: independentProjects)
+
+            // 记录合并前的状态：所有子项目 + 所有父项目
+            let originalProjects = allChildrenProjects + parentProjects
 
             // 创建新的父项目
             let newParentProject = ProjectRecord(
@@ -840,8 +857,8 @@ class InventoryManager: ObservableObject {
             )
 
             // 将所有子项目设为新父项目的子项目
-            for childId in allChildren {
-                if let index = projects.firstIndex(where: { $0.id == childId }) {
+            for child in allChildrenProjects {
+                if let index = projects.firstIndex(where: { $0.id == child.id }) {
                     projects[index].parentId = newParentProject.id
                 }
             }
@@ -854,10 +871,23 @@ class InventoryManager: ObservableObject {
             // 添加新父项目
             projects.insert(newParentProject, at: 0)
             saveData()
+
+            // 记录合并历史
+            HistoryManager.shared.recordProjectMerge(
+                originalProjects: originalProjects,
+                newParentId: newParentProject.id,
+                isSimpleMerge: false,
+                existingParentId: nil,
+                mergedName: newName
+            )
+
             return newParentProject.id
         }
 
         // 情况3：只有独立项目 → 创建新父项目
+        // 记录合并前的状态
+        let originalProjects = independentProjects
+
         let newParentProject = ProjectRecord(
             name: newName,
             date: Date(),
@@ -878,7 +908,70 @@ class InventoryManager: ObservableObject {
         // 添加新父项目
         projects.insert(newParentProject, at: 0)
         saveData()
+
+        // 记录合并历史
+        HistoryManager.shared.recordProjectMerge(
+            originalProjects: originalProjects,
+            newParentId: newParentProject.id,
+            isSimpleMerge: false,
+            existingParentId: nil,
+            mergedName: newName
+        )
+
         return newParentProject.id
+    }
+
+    /// 撤回项目合并操作
+    func revertProjectMerge(mergeSnapshot: MergeSnapshot) -> Bool {
+        if mergeSnapshot.isSimpleMerge {
+            // 简单合并撤回：将子项目的 parentId 恢复为 nil（变回独立项目）
+            for projectSnapshot in mergeSnapshot.originalProjects {
+                if let index = projects.firstIndex(where: { $0.id == projectSnapshot.id }) {
+                    projects[index].parentId = projectSnapshot.parentId  // 恢复原始 parentId（通常是 nil）
+                }
+            }
+            saveData()
+            print("[InventoryManager] 撤回简单合并：恢复了 \(mergeSnapshot.originalProjects.count) 个项目")
+            return true
+        } else {
+            // 复杂合并撤回：
+            // 1. 删除新创建的父项目
+            // 2. 恢复所有原始项目的状态
+
+            // 先删除新父项目
+            if let newParentId = mergeSnapshot.newParentId {
+                projects.removeAll { $0.id == newParentId }
+            }
+
+            // 恢复所有原始项目的状态
+            for projectSnapshot in mergeSnapshot.originalProjects {
+                if let index = projects.firstIndex(where: { $0.id == projectSnapshot.id }) {
+                    // 恢复 parentId
+                    projects[index].parentId = projectSnapshot.parentId
+                } else {
+                    // 项目不存在（可能是被删除的旧父项目），需要重新创建
+                    let usages = projectSnapshot.beadUsages.map {
+                        BeadUsage(colorCode: $0.colorCode, brandId: $0.brandId, quantity: $0.quantity, isDeducted: $0.isDeducted)
+                    }
+                    let restoredProject = ProjectRecord(
+                        id: projectSnapshot.id,
+                        name: projectSnapshot.name,
+                        date: projectSnapshot.date,
+                        beadUsage: usages,
+                        brandId: projectSnapshot.brandId,
+                        isArchived: projectSnapshot.isArchived,
+                        parentId: projectSnapshot.parentId,
+                        isPlanned: projectSnapshot.isPlanned,
+                        executedDate: projectSnapshot.executedDate
+                    )
+                    projects.append(restoredProject)
+                }
+            }
+
+            saveData()
+            print("[InventoryManager] 撤回复杂合并：恢复了 \(mergeSnapshot.originalProjects.count) 个项目")
+            return true
+        }
     }
 
     /// 将子项目独立为顶级项目

@@ -265,14 +265,75 @@ class HistoryManager: ObservableObject {
         print("[History] 记录计划执行: \(afterProject.name)")
     }
 
+    /// 记录项目合并操作
+    func recordProjectMerge(
+        originalProjects: [ProjectRecord],
+        newParentId: UUID?,
+        isSimpleMerge: Bool,
+        existingParentId: UUID?,
+        mergedName: String
+    ) {
+        // 撤回操作时不记录新的历史
+        guard !isReverting else { return }
+
+        // 为所有原始项目创建快照
+        let projectSnapshots = originalProjects.map { project -> ProjectSnapshot in
+            let usageSnapshots = project.beadUsage.map {
+                BeadUsageSnapshot(colorCode: $0.colorCode, brandId: $0.brandId, quantity: $0.quantity, isDeducted: $0.isDeducted)
+            }
+            return ProjectSnapshot(
+                id: project.id,
+                name: project.name,
+                date: project.date,
+                totalBeads: project.totalBeads,
+                brandId: project.brandId,
+                isArchived: project.isArchived,
+                parentId: project.parentId,
+                isPlanned: project.isPlanned,
+                executedDate: project.executedDate,
+                beadUsages: usageSnapshots
+            )
+        }
+
+        let mergeSnapshot = MergeSnapshot(
+            originalProjects: projectSnapshots,
+            newParentId: newParentId,
+            isSimpleMerge: isSimpleMerge,
+            existingParentId: existingParentId
+        )
+
+        let snapshotData = try? JSONEncoder().encode(mergeSnapshot)
+
+        let record = HistoryRecord(
+            operationType: .projectMerge,
+            entityName: mergedName,
+            beforeSnapshot: snapshotData,
+            afterSnapshot: nil
+        )
+
+        records.insert(record, at: 0)
+        trimRecords()
+        saveData()
+
+        print("[History] 记录项目合并: \(mergedName) (包含 \(originalProjects.count) 个项目)")
+    }
+
     // MARK: - 撤回操作
 
     /// 检查某个记录是否可以撤回
     func canRevert(_ record: HistoryRecord) -> Bool {
         switch record.operationType {
-        case .stockReset, .projectMerge:
-            // 这些操作不支持撤回
+        case .stockReset:
+            // 库存重置不支持撤回
             return false
+
+        case .projectMerge:
+            // 检查是否有合并快照
+            guard let beforeData = record.beforeSnapshot,
+                  let _ = try? JSONDecoder().decode(MergeSnapshot.self, from: beforeData) else {
+                return false
+            }
+            return true
 
         case .planExecute:
             // 现在支持撤回执行操作
@@ -316,7 +377,15 @@ class HistoryManager: ObservableObject {
         case .stockReset:
             return "库存重置影响范围太大，不支持撤回"
         case .projectMerge:
-            return "项目合并操作过于复杂，不支持撤回"
+            // 检查是否有合并快照
+            if record.beforeSnapshot == nil {
+                return "缺少合并快照，无法撤回（旧版本记录）"
+            }
+            if let beforeData = record.beforeSnapshot,
+               (try? JSONDecoder().decode(MergeSnapshot.self, from: beforeData)) == nil {
+                return "合并快照格式无效，无法撤回"
+            }
+            return nil
         case .planAdd:
             if let afterData = record.afterSnapshot,
                let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: afterData),
@@ -480,8 +549,13 @@ class HistoryManager: ObservableObject {
             return false
 
         case .projectMerge:
-            // 合并不支持撤回（太复杂）
-            return false
+            // 撤回合并 = 恢复所有原始项目的状态
+            guard let beforeData = record.beforeSnapshot,
+                  let mergeSnapshot = try? JSONDecoder().decode(MergeSnapshot.self, from: beforeData) else {
+                print("[History] 无法撤回合并：缺少合并快照")
+                return false
+            }
+            return manager.revertProjectMerge(mergeSnapshot: mergeSnapshot)
 
         // 计划操作撤回
         case .planAdd:

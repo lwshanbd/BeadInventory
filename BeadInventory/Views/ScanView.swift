@@ -42,6 +42,20 @@ struct ScanView: View {
         recognizedItems.reduce(0) { $0 + $1.quantity }
     }
 
+    /// 检查扣除后库存会变为负数的颜色
+    var insufficientStockItems: [(colorCode: String, currentStock: Int, deductAmount: Int)] {
+        guard let brandId = inventoryManager.currentBrandId else { return [] }
+        var result: [(colorCode: String, currentStock: Int, deductAmount: Int)] = []
+        for item in recognizedItems {
+            let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode)
+            let currentStock = stock?.stock ?? 0
+            if currentStock < item.quantity {
+                result.append((colorCode: item.colorCode, currentStock: currentStock, deductAmount: item.quantity))
+            }
+        }
+        return result
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -294,11 +308,15 @@ struct ScanView: View {
             }
             .alert("确认扣减", isPresented: $showingConfirmation) {
                 Button("取消", role: .cancel) { }
-                Button("确认扣减") {
+                Button("确认扣减", role: insufficientStockItems.isEmpty ? .none : .destructive) {
                     applyToInventory()
                 }
             } message: {
-                Text("将从库存中扣减 \(totalBeads) 颗豆子，共 \(recognizedItems.count) 种颜色。此操作不可撤销。")
+                if insufficientStockItems.isEmpty {
+                    Text("将从库存中扣减 \(totalBeads) 颗豆子，共 \(recognizedItems.count) 种颜色。")
+                } else {
+                    Text("将从库存中扣减 \(totalBeads) 颗豆子，共 \(recognizedItems.count) 种颜色。\n\n⚠️ 以下 \(insufficientStockItems.count) 种颜色扣除后库存将为负数：\n\(insufficientStockItems.map { "\($0.colorCode): \($0.currentStock) - \($0.deductAmount) = \($0.currentStock - $0.deductAmount)" }.joined(separator: "\n"))")
+                }
             }
             .alert("创建计划", isPresented: $showingCreatePlan) {
                 Button("取消", role: .cancel) { }

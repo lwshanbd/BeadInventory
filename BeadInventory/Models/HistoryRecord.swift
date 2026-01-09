@@ -189,3 +189,16 @@ struct BeadUsageSnapshot: Codable {
     let quantity: Int
     let isDeducted: Bool
 }
+
+// MARK: - 合并快照（用于支持合并操作撤回）
+
+struct MergeSnapshot: Codable {
+    /// 合并前所有参与项目的状态
+    let originalProjects: [ProjectSnapshot]
+    /// 合并后新创建的父项目ID（如果有）
+    let newParentId: UUID?
+    /// 是否是简单合并（一个父项目 + 独立项目，不创建新父项目）
+    let isSimpleMerge: Bool
+    /// 原有父项目ID（仅用于简单合并情况）
+    let existingParentId: UUID?
+}
