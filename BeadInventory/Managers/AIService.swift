@@ -605,7 +605,73 @@ class AIServiceManager: ObservableObject {
             }
         }
 
+        // 修复常见的 JSON 格式问题
+        jsonText = fixJSONFormat(jsonText)
+
         return jsonText
+    }
+
+    // 修复常见的 JSON 格式问题
+    private func fixJSONFormat(_ json: String) -> String {
+        var fixed = json
+
+        // 修复多余的括号问题（如 "]}" 变成 "]]}" 或 "}}" 等）
+        // 统计括号数量
+        let openBraces = fixed.filter { $0 == "{" }.count
+        let closeBraces = fixed.filter { $0 == "}" }.count
+        let openBrackets = fixed.filter { $0 == "[" }.count
+        let closeBrackets = fixed.filter { $0 == "]" }.count
+
+        // 如果 ] 比 [ 多，从末尾移除多余的 ]
+        if closeBrackets > openBrackets {
+            let excess = closeBrackets - openBrackets
+            for _ in 0..<excess {
+                if let lastIndex = fixed.lastIndex(of: "]") {
+                    // 确保不是在字符串内部
+                    let afterIndex = fixed.index(after: lastIndex)
+                    if afterIndex == fixed.endIndex || fixed[afterIndex] == "}" || fixed[afterIndex] == "]" || fixed[afterIndex] == "," {
+                        fixed.remove(at: lastIndex)
+                        print("[AI Debug] 修复：移除多余的 ]")
+                    }
+                }
+            }
+        }
+
+        // 如果 } 比 { 多，从末尾移除多余的 }
+        if closeBraces > openBraces {
+            let excess = closeBraces - openBraces
+            for _ in 0..<excess {
+                if let lastIndex = fixed.lastIndex(of: "}") {
+                    fixed.remove(at: lastIndex)
+                    print("[AI Debug] 修复：移除多余的 }")
+                }
+            }
+        }
+
+        // 如果 { 比 } 多，在末尾添加 }
+        if openBraces > closeBraces {
+            let missing = openBraces - closeBraces
+            for _ in 0..<missing {
+                fixed.append("}")
+                print("[AI Debug] 修复：添加缺失的 }")
+            }
+        }
+
+        // 如果 [ 比 ] 多，在末尾添加 ]
+        if openBrackets > closeBrackets {
+            let missing = openBrackets - closeBrackets
+            for _ in 0..<missing {
+                // 在最后一个 } 之前插入 ]
+                if let lastBrace = fixed.lastIndex(of: "}") {
+                    fixed.insert("]", at: lastBrace)
+                } else {
+                    fixed.append("]")
+                }
+                print("[AI Debug] 修复：添加缺失的 ]")
+            }
+        }
+
+        return fixed
     }
 }
 
