@@ -95,7 +95,7 @@ struct PlannedProjectsView: View {
 
                                 // 展开的子项目
                                 if isParent && isExpanded {
-                                    ForEach(inventoryManager.childProjects(of: project.id)) { child in
+                                    ForEach(inventoryManager.plannedChildProjects(of: project.id)) { child in
                                         PlannedChildProjectRow(project: child)
                                             .padding(.leading, 20)
                                     }
@@ -243,7 +243,7 @@ struct PlannedProjectsListView: View {
 
                     // 子项目
                     if isParent && isExpanded {
-                        let children = inventoryManager.childProjects(of: project.id)
+                        let children = inventoryManager.plannedChildProjects(of: project.id)
                         ForEach(children) { child in
                             PlannedChildProjectRow(project: child)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -285,20 +285,20 @@ struct PlannedProjectRow: View {
 
     var colorCount: Int {
         if isParent {
-            return inventoryManager.aggregatedColorCount(for: project.id)
+            return inventoryManager.plannedAggregatedColorCount(for: project.id)
         }
         return project.beadUsage.count
     }
 
     var totalBeads: Int {
         if isParent {
-            return inventoryManager.aggregatedTotalBeads(for: project.id)
+            return inventoryManager.plannedAggregatedTotalBeads(for: project.id)
         }
         return project.totalBeads
     }
 
     var childCount: Int {
-        inventoryManager.childProjects(of: project.id).count
+        inventoryManager.plannedChildProjects(of: project.id).count
     }
 
     // 从 thumbnail Data 创建 UIImage
@@ -548,14 +548,14 @@ struct ExecutePlannedProjectSheet: View {
 
     var totalBeads: Int {
         if isParent {
-            return inventoryManager.aggregatedTotalBeads(for: project.id)
+            return inventoryManager.plannedAggregatedTotalBeads(for: project.id)
         }
         return project.totalBeads
     }
 
     var colorCount: Int {
         if isParent {
-            return inventoryManager.aggregatedColorCount(for: project.id)
+            return inventoryManager.plannedAggregatedColorCount(for: project.id)
         }
         return project.beadUsage.count
     }
@@ -563,7 +563,7 @@ struct ExecutePlannedProjectSheet: View {
     /// 获取当前项目的所有 beadUsage（父项目则聚合子项目）
     var allBeadUsages: [BeadUsage] {
         if isParent {
-            return inventoryManager.aggregatedBeadUsage(for: project.id)
+            return inventoryManager.plannedAggregatedBeadUsage(for: project.id)
         }
         return project.beadUsage
     }
@@ -611,7 +611,7 @@ struct ExecutePlannedProjectSheet: View {
                         HStack {
                             Text("子项目")
                             Spacer()
-                            Text("\(inventoryManager.childProjects(of: project.id).count) 个")
+                            Text("\(inventoryManager.plannedChildProjects(of: project.id).count) 个")
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -803,12 +803,12 @@ struct PlannedProjectDetailView: View {
     }
 
     var childProjects: [ProjectRecord] {
-        inventoryManager.childProjects(of: project.id)
+        inventoryManager.plannedChildProjects(of: project.id)
     }
 
     var displayUsage: [BeadUsage] {
         if isParentProject {
-            return inventoryManager.aggregatedBeadUsage(for: project.id)
+            return inventoryManager.plannedAggregatedBeadUsage(for: project.id)
         }
         return currentProject?.beadUsage ?? project.beadUsage
     }
@@ -823,14 +823,14 @@ struct PlannedProjectDetailView: View {
 
     var colorCount: Int {
         if isParentProject {
-            return inventoryManager.aggregatedColorCount(for: project.id)
+            return inventoryManager.plannedAggregatedColorCount(for: project.id)
         }
         return currentProject?.beadUsage.count ?? project.beadUsage.count
     }
 
     var totalBeads: Int {
         if isParentProject {
-            return inventoryManager.aggregatedTotalBeads(for: project.id)
+            return inventoryManager.plannedAggregatedTotalBeads(for: project.id)
         }
         return currentProject?.totalBeads ?? project.totalBeads
     }

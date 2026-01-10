@@ -726,6 +726,26 @@ class InventoryManager: ObservableObject {
         projects.filter { $0.parentId == parentId }
     }
 
+    /// 获取父项目的计划中子项目（未执行的）
+    func plannedChildProjects(of parentId: UUID) -> [ProjectRecord] {
+        projects.filter { $0.parentId == parentId && $0.isPlanned }
+    }
+
+    /// 获取父项目的已执行子项目
+    func executedChildProjects(of parentId: UUID) -> [ProjectRecord] {
+        projects.filter { $0.parentId == parentId && !$0.isPlanned }
+    }
+
+    /// 判断父项目是否还有未执行的子项目
+    func hasPlannedChildren(_ parentId: UUID) -> Bool {
+        projects.contains { $0.parentId == parentId && $0.isPlanned }
+    }
+
+    /// 判断父项目是否有已执行的子项目
+    func hasExecutedChildren(_ parentId: UUID) -> Bool {
+        projects.contains { $0.parentId == parentId && !$0.isPlanned }
+    }
+
     /// 判断项目是否为父项目（有子项目）
     func isParentProject(_ projectId: UUID) -> Bool {
         projects.contains { $0.parentId == projectId }
@@ -755,6 +775,76 @@ class InventoryManager: ObservableObject {
     /// 获取父项目的汇总颜色数
     func aggregatedColorCount(for parentId: UUID) -> Int {
         let children = childProjects(of: parentId)
+        var colorCodes = Set<String>()
+        for child in children {
+            for usage in child.beadUsage {
+                colorCodes.insert(usage.colorCode)
+            }
+        }
+        return colorCodes.count
+    }
+
+    // MARK: - 计划子项目统计（只统计未执行的子项目）
+
+    /// 获取父项目的计划中子项目汇总 beadUsage
+    func plannedAggregatedBeadUsage(for parentId: UUID) -> [BeadUsage] {
+        let children = plannedChildProjects(of: parentId)
+        var usageDict: [String: Int] = [:]
+
+        for child in children {
+            for usage in child.beadUsage {
+                usageDict[usage.colorCode, default: 0] += usage.quantity
+            }
+        }
+
+        return usageDict.map { colorCode, quantity in
+            BeadUsage(colorCode: colorCode, quantity: quantity, isDeducted: false)
+        }.sorted { $0.colorCode < $1.colorCode }
+    }
+
+    /// 获取父项目的计划中子项目汇总总颗数
+    func plannedAggregatedTotalBeads(for parentId: UUID) -> Int {
+        plannedChildProjects(of: parentId).reduce(0) { $0 + $1.totalBeads }
+    }
+
+    /// 获取父项目的计划中子项目汇总颜色数
+    func plannedAggregatedColorCount(for parentId: UUID) -> Int {
+        let children = plannedChildProjects(of: parentId)
+        var colorCodes = Set<String>()
+        for child in children {
+            for usage in child.beadUsage {
+                colorCodes.insert(usage.colorCode)
+            }
+        }
+        return colorCodes.count
+    }
+
+    // MARK: - 已执行子项目统计
+
+    /// 获取父项目的已执行子项目汇总 beadUsage
+    func executedAggregatedBeadUsage(for parentId: UUID) -> [BeadUsage] {
+        let children = executedChildProjects(of: parentId)
+        var usageDict: [String: Int] = [:]
+
+        for child in children {
+            for usage in child.beadUsage {
+                usageDict[usage.colorCode, default: 0] += usage.quantity
+            }
+        }
+
+        return usageDict.map { colorCode, quantity in
+            BeadUsage(colorCode: colorCode, quantity: quantity, isDeducted: true)
+        }.sorted { $0.colorCode < $1.colorCode }
+    }
+
+    /// 获取父项目的已执行子项目汇总总颗数
+    func executedAggregatedTotalBeads(for parentId: UUID) -> Int {
+        executedChildProjects(of: parentId).reduce(0) { $0 + $1.totalBeads }
+    }
+
+    /// 获取父项目的已执行子项目汇总颜色数
+    func executedAggregatedColorCount(for parentId: UUID) -> Int {
+        let children = executedChildProjects(of: parentId)
         var colorCodes = Set<String>()
         for child in children {
             for usage in child.beadUsage {
@@ -1050,13 +1140,23 @@ class InventoryManager: ObservableObject {
 
     /// 获取所有计划中的顶级项目
     func plannedProjects() -> [ProjectRecord] {
-        projects.filter { $0.isPlanned && $0.parentId == nil && !$0.isArchived }
+        // 获取所有顶级项目（没有父项目的）
+        let topLevel = projects.filter { $0.parentId == nil && !$0.isArchived }
+
+        return topLevel.filter { project in
+            if isParentProject(project.id) {
+                // 父项目：只有当它还有未执行的子项目时才显示
+                return hasPlannedChildren(project.id)
+            } else {
+                // 独立项目：根据自身的 isPlanned 状态
+                return project.isPlanned
+            }
+        }
     }
 
     /// 获取计划项目数量（用于 Tab Badge）
     func plannedProjectCount() -> Int {
-        // 只统计顶级计划项目（与 plannedProjects() 一致）
-        projects.filter { $0.isPlanned && $0.parentId == nil && !$0.isArchived }.count
+        plannedProjects().count
     }
 
     /// 判断项目是否为计划项目
@@ -1112,6 +1212,22 @@ class InventoryManager: ObservableObject {
         projects[index].beadUsage = project.beadUsage.map { usage in
             BeadUsage(id: usage.id, colorCode: usage.colorCode, brandId: brandId,
                       quantity: usage.quantity, isDeducted: true)
+        }
+
+        // 如果这是一个子项目，检查父项目是否还有其他未执行的子项目
+        if let parentId = project.parentId {
+            // 检查父项目是否还有其他未执行的子计划（排除当前刚执行的这个）
+            let remainingPlannedChildren = projects.filter {
+                $0.parentId == parentId && $0.isPlanned && $0.id != projectId
+            }
+            // 如果没有其他未执行的子计划，将父项目的 isPlanned 设为 false
+            if remainingPlannedChildren.isEmpty {
+                if let parentIndex = projects.firstIndex(where: { $0.id == parentId }) {
+                    projects[parentIndex].isPlanned = false
+                    projects[parentIndex].executedDate = Date()
+                    projects[parentIndex].brandId = brandId
+                }
+            }
         }
 
         saveData()

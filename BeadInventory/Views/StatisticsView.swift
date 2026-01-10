@@ -340,19 +340,32 @@ struct ProjectHistoryView: View {
 
     // 只显示顶级项目（排除计划项目，只显示已执行的）
     var displayedProjects: [ProjectRecord] {
-        let topLevel = inventoryManager.topLevelProjects().filter { !$0.isPlanned }
+        let topLevel = inventoryManager.topLevelProjects()
+
+        // 筛选出已执行的项目或有已执行子项目的父项目
+        let executed = topLevel.filter { project in
+            if inventoryManager.isParentProject(project.id) {
+                // 父项目：只有当它有已执行的子项目时才显示
+                return inventoryManager.hasExecutedChildren(project.id)
+            } else {
+                // 独立项目：根据自身的 isPlanned 状态
+                return !project.isPlanned
+            }
+        }
+
         if showArchived {
-            return topLevel
+            return executed
         } else {
-            return topLevel.filter { !$0.isArchived }
+            return executed.filter { !$0.isArchived }
         }
     }
 
     var archivedCount: Int {
-        inventoryManager.projects.filter { $0.isArchived && !$0.isPlanned }.count
+        // 只统计已执行项目中的归档数量
+        inventoryManager.projects.filter { $0.isArchived && !$0.isPlanned && $0.parentId == nil }.count
     }
 
-    // 已执行的项目（非计划项目）
+    // 已执行的项目（非计划项目，包括子项目）
     var executedProjects: [ProjectRecord] {
         inventoryManager.projects.filter { !$0.isPlanned }
     }
@@ -499,7 +512,7 @@ struct ProjectHistoryView: View {
 
                         // 子项目
                         if isParent && isExpanded {
-                            let children = inventoryManager.childProjects(of: project.id)
+                            let children = inventoryManager.executedChildProjects(of: project.id)
                             ForEach(children) { child in
                                 ProjectRowWithHierarchy(
                                     project: child,
@@ -581,20 +594,20 @@ struct ProjectRowWithHierarchy: View {
 
     var colorCount: Int {
         if isParent {
-            return inventoryManager.aggregatedColorCount(for: project.id)
+            return inventoryManager.executedAggregatedColorCount(for: project.id)
         }
         return project.beadUsage.count
     }
 
     var totalBeads: Int {
         if isParent {
-            return inventoryManager.aggregatedTotalBeads(for: project.id)
+            return inventoryManager.executedAggregatedTotalBeads(for: project.id)
         }
         return project.totalBeads
     }
 
     var childCount: Int {
-        inventoryManager.childProjects(of: project.id).count
+        inventoryManager.executedChildProjects(of: project.id).count
     }
 
     // 从 thumbnail Data 创建 UIImage
