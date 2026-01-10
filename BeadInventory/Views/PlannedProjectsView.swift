@@ -317,8 +317,11 @@ struct PlannedProjectRow: View {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                         .foregroundColor(isSelected ? .accentColor : .secondary)
                         .font(.title2)
+                        .frame(width: 44, height: 44) // 增大点击区域
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .zIndex(10) // 确保在最上层
             }
 
             // 展开/折叠按钮
@@ -334,88 +337,52 @@ struct PlannedProjectRow: View {
                 .buttonStyle(.plain)
             }
 
-            // 缩略图（如果有）
+            // 缩略图（如果有）- 选择模式下点击也触发选择
             if let image = thumbnailImage {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 50, height: 50)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
+                Group {
+                    if isSelectMode {
+                        Button {
+                            onToggleSelect()
+                        } label: {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 50, height: 50)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 50, height: 50)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            )
+                    }
+                }
             }
 
             // 项目内容
-            NavigationLink(destination: PlannedProjectDetailView(project: project)) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        // 计划标识
-                        Image(systemName: "calendar.badge.clock")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-
-                        if isParent {
-                            Image(systemName: "folder.fill")
-                                .font(.caption)
-                                .foregroundColor(.accentColor)
-                        }
-
-                        Text(project.name)
-                            .font(.headline)
-
-                        Spacer()
-
-                        Text(project.date.formatted(date: .abbreviated, time: .omitted))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    HStack {
-                        if isParent {
-                            Text("\(childCount) 个子项目")
-                                .font(.caption)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.blue.opacity(0.1))
-                                .foregroundColor(.blue)
-                                .cornerRadius(4)
-                        }
-
-                        Label("\(colorCount) 色", systemImage: "paintpalette")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        Spacer()
-
-                        Label("\(totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
-                            .font(.caption)
-                            .foregroundColor(.accentColor)
-                    }
-
-                    // 颜色预览
-                    if !isParent {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 4) {
-                                ForEach(project.beadUsage.prefix(8)) { usage in
-                                    Text(usage.colorCode)
-                                        .font(.caption2)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color.orange.opacity(0.1))
-                                        .cornerRadius(4)
-                                }
-                                if project.beadUsage.count > 8 {
-                                    Text("+\(project.beadUsage.count - 8)")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                    }
+            if isSelectMode {
+                // 选择模式下，点击内容区域也触发选择
+                Button {
+                    onToggleSelect()
+                } label: {
+                    projectContentView
                 }
-                .padding(.vertical, 4)
+                .buttonStyle(.plain)
+            } else {
+                // 非选择模式下，使用 NavigationLink
+                NavigationLink(destination: PlannedProjectDetailView(project: project)) {
+                    projectContentView
+                }
             }
 
             // 执行按钮（非选择模式下显示）
@@ -430,6 +397,78 @@ struct PlannedProjectRow: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    // 提取项目内容视图
+    private var projectContentView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                // 计划标识
+                Image(systemName: "calendar.badge.clock")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+
+                if isParent {
+                    Image(systemName: "folder.fill")
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                }
+
+                Text(project.name)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                Text(project.date.formatted(date: .abbreviated, time: .omitted))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack {
+                if isParent {
+                    Text("\(childCount) 个子项目")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.1))
+                        .foregroundColor(.blue)
+                        .cornerRadius(4)
+                }
+
+                Label("\(colorCount) 色", systemImage: "paintpalette")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                Label("\(totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
+                    .font(.caption)
+                    .foregroundColor(.accentColor)
+            }
+
+            // 颜色预览
+            if !isParent {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(project.beadUsage.prefix(8)) { usage in
+                            Text(usage.colorCode)
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.1))
+                                .cornerRadius(4)
+                        }
+                        if project.beadUsage.count > 8 {
+                            Text("+\(project.beadUsage.count - 8)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
