@@ -31,6 +31,9 @@ struct ScanView: View {
     @State private var thumbnailImage: UIImage?      // 缩略图（可裁切）
     @State private var showingThumbnailCrop = false  // 显示缩略图裁切视图
 
+    // 图片固定功能
+    @State private var isImagePinned = false         // 是否固定图片在顶部
+
     // 识别结果项
     struct RecognizedItem: Identifiable {
         let id = UUID()
@@ -58,202 +61,222 @@ struct ScanView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // 图片选择区域
-                    ImageSelectionSection(
-                        selectedImage: $selectedImage,
-                        selectedPhotoItem: $selectedPhotoItem,
-                        showingCamera: $showingCamera,
-                        isLoadingImage: $isLoadingImage,
-                        showingCropView: $showingCropView
+            VStack(spacing: 0) {
+                // 固定在顶部的图片（当 isImagePinned 为 true 时）
+                if isImagePinned, let image = selectedImage {
+                    PinnedImageView(
+                        image: image,
+                        isPinned: $isImagePinned,
+                        showingCropView: $showingCropView,
+                        onReselect: {
+                            selectedImage = nil
+                            selectedPhotoItem = nil
+                            isImagePinned = false
+                        }
                     )
+                }
 
-                    // AI 配置状态提示
-                    if !aiService.isConfigured {
-                        HStack {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange)
-                            Text("请先在设置中配置 AI API")
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // 图片选择区域（当未固定时显示）
+                        if !isImagePinned {
+                            ImageSelectionSection(
+                                selectedImage: $selectedImage,
+                                selectedPhotoItem: $selectedPhotoItem,
+                                showingCamera: $showingCamera,
+                                isLoadingImage: $isLoadingImage,
+                                showingCropView: $showingCropView,
+                                isPinned: $isImagePinned,
+                                hasRecognizedItems: !recognizedItems.isEmpty
+                            )
+                        }
+
+                        // AI 配置状态提示
+                        if !aiService.isConfigured {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                Text("请先在设置中配置 AI API")
+                                    .font(.caption)
+                                Spacer()
+                                NavigationLink("去设置") {
+                                    AISettingsView(aiService: aiService)
+                                }
                                 .font(.caption)
-                            Spacer()
-                            NavigationLink("去设置") {
-                                AISettingsView(aiService: aiService)
                             }
-                            .font(.caption)
-                        }
-                        .padding()
-                        .background(Color.orange.opacity(0.1))
-                        .cornerRadius(8)
-                        .padding(.horizontal)
-                    }
-
-                    // 识别按钮
-                    if selectedImage != nil {
-                        HStack(spacing: 12) {
-                            // 表格识别按钮
-                            Button {
-                                recognizeImage(mode: .table)
-                            } label: {
-                                HStack {
-                                    if isRecognizing {
-                                        ProgressView()
-                                            .tint(.white)
-                                    } else {
-                                        Image(systemName: "tablecells")
-                                    }
-                                    Text(isRecognizing ? "识别中..." : "表格识别")
-                                }
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(aiService.isConfigured ? Color.accentColor : Color.gray)
-                                .foregroundColor(.white)
-                                .cornerRadius(12)
-                            }
-                            .disabled(isRecognizing || !aiService.isConfigured)
-
-                            // 图纸识别按钮
-                            Button {
-                                recognizeImage(mode: .blueprint)
-                            } label: {
-                                HStack {
-                                    if isRecognizing {
-                                        ProgressView()
-                                            .tint(.white)
-                                    } else {
-                                        Image(systemName: "doc.richtext")
-                                    }
-                                    Text(isRecognizing ? "识别中..." : "图纸识别")
-                                }
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(aiService.isConfigured ? Color.orange : Color.gray)
-                                .foregroundColor(.white)
-                                .cornerRadius(12)
-                            }
-                            .disabled(isRecognizing || !aiService.isConfigured)
-                        }
-                        .padding(.horizontal)
-                    }
-
-                    // 错误提示
-                    if let error = errorMessage {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundColor(.red)
                             .padding()
-                            .background(Color.red.opacity(0.1))
+                            .background(Color.orange.opacity(0.1))
                             .cornerRadius(8)
                             .padding(.horizontal)
-                    }
-
-                    // 识别结果
-                    if !recognizedItems.isEmpty {
-                        RecognizedResultsSectionNew(
-                            items: $recognizedItems,
-                            totalBeads: totalBeads,
-                            inventoryManager: inventoryManager,
-                            onClear: clearState
-                        )
-                    }
-
-                    // 手动添加/编辑按钮
-                    Button {
-                        showingManualEntry = true
-                    } label: {
-                        HStack {
-                            Image(systemName: recognizedItems.isEmpty ? "plus.circle" : "pencil.circle")
-                            Text(recognizedItems.isEmpty ? "手动添加" : "编辑颜色")
                         }
-                        .font(.subheadline)
-                        .foregroundColor(.accentColor)
-                    }
-                    .padding(.top, 8)
 
-                    // 确认操作按钮区域
-                    if !recognizedItems.isEmpty {
-                        VStack(spacing: 16) {
-                            // 项目名称输入
-                            TextField("项目名称（可选）", text: $projectName)
-                                .textFieldStyle(.roundedBorder)
-                                .padding(.horizontal)
-
-                            // 缩略图预览和裁切
-                            ThumbnailPreviewSection(
-                                thumbnailImage: $thumbnailImage,
-                                originalImage: originalImage,
-                                showingThumbnailCrop: $showingThumbnailCrop
-                            )
-                            .padding(.horizontal)
-
-                            // 两个操作按钮
+                        // 识别按钮
+                        if selectedImage != nil {
                             HStack(spacing: 12) {
-                                // 创建计划按钮（不需要选择品牌）
+                                // 表格识别按钮
                                 Button {
-                                    showingCreatePlan = true
+                                    recognizeImage(mode: .table)
                                 } label: {
                                     HStack {
-                                        Image(systemName: "calendar.badge.plus")
-                                        Text("创建计划")
+                                        if isRecognizing {
+                                            ProgressView()
+                                                .tint(.white)
+                                        } else {
+                                            Image(systemName: "tablecells")
+                                        }
+                                        Text(isRecognizing ? "识别中..." : "表格识别")
                                     }
                                     .font(.headline)
                                     .frame(maxWidth: .infinity)
                                     .padding()
-                                    .background(Color.orange)
+                                    .background(aiService.isConfigured ? Color.accentColor : Color.gray)
                                     .foregroundColor(.white)
                                     .cornerRadius(12)
                                 }
+                                .disabled(isRecognizing || !aiService.isConfigured)
 
-                                // 扣减库存按钮（需要选择品牌）
+                                // 图纸识别按钮
                                 Button {
-                                    showingConfirmation = true
+                                    recognizeImage(mode: .blueprint)
                                 } label: {
                                     HStack {
-                                        Image(systemName: "minus.circle.fill")
-                                        Text("扣减库存")
+                                        if isRecognizing {
+                                            ProgressView()
+                                                .tint(.white)
+                                        } else {
+                                            Image(systemName: "doc.richtext")
+                                        }
+                                        Text(isRecognizing ? "识别中..." : "图纸识别")
                                     }
                                     .font(.headline)
                                     .frame(maxWidth: .infinity)
                                     .padding()
-                                    .background(inventoryManager.currentBrandId != nil ? Color.green : Color.gray)
+                                    .background(aiService.isConfigured ? Color.orange : Color.gray)
                                     .foregroundColor(.white)
                                     .cornerRadius(12)
                                 }
-                                .disabled(inventoryManager.currentBrandId == nil)
+                                .disabled(isRecognizing || !aiService.isConfigured)
                             }
                             .padding(.horizontal)
+                        }
 
-                            // 品牌选择提示（仅扣减时需要）
-                            if inventoryManager.currentBrandId != nil {
-                                HStack {
-                                    Text("扣减品牌:")
-                                        .foregroundColor(.secondary)
-                                    Text(inventoryManager.currentBrand?.name ?? "")
-                                        .fontWeight(.medium)
-                                        .foregroundColor(.accentColor)
-                                    Spacer()
-                                    BrandPicker()
-                                }
-                                .font(.subheadline)
+                        // 错误提示
+                        if let error = errorMessage {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                                .padding()
+                                .background(Color.red.opacity(0.1))
+                                .cornerRadius(8)
                                 .padding(.horizontal)
-                            } else {
-                                HStack {
-                                    Image(systemName: "info.circle")
-                                        .foregroundColor(.blue)
-                                    Text("创建计划无需选择品牌，执行时再选择")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                        }
+
+                        // 识别结果
+                        if !recognizedItems.isEmpty {
+                            RecognizedResultsSectionNew(
+                                items: $recognizedItems,
+                                totalBeads: totalBeads,
+                                inventoryManager: inventoryManager,
+                                onClear: clearState
+                            )
+                        }
+
+                        // 手动添加/编辑按钮
+                        Button {
+                            showingManualEntry = true
+                        } label: {
+                            HStack {
+                                Image(systemName: recognizedItems.isEmpty ? "plus.circle" : "pencil.circle")
+                                Text(recognizedItems.isEmpty ? "手动添加" : "编辑颜色")
+                            }
+                            .font(.subheadline)
+                            .foregroundColor(.accentColor)
+                        }
+                        .padding(.top, 8)
+
+                        // 确认操作按钮区域
+                        if !recognizedItems.isEmpty {
+                            VStack(spacing: 16) {
+                                // 项目名称输入
+                                TextField("项目名称（可选）", text: $projectName)
+                                    .textFieldStyle(.roundedBorder)
+                                    .padding(.horizontal)
+
+                                // 缩略图预览和裁切
+                                ThumbnailPreviewSection(
+                                    thumbnailImage: $thumbnailImage,
+                                    originalImage: originalImage,
+                                    showingThumbnailCrop: $showingThumbnailCrop
+                                )
+                                .padding(.horizontal)
+
+                                // 两个操作按钮
+                                HStack(spacing: 12) {
+                                    // 创建计划按钮（不需要选择品牌）
+                                    Button {
+                                        showingCreatePlan = true
+                                    } label: {
+                                        HStack {
+                                            Image(systemName: "calendar.badge.plus")
+                                            Text("创建计划")
+                                        }
+                                        .font(.headline)
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color.orange)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(12)
+                                    }
+
+                                    // 扣减库存按钮（需要选择品牌）
+                                    Button {
+                                        showingConfirmation = true
+                                    } label: {
+                                        HStack {
+                                            Image(systemName: "minus.circle.fill")
+                                            Text("扣减库存")
+                                        }
+                                        .font(.headline)
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(inventoryManager.currentBrandId != nil ? Color.green : Color.gray)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(12)
+                                    }
+                                    .disabled(inventoryManager.currentBrandId == nil)
                                 }
                                 .padding(.horizontal)
+
+                                // 品牌选择提示（仅扣减时需要）
+                                if inventoryManager.currentBrandId != nil {
+                                    HStack {
+                                        Text("扣减品牌:")
+                                            .foregroundColor(.secondary)
+                                        Text(inventoryManager.currentBrand?.name ?? "")
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.accentColor)
+                                        Spacer()
+                                        BrandPicker()
+                                    }
+                                    .font(.subheadline)
+                                    .padding(.horizontal)
+                                } else {
+                                    HStack {
+                                        Image(systemName: "info.circle")
+                                            .foregroundColor(.blue)
+                                        Text("创建计划无需选择品牌，执行时再选择")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.horizontal)
+                                }
                             }
                         }
-                    }
 
-                    Spacer(minLength: 50)
+                        Spacer(minLength: 50)
+                    }
+                    .padding(.vertical)
                 }
-                .padding(.vertical)
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("图纸扫描")
@@ -426,6 +449,7 @@ struct ScanView: View {
         projectName = ""
         originalImage = nil
         thumbnailImage = nil
+        isImagePinned = false
     }
 
     func removeItem(id: UUID) {
@@ -444,6 +468,75 @@ struct ScanView: View {
     }
 }
 
+// MARK: - 固定在顶部的图片视图
+struct PinnedImageView: View {
+    let image: UIImage
+    @Binding var isPinned: Bool
+    @Binding var showingCropView: Bool
+    let onReselect: () -> Void
+
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // 图片区域
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxHeight: isExpanded ? 300 : 120)
+                .cornerRadius(8)
+                .shadow(radius: 2)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .onTapGesture {
+                    withAnimation {
+                        isExpanded.toggle()
+                    }
+                }
+
+            // 操作按钮
+            HStack(spacing: 16) {
+                Button {
+                    withAnimation {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    Label(isExpanded ? "收起" : "展开", systemImage: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                }
+
+                Button {
+                    showingCropView = true
+                } label: {
+                    Label("裁切", systemImage: "crop")
+                        .font(.caption)
+                }
+
+                Button {
+                    withAnimation {
+                        isPinned = false
+                    }
+                } label: {
+                    Label("取消固定", systemImage: "pin.slash")
+                        .font(.caption)
+                }
+
+                Button {
+                    onReselect()
+                } label: {
+                    Text("重新选择")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.vertical, 8)
+
+            Divider()
+        }
+        .background(Color(.systemBackground))
+    }
+}
+
 // MARK: - 图片选择区域
 struct ImageSelectionSection: View {
     @Binding var selectedImage: UIImage?
@@ -451,6 +544,8 @@ struct ImageSelectionSection: View {
     @Binding var showingCamera: Bool
     @Binding var isLoadingImage: Bool
     @Binding var showingCropView: Bool
+    @Binding var isPinned: Bool
+    var hasRecognizedItems: Bool
 
     var body: some View {
         VStack(spacing: 16) {
@@ -481,6 +576,18 @@ struct ImageSelectionSection: View {
                     } label: {
                         Label("裁切", systemImage: "crop")
                             .font(.caption)
+                    }
+
+                    // 固定图片按钮（仅在有识别结果时显示）
+                    if hasRecognizedItems {
+                        Button {
+                            withAnimation {
+                                isPinned = true
+                            }
+                        } label: {
+                            Label("固定", systemImage: "pin")
+                                .font(.caption)
+                        }
                     }
 
                     Button("重新选择") {
