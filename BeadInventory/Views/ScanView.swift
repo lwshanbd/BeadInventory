@@ -994,7 +994,7 @@ struct ManualEntrySheetNew: View {
                         }
                     }
                     .padding(.horizontal)
-                    .padding(.bottom, !selectedColors.isEmpty ? 100 : 20)
+                    .padding(.bottom, 100)
                 }
                 .scrollDismissesKeyboard(.interactively)
 
