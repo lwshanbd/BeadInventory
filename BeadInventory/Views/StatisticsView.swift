@@ -338,9 +338,9 @@ struct ProjectHistoryView: View {
     @State private var showDeleteParentAlert = false
     @State private var projectToDelete: ProjectRecord?
 
-    // 只显示顶级项目
+    // 只显示顶级项目（排除计划项目，只显示已执行的）
     var displayedProjects: [ProjectRecord] {
-        let topLevel = inventoryManager.topLevelProjects()
+        let topLevel = inventoryManager.topLevelProjects().filter { !$0.isPlanned }
         if showArchived {
             return topLevel
         } else {
@@ -349,12 +349,17 @@ struct ProjectHistoryView: View {
     }
 
     var archivedCount: Int {
-        inventoryManager.projects.filter { $0.isArchived }.count
+        inventoryManager.projects.filter { $0.isArchived && !$0.isPlanned }.count
+    }
+
+    // 已执行的项目（非计划项目）
+    var executedProjects: [ProjectRecord] {
+        inventoryManager.projects.filter { !$0.isPlanned }
     }
 
     var body: some View {
         Group {
-            if inventoryManager.projects.isEmpty {
+            if executedProjects.isEmpty {
                 VStack(spacing: 16) {
                     Image(systemName: "doc.text")
                         .font(.system(size: 50))
@@ -364,7 +369,7 @@ struct ProjectHistoryView: View {
                         .font(.headline)
                         .foregroundColor(.secondary)
 
-                    Text("扫描图纸后会自动记录")
+                    Text("扫描图纸并执行扣减后会自动记录")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
