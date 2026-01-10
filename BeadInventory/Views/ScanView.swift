@@ -978,15 +978,12 @@ struct ManualEntrySheetNew: View {
 
                 // 颜色列表
                 ScrollView {
-                    LazyVStack(spacing: 8) {
+                    VStack(spacing: 8) {
                         ForEach(colorsInSeries) { color in
                             ManualEntryColorRow(
                                 color: color,
                                 isSelected: selectedColors.contains(color.id),
-                                quantity: Binding(
-                                    get: { quantities[color.id] ?? 1 },
-                                    set: { quantities[color.id] = $0 }
-                                ),
+                                quantity: bindingForColor(color.id),
                                 onToggle: {
                                     toggleSelection(color.id)
                                 }
@@ -996,7 +993,11 @@ struct ManualEntrySheetNew: View {
                     .padding(.horizontal)
                     .padding(.bottom, 100)
                 }
-                .scrollDismissesKeyboard(.interactively)
+                .scrollDismissesKeyboard(.immediately)
+                .onTapGesture {
+                    // 点击空白区域收起键盘
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
 
                 // 底部确认栏
                 if !selectedColors.isEmpty {
@@ -1068,6 +1069,14 @@ struct ManualEntrySheetNew: View {
         }
         recognizedItems = newItems
         dismiss()
+    }
+
+    /// 为指定颜色创建稳定的 Binding
+    func bindingForColor(_ colorId: UUID) -> Binding<Int> {
+        Binding(
+            get: { self.quantities[colorId] ?? 1 },
+            set: { self.quantities[colorId] = $0 }
+        )
     }
 }
 
@@ -1159,16 +1168,16 @@ struct ManualEntryColorRow: View {
 struct ManualEntryQuantityControl: View {
     @Binding var quantity: Int
     @State private var editText: String = ""
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
             // 减少按钮
             Button {
-                hideKeyboard()
                 if quantity > 1 {
                     quantity -= 1
+                    editText = "\(quantity)"
                 }
-                editText = "\(quantity)"
             } label: {
                 Image(systemName: "minus")
                     .font(.caption)
@@ -1182,22 +1191,26 @@ struct ManualEntryQuantityControl: View {
             .disabled(quantity <= 1)
 
             // 数量输入框
-            ManualEntryNumberField(text: $editText, onCommit: {
-                if let value = Int(editText), value > 0 {
-                    quantity = value
+            TextField("", text: $editText)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.center)
+                .font(.system(size: 16, weight: .regular, design: .monospaced))
+                .frame(width: 60, height: 32)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+                .focused($isFocused)
+                .onChange(of: editText) { _, newValue in
+                    let filtered = newValue.filter { $0.isNumber }
+                    if filtered != newValue {
+                        editText = filtered
+                    }
+                    if let value = Int(filtered), value > 0 {
+                        quantity = value
+                    }
                 }
-                editText = "\(quantity)"
-            })
-            .frame(width: 60, height: 32)
-            .onChange(of: editText) { _, newValue in
-                if let value = Int(newValue), value > 0 {
-                    quantity = value
-                }
-            }
 
             // 增加按钮
             Button {
-                hideKeyboard()
                 quantity += 1
                 editText = "\(quantity)"
             } label: {
@@ -1220,66 +1233,17 @@ struct ManualEntryQuantityControl: View {
             editText = "\(quantity)"
         }
         .onChange(of: quantity) { _, newValue in
-            editText = "\(newValue)"
+            if !isFocused {
+                editText = "\(newValue)"
+            }
         }
-    }
-
-    private func hideKeyboard() {
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    }
-}
-
-// MARK: - 手动添加数字输入框
-struct ManualEntryNumberField: UIViewRepresentable {
-    @Binding var text: String
-    var onCommit: () -> Void
-
-    func makeUIView(context: Context) -> UITextField {
-        let textField = UITextField()
-        textField.keyboardType = .numberPad
-        textField.textAlignment = .center
-        textField.font = UIFont.monospacedSystemFont(ofSize: 16, weight: .regular)
-        textField.backgroundColor = UIColor.systemGray6
-        textField.layer.cornerRadius = 8
-        textField.delegate = context.coordinator
-
-        let toolbar = UIToolbar()
-        toolbar.sizeToFit()
-        let flexSpace = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
-        let doneButton = UIBarButtonItem(title: "完成", style: .done, target: context.coordinator, action: #selector(Coordinator.donePressed))
-        toolbar.items = [flexSpace, doneButton]
-        textField.inputAccessoryView = toolbar
-
-        return textField
-    }
-
-    func updateUIView(_ uiView: UITextField, context: Context) {
-        if uiView.text != text {
-            uiView.text = text
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    class Coordinator: NSObject, UITextFieldDelegate {
-        var parent: ManualEntryNumberField
-
-        init(_ parent: ManualEntryNumberField) {
-            self.parent = parent
-        }
-
-        func textFieldDidChangeSelection(_ textField: UITextField) {
-            parent.text = textField.text ?? ""
-        }
-
-        func textFieldDidEndEditing(_ textField: UITextField) {
-            parent.onCommit()
-        }
-
-        @objc func donePressed() {
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        .onChange(of: isFocused) { _, focused in
+            if !focused {
+                if let value = Int(editText), value > 0 {
+                    quantity = value
+                }
+                editText = "\(quantity)"
+            }
         }
     }
 }
