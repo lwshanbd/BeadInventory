@@ -1160,13 +1160,18 @@ class InventoryManager: ObservableObject {
 
     /// 删除计划项目（不回退库存，因为还未扣减）
     func deletePlannedProject(_ projectId: UUID) {
-        // 记录历史（在删除前）
-        if let project = projects.first(where: { $0.id == projectId }) {
-            historyManager.recordProject(type: .planDelete, project: project)
+        guard let project = projects.first(where: { $0.id == projectId }) else {
+            return
         }
 
+        // 查找子项目（如果有）
+        let children = projects.filter { $0.parentId == projectId }
+
+        // 记录历史（在删除前），包含父项目和子项目
+        historyManager.recordPlanDelete(project: project, children: children)
+
         // 如果是父项目，也删除子项目
-        if isParentProject(projectId) {
+        if !children.isEmpty {
             projects.removeAll { $0.parentId == projectId }
         }
         projects.removeAll { $0.id == projectId }

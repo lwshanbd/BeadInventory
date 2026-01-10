@@ -202,3 +202,12 @@ struct MergeSnapshot: Codable {
     /// 原有父项目ID（仅用于简单合并情况）
     let existingParentId: UUID?
 }
+
+// MARK: - 计划删除快照（用于支持删除父项目时恢复子项目）
+
+struct PlanDeleteSnapshot: Codable {
+    /// 被删除的项目（父项目）
+    let deletedProject: ProjectSnapshot
+    /// 被级联删除的子项目
+    let deletedChildren: [ProjectSnapshot]
+}

@@ -318,6 +318,75 @@ class HistoryManager: ObservableObject {
         print("[History] 记录项目合并: \(mergedName) (包含 \(originalProjects.count) 个项目)")
     }
 
+    /// 记录计划删除操作（包含父项目及其子项目）
+    func recordPlanDelete(
+        project: ProjectRecord,
+        children: [ProjectRecord]
+    ) {
+        // 撤回操作时不记录新的历史
+        guard !isReverting else { return }
+
+        // 创建父项目快照
+        let projectUsages = project.beadUsage.map {
+            BeadUsageSnapshot(colorCode: $0.colorCode, brandId: $0.brandId, quantity: $0.quantity, isDeducted: $0.isDeducted)
+        }
+        let projectSnapshot = ProjectSnapshot(
+            id: project.id,
+            name: project.name,
+            date: project.date,
+            totalBeads: project.totalBeads,
+            brandId: project.brandId,
+            isArchived: project.isArchived,
+            parentId: project.parentId,
+            isPlanned: project.isPlanned,
+            executedDate: project.executedDate,
+            beadUsages: projectUsages
+        )
+
+        // 创建子项目快照
+        let childSnapshots = children.map { child -> ProjectSnapshot in
+            let childUsages = child.beadUsage.map {
+                BeadUsageSnapshot(colorCode: $0.colorCode, brandId: $0.brandId, quantity: $0.quantity, isDeducted: $0.isDeducted)
+            }
+            return ProjectSnapshot(
+                id: child.id,
+                name: child.name,
+                date: child.date,
+                totalBeads: child.totalBeads,
+                brandId: child.brandId,
+                isArchived: child.isArchived,
+                parentId: child.parentId,
+                isPlanned: child.isPlanned,
+                executedDate: child.executedDate,
+                beadUsages: childUsages
+            )
+        }
+
+        let deleteSnapshot = PlanDeleteSnapshot(
+            deletedProject: projectSnapshot,
+            deletedChildren: childSnapshots
+        )
+
+        let snapshotData = try? JSONEncoder().encode(deleteSnapshot)
+
+        let record = HistoryRecord(
+            operationType: .planDelete,
+            entityName: project.name,
+            beforeSnapshot: snapshotData,
+            afterSnapshot: nil
+        )
+
+        records.insert(record, at: 0)
+        trimRecords()
+        saveData()
+
+        if children.isEmpty {
+            print("[History] 记录计划删除: \(project.name)")
+        } else {
+            print("[History] 记录计划删除: \(project.name) (包含 \(children.count) 个子项目)")
+        }
+    }
+
     // MARK: - 撤回操作
 
     /// 检查某个记录是否可以撤回
@@ -599,12 +668,31 @@ class HistoryManager: ObservableObject {
 
         case .planDelete:
             // 撤回删除 = 从快照恢复
-            if let beforeData = record.beforeSnapshot,
-               let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: beforeData) {
+            guard let beforeData = record.beforeSnapshot else { return false }
+
+            // 尝试新格式（包含子项目）
+            if let deleteSnapshot = try? JSONDecoder().decode(PlanDeleteSnapshot.self, from: beforeData) {
+                // 先恢复父项目
+                let parentProject = restoreProject(from: deleteSnapshot.deletedProject)
+                manager.addPlannedProject(parentProject)
+
+                // 再恢复所有子项目
+                for childSnapshot in deleteSnapshot.deletedChildren {
+                    let childProject = restoreProject(from: childSnapshot)
+                    manager.addPlannedProject(childProject)
+                }
+
+                print("[History] 恢复计划: \(parentProject.name) (包含 \(deleteSnapshot.deletedChildren.count) 个子项目)")
+                return true
+            }
+
+            // 兼容旧格式（只有单个项目）
+            if let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: beforeData) {
                 let project = restoreProject(from: snapshot)
                 manager.addPlannedProject(project)
                 return true
             }
+
             return false
 
         case .planUpdate:
