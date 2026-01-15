@@ -10,6 +10,12 @@ import SwiftUI
 struct AboutView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
 
+    var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        return "版本 \(version) (\(build))"
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 32) {
@@ -26,7 +32,7 @@ struct AboutView: View {
                         .font(.largeTitle)
                         .fontWeight(.bold)
 
-                    Text("版本 1.0.0 Beta")
+                    Text(appVersion)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -143,7 +149,7 @@ struct AboutView: View {
                     Text("感谢使用啃豆小仓")
                         .font(.footnote)
                         .foregroundColor(.secondary)
-                    Text("2025")
+                    Text("2026")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                 }
