@@ -83,6 +83,13 @@ struct PlannedProjectsView: View {
                                     } label: {
                                         Label("删除", systemImage: "trash")
                                     }
+
+                                    Button {
+                                        _ = inventoryManager.duplicatePlannedProject(project.id)
+                                    } label: {
+                                        Label("复制", systemImage: "doc.on.doc")
+                                    }
+                                    .tint(.blue)
                                 }
                                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                     Button {
@@ -231,6 +238,13 @@ struct PlannedProjectsListView: View {
                         } label: {
                             Label("删除", systemImage: "trash")
                         }
+
+                        Button {
+                            _ = inventoryManager.duplicatePlannedProject(project.id)
+                        } label: {
+                            Label("复制", systemImage: "doc.on.doc")
+                        }
+                        .tint(.blue)
                     }
                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
                         Button {
@@ -1012,12 +1026,24 @@ struct PlannedProjectDetailView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
-            if !isParentProject {
+            Menu {
                 Button {
-                    showEditSheet = true
+                    if let _ = inventoryManager.duplicatePlannedProject(project.id) {
+                        dismiss()
+                    }
                 } label: {
-                    Text("编辑")
+                    Label("复制计划", systemImage: "doc.on.doc")
                 }
+
+                if !isParentProject {
+                    Button {
+                        showEditSheet = true
+                    } label: {
+                        Label("编辑", systemImage: "pencil")
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
         }
     }
