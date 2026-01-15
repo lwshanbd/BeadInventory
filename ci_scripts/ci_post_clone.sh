@@ -3,14 +3,19 @@
 # 自定义 Build Number 策略
 # 方案 B：基于版本号+CI build number，例如 1.1.51
 
-VERSION=$(/usr/libexec/PlistBuddy -c "Print MARKETING_VERSION" "${PROJECT_DIR}/${INFOPLIST_FILE}" 2>/dev/null || echo "1.0")
+set -e
+
+cd "$CI_PRIMARY_REPOSITORY_PATH"
+
+# 从 pbxproj 读取 MARKETING_VERSION
+VERSION=$(grep -m1 'MARKETING_VERSION' BeadInventory.xcodeproj/project.pbxproj | sed 's/.*= *\([^;]*\);/\1/' | tr -d ' ')
+VERSION=${VERSION:-"1.0"}
+
 NEW_BUILD="${VERSION}.${CI_BUILD_NUMBER}"
 
-# 更新项目中的 build number
-if [ -n "$CI_BUILD_NUMBER" ]; then
-    echo "Setting build number to: $NEW_BUILD"
+echo "Setting build number to: $NEW_BUILD"
 
-    # 更新 pbxproj 文件中的 CURRENT_PROJECT_VERSION
-    cd "$CI_PRIMARY_REPOSITORY_PATH"
-    agvtool new-version -all "$NEW_BUILD"
-fi
+# 使用 sed 直接替换 CURRENT_PROJECT_VERSION（更安全）
+sed -i '' "s/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = ${NEW_BUILD};/g" BeadInventory.xcodeproj/project.pbxproj
+
+echo "Build number updated successfully"
