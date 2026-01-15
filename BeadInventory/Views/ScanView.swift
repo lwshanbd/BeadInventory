@@ -283,7 +283,7 @@ struct ScanView: View {
             .sheet(isPresented: $showingCamera) {
                 CameraPicker(image: $selectedImage)
             }
-            .onChange(of: selectedPhotoItem) { newItem in
+            .onChange(of: selectedPhotoItem) { _, newItem in
                 guard let newItem = newItem else { return }
                 isLoadingImage = true
                 Task {
@@ -1693,7 +1693,7 @@ struct ImageCropView: View {
                             containerSize = geometry.size
                             initializeCropRect()
                         }
-                        .onChange(of: geometry.size) { newSize in
+                        .onChange(of: geometry.size) { _, newSize in
                             containerSize = newSize
                             if !isInitialized {
                                 initializeCropRect()

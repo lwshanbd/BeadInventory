@@ -142,7 +142,7 @@ struct HistoryRowView: View {
                     Label("撤回", systemImage: "arrow.uturn.backward")
                 }
                 .tint(.orange)
-            } else if let reason = historyManager.revertDisabledReason(record) {
+            } else if historyManager.revertDisabledReason(record) != nil {
                 // 显示禁用原因的按钮
                 Button {
                     showingDisabledAlert = true
