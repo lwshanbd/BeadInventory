@@ -2,7 +2,7 @@
 //  AIService.swift
 //  BeadInventory
 //
-//  AI图像识别服务 - 支持 Kimi、OpenAI 和 Anthropic
+//  AI图像识别服务 - 支持 Kimi、OpenAI、Anthropic 和 Qwen
 //
 
 import Foundation
@@ -16,6 +16,7 @@ enum AIProvider: String, CaseIterable, Codable {
     case kimi = "Kimi"
     case openai = "OpenAI"
     case anthropic = "Anthropic"
+    case qwen = "Qwen"
 }
 
 struct AIConfig: Codable {
@@ -27,11 +28,13 @@ struct AIConfig: Codable {
     static let defaultKimiURL = "https://api.moonshot.cn/v1"
     static let defaultOpenAIURL = "https://api.openai.com/v1"
     static let defaultAnthropicURL = "https://api.anthropic.com"
+    static let defaultQwenURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     // Kimi 仅支持一个模型
     static let kimiModel = "kimi-latest"
     static let openAIModels = ["gpt-5-mini-2025-08-07", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo"]
     static let anthropicModels = ["claude-sonnet-4-5-20250929", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"]
+    static let qwenModels = ["qwen3-vl-flash", "qwen-vl-max", "qwen-vl-plus"]
 
     static func defaultModel(for provider: AIProvider) -> String {
         switch provider {
@@ -41,6 +44,8 @@ struct AIConfig: Codable {
             return "gpt-5-mini-2025-08-07"
         case .anthropic:
             return "claude-sonnet-4-5-20250929"
+        case .qwen:
+            return "qwen3-vl-flash"
         }
     }
 
@@ -59,6 +64,8 @@ struct AIConfig: Codable {
             return baseURL.isEmpty ? AIConfig.defaultOpenAIURL : baseURL
         case .anthropic:
             return baseURL.isEmpty ? AIConfig.defaultAnthropicURL : baseURL
+        case .qwen:
+            return baseURL.isEmpty ? AIConfig.defaultQwenURL : baseURL
         }
     }
 
@@ -113,8 +120,18 @@ class AIServiceManager: ObservableObject {
                     config.model = AIConfig.kimiModel
                 }
             } else {
-                // OpenAI/Anthropic：如果当前模型不在新 provider 的模型列表中，则重置
-                let validModels = config.provider == .openai ? AIConfig.openAIModels : AIConfig.anthropicModels
+                // OpenAI/Anthropic/Qwen：如果当前模型不在新 provider 的模型列表中，则重置
+                let validModels: [String]
+                switch config.provider {
+                case .openai:
+                    validModels = AIConfig.openAIModels
+                case .anthropic:
+                    validModels = AIConfig.anthropicModels
+                case .qwen:
+                    validModels = AIConfig.qwenModels
+                case .kimi:
+                    validModels = [AIConfig.kimiModel]
+                }
                 if !validModels.contains(config.model) {
                     config.model = AIConfig.defaultModel(for: config.provider)
                 }
@@ -265,8 +282,8 @@ class AIServiceManager: ObservableObject {
         print("[AI Debug] Base64长度: \(base64Image.count)")
 
         switch config.provider {
-        case .kimi, .openai:
-            // Kimi 和 OpenAI 使用相同的 API 格式
+        case .kimi, .openai, .qwen:
+            // Kimi、OpenAI 和 Qwen 使用相同的 API 格式（OpenAI 兼容）
             return try await recognizeWithOpenAI(base64Image: base64Image, mediaType: mediaType, mode: mode)
         case .anthropic:
             return try await recognizeWithAnthropic(base64Image: base64Image, mediaType: mediaType, mode: mode)
@@ -376,6 +393,7 @@ class AIServiceManager: ObservableObject {
         ]
 
         // 根据提供商设置不同的 token 限制参数
+        // OpenAI 使用 max_completion_tokens，Kimi/Qwen 使用 max_tokens
         if config.provider == .openai {
             body["max_completion_tokens"] = 8192
         } else {
