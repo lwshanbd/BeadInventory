@@ -84,7 +84,7 @@ struct AddInventoryView: View {
 
                 // 颜色列表
                 ScrollView {
-                    LazyVStack(spacing: 8) {
+                    VStack(spacing: 8) {
                         ForEach(colorsInSeries) { color in
                             ColorAddRow(
                                 color: color,
@@ -102,7 +102,11 @@ struct AddInventoryView: View {
                     .padding(.horizontal)
                     .padding(.bottom, 100)
                 }
-                .scrollDismissesKeyboard(.interactively)
+                .scrollDismissesKeyboard(.immediately)
+                .onTapGesture {
+                    // 点击空白区域收起键盘
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
 
                 // 底部确认栏
                 if !selectedColors.isEmpty {
@@ -324,6 +328,7 @@ struct ColorAddRow: View {
 struct QuantityControl: View {
     @Binding var quantity: Double
     @State private var editText: String = ""
+    @FocusState private var isFocused: Bool
 
     var displayText: String {
         if quantity == Double(Int(quantity)) {
@@ -337,40 +342,45 @@ struct QuantityControl: View {
         HStack(spacing: 8) {
             // 减少按钮
             Button {
-                hideKeyboard()
                 if quantity > 0.5 {
                     quantity -= 1
                     if quantity < 0.5 { quantity = 0.5 }
+                    editText = displayText
                 }
-                editText = displayText
             } label: {
                 Image(systemName: "minus")
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(width: 28, height: 28)
-                    .background(Color.gray.opacity(0.6))
+                    .background(quantity > 0.5 ? Color.gray.opacity(0.6) : Color.gray.opacity(0.3))
                     .cornerRadius(14)
             }
             .buttonStyle(PlainButtonStyle())
+            .disabled(quantity <= 0.5)
 
             // 数量输入框
-            NumberInputField(text: $editText, onCommit: {
-                if let value = Double(editText), value > 0 {
-                    quantity = value
+            TextField("", text: $editText)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.center)
+                .font(.system(size: 16, weight: .regular, design: .monospaced))
+                .frame(width: 60, height: 32)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+                .focused($isFocused)
+                .onChange(of: editText) { _, newValue in
+                    // 过滤只允许数字和小数点
+                    let filtered = newValue.filter { $0.isNumber || $0 == "." }
+                    if filtered != newValue {
+                        editText = filtered
+                    }
+                    if let value = Double(filtered), value > 0 {
+                        quantity = value
+                    }
                 }
-                editText = displayText
-            })
-            .frame(width: 60, height: 32)
-            .onChange(of: editText) { _, newValue in
-                if let value = Double(newValue), value > 0 {
-                    quantity = value
-                }
-            }
 
             // 增加按钮
             Button {
-                hideKeyboard()
                 if quantity == Double(Int(quantity)) {
                     quantity += 1
                 } else {
@@ -396,68 +406,20 @@ struct QuantityControl: View {
         .onAppear {
             editText = displayText
         }
-        .onChange(of: quantity) { _, _ in
-            editText = displayText
+        .onChange(of: quantity) { _, newValue in
+            // 只有在非编辑状态下才更新文本，避免干扰用户输入
+            if !isFocused {
+                editText = displayText
+            }
         }
-    }
-
-    private func hideKeyboard() {
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    }
-}
-
-// MARK: - UIKit TextField 包装器
-struct NumberInputField: UIViewRepresentable {
-    @Binding var text: String
-    var onCommit: () -> Void
-
-    func makeUIView(context: Context) -> UITextField {
-        let textField = UITextField()
-        textField.keyboardType = .decimalPad
-        textField.textAlignment = .center
-        textField.font = UIFont.monospacedSystemFont(ofSize: 16, weight: .regular)
-        textField.backgroundColor = UIColor.systemGray6
-        textField.layer.cornerRadius = 8
-        textField.delegate = context.coordinator
-
-        // 添加工具栏
-        let toolbar = UIToolbar()
-        toolbar.sizeToFit()
-        let flexSpace = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
-        let doneButton = UIBarButtonItem(title: "完成", style: .done, target: context.coordinator, action: #selector(Coordinator.donePressed))
-        toolbar.items = [flexSpace, doneButton]
-        textField.inputAccessoryView = toolbar
-
-        return textField
-    }
-
-    func updateUIView(_ uiView: UITextField, context: Context) {
-        if uiView.text != text {
-            uiView.text = text
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    class Coordinator: NSObject, UITextFieldDelegate {
-        var parent: NumberInputField
-
-        init(_ parent: NumberInputField) {
-            self.parent = parent
-        }
-
-        func textFieldDidChangeSelection(_ textField: UITextField) {
-            parent.text = textField.text ?? ""
-        }
-
-        func textFieldDidEndEditing(_ textField: UITextField) {
-            parent.onCommit()
-        }
-
-        @objc func donePressed() {
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        .onChange(of: isFocused) { _, focused in
+            // 失去焦点时，验证并格式化输入
+            if !focused {
+                if let value = Double(editText), value > 0 {
+                    quantity = max(0.5, value)
+                }
+                editText = displayText
+            }
         }
     }
 }
