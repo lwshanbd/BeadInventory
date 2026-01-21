@@ -32,16 +32,16 @@ struct AIConfig: Codable {
 
     // Kimi 仅支持一个模型
     static let kimiModel = "kimi-latest"
-    static let openAIModels = ["gpt-5-mini-2025-08-07", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo"]
+    static let openAIModels = ["gpt-5-mini", "gpt-5-nano", "gpt-5.2"]
     static let anthropicModels = ["claude-sonnet-4-5-20250929", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"]
-    static let qwenModels = ["qwen3-vl-flash", "qwen-vl-max", "qwen-vl-plus"]
+    static let qwenModels = ["qwen3-vl-flash", "qwen-vl-max", "qwen3-vl-plus"]
 
     static func defaultModel(for provider: AIProvider) -> String {
         switch provider {
         case .kimi:
             return kimiModel
         case .openai:
-            return "gpt-5-mini-2025-08-07"
+            return "gpt-5-mini"
         case .anthropic:
             return "claude-sonnet-4-5-20250929"
         case .qwen:
