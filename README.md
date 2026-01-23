@@ -71,11 +71,10 @@ open BeadInventory.xcodeproj
 
 应用支持四种 AI 服务商：
 
-### Kimi（推荐新手）
+### Kimi
 1. 前往 [Moonshot AI](https://platform.moonshot.cn/) 获取 API Key
 2. 在应用「更多」→「设置」→「AI 图像识别」中选择 Kimi
 3. 填入 API Key
-4. Kimi 提供免费额度，适合新手试用
 
 ### OpenAI
 1. 前往 [OpenAI Platform](https://platform.openai.com/) 获取 API Key
@@ -87,13 +86,12 @@ open BeadInventory.xcodeproj
 1. 前往 [Anthropic Console](https://console.anthropic.com/) 获取 API Key
 2. 在应用设置中选择 Anthropic
 3. 填入 API Key
-4. 推荐使用 Claude Sonnet 4.5 模型
+
 
 ### Qwen（通义千问）
-1. 前往 [阿里云 DashScope](https://dashscope.console.aliyun.com/) 获取 API Key
+1. 前往 [阿里云](https://dashscope.console.aliyun.com/) 获取 API Key
 2. 在应用设置中选择 Qwen
 3. 填入 API Key
-4. 推荐使用 qwen-vl-max 模型
 
 ## 项目结构
 
