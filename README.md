@@ -140,6 +140,10 @@ BeadInventory/
 - **SwiftData** - 数据持久化
 - **Async/Await** - 现代异步编程
 
+## 声明
+
+**支持原创，尊重版权** - 拼豆图纸凝聚创作者心血，请尊重原作者劳动成果。
+
 ## License
 
 MIT License

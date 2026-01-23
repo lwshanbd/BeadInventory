@@ -143,6 +143,27 @@ struct AboutView: View {
                 .cornerRadius(16)
                 .padding(.horizontal)
 
+                // 原创声明
+                VStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.title2)
+                        .foregroundColor(.blue)
+                    Text("支持原创，尊重版权")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Text("拼豆图纸凝聚创作者心血，请尊重原作者劳动成果")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.blue.opacity(0.1))
+                )
+                .padding(.horizontal)
+
                 // 致谢
                 VStack(spacing: 8) {
                     Text("感谢使用啃豆小仓")
