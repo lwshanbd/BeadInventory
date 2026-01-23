@@ -142,6 +142,12 @@ BeadInventory/
 
 **支持原创，拒绝抄袭** - 啃豆小仓与每一份拼豆图纸都凝聚着创作者的心血，请尊重原创。
 
+## 支持作者
+
+如果这个应用对你有帮助，欢迎请作者喝杯咖啡 ☕
+
+<img src="wxpay.jpg" width="200" alt="微信赞赏码">
+
 ## License
 
-MIT License
+GPL-3.0 License
