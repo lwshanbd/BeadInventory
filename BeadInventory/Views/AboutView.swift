@@ -151,6 +151,9 @@ struct AboutView: View {
                     Text("2026")
                         .font(.footnote)
                         .foregroundColor(.secondary)
+                    Text("鲁ICP备2026003850号-1A")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
                 .padding(.top, 20)
                 .padding(.bottom, 40)
