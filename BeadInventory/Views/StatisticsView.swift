@@ -337,6 +337,16 @@ struct ProjectHistoryView: View {
     @State private var showMergeSheet = false
     @State private var showDeleteParentAlert = false
     @State private var projectToDelete: ProjectRecord?
+    @State private var selectModeType: SelectModeType = .merge
+    @State private var showRevertConfirmSheet = false
+    @State private var revertResultMessage = ""
+    @State private var showRevertResultAlert = false
+    @State private var restoreStock = true  // 是否恢复库存
+
+    enum SelectModeType {
+        case merge
+        case revertToPlan
+    }
 
     // 只显示顶级项目（排除计划项目，只显示已执行的）
     var displayedProjects: [ProjectRecord] {
@@ -406,40 +416,86 @@ struct ProjectHistoryView: View {
 
                     Spacer()
 
-                    // 合并模式按钮
-                    Button {
-                        withAnimation {
-                            isSelectMode.toggle()
-                            if !isSelectMode {
+                    if isSelectMode {
+                        // 选择模式下显示取消按钮
+                        Button {
+                            withAnimation {
+                                isSelectMode = false
                                 selectedProjects.removeAll()
                             }
+                        } label: {
+                            Text("取消")
+                                .font(.subheadline)
                         }
-                    } label: {
-                        Text(isSelectMode ? "取消" : "合并")
+                    } else {
+                        // 非选择模式显示操作菜单
+                        Menu {
+                            Button {
+                                withAnimation {
+                                    selectModeType = .merge
+                                    isSelectMode = true
+                                }
+                            } label: {
+                                Label("合并项目", systemImage: "arrow.triangle.merge")
+                            }
+
+                            Button {
+                                withAnimation {
+                                    selectModeType = .revertToPlan
+                                    isSelectMode = true
+                                }
+                            } label: {
+                                Label("退回计划", systemImage: "arrow.uturn.backward")
+                            }
+                        } label: {
+                            HStack {
+                                Text("批量操作")
+                                Image(systemName: "chevron.down")
+                            }
                             .font(.subheadline)
+                        }
                     }
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 8)
 
-                // 合并确认按钮
-                if isSelectMode && selectedProjects.count >= 2 {
-                    Button {
-                        showMergeSheet = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "arrow.triangle.merge")
-                            Text("合并 \(selectedProjects.count) 个项目")
+                // 操作确认按钮
+                if isSelectMode {
+                    if selectModeType == .merge && selectedProjects.count >= 2 {
+                        Button {
+                            showMergeSheet = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "arrow.triangle.merge")
+                                Text("合并 \(selectedProjects.count) 个项目")
+                            }
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(Color.accentColor)
+                            .cornerRadius(10)
                         }
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.accentColor)
-                        .cornerRadius(10)
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                    } else if selectModeType == .revertToPlan && selectedProjects.count >= 1 {
+                        Button {
+                            showRevertConfirmSheet = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "arrow.uturn.backward")
+                                Text("退回 \(selectedProjects.count) 个项目为计划")
+                            }
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(Color.orange)
+                            .cornerRadius(10)
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
                 }
 
                 List {
@@ -570,6 +626,168 @@ struct ProjectHistoryView: View {
             }
         } message: {
             Text("该项目包含子项目，请选择处理方式：\n• 删除全部：同时删除所有子项目\n• 仅删除父项目：子项目变为独立项目")
+        }
+        // 退回计划确认（使用 sheet 以便添加选项）
+        .sheet(isPresented: $showRevertConfirmSheet) {
+            RevertToPlanSheet(
+                projectCount: selectedProjects.count,
+                restoreStock: $restoreStock,
+                onConfirm: {
+                    showRevertConfirmSheet = false
+                    revertSelectedProjectsToPlan()
+                },
+                onCancel: {
+                    showRevertConfirmSheet = false
+                }
+            )
+            .presentationDetents([.height(350)])
+        }
+        // 退回结果提示
+        .alert("退回完成", isPresented: $showRevertResultAlert) {
+            Button("确定") { }
+        } message: {
+            Text(revertResultMessage)
+        }
+    }
+
+    // 退回选中项目为计划
+    private func revertSelectedProjectsToPlan() {
+        var successCount = 0
+        var failCount = 0
+
+        for projectId in selectedProjects {
+            guard let project = inventoryManager.projects.first(where: { $0.id == projectId }) else {
+                failCount += 1
+                continue
+            }
+
+            // 跳过父项目（合并后的项目需要先拆分）
+            if inventoryManager.isParentProject(projectId) {
+                failCount += 1
+                continue
+            }
+
+            // 获取项目关联的品牌
+            let brandId = project.brandId
+
+            if restoreStock && brandId != nil {
+                // 需要恢复库存：使用原有的退回方法
+                let beadUsages = project.beadUsage.map { ($0.colorCode, $0.quantity) }
+                if inventoryManager.revertPlanExecute(projectId: projectId, brandId: brandId!, beadUsages: beadUsages) {
+                    successCount += 1
+                } else {
+                    failCount += 1
+                }
+            } else {
+                // 不恢复库存：直接修改项目状态
+                if let index = inventoryManager.projects.firstIndex(where: { $0.id == projectId }) {
+                    inventoryManager.projects[index].isPlanned = true
+                    inventoryManager.projects[index].brandId = nil
+                    inventoryManager.projects[index].executedDate = nil
+                    inventoryManager.projects[index].beadUsage = inventoryManager.projects[index].beadUsage.map { usage in
+                        BeadUsage(id: usage.id, colorCode: usage.colorCode, brandId: nil,
+                                  quantity: usage.quantity, isDeducted: false)
+                    }
+                    successCount += 1
+                } else {
+                    failCount += 1
+                }
+            }
+        }
+
+        inventoryManager.saveData()
+
+        // 生成结果消息
+        let stockNote = restoreStock ? "（库存已恢复）" : "（库存未变动）"
+        if failCount == 0 {
+            revertResultMessage = "成功退回 \(successCount) 个项目为计划状态\(stockNote)"
+        } else {
+            revertResultMessage = "成功退回 \(successCount) 个项目\(stockNote)\n\(failCount) 个项目退回失败（可能是合并项目，需要先拆分）"
+        }
+
+        // 清理选择状态
+        isSelectMode = false
+        selectedProjects.removeAll()
+
+        // 显示结果
+        showRevertResultAlert = true
+    }
+}
+
+// MARK: - 退回计划确认弹窗
+struct RevertToPlanSheet: View {
+    let projectCount: Int
+    @Binding var restoreStock: Bool
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                // 图标
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .font(.system(size: 50))
+                    .foregroundColor(.orange)
+
+                // 标题
+                Text("退回 \(projectCount) 个项目为计划")
+                    .font(.headline)
+
+                // 选项
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle(isOn: $restoreStock) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("恢复库存")
+                                .font(.body)
+                            Text(restoreStock ? "已扣减的库存将加回" : "库存保持不变")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
+                }
+                .padding(.horizontal)
+
+                // 提示
+                Text("💡 如果这些项目是从旧版备份导入的计划，建议关闭「恢复库存」")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                Spacer()
+
+                // 按钮
+                HStack(spacing: 16) {
+                    Button {
+                        onCancel()
+                    } label: {
+                        Text("取消")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color(.systemGray5))
+                            .foregroundColor(.primary)
+                            .cornerRadius(10)
+                    }
+
+                    Button {
+                        onConfirm()
+                    } label: {
+                        Text("确认退回")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.orange)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom)
+            }
+            .navigationTitle("退回为计划")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

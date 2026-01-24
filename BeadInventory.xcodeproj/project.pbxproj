@@ -25,6 +25,14 @@
 		38B1A0012F0100010000000D /* HistoryRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000021 /* HistoryRecord.swift */; };
 		38B1A0012F0100010000000E /* HistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000022 /* HistoryManager.swift */; };
 		38B1A0012F0100010000000F /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000023 /* HistoryView.swift */; };
+		38B1A0012F01000100000030 /* HiddenColorsManageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000031 /* HiddenColorsManageView.swift */; };
+		38B1A0012F01000100000040 /* ColorPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000041 /* ColorPresets.swift */; };
+		38B1A0012F01000100000042 /* AddBrandView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000043 /* AddBrandView.swift */; };
+		38B1A0012F01000100000044 /* ColorSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000045 /* ColorSelectionView.swift */; };
+		38B1A0012F01000100000046 /* SwiftDataMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000047 /* SwiftDataMigration.swift */; };
+		38B1A0012F01000100000048 /* CSVImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000049 /* CSVImporter.swift */; };
+		38B1A0012F0100010000004A /* ImportStockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000004B /* ImportStockView.swift */; };
+		38FA2CDA2F2482A300912E02 /* ImportFullDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38FA2CD92F2482A300912E02 /* ImportFullDataView.swift */; };
 		A01234560001 /* BeadInventoryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560011 /* BeadInventoryApp.swift */; };
 		A01234560002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560012 /* ContentView.swift */; };
 		A01234560003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A01234560013 /* Assets.xcassets */; };
@@ -37,13 +45,6 @@
 		A0123456000A /* StatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001A /* StatisticsView.swift */; };
 		A0123456000B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001B /* SettingsView.swift */; };
 		A0123456000C /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001C /* AIService.swift */; };
-		38B1A0012F01000100000030 /* HiddenColorsManageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000031 /* HiddenColorsManageView.swift */; };
-		38B1A0012F01000100000040 /* ColorPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000041 /* ColorPresets.swift */; };
-		38B1A0012F01000100000042 /* AddBrandView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000043 /* AddBrandView.swift */; };
-		38B1A0012F01000100000044 /* ColorSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000045 /* ColorSelectionView.swift */; };
-		38B1A0012F01000100000046 /* SwiftDataMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000047 /* SwiftDataMigration.swift */; };
-		38B1A0012F01000100000048 /* CSVImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000049 /* CSVImporter.swift */; };
-		38B1A0012F0100010000004A /* ImportStockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000004B /* ImportStockView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -72,6 +73,7 @@
 		38B1A0012F01000100000047 /* SwiftDataMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftDataMigration.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000049 /* CSVImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVImporter.swift; sourceTree = "<group>"; };
 		38B1A0012F0100010000004B /* ImportStockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportStockView.swift; sourceTree = "<group>"; };
+		38FA2CD92F2482A300912E02 /* ImportFullDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportFullDataView.swift; sourceTree = "<group>"; };
 		A01234560010 /* BeadInventory.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BeadInventory.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A01234560011 /* BeadInventoryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeadInventoryApp.swift; sourceTree = "<group>"; };
 		A01234560012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -196,6 +198,7 @@
 				38B1A0012F0100010000004B /* ImportStockView.swift */,
 				A01234560017 /* InventoryView.swift */,
 				38B1A0012F0100010000001C /* MoreView.swift */,
+				38FA2CD92F2482A300912E02 /* ImportFullDataView.swift */,
 				38B1A0012F0100010000001B /* PlannedProjectsView.swift */,
 				38B1A0012F0100010000001A /* ProjectDetailView.swift */,
 				A01234560018 /* ScanView.swift */,
@@ -292,6 +295,7 @@
 				A01234560008 /* ScanView.swift in Sources */,
 				A01234560009 /* ColorConverterView.swift in Sources */,
 				A0123456000A /* StatisticsView.swift in Sources */,
+				38FA2CDA2F2482A300912E02 /* ImportFullDataView.swift in Sources */,
 				A0123456000B /* SettingsView.swift in Sources */,
 				38B1A0012F01000100000004 /* BrandPicker.swift in Sources */,
 				38B1A0012F01000100000005 /* BrandManagerView.swift in Sources */,

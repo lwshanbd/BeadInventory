@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct MoreView: View {
+    @State private var showingImportFullData = false
+
     var body: some View {
         NavigationStack {
             List {
@@ -82,6 +84,23 @@ struct MoreView: View {
                                 .foregroundColor(.gray)
                         }
                     }
+
+                    Button {
+                        showingImportFullData = true
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("导入历史数据")
+                                Text("从备份文件恢复全部数据")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "arrow.down.doc.fill")
+                                .foregroundColor(.green)
+                        }
+                    }
+                    .foregroundColor(.primary)
                 }
 
                 // 关于
@@ -104,6 +123,9 @@ struct MoreView: View {
                 }
             }
             .navigationTitle("更多")
+            .sheet(isPresented: $showingImportFullData) {
+                ImportFullDataView()
+            }
         }
     }
 }

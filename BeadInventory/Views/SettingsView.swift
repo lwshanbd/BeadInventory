@@ -336,7 +336,14 @@ struct ExportDataSheet: View {
 
             for project in inventoryManager.projects {
                 let brandName = inventoryManager.brands.first { $0.id == project.brandId }?.name ?? "未知"
-                let status = project.isArchived ? "已归档" : "进行中"
+                let status: String
+                if project.isPlanned {
+                    status = "计划中"
+                } else if project.isArchived {
+                    status = "已归档"
+                } else {
+                    status = "进行中"
+                }
                 let dateStr = formatDate(project.date)
                 csv += "\(project.name),\(dateStr),\(project.totalBeads),\(brandName),\(status)\n"
             }
@@ -404,7 +411,8 @@ struct ExportDataSheet: View {
                     "name": project.name,
                     "date": ISO8601DateFormatter().string(from: project.date),
                     "totalBeads": project.totalBeads,
-                    "isArchived": project.isArchived
+                    "isArchived": project.isArchived,
+                    "isPlanned": project.isPlanned
                 ]
                 if let brandId = project.brandId {
                     projectData["brandId"] = brandId.uuidString
