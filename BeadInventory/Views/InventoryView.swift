@@ -15,6 +15,8 @@ struct InventoryView: View {
     @State private var sortOption: SortOption = .code
     @State private var sortAscending: Bool = true
     @AppStorage("inventoryViewMode") private var viewMode: ViewMode = .list
+    @AppStorage("inventoryGroupByPrefix") private var groupByPrefix: Bool = false
+    @State private var collapsedGroups: Set<String> = []
 
     enum ViewMode: String {
         case list = "list"
@@ -61,6 +63,21 @@ struct InventoryView: View {
             sorted = visibleColors.sorted { $0.colorName < $1.colorName }
         }
         return sortAscending ? sorted : sorted.reversed()
+    }
+
+    // 按首字母分组的颜色
+    var groupedColors: [(prefix: String, colors: [BeadColor])] {
+        var groups: [String: [BeadColor]] = [:]
+        for color in filteredColors {
+            let prefix = String(color.mardCode.prefix(1)).uppercased()
+            if groups[prefix] != nil {
+                groups[prefix]?.append(color)
+            } else {
+                groups[prefix] = [color]
+            }
+        }
+        // 按首字母排序
+        return groups.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
     }
 
     var body: some View {
@@ -129,6 +146,29 @@ struct InventoryView: View {
                                 .foregroundColor(.accentColor)
                                 .cornerRadius(16)
                             }
+
+                            // 分组按钮（仅列表模式显示）
+                            if viewMode == .list {
+                                Button {
+                                    withAnimation {
+                                        groupByPrefix.toggle()
+                                        if !groupByPrefix {
+                                            collapsedGroups.removeAll()
+                                        }
+                                    }
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: groupByPrefix ? "folder.fill" : "folder")
+                                        Text("分组")
+                                    }
+                                    .font(.caption)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(groupByPrefix ? Color.orange : Color.gray.opacity(0.2))
+                                    .foregroundColor(groupByPrefix ? .white : .primary)
+                                    .cornerRadius(16)
+                                }
+                            }
                         }
                         .padding(.horizontal)
                     }
@@ -160,22 +200,64 @@ struct InventoryView: View {
                         }
                     } else {
                         // 列表模式
-                        List {
-                            ForEach(filteredColors) { color in
-                                ColorRowView(
-                                    color: color,
-                                    stock: stockDict[color.mardCode],
-                                    sortOption: sortOption,
-                                    lowStockThreshold: lowStockThreshold
-                                )
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    selectedColor = color
+                        if groupByPrefix {
+                            // 分组模式
+                            List {
+                                ForEach(groupedColors, id: \.prefix) { group in
+                                    Section {
+                                        if !collapsedGroups.contains(group.prefix) {
+                                            ForEach(group.colors) { color in
+                                                ColorRowView(
+                                                    color: color,
+                                                    stock: stockDict[color.mardCode],
+                                                    sortOption: sortOption,
+                                                    lowStockThreshold: lowStockThreshold
+                                                )
+                                                .contentShape(Rectangle())
+                                                .onTapGesture {
+                                                    selectedColor = color
+                                                }
+                                                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                                            }
+                                        }
+                                    } header: {
+                                        GroupHeaderView(
+                                            prefix: group.prefix,
+                                            count: group.colors.count,
+                                            isCollapsed: collapsedGroups.contains(group.prefix),
+                                            onToggle: {
+                                                withAnimation {
+                                                    if collapsedGroups.contains(group.prefix) {
+                                                        collapsedGroups.remove(group.prefix)
+                                                    } else {
+                                                        collapsedGroups.insert(group.prefix)
+                                                    }
+                                                }
+                                            }
+                                        )
+                                    }
                                 }
-                                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                             }
+                            .listStyle(.plain)
+                        } else {
+                            // 普通列表模式
+                            List {
+                                ForEach(filteredColors) { color in
+                                    ColorRowView(
+                                        color: color,
+                                        stock: stockDict[color.mardCode],
+                                        sortOption: sortOption,
+                                        lowStockThreshold: lowStockThreshold
+                                    )
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        selectedColor = color
+                                    }
+                                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                                }
+                            }
+                            .listStyle(.plain)
                         }
-                        .listStyle(.plain)
                     }
                 } else {
                     // 没有品牌时的提示
@@ -215,6 +297,41 @@ struct InventoryView: View {
                 BrandSettingsView()
             }
         }
+    }
+}
+
+// MARK: - 分组标题视图
+struct GroupHeaderView: View {
+    let prefix: String
+    let count: Int
+    let isCollapsed: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack {
+                Text(prefix)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+
+                Text("系列")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Text("(\(count))")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
     }
 }
 
