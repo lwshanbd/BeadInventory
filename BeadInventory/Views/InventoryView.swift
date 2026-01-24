@@ -69,15 +69,25 @@ struct InventoryView: View {
     var groupedColors: [(prefix: String, colors: [BeadColor])] {
         var groups: [String: [BeadColor]] = [:]
         for color in filteredColors {
-            let prefix = String(color.mardCode.prefix(1)).uppercased()
+            // 自定义颜色（以 C_ 开头）单独分组为 "自定义"
+            let prefix: String
+            if color.mardCode.hasPrefix("C_") {
+                prefix = "自定义"
+            } else {
+                prefix = String(color.mardCode.prefix(1)).uppercased()
+            }
             if groups[prefix] != nil {
                 groups[prefix]?.append(color)
             } else {
                 groups[prefix] = [color]
             }
         }
-        // 按首字母排序
-        return groups.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
+        // 按首字母排序，"自定义" 放在最后
+        return groups.sorted { lhs, rhs in
+            if lhs.key == "自定义" { return false }
+            if rhs.key == "自定义" { return true }
+            return lhs.key < rhs.key
+        }.map { ($0.key, $0.value) }
     }
 
     var body: some View {
@@ -431,6 +441,18 @@ struct ColorCardView: View {
     var used: Int { stock?.used ?? 0 }
     var isLowStock: Bool { available < lowStockThreshold }
 
+    // 显示色号：自定义颜色去掉 C_ 前缀
+    var displayCode: String {
+        if color.mardCode.hasPrefix("C_") {
+            return String(color.mardCode.dropFirst(2))
+        }
+        return color.mardCode
+    }
+
+    var isCustomColor: Bool {
+        color.mardCode.hasPrefix("C_")
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             // 颜色块
@@ -441,9 +463,17 @@ struct ColorCardView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
+                .overlay(alignment: .topTrailing) {
+                    if isCustomColor {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                            .padding(4)
+                    }
+                }
 
-            // MARD 色号
-            Text(color.mardCode)
+            // 色号
+            Text(displayCode)
                 .font(.system(.caption, design: .monospaced))
                 .fontWeight(.medium)
 
@@ -494,6 +524,18 @@ struct ColorRowView: View {
 
     var isLowStock: Bool { available < lowStockThreshold }
 
+    // 显示色号：自定义颜色去掉 C_ 前缀
+    var displayCode: String {
+        if color.mardCode.hasPrefix("C_") {
+            return String(color.mardCode.dropFirst(2))
+        }
+        return color.mardCode
+    }
+
+    var isCustomColor: Bool {
+        color.mardCode.hasPrefix("C_")
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             // 颜色块
@@ -504,11 +546,30 @@ struct ColorRowView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
+                .overlay(alignment: .topTrailing) {
+                    if isCustomColor {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 8))
+                            .foregroundColor(.orange)
+                            .padding(2)
+                    }
+                }
 
             // 色号和名称
             VStack(alignment: .leading, spacing: 4) {
-                Text(color.mardCode)
-                    .font(.system(.headline, design: .monospaced))
+                HStack(spacing: 4) {
+                    Text(displayCode)
+                        .font(.system(.headline, design: .monospaced))
+                    if isCustomColor {
+                        Text("自定义")
+                            .font(.caption2)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.2))
+                            .foregroundColor(.orange)
+                            .cornerRadius(4)
+                    }
+                }
 
                 Text(color.colorName)
                     .font(.caption)

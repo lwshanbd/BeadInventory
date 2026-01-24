@@ -12,6 +12,7 @@ import SwiftData
 class InventoryManager: ObservableObject {
     @Published var beadColors: [BeadColor] = []
     @Published var projects: [ProjectRecord] = []
+    @Published var customColors: [CustomColor] = []  // 自定义颜色
 
     // 品牌相关
     @Published var brands: [Brand] = []
@@ -31,6 +32,7 @@ class InventoryManager: ObservableObject {
     private let brandStocksKey = "brandStocks"
     private let currentBrandIdKey = "currentBrandId"
     private let migrationCompletedKey = "swiftDataMigrationCompleted"
+    private let customColorsKey = "customColors"
 
     // 计算属性：当前选中的品牌
     var currentBrand: Brand? {
@@ -147,6 +149,7 @@ class InventoryManager: ObservableObject {
     // MARK: - 品牌库存操作
 
     func initializeStockForBrand(_ brandId: UUID, defaultStock: Int = 1000, selectedColors: Set<String>? = nil) {
+        // 为预设颜色初始化库存
         for color in beadColors {
             // 如果指定了 selectedColors，则只有选中的颜色才有库存，未选中的标记为隐藏
             let isSelected = selectedColors?.contains(color.mardCode) ?? true
@@ -156,6 +159,18 @@ class InventoryManager: ObservableObject {
                 stock: isSelected ? defaultStock : 0,
                 used: 0,
                 isHidden: !isSelected
+            )
+            brandStocks.append(stock)
+        }
+
+        // 为自定义颜色初始化库存
+        for customColor in customColors {
+            let stock = BrandStock(
+                brandId: brandId,
+                mardCode: customColor.mardCode,
+                stock: 0,  // 自定义颜色默认库存为0
+                used: 0,
+                isHidden: false
             )
             brandStocks.append(stock)
         }
@@ -390,6 +405,139 @@ class InventoryManager: ObservableObject {
         brandStocks.filter { $0.brandId == brandId && $0.isHidden }.count
     }
 
+    // MARK: - 自定义颜色管理
+
+    /// 添加自定义颜色
+    @discardableResult
+    func addCustomColor(colorCode: String, colorHex: String, colorName: String = "") -> CustomColor? {
+        // 检查色号是否已存在（包括预设颜色）
+        let normalizedCode = colorCode.uppercased().trimmingCharacters(in: .whitespaces)
+        let customMardCode = "C_\(normalizedCode)"
+
+        // 检查是否与预设颜色冲突
+        if beadColors.contains(where: {
+            $0.mardCode.uppercased() == normalizedCode ||
+            $0.cocoCode.uppercased() == normalizedCode ||
+            $0.manmanCode.uppercased() == normalizedCode ||
+            $0.panpanCode.uppercased() == normalizedCode ||
+            $0.mixiaowoCode.uppercased() == normalizedCode
+        }) {
+            return nil
+        }
+
+        // 检查是否与已有自定义颜色冲突
+        if customColors.contains(where: {
+            $0.colorCode.uppercased() == normalizedCode ||
+            $0.mardCode.uppercased() == customMardCode
+        }) {
+            return nil
+        }
+
+        let customColor = CustomColor(
+            colorCode: normalizedCode,
+            colorHex: colorHex.replacingOccurrences(of: "#", with: ""),
+            colorName: colorName
+        )
+        customColors.append(customColor)
+
+        // 为所有品牌初始化该自定义颜色的库存
+        for brand in brands {
+            let stock = BrandStock(
+                brandId: brand.id,
+                mardCode: customColor.mardCode,
+                stock: 0,
+                used: 0,
+                isHidden: false
+            )
+            brandStocks.append(stock)
+        }
+
+        saveData()
+        return customColor
+    }
+
+    /// 更新自定义颜色
+    func updateCustomColor(id: UUID, colorCode: String? = nil, colorHex: String? = nil, colorName: String? = nil) -> Bool {
+        guard let index = customColors.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+
+        let oldMardCode = customColors[index].mardCode
+
+        if let newCode = colorCode {
+            let normalizedCode = newCode.uppercased().trimmingCharacters(in: .whitespaces)
+            // 检查新色号是否冲突（排除自己）
+            if customColors.contains(where: { $0.id != id && $0.colorCode.uppercased() == normalizedCode }) {
+                return false
+            }
+            customColors[index].colorCode = normalizedCode
+
+            // 更新所有品牌库存中的 mardCode
+            let newMardCode = "C_\(normalizedCode)"
+            for i in brandStocks.indices where brandStocks[i].mardCode == oldMardCode {
+                // 需要创建新的 BrandStock 因为 mardCode 是 let
+                let oldStock = brandStocks[i]
+                brandStocks[i] = BrandStock(
+                    id: oldStock.id,
+                    brandId: oldStock.brandId,
+                    mardCode: newMardCode,
+                    stock: oldStock.stock,
+                    used: oldStock.used,
+                    isHidden: oldStock.isHidden
+                )
+            }
+        }
+
+        if let newHex = colorHex {
+            customColors[index].colorHex = newHex.replacingOccurrences(of: "#", with: "")
+        }
+
+        if let newName = colorName {
+            customColors[index].colorName = newName
+        }
+
+        customColors[index].updatedAt = Date()
+        saveData()
+        return true
+    }
+
+    /// 删除自定义颜色
+    func deleteCustomColor(id: UUID) -> Bool {
+        guard let index = customColors.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+
+        let mardCode = customColors[index].mardCode
+
+        // 删除所有品牌中该颜色的库存记录
+        brandStocks.removeAll { $0.mardCode == mardCode }
+
+        // 删除自定义颜色
+        customColors.remove(at: index)
+
+        saveData()
+        return true
+    }
+
+    /// 根据 ID 获取自定义颜色
+    func getCustomColor(id: UUID) -> CustomColor? {
+        customColors.first { $0.id == id }
+    }
+
+    /// 根据色号获取自定义颜色
+    func getCustomColor(byCode code: String) -> CustomColor? {
+        let normalizedCode = code.uppercased().trimmingCharacters(in: .whitespaces)
+        return customColors.first {
+            $0.colorCode.uppercased() == normalizedCode ||
+            $0.mardCode.uppercased() == normalizedCode
+        }
+    }
+
+    /// 检查色号是否为自定义颜色
+    func isCustomColor(_ mardCode: String) -> Bool {
+        mardCode.hasPrefix("C_") || customColors.contains { $0.colorCode.uppercased() == mardCode.uppercased() }
+    }
+
     // MARK: - 数据持久化 (SwiftData)
 
     func loadData() {
@@ -435,6 +583,12 @@ class InventoryManager: ObservableObject {
 
         // 初始化颜色数据
         beadColors = DefaultBeadColors.colors
+
+        // 从 SwiftData 加载自定义颜色
+        let customColorDescriptor = FetchDescriptor<SDCustomColor>(sortBy: [SortDescriptor(\.createdAt)])
+        if let sdCustomColors = try? context.fetch(customColorDescriptor) {
+            customColors = sdCustomColors.map { $0.toStruct() }
+        }
     }
 
     func saveData() {
@@ -463,6 +617,14 @@ class InventoryManager: ObservableObject {
             for project in projects {
                 let sdProject = SDProjectRecord(from: project)
                 context.insert(sdProject)
+            }
+
+            // 删除旧的自定义颜色数据
+            try context.delete(model: SDCustomColor.self)
+            // 保存新的自定义颜色数据
+            for customColor in customColors {
+                let sdCustomColor = SDCustomColor(from: customColor)
+                context.insert(sdCustomColor)
             }
 
             try context.save()
@@ -552,6 +714,12 @@ class InventoryManager: ObservableObject {
            let id = UUID(uuidString: idString) {
             currentBrandId = id
         }
+
+        // 加载自定义颜色
+        if let data = UserDefaults.standard.data(forKey: customColorsKey),
+           let decoded = try? JSONDecoder().decode([CustomColor].self, from: data) {
+            customColors = decoded
+        }
     }
 
     // MARK: - 库存操作
@@ -598,13 +766,25 @@ class InventoryManager: ObservableObject {
             return mardMatch
         }
 
-        // 再匹配其他品牌色号
-        return beadColors.first { color in
+        // 匹配其他品牌色号
+        if let brandMatch = beadColors.first(where: { color in
             color.cocoCode.uppercased() == code ||
             color.manmanCode.uppercased() == code ||
             color.panpanCode.uppercased() == code ||
             color.mixiaowoCode.uppercased() == code
+        }) {
+            return brandMatch
         }
+
+        // 匹配自定义颜色（包括 C_ 前缀和不带前缀的色号）
+        if let customColor = customColors.first(where: { custom in
+            custom.mardCode.uppercased() == code ||
+            custom.colorCode.uppercased() == code
+        }) {
+            return customColor.toBeadColor()
+        }
+
+        return nil
     }
 
     func findColorIndex(byCode code: String) -> Int? {
@@ -625,9 +805,9 @@ class InventoryManager: ObservableObject {
     }
 
     func searchColors(_ query: String) -> [BeadColor] {
-        guard !query.isEmpty else { return beadColors }
+        guard !query.isEmpty else { return allBeadColors }
         let query = query.uppercased()
-        return beadColors.filter { color in
+        return allBeadColors.filter { color in
             color.mardCode.uppercased().contains(query) ||
             color.cocoCode.uppercased().contains(query) ||
             color.manmanCode.uppercased().contains(query) ||
@@ -635,6 +815,11 @@ class InventoryManager: ObservableObject {
             color.mixiaowoCode.uppercased().contains(query) ||
             color.colorName.uppercased().contains(query)
         }
+    }
+
+    /// 所有颜色（包括预设颜色和自定义颜色）
+    var allBeadColors: [BeadColor] {
+        beadColors + customColors.map { $0.toBeadColor() }
     }
 
     // MARK: - 项目管理

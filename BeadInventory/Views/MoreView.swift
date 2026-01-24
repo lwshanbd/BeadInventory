@@ -32,7 +32,7 @@ struct MoreView: View {
                     }
                 }
 
-                // 色号转换
+                // 颜色管理
                 Section {
                     NavigationLink {
                         ColorConverterView()
@@ -47,6 +47,22 @@ struct MoreView: View {
                         } icon: {
                             Image(systemName: "paintpalette.fill")
                                 .foregroundColor(.purple)
+                        }
+                    }
+
+                    NavigationLink {
+                        CustomColorsView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("自定义颜色")
+                                Text("添加和管理自己的颜色")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "eyedropper.halffull")
+                                .foregroundColor(.pink)
                         }
                     }
                 }

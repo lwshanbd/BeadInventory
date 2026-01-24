@@ -1142,7 +1142,7 @@ struct ManualEntrySheetNew: View {
     @Environment(\.dismiss) var dismiss
 
     // 色系列表
-    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他"]
+    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "自定义", "其他"]
     let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
 
     @State private var selectedSeries = "A"
@@ -1151,21 +1151,26 @@ struct ManualEntrySheetNew: View {
     @State private var isInitialized = false
 
     var colorsInSeries: [BeadColor] {
-        inventoryManager.beadColors.filter { color in
+        inventoryManager.allBeadColors.filter { color in
             let code = color.mardCode
 
-            if selectedSeries == "其他" {
+            if selectedSeries == "自定义" {
+                // 自定义颜色（以 C_ 开头）
+                return code.hasPrefix("C_")
+            } else if selectedSeries == "其他" {
+                // 既不是标准系列，也不是自定义颜色
                 return !standardPrefixes.contains { prefix in
                     if prefix == "ZG" {
                         return code.hasPrefix("ZG")
                     } else {
                         return code.hasPrefix(prefix) && !code.hasPrefix("ZG")
                     }
-                }
+                } && !code.hasPrefix("C_")
             } else if selectedSeries == "ZG" {
                 return code.hasPrefix("ZG")
             } else {
                 if code.hasPrefix("ZG") { return false }
+                if code.hasPrefix("C_") { return false }  // 排除自定义颜色
                 return code.hasPrefix(selectedSeries)
             }
         }.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
@@ -1251,8 +1256,8 @@ struct ManualEntrySheetNew: View {
         isInitialized = true
 
         for item in recognizedItems {
-            // 根据色号找到对应的颜色
-            if let color = inventoryManager.beadColors.first(where: { $0.mardCode.uppercased() == item.colorCode.uppercased() }) {
+            // 根据色号找到对应的颜色（包括自定义颜色）
+            if let color = inventoryManager.allBeadColors.first(where: { $0.mardCode.uppercased() == item.colorCode.uppercased() }) {
                 selectedColors.insert(color.id)
                 quantities[color.id] = item.quantity
             }
@@ -1277,7 +1282,7 @@ struct ManualEntrySheetNew: View {
         // 用新的选择替换原来的 recognizedItems
         var newItems: [ScanView.RecognizedItem] = []
         for colorId in selectedColors {
-            guard let color = inventoryManager.beadColors.first(where: { $0.id == colorId }) else { continue }
+            guard let color = inventoryManager.allBeadColors.first(where: { $0.id == colorId }) else { continue }
             let qty = quantities[colorId] ?? 1
             newItems.append(ScanView.RecognizedItem(colorCode: color.mardCode, quantity: qty))
         }

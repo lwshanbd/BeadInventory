@@ -144,6 +144,55 @@ final class SDBeadUsage {
     }
 }
 
+// MARK: - 自定义颜色模型
+@Model
+final class SDCustomColor {
+    @Attribute(.unique) var id: UUID
+    var colorCode: String       // 用户定义的色号
+    var colorHex: String        // 颜色十六进制值
+    var colorName: String       // 颜色名称
+    var createdAt: Date         // 创建时间
+    var updatedAt: Date         // 更新时间
+
+    init(
+        id: UUID = UUID(),
+        colorCode: String,
+        colorHex: String,
+        colorName: String = "",
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.colorCode = colorCode
+        self.colorHex = colorHex
+        self.colorName = colorName
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    convenience init(from customColor: CustomColor) {
+        self.init(
+            id: customColor.id,
+            colorCode: customColor.colorCode,
+            colorHex: customColor.colorHex,
+            colorName: customColor.colorName,
+            createdAt: customColor.createdAt,
+            updatedAt: customColor.updatedAt
+        )
+    }
+
+    func toStruct() -> CustomColor {
+        CustomColor(
+            id: id,
+            colorCode: colorCode,
+            colorHex: colorHex,
+            colorName: colorName,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+}
+
 // MARK: - 历史记录模型
 @Model
 final class SDHistoryRecord {
