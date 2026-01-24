@@ -164,7 +164,9 @@ class HistoryManager: ObservableObject {
             parentId: project.parentId,
             isPlanned: project.isPlanned,
             executedDate: project.executedDate,
-            beadUsages: usageSnapshots
+            beadUsages: usageSnapshots,
+            thumbnail: project.thumbnail,
+            finishedImage: project.finishedImage
         )
 
         let snapshotData = try? JSONEncoder().encode(snapshot)
@@ -228,7 +230,9 @@ class HistoryManager: ObservableObject {
             parentId: beforeProject.parentId,
             isPlanned: beforeProject.isPlanned,
             executedDate: beforeProject.executedDate,
-            beadUsages: beforeUsages
+            beadUsages: beforeUsages,
+            thumbnail: beforeProject.thumbnail,
+            finishedImage: beforeProject.finishedImage
         )
 
         // 执行后快照
@@ -245,7 +249,9 @@ class HistoryManager: ObservableObject {
             parentId: afterProject.parentId,
             isPlanned: afterProject.isPlanned,
             executedDate: afterProject.executedDate,
-            beadUsages: afterUsages
+            beadUsages: afterUsages,
+            thumbnail: afterProject.thumbnail,
+            finishedImage: afterProject.finishedImage
         )
 
         let beforeData = try? JSONEncoder().encode(beforeSnapshot)
@@ -291,7 +297,9 @@ class HistoryManager: ObservableObject {
                 parentId: project.parentId,
                 isPlanned: project.isPlanned,
                 executedDate: project.executedDate,
-                beadUsages: usageSnapshots
+                beadUsages: usageSnapshots,
+                thumbnail: project.thumbnail,
+                finishedImage: project.finishedImage
             )
         }
 
@@ -340,7 +348,9 @@ class HistoryManager: ObservableObject {
             parentId: project.parentId,
             isPlanned: project.isPlanned,
             executedDate: project.executedDate,
-            beadUsages: projectUsages
+            beadUsages: projectUsages,
+            thumbnail: project.thumbnail,
+            finishedImage: project.finishedImage
         )
 
         // 创建子项目快照
@@ -358,7 +368,9 @@ class HistoryManager: ObservableObject {
                 parentId: child.parentId,
                 isPlanned: child.isPlanned,
                 executedDate: child.executedDate,
-                beadUsages: childUsages
+                beadUsages: childUsages,
+                thumbnail: child.thumbnail,
+                finishedImage: child.finishedImage
             )
         }
 
@@ -617,6 +629,18 @@ class HistoryManager: ObservableObject {
             }
             return false
 
+        case .projectUpdate:
+            // 撤回项目修改 = 恢复旧快照（目前主要是缩略图/成品图修改）
+            if let beforeData = record.beforeSnapshot,
+               let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: beforeData) {
+                // 恢复缩略图
+                manager.updateProjectThumbnail(snapshot.id, thumbnail: snapshot.thumbnail)
+                // 恢复成品图
+                manager.updateProjectFinishedImage(snapshot.id, finishedImage: snapshot.finishedImage)
+                return true
+            }
+            return false
+
         case .projectMerge:
             // 撤回合并 = 恢复所有原始项目的状态
             guard let beforeData = record.beforeSnapshot,
@@ -720,7 +744,9 @@ class HistoryManager: ObservableObject {
             isArchived: snapshot.isArchived,
             parentId: snapshot.parentId,
             isPlanned: snapshot.isPlanned,
-            executedDate: snapshot.executedDate
+            executedDate: snapshot.executedDate,
+            thumbnail: snapshot.thumbnail,
+            finishedImage: snapshot.finishedImage
         )
     }
 

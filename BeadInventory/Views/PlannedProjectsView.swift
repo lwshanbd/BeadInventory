@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import PhotosUI
 
 struct PlannedProjectsView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
@@ -804,6 +805,7 @@ struct PlannedProjectDetailView: View {
     @State private var showExecuteSheet = false
     @State private var showStockCheckSheet = false
     @State private var showEditSheet = false
+    @State private var showThumbnailEditor = false
     @State private var sortByQuantity = true
     @State private var showChildrenSection = true
 
@@ -868,6 +870,7 @@ struct PlannedProjectDetailView: View {
         .sheet(isPresented: $showExecuteSheet) { executeSheet }
         .sheet(isPresented: $showStockCheckSheet) { stockCheckSheet }
         .sheet(isPresented: $showEditSheet) { editSheet }
+        .sheet(isPresented: $showThumbnailEditor) { thumbnailEditorSheet }
         .onChange(of: currentProject?.isPlanned) { _, isPlanned in
             if isPlanned == false { dismiss() }
         }
@@ -899,7 +902,8 @@ struct PlannedProjectDetailView: View {
             isParent: isParentProject,
             colorCount: colorCount,
             totalBeads: totalBeads,
-            childCount: childProjects.count
+            childCount: childProjects.count,
+            onEditThumbnail: { showThumbnailEditor = true }
         )
     }
 
@@ -1069,6 +1073,18 @@ struct PlannedProjectDetailView: View {
                 .environmentObject(inventoryManager)
         }
     }
+
+    private var thumbnailEditorSheet: some View {
+        ProjectImageEditorSheet(
+            projectId: project.id,
+            title: "项目封面",
+            currentImage: (currentProject ?? project).thumbnail.flatMap { UIImage(data: $0) },
+            onSave: { imageData in
+                inventoryManager.updateProjectThumbnail(project.id, thumbnail: imageData)
+            }
+        )
+        .environmentObject(inventoryManager)
+    }
 }
 
 // MARK: - 计划项目信息卡片
@@ -1078,6 +1094,7 @@ struct PlannedProjectInfoCard: View {
     let colorCount: Int
     let totalBeads: Int
     let childCount: Int
+    var onEditThumbnail: (() -> Void)? = nil
 
     // 从 thumbnail Data 创建 UIImage
     var thumbnailImage: UIImage? {
@@ -1087,17 +1104,50 @@ struct PlannedProjectInfoCard: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            // 缩略图（如果有）
-            if let image = thumbnailImage {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: 150)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
+            // 缩略图区域
+            ZStack(alignment: .topTrailing) {
+                if let image = thumbnailImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 150)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        )
+                } else if onEditThumbnail != nil {
+                    // 无图片时的占位符
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.gray.opacity(0.1))
+                        .frame(height: 100)
+                        .overlay(
+                            VStack(spacing: 8) {
+                                Image(systemName: "photo.badge.plus")
+                                    .font(.title2)
+                                    .foregroundColor(.secondary)
+                                Text("添加封面")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        )
+                        .onTapGesture {
+                            onEditThumbnail?()
+                        }
+                }
+
+                // 编辑按钮
+                if onEditThumbnail != nil && thumbnailImage != nil {
+                    Button {
+                        onEditThumbnail?()
+                    } label: {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .background(Circle().fill(Color.accentColor))
+                    }
+                    .padding(8)
+                }
             }
 
             HStack {

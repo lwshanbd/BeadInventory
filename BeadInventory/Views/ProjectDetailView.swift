@@ -6,12 +6,17 @@
 //
 
 import SwiftUI
+import PhotosUI
 
 struct ProjectDetailView: View {
     let project: ProjectRecord
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var sortByQuantity = true
     @State private var showChildrenSection = true
+
+    // 图片编辑相关状态
+    @State private var showingThumbnailEditor = false
+    @State private var showingFinishedImageEditor = false
 
     var isParentProject: Bool {
         inventoryManager.isParentProject(project.id)
@@ -56,18 +61,32 @@ struct ProjectDetailView: View {
         return project.totalBeads
     }
 
+    // 获取当前项目的最新状态
+    var currentProject: ProjectRecord? {
+        inventoryManager.projects.first { $0.id == project.id }
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 // 项目信息卡片
                 ProjectInfoCardEnhanced(
-                    project: project,
+                    project: currentProject ?? project,
                     brandName: brandName,
                     isParent: isParentProject,
                     colorCount: colorCount,
                     totalBeads: totalBeads,
-                    childCount: childProjects.count
+                    childCount: childProjects.count,
+                    onEditThumbnail: { showingThumbnailEditor = true }
                 )
+
+                // 成品图展示区域（仅已执行项目显示）
+                if !project.isPlanned {
+                    FinishedImageSection(
+                        project: currentProject ?? project,
+                        onEditFinishedImage: { showingFinishedImageEditor = true }
+                    )
+                }
 
                 // 子项目列表（仅父项目显示）
                 if isParentProject && !childProjects.isEmpty {
@@ -149,6 +168,29 @@ struct ProjectDetailView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingThumbnailEditor) {
+            ProjectImageEditorSheet(
+                projectId: project.id,
+                title: "项目封面",
+                currentImage: (currentProject ?? project).thumbnail.flatMap { UIImage(data: $0) },
+                onSave: { imageData in
+                    inventoryManager.updateProjectThumbnail(project.id, thumbnail: imageData)
+                }
+            )
+            .environmentObject(inventoryManager)
+        }
+        .sheet(isPresented: $showingFinishedImageEditor) {
+            ProjectImageEditorSheet(
+                projectId: project.id,
+                title: "成品图",
+                currentImage: (currentProject ?? project).finishedImage.flatMap { UIImage(data: $0) },
+                maxImageSize: 400, // 成品图使用更大尺寸
+                onSave: { imageData in
+                    inventoryManager.updateProjectFinishedImage(project.id, finishedImage: imageData)
+                }
+            )
+            .environmentObject(inventoryManager)
+        }
     }
 }
 
@@ -295,6 +337,7 @@ struct ProjectInfoCardEnhanced: View {
     let colorCount: Int
     let totalBeads: Int
     let childCount: Int
+    var onEditThumbnail: (() -> Void)? = nil
 
     // 从 thumbnail Data 创建 UIImage
     var thumbnailImage: UIImage? {
@@ -304,17 +347,50 @@ struct ProjectInfoCardEnhanced: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            // 缩略图（如果有）
-            if let image = thumbnailImage {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: 150)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
+            // 缩略图区域
+            ZStack(alignment: .topTrailing) {
+                if let image = thumbnailImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 150)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        )
+                } else if onEditThumbnail != nil {
+                    // 无图片时的占位符
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.gray.opacity(0.1))
+                        .frame(height: 100)
+                        .overlay(
+                            VStack(spacing: 8) {
+                                Image(systemName: "photo.badge.plus")
+                                    .font(.title2)
+                                    .foregroundColor(.secondary)
+                                Text("添加封面")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        )
+                        .onTapGesture {
+                            onEditThumbnail?()
+                        }
+                }
+
+                // 编辑按钮
+                if onEditThumbnail != nil && thumbnailImage != nil {
+                    Button {
+                        onEditThumbnail?()
+                    } label: {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .background(Circle().fill(Color.accentColor))
+                    }
+                    .padding(8)
+                }
             }
 
             // 日期和状态
@@ -466,6 +542,268 @@ struct BeadUsageRow: View {
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(10)
+    }
+}
+
+// MARK: - 成品图展示区域
+struct FinishedImageSection: View {
+    let project: ProjectRecord
+    let onEditFinishedImage: () -> Void
+
+    var finishedImage: UIImage? {
+        guard let data = project.finishedImage else { return nil }
+        return UIImage(data: data)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("成品展示", systemImage: "star.fill")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                Spacer()
+                Button {
+                    onEditFinishedImage()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: finishedImage == nil ? "photo.badge.plus" : "pencil")
+                        Text(finishedImage == nil ? "上传成品图" : "修改")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.accentColor)
+                }
+            }
+
+            if let image = finishedImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+            } else {
+                // 空状态占位符
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.gray.opacity(0.1))
+                    .frame(height: 150)
+                    .overlay(
+                        VStack(spacing: 12) {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.system(size: 40))
+                                .foregroundColor(.secondary.opacity(0.5))
+                            Text("上传成品图展示你的作品")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    )
+                    .onTapGesture {
+                        onEditFinishedImage()
+                    }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - 项目图片编辑弹窗
+struct ProjectImageEditorSheet: View {
+    let projectId: UUID
+    let title: String
+    let currentImage: UIImage?
+    var maxImageSize: CGFloat = 200
+    let onSave: (Data?) -> Void
+
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var inventoryManager: InventoryManager
+
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var editedImage: UIImage?
+    @State private var isLoadingImage = false
+    @State private var showingCropView = false
+    @State private var imageToCrop: UIImage?
+
+    var displayImage: UIImage? {
+        editedImage ?? currentImage
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                // 图片预览区域
+                if isLoadingImage {
+                    ProgressView("加载中...")
+                        .frame(height: 200)
+                } else if let image = displayImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 250)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        )
+                        .padding(.horizontal)
+                } else {
+                    // 空状态
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.gray.opacity(0.1))
+                        .frame(height: 200)
+                        .overlay(
+                            VStack(spacing: 12) {
+                                Image(systemName: "photo.badge.plus")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.secondary)
+                                Text("选择图片")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        )
+                        .padding(.horizontal)
+                }
+
+                // 操作按钮
+                VStack(spacing: 12) {
+                    // 选择图片按钮
+                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        HStack {
+                            Image(systemName: "photo.on.rectangle")
+                            Text(displayImage == nil ? "从相册选择" : "更换图片")
+                        }
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+
+                    // 裁切按钮（仅当有图片时显示）
+                    if displayImage != nil {
+                        HStack(spacing: 12) {
+                            Button {
+                                imageToCrop = displayImage
+                                showingCropView = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: "crop")
+                                    Text("裁切")
+                                }
+                                .font(.subheadline)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.blue.opacity(0.1))
+                                .foregroundColor(.blue)
+                                .cornerRadius(12)
+                            }
+
+                            Button {
+                                editedImage = nil
+                            } label: {
+                                HStack {
+                                    Image(systemName: "arrow.uturn.backward")
+                                    Text("重置")
+                                }
+                                .font(.subheadline)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.orange.opacity(0.1))
+                                .foregroundColor(.orange)
+                                .cornerRadius(12)
+                            }
+                            .disabled(editedImage == nil)
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // 移除按钮（仅当有当前图片时显示）
+                    if currentImage != nil || editedImage != nil {
+                        Button {
+                            onSave(nil)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Image(systemName: "trash")
+                                Text("移除图片")
+                            }
+                            .font(.subheadline)
+                            .foregroundColor(.red)
+                        }
+                        .padding(.top, 8)
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(.vertical)
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("保存") {
+                        if let image = displayImage {
+                            let imageData = generateImageData(from: image)
+                            onSave(imageData)
+                        }
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(editedImage == nil && currentImage == displayImage)
+                }
+            }
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                if let newItem = newItem {
+                    isLoadingImage = true
+                    Task {
+                        if let data = try? await newItem.loadTransferable(type: Data.self),
+                           let image = UIImage(data: data) {
+                            await MainActor.run {
+                                imageToCrop = image
+                                isLoadingImage = false
+                                showingCropView = true
+                            }
+                        } else {
+                            await MainActor.run {
+                                isLoadingImage = false
+                            }
+                        }
+                    }
+                    selectedPhotoItem = nil
+                }
+            }
+            .fullScreenCover(isPresented: $showingCropView) {
+                if let image = imageToCrop {
+                    ImageCropView(image: image) { croppedImage in
+                        editedImage = croppedImage
+                        imageToCrop = nil
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    /// 生成压缩的图片数据
+    func generateImageData(from image: UIImage) -> Data? {
+        let scale = min(maxImageSize / image.size.width, maxImageSize / image.size.height, 1.0)
+        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: newSize))
+        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+
+        return resizedImage?.jpegData(compressionQuality: 0.7)
     }
 }
 

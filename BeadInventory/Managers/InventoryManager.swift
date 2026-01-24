@@ -1415,6 +1415,30 @@ class InventoryManager: ObservableObject {
         }
     }
 
+    // MARK: - 项目图片管理
+
+    /// 更新项目缩略图（支持计划项目和已执行项目）
+    func updateProjectThumbnail(_ projectId: UUID, thumbnail: Data?) {
+        if let index = projects.firstIndex(where: { $0.id == projectId }) {
+            // 记录历史
+            historyManager.recordProject(type: projects[index].isPlanned ? .planUpdate : .projectUpdate, project: projects[index])
+
+            projects[index].thumbnail = thumbnail
+            saveData()
+        }
+    }
+
+    /// 更新项目成品图（仅已执行项目）
+    func updateProjectFinishedImage(_ projectId: UUID, finishedImage: Data?) {
+        if let index = projects.firstIndex(where: { $0.id == projectId && !$0.isPlanned }) {
+            // 记录历史
+            historyManager.recordProject(type: .projectUpdate, project: projects[index])
+
+            projects[index].finishedImage = finishedImage
+            saveData()
+        }
+    }
+
     // MARK: - 统计
 
     var totalStock: Int {

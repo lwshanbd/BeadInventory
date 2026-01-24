@@ -23,6 +23,7 @@ enum HistoryOperationType: String, Codable, CaseIterable {
 
     // 项目操作
     case projectAdd = "project_add"
+    case projectUpdate = "project_update"
     case projectDelete = "project_delete"
     case projectArchive = "project_archive"
     case projectUnarchive = "project_unarchive"
@@ -45,6 +46,7 @@ enum HistoryOperationType: String, Codable, CaseIterable {
         case .stockDeduct: return "扣减库存"
         case .stockReset: return "重置库存"
         case .projectAdd: return "添加项目"
+        case .projectUpdate: return "修改项目"
         case .projectDelete: return "删除项目"
         case .projectArchive: return "归档项目"
         case .projectUnarchive: return "取消归档"
@@ -67,6 +69,7 @@ enum HistoryOperationType: String, Codable, CaseIterable {
         case .stockDeduct: return "arrow.down.circle.fill"
         case .stockReset: return "arrow.counterclockwise.circle.fill"
         case .projectAdd: return "doc.badge.plus"
+        case .projectUpdate: return "pencil.circle.fill"
         case .projectDelete: return "doc.badge.minus"
         case .projectArchive: return "archivebox.fill"
         case .projectUnarchive: return "archivebox"
@@ -83,7 +86,7 @@ enum HistoryOperationType: String, Codable, CaseIterable {
         switch self {
         case .brandAdd, .stockAdd, .projectAdd, .planAdd:
             return "green"
-        case .brandUpdate, .stockUpdate, .planUpdate:
+        case .brandUpdate, .stockUpdate, .projectUpdate, .planUpdate:
             return "blue"
         case .brandDelete, .stockDeduct, .projectDelete, .planDelete:
             return "red"
@@ -181,6 +184,41 @@ struct ProjectSnapshot: Codable {
     let isPlanned: Bool
     let executedDate: Date?
     let beadUsages: [BeadUsageSnapshot]
+    let thumbnail: Data?
+    let finishedImage: Data?
+
+    // 自定义解码器，兼容旧数据
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        date = try container.decode(Date.self, forKey: .date)
+        totalBeads = try container.decode(Int.self, forKey: .totalBeads)
+        brandId = try container.decodeIfPresent(UUID.self, forKey: .brandId)
+        isArchived = try container.decode(Bool.self, forKey: .isArchived)
+        parentId = try container.decodeIfPresent(UUID.self, forKey: .parentId)
+        isPlanned = try container.decode(Bool.self, forKey: .isPlanned)
+        executedDate = try container.decodeIfPresent(Date.self, forKey: .executedDate)
+        beadUsages = try container.decode([BeadUsageSnapshot].self, forKey: .beadUsages)
+        // 向后兼容：旧数据没有这些字段
+        thumbnail = try container.decodeIfPresent(Data.self, forKey: .thumbnail)
+        finishedImage = try container.decodeIfPresent(Data.self, forKey: .finishedImage)
+    }
+
+    init(id: UUID, name: String, date: Date, totalBeads: Int, brandId: UUID?, isArchived: Bool, parentId: UUID?, isPlanned: Bool, executedDate: Date?, beadUsages: [BeadUsageSnapshot], thumbnail: Data? = nil, finishedImage: Data? = nil) {
+        self.id = id
+        self.name = name
+        self.date = date
+        self.totalBeads = totalBeads
+        self.brandId = brandId
+        self.isArchived = isArchived
+        self.parentId = parentId
+        self.isPlanned = isPlanned
+        self.executedDate = executedDate
+        self.beadUsages = beadUsages
+        self.thumbnail = thumbnail
+        self.finishedImage = finishedImage
+    }
 }
 
 struct BeadUsageSnapshot: Codable {
