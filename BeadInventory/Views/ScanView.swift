@@ -210,6 +210,12 @@ struct ScanView: View {
                                 )
                                 .padding(.horizontal)
 
+                                // 库存不足预警（扣减前显示）
+                                if inventoryManager.currentBrandId != nil && !insufficientStockItems.isEmpty {
+                                    StockWarningCard(insufficientItems: insufficientStockItems)
+                                        .padding(.horizontal)
+                                }
+
                                 // 两个操作按钮
                                 HStack(spacing: 12) {
                                     // 创建计划按钮（不需要选择品牌）
@@ -233,13 +239,13 @@ struct ScanView: View {
                                         showingConfirmation = true
                                     } label: {
                                         HStack {
-                                            Image(systemName: "minus.circle.fill")
+                                            Image(systemName: insufficientStockItems.isEmpty ? "minus.circle.fill" : "exclamationmark.triangle.fill")
                                             Text("扣减库存")
                                         }
                                         .font(.headline)
                                         .frame(maxWidth: .infinity)
                                         .padding()
-                                        .background(inventoryManager.currentBrandId != nil ? Color.green : Color.gray)
+                                        .background(inventoryManager.currentBrandId != nil ? (insufficientStockItems.isEmpty ? Color.green : Color.red) : Color.gray)
                                         .foregroundColor(.white)
                                         .cornerRadius(12)
                                     }
@@ -1352,6 +1358,104 @@ struct ManualEntryQuantityControl: View {
                 editText = "\(quantity)"
             }
         }
+    }
+}
+
+// MARK: - 库存不足预警卡片
+struct StockWarningCard: View {
+    let insufficientItems: [(colorCode: String, currentStock: Int, deductAmount: Int)]
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 标题栏（可点击展开/收起）
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.white)
+                    Text("库存不足警告")
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    Spacer()
+                    Text("\(insufficientItems.count) 种颜色")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.9))
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color.red)
+                .cornerRadius(isExpanded ? 10 : 10, corners: isExpanded ? [.topLeft, .topRight] : .allCorners)
+            }
+            .buttonStyle(.plain)
+
+            // 展开后显示详细列表
+            if isExpanded {
+                VStack(spacing: 0) {
+                    ForEach(Array(insufficientItems.enumerated()), id: \.element.colorCode) { index, item in
+                        HStack {
+                            Text(item.colorCode)
+                                .font(.system(.body, design: .monospaced))
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text("库存 \(item.currentStock)")
+                                .foregroundColor(.secondary)
+                            Text("→")
+                                .foregroundColor(.secondary)
+                            Text("\(item.currentStock - item.deductAmount)")
+                                .foregroundColor(.red)
+                                .fontWeight(.medium)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+
+                        if index < insufficientItems.count - 1 {
+                            Divider()
+                                .padding(.leading, 12)
+                        }
+                    }
+                }
+                .background(Color(.systemBackground))
+                .cornerRadius(10, corners: [.bottomLeft, .bottomRight])
+                .overlay(
+                    RoundedCorner(radius: 10, corners: [.bottomLeft, .bottomRight])
+                        .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                )
+            }
+        }
+        .background(isExpanded ? Color.red.opacity(0.05) : Color.clear)
+        .cornerRadius(10)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.red.opacity(isExpanded ? 0.3 : 0), lineWidth: 1)
+        )
+    }
+}
+
+// 圆角辅助
+struct RoundedCorner: Shape {
+    var radius: CGFloat
+    var corners: UIRectCorner
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+        return Path(path.cgPath)
+    }
+}
+
+extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
     }
 }
 
