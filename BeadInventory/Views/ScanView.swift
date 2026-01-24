@@ -875,9 +875,49 @@ struct RecognizedResultsSectionNew: View {
     var onClear: (() -> Void)? = nil
 
     @State private var showingClearAlert = false
+    @State private var sortOption: ResultSortOption = .original
+    @State private var sortAscending: Bool = true
+
+    enum ResultSortOption: String, CaseIterable {
+        case original = "默认"
+        case code = "色号"
+        case quantity = "数量"
+        case stock = "库存"
+    }
+
+    // 排序后的结果
+    var sortedItems: [ScanView.RecognizedItem] {
+        guard sortOption != .original else { return items }
+
+        let sorted: [ScanView.RecognizedItem]
+        switch sortOption {
+        case .original:
+            return items
+        case .code:
+            sorted = items.sorted { $0.colorCode.localizedStandardCompare($1.colorCode) == .orderedAscending }
+        case .quantity:
+            sorted = items.sorted { $0.quantity < $1.quantity }
+        case .stock:
+            sorted = items.sorted {
+                let stock0 = getAvailableStock(for: $0.colorCode)
+                let stock1 = getAvailableStock(for: $1.colorCode)
+                return stock0 < stock1
+            }
+        }
+        return sortAscending ? sorted : sorted.reversed()
+    }
+
+    func getAvailableStock(for colorCode: String) -> Int {
+        guard let brandId = inventoryManager.currentBrandId,
+              let stock = inventoryManager.getStock(brandId: brandId, mardCode: colorCode) else {
+            return 0
+        }
+        return stock.available
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // 标题栏
             HStack {
                 Text("识别结果")
                     .font(.headline)
@@ -898,16 +938,41 @@ struct RecognizedResultsSectionNew: View {
                     .padding(.leading, 8)
                 }
             }
-            .alert("清空确认", isPresented: $showingClearAlert) {
-                Button("取消", role: .cancel) { }
-                Button("清空", role: .destructive) {
-                    onClear?()
+
+            // 排序选项栏
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(ResultSortOption.allCases, id: \.self) { option in
+                        Button {
+                            withAnimation {
+                                if sortOption == option && option != .original {
+                                    sortAscending.toggle()
+                                } else {
+                                    sortOption = option
+                                    sortAscending = true
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(option.rawValue)
+                                if sortOption == option && option != .original {
+                                    Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
+                                        .font(.caption2)
+                                }
+                            }
+                            .font(.caption)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(sortOption == option ? Color.accentColor : Color(.systemGray5))
+                            .foregroundColor(sortOption == option ? .white : .primary)
+                            .cornerRadius(12)
+                        }
+                    }
                 }
-            } message: {
-                Text("确定要清空所有已添加的颜色吗？")
             }
 
-            ForEach(items) { item in
+            // 结果列表
+            ForEach(sortedItems) { item in
                 RecognizedItemRowNew(
                     item: item,
                     inventoryManager: inventoryManager,
@@ -927,6 +992,14 @@ struct RecognizedResultsSectionNew: View {
         .background(Color(.systemBackground))
         .cornerRadius(16)
         .padding(.horizontal)
+        .alert("清空确认", isPresented: $showingClearAlert) {
+            Button("取消", role: .cancel) { }
+            Button("清空", role: .destructive) {
+                onClear?()
+            }
+        } message: {
+            Text("确定要清空所有已添加的颜色吗？")
+        }
     }
 }
 
