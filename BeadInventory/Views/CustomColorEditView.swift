@@ -256,6 +256,6 @@ extension Character {
 }
 
 #Preview {
-    CustomColorEditView(editingColor: nil)
+    CustomColorEditView(editingColor: nil as CustomColor?)
         .environmentObject(InventoryManager())
 }

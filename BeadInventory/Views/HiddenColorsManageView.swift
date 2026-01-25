@@ -157,7 +157,7 @@ struct HiddenColorRow: View {
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var color: BeadColor? {
-        inventoryManager.beadColors.first { $0.mardCode == stock.mardCode }
+        inventoryManager.findColor(byCode: stock.mardCode)
     }
 
     var body: some View {

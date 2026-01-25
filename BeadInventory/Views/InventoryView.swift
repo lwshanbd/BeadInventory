@@ -69,10 +69,10 @@ struct InventoryView: View {
     var groupedColors: [(prefix: String, colors: [BeadColor])] {
         var groups: [String: [BeadColor]] = [:]
         for color in filteredColors {
-            // 自定义颜色（以 C_ 开头）单独分组为 "自定义"
+            // 自定义颜色（以 # 开头）单独分组为 "#"
             let prefix: String
-            if color.mardCode.hasPrefix("C_") {
-                prefix = "自定义"
+            if color.mardCode.hasPrefix("#") {
+                prefix = "#"
             } else {
                 prefix = String(color.mardCode.prefix(1)).uppercased()
             }
@@ -441,16 +441,13 @@ struct ColorCardView: View {
     var used: Int { stock?.used ?? 0 }
     var isLowStock: Bool { available < lowStockThreshold }
 
-    // 显示色号：自定义颜色去掉 C_ 前缀
+    // 显示色号：自定义颜色保留 # 前缀
     var displayCode: String {
-        if color.mardCode.hasPrefix("C_") {
-            return String(color.mardCode.dropFirst(2))
-        }
-        return color.mardCode
+        color.mardCode
     }
 
     var isCustomColor: Bool {
-        color.mardCode.hasPrefix("C_")
+        color.mardCode.hasPrefix("#")
     }
 
     var body: some View {
@@ -524,16 +521,13 @@ struct ColorRowView: View {
 
     var isLowStock: Bool { available < lowStockThreshold }
 
-    // 显示色号：自定义颜色去掉 C_ 前缀
+    // 显示色号：自定义颜色保留 # 前缀
     var displayCode: String {
-        if color.mardCode.hasPrefix("C_") {
-            return String(color.mardCode.dropFirst(2))
-        }
-        return color.mardCode
+        color.mardCode
     }
 
     var isCustomColor: Bool {
-        color.mardCode.hasPrefix("C_")
+        color.mardCode.hasPrefix("#")
     }
 
     var body: some View {

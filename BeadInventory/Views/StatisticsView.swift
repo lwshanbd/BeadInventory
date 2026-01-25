@@ -59,7 +59,7 @@ struct UsageStatisticsView: View {
         if showLowStockOnly {
             let lowStocks = inventoryManager.lowStockColors(for: brandId)
             return lowStocks.compactMap { stock in
-                if let color = inventoryManager.beadColors.first(where: { $0.mardCode == stock.mardCode }) {
+                if let color = inventoryManager.findColor(byCode: stock.mardCode) {
                     return (color, stock)
                 }
                 return nil
@@ -67,7 +67,7 @@ struct UsageStatisticsView: View {
         } else {
             let usedStocks = inventoryManager.brandStocks.filter { $0.brandId == brandId && $0.used > 0 }
             return usedStocks.compactMap { stock in
-                if let color = inventoryManager.beadColors.first(where: { $0.mardCode == stock.mardCode }) {
+                if let color = inventoryManager.findColor(byCode: stock.mardCode) {
                     return (color, stock)
                 }
                 return nil

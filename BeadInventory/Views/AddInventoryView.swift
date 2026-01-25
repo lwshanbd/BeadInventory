@@ -11,8 +11,8 @@ struct AddInventoryView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
-    // 色系列表（"其他"包含特殊色号如 Any）
-    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他"]
+    // 色系列表（"其他"包含特殊色号如 Any，"#"为自定义颜色）
+    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他", "#"]
 
     @State private var selectedSeries = "A"
     @State private var selectedColors: Set<UUID> = []
@@ -23,11 +23,18 @@ struct AddInventoryView: View {
     let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
 
     var colorsInSeries: [BeadColor] {
-        inventoryManager.beadColors.filter { color in
+        // 自定义颜色使用 allBeadColors
+        let sourceColors = selectedSeries == "#" ? inventoryManager.allBeadColors : inventoryManager.beadColors
+
+        return sourceColors.filter { color in
             let code = color.mardCode
 
-            if selectedSeries == "其他" {
-                // "其他"系列：不属于任何标准色系的颜色
+            if selectedSeries == "#" {
+                // 自定义颜色系列
+                return code.hasPrefix("#")
+            } else if selectedSeries == "其他" {
+                // "其他"系列：不属于任何标准色系的颜色（排除自定义颜色）
+                if code.hasPrefix("#") { return false }
                 return !standardPrefixes.contains { prefix in
                     if prefix == "ZG" {
                         return code.hasPrefix("ZG")
@@ -135,7 +142,7 @@ struct AddInventoryView: View {
                         Button {
                             selectAllColors()
                         } label: {
-                            Label("全选所有 (\(inventoryManager.beadColors.count)色)", systemImage: "checkmark.circle.fill")
+                            Label("全选所有 (\(inventoryManager.allBeadColors.count)色)", systemImage: "checkmark.circle.fill")
                         }
 
                         Button {
@@ -202,7 +209,7 @@ struct AddInventoryView: View {
     }
 
     func selectAllColors() {
-        for color in inventoryManager.beadColors {
+        for color in inventoryManager.allBeadColors {
             selectedColors.insert(color.id)
             if quantities[color.id] == nil {
                 quantities[color.id] = 1.0
@@ -231,7 +238,7 @@ struct AddInventoryView: View {
     func confirmAddStock() {
         guard let brandId = inventoryManager.currentBrandId else { return }
         for colorId in selectedColors {
-            guard let color = inventoryManager.beadColors.first(where: { $0.id == colorId }) else { continue }
+            guard let color = inventoryManager.allBeadColors.first(where: { $0.id == colorId }) else { continue }
             let qty = quantities[colorId] ?? 1.0
             let amount = Int(qty * 1000)
             inventoryManager.addStock(brandId: brandId, mardCode: color.mardCode, amount: amount)

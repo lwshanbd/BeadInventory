@@ -484,7 +484,7 @@ struct BeadUsageRow: View {
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var beadColor: BeadColor? {
-        inventoryManager.beadColors.first { $0.mardCode == usage.colorCode }
+        inventoryManager.findColor(byCode: usage.colorCode)
     }
 
     var displayColor: Color {

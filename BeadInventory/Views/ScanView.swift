@@ -1141,8 +1141,8 @@ struct ManualEntrySheetNew: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
-    // 色系列表
-    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "自定义", "其他"]
+    // 色系列表（"#"为自定义颜色）
+    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他", "#"]
     let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
 
     @State private var selectedSeries = "A"
@@ -1154,9 +1154,9 @@ struct ManualEntrySheetNew: View {
         inventoryManager.allBeadColors.filter { color in
             let code = color.mardCode
 
-            if selectedSeries == "自定义" {
-                // 自定义颜色（以 C_ 开头）
-                return code.hasPrefix("C_")
+            if selectedSeries == "#" {
+                // 自定义颜色（以 # 开头）
+                return code.hasPrefix("#")
             } else if selectedSeries == "其他" {
                 // 既不是标准系列，也不是自定义颜色
                 return !standardPrefixes.contains { prefix in
@@ -1165,12 +1165,12 @@ struct ManualEntrySheetNew: View {
                     } else {
                         return code.hasPrefix(prefix) && !code.hasPrefix("ZG")
                     }
-                } && !code.hasPrefix("C_")
+                } && !code.hasPrefix("#")
             } else if selectedSeries == "ZG" {
                 return code.hasPrefix("ZG")
             } else {
                 if code.hasPrefix("ZG") { return false }
-                if code.hasPrefix("C_") { return false }  // 排除自定义颜色
+                if code.hasPrefix("#") { return false }  // 排除自定义颜色
                 return code.hasPrefix(selectedSeries)
             }
         }.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
@@ -1256,8 +1256,8 @@ struct ManualEntrySheetNew: View {
         isInitialized = true
 
         for item in recognizedItems {
-            // 根据色号找到对应的颜色（包括自定义颜色）
-            if let color = inventoryManager.allBeadColors.first(where: { $0.mardCode.uppercased() == item.colorCode.uppercased() }) {
+            // 根据色号找到对应的颜色（包括自定义颜色，兼容旧 C_ 前缀）
+            if let color = inventoryManager.findColor(byCode: item.colorCode) {
                 selectedColors.insert(color.id)
                 quantities[color.id] = item.quantity
             }

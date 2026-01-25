@@ -1215,7 +1215,7 @@ struct PlannedBeadUsageRow: View {
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var beadColor: BeadColor? {
-        inventoryManager.beadColors.first { $0.mardCode == usage.colorCode }
+        inventoryManager.findColor(byCode: usage.colorCode)
     }
 
     var displayColor: Color {
@@ -1518,7 +1518,7 @@ struct InsufficientColorRow: View {
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var beadColor: BeadColor? {
-        inventoryManager.beadColors.first { $0.mardCode == colorCode }
+        inventoryManager.findColor(byCode: colorCode)
     }
 
     var displayColor: Color {
@@ -1719,7 +1719,7 @@ struct EditableUsageRow: View {
     @FocusState private var isQuantityFocused: Bool
 
     var beadColor: BeadColor? {
-        inventoryManager.beadColors.first { $0.mardCode == usage.colorCode }
+        inventoryManager.findColor(byCode: usage.colorCode)
     }
 
     var displayColor: Color {
@@ -1824,10 +1824,10 @@ struct AddColorToProjectSheet: View {
 
     var filteredColors: [BeadColor] {
         if searchText.isEmpty {
-            return Array(inventoryManager.beadColors.prefix(50))
+            return Array(inventoryManager.allBeadColors.prefix(50))
         }
         let search = searchText.uppercased()
-        return inventoryManager.beadColors.filter { color in
+        return inventoryManager.allBeadColors.filter { color in
             color.mardCode.uppercased().contains(search) ||
             color.colorName.uppercased().contains(search) ||
             color.cocoCode.uppercased().contains(search) ||
@@ -1860,7 +1860,7 @@ struct AddColorToProjectSheet: View {
 
                 // 已选择的颜色和数量
                 if let colorCode = selectedColorCode,
-                   let color = inventoryManager.beadColors.first(where: { $0.mardCode == colorCode }) {
+                   let color = inventoryManager.findColor(byCode: colorCode) {
                     VStack(spacing: 12) {
                         HStack(spacing: 12) {
                             RoundedRectangle(cornerRadius: 8)

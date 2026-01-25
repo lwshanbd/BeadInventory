@@ -39,9 +39,9 @@ struct CustomColor: Identifiable, Codable, Hashable {
     }
 
     /// 转换为 BeadColor 格式，方便在现有系统中使用
-    /// 自定义颜色使用 "C_" 前缀以区分于预设颜色
+    /// 自定义颜色使用 "#" 前缀以区分于预设颜色，并使其排序在最后
     var mardCode: String {
-        "C_\(colorCode)"
+        "#\(colorCode)"
     }
 
     /// 转换为 BeadColor

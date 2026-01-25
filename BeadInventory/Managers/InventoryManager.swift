@@ -412,7 +412,7 @@ class InventoryManager: ObservableObject {
     func addCustomColor(colorCode: String, colorHex: String, colorName: String = "") -> CustomColor? {
         // 检查色号是否已存在（包括预设颜色）
         let normalizedCode = colorCode.uppercased().trimmingCharacters(in: .whitespaces)
-        let customMardCode = "C_\(normalizedCode)"
+        let customMardCode = "#\(normalizedCode)"
 
         // 检查是否与预设颜色冲突
         if beadColors.contains(where: {
@@ -473,7 +473,7 @@ class InventoryManager: ObservableObject {
             customColors[index].colorCode = normalizedCode
 
             // 更新所有品牌库存中的 mardCode
-            let newMardCode = "C_\(normalizedCode)"
+            let newMardCode = "#\(normalizedCode)"
             for i in brandStocks.indices where brandStocks[i].mardCode == oldMardCode {
                 // 需要创建新的 BrandStock 因为 mardCode 是 let
                 let oldStock = brandStocks[i]
@@ -524,18 +524,21 @@ class InventoryManager: ObservableObject {
         customColors.first { $0.id == id }
     }
 
-    /// 根据色号获取自定义颜色
+    /// 根据色号获取自定义颜色（兼容旧 C_ 前缀）
     func getCustomColor(byCode code: String) -> CustomColor? {
         let normalizedCode = code.uppercased().trimmingCharacters(in: .whitespaces)
-        return customColors.first {
-            $0.colorCode.uppercased() == normalizedCode ||
-            $0.mardCode.uppercased() == normalizedCode
+        return customColors.first { custom in
+            let customColorCode = custom.colorCode.uppercased()
+            let oldMardCode = "C_\(customColorCode)"
+            return customColorCode == normalizedCode ||
+                   custom.mardCode.uppercased() == normalizedCode ||
+                   oldMardCode == normalizedCode
         }
     }
 
-    /// 检查色号是否为自定义颜色
+    /// 检查色号是否为自定义颜色（兼容旧 C_ 前缀）
     func isCustomColor(_ mardCode: String) -> Bool {
-        mardCode.hasPrefix("C_") || customColors.contains { $0.colorCode.uppercased() == mardCode.uppercased() }
+        mardCode.hasPrefix("#") || mardCode.hasPrefix("C_") || customColors.contains { $0.colorCode.uppercased() == mardCode.uppercased() }
     }
 
     // MARK: - 数据持久化 (SwiftData)
@@ -776,10 +779,15 @@ class InventoryManager: ObservableObject {
             return brandMatch
         }
 
-        // 匹配自定义颜色（包括 C_ 前缀和不带前缀的色号）
+        // 匹配自定义颜色（包括 # 前缀、旧 C_ 前缀和不带前缀的色号）
         if let customColor = customColors.first(where: { custom in
-            custom.mardCode.uppercased() == code ||
-            custom.colorCode.uppercased() == code
+            let customMardCode = custom.mardCode.uppercased()
+            let customColorCode = custom.colorCode.uppercased()
+            // 兼容旧的 C_ 前缀
+            let oldMardCode = "C_\(customColorCode)"
+            return customMardCode == code ||
+                   customColorCode == code ||
+                   oldMardCode == code
         }) {
             return customColor.toBeadColor()
         }
