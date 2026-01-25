@@ -210,6 +210,24 @@ struct ScanView: View {
                                 )
                                 .padding(.horizontal)
 
+                                // 品牌选择（扣减库存时需要）
+                                HStack {
+                                    Text("扣减品牌:")
+                                        .foregroundColor(.secondary)
+                                    if inventoryManager.currentBrandId != nil {
+                                        Text(inventoryManager.currentBrand?.name ?? "")
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.accentColor)
+                                    } else {
+                                        Text("请选择")
+                                            .foregroundColor(.orange)
+                                    }
+                                    Spacer()
+                                    BrandPicker()
+                                }
+                                .font(.subheadline)
+                                .padding(.horizontal)
+
                                 // 两个操作按钮
                                 HStack(spacing: 12) {
                                     // 创建计划按钮（不需要选择品牌）
@@ -247,20 +265,8 @@ struct ScanView: View {
                                 }
                                 .padding(.horizontal)
 
-                                // 品牌选择提示（仅扣减时需要）
-                                if inventoryManager.currentBrandId != nil {
-                                    HStack {
-                                        Text("扣减品牌:")
-                                            .foregroundColor(.secondary)
-                                        Text(inventoryManager.currentBrand?.name ?? "")
-                                            .fontWeight(.medium)
-                                            .foregroundColor(.accentColor)
-                                        Spacer()
-                                        BrandPicker()
-                                    }
-                                    .font(.subheadline)
-                                    .padding(.horizontal)
-                                } else {
+                                // 提示信息
+                                if inventoryManager.currentBrandId == nil {
                                     HStack {
                                         Image(systemName: "info.circle")
                                             .foregroundColor(.blue)
@@ -1021,15 +1027,25 @@ struct RecognizedItemRowNew: View {
         inventoryManager.findColor(byCode: item.colorCode)
     }
 
+    // 获取低库存阈值
+    var lowStockThreshold: Int {
+        guard let brandId = inventoryManager.currentBrandId else { return 100 }
+        return inventoryManager.getLowStockThreshold(for: brandId)
+    }
+
     // 计算当前库存和扣减后库存
-    var stockInfo: (current: Int, after: Int, isInsufficient: Bool)? {
+    // isInsufficient: 库存不足（负数）
+    // isLowStock: 低库存预警（低于阈值但非负）
+    var stockInfo: (current: Int, after: Int, isInsufficient: Bool, isLowStock: Bool)? {
         guard let brandId = inventoryManager.currentBrandId,
               let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode) else {
             return nil
         }
         let current = stock.available
         let after = current - item.quantity
-        return (current, after, after < 0)
+        let isInsufficient = after < 0
+        let isLowStock = !isInsufficient && after < lowStockThreshold
+        return (current, after, isInsufficient, isLowStock)
     }
 
     var body: some View {
@@ -1091,11 +1107,15 @@ struct RecognizedItemRowNew: View {
                             Text("\(info.after)")
                                 .font(.caption2)
                                 .fontWeight(.medium)
-                                .foregroundColor(info.isInsufficient ? .red : .green)
+                                .foregroundColor(info.isInsufficient ? .red : (info.isLowStock ? .orange : .green))
                             if info.isInsufficient {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .font(.caption2)
                                     .foregroundColor(.red)
+                            } else if info.isLowStock {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
                             }
                         }
                     }
