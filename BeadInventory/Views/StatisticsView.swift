@@ -396,16 +396,34 @@ struct ProjectHistoryView: View {
             VStack(spacing: 0) {
                 // 工具栏
                 HStack {
-                    // 显示全部/隐藏归档按钮
-                    if archivedCount > 0 || showArchived {
+                    if isSelectMode {
+                        // 编辑模式：显示全选/取消全选按钮
                         Button {
-                            withAnimation { showArchived.toggle() }
-                        } label: {
-                            HStack {
-                                Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
-                                Text(showArchived ? "隐藏归档" : "显示归档(\(archivedCount))")
+                            withAnimation {
+                                if selectedProjects.count == displayedProjects.count {
+                                    // 已全选，取消全选
+                                    selectedProjects.removeAll()
+                                } else {
+                                    // 全选所有显示的项目
+                                    selectedProjects = Set(displayedProjects.map { $0.id })
+                                }
                             }
-                            .font(.subheadline)
+                        } label: {
+                            Text(selectedProjects.count == displayedProjects.count ? "取消全选" : "全选")
+                                .font(.subheadline)
+                        }
+                    } else {
+                        // 非编辑模式：显示归档按钮
+                        if archivedCount > 0 || showArchived {
+                            Button {
+                                withAnimation { showArchived.toggle() }
+                            } label: {
+                                HStack {
+                                    Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
+                                    Text(showArchived ? "隐藏归档" : "显示归档(\(archivedCount))")
+                                }
+                                .font(.subheadline)
+                            }
                         }
                     }
 
