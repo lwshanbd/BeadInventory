@@ -13,6 +13,25 @@ struct MoreView: View {
     var body: some View {
         NavigationStack {
             List {
+                // 成品展示
+                Section {
+                    NavigationLink {
+                        CalendarView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("成品日历")
+                                Text("按日期查看完成的作品")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "calendar.badge.checkmark")
+                                .foregroundColor(.green)
+                        }
+                    }
+                }
+
                 // 历史记录
                 Section {
                     NavigationLink {
