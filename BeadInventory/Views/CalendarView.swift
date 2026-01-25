@@ -43,18 +43,19 @@ struct CalendarView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // 月份导航
-            monthHeader
+        ScrollView {
+            VStack(spacing: 0) {
+                // 月份导航
+                monthHeader
 
-            // 星期标题
-            weekdayHeader
+                // 星期标题
+                weekdayHeader
 
-            // 日历网格
-            calendarGrid
-
-            Spacer()
+                // 日历网格
+                calendarGrid
+            }
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("成品日历")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedDay) { selection in
@@ -116,28 +117,44 @@ struct CalendarView: View {
         let days = generateDaysInMonth()
         let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
 
-        return LazyVGrid(columns: columns, spacing: 4) {
-            ForEach(days, id: \.self) { date in
-                if let date = date {
-                    DayCell(
-                        date: date,
-                        projects: projectsForDate(date),
-                        isToday: calendar.isDateInToday(date),
-                        isCurrentMonth: calendar.isDate(date, equalTo: currentMonth, toGranularity: .month)
-                    )
-                    .onTapGesture {
-                        let dayProjects = projectsForDate(date)
-                        if !dayProjects.isEmpty {
-                            selectedDay = DaySelection(date: date, projects: dayProjects)
+        return GeometryReader { geometry in
+            let cellWidth = (geometry.size.width - 16 - 24) / 7  // 减去padding和间距
+            let cellHeight = cellWidth  // 正方形格子
+
+            LazyVGrid(columns: columns, spacing: 4) {
+                ForEach(days, id: \.self) { date in
+                    if let date = date {
+                        DayCell(
+                            date: date,
+                            projects: projectsForDate(date),
+                            isToday: calendar.isDateInToday(date),
+                            isCurrentMonth: calendar.isDate(date, equalTo: currentMonth, toGranularity: .month)
+                        )
+                        .frame(width: cellWidth, height: cellHeight)
+                        .onTapGesture {
+                            let dayProjects = projectsForDate(date)
+                            if !dayProjects.isEmpty {
+                                selectedDay = DaySelection(date: date, projects: dayProjects)
+                            }
                         }
+                    } else {
+                        Color.clear
+                            .frame(width: cellWidth, height: cellHeight)
                     }
-                } else {
-                    Color.clear
-                        .aspectRatio(1, contentMode: .fit)
                 }
             }
         }
+        .frame(height: calculateGridHeight())
         .padding(.horizontal, 8)
+    }
+
+    // 计算日历网格高度
+    private func calculateGridHeight() -> CGFloat {
+        let screenWidth = UIScreen.main.bounds.width
+        let cellWidth = (screenWidth - 16 - 24) / 7
+        let numberOfRows: CGFloat = 6  // 固定6行
+        let spacing: CGFloat = 4
+        return (cellWidth * numberOfRows) + (spacing * (numberOfRows - 1))
     }
 
     // MARK: - 辅助方法
@@ -199,7 +216,7 @@ struct DayCell: View {
             backgroundView
             dayNumberOverlay
         }
-        .aspectRatio(1, contentMode: .fit)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(cellBackground)
         .overlay(cellBorder)
         .cornerRadius(8)
@@ -212,13 +229,14 @@ struct DayCell: View {
         if let firstProject = projects.first,
            let imageData = firstProject.finishedImage,
            let uiImage = UIImage(data: imageData) {
-            Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFill()
-                .frame(minWidth: 0, maxWidth: .infinity)
-                .aspectRatio(1, contentMode: .fit)
-                .clipped()
-                .overlay(countBadge, alignment: .topTrailing)
+            GeometryReader { geometry in
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+            }
+            .overlay(countBadge, alignment: .topTrailing)
         } else {
             Color.clear
         }

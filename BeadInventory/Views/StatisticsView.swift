@@ -828,8 +828,12 @@ struct ProjectRowWithHierarchy: View {
         inventoryManager.executedChildProjects(of: project.id).count
     }
 
-    // 从 thumbnail Data 创建 UIImage
+    // 从 finishedImage 或 thumbnail Data 创建 UIImage（优先使用成品图）
     var thumbnailImage: UIImage? {
+        // 优先使用成品图，如果没有则使用原始缩略图
+        if let finishedData = project.finishedImage {
+            return UIImage(data: finishedData)
+        }
         guard let data = project.thumbnail else { return nil }
         return UIImage(data: data)
     }

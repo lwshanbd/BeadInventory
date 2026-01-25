@@ -198,8 +198,11 @@ struct ProjectDetailView: View {
 struct ChildProjectRow: View {
     let project: ProjectRecord
 
-    // 从 thumbnail Data 创建 UIImage
+    // 从 finishedImage 或 thumbnail Data 创建 UIImage（优先使用成品图）
     var thumbnailImage: UIImage? {
+        if let finishedData = project.finishedImage {
+            return UIImage(data: finishedData)
+        }
         guard let data = project.thumbnail else { return nil }
         return UIImage(data: data)
     }
@@ -258,8 +261,11 @@ struct ChildProjectRowWithActions: View {
     let onDelete: () -> Void
     let onDetach: () -> Void
 
-    // 从 thumbnail Data 创建 UIImage
+    // 从 finishedImage 或 thumbnail Data 创建 UIImage（优先使用成品图）
     var thumbnailImage: UIImage? {
+        if let finishedData = project.finishedImage {
+            return UIImage(data: finishedData)
+        }
         guard let data = project.thumbnail else { return nil }
         return UIImage(data: data)
     }
@@ -339,8 +345,11 @@ struct ProjectInfoCardEnhanced: View {
     let childCount: Int
     var onEditThumbnail: (() -> Void)? = nil
 
-    // 从 thumbnail Data 创建 UIImage
+    // 从 finishedImage 或 thumbnail Data 创建 UIImage（优先使用成品图）
     var thumbnailImage: UIImage? {
+        if let finishedData = project.finishedImage {
+            return UIImage(data: finishedData)
+        }
         guard let data = project.thumbnail else { return nil }
         return UIImage(data: data)
     }
@@ -715,6 +724,7 @@ struct ProjectImageEditorSheet: View {
     @State private var isLoadingImage = false
     @State private var showingCropView = false
     @State private var imageToCrop: UIImage?
+    @State private var showingCamera = false
 
     var displayImage: UIImage? {
         editedImage ?? currentImage
@@ -748,7 +758,7 @@ struct ProjectImageEditorSheet: View {
                                 Image(systemName: "photo.badge.plus")
                                     .font(.system(size: 40))
                                     .foregroundColor(.secondary)
-                                Text("选择图片")
+                                Text("选择图片或拍照")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                             }
@@ -758,18 +768,37 @@ struct ProjectImageEditorSheet: View {
 
                 // 操作按钮
                 VStack(spacing: 12) {
-                    // 选择图片按钮
-                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                        HStack {
-                            Image(systemName: "photo.on.rectangle")
-                            Text(displayImage == nil ? "从相册选择" : "更换图片")
+                    // 相册和拍照按钮
+                    HStack(spacing: 12) {
+                        // 从相册选择
+                        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                            HStack {
+                                Image(systemName: "photo.on.rectangle")
+                                Text("相册")
+                            }
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.accentColor)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
                         }
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.accentColor)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
+
+                        // 拍照按钮
+                        Button {
+                            showingCamera = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "camera")
+                                Text("拍照")
+                            }
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.green)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
+                        }
                     }
                     .padding(.horizontal)
 
@@ -877,6 +906,14 @@ struct ProjectImageEditorSheet: View {
                     }
                 }
             }
+            .fullScreenCover(isPresented: $showingCamera) {
+                CameraView { capturedImage in
+                    if let image = capturedImage {
+                        imageToCrop = image
+                        showingCropView = true
+                    }
+                }
+            }
         }
         .presentationDetents([.medium, .large])
     }
@@ -892,6 +929,45 @@ struct ProjectImageEditorSheet: View {
         UIGraphicsEndImageContext()
 
         return resizedImage?.jpegData(compressionQuality: 0.7)
+    }
+}
+
+// MARK: - 相机视图
+struct CameraView: UIViewControllerRepresentable {
+    let onCapture: (UIImage?) -> Void
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onCapture: onCapture)
+    }
+
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onCapture: (UIImage?) -> Void
+
+        init(onCapture: @escaping (UIImage?) -> Void) {
+            self.onCapture = onCapture
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            let image = info[.originalImage] as? UIImage
+            picker.dismiss(animated: true) {
+                self.onCapture(image)
+            }
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            picker.dismiss(animated: true) {
+                self.onCapture(nil)
+            }
+        }
     }
 }
 
