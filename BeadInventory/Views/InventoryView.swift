@@ -171,27 +171,25 @@ struct InventoryView: View {
                                 .cornerRadius(16)
                             }
 
-                            // 分组按钮（仅列表模式显示）
-                            if viewMode == .list {
-                                Button {
-                                    withAnimation {
-                                        groupByPrefix.toggle()
-                                        if !groupByPrefix {
-                                            collapsedGroups.removeAll()
-                                        }
+                            // 分组按钮
+                            Button {
+                                withAnimation {
+                                    groupByPrefix.toggle()
+                                    if !groupByPrefix {
+                                        collapsedGroups.removeAll()
                                     }
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: groupByPrefix ? "folder.fill" : "folder")
-                                        Text("分组")
-                                    }
-                                    .font(.caption)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(groupByPrefix ? Color.orange : Color.gray.opacity(0.2))
-                                    .foregroundColor(groupByPrefix ? .white : .primary)
-                                    .cornerRadius(16)
                                 }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: groupByPrefix ? "folder.fill" : "folder")
+                                    Text("分组")
+                                }
+                                .font(.caption)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(groupByPrefix ? Color.orange : Color.gray.opacity(0.2))
+                                .foregroundColor(groupByPrefix ? .white : .primary)
+                                .cornerRadius(16)
                             }
                         }
                         .padding(.horizontal)
@@ -202,25 +200,75 @@ struct InventoryView: View {
                     if viewMode == .grid {
                         // 网格模式
                         ScrollView {
-                            LazyVGrid(columns: [
-                                GridItem(.flexible()),
-                                GridItem(.flexible()),
-                                GridItem(.flexible())
-                            ], spacing: 12) {
-                                ForEach(filteredColors) { color in
-                                    ColorCardView(
-                                        color: color,
-                                        stock: stockDict[color.mardCode],
-                                        sortOption: sortOption,
-                                        lowStockThreshold: lowStockThreshold
-                                    )
-                                    .onTapGesture {
-                                        selectedColor = color
+                            if groupByPrefix {
+                                // 分组网格模式
+                                LazyVStack(spacing: 16) {
+                                    ForEach(groupedColors, id: \.prefix) { group in
+                                        VStack(spacing: 8) {
+                                            // 分组标题
+                                            GridGroupHeaderView(
+                                                prefix: group.prefix,
+                                                count: group.colors.count,
+                                                isCollapsed: collapsedGroups.contains(group.prefix),
+                                                onToggle: {
+                                                    withAnimation {
+                                                        if collapsedGroups.contains(group.prefix) {
+                                                            collapsedGroups.remove(group.prefix)
+                                                        } else {
+                                                            collapsedGroups.insert(group.prefix)
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                            .padding(.horizontal)
+
+                                            // 分组内容
+                                            if !collapsedGroups.contains(group.prefix) {
+                                                LazyVGrid(columns: [
+                                                    GridItem(.flexible()),
+                                                    GridItem(.flexible()),
+                                                    GridItem(.flexible())
+                                                ], spacing: 12) {
+                                                    ForEach(group.colors) { color in
+                                                        ColorCardView(
+                                                            color: color,
+                                                            stock: stockDict[color.mardCode],
+                                                            sortOption: sortOption,
+                                                            lowStockThreshold: lowStockThreshold
+                                                        )
+                                                        .onTapGesture {
+                                                            selectedColor = color
+                                                        }
+                                                    }
+                                                }
+                                                .padding(.horizontal)
+                                            }
+                                        }
                                     }
                                 }
+                                .padding(.bottom, 20)
+                            } else {
+                                // 普通网格模式
+                                LazyVGrid(columns: [
+                                    GridItem(.flexible()),
+                                    GridItem(.flexible()),
+                                    GridItem(.flexible())
+                                ], spacing: 12) {
+                                    ForEach(filteredColors) { color in
+                                        ColorCardView(
+                                            color: color,
+                                            stock: stockDict[color.mardCode],
+                                            sortOption: sortOption,
+                                            lowStockThreshold: lowStockThreshold
+                                        )
+                                        .onTapGesture {
+                                            selectedColor = color
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal)
+                                .padding(.bottom, 20)
                             }
-                            .padding(.horizontal)
-                            .padding(.bottom, 20)
                         }
                     } else {
                         // 列表模式
@@ -324,7 +372,7 @@ struct InventoryView: View {
     }
 }
 
-// MARK: - 分组标题视图
+// MARK: - 分组标题视图（列表模式）
 struct GroupHeaderView: View {
     let prefix: String
     let count: Int
@@ -356,6 +404,75 @@ struct GroupHeaderView: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - 分组标题视图（网格模式）
+struct GridGroupHeaderView: View {
+    let prefix: String
+    let count: Int
+    let isCollapsed: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack {
+                // 分组标识
+                Text(prefix)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .frame(width: 40, height: 40)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(colorForPrefix(prefix))
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(prefix) 系列")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Text("\(count) 个颜色")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                // 折叠/展开图标
+                Image(systemName: isCollapsed ? "chevron.down.circle" : "chevron.up.circle")
+                    .font(.title3)
+                    .foregroundColor(.accentColor)
+            }
+            .padding(12)
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // 根据前缀返回不同颜色
+    func colorForPrefix(_ prefix: String) -> Color {
+        switch prefix {
+        case "A": return .red
+        case "B": return .orange
+        case "C": return .yellow
+        case "D": return .green
+        case "E": return .mint
+        case "F": return .teal
+        case "G": return .cyan
+        case "H": return .blue
+        case "M": return .indigo
+        case "P": return .purple
+        case "Q": return .pink
+        case "R": return .red.opacity(0.7)
+        case "T": return .brown
+        case "Y": return .orange.opacity(0.7)
+        case "ZG": return .gray
+        case "#": return .orange
+        default: return .gray
+        }
     }
 }
 
