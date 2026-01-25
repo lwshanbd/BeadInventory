@@ -198,11 +198,8 @@ struct ProjectDetailView: View {
 struct ChildProjectRow: View {
     let project: ProjectRecord
 
-    // 从 finishedImage 或 thumbnail Data 创建 UIImage（优先使用成品图）
+    // 从 thumbnail Data 创建 UIImage
     var thumbnailImage: UIImage? {
-        if let finishedData = project.finishedImage {
-            return UIImage(data: finishedData)
-        }
         guard let data = project.thumbnail else { return nil }
         return UIImage(data: data)
     }
@@ -261,11 +258,8 @@ struct ChildProjectRowWithActions: View {
     let onDelete: () -> Void
     let onDetach: () -> Void
 
-    // 从 finishedImage 或 thumbnail Data 创建 UIImage（优先使用成品图）
+    // 从 thumbnail Data 创建 UIImage
     var thumbnailImage: UIImage? {
-        if let finishedData = project.finishedImage {
-            return UIImage(data: finishedData)
-        }
         guard let data = project.thumbnail else { return nil }
         return UIImage(data: data)
     }
@@ -345,11 +339,8 @@ struct ProjectInfoCardEnhanced: View {
     let childCount: Int
     var onEditThumbnail: (() -> Void)? = nil
 
-    // 从 finishedImage 或 thumbnail Data 创建 UIImage（优先使用成品图）
+    // 从 thumbnail Data 创建 UIImage
     var thumbnailImage: UIImage? {
-        if let finishedData = project.finishedImage {
-            return UIImage(data: finishedData)
-        }
         guard let data = project.thumbnail else { return nil }
         return UIImage(data: data)
     }
