@@ -319,6 +319,8 @@ struct ScanView: View {
                     ImageCropView(image: image) { croppedImage in
                         selectedImage = croppedImage
                     }
+                } else {
+                    Color.black.onAppear { showingCropView = false }
                 }
             }
             .fullScreenCover(isPresented: $showingThumbnailCrop) {
@@ -327,6 +329,8 @@ struct ScanView: View {
                     ImageCropView(image: image) { croppedImage in
                         thumbnailImage = croppedImage
                     }
+                } else {
+                    Color.black.onAppear { showingThumbnailCrop = false }
                 }
             }
             .alert("确认扣减", isPresented: $showingConfirmation) {
@@ -1506,7 +1510,10 @@ struct ThumbnailPreviewSection: View {
                                 await MainActor.run {
                                     uploadedImage = image
                                     isLoadingImage = false
-                                    showingUploadedImageCrop = true
+                                    // 延迟打开裁切视图，确保状态已更新
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                        showingUploadedImageCrop = true
+                                    }
                                 }
                             } else {
                                 await MainActor.run {
@@ -1610,6 +1617,11 @@ struct ThumbnailPreviewSection: View {
                 ImageCropView(image: image) { croppedImage in
                     thumbnailImage = croppedImage
                     uploadedImage = nil
+                }
+            } else {
+                // 如果没有图片，立即关闭
+                Color.black.onAppear {
+                    showingUploadedImageCrop = false
                 }
             }
         }
@@ -1727,41 +1739,14 @@ struct ImageCropView: View {
     @Environment(\.dismiss) var dismiss
 
     // 状态
-    @State private var containerSize: CGSize = .zero
     @State private var cropRect: CGRect = .zero
     @State private var isInitialized = false
+    @State private var imageDisplayRect: CGRect = .zero  // 图片在容器内的显示区域（本地坐标）
+    @State private var containerSize: CGSize = .zero
 
     // 预览状态
     @State private var croppedPreview: UIImage? = nil
     @State private var showingPreview = false
-
-    // 计算图片显示区域
-    var imageRect: CGRect {
-        guard containerSize.width > 0, containerSize.height > 0 else {
-            return .zero
-        }
-
-        let imageAspect = image.size.width / image.size.height
-        let containerAspect = containerSize.width / containerSize.height
-
-        let displaySize: CGSize
-        if imageAspect > containerAspect {
-            let w = containerSize.width
-            let h = w / imageAspect
-            displaySize = CGSize(width: w, height: h)
-        } else {
-            let h = containerSize.height
-            let w = h * imageAspect
-            displaySize = CGSize(width: w, height: h)
-        }
-
-        let origin = CGPoint(
-            x: (containerSize.width - displaySize.width) / 2,
-            y: (containerSize.height - displaySize.height) / 2
-        )
-
-        return CGRect(origin: origin, size: displaySize)
-    }
 
     var body: some View {
         NavigationStack {
@@ -1780,38 +1765,49 @@ struct ImageCropView: View {
                         }
                     )
                 } else {
-                    // 裁切界面
+                    // 裁切界面 - 使用单一 GeometryReader 确保坐标一致
                     GeometryReader { geometry in
+                        let localContainerSize = geometry.size
+                        let localImageRect = calculateImageRect(for: localContainerSize)
+
                         ZStack {
-                            Color.black.ignoresSafeArea()
+                            Color.black
 
                             // 图片
                             Image(uiImage: image)
                                 .resizable()
                                 .scaledToFit()
-                                .frame(width: imageRect.width, height: imageRect.height)
-                                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                                .frame(width: localImageRect.width, height: localImageRect.height)
+                                .position(x: localImageRect.midX, y: localImageRect.midY)
 
                             // 遮罩和裁切框
                             if cropRect != .zero {
                                 CropOverlayView(
                                     cropRect: $cropRect,
-                                    imageRect: imageRect,
-                                    containerSize: geometry.size
+                                    imageRect: imageDisplayRect,
+                                    containerSize: localContainerSize
                                 )
                             }
                         }
                         .onAppear {
-                            containerSize = geometry.size
-                            initializeCropRect()
+                            containerSize = localContainerSize
+                            imageDisplayRect = localImageRect
+                            if !isInitialized {
+                                initializeCropRect(imageRect: localImageRect)
+                            }
                         }
                         .onChange(of: geometry.size) { _, newSize in
-                            containerSize = newSize
-                            if !isInitialized {
-                                initializeCropRect()
+                            if newSize.width > 0 && newSize.height > 0 {
+                                containerSize = newSize
+                                let newImageRect = calculateImageRect(for: newSize)
+                                imageDisplayRect = newImageRect
+                                if !isInitialized {
+                                    initializeCropRect(imageRect: newImageRect)
+                                }
                             }
                         }
                     }
+                    .ignoresSafeArea(edges: .bottom)
                 }
             }
             .navigationTitle(showingPreview ? "预览" : "裁切图片")
@@ -1844,7 +1840,38 @@ struct ImageCropView: View {
         }
     }
 
-    func initializeCropRect() {
+    /// 计算图片在容器中居中显示的区域
+    func calculateImageRect(for size: CGSize) -> CGRect {
+        guard size.width > 0, size.height > 0 else {
+            return .zero
+        }
+
+        let imageAspect = image.size.width / image.size.height
+        let containerAspect = size.width / size.height
+
+        let displaySize: CGSize
+        if imageAspect > containerAspect {
+            // 图片更宽，以宽度为准
+            let w = size.width
+            let h = w / imageAspect
+            displaySize = CGSize(width: w, height: h)
+        } else {
+            // 图片更高，以高度为准
+            let h = size.height
+            let w = h * imageAspect
+            displaySize = CGSize(width: w, height: h)
+        }
+
+        // 居中
+        let origin = CGPoint(
+            x: (size.width - displaySize.width) / 2,
+            y: (size.height - displaySize.height) / 2
+        )
+
+        return CGRect(origin: origin, size: displaySize)
+    }
+
+    func initializeCropRect(imageRect: CGRect) {
         guard imageRect.width > 0, imageRect.height > 0 else { return }
         guard !isInitialized else { return }
 
@@ -1861,16 +1888,16 @@ struct ImageCropView: View {
     }
 
     func performCrop() {
-        guard imageRect.width > 0, imageRect.height > 0,
+        guard imageDisplayRect.width > 0, imageDisplayRect.height > 0,
               cropRect.width > 0, cropRect.height > 0 else {
             return
         }
 
         // 将裁切框坐标转换为相对于显示图片的坐标（0-1 范围）
-        let relativeX = (cropRect.minX - imageRect.minX) / imageRect.width
-        let relativeY = (cropRect.minY - imageRect.minY) / imageRect.height
-        let relativeWidth = cropRect.width / imageRect.width
-        let relativeHeight = cropRect.height / imageRect.height
+        let relativeX = (cropRect.minX - imageDisplayRect.minX) / imageDisplayRect.width
+        let relativeY = (cropRect.minY - imageDisplayRect.minY) / imageDisplayRect.height
+        let relativeWidth = cropRect.width / imageDisplayRect.width
+        let relativeHeight = cropRect.height / imageDisplayRect.height
 
         // 首先将图片方向正规化
         let normalizedImage = normalizeImageOrientation(image)

@@ -716,6 +716,7 @@ struct ProjectImageEditorSheet: View {
     @State private var showingCropView = false
     @State private var imageToCrop: UIImage?
     @State private var showingCamera = false
+    @State private var pendingCropAfterCamera = false  // 相机关闭后需要打开裁切
 
     var displayImage: UIImage? {
         editedImage ?? currentImage
@@ -794,11 +795,10 @@ struct ProjectImageEditorSheet: View {
                     .padding(.horizontal)
 
                     // 裁切按钮（仅当有图片时显示）
-                    if displayImage != nil {
+                    if let currentDisplayImage = displayImage {
                         HStack(spacing: 12) {
                             Button {
-                                imageToCrop = displayImage
-                                showingCropView = true
+                                imageToCrop = currentDisplayImage
                             } label: {
                                 HStack {
                                     Image(systemName: "crop")
@@ -878,7 +878,6 @@ struct ProjectImageEditorSheet: View {
                             await MainActor.run {
                                 imageToCrop = image
                                 isLoadingImage = false
-                                showingCropView = true
                             }
                         } else {
                             await MainActor.run {
@@ -889,11 +888,39 @@ struct ProjectImageEditorSheet: View {
                     selectedPhotoItem = nil
                 }
             }
+            // 监听 imageToCrop 变化，自动打开裁切视图
+            .onChange(of: imageToCrop) { _, newImage in
+                if newImage != nil && !showingCropView && !showingCamera {
+                    // 延迟打开，确保状态稳定
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        if imageToCrop != nil {
+                            showingCropView = true
+                        }
+                    }
+                }
+            }
+            // 相机关闭后检查是否需要打开裁切
+            .onChange(of: showingCamera) { _, isShowing in
+                if !isShowing && pendingCropAfterCamera && imageToCrop != nil {
+                    pendingCropAfterCamera = false
+                    // 等待相机完全关闭后再打开裁切
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        if imageToCrop != nil {
+                            showingCropView = true
+                        }
+                    }
+                }
+            }
             .fullScreenCover(isPresented: $showingCropView) {
                 if let image = imageToCrop {
                     ImageCropView(image: image) { croppedImage in
                         editedImage = croppedImage
                         imageToCrop = nil
+                    }
+                } else {
+                    // 如果没有图片，立即关闭
+                    Color.black.onAppear {
+                        showingCropView = false
                     }
                 }
             }
@@ -901,7 +928,7 @@ struct ProjectImageEditorSheet: View {
                 CameraView { capturedImage in
                     if let image = capturedImage {
                         imageToCrop = image
-                        showingCropView = true
+                        pendingCropAfterCamera = true
                     }
                 }
             }
