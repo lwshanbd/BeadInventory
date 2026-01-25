@@ -193,75 +193,107 @@ struct DayCell: View {
 
     var body: some View {
         ZStack {
-            // 背景：成品图或空白
-            if let firstProject = projects.first,
-               let imageData = firstProject.finishedImage,
-               let uiImage = UIImage(data: imageData) {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(minWidth: 0, maxWidth: .infinity)
-                    .aspectRatio(1, contentMode: .fit)
-                    .clipped()
-                    .overlay(
-                        // 多个项目时显示数量角标
-                        Group {
-                            if projects.count > 1 {
-                                Text("+\(projects.count - 1)")
-                                    .font(.caption2)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.white)
-                                    .padding(3)
-                                    .background(Color.red)
-                                    .cornerRadius(4)
-                                    .padding(2)
-                            }
-                        },
-                        alignment: .topTrailing
-                    )
-            } else {
-                Color.clear
-            }
+            backgroundView
+            dayNumberOverlay
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .background(cellBackground)
+        .overlay(cellBorder)
+        .cornerRadius(8)
+    }
 
-            // 日期数字
+    // MARK: - 子视图
+
+    @ViewBuilder
+    private var backgroundView: some View {
+        if let firstProject = projects.first,
+           let imageData = firstProject.finishedImage,
+           let uiImage = UIImage(data: imageData) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(minWidth: 0, maxWidth: .infinity)
+                .aspectRatio(1, contentMode: .fit)
+                .clipped()
+                .overlay(countBadge, alignment: .topTrailing)
+        } else {
+            Color.clear
+        }
+    }
+
+    @ViewBuilder
+    private var countBadge: some View {
+        if projects.count > 1 {
+            Text("+\(projects.count - 1)")
+                .font(.caption2)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .padding(3)
+                .background(Color.red)
+                .cornerRadius(4)
+                .padding(2)
+        }
+    }
+
+    @ViewBuilder
+    private var dayNumberOverlay: some View {
+        if hasFinishedImage {
+            // 有图片时，数字显示在左下角
             VStack {
                 Spacer()
                 HStack {
-                    if hasFinishedImage {
-                        // 有图片时，数字显示在左下角带背景
-                        Text("\(dayNumber)")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .padding(4)
-                            .background(
-                                Circle()
-                                    .fill(isToday ? Color.green : Color.black.opacity(0.6))
-                            )
-                            .padding(2)
-                    }
+                    dayNumberBadge
                     Spacer()
                 }
             }
-
+        } else {
             // 无图片时，数字居中显示
-            if !hasFinishedImage {
-                Text("\(dayNumber)")
-                    .font(.callout)
-                    .fontWeight(isToday ? .bold : .regular)
-                    .foregroundColor(isCurrentMonth ? (isToday ? .green : .primary) : .secondary.opacity(0.5))
-            }
+            centeredDayNumber
         }
-        .aspectRatio(1, contentMode: .fit)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(hasFinishedImage ? Color.clear : (isToday ? Color.green.opacity(0.1) : Color.clear))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(isToday ? Color.green : Color.clear, lineWidth: 2)
-        )
-        .cornerRadius(8)
+    }
+
+    private var dayNumberBadge: some View {
+        Text("\(dayNumber)")
+            .font(.caption)
+            .fontWeight(.bold)
+            .foregroundColor(.white)
+            .padding(4)
+            .background(
+                Circle()
+                    .fill(isToday ? Color.green : Color.black.opacity(0.6))
+            )
+            .padding(2)
+    }
+
+    private var centeredDayNumber: some View {
+        let textColor: Color = {
+            if !isCurrentMonth {
+                return .secondary.opacity(0.5)
+            }
+            return isToday ? .green : .primary
+        }()
+
+        return Text("\(dayNumber)")
+            .font(.callout)
+            .fontWeight(isToday ? .bold : .regular)
+            .foregroundColor(textColor)
+    }
+
+    private var cellBackground: some View {
+        let fillColor: Color = {
+            if hasFinishedImage {
+                return .clear
+            }
+            return isToday ? Color.green.opacity(0.1) : .clear
+        }()
+
+        return RoundedRectangle(cornerRadius: 8)
+            .fill(fillColor)
+    }
+
+    private var cellBorder: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .stroke(isToday ? Color.green : Color.clear, lineWidth: 2)
     }
 }
 
