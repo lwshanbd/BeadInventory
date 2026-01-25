@@ -2,7 +2,7 @@
 //  CustomColorsView.swift
 //  BeadInventory
 //
-//  自定义颜色管理视图
+//  自定义色号管理视图
 //
 
 import SwiftUI
@@ -53,7 +53,7 @@ struct CustomColorsView: View {
             }
         }
         .searchable(text: $searchText, prompt: "搜索颜色")
-        .navigationTitle("自定义颜色")
+        .navigationTitle("自定义色号")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -81,7 +81,7 @@ struct CustomColorsView: View {
             }
         } message: {
             if let color = colorToDelete {
-                Text("确定要删除自定义颜色「\(color.colorCode)」吗？\n删除后将无法恢复，且该颜色在所有品牌中的库存记录也将被删除。")
+                Text("确定要删除自定义色号「\(color.colorCode)」吗？\n删除后将无法恢复，且该颜色在所有品牌中的库存记录也将被删除。")
             }
         }
     }
@@ -93,7 +93,7 @@ struct CustomColorsView: View {
                     .font(.system(size: 50))
                     .foregroundColor(.secondary)
 
-                Text("还没有自定义颜色")
+                Text("还没有自定义色号")
                     .font(.headline)
                     .foregroundColor(.secondary)
 
@@ -104,7 +104,11 @@ struct CustomColorsView: View {
                 Button {
                     showingAddSheet = true
                 } label: {
-                    Label("添加自定义颜色", systemImage: "plus.circle.fill")
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                            .fontWeight(.semibold)
+                        Text("添加自定义色号")
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .padding(.top, 8)

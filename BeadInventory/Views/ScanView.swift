@@ -1141,7 +1141,7 @@ struct ManualEntrySheetNew: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
-    // 色系列表（"#"为自定义颜色）
+    // 色系列表（"#"为自定义色号）
     let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他", "#"]
     let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
 
@@ -1155,10 +1155,10 @@ struct ManualEntrySheetNew: View {
             let code = color.mardCode
 
             if selectedSeries == "#" {
-                // 自定义颜色（以 # 开头）
+                // 自定义色号（以 # 开头）
                 return code.hasPrefix("#")
             } else if selectedSeries == "其他" {
-                // 既不是标准系列，也不是自定义颜色
+                // 既不是标准系列，也不是自定义色号
                 return !standardPrefixes.contains { prefix in
                     if prefix == "ZG" {
                         return code.hasPrefix("ZG")
@@ -1170,7 +1170,7 @@ struct ManualEntrySheetNew: View {
                 return code.hasPrefix("ZG")
             } else {
                 if code.hasPrefix("ZG") { return false }
-                if code.hasPrefix("#") { return false }  // 排除自定义颜色
+                if code.hasPrefix("#") { return false }  // 排除自定义色号
                 return code.hasPrefix(selectedSeries)
             }
         }.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
@@ -1256,7 +1256,7 @@ struct ManualEntrySheetNew: View {
         isInitialized = true
 
         for item in recognizedItems {
-            // 根据色号找到对应的颜色（包括自定义颜色，兼容旧 C_ 前缀）
+            // 根据色号找到对应的颜色（包括自定义色号，兼容旧 C_ 前缀）
             if let color = inventoryManager.findColor(byCode: item.colorCode) {
                 selectedColors.insert(color.id)
                 quantities[color.id] = item.quantity

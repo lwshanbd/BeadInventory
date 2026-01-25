@@ -146,7 +146,7 @@ final class SDBeadUsage {
     }
 }
 
-// MARK: - 自定义颜色模型
+// MARK: - 自定义色号模型
 @Model
 final class SDCustomColor {
     @Attribute(.unique) var id: UUID

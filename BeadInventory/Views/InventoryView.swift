@@ -47,20 +47,34 @@ struct InventoryView: View {
         let colors = inventoryManager.searchColors(searchText)
         // 过滤掉隐藏的色号（只显示在 stockDict 中存在的颜色）
         let visibleColors = colors.filter { stockDict[$0.mardCode] != nil }
+
+        // 自定义色号始终排在最后的辅助函数
+        func customColorLast(_ c1: BeadColor, _ c2: BeadColor, by compare: (BeadColor, BeadColor) -> Bool) -> Bool {
+            let c1IsCustom = c1.mardCode.hasPrefix("#")
+            let c2IsCustom = c2.mardCode.hasPrefix("#")
+            if c1IsCustom && !c2IsCustom { return false }  // c1 自定义，排后面
+            if !c1IsCustom && c2IsCustom { return true }   // c2 自定义，c1 排前面
+            return compare(c1, c2)  // 都是或都不是自定义，按原规则排序
+        }
+
         let sorted: [BeadColor]
         switch sortOption {
         case .code:
-            sorted = visibleColors.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
+            sorted = visibleColors.sorted { customColorLast($0, $1) {
+                $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending
+            }}
         case .stock:
-            sorted = visibleColors.sorted {
+            sorted = visibleColors.sorted { customColorLast($0, $1) {
                 (stockDict[$0.mardCode]?.available ?? 0) < (stockDict[$1.mardCode]?.available ?? 0)
-            }
+            }}
         case .used:
-            sorted = visibleColors.sorted {
+            sorted = visibleColors.sorted { customColorLast($0, $1) {
                 (stockDict[$0.mardCode]?.used ?? 0) < (stockDict[$1.mardCode]?.used ?? 0)
-            }
+            }}
         case .name:
-            sorted = visibleColors.sorted { $0.colorName < $1.colorName }
+            sorted = visibleColors.sorted { customColorLast($0, $1) {
+                $0.colorName < $1.colorName
+            }}
         }
         return sortAscending ? sorted : sorted.reversed()
     }
@@ -69,7 +83,7 @@ struct InventoryView: View {
     var groupedColors: [(prefix: String, colors: [BeadColor])] {
         var groups: [String: [BeadColor]] = [:]
         for color in filteredColors {
-            // 自定义颜色（以 # 开头）单独分组为 "#"
+            // 自定义色号（以 # 开头）单独分组为 "#"
             let prefix: String
             if color.mardCode.hasPrefix("#") {
                 prefix = "#"
@@ -82,10 +96,10 @@ struct InventoryView: View {
                 groups[prefix] = [color]
             }
         }
-        // 按首字母排序，"自定义" 放在最后
+        // 按首字母排序，"#"（自定义色号）放在最后
         return groups.sorted { lhs, rhs in
-            if lhs.key == "自定义" { return false }
-            if rhs.key == "自定义" { return true }
+            if lhs.key == "#" { return false }
+            if rhs.key == "#" { return true }
             return lhs.key < rhs.key
         }.map { ($0.key, $0.value) }
     }
@@ -441,7 +455,7 @@ struct ColorCardView: View {
     var used: Int { stock?.used ?? 0 }
     var isLowStock: Bool { available < lowStockThreshold }
 
-    // 显示色号：自定义颜色保留 # 前缀
+    // 显示色号：自定义色号保留 # 前缀
     var displayCode: String {
         color.mardCode
     }
@@ -521,7 +535,7 @@ struct ColorRowView: View {
 
     var isLowStock: Bool { available < lowStockThreshold }
 
-    // 显示色号：自定义颜色保留 # 前缀
+    // 显示色号：自定义色号保留 # 前缀
     var displayCode: String {
         color.mardCode
     }

@@ -2,13 +2,13 @@
 //  CustomColor.swift
 //  BeadInventory
 //
-//  自定义颜色模型 - 用户可以添加自己的颜色
+//  自定义色号模型 - 用户可以添加自己的颜色
 //
 
 import Foundation
 import SwiftUI
 
-/// 自定义颜色模型
+/// 自定义色号模型
 struct CustomColor: Identifiable, Codable, Hashable {
     let id: UUID
     var colorCode: String       // 用户定义的色号（如 "MY01"）
@@ -39,7 +39,7 @@ struct CustomColor: Identifiable, Codable, Hashable {
     }
 
     /// 转换为 BeadColor 格式，方便在现有系统中使用
-    /// 自定义颜色使用 "#" 前缀以区分于预设颜色，并使其排序在最后
+    /// 自定义色号使用 "#" 前缀以区分于预设颜色，并使其排序在最后
     var mardCode: String {
         "#\(colorCode)"
     }

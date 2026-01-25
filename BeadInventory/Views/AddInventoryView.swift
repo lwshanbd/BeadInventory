@@ -11,7 +11,7 @@ struct AddInventoryView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
-    // 色系列表（"其他"包含特殊色号如 Any，"#"为自定义颜色）
+    // 色系列表（"其他"包含特殊色号如 Any，"#"为自定义色号）
     let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他", "#"]
 
     @State private var selectedSeries = "A"
@@ -23,17 +23,17 @@ struct AddInventoryView: View {
     let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
 
     var colorsInSeries: [BeadColor] {
-        // 自定义颜色使用 allBeadColors
+        // 自定义色号使用 allBeadColors
         let sourceColors = selectedSeries == "#" ? inventoryManager.allBeadColors : inventoryManager.beadColors
 
         return sourceColors.filter { color in
             let code = color.mardCode
 
             if selectedSeries == "#" {
-                // 自定义颜色系列
+                // 自定义色号系列
                 return code.hasPrefix("#")
             } else if selectedSeries == "其他" {
-                // "其他"系列：不属于任何标准色系的颜色（排除自定义颜色）
+                // "其他"系列：不属于任何标准色系的颜色（排除自定义色号）
                 if code.hasPrefix("#") { return false }
                 return !standardPrefixes.contains { prefix in
                     if prefix == "ZG" {

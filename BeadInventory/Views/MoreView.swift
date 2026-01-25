@@ -74,8 +74,8 @@ struct MoreView: View {
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("自定义颜色")
-                                Text("添加和管理自己的颜色")
+                                Text("自定义色号")
+                                Text("添加和管理自己的色号")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }

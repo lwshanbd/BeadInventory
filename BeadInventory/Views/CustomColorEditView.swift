@@ -2,7 +2,7 @@
 //  CustomColorEditView.swift
 //  BeadInventory
 //
-//  自定义颜色编辑视图 - 添加/编辑自定义颜色
+//  自定义色号编辑视图 - 添加/编辑自定义色号
 //
 
 import SwiftUI
@@ -20,6 +20,7 @@ struct CustomColorEditView: View {
     @State private var showingColorPicker = false
     @State private var showingError = false
     @State private var errorMessage = ""
+    @State private var showingAddSuccessHint = false  // 添加成功后的提示
 
     // 用于手动输入 Hex
     @State private var hexInput: String = "FF0000"
@@ -126,7 +127,7 @@ struct CustomColorEditView: View {
                     .padding(.vertical, 4)
                 }
             }
-            .navigationTitle(isEditing ? "编辑颜色" : "添加自定义颜色")
+            .navigationTitle(isEditing ? "编辑颜色" : "添加自定义色号")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -145,6 +146,13 @@ struct CustomColorEditView: View {
                 Button("确定", role: .cancel) { }
             } message: {
                 Text(errorMessage)
+            }
+            .alert("添加成功", isPresented: $showingAddSuccessHint) {
+                Button("知道了") {
+                    dismiss()
+                }
+            } message: {
+                Text("自定义色号已添加，默认在所有品牌中隐藏。\n\n如需使用，请前往对应品牌的「隐藏色号管理」中取消隐藏。")
             }
             .onAppear {
                 if let color = editingColor {
@@ -226,7 +234,8 @@ struct CustomColorEditView: View {
                 colorHex: colorHex,
                 colorName: trimmedName
             ) {
-                dismiss()
+                // 显示提示
+                showingAddSuccessHint = true
             } else {
                 errorMessage = "色号已存在或与现有颜色冲突"
                 showingError = true
