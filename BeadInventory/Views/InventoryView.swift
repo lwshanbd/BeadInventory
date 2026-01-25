@@ -417,62 +417,29 @@ struct GridGroupHeaderView: View {
     var body: some View {
         Button(action: onToggle) {
             HStack {
-                // 分组标识
                 Text(prefix)
                     .font(.title2)
                     .fontWeight(.bold)
-                    .foregroundColor(.white)
-                    .frame(width: 40, height: 40)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(colorForPrefix(prefix))
-                    )
+                    .foregroundColor(.primary)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(prefix) 系列")
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                    Text("\(count) 个颜色")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                Text("系列")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Text("(\(count))")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
 
                 Spacer()
 
-                // 折叠/展开图标
-                Image(systemName: isCollapsed ? "chevron.down.circle" : "chevron.up.circle")
-                    .font(.title3)
-                    .foregroundColor(.accentColor)
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
-            .padding(12)
-            .background(Color(.systemBackground))
-            .cornerRadius(12)
-            .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
         }
         .buttonStyle(.plain)
-    }
-
-    // 根据前缀返回不同颜色
-    func colorForPrefix(_ prefix: String) -> Color {
-        switch prefix {
-        case "A": return .red
-        case "B": return .orange
-        case "C": return .yellow
-        case "D": return .green
-        case "E": return .mint
-        case "F": return .teal
-        case "G": return .cyan
-        case "H": return .blue
-        case "M": return .indigo
-        case "P": return .purple
-        case "Q": return .pink
-        case "R": return .red.opacity(0.7)
-        case "T": return .brown
-        case "Y": return .orange.opacity(0.7)
-        case "ZG": return .gray
-        case "#": return .orange
-        default: return .gray
-        }
     }
 }
 
