@@ -817,10 +817,6 @@ class InventoryManager: ObservableObject {
         let query = query.uppercased()
         return allBeadColors.filter { color in
             color.mardCode.uppercased().contains(query) ||
-            color.cocoCode.uppercased().contains(query) ||
-            color.manmanCode.uppercased().contains(query) ||
-            color.panpanCode.uppercased().contains(query) ||
-            color.mixiaowoCode.uppercased().contains(query) ||
             color.colorName.uppercased().contains(query)
         }
     }
