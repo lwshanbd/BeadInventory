@@ -1363,6 +1363,23 @@ struct StockCheckSheet: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 40)
                     } else {
+                        // 全部品牌汇总检查
+                        AllBrandsStockCheckCard(requiredUsage: requiredUsage)
+
+                        // 分隔线
+                        HStack {
+                            Rectangle()
+                                .fill(Color.secondary.opacity(0.3))
+                                .frame(height: 1)
+                            Text("各品牌单独库存")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Rectangle()
+                                .fill(Color.secondary.opacity(0.3))
+                                .frame(height: 1)
+                        }
+                        .padding(.horizontal)
+
                         ForEach(inventoryManager.brands) { brand in
                             BrandStockCheckCard(
                                 brand: brand,
@@ -1383,6 +1400,201 @@ struct StockCheckSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+// MARK: - 全部品牌汇总库存检查卡片
+struct AllBrandsStockCheckCard: View {
+    let requiredUsage: [BeadUsage]
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var isExpanded = false
+
+    // 计算所有品牌库存总和后仍不足的颜色
+    var insufficientColors: [(colorCode: String, required: Int, totalAvailable: Int, shortage: Int)] {
+        var result: [(colorCode: String, required: Int, totalAvailable: Int, shortage: Int)] = []
+
+        for usage in requiredUsage {
+            // 计算所有品牌该颜色的库存总和
+            var totalAvailable = 0
+            for brand in inventoryManager.brands {
+                if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: usage.colorCode) {
+                    totalAvailable += stock.available
+                }
+            }
+
+            if totalAvailable < usage.quantity {
+                result.append((
+                    colorCode: usage.colorCode,
+                    required: usage.quantity,
+                    totalAvailable: totalAvailable,
+                    shortage: usage.quantity - totalAvailable
+                ))
+            }
+        }
+
+        return result.sorted { $0.shortage > $1.shortage }
+    }
+
+    var isSufficient: Bool {
+        insufficientColors.isEmpty
+    }
+
+    var totalShortage: Int {
+        insufficientColors.reduce(0) { $0 + $1.shortage }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // 标题和状态
+            Button {
+                withAnimation { isExpanded.toggle() }
+            } label: {
+                HStack {
+                    // 图标和标题
+                    Image(systemName: "square.stack.3d.up.fill")
+                        .foregroundColor(.purple)
+                    Text("全部品牌汇总")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    Spacer()
+
+                    // 状态标签
+                    if isSufficient {
+                        Label("库存充足", systemImage: "checkmark.circle.fill")
+                            .font(.subheadline)
+                            .foregroundColor(.green)
+                    } else {
+                        Label("缺少 \(insufficientColors.count) 色", systemImage: "exclamationmark.triangle.fill")
+                            .font(.subheadline)
+                            .foregroundColor(.red)
+                    }
+
+                    // 展开指示器（仅当有不足时显示）
+                    if !isSufficient {
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+
+            // 说明文字
+            Text("综合所有品牌库存后的检查结果")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            // 汇总信息
+            if !isSufficient {
+                HStack {
+                    Label("共缺少 \(totalShortage) 颗", systemImage: "minus.circle")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+
+                    Spacer()
+
+                    if !isExpanded {
+                        Text("点击展开详情")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            // 展开的详细列表
+            if isExpanded && !isSufficient {
+                Divider()
+
+                VStack(spacing: 8) {
+                    ForEach(insufficientColors, id: \.colorCode) { item in
+                        AllBrandsInsufficientColorRow(
+                            colorCode: item.colorCode,
+                            required: item.required,
+                            totalAvailable: item.totalAvailable,
+                            shortage: item.shortage
+                        )
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(isSufficient ? Color.green.opacity(0.08) : Color.red.opacity(0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isSufficient ? Color.green.opacity(0.4) : Color.red.opacity(0.4), lineWidth: 2)
+        )
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - 全部品牌汇总不足颜色行
+struct AllBrandsInsufficientColorRow: View {
+    let colorCode: String
+    let required: Int
+    let totalAvailable: Int
+    let shortage: Int
+    @EnvironmentObject var inventoryManager: InventoryManager
+
+    var beadColor: BeadColor? {
+        inventoryManager.findColor(byCode: colorCode)
+    }
+
+    var displayColor: Color {
+        beadColor?.color ?? .gray
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            // 颜色预览
+            RoundedRectangle(cornerRadius: 4)
+                .fill(displayColor)
+                .frame(width: 28, height: 28)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+
+            // 色号
+            Text(colorCode)
+                .font(.system(.subheadline, design: .monospaced))
+                .fontWeight(.medium)
+
+            Spacer()
+
+            // 库存信息
+            VStack(alignment: .trailing, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text("需要")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text("\(required)")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+
+                HStack(spacing: 4) {
+                    Text("总计")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text("\(totalAvailable)")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+            }
+
+            // 缺少量
+            Text("-\(shortage)")
+                .font(.subheadline)
+                .fontWeight(.bold)
+                .foregroundColor(.red)
+                .frame(width: 50, alignment: .trailing)
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(Color(.systemBackground))
+        .cornerRadius(6)
     }
 }
 
