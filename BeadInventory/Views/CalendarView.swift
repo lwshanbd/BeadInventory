@@ -7,11 +7,17 @@
 
 import SwiftUI
 
+// 用于传递给 sheet 的数据
+struct DaySelection: Identifiable {
+    let id = UUID()
+    let date: Date
+    let projects: [ProjectRecord]
+}
+
 struct CalendarView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var currentMonth: Date = Date()
-    @State private var selectedDate: Date?
-    @State private var showingDayDetail = false
+    @State private var selectedDay: DaySelection?
 
     private let calendar = Calendar.current
     private let weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
@@ -51,10 +57,8 @@ struct CalendarView: View {
         }
         .navigationTitle("成品日历")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showingDayDetail) {
-            if let date = selectedDate {
-                DayDetailSheet(date: date, projects: projectsForDate(date))
-            }
+        .sheet(item: $selectedDay) { selection in
+            DayDetailSheet(date: selection.date, projects: selection.projects)
         }
     }
 
@@ -124,8 +128,7 @@ struct CalendarView: View {
                     .onTapGesture {
                         let dayProjects = projectsForDate(date)
                         if !dayProjects.isEmpty {
-                            selectedDate = date
-                            showingDayDetail = true
+                            selectedDay = DaySelection(date: date, projects: dayProjects)
                         }
                     }
                 } else {
@@ -305,13 +308,26 @@ struct DayDetailSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                LazyVStack(spacing: 16) {
-                    ForEach(projects) { project in
-                        ProjectImageCard(project: project)
+            Group {
+                if projects.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .font(.system(size: 50))
+                            .foregroundColor(.secondary)
+                        Text("当天没有成品图")
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 16) {
+                            ForEach(projects) { project in
+                                ProjectImageCard(project: project)
+                            }
+                        }
+                        .padding()
                     }
                 }
-                .padding()
             }
             .navigationTitle(dateString(from: date))
             .navigationBarTitleDisplayMode(.inline)
