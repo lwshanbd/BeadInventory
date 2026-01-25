@@ -22,16 +22,16 @@ struct CalendarView: View {
     private let calendar = Calendar.current
     private let weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
-    // 获取当月有成品图的项目，按日期分组
+    // 获取有成品图和完成日期的项目，按日期分组
     var projectsByDate: [Date: [ProjectRecord]] {
         let projects = inventoryManager.projects.filter { project in
-            project.finishedImage != nil && project.executedDate != nil
+            project.finishedImage != nil && project.completedDate != nil
         }
 
         var grouped: [Date: [ProjectRecord]] = [:]
         for project in projects {
-            if let executedDate = project.executedDate {
-                let dayStart = calendar.startOfDay(for: executedDate)
+            if let completedDate = project.completedDate {
+                let dayStart = calendar.startOfDay(for: completedDate)
                 if grouped[dayStart] != nil {
                     grouped[dayStart]?.append(project)
                 } else {

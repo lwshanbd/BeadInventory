@@ -68,8 +68,9 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
     var executedDate: Date?       // 执行日期（计划项目执行后记录）
     var thumbnail: Data?          // 缩略图数据（可选，压缩后的JPEG）
     var finishedImage: Data?      // 成品图数据（可选，压缩后的JPEG，仅已执行项目使用）
+    var completedDate: Date?      // 完成日期（用于日历展示，用户可自定义选择）
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, finishedImage: Data? = nil) {
+    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, finishedImage: Data? = nil, completedDate: Date? = nil) {
         self.id = id
         self.name = name
         self.date = date
@@ -82,6 +83,7 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
         self.executedDate = executedDate
         self.thumbnail = thumbnail
         self.finishedImage = finishedImage
+        self.completedDate = completedDate
     }
 
     // 自定义解码器，兼容旧数据
@@ -102,6 +104,8 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
         thumbnail = try container.decodeIfPresent(Data.self, forKey: .thumbnail)
         // 向后兼容：旧数据没有 finishedImage 字段
         finishedImage = try container.decodeIfPresent(Data.self, forKey: .finishedImage)
+        // 向后兼容：旧数据没有 completedDate 字段
+        completedDate = try container.decodeIfPresent(Date.self, forKey: .completedDate)
     }
 }
 

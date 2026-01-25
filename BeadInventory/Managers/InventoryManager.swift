@@ -1628,6 +1628,17 @@ class InventoryManager: ObservableObject {
         }
     }
 
+    /// 更新项目完成日期（仅已执行项目）
+    func updateProjectCompletedDate(_ projectId: UUID, completedDate: Date?) {
+        if let index = projects.firstIndex(where: { $0.id == projectId && !$0.isPlanned }) {
+            // 记录历史
+            historyManager.recordProject(type: .projectUpdate, project: projects[index])
+
+            projects[index].completedDate = completedDate
+            saveData()
+        }
+    }
+
     // MARK: - 统计
 
     var totalStock: Int {

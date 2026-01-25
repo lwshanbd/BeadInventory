@@ -549,6 +549,9 @@ struct BeadUsageRow: View {
 struct FinishedImageSection: View {
     let project: ProjectRecord
     let onEditFinishedImage: () -> Void
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var showingDatePicker = false
+    @State private var selectedDate: Date = Date()
 
     var finishedImage: UIImage? {
         guard let data = project.finishedImage else { return nil }
@@ -584,6 +587,38 @@ struct FinishedImageSection: View {
                         RoundedRectangle(cornerRadius: 12)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
+
+                // 完成日期选择
+                HStack {
+                    Image(systemName: "calendar")
+                        .foregroundColor(.secondary)
+                    Text("完成日期")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Button {
+                        selectedDate = project.completedDate ?? Date()
+                        showingDatePicker = true
+                    } label: {
+                        if let date = project.completedDate {
+                            Text(formatDate(date))
+                                .foregroundColor(.accentColor)
+                        } else {
+                            Text("选择日期")
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+
+                    if project.completedDate != nil {
+                        Button {
+                            inventoryManager.updateProjectCompletedDate(project.id, completedDate: nil)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .font(.subheadline)
+                .padding(.top, 8)
             } else {
                 // 空状态占位符
                 RoundedRectangle(cornerRadius: 12)
@@ -608,6 +643,59 @@ struct FinishedImageSection: View {
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .padding(.horizontal)
+        .sheet(isPresented: $showingDatePicker) {
+            CompletedDatePickerSheet(
+                selectedDate: $selectedDate,
+                onSave: { date in
+                    inventoryManager.updateProjectCompletedDate(project.id, completedDate: date)
+                }
+            )
+        }
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy年M月d日"
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - 完成日期选择弹窗
+struct CompletedDatePickerSheet: View {
+    @Environment(\.dismiss) var dismiss
+    @Binding var selectedDate: Date
+    let onSave: (Date) -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack {
+                DatePicker(
+                    "选择完成日期",
+                    selection: $selectedDate,
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.graphical)
+                .padding()
+
+                Spacer()
+            }
+            .navigationTitle("完成日期")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("确定") {
+                        onSave(selectedDate)
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 
