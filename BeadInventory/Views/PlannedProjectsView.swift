@@ -2542,6 +2542,7 @@ struct ReplenishSuggestionSheet: View {
     @Environment(\.dismiss) var dismiss
     @State private var selectedBrandId: UUID?
     @State private var showCopySuccess = false
+    @State private var showExportSuccess = false
     @State private var freeShippingThreshold: Int = 50  // 包邮额度（以10g为单位）
     @State private var replenishQuantities: [String: Int] = [:]  // 每个色号的补豆数量（以10g为单位）
 
@@ -2703,6 +2704,42 @@ struct ReplenishSuggestionSheet: View {
         replenishQuantities = quantities
     }
 
+    // 导出到运输中
+    func exportToShipping() {
+        guard let brandId = selectedBrandId else { return }
+
+        // 生成默认名称
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M月d日补豆"
+        let recordName = formatter.string(from: Date())
+
+        // 构建购买项列表
+        var items: [PurchaseItem] = []
+        for (colorCode, quantity) in replenishQuantities.sorted(by: { $0.key < $1.key }) {
+            if quantity > 0 {
+                // quantity 是以 10g 为单位，1g = 100颗，所以 quantity * 10g * 100 = quantity * 1000
+                items.append(PurchaseItem(colorCode: colorCode, quantity: quantity * 1000))
+            }
+        }
+
+        guard !items.isEmpty else { return }
+
+        // 添加到运输中
+        inventoryManager.addPurchaseRecord(
+            name: recordName,
+            brandId: brandId,
+            items: items,
+            note: "从补豆建议导出"
+        )
+
+        // 显示成功提示
+        showExportSuccess = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            showExportSuccess = false
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -2857,25 +2894,40 @@ struct ReplenishSuggestionSheet: View {
                             .padding(.vertical, 40)
                         }
 
-                        // 复制按钮
+                        // 操作按钮
                         if totalSelectedQuantity > 0 {
-                            Button {
-                                UIPasteboard.general.string = csvText
-                                showCopySuccess = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    showCopySuccess = false
+                            VStack(spacing: 12) {
+                                // 导出到运输中
+                                Button {
+                                    exportToShipping()
+                                } label: {
+                                    HStack {
+                                        Image(systemName: showExportSuccess ? "checkmark" : "shippingbox.fill")
+                                        Text(showExportSuccess ? "已添加到运输中" : "导出到运输中（\(totalSelectedQuantity)×10g）")
+                                    }
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .frame(maxWidth: .infinity)
+                                    .background(showExportSuccess ? Color.green : Color.orange)
+                                    .cornerRadius(12)
                                 }
-                            } label: {
-                                HStack {
-                                    Image(systemName: showCopySuccess ? "checkmark" : "doc.on.doc")
-                                    Text(showCopySuccess ? "已复制" : "复制 CSV（\(totalSelectedQuantity)×10g）")
+
+                                // 复制 CSV
+                                Button {
+                                    UIPasteboard.general.string = csvText
+                                    showCopySuccess = true
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                        showCopySuccess = false
+                                    }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: showCopySuccess ? "checkmark" : "doc.on.doc")
+                                        Text(showCopySuccess ? "已复制" : "复制 CSV")
+                                    }
+                                    .font(.subheadline)
+                                    .foregroundColor(.accentColor)
                                 }
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding()
-                                .frame(maxWidth: .infinity)
-                                .background(showCopySuccess ? Color.green : Color.accentColor)
-                                .cornerRadius(12)
                             }
                             .padding(.horizontal)
                             .padding(.top, 8)
