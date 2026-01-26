@@ -2542,6 +2542,8 @@ struct ReplenishSuggestionSheet: View {
     @Environment(\.dismiss) var dismiss
     @State private var selectedBrandId: UUID?
     @State private var showCopySuccess = false
+    @State private var freeShippingThreshold: Int = 50  // 包邮额度（以10g为单位）
+    @State private var replenishQuantities: [String: Int] = [:]  // 每个色号的补豆数量（以10g为单位）
 
     // 获取选中的项目列表
     var selectedProjects: [ProjectRecord] {
@@ -2553,7 +2555,6 @@ struct ReplenishSuggestionSheet: View {
     // 汇总所有选中项目的颜色用量
     var aggregatedUsage: [String: Int] {
         var usageDict: [String: Int] = [:]
-
         for project in selectedProjects {
             let usage: [BeadUsage]
             if inventoryManager.isParentProject(project.id) {
@@ -2561,12 +2562,10 @@ struct ReplenishSuggestionSheet: View {
             } else {
                 usage = project.beadUsage
             }
-
             for item in usage {
                 usageDict[item.colorCode, default: 0] += item.quantity
             }
         }
-
         return usageDict
     }
 
@@ -2581,102 +2580,127 @@ struct ReplenishSuggestionSheet: View {
         selectedBrand?.lowStockThreshold ?? 100
     }
 
-    // 计算补豆建议
-    var replenishSuggestion: ReplenishResult {
+    // 获取某个色号在选中品牌的运输中数量
+    func inTransitQuantity(for colorCode: String, brandId: UUID) -> Int {
+        var total = 0
+        for record in inventoryManager.purchaseRecords {
+            if record.brandId == brandId {
+                for item in record.items {
+                    if item.colorCode == colorCode {
+                        total += item.quantity
+                    }
+                }
+            }
+        }
+        return total
+    }
+
+    // 计算补豆建议数据
+    var replenishData: ReplenishData {
         guard let brand = selectedBrand else {
-            return ReplenishResult(negativeStock: [], lowStock: [], highUsage: highUsageForAllBrands)
+            return ReplenishData(negativeStock: [], lowStock: [], highUsage: [], processedCodes: [])
         }
 
-        var negativeStock: [(colorCode: String, currentStock: Int, usage: Int, afterDeduct: Int, replenishAmount: Int)] = []
-        var lowStock: [(colorCode: String, currentStock: Int, usage: Int, afterDeduct: Int, replenishAmount: Int)] = []
+        var negativeStock: [ReplenishColorInfo] = []
+        var lowStock: [ReplenishColorInfo] = []
         var processedCodes: Set<String> = []
 
-        // 遍历所有用量（针对选中品牌计算负库存和低库存）
         for (colorCode, usage) in aggregatedUsage {
             let currentStock = inventoryManager.getStock(brandId: brand.id, mardCode: colorCode)?.available ?? 0
-            let afterDeduct = currentStock - usage
+            let inTransit = inTransitQuantity(for: colorCode, brandId: brand.id)
+            let effectiveStock = currentStock + inTransit
+            let afterDeduct = effectiveStock - usage
 
             if afterDeduct < 0 {
-                // 负库存：需要补到阈值以上
                 let deficit = lowStockThreshold - afterDeduct
-                let replenishAmount = ((deficit + 999) / 1000) * 1000
-                negativeStock.append((colorCode, currentStock, usage, afterDeduct, replenishAmount))
+                let defaultAmount = (deficit + 999) / 1000
+                negativeStock.append(ReplenishColorInfo(
+                    colorCode: colorCode,
+                    currentStock: currentStock,
+                    inTransit: inTransit,
+                    usage: usage,
+                    afterDeduct: afterDeduct,
+                    defaultAmount: defaultAmount
+                ))
                 processedCodes.insert(colorCode)
             } else if afterDeduct < lowStockThreshold {
-                // 低库存：需要补到阈值以上
                 let deficit = lowStockThreshold - afterDeduct
-                let replenishAmount = ((deficit + 999) / 1000) * 1000
-                lowStock.append((colorCode, currentStock, usage, afterDeduct, replenishAmount))
+                let defaultAmount = (deficit + 999) / 1000
+                lowStock.append(ReplenishColorInfo(
+                    colorCode: colorCode,
+                    currentStock: currentStock,
+                    inTransit: inTransit,
+                    usage: usage,
+                    afterDeduct: afterDeduct,
+                    defaultAmount: defaultAmount
+                ))
                 processedCodes.insert(colorCode)
             }
         }
 
-        // 按缺口排序（缺口大的在前）
         negativeStock.sort { $0.afterDeduct < $1.afterDeduct }
         lowStock.sort { $0.afterDeduct < $1.afterDeduct }
 
-        // 用量排名前20（基于全部品牌总库存，排除当前品牌下已显示的负库存和低库存）
-        var highUsage: [(colorCode: String, usage: Int, replenishAmount: Int)] = []
-        for item in highUsageForAllBrands {
-            if !processedCodes.contains(item.colorCode) && highUsage.count < 20 {
-                highUsage.append(item)
-            }
-        }
-
-        return ReplenishResult(negativeStock: negativeStock, lowStock: lowStock, highUsage: highUsage)
+        return ReplenishData(
+            negativeStock: negativeStock,
+            lowStock: lowStock,
+            highUsage: highUsageColors,
+            processedCodes: processedCodes
+        )
     }
 
-    // 基于全部历史用量 + 选中计划用量计算用量较大的色号
-    var highUsageForAllBrands: [(colorCode: String, usage: Int, replenishAmount: Int)] {
-        // 汇总全部历史项目（已执行）的用量
+    // 基于全部历史用量 + 选中计划用量计算用量较大的色号（不过滤）
+    var highUsageColors: [HighUsageColorInfo] {
         var totalUsageDict: [String: Int] = [:]
-
         for project in inventoryManager.projects {
-            // 只统计已执行的项目（非计划项目）
             guard !project.isPlanned else { continue }
-
             for usage in project.beadUsage {
                 totalUsageDict[usage.colorCode, default: 0] += usage.quantity
             }
         }
-
-        // 加上当前选中计划的用量
         for (colorCode, quantity) in aggregatedUsage {
             totalUsageDict[colorCode, default: 0] += quantity
         }
-
-        // 按总用量排序，取前20
         let sortedUsage = totalUsageDict.sorted { $0.value > $1.value }
-        var result: [(colorCode: String, usage: Int, replenishAmount: Int)] = []
+        return sortedUsage.prefix(20).map { HighUsageColorInfo(colorCode: $0.key, totalUsage: $0.value) }
+    }
 
-        for (colorCode, usage) in sortedUsage.prefix(20) {
-            let replenishAmount = ((usage + 999) / 1000) * 1000
-            result.append((colorCode, usage, replenishAmount))
-        }
+    // 已选补豆总量（以10g为单位）
+    var totalSelectedQuantity: Int {
+        replenishQuantities.values.reduce(0, +)
+    }
 
-        return result
+    // 还差多少包邮（以10g为单位）
+    var remainingForFreeShipping: Int {
+        max(0, freeShippingThreshold - totalSelectedQuantity)
     }
 
     // 生成 CSV 文本
     var csvText: String {
         var lines: [String] = ["色号,豆量"]
-
-        // 负库存
-        for item in replenishSuggestion.negativeStock {
-            lines.append("\(item.colorCode),\(item.replenishAmount)")
+        for (colorCode, quantity) in replenishQuantities.sorted(by: { $0.key < $1.key }) {
+            if quantity > 0 {
+                lines.append("\(colorCode),\(quantity * 1000)")
+            }
         }
-
-        // 低库存
-        for item in replenishSuggestion.lowStock {
-            lines.append("\(item.colorCode),\(item.replenishAmount)")
-        }
-
-        // 用量大
-        for item in replenishSuggestion.highUsage {
-            lines.append("\(item.colorCode),\(item.replenishAmount)")
-        }
-
         return lines.joined(separator: "\n")
+    }
+
+    // 初始化默认补豆数量
+    func initializeDefaultQuantities() {
+        var quantities: [String: Int] = [:]
+        for item in replenishData.negativeStock {
+            quantities[item.colorCode] = item.defaultAmount
+        }
+        for item in replenishData.lowStock {
+            quantities[item.colorCode] = item.defaultAmount
+        }
+        for item in replenishData.highUsage {
+            if quantities[item.colorCode] == nil {
+                quantities[item.colorCode] = 0
+            }
+        }
+        replenishQuantities = quantities
     }
 
     var body: some View {
@@ -2687,7 +2711,6 @@ struct ReplenishSuggestionSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("选择品牌")
                             .font(.headline)
-
                         if inventoryManager.brands.isEmpty {
                             Text("暂无品牌，请先创建品牌")
                                 .font(.subheadline)
@@ -2698,6 +2721,7 @@ struct ReplenishSuggestionSheet: View {
                                     ForEach(inventoryManager.brands) { brand in
                                         Button {
                                             selectedBrandId = brand.id
+                                            initializeDefaultQuantities()
                                         } label: {
                                             Text(brand.name)
                                                 .font(.subheadline)
@@ -2718,6 +2742,52 @@ struct ReplenishSuggestionSheet: View {
                     .padding(.horizontal)
 
                     if selectedBrand != nil {
+                        // 包邮额度输入
+                        HStack {
+                            Text("包邮额度")
+                                .font(.subheadline)
+                            Spacer()
+                            HStack(spacing: 4) {
+                                TextField("", value: $freeShippingThreshold, format: .number)
+                                    .keyboardType(.numberPad)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 60)
+                                    .multilineTextAlignment(.center)
+                                Text("×10g")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+
+                        // 状态栏
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("已选补豆")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("\(totalSelectedQuantity)×10g")
+                                    .font(.headline)
+                                    .foregroundColor(.accentColor)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Text("还差包邮")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(remainingForFreeShipping > 0 ? "\(remainingForFreeShipping)×10g" : "已达标 ✓")
+                                    .font(.headline)
+                                    .foregroundColor(remainingForFreeShipping > 0 ? .orange : .green)
+                            }
+                        }
+                        .padding()
+                        .background(remainingForFreeShipping > 0 ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+
                         // 选中项目信息
                         HStack {
                             Image(systemName: "info.circle.fill")
@@ -2733,57 +2803,46 @@ struct ReplenishSuggestionSheet: View {
                         .padding(.horizontal)
 
                         // 负库存区域
-                        if !replenishSuggestion.negativeStock.isEmpty {
-                            ReplenishSection(
+                        if !replenishData.negativeStock.isEmpty {
+                            ReplenishSectionView(
                                 title: "库存不足（需补豆）",
-                                subtitle: "扣减后库存为负",
+                                subtitle: "库存+运输中-消耗 < 0",
                                 color: .red,
-                                items: replenishSuggestion.negativeStock.map {
-                                    ReplenishItem(
-                                        colorCode: $0.colorCode,
-                                        detail: "现有 \($0.currentStock) - 消耗 \($0.usage) = \($0.afterDeduct)",
-                                        amount: $0.replenishAmount
-                                    )
-                                }
+                                items: replenishData.negativeStock,
+                                processedCodes: replenishData.processedCodes,
+                                quantities: $replenishQuantities,
+                                showWarning: false
                             )
                         }
 
                         // 低库存区域
-                        if !replenishSuggestion.lowStock.isEmpty {
-                            ReplenishSection(
+                        if !replenishData.lowStock.isEmpty {
+                            ReplenishSectionView(
                                 title: "低库存预警（建议补豆）",
-                                subtitle: "扣减后低于阈值 \(lowStockThreshold)",
+                                subtitle: "库存+运输中-消耗 < 阈值\(lowStockThreshold)",
                                 color: .orange,
-                                items: replenishSuggestion.lowStock.map {
-                                    ReplenishItem(
-                                        colorCode: $0.colorCode,
-                                        detail: "现有 \($0.currentStock) - 消耗 \($0.usage) = \($0.afterDeduct)",
-                                        amount: $0.replenishAmount
-                                    )
-                                }
+                                items: replenishData.lowStock,
+                                processedCodes: replenishData.processedCodes,
+                                quantities: $replenishQuantities,
+                                showWarning: false
                             )
                         }
 
                         // 用量大区域
-                        if !replenishSuggestion.highUsage.isEmpty {
-                            ReplenishSection(
+                        if !replenishData.highUsage.isEmpty {
+                            HighUsageSectionView(
                                 title: "用量较大（供参考）",
                                 subtitle: "历史用量+选中计划，排名前20",
-                                color: .green,
-                                items: replenishSuggestion.highUsage.map {
-                                    ReplenishItem(
-                                        colorCode: $0.colorCode,
-                                        detail: "总用量 \($0.usage)",
-                                        amount: $0.replenishAmount
-                                    )
-                                }
+                                items: replenishData.highUsage,
+                                processedCodes: replenishData.processedCodes,
+                                quantities: $replenishQuantities
                             )
                         }
 
                         // 空状态
-                        if replenishSuggestion.negativeStock.isEmpty &&
-                           replenishSuggestion.lowStock.isEmpty &&
-                           replenishSuggestion.highUsage.isEmpty {
+                        if replenishData.negativeStock.isEmpty &&
+                           replenishData.lowStock.isEmpty &&
+                           replenishData.highUsage.isEmpty {
                             VStack(spacing: 12) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .font(.largeTitle)
@@ -2799,9 +2858,7 @@ struct ReplenishSuggestionSheet: View {
                         }
 
                         // 复制按钮
-                        if !replenishSuggestion.negativeStock.isEmpty ||
-                           !replenishSuggestion.lowStock.isEmpty ||
-                           !replenishSuggestion.highUsage.isEmpty {
+                        if totalSelectedQuantity > 0 {
                             Button {
                                 UIPasteboard.general.string = csvText
                                 showCopySuccess = true
@@ -2811,7 +2868,7 @@ struct ReplenishSuggestionSheet: View {
                             } label: {
                                 HStack {
                                     Image(systemName: showCopySuccess ? "checkmark" : "doc.on.doc")
-                                    Text(showCopySuccess ? "已复制" : "复制 CSV")
+                                    Text(showCopySuccess ? "已复制" : "复制 CSV（\(totalSelectedQuantity)×10g）")
                                 }
                                 .font(.headline)
                                 .foregroundColor(.white)
@@ -2824,7 +2881,6 @@ struct ReplenishSuggestionSheet: View {
                             .padding(.top, 8)
                         }
                     } else if !inventoryManager.brands.isEmpty {
-                        // 未选择品牌提示
                         VStack(spacing: 12) {
                             Image(systemName: "hand.tap")
                                 .font(.largeTitle)
@@ -2848,101 +2904,162 @@ struct ReplenishSuggestionSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
         .onAppear {
-            // 默认选中第一个品牌
             if selectedBrandId == nil, let firstBrand = inventoryManager.brands.first {
                 selectedBrandId = firstBrand.id
             }
+            initializeDefaultQuantities()
         }
     }
 }
 
-// MARK: - 补豆建议结果
-struct ReplenishResult {
-    let negativeStock: [(colorCode: String, currentStock: Int, usage: Int, afterDeduct: Int, replenishAmount: Int)]
-    let lowStock: [(colorCode: String, currentStock: Int, usage: Int, afterDeduct: Int, replenishAmount: Int)]
-    let highUsage: [(colorCode: String, usage: Int, replenishAmount: Int)]
+// MARK: - 补豆数据
+struct ReplenishData {
+    let negativeStock: [ReplenishColorInfo]
+    let lowStock: [ReplenishColorInfo]
+    let highUsage: [HighUsageColorInfo]
+    let processedCodes: Set<String>
 }
 
-// MARK: - 补豆建议项
-struct ReplenishItem {
+struct ReplenishColorInfo {
     let colorCode: String
-    let detail: String
-    let amount: Int
+    let currentStock: Int
+    let inTransit: Int
+    let usage: Int
+    let afterDeduct: Int
+    let defaultAmount: Int  // 以10g为单位
 }
 
-// MARK: - 补豆建议区域
-struct ReplenishSection: View {
+struct HighUsageColorInfo {
+    let colorCode: String
+    let totalUsage: Int
+}
+
+// MARK: - 补豆建议区域视图（负库存/低库存）
+struct ReplenishSectionView: View {
     let title: String
     let subtitle: String
     let color: Color
-    let items: [ReplenishItem]
+    let items: [ReplenishColorInfo]
+    let processedCodes: Set<String>
+    @Binding var quantities: [String: Int]
+    let showWarning: Bool
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var isExpanded = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // 标题
             Button {
                 withAnimation { isExpanded.toggle() }
             } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Circle()
-                                .fill(color)
-                                .frame(width: 10, height: 10)
-                            Text(title)
-                                .font(.headline)
-                                .foregroundColor(.primary)
+                            Circle().fill(color).frame(width: 10, height: 10)
+                            Text(title).font(.headline).foregroundColor(.primary)
                         }
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        Text(subtitle).font(.caption).foregroundColor(.secondary)
                     }
-
                     Spacer()
-
-                    Text("\(items.count) 色")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
+                    Text("\(items.count) 色").font(.subheadline).foregroundColor(.secondary)
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.caption).foregroundColor(.secondary)
                 }
             }
             .buttonStyle(.plain)
 
-            // 详细列表
             if isExpanded {
                 Divider()
-
                 ForEach(items, id: \.colorCode) { item in
-                    ReplenishItemRow(item: item, color: color)
+                    ReplenishColorRow(
+                        colorCode: item.colorCode,
+                        detail: "库存\(item.currentStock)+运输\(item.inTransit)-消耗\(item.usage)=\(item.afterDeduct)",
+                        color: color,
+                        quantity: Binding(
+                            get: { quantities[item.colorCode] ?? 0 },
+                            set: { quantities[item.colorCode] = $0 }
+                        ),
+                        showWarning: false
+                    )
                 }
             }
         }
         .padding()
         .background(color.opacity(0.05))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(color.opacity(0.3), lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.3), lineWidth: 1))
         .cornerRadius(12)
         .padding(.horizontal)
     }
 }
 
-// MARK: - 补豆建议项行
-struct ReplenishItemRow: View {
-    let item: ReplenishItem
+// MARK: - 用量较大区域视图
+struct HighUsageSectionView: View {
+    let title: String
+    let subtitle: String
+    let items: [HighUsageColorInfo]
+    let processedCodes: Set<String>
+    @Binding var quantities: [String: Int]
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var isExpanded = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation { isExpanded.toggle() }
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Circle().fill(Color.green).frame(width: 10, height: 10)
+                            Text(title).font(.headline).foregroundColor(.primary)
+                        }
+                        Text(subtitle).font(.caption).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Text("\(items.count) 色").font(.subheadline).foregroundColor(.secondary)
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                Divider()
+                ForEach(items, id: \.colorCode) { item in
+                    let isAlreadyListed = processedCodes.contains(item.colorCode)
+                    ReplenishColorRow(
+                        colorCode: item.colorCode,
+                        detail: "总用量 \(item.totalUsage)",
+                        color: .green,
+                        quantity: Binding(
+                            get: { quantities[item.colorCode] ?? 0 },
+                            set: { quantities[item.colorCode] = $0 }
+                        ),
+                        showWarning: isAlreadyListed
+                    )
+                }
+            }
+        }
+        .padding()
+        .background(Color.green.opacity(0.05))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.3), lineWidth: 1))
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - 补豆色号行
+struct ReplenishColorRow: View {
+    let colorCode: String
+    let detail: String
     let color: Color
+    @Binding var quantity: Int
+    let showWarning: Bool
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var beadColor: BeadColor? {
-        inventoryManager.findColor(byCode: item.colorCode)
+        inventoryManager.findColor(byCode: colorCode)
     }
 
     var displayColor: Color {
@@ -2950,39 +3067,68 @@ struct ReplenishItemRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             // 颜色预览
             RoundedRectangle(cornerRadius: 4)
                 .fill(displayColor)
                 .frame(width: 28, height: 28)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                )
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.gray.opacity(0.3), lineWidth: 1))
 
             // 色号
-            Text(item.colorCode)
-                .font(.system(.subheadline, design: .monospaced))
-                .fontWeight(.medium)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(colorCode)
+                        .font(.system(.subheadline, design: .monospaced))
+                        .fontWeight(.medium)
+                    if showWarning {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                }
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
 
             Spacer()
 
-            // 详情
-            Text(item.detail)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            // 数量调节器
+            HStack(spacing: 4) {
+                Button {
+                    if quantity > 0 { quantity -= 1 }
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(quantity > 0 ? color : .gray)
+                }
+                .disabled(quantity <= 0)
 
-            // 数量
-            Text("\(item.amount)")
-                .font(.subheadline)
-                .fontWeight(.bold)
-                .foregroundColor(color)
-                .frame(width: 60, alignment: .trailing)
+                TextField("", value: $quantity, format: .number)
+                    .keyboardType(.numberPad)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 40)
+                    .multilineTextAlignment(.center)
+                    .font(.subheadline.monospacedDigit())
+
+                Text("×10g")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Button {
+                    quantity += 1
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(color)
+                }
+            }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .padding(.horizontal, 8)
         .background(Color(.systemBackground))
-        .cornerRadius(6)
+        .cornerRadius(8)
     }
 }
 
