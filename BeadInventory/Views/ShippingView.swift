@@ -383,7 +383,15 @@ struct AddPurchaseRecordView: View {
     }
 
     var canSave: Bool {
-        !recordName.isEmpty && selectedBrandId != nil && !selectedColors.isEmpty
+        selectedBrandId != nil && !selectedColors.isEmpty
+    }
+
+    /// 生成默认名称（基于日期）
+    var defaultName: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M月d日订单"
+        return formatter.string(from: Date())
     }
 
     var body: some View {
@@ -391,8 +399,8 @@ struct AddPurchaseRecordView: View {
             VStack(spacing: 0) {
                 // 基本信息
                 VStack(spacing: 12) {
-                    // 记录名称
-                    TextField("购买记录名称（如：淘宝订单xxx）", text: $recordName)
+                    // 记录名称（可选）
+                    TextField("名称（可选，默认：\(defaultName)）", text: $recordName)
                         .textFieldStyle(.roundedBorder)
 
                     // 品牌选择
@@ -537,8 +545,11 @@ struct AddPurchaseRecordView: View {
             items.append(PurchaseItem(colorCode: color.mardCode, quantity: amount))
         }
 
+        // 如果名称为空，使用默认名称
+        let finalName = recordName.trimmingCharacters(in: .whitespaces).isEmpty ? defaultName : recordName
+
         inventoryManager.addPurchaseRecord(
-            name: recordName,
+            name: finalName,
             brandId: brandId,
             items: items,
             note: note.isEmpty ? nil : note
