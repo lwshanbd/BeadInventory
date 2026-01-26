@@ -1605,7 +1605,12 @@ struct BrandStockCheckCard: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var isExpanded = false
 
-    // 计算库存不足的颜色
+    // 低库存阈值
+    var lowStockThreshold: Int {
+        brand.lowStockThreshold
+    }
+
+    // 计算库存不足的颜色（扣减后为负数）
     var insufficientColors: [(colorCode: String, required: Int, available: Int, shortage: Int)] {
         var result: [(colorCode: String, required: Int, available: Int, shortage: Int)] = []
 
@@ -1634,12 +1639,49 @@ struct BrandStockCheckCard: View {
         return result.sorted { $0.shortage > $1.shortage }
     }
 
+    // 计算低库存预警的颜色（扣减后不为负但低于阈值）
+    var lowStockColors: [(colorCode: String, required: Int, available: Int, afterDeduct: Int)] {
+        var result: [(colorCode: String, required: Int, available: Int, afterDeduct: Int)] = []
+
+        for usage in requiredUsage {
+            if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: usage.colorCode) {
+                let afterDeduct = stock.available - usage.quantity
+                // 扣减后不为负（不在 insufficientColors 中），但低于低库存阈值
+                if afterDeduct >= 0 && afterDeduct < lowStockThreshold {
+                    result.append((
+                        colorCode: usage.colorCode,
+                        required: usage.quantity,
+                        available: stock.available,
+                        afterDeduct: afterDeduct
+                    ))
+                }
+            }
+        }
+
+        return result.sorted { $0.afterDeduct < $1.afterDeduct }
+    }
+
     var isSufficient: Bool {
         insufficientColors.isEmpty
     }
 
+    var hasLowStock: Bool {
+        !lowStockColors.isEmpty
+    }
+
     var totalShortage: Int {
         insufficientColors.reduce(0) { $0 + $1.shortage }
+    }
+
+    // 整体状态：绿色（充足）、黄色（有低库存预警）、红色（有不足）
+    var statusColor: Color {
+        if !isSufficient {
+            return .red
+        } else if hasLowStock {
+            return .orange
+        } else {
+            return .green
+        }
     }
 
     var body: some View {
@@ -1657,18 +1699,22 @@ struct BrandStockCheckCard: View {
                     Spacer()
 
                     // 状态标签
-                    if isSufficient {
-                        Label("库存充足", systemImage: "checkmark.circle.fill")
-                            .font(.subheadline)
-                            .foregroundColor(.green)
-                    } else {
+                    if !isSufficient {
                         Label("缺少 \(insufficientColors.count) 色", systemImage: "exclamationmark.triangle.fill")
                             .font(.subheadline)
                             .foregroundColor(.red)
+                    } else if hasLowStock {
+                        Label("低库存 \(lowStockColors.count) 色", systemImage: "exclamationmark.circle.fill")
+                            .font(.subheadline)
+                            .foregroundColor(.orange)
+                    } else {
+                        Label("库存充足", systemImage: "checkmark.circle.fill")
+                            .font(.subheadline)
+                            .foregroundColor(.green)
                     }
 
-                    // 展开指示器（仅当有不足时显示）
-                    if !isSufficient {
+                    // 展开指示器（有不足或低库存时显示）
+                    if !isSufficient || hasLowStock {
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -1681,6 +1727,26 @@ struct BrandStockCheckCard: View {
             if !isSufficient {
                 HStack {
                     Label("共缺少 \(totalShortage) 颗", systemImage: "minus.circle")
+                        .font(.caption)
+                        .foregroundColor(.red)
+
+                    if hasLowStock {
+                        Label("低库存 \(lowStockColors.count) 色", systemImage: "exclamationmark.circle")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+
+                    Spacer()
+
+                    if !isExpanded {
+                        Text("点击展开详情")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } else if hasLowStock {
+                HStack {
+                    Label("\(lowStockColors.count) 种颜色扣减后低于 \(lowStockThreshold)", systemImage: "exclamationmark.circle")
                         .font(.caption)
                         .foregroundColor(.orange)
 
@@ -1695,10 +1761,11 @@ struct BrandStockCheckCard: View {
             }
 
             // 展开的详细列表
-            if isExpanded && !isSufficient {
+            if isExpanded && (!isSufficient || hasLowStock) {
                 Divider()
 
                 VStack(spacing: 8) {
+                    // 先显示库存不足的（红色）
                     ForEach(insufficientColors, id: \.colorCode) { item in
                         InsufficientColorRow(
                             colorCode: item.colorCode,
@@ -1707,21 +1774,32 @@ struct BrandStockCheckCard: View {
                             shortage: item.shortage
                         )
                     }
+
+                    // 再显示低库存预警的（黄色）
+                    ForEach(lowStockColors, id: \.colorCode) { item in
+                        LowStockColorRow(
+                            colorCode: item.colorCode,
+                            required: item.required,
+                            available: item.available,
+                            afterDeduct: item.afterDeduct,
+                            threshold: lowStockThreshold
+                        )
+                    }
                 }
             }
         }
         .padding()
-        .background(isSufficient ? Color.green.opacity(0.05) : Color.red.opacity(0.05))
+        .background(statusColor.opacity(0.05))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isSufficient ? Color.green.opacity(0.3) : Color.red.opacity(0.3), lineWidth: 1)
+                .stroke(statusColor.opacity(0.3), lineWidth: 1)
         )
         .cornerRadius(12)
         .padding(.horizontal)
     }
 }
 
-// MARK: - 库存不足颜色行
+// MARK: - 库存不足颜色行（红色）
 struct InsufficientColorRow: View {
     let colorCode: String
     let required: Int
@@ -1785,7 +1863,82 @@ struct InsufficientColorRow: View {
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
-        .background(Color(.systemBackground))
+        .background(Color.red.opacity(0.05))
+        .cornerRadius(6)
+    }
+}
+
+// MARK: - 低库存预警颜色行（黄色）
+struct LowStockColorRow: View {
+    let colorCode: String
+    let required: Int
+    let available: Int
+    let afterDeduct: Int
+    let threshold: Int
+    @EnvironmentObject var inventoryManager: InventoryManager
+
+    var beadColor: BeadColor? {
+        inventoryManager.findColor(byCode: colorCode)
+    }
+
+    var displayColor: Color {
+        beadColor?.color ?? .gray
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            // 颜色预览
+            RoundedRectangle(cornerRadius: 4)
+                .fill(displayColor)
+                .frame(width: 28, height: 28)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+
+            // 色号
+            Text(colorCode)
+                .font(.system(.subheadline, design: .monospaced))
+                .fontWeight(.medium)
+
+            Spacer()
+
+            // 库存信息
+            VStack(alignment: .trailing, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text("需要")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text("\(required)")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+
+                HStack(spacing: 4) {
+                    Text("现有")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text("\(available)")
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                }
+            }
+
+            // 扣减后剩余
+            VStack(alignment: .trailing, spacing: 0) {
+                Text("→\(afterDeduct)")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.orange)
+                Text("<\(threshold)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .frame(width: 50, alignment: .trailing)
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(Color.orange.opacity(0.05))
         .cornerRadius(6)
     }
 }
