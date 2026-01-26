@@ -3057,6 +3057,7 @@ struct ReplenishColorRow: View {
     @Binding var quantity: Int
     let showWarning: Bool
     @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var showWarningTip = false
 
     var beadColor: BeadColor? {
         inventoryManager.findColor(byCode: colorCode)
@@ -3081,9 +3082,19 @@ struct ReplenishColorRow: View {
                         .font(.system(.subheadline, design: .monospaced))
                         .fontWeight(.medium)
                     if showWarning {
-                        Image(systemName: "exclamationmark.circle.fill")
-                            .font(.caption)
-                            .foregroundColor(.orange)
+                        Button {
+                            showWarningTip = true
+                        } label: {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                        .popover(isPresented: $showWarningTip) {
+                            Text("此色号已在上方「库存不足」或「低库存预警」中列出，已有建议补豆量")
+                                .font(.subheadline)
+                                .padding()
+                                .presentationCompactAdaptation(.popover)
+                        }
                     }
                 }
                 Text(detail)
