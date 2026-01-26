@@ -141,7 +141,7 @@ struct PurchaseRecord: Identifiable, Codable, Equatable {
     let id: UUID
     var name: String                    // 购买记录名称（如"淘宝订单xxx"）
     let date: Date                      // 创建日期
-    let brandId: UUID                   // 目标品牌
+    var brandId: UUID                   // 目标品牌
     var items: [PurchaseItem]           // 购买的颜色列表
     var note: String?                   // 备注
 
