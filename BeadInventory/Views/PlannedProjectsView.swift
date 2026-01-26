@@ -3157,6 +3157,8 @@ struct ReplenishColorRow: View {
                         .popover(isPresented: $showWarningTip) {
                             Text("此色号已在上方「库存不足」或「低库存预警」中列出，已有建议补豆量")
                                 .font(.subheadline)
+                                .frame(width: 200)
+                                .fixedSize(horizontal: false, vertical: true)
                                 .padding()
                                 .presentationCompactAdaptation(.popover)
                         }
