@@ -136,6 +136,46 @@ struct BeadUsage: Identifiable, Codable, Hashable {
     }
 }
 
+// MARK: - 购买记录（运输中）
+struct PurchaseRecord: Identifiable, Codable, Equatable {
+    let id: UUID
+    var name: String                    // 购买记录名称（如"淘宝订单xxx"）
+    let date: Date                      // 创建日期
+    let brandId: UUID                   // 目标品牌
+    var items: [PurchaseItem]           // 购买的颜色列表
+    var note: String?                   // 备注
+
+    init(id: UUID = UUID(), name: String, date: Date = Date(), brandId: UUID, items: [PurchaseItem], note: String? = nil) {
+        self.id = id
+        self.name = name
+        self.date = date
+        self.brandId = brandId
+        self.items = items
+        self.note = note
+    }
+
+    var totalBeads: Int {
+        items.reduce(0) { $0 + $1.quantity }
+    }
+
+    var colorCount: Int {
+        items.count
+    }
+}
+
+// MARK: - 购买项
+struct PurchaseItem: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    let colorCode: String   // 色号（MARD）
+    var quantity: Int       // 数量
+
+    init(id: UUID = UUID(), colorCode: String, quantity: Int) {
+        self.id = id
+        self.colorCode = colorCode
+        self.quantity = quantity
+    }
+}
+
 // MARK: - Color Extension
 extension Color {
     init(hex: String) {

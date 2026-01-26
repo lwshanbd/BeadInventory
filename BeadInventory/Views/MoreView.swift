@@ -8,11 +8,44 @@
 import SwiftUI
 
 struct MoreView: View {
+    @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showingImportFullData = false
 
     var body: some View {
         NavigationStack {
             List {
+                // 运输中
+                Section {
+                    NavigationLink {
+                        ShippingView()
+                    } label: {
+                        Label {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("运输中")
+                                    Text("待到货的购买记录")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                if !inventoryManager.purchaseRecords.isEmpty {
+                                    Text("\(inventoryManager.purchaseRecords.count)")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 2)
+                                        .background(Color.orange)
+                                        .cornerRadius(10)
+                                }
+                            }
+                        } icon: {
+                            Image(systemName: "shippingbox.fill")
+                                .foregroundColor(.orange)
+                        }
+                    }
+                }
+
                 // 成品展示
                 Section {
                     NavigationLink {

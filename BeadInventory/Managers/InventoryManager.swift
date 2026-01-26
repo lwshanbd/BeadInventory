@@ -13,6 +13,7 @@ class InventoryManager: ObservableObject {
     @Published var beadColors: [BeadColor] = []
     @Published var projects: [ProjectRecord] = []
     @Published var customColors: [CustomColor] = []  // 自定义色号
+    @Published var purchaseRecords: [PurchaseRecord] = []  // 运输中的购买记录
 
     // 品牌相关
     @Published var brands: [Brand] = []
@@ -33,6 +34,7 @@ class InventoryManager: ObservableObject {
     private let currentBrandIdKey = "currentBrandId"
     private let migrationCompletedKey = "swiftDataMigrationCompleted"
     private let customColorsKey = "customColors"
+    private let purchaseRecordsKey = "purchaseRecords"
 
     // 计算属性：当前选中的品牌
     var currentBrand: Brand? {
@@ -592,6 +594,12 @@ class InventoryManager: ObservableObject {
         if let sdCustomColors = try? context.fetch(customColorDescriptor) {
             customColors = sdCustomColors.map { $0.toStruct() }
         }
+
+        // 加载运输中的购买记录（存在 UserDefaults 中）
+        if let data = UserDefaults.standard.data(forKey: purchaseRecordsKey),
+           let decoded = try? JSONDecoder().decode([PurchaseRecord].self, from: data) {
+            purchaseRecords = decoded
+        }
     }
 
     func saveData() {
@@ -632,8 +640,15 @@ class InventoryManager: ObservableObject {
 
             try context.save()
             saveCurrentBrandId()
+            savePurchaseRecords()
         } catch {
             print("保存数据失败: \(error)")
+        }
+    }
+
+    private func savePurchaseRecords() {
+        if let encoded = try? JSONEncoder().encode(purchaseRecords) {
+            UserDefaults.standard.set(encoded, forKey: purchaseRecordsKey)
         }
     }
 
@@ -722,6 +737,12 @@ class InventoryManager: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: customColorsKey),
            let decoded = try? JSONDecoder().decode([CustomColor].self, from: data) {
             customColors = decoded
+        }
+
+        // 加载运输中的购买记录
+        if let data = UserDefaults.standard.data(forKey: purchaseRecordsKey),
+           let decoded = try? JSONDecoder().decode([PurchaseRecord].self, from: data) {
+            purchaseRecords = decoded
         }
     }
 
@@ -1662,6 +1683,59 @@ class InventoryManager: ObservableObject {
 
     var lowStockColors: [BeadColor] {
         beadColors.filter { $0.available < 100 }
+    }
+
+    // MARK: - 运输中（购买记录）
+
+    /// 添加购买记录
+    func addPurchaseRecord(name: String, brandId: UUID, items: [PurchaseItem], note: String? = nil) {
+        let record = PurchaseRecord(name: name, brandId: brandId, items: items, note: note)
+        purchaseRecords.append(record)
+        savePurchaseRecords()
+    }
+
+    /// 删除购买记录
+    func deletePurchaseRecord(id: UUID) {
+        purchaseRecords.removeAll { $0.id == id }
+        savePurchaseRecords()
+    }
+
+    /// 确认购买记录到货（添加到库存并删除记录）
+    func confirmPurchaseRecord(id: UUID) {
+        guard let record = purchaseRecords.first(where: { $0.id == id }) else { return }
+
+        // 将购买的物品添加到库存
+        for item in record.items {
+            addStock(brandId: record.brandId, mardCode: item.colorCode, amount: item.quantity)
+        }
+
+        // 记录历史
+        let brandName = brands.first(where: { $0.id == record.brandId })?.name ?? "未知品牌"
+        historyManager.record(type: .stockAdd, entityName: "\(brandName) 到货: \(record.name) (\(record.colorCount)色 +\(record.totalBeads)颗)")
+
+        // 删除记录
+        purchaseRecords.removeAll { $0.id == id }
+        savePurchaseRecords()
+    }
+
+    /// 更新购买记录
+    func updatePurchaseRecord(id: UUID, name: String? = nil, items: [PurchaseItem]? = nil, note: String? = nil) {
+        guard let index = purchaseRecords.firstIndex(where: { $0.id == id }) else { return }
+        if let name = name {
+            purchaseRecords[index].name = name
+        }
+        if let items = items {
+            purchaseRecords[index].items = items
+        }
+        if let note = note {
+            purchaseRecords[index].note = note
+        }
+        savePurchaseRecords()
+    }
+
+    /// 获取指定品牌的购买记录
+    func purchaseRecords(for brandId: UUID) -> [PurchaseRecord] {
+        purchaseRecords.filter { $0.brandId == brandId }
     }
 
     // MARK: - 重置
