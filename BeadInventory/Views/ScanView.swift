@@ -1763,6 +1763,8 @@ struct AISettingsView: View {
                     Text("Qwen API Key 可从阿里云百炼平台 bailian.console.aliyun.com 获取")
                 case .deepseek:
                     Text("DeepSeek API Key 可从 platform.deepseek.com 获取")
+                case .gemini:
+                    Text("Gemini API Key 可从 aistudio.google.com 获取")
                 }
             }
 

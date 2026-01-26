@@ -2,7 +2,7 @@
 //  AIService.swift
 //  BeadInventory
 //
-//  AI图像识别服务 - 支持 Kimi、OpenAI、Anthropic、Qwen 和 DeepSeek
+//  AI图像识别服务 - 支持 Kimi、OpenAI、Anthropic、Qwen、DeepSeek 和 Gemini
 //
 
 import Foundation
@@ -18,6 +18,7 @@ enum AIProvider: String, CaseIterable, Codable {
     case anthropic = "Anthropic"
     case qwen = "Qwen"
     case deepseek = "DeepSeek"
+    case gemini = "Gemini"
 }
 
 struct AIConfig: Codable {
@@ -31,6 +32,7 @@ struct AIConfig: Codable {
     static let defaultAnthropicURL = "https://api.anthropic.com"
     static let defaultQwenURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     static let defaultDeepSeekURL = "https://api.deepseek.com"
+    static let defaultGeminiURL = "https://generativelanguage.googleapis.com/v1beta"
 
     // Kimi 仅支持一个模型
     static let kimiModel = "kimi-latest"
@@ -38,6 +40,7 @@ struct AIConfig: Codable {
     static let anthropicModels = ["claude-sonnet-4-5-20250929", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"]
     static let qwenModels = ["qwen3-vl-flash", "qwen-vl-max", "qwen3-vl-plus"]
     static let deepseekModels = ["deepseek-chat", "deepseek-reasoner"]
+    static let geminiModels = ["gemini-3-flash-preview", "gemini-3-pro-preview"]
 
     static func defaultModel(for provider: AIProvider) -> String {
         switch provider {
@@ -51,6 +54,8 @@ struct AIConfig: Codable {
             return "qwen3-vl-flash"
         case .deepseek:
             return "deepseek-chat"
+        case .gemini:
+            return "gemini-3-flash-preview"
         }
     }
 
@@ -73,6 +78,8 @@ struct AIConfig: Codable {
             return baseURL.isEmpty ? AIConfig.defaultQwenURL : baseURL
         case .deepseek:
             return baseURL.isEmpty ? AIConfig.defaultDeepSeekURL : baseURL
+        case .gemini:
+            return baseURL.isEmpty ? AIConfig.defaultGeminiURL : baseURL
         }
     }
 
@@ -127,7 +134,7 @@ class AIServiceManager: ObservableObject {
                     config.model = AIConfig.kimiModel
                 }
             } else {
-                // OpenAI/Anthropic/Qwen/DeepSeek：如果当前模型不在新 provider 的模型列表中，则重置
+                // OpenAI/Anthropic/Qwen/DeepSeek/Gemini：如果当前模型不在新 provider 的模型列表中，则重置
                 let validModels: [String]
                 switch config.provider {
                 case .openai:
@@ -138,6 +145,8 @@ class AIServiceManager: ObservableObject {
                     validModels = AIConfig.qwenModels
                 case .deepseek:
                     validModels = AIConfig.deepseekModels
+                case .gemini:
+                    validModels = AIConfig.geminiModels
                 case .kimi:
                     validModels = [AIConfig.kimiModel]
                 }
@@ -296,6 +305,8 @@ class AIServiceManager: ObservableObject {
             return try await recognizeWithOpenAI(base64Image: base64Image, mediaType: mediaType, mode: mode)
         case .anthropic:
             return try await recognizeWithAnthropic(base64Image: base64Image, mediaType: mediaType, mode: mode)
+        case .gemini:
+            return try await recognizeWithGemini(base64Image: base64Image, mediaType: mediaType, mode: mode)
         }
     }
 
@@ -603,6 +614,152 @@ class AIServiceManager: ObservableObject {
         }
 
         throw AIError.parseError("No text content found in response")
+    }
+
+    // MARK: - Gemini 实现
+
+    private func recognizeWithGemini(base64Image: String, mediaType: String, mode: RecognitionMode) async throws -> [AIRecognizedItem] {
+        let url = URL(string: "\(config.effectiveBaseURL)/models/\(config.effectiveModel):generateContent?key=\(config.effectiveAPIKey)")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let prompt: String
+
+        switch mode {
+        case .table:
+            prompt = """
+            你是一个珠子色号表格识别助手。请仔细分析图片中的表格。
+
+            表格结构说明：
+            - 这是一个多行多列的表格，每一列代表一种颜色
+            - 表格中有多行，分别对应不同品牌的色号和数量
+            - 其中某一行是MARD品牌的色号（格式如：F8, A17, B195, DH01, IC09等，通常是字母+数字）
+            - 其中某一行是该颜色需要的豆子数量（纯数字）
+            - 其他行可能是其他品牌的色号（vivid, 漫漫, 卡卡），请忽略这些行
+            - 重要：MARD行和数量行的位置不固定，请先观察表格结构，判断哪一行是MARD色号、哪一行是数量
+
+            特殊情况 - 双区块表格：
+            - 当颜色数量较多时，图片中可能出现上下两个独立的表格区块
+            - 每个区块都有自己的品牌行和数量行
+            - 请分别识别两个区块中的所有MARD色号和数量，合并输出
+
+            你的任务：
+            1. 先观察表格结构，确定MARD行和数量行的位置
+            2. 识别每一列的MARD色号和对应数量
+            3. 如果有多个表格区块，分别识别后合并结果
+            4. 只返回JSON格式结果，不要其他文字
+            5. 如果检测到"任意色"，color_code应当叫做"any"
+
+            输出格式（严格JSON）：
+            {"items":[{"color_code":"F8","quantity":100},{"color_code":"A17","quantity":50}]}
+
+            注意：
+            - 只返回MARD色号，忽略其他品牌行
+            - color_code是字符串，quantity是整数
+            - 如果某列无法识别，跳过该列
+            - 只输出JSON，不要解释
+            - 图片可能有水印干扰，请仔细辨认文字
+
+            请识别这张色号表格图片，提取所有MARD色号和对应的数量。先判断表格结构，找到MARD行和数量行。如有多个表格区块请全部识别。只返回JSON。
+            """
+
+        case .blueprint:
+            prompt = """
+            你是一个珠子图纸识别助手。请仔细分析图片中的拼豆图纸。
+
+            图纸结构说明：
+            - 这是一张拼豆图纸，上面标注了各种颜色的色号和对应数量
+            - 色号格式通常是字母+数字的组合（如：F8, A17, B195, DH01, IC09等）
+            - 每个色号旁边（下方、侧面或附近）会标注该颜色需要的豆子数量（纯数字）
+            - 色号和数量可能以各种方式排列：横排、竖排、分散在图纸各处
+
+            你的任务：
+            1. 仔细扫描整张图纸
+            2. 找出所有的色号及其对应的数量
+            3. 只返回JSON格式结果，不要其他文字
+            4. 如果检测到"任意色"，color_code应当叫做"any"
+
+            输出格式（严格JSON）：
+            {"items":[{"color_code":"F8","quantity":100},{"color_code":"A17","quantity":50}]}
+
+            注意：
+            - color_code是字符串（字母+数字），quantity是整数
+            - 如果某个色号无法识别数量，跳过该项
+            - 只输出JSON，不要解释
+            - 图片可能有水印干扰，请仔细辨认文字
+            - 数量通常在色号的下方或旁边
+
+            请识别这张拼豆图纸，找出所有色号和对应的数量。色号通常是字母+数字，数量在色号附近。只返回JSON。
+            """
+        }
+
+        // Gemini API 格式
+        let body: [String: Any] = [
+            "contents": [
+                [
+                    "parts": [
+                        [
+                            "inline_data": [
+                                "mime_type": mediaType,
+                                "data": base64Image
+                            ]
+                        ],
+                        [
+                            "text": prompt
+                        ]
+                    ]
+                ]
+            ],
+            "generationConfig": [
+                "maxOutputTokens": 8192
+            ]
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 180
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AIError.networkError("Invalid response")
+        }
+
+        if httpResponse.statusCode != 200 {
+            let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
+            print("[AI Debug] API错误: \(errorText)")
+            throw AIError.apiError("HTTP \(httpResponse.statusCode): \(errorText)")
+        }
+
+        // 解析 Gemini 响应
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let candidates = json["candidates"] as? [[String: Any]],
+              let firstCandidate = candidates.first,
+              let content = firstCandidate["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]] else {
+            throw AIError.parseError("Failed to parse Gemini response")
+        }
+
+        // 找到 text 部分
+        for part in parts {
+            if let text = part["text"] as? String {
+                print("[AI Debug] Gemini原始回复:\n\(text)")
+
+                let jsonText = extractJSON(from: text)
+                print("[AI Debug] 提取的JSON:\n\(jsonText)")
+
+                guard let jsonData = jsonText.data(using: .utf8) else {
+                    throw AIError.parseError("无法转换JSON文本")
+                }
+
+                let result = try JSONDecoder().decode(AIRecognitionResult.self, from: jsonData)
+                print("[AI Debug] 解析成功，识别到 \(result.items.count) 个色号")
+                return result.items
+            }
+        }
+
+        throw AIError.parseError("No text content found in Gemini response")
     }
 
     // 从文本中提取JSON
