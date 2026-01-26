@@ -2617,10 +2617,12 @@ struct ReplenishSuggestionSheet: View {
 
         // 用量排名前20（排除已在负库存和低库存中的）
         let sortedUsage = aggregatedUsage.sorted { $0.value > $1.value }
-        var highUsage: [(colorCode: String, usage: Int)] = []
+        var highUsage: [(colorCode: String, usage: Int, replenishAmount: Int)] = []
         for (colorCode, usage) in sortedUsage {
             if !processedCodes.contains(colorCode) && highUsage.count < 20 {
-                highUsage.append((colorCode, usage))
+                // 用量向上取整到1000的倍数
+                let replenishAmount = ((usage + 999) / 1000) * 1000
+                highUsage.append((colorCode, usage, replenishAmount))
             }
         }
 
@@ -2643,8 +2645,7 @@ struct ReplenishSuggestionSheet: View {
 
         // 用量大
         for item in replenishSuggestion.highUsage {
-            // 用量大的不一定需要补豆，这里显示用量作为参考
-            lines.append("\(item.colorCode),\(item.usage)")
+            lines.append("\(item.colorCode),\(item.replenishAmount)")
         }
 
         return lines.joined(separator: "\n")
@@ -2744,8 +2745,8 @@ struct ReplenishSuggestionSheet: View {
                                 items: replenishSuggestion.highUsage.map {
                                     ReplenishItem(
                                         colorCode: $0.colorCode,
-                                        detail: "消耗量",
-                                        amount: $0.usage
+                                        detail: "消耗 \($0.usage)",
+                                        amount: $0.replenishAmount
                                     )
                                 }
                             )
@@ -2833,7 +2834,7 @@ struct ReplenishSuggestionSheet: View {
 struct ReplenishResult {
     let negativeStock: [(colorCode: String, currentStock: Int, usage: Int, afterDeduct: Int, replenishAmount: Int)]
     let lowStock: [(colorCode: String, currentStock: Int, usage: Int, afterDeduct: Int, replenishAmount: Int)]
-    let highUsage: [(colorCode: String, usage: Int)]
+    let highUsage: [(colorCode: String, usage: Int, replenishAmount: Int)]
 }
 
 // MARK: - 补豆建议项
