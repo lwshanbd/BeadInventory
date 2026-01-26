@@ -14,6 +14,7 @@ struct PlannedProjectsView: View {
     @State private var isSelectMode = false
     @State private var selectedProjects: Set<UUID> = []
     @State private var showMergeSheet = false
+    @State private var showMultiStockCheckSheet = false
     @State private var projectToExecute: ProjectRecord?
 
     var plannedProjects: [ProjectRecord] {
@@ -27,21 +28,41 @@ struct PlannedProjectsView: View {
                     EmptyPlannedProjectsView()
                 } else {
                     VStack(spacing: 0) {
-                        // 合并确认按钮（与统计页面相同的方式）
-                        if isSelectMode && selectedProjects.count >= 2 {
-                            Button {
-                                showMergeSheet = true
-                            } label: {
-                                HStack {
-                                    Image(systemName: "arrow.triangle.merge")
-                                    Text("合并 \(selectedProjects.count) 个计划")
+                        // 多选操作按钮区域
+                        if isSelectMode && !selectedProjects.isEmpty {
+                            HStack(spacing: 12) {
+                                // 库存确认按钮（选中 1 个及以上即可）
+                                Button {
+                                    showMultiStockCheckSheet = true
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "checklist")
+                                        Text("库存确认")
+                                    }
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .frame(maxWidth: .infinity)
+                                    .background(Color.blue)
+                                    .cornerRadius(10)
                                 }
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding()
-                                .frame(maxWidth: .infinity)
-                                .background(Color.accentColor)
-                                .cornerRadius(10)
+
+                                // 合并按钮（需要选中 2 个及以上）
+                                Button {
+                                    showMergeSheet = true
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "arrow.triangle.merge")
+                                        Text("合并")
+                                    }
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .frame(maxWidth: .infinity)
+                                    .background(selectedProjects.count >= 2 ? Color.accentColor : Color.gray)
+                                    .cornerRadius(10)
+                                }
+                                .disabled(selectedProjects.count < 2)
                             }
                             .padding(.horizontal)
                             .padding(.vertical, 8)
@@ -127,7 +148,7 @@ struct PlannedProjectsView: View {
                                 }
                             }
                         } label: {
-                            Text(isSelectMode ? "取消" : "合并")
+                            Text(isSelectMode ? "取消" : "多选")
                         }
                     }
                 }
@@ -139,6 +160,10 @@ struct PlannedProjectsView: View {
                     selectedProjects.removeAll()
                 }
                 .environmentObject(inventoryManager)
+            }
+            .sheet(isPresented: $showMultiStockCheckSheet) {
+                MultiProjectStockCheckSheet(projectIds: Array(selectedProjects))
+                    .environmentObject(inventoryManager)
             }
             .sheet(item: $projectToExecute) { project in
                 ExecutePlannedProjectSheet(project: project)
@@ -2350,6 +2375,140 @@ struct AddColorToProjectSheet: View {
         .onAppear {
             isSearchFocused = true
         }
+    }
+}
+
+// MARK: - 多项目库存检查弹窗
+struct MultiProjectStockCheckSheet: View {
+    let projectIds: [UUID]
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @Environment(\.dismiss) var dismiss
+
+    // 获取选中的项目列表
+    var selectedProjects: [ProjectRecord] {
+        projectIds.compactMap { id in
+            inventoryManager.projects.first { $0.id == id }
+        }
+    }
+
+    // 汇总所有选中项目的颜色用量
+    var aggregatedUsage: [BeadUsage] {
+        var usageDict: [String: Int] = [:]
+
+        for project in selectedProjects {
+            // 如果是父项目，使用汇总的用量
+            let usage: [BeadUsage]
+            if inventoryManager.isParentProject(project.id) {
+                usage = inventoryManager.aggregatedBeadUsage(for: project.id)
+            } else {
+                usage = project.beadUsage
+            }
+
+            for item in usage {
+                usageDict[item.colorCode, default: 0] += item.quantity
+            }
+        }
+
+        return usageDict.map { BeadUsage(colorCode: $0.key, quantity: $0.value) }
+            .sorted { $0.quantity > $1.quantity }
+    }
+
+    // 统计信息
+    var totalColors: Int {
+        aggregatedUsage.count
+    }
+
+    var totalBeads: Int {
+        aggregatedUsage.reduce(0) { $0 + $1.quantity }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // 选中项目信息
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundColor(.blue)
+                            Text("已选 \(selectedProjects.count) 个计划，共 \(totalColors) 色 \(totalBeads) 颗")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+
+                        // 显示选中的项目名称
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(selectedProjects) { project in
+                                    Text(project.name)
+                                        .font(.caption)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(Color.accentColor.opacity(0.1))
+                                        .foregroundColor(.accentColor)
+                                        .cornerRadius(12)
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+
+                    // 各品牌库存检查结果
+                    if inventoryManager.brands.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.largeTitle)
+                                .foregroundColor(.orange)
+                            Text("暂无品牌")
+                                .font(.headline)
+                            Text("请先创建品牌以检查库存")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
+                    } else {
+                        // 全部品牌汇总检查
+                        AllBrandsStockCheckCard(requiredUsage: aggregatedUsage)
+
+                        // 分隔线
+                        HStack {
+                            Rectangle()
+                                .fill(Color.secondary.opacity(0.3))
+                                .frame(height: 1)
+                            Text("各品牌单独库存")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Rectangle()
+                                .fill(Color.secondary.opacity(0.3))
+                                .frame(height: 1)
+                        }
+                        .padding(.horizontal)
+
+                        ForEach(inventoryManager.brands) { brand in
+                            BrandStockCheckCard(
+                                brand: brand,
+                                requiredUsage: aggregatedUsage
+                            )
+                        }
+                    }
+                }
+                .padding(.vertical)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("库存确认")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 
