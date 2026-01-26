@@ -1752,12 +1752,17 @@ struct AISettingsView: View {
             } header: {
                 Text("AI 配置")
             } footer: {
-                if aiService.config.provider == .kimi {
+                switch aiService.config.provider {
+                case .kimi:
                     Text("Kimi API Key 可从 platform.moonshot.cn 获取")
-                } else if aiService.config.provider == .openai {
+                case .openai:
                     Text("OpenAI API Key 可从 platform.openai.com 获取。如需代理可填写自定义 API 地址。")
-                } else {
+                case .anthropic:
                     Text("Anthropic API Key 可从 console.anthropic.com 获取。")
+                case .qwen:
+                    Text("Qwen API Key 可从阿里云百炼平台 bailian.console.aliyun.com 获取")
+                case .deepseek:
+                    Text("DeepSeek API Key 可从 platform.deepseek.com 获取")
                 }
             }
 
