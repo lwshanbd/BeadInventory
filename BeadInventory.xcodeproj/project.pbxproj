@@ -49,6 +49,7 @@
 		A0123456000A /* StatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001A /* StatisticsView.swift */; };
 		A0123456000B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001B /* SettingsView.swift */; };
 		A0123456000C /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001C /* AIService.swift */; };
+		38FA2CE32F26A00000912E02 /* ShippingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38FA2CE42F26A00000912E02 /* ShippingView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -82,6 +83,7 @@
 		38FA2CDC2F25B67200912E02 /* CustomColorsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomColorsView.swift; sourceTree = "<group>"; };
 		38FA2CE02F25B67300912E02 /* CustomColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomColor.swift; sourceTree = "<group>"; };
 		38FA2CE22F25B67400912E02 /* CalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarView.swift; sourceTree = "<group>"; };
+		38FA2CE42F26A00000912E02 /* ShippingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShippingView.swift; sourceTree = "<group>"; };
 		A01234560010 /* BeadInventory.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BeadInventory.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A01234560011 /* BeadInventoryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeadInventoryApp.swift; sourceTree = "<group>"; };
 		A01234560012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -217,6 +219,7 @@
 				A01234560019 /* ColorConverterView.swift */,
 				A0123456001A /* StatisticsView.swift */,
 				A0123456001B /* SettingsView.swift */,
+				38FA2CE42F26A00000912E02 /* ShippingView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -332,6 +335,7 @@
 				38B1A0012F01000100000046 /* SwiftDataMigration.swift in Sources */,
 				38B1A0012F01000100000048 /* CSVImporter.swift in Sources */,
 				38B1A0012F0100010000004A /* ImportStockView.swift in Sources */,
+				38FA2CE32F26A00000912E02 /* ShippingView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
