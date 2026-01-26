@@ -2584,14 +2584,14 @@ struct ReplenishSuggestionSheet: View {
     // 计算补豆建议
     var replenishSuggestion: ReplenishResult {
         guard let brand = selectedBrand else {
-            return ReplenishResult(negativeStock: [], lowStock: [], highUsage: [])
+            return ReplenishResult(negativeStock: [], lowStock: [], highUsage: highUsageForAllBrands)
         }
 
         var negativeStock: [(colorCode: String, currentStock: Int, usage: Int, afterDeduct: Int, replenishAmount: Int)] = []
         var lowStock: [(colorCode: String, currentStock: Int, usage: Int, afterDeduct: Int, replenishAmount: Int)] = []
         var processedCodes: Set<String> = []
 
-        // 遍历所有用量
+        // 遍历所有用量（针对选中品牌计算负库存和低库存）
         for (colorCode, usage) in aggregatedUsage {
             let currentStock = inventoryManager.getStock(brandId: brand.id, mardCode: colorCode)?.available ?? 0
             let afterDeduct = currentStock - usage
@@ -2615,18 +2615,40 @@ struct ReplenishSuggestionSheet: View {
         negativeStock.sort { $0.afterDeduct < $1.afterDeduct }
         lowStock.sort { $0.afterDeduct < $1.afterDeduct }
 
-        // 用量排名前20（排除已在负库存和低库存中的）
-        let sortedUsage = aggregatedUsage.sorted { $0.value > $1.value }
+        // 用量排名前20（基于全部品牌总库存，排除当前品牌下已显示的负库存和低库存）
         var highUsage: [(colorCode: String, usage: Int, replenishAmount: Int)] = []
-        for (colorCode, usage) in sortedUsage {
-            if !processedCodes.contains(colorCode) && highUsage.count < 20 {
-                // 用量向上取整到1000的倍数
-                let replenishAmount = ((usage + 999) / 1000) * 1000
-                highUsage.append((colorCode, usage, replenishAmount))
+        for item in highUsageForAllBrands {
+            if !processedCodes.contains(item.colorCode) && highUsage.count < 20 {
+                highUsage.append(item)
             }
         }
 
         return ReplenishResult(negativeStock: negativeStock, lowStock: lowStock, highUsage: highUsage)
+    }
+
+    // 基于全部品牌总库存计算用量较大的色号
+    var highUsageForAllBrands: [(colorCode: String, usage: Int, replenishAmount: Int)] {
+        let sortedUsage = aggregatedUsage.sorted { $0.value > $1.value }
+        var result: [(colorCode: String, usage: Int, replenishAmount: Int)] = []
+
+        for (colorCode, usage) in sortedUsage {
+            // 计算所有品牌该颜色的库存总和
+            var totalStock = 0
+            for brand in inventoryManager.brands {
+                if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: colorCode) {
+                    totalStock += stock.available
+                }
+            }
+
+            // 只有在全部品牌总库存充足时才显示（总库存 - 消耗 >= 0）
+            let afterDeduct = totalStock - usage
+            if afterDeduct >= 0 && result.count < 20 {
+                let replenishAmount = ((usage + 999) / 1000) * 1000
+                result.append((colorCode, usage, replenishAmount))
+            }
+        }
+
+        return result
     }
 
     // 生成 CSV 文本
