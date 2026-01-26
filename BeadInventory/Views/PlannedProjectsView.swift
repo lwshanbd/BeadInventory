@@ -157,6 +157,19 @@ struct PlannedProjectsView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("计划项目")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if isSelectMode {
+                        Button {
+                            if selectedProjects.count == plannedProjects.count {
+                                selectedProjects.removeAll()
+                            } else {
+                                selectedProjects = Set(plannedProjects.map { $0.id })
+                            }
+                        } label: {
+                            Text(selectedProjects.count == plannedProjects.count ? "取消全选" : "全选")
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     if !plannedProjects.isEmpty {
                         Button {
