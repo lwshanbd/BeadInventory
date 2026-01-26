@@ -2856,7 +2856,7 @@ struct ReplenishSuggestionSheet: View {
                         if !replenishData.negativeStock.isEmpty {
                             ReplenishSectionView(
                                 title: "库存不足（需补豆）",
-                                subtitle: "库存+运输中-消耗 < 0",
+                                subtitle: "扣减后库存为负",
                                 color: .red,
                                 items: replenishData.negativeStock,
                                 processedCodes: replenishData.processedCodes,
@@ -2869,7 +2869,7 @@ struct ReplenishSuggestionSheet: View {
                         if !replenishData.lowStock.isEmpty {
                             ReplenishSectionView(
                                 title: "低库存预警（建议补豆）",
-                                subtitle: "库存+运输中-消耗 < 阈值\(lowStockThreshold)",
+                                subtitle: "扣减后库存低于\(lowStockThreshold)",
                                 color: .orange,
                                 items: replenishData.lowStock,
                                 processedCodes: replenishData.processedCodes,
@@ -3039,7 +3039,7 @@ struct ReplenishSectionView: View {
                 ForEach(items, id: \.colorCode) { item in
                     ReplenishColorRow(
                         colorCode: item.colorCode,
-                        detail: "库存\(item.currentStock)+运输\(item.inTransit)-消耗\(item.usage)=\(item.afterDeduct)",
+                        detail: item.afterDeduct < 0 ? "缺 \(abs(item.afterDeduct)) 颗" : "余 \(item.afterDeduct) 颗",
                         color: color,
                         quantity: Binding(
                             get: { quantities[item.colorCode] ?? 0 },
