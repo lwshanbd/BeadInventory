@@ -171,6 +171,26 @@ struct ScanView: View {
                                 .padding(.horizontal)
                         }
 
+                        // 品牌选择（放在识别结果之前，预警颜色与品牌相关）
+                        if !recognizedItems.isEmpty {
+                            HStack {
+                                Text("备扣品牌:")
+                                    .foregroundColor(.secondary)
+                                if inventoryManager.currentBrandId != nil {
+                                    Text(inventoryManager.currentBrand?.name ?? "")
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.accentColor)
+                                } else {
+                                    Text("请选择")
+                                        .foregroundColor(.orange)
+                                }
+                                Spacer()
+                                BrandPicker()
+                            }
+                            .font(.subheadline)
+                            .padding(.horizontal)
+                        }
+
                         // 识别结果
                         if !recognizedItems.isEmpty {
                             RecognizedResultsSectionNew(
@@ -197,24 +217,6 @@ struct ScanView: View {
                         // 确认操作按钮区域
                         if !recognizedItems.isEmpty {
                             VStack(spacing: 16) {
-                                // 品牌选择（扣减库存时需要）- 放在顶部
-                                HStack {
-                                    Text("备扣品牌:")
-                                        .foregroundColor(.secondary)
-                                    if inventoryManager.currentBrandId != nil {
-                                        Text(inventoryManager.currentBrand?.name ?? "")
-                                            .fontWeight(.medium)
-                                            .foregroundColor(.accentColor)
-                                    } else {
-                                        Text("请选择")
-                                            .foregroundColor(.orange)
-                                    }
-                                    Spacer()
-                                    BrandPicker()
-                                }
-                                .font(.subheadline)
-                                .padding(.horizontal)
-
                                 // 项目名称输入
                                 TextField("项目名称（可选）", text: $projectName)
                                     .textFieldStyle(.roundedBorder)
