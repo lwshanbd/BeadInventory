@@ -2626,26 +2626,32 @@ struct ReplenishSuggestionSheet: View {
         return ReplenishResult(negativeStock: negativeStock, lowStock: lowStock, highUsage: highUsage)
     }
 
-    // 基于全部品牌总库存计算用量较大的色号
+    // 基于全部历史用量 + 选中计划用量计算用量较大的色号
     var highUsageForAllBrands: [(colorCode: String, usage: Int, replenishAmount: Int)] {
-        let sortedUsage = aggregatedUsage.sorted { $0.value > $1.value }
+        // 汇总全部历史项目（已执行）的用量
+        var totalUsageDict: [String: Int] = [:]
+
+        for project in inventoryManager.projects {
+            // 只统计已执行的项目（非计划项目）
+            guard !project.isPlanned else { continue }
+
+            for usage in project.beadUsage {
+                totalUsageDict[usage.colorCode, default: 0] += usage.quantity
+            }
+        }
+
+        // 加上当前选中计划的用量
+        for (colorCode, quantity) in aggregatedUsage {
+            totalUsageDict[colorCode, default: 0] += quantity
+        }
+
+        // 按总用量排序，取前20
+        let sortedUsage = totalUsageDict.sorted { $0.value > $1.value }
         var result: [(colorCode: String, usage: Int, replenishAmount: Int)] = []
 
-        for (colorCode, usage) in sortedUsage {
-            // 计算所有品牌该颜色的库存总和
-            var totalStock = 0
-            for brand in inventoryManager.brands {
-                if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: colorCode) {
-                    totalStock += stock.available
-                }
-            }
-
-            // 只有在全部品牌总库存充足时才显示（总库存 - 消耗 >= 0）
-            let afterDeduct = totalStock - usage
-            if afterDeduct >= 0 && result.count < 20 {
-                let replenishAmount = ((usage + 999) / 1000) * 1000
-                result.append((colorCode, usage, replenishAmount))
-            }
+        for (colorCode, usage) in sortedUsage.prefix(20) {
+            let replenishAmount = ((usage + 999) / 1000) * 1000
+            result.append((colorCode, usage, replenishAmount))
         }
 
         return result
@@ -2762,12 +2768,12 @@ struct ReplenishSuggestionSheet: View {
                         if !replenishSuggestion.highUsage.isEmpty {
                             ReplenishSection(
                                 title: "用量较大（供参考）",
-                                subtitle: "消耗量排名前20，库存充足",
+                                subtitle: "历史用量+选中计划，排名前20",
                                 color: .green,
                                 items: replenishSuggestion.highUsage.map {
                                     ReplenishItem(
                                         colorCode: $0.colorCode,
-                                        detail: "消耗 \($0.usage)",
+                                        detail: "总用量 \($0.usage)",
                                         amount: $0.replenishAmount
                                     )
                                 }
