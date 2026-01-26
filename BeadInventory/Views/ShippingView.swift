@@ -10,6 +10,9 @@ import SwiftUI
 struct ShippingView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showingAddPurchase = false
+    @State private var showingPasteSheet = false
+    @State private var pasteError: String?
+    @State private var showingPasteError = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,10 +72,18 @@ struct ShippingView: View {
         .navigationTitle("运输中")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showingAddPurchase = true
-                } label: {
-                    Image(systemName: "plus")
+                HStack(spacing: 16) {
+                    Button {
+                        showingPasteSheet = true
+                    } label: {
+                        Image(systemName: "doc.on.clipboard")
+                    }
+
+                    Button {
+                        showingAddPurchase = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
         }
@@ -80,6 +91,308 @@ struct ShippingView: View {
             AddPurchaseRecordView()
                 .environmentObject(inventoryManager)
         }
+        .sheet(isPresented: $showingPasteSheet) {
+            PasteReplenishSheet()
+                .environmentObject(inventoryManager)
+        }
+        .alert("粘贴失败", isPresented: $showingPasteError) {
+            Button("确定", role: .cancel) { }
+        } message: {
+            Text(pasteError ?? "未知错误")
+        }
+    }
+}
+
+// MARK: - 粘贴补豆建议弹窗
+struct PasteReplenishSheet: View {
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @Environment(\.dismiss) var dismiss
+    @State private var selectedBrandId: UUID?
+    @State private var recordName = ""
+    @State private var parsedItems: [(colorCode: String, grams: Int)] = []
+    @State private var parseError: String?
+    @State private var hasParsed = false
+
+    var totalGrams: Int {
+        parsedItems.reduce(0) { $0 + $1.grams }
+    }
+
+    var totalBeads: Int {
+        parsedItems.reduce(0) { $0 + $1.grams * 100 }  // 1g = 100颗
+    }
+
+    /// 生成默认名称（基于日期）
+    var defaultName: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M月d日补豆"
+        return formatter.string(from: Date())
+    }
+
+    var canSave: Bool {
+        selectedBrandId != nil && !parsedItems.isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                if !hasParsed {
+                    // 粘贴前的提示
+                    VStack(spacing: 20) {
+                        Image(systemName: "doc.on.clipboard")
+                            .font(.system(size: 60))
+                            .foregroundColor(.accentColor)
+
+                        Text("粘贴补豆建议")
+                            .font(.title2)
+                            .fontWeight(.bold)
+
+                        Text("请先在「补豆建议」页面复制 CSV，\n然后点击下方按钮粘贴")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+
+                        Text("CSV 格式：色号,克数")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.gray.opacity(0.1))
+                            .cornerRadius(8)
+
+                        Button {
+                            parseClipboard()
+                        } label: {
+                            HStack {
+                                Image(systemName: "doc.on.clipboard.fill")
+                                Text("从剪贴板粘贴")
+                            }
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 32)
+                            .padding(.vertical, 14)
+                            .background(Color.accentColor)
+                            .cornerRadius(25)
+                        }
+
+                        if let error = parseError {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                                .padding(.top, 8)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding()
+                } else {
+                    // 解析成功后的预览
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            // 品牌选择
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("选择品牌")
+                                    .font(.headline)
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 10) {
+                                        ForEach(inventoryManager.brands) { brand in
+                                            Button {
+                                                selectedBrandId = brand.id
+                                            } label: {
+                                                Text(brand.name)
+                                                    .font(.subheadline)
+                                                    .padding(.horizontal, 16)
+                                                    .padding(.vertical, 10)
+                                                    .background(selectedBrandId == brand.id ? Color.accentColor : Color.gray.opacity(0.2))
+                                                    .foregroundColor(selectedBrandId == brand.id ? .white : .primary)
+                                                    .cornerRadius(20)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .padding()
+                            .background(Color(.systemBackground))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+
+                            // 记录名称
+                            HStack {
+                                Text("名称")
+                                    .foregroundColor(.secondary)
+                                TextField("默认：\(defaultName)", text: $recordName)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            .padding(.horizontal)
+
+                            // 汇总信息
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("共 \(parsedItems.count) 色")
+                                        .font(.headline)
+                                    Text("\(totalGrams)g（\(totalBeads) 颗）")
+                                        .font(.subheadline)
+                                        .foregroundColor(.green)
+                                }
+                                Spacer()
+                                Button("重新粘贴") {
+                                    hasParsed = false
+                                    parsedItems = []
+                                    parseError = nil
+                                }
+                                .font(.subheadline)
+                            }
+                            .padding()
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+
+                            // 颜色列表预览
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("补豆明细")
+                                    .font(.headline)
+                                    .padding(.horizontal)
+
+                                ForEach(parsedItems, id: \.colorCode) { item in
+                                    PasteItemRow(colorCode: item.colorCode, grams: item.grams)
+                                }
+                                .padding(.horizontal)
+                            }
+                        }
+                        .padding(.vertical)
+                    }
+
+                    // 底部保存按钮
+                    VStack(spacing: 0) {
+                        Divider()
+                        Button {
+                            saveRecord()
+                        } label: {
+                            Text("保存到运输中")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(canSave ? Color.accentColor : Color.gray)
+                                .cornerRadius(12)
+                        }
+                        .disabled(!canSave)
+                        .padding()
+                    }
+                    .background(Color(.systemBackground))
+                }
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("粘贴补豆")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { dismiss() }
+                }
+            }
+        }
+    }
+
+    func parseClipboard() {
+        guard let text = UIPasteboard.general.string, !text.isEmpty else {
+            parseError = "剪贴板为空"
+            return
+        }
+
+        let lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
+        guard lines.count > 1 else {
+            parseError = "数据格式错误：至少需要标题行和一行数据"
+            return
+        }
+
+        // 跳过标题行
+        var items: [(colorCode: String, grams: Int)] = []
+        for line in lines.dropFirst() {
+            let parts = line.components(separatedBy: ",")
+            guard parts.count >= 2 else { continue }
+            let colorCode = parts[0].trimmingCharacters(in: .whitespaces)
+            guard let grams = Int(parts[1].trimmingCharacters(in: .whitespaces)) else { continue }
+            if grams > 0 {
+                items.append((colorCode, grams))
+            }
+        }
+
+        if items.isEmpty {
+            parseError = "未找到有效数据"
+            return
+        }
+
+        parsedItems = items
+        hasParsed = true
+        parseError = nil
+
+        // 默认选中第一个品牌
+        if selectedBrandId == nil, let firstBrand = inventoryManager.brands.first {
+            selectedBrandId = firstBrand.id
+        }
+    }
+
+    func saveRecord() {
+        guard let brandId = selectedBrandId else { return }
+
+        let items = parsedItems.map { item in
+            PurchaseItem(colorCode: item.colorCode, quantity: item.grams * 100)  // 克数转颗数
+        }
+
+        let finalName = recordName.trimmingCharacters(in: .whitespaces).isEmpty ? defaultName : recordName
+
+        inventoryManager.addPurchaseRecord(
+            name: finalName,
+            brandId: brandId,
+            items: items,
+            note: "从补豆建议粘贴"
+        )
+
+        dismiss()
+    }
+}
+
+// MARK: - 粘贴项行
+struct PasteItemRow: View {
+    let colorCode: String
+    let grams: Int
+    @EnvironmentObject var inventoryManager: InventoryManager
+
+    var beadColor: BeadColor? {
+        inventoryManager.findColor(byCode: colorCode)
+    }
+
+    var displayColor: Color {
+        beadColor?.color ?? .gray
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(displayColor)
+                .frame(width: 36, height: 36)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+
+            Text(colorCode)
+                .font(.system(.body, design: .monospaced))
+                .fontWeight(.medium)
+
+            Spacer()
+
+            Text("\(grams)g")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            Text("+\(grams * 100)")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.green)
+        }
+        .padding(10)
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
     }
 }
 

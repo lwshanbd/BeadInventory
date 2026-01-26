@@ -2675,12 +2675,12 @@ struct ReplenishSuggestionSheet: View {
         max(0, freeShippingThreshold - totalSelectedQuantity)
     }
 
-    // 生成 CSV 文本
+    // 生成 CSV 文本（克数 = quantity * 10g）
     var csvText: String {
-        var lines: [String] = ["色号,豆量"]
+        var lines: [String] = ["色号,克数"]
         for (colorCode, quantity) in replenishQuantities.sorted(by: { $0.key < $1.key }) {
             if quantity > 0 {
-                lines.append("\(colorCode),\(quantity * 1000)")
+                lines.append("\(colorCode),\(quantity * 10)")
             }
         }
         return lines.joined(separator: "\n")
