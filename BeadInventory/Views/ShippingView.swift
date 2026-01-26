@@ -567,26 +567,28 @@ struct PurchaseRecordDetailView: View {
                         .cornerRadius(12)
                     }
 
-                    Button {
-                        showingEditSheet = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "pencil")
-                            Text("编辑记录")
+                    HStack(spacing: 24) {
+                        Button {
+                            showingEditSheet = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "pencil")
+                                Text("编辑记录")
+                            }
+                            .font(.subheadline)
+                            .foregroundColor(.accentColor)
                         }
-                        .font(.subheadline)
-                        .foregroundColor(.accentColor)
-                    }
 
-                    Button {
-                        showingDeleteConfirmation = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "trash")
-                            Text("删除记录")
+                        Button {
+                            showingDeleteConfirmation = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "trash")
+                                Text("删除记录")
+                            }
+                            .font(.subheadline)
+                            .foregroundColor(.red)
                         }
-                        .font(.subheadline)
-                        .foregroundColor(.red)
                     }
                 }
                 .padding(.horizontal)
