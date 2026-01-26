@@ -2913,7 +2913,7 @@ struct ReplenishSuggestionSheet: View {
                                     .cornerRadius(12)
                                 }
 
-                                // 复制 CSV
+                                // 复制补豆计划
                                 Button {
                                     UIPasteboard.general.string = csvText
                                     showCopySuccess = true
@@ -2923,7 +2923,7 @@ struct ReplenishSuggestionSheet: View {
                                 } label: {
                                     HStack {
                                         Image(systemName: showCopySuccess ? "checkmark" : "doc.on.doc")
-                                        Text(showCopySuccess ? "已复制" : "复制 CSV")
+                                        Text(showCopySuccess ? "已复制" : "复制补豆计划")
                                     }
                                     .font(.subheadline)
                                     .foregroundColor(.accentColor)

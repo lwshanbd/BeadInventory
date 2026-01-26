@@ -464,9 +464,15 @@ struct PurchaseRecordDetailView: View {
     @Environment(\.dismiss) var dismiss
     @State private var showingConfirmation = false
     @State private var showingDeleteConfirmation = false
+    @State private var showingEditSheet = false
+
+    // 获取最新的记录数据
+    var currentRecord: PurchaseRecord {
+        inventoryManager.purchaseRecords.first(where: { $0.id == record.id }) ?? record
+    }
 
     var brandName: String {
-        inventoryManager.brands.first(where: { $0.id == record.brandId })?.name ?? "未知品牌"
+        inventoryManager.brands.first(where: { $0.id == currentRecord.brandId })?.name ?? "未知品牌"
     }
 
     var body: some View {
@@ -478,7 +484,7 @@ struct PurchaseRecordDetailView: View {
                         Image(systemName: "shippingbox.fill")
                             .font(.title)
                             .foregroundColor(.orange)
-                        Text(record.name)
+                        Text(currentRecord.name)
                             .font(.title2)
                             .fontWeight(.bold)
                         Spacer()
@@ -497,7 +503,7 @@ struct PurchaseRecordDetailView: View {
                         }
 
                         VStack(spacing: 4) {
-                            Text("\(record.colorCount)")
+                            Text("\(currentRecord.colorCount)")
                                 .font(.headline)
                                 .foregroundColor(.purple)
                             Text("颜色数")
@@ -506,7 +512,7 @@ struct PurchaseRecordDetailView: View {
                         }
 
                         VStack(spacing: 4) {
-                            Text("+\(record.totalBeads)")
+                            Text("+\(currentRecord.totalBeads)")
                                 .font(.headline)
                                 .foregroundColor(.green)
                             Text("总颗数")
@@ -515,7 +521,7 @@ struct PurchaseRecordDetailView: View {
                         }
                     }
 
-                    if let note = record.note, !note.isEmpty {
+                    if let note = currentRecord.note, !note.isEmpty {
                         Divider()
                         HStack {
                             Text(note)
@@ -537,7 +543,7 @@ struct PurchaseRecordDetailView: View {
                         .padding(.horizontal)
 
                     VStack(spacing: 8) {
-                        ForEach(record.items) { item in
+                        ForEach(currentRecord.items) { item in
                             PurchaseItemRow(item: item)
                         }
                     }
@@ -562,6 +568,17 @@ struct PurchaseRecordDetailView: View {
                     }
 
                     Button {
+                        showingEditSheet = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "pencil")
+                            Text("编辑记录")
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.accentColor)
+                    }
+
+                    Button {
                         showingDeleteConfirmation = true
                     } label: {
                         HStack {
@@ -580,6 +597,10 @@ struct PurchaseRecordDetailView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("购买详情")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingEditSheet) {
+            EditPurchaseRecordSheet(record: currentRecord)
+                .environmentObject(inventoryManager)
+        }
         .alert("确认到货", isPresented: $showingConfirmation) {
             Button("取消", role: .cancel) { }
             Button("确认") {
@@ -587,7 +608,7 @@ struct PurchaseRecordDetailView: View {
                 dismiss()
             }
         } message: {
-            Text("将把 \(record.colorCount) 种颜色共 \(record.totalBeads) 颗豆子添加到「\(brandName)」的库存中。")
+            Text("将把 \(currentRecord.colorCount) 种颜色共 \(currentRecord.totalBeads) 颗豆子添加到「\(brandName)」的库存中。")
         }
         .alert("删除记录", isPresented: $showingDeleteConfirmation) {
             Button("取消", role: .cancel) { }
@@ -878,6 +899,438 @@ struct AddPurchaseRecordView: View {
             return String(format: "%.1fK", Double(num) / 1000)
         }
         return "\(num)"
+    }
+}
+
+// MARK: - 编辑购买记录
+struct EditPurchaseRecordSheet: View {
+    let record: PurchaseRecord
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @Environment(\.dismiss) var dismiss
+
+    @State private var recordName: String = ""
+    @State private var note: String = ""
+    @State private var items: [EditableItem] = []
+    @State private var showingAddColor = false
+
+    struct EditableItem: Identifiable {
+        let id = UUID()
+        var colorCode: String
+        var quantity: Int  // 颗数
+    }
+
+    var totalBeads: Int {
+        items.reduce(0) { $0 + $1.quantity }
+    }
+
+    var hasChanges: Bool {
+        let nameChanged = recordName != record.name
+        let noteChanged = note != (record.note ?? "")
+        let itemsChanged = items.count != record.items.count ||
+            !items.enumerated().allSatisfy { index, item in
+                index < record.items.count &&
+                item.colorCode == record.items[index].colorCode &&
+                item.quantity == record.items[index].quantity
+            }
+        return nameChanged || noteChanged || itemsChanged
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // 基本信息
+                        VStack(spacing: 12) {
+                            HStack {
+                                Text("名称")
+                                    .foregroundColor(.secondary)
+                                TextField("记录名称", text: $recordName)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            HStack {
+                                Text("备注")
+                                    .foregroundColor(.secondary)
+                                TextField("备注（可选）", text: $note)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+
+                        // 汇总信息
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("共 \(items.count) 色")
+                                    .font(.headline)
+                                Text("+\(totalBeads) 颗")
+                                    .font(.subheadline)
+                                    .foregroundColor(.green)
+                            }
+                            Spacer()
+                            Button {
+                                showingAddColor = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: "plus.circle.fill")
+                                    Text("添加颜色")
+                                }
+                                .font(.subheadline)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+
+                        // 颜色列表
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("购买明细")
+                                .font(.headline)
+                                .padding(.horizontal)
+
+                            if items.isEmpty {
+                                Text("暂无颜色")
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                            } else {
+                                ForEach($items) { $item in
+                                    EditableItemRow(
+                                        item: $item,
+                                        onDelete: {
+                                            items.removeAll { $0.id == item.id }
+                                        }
+                                    )
+                                }
+                                .padding(.horizontal)
+                            }
+                        }
+                    }
+                    .padding(.vertical)
+                }
+
+                // 底部保存按钮
+                VStack(spacing: 0) {
+                    Divider()
+                    Button {
+                        saveChanges()
+                    } label: {
+                        Text("保存修改")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(hasChanges && !items.isEmpty ? Color.accentColor : Color.gray)
+                            .cornerRadius(12)
+                    }
+                    .disabled(!hasChanges || items.isEmpty)
+                    .padding()
+                }
+                .background(Color(.systemBackground))
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("编辑记录")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { dismiss() }
+                }
+            }
+            .onAppear {
+                recordName = record.name
+                note = record.note ?? ""
+                items = record.items.map { EditableItem(colorCode: $0.colorCode, quantity: $0.quantity) }
+            }
+            .sheet(isPresented: $showingAddColor) {
+                AddColorToRecordSheet(brandId: record.brandId) { colorCode, quantity in
+                    // 检查是否已存在该颜色
+                    if let existingIndex = items.firstIndex(where: { $0.colorCode == colorCode }) {
+                        items[existingIndex].quantity += quantity
+                    } else {
+                        items.append(EditableItem(colorCode: colorCode, quantity: quantity))
+                    }
+                }
+                .environmentObject(inventoryManager)
+            }
+        }
+    }
+
+    func saveChanges() {
+        let purchaseItems = items.map { PurchaseItem(colorCode: $0.colorCode, quantity: $0.quantity) }
+        inventoryManager.updatePurchaseRecord(
+            id: record.id,
+            name: recordName,
+            items: purchaseItems,
+            note: note.isEmpty ? nil : note
+        )
+        dismiss()
+    }
+}
+
+// MARK: - 可编辑项行
+struct EditableItemRow: View {
+    @Binding var item: EditPurchaseRecordSheet.EditableItem
+    let onDelete: () -> Void
+    @EnvironmentObject var inventoryManager: InventoryManager
+
+    var beadColor: BeadColor? {
+        inventoryManager.findColor(byCode: item.colorCode)
+    }
+
+    var displayColor: Color {
+        beadColor?.color ?? .gray
+    }
+
+    var grams: Int {
+        item.quantity / 100  // 100颗 = 1g
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // 颜色预览
+            RoundedRectangle(cornerRadius: 6)
+                .fill(displayColor)
+                .frame(width: 36, height: 36)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+
+            // 色号
+            Text(item.colorCode)
+                .font(.system(.body, design: .monospaced))
+                .fontWeight(.medium)
+
+            Spacer()
+
+            // 数量调整
+            HStack(spacing: 8) {
+                Button {
+                    if item.quantity > 1000 {
+                        item.quantity -= 1000
+                    }
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .foregroundColor(item.quantity > 1000 ? .blue : .gray)
+                        .font(.title3)
+                }
+                .disabled(item.quantity <= 1000)
+
+                VStack(spacing: 0) {
+                    Text("\(item.quantity)")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.green)
+                    Text("\(grams)g")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .frame(minWidth: 50)
+
+                Button {
+                    item.quantity += 1000
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(.blue)
+                        .font(.title3)
+                }
+            }
+
+            // 删除按钮
+            Button {
+                onDelete()
+            } label: {
+                Image(systemName: "trash")
+                    .foregroundColor(.red)
+                    .font(.subheadline)
+            }
+            .padding(.leading, 8)
+        }
+        .padding(10)
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+    }
+}
+
+// MARK: - 添加颜色到记录
+struct AddColorToRecordSheet: View {
+    let brandId: UUID
+    let onAdd: (String, Int) -> Void
+
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @Environment(\.dismiss) var dismiss
+
+    @State private var selectedSeries = "A"
+    @State private var selectedColorId: UUID?
+    @State private var quantity: Double = 1.0  // 千颗
+
+    // 色系列表
+    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他", "#"]
+    let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
+
+    var colorsInSeries: [BeadColor] {
+        let sourceColors = selectedSeries == "#" ? inventoryManager.allBeadColors : inventoryManager.beadColors
+
+        return sourceColors.filter { color in
+            let code = color.mardCode
+
+            if selectedSeries == "#" {
+                return code.hasPrefix("#")
+            } else if selectedSeries == "其他" {
+                if code.hasPrefix("#") { return false }
+                return !standardPrefixes.contains { prefix in
+                    if prefix == "ZG" {
+                        return code.hasPrefix("ZG")
+                    } else {
+                        return code.hasPrefix(prefix) && !code.hasPrefix("ZG")
+                    }
+                }
+            } else if selectedSeries == "ZG" {
+                return code.hasPrefix("ZG")
+            } else {
+                if code.hasPrefix("ZG") { return false }
+                return code.hasPrefix(selectedSeries)
+            }
+        }.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
+    }
+
+    var selectedColor: BeadColor? {
+        guard let id = selectedColorId else { return nil }
+        return inventoryManager.allBeadColors.first { $0.id == id }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // 色系选择器
+                SeriesSelector(
+                    series: colorSeries,
+                    selectedSeries: $selectedSeries
+                )
+                .padding(.vertical, 8)
+
+                // 颜色列表
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(colorsInSeries) { color in
+                            Button {
+                                selectedColorId = color.id
+                            } label: {
+                                HStack(spacing: 12) {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(color.color)
+                                        .frame(width: 36, height: 36)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                        )
+
+                                    Text(color.mardCode)
+                                        .font(.system(.body, design: .monospaced))
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.primary)
+
+                                    Spacer()
+
+                                    if selectedColorId == color.id {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.accentColor)
+                                    }
+                                }
+                                .padding(10)
+                                .background(selectedColorId == color.id ? Color.accentColor.opacity(0.1) : Color(.systemBackground))
+                                .cornerRadius(10)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 100)
+                }
+
+                // 底部确认栏
+                if selectedColor != nil {
+                    VStack(spacing: 0) {
+                        Divider()
+
+                        VStack(spacing: 12) {
+                            // 已选颜色
+                            HStack {
+                                if let color = selectedColor {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(color.color)
+                                        .frame(width: 24, height: 24)
+                                    Text(color.mardCode)
+                                        .font(.headline)
+                                }
+                                Spacer()
+                            }
+
+                            // 数量选择
+                            HStack {
+                                Text("数量（千颗）")
+                                    .foregroundColor(.secondary)
+                                Spacer()
+
+                                HStack(spacing: 12) {
+                                    Button {
+                                        if quantity > 1 {
+                                            quantity -= 1
+                                        }
+                                    } label: {
+                                        Image(systemName: "minus.circle.fill")
+                                            .font(.title2)
+                                            .foregroundColor(quantity > 1 ? .blue : .gray)
+                                    }
+                                    .disabled(quantity <= 1)
+
+                                    Text("\(Int(quantity))")
+                                        .font(.title3)
+                                        .fontWeight(.semibold)
+                                        .frame(minWidth: 40)
+
+                                    Button {
+                                        quantity += 1
+                                    } label: {
+                                        Image(systemName: "plus.circle.fill")
+                                            .font(.title2)
+                                            .foregroundColor(.blue)
+                                    }
+                                }
+                            }
+
+                            Button {
+                                if let color = selectedColor {
+                                    onAdd(color.mardCode, Int(quantity * 1000))
+                                    dismiss()
+                                }
+                            } label: {
+                                Text("添加 \(Int(quantity * 1000)) 颗")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.accentColor)
+                                    .cornerRadius(12)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                    }
+                }
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("添加颜色")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { dismiss() }
+                }
+            }
+        }
     }
 }
 
