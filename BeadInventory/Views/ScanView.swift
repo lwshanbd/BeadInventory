@@ -197,22 +197,9 @@ struct ScanView: View {
                         // 确认操作按钮区域
                         if !recognizedItems.isEmpty {
                             VStack(spacing: 16) {
-                                // 项目名称输入
-                                TextField("项目名称（可选）", text: $projectName)
-                                    .textFieldStyle(.roundedBorder)
-                                    .padding(.horizontal)
-
-                                // 缩略图预览和裁切
-                                ThumbnailPreviewSection(
-                                    thumbnailImage: $thumbnailImage,
-                                    originalImage: originalImage,
-                                    showingThumbnailCrop: $showingThumbnailCrop
-                                )
-                                .padding(.horizontal)
-
-                                // 品牌选择（扣减库存时需要）
+                                // 品牌选择（扣减库存时需要）- 放在顶部
                                 HStack {
-                                    Text("扣减品牌:")
+                                    Text("备扣品牌:")
                                         .foregroundColor(.secondary)
                                     if inventoryManager.currentBrandId != nil {
                                         Text(inventoryManager.currentBrand?.name ?? "")
@@ -226,6 +213,19 @@ struct ScanView: View {
                                     BrandPicker()
                                 }
                                 .font(.subheadline)
+                                .padding(.horizontal)
+
+                                // 项目名称输入
+                                TextField("项目名称（可选）", text: $projectName)
+                                    .textFieldStyle(.roundedBorder)
+                                    .padding(.horizontal)
+
+                                // 缩略图预览和裁切
+                                ThumbnailPreviewSection(
+                                    thumbnailImage: $thumbnailImage,
+                                    originalImage: originalImage,
+                                    showingThumbnailCrop: $showingThumbnailCrop
+                                )
                                 .padding(.horizontal)
 
                                 // 两个操作按钮
