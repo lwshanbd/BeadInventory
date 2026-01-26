@@ -13,6 +13,9 @@ struct ScanView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @ObservedObject private var aiService = AIServiceManager.shared
 
+    /// 从外部传入的图片（如 Share Extension）
+    @Binding var externalImage: UIImage?
+
     @State private var selectedImage: UIImage?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var showingCamera = false
@@ -33,6 +36,10 @@ struct ScanView: View {
 
     // 图片固定功能
     @State private var isImagePinned = false         // 是否固定图片在顶部
+
+    init(externalImage: Binding<UIImage?> = .constant(nil)) {
+        self._externalImage = externalImage
+    }
 
     // 识别结果项
     struct RecognizedItem: Identifiable {
@@ -316,6 +323,19 @@ struct ScanView: View {
                 if let image = newImage, originalImage == nil {
                     originalImage = image
                     thumbnailImage = image
+                }
+            }
+            // 监听从 Share Extension 传入的外部图片
+            .onChange(of: externalImage) { _, newImage in
+                if let image = newImage {
+                    // 清除之前的状态
+                    clearState()
+                    // 设置新图片
+                    selectedImage = image
+                    originalImage = image
+                    thumbnailImage = image
+                    // 清除外部图片引用
+                    externalImage = nil
                 }
             }
             .sheet(isPresented: $showingManualEntry) {

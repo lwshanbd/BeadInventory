@@ -9,8 +9,17 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
+    @EnvironmentObject var sharedImageManager: SharedImageManager
+    @Binding var shouldOpenScan: Bool
     @State private var selectedTab = 0
     @State private var showingAddInventory = false
+
+    /// 从 Share Extension 传入的图片
+    @State private var externalImage: UIImage?
+
+    init(shouldOpenScan: Binding<Bool> = .constant(false)) {
+        self._shouldOpenScan = shouldOpenScan
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -23,7 +32,7 @@ struct ContentView: View {
                     .tag(0)
 
                 // 图纸导入
-                ScanView()
+                ScanView(externalImage: $externalImage)
                     .tabItem {
                         Label("扫描", systemImage: "doc.text.viewfinder")
                     }
@@ -79,10 +88,49 @@ struct ContentView: View {
         .sheet(isPresented: $showingAddInventory) {
             AddInventoryView()
         }
+        // 监听 URL Scheme 触发的扫描请求
+        .onChange(of: shouldOpenScan) { _, newValue in
+            if newValue {
+                // 获取共享图片
+                if let image = sharedImageManager.consumePendingImage() {
+                    externalImage = image
+                }
+                // 切换到扫描 Tab
+                selectedTab = 1
+                // 重置标志
+                shouldOpenScan = false
+            }
+        }
+        // 监听共享图片管理器的状态
+        .onChange(of: sharedImageManager.hasPendingImage) { _, hasPending in
+            if hasPending {
+                // 有新的共享图片，切换到扫描页
+                if let image = sharedImageManager.consumePendingImage() {
+                    externalImage = image
+                }
+                selectedTab = 1
+            }
+        }
+        // App 进入前台时检查是否有待处理的图片
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            sharedImageManager.checkForPendingImage()
+        }
+        // App 变为活跃状态时也检查（处理从 Share Extension 返回的情况）
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            sharedImageManager.checkForPendingImage()
+        }
+        // 视图首次出现时检查（处理冷启动）
+        .onAppear {
+            // 延迟一点检查，确保视图已准备好
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                sharedImageManager.checkForPendingImage()
+            }
+        }
     }
 }
 
 #Preview {
     ContentView()
         .environmentObject(InventoryManager())
+        .environmentObject(SharedImageManager.shared)
 }

@@ -13,6 +13,10 @@ struct BeadInventoryApp: App {
     let modelContainer: ModelContainer
 
     @StateObject private var inventoryManager: InventoryManager
+    @StateObject private var sharedImageManager = SharedImageManager.shared
+
+    /// 深链接触发扫描的标志
+    @State private var shouldOpenScan = false
 
     init() {
         // 设置 SwiftData ModelContainer（使用版本化 Schema 支持数据迁移）
@@ -43,9 +47,28 @@ struct BeadInventoryApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(shouldOpenScan: $shouldOpenScan)
                 .environmentObject(inventoryManager)
+                .environmentObject(sharedImageManager)
+                .onOpenURL { url in
+                    handleIncomingURL(url)
+                }
+                .onAppear {
+                    // App 启动时检查是否有待处理的共享图片
+                    sharedImageManager.checkForPendingImage()
+                }
         }
         .modelContainer(modelContainer)
+    }
+
+    /// 处理传入的 URL Scheme
+    private func handleIncomingURL(_ url: URL) {
+        // 处理 beadinventory://scan
+        if url.scheme == "beadinventory" && url.host == "scan" {
+            // 检查共享图片
+            sharedImageManager.checkForPendingImage()
+            // 触发跳转到扫描页
+            shouldOpenScan = true
+        }
     }
 }
