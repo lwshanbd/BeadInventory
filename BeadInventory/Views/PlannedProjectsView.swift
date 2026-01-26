@@ -15,6 +15,7 @@ struct PlannedProjectsView: View {
     @State private var selectedProjects: Set<UUID> = []
     @State private var showMergeSheet = false
     @State private var showMultiStockCheckSheet = false
+    @State private var showReplenishSuggestionSheet = false
     @State private var projectToExecute: ProjectRecord?
 
     var plannedProjects: [ProjectRecord] {
@@ -30,39 +31,57 @@ struct PlannedProjectsView: View {
                     VStack(spacing: 0) {
                         // 多选操作按钮区域
                         if isSelectMode && !selectedProjects.isEmpty {
-                            HStack(spacing: 12) {
-                                // 库存确认按钮（选中 1 个及以上即可）
-                                Button {
-                                    showMultiStockCheckSheet = true
-                                } label: {
-                                    HStack {
-                                        Image(systemName: "checklist")
-                                        Text("库存确认")
+                            VStack(spacing: 8) {
+                                HStack(spacing: 8) {
+                                    // 库存确认按钮
+                                    Button {
+                                        showMultiStockCheckSheet = true
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "checklist")
+                                            Text("库存确认")
+                                        }
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.white)
+                                        .padding(.vertical, 12)
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.blue)
+                                        .cornerRadius(10)
                                     }
-                                    .font(.headline)
-                                    .foregroundColor(.white)
-                                    .padding()
-                                    .frame(maxWidth: .infinity)
-                                    .background(Color.blue)
-                                    .cornerRadius(10)
-                                }
 
-                                // 合并按钮（需要选中 2 个及以上）
-                                Button {
-                                    showMergeSheet = true
-                                } label: {
-                                    HStack {
-                                        Image(systemName: "arrow.triangle.merge")
-                                        Text("合并")
+                                    // 补豆建议按钮
+                                    Button {
+                                        showReplenishSuggestionSheet = true
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "cart.badge.plus")
+                                            Text("补豆建议")
+                                        }
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.white)
+                                        .padding(.vertical, 12)
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.orange)
+                                        .cornerRadius(10)
                                     }
-                                    .font(.headline)
-                                    .foregroundColor(.white)
-                                    .padding()
-                                    .frame(maxWidth: .infinity)
-                                    .background(selectedProjects.count >= 2 ? Color.accentColor : Color.gray)
-                                    .cornerRadius(10)
+
+                                    // 合并按钮（需要选中 2 个及以上）
+                                    Button {
+                                        showMergeSheet = true
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "arrow.triangle.merge")
+                                            Text("合并")
+                                        }
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.white)
+                                        .padding(.vertical, 12)
+                                        .frame(maxWidth: .infinity)
+                                        .background(selectedProjects.count >= 2 ? Color.accentColor : Color.gray)
+                                        .cornerRadius(10)
+                                    }
+                                    .disabled(selectedProjects.count < 2)
                                 }
-                                .disabled(selectedProjects.count < 2)
                             }
                             .padding(.horizontal)
                             .padding(.vertical, 8)
@@ -163,6 +182,10 @@ struct PlannedProjectsView: View {
             }
             .sheet(isPresented: $showMultiStockCheckSheet) {
                 MultiProjectStockCheckSheet(projectIds: Array(selectedProjects))
+                    .environmentObject(inventoryManager)
+            }
+            .sheet(isPresented: $showReplenishSuggestionSheet) {
+                ReplenishSuggestionSheet(projectIds: Array(selectedProjects))
                     .environmentObject(inventoryManager)
             }
             .sheet(item: $projectToExecute) { project in
@@ -2509,6 +2532,428 @@ struct MultiProjectStockCheckSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+// MARK: - 补豆建议弹窗
+struct ReplenishSuggestionSheet: View {
+    let projectIds: [UUID]
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @Environment(\.dismiss) var dismiss
+    @State private var selectedBrandId: UUID?
+    @State private var showCopySuccess = false
+
+    // 获取选中的项目列表
+    var selectedProjects: [ProjectRecord] {
+        projectIds.compactMap { id in
+            inventoryManager.projects.first { $0.id == id }
+        }
+    }
+
+    // 汇总所有选中项目的颜色用量
+    var aggregatedUsage: [String: Int] {
+        var usageDict: [String: Int] = [:]
+
+        for project in selectedProjects {
+            let usage: [BeadUsage]
+            if inventoryManager.isParentProject(project.id) {
+                usage = inventoryManager.aggregatedBeadUsage(for: project.id)
+            } else {
+                usage = project.beadUsage
+            }
+
+            for item in usage {
+                usageDict[item.colorCode, default: 0] += item.quantity
+            }
+        }
+
+        return usageDict
+    }
+
+    // 选中品牌
+    var selectedBrand: Brand? {
+        guard let id = selectedBrandId else { return nil }
+        return inventoryManager.brands.first { $0.id == id }
+    }
+
+    // 低库存阈值
+    var lowStockThreshold: Int {
+        selectedBrand?.lowStockThreshold ?? 100
+    }
+
+    // 计算补豆建议
+    var replenishSuggestion: ReplenishResult {
+        guard let brand = selectedBrand else {
+            return ReplenishResult(negativeStock: [], lowStock: [], highUsage: [])
+        }
+
+        var negativeStock: [(colorCode: String, currentStock: Int, usage: Int, afterDeduct: Int, replenishAmount: Int)] = []
+        var lowStock: [(colorCode: String, currentStock: Int, usage: Int, afterDeduct: Int, replenishAmount: Int)] = []
+        var processedCodes: Set<String> = []
+
+        // 遍历所有用量
+        for (colorCode, usage) in aggregatedUsage {
+            let currentStock = inventoryManager.getStock(brandId: brand.id, mardCode: colorCode)?.available ?? 0
+            let afterDeduct = currentStock - usage
+
+            if afterDeduct < 0 {
+                // 负库存：需要补到阈值以上
+                let deficit = lowStockThreshold - afterDeduct
+                let replenishAmount = ((deficit + 999) / 1000) * 1000
+                negativeStock.append((colorCode, currentStock, usage, afterDeduct, replenishAmount))
+                processedCodes.insert(colorCode)
+            } else if afterDeduct < lowStockThreshold {
+                // 低库存：需要补到阈值以上
+                let deficit = lowStockThreshold - afterDeduct
+                let replenishAmount = ((deficit + 999) / 1000) * 1000
+                lowStock.append((colorCode, currentStock, usage, afterDeduct, replenishAmount))
+                processedCodes.insert(colorCode)
+            }
+        }
+
+        // 按缺口排序（缺口大的在前）
+        negativeStock.sort { $0.afterDeduct < $1.afterDeduct }
+        lowStock.sort { $0.afterDeduct < $1.afterDeduct }
+
+        // 用量排名前20（排除已在负库存和低库存中的）
+        let sortedUsage = aggregatedUsage.sorted { $0.value > $1.value }
+        var highUsage: [(colorCode: String, usage: Int)] = []
+        for (colorCode, usage) in sortedUsage {
+            if !processedCodes.contains(colorCode) && highUsage.count < 20 {
+                highUsage.append((colorCode, usage))
+            }
+        }
+
+        return ReplenishResult(negativeStock: negativeStock, lowStock: lowStock, highUsage: highUsage)
+    }
+
+    // 生成 CSV 文本
+    var csvText: String {
+        var lines: [String] = ["色号,豆量"]
+
+        // 负库存
+        for item in replenishSuggestion.negativeStock {
+            lines.append("\(item.colorCode),\(item.replenishAmount)")
+        }
+
+        // 低库存
+        for item in replenishSuggestion.lowStock {
+            lines.append("\(item.colorCode),\(item.replenishAmount)")
+        }
+
+        // 用量大
+        for item in replenishSuggestion.highUsage {
+            // 用量大的不一定需要补豆，这里显示用量作为参考
+            lines.append("\(item.colorCode),\(item.usage)")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // 品牌选择
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("选择品牌")
+                            .font(.headline)
+
+                        if inventoryManager.brands.isEmpty {
+                            Text("暂无品牌，请先创建品牌")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 10) {
+                                    ForEach(inventoryManager.brands) { brand in
+                                        Button {
+                                            selectedBrandId = brand.id
+                                        } label: {
+                                            Text(brand.name)
+                                                .font(.subheadline)
+                                                .padding(.horizontal, 16)
+                                                .padding(.vertical, 10)
+                                                .background(selectedBrandId == brand.id ? Color.accentColor : Color.gray.opacity(0.2))
+                                                .foregroundColor(selectedBrandId == brand.id ? .white : .primary)
+                                                .cornerRadius(20)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+
+                    if selectedBrand != nil {
+                        // 选中项目信息
+                        HStack {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundColor(.blue)
+                            Text("已选 \(selectedProjects.count) 个计划，低库存阈值: \(lowStockThreshold)")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding()
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(10)
+                        .padding(.horizontal)
+
+                        // 负库存区域
+                        if !replenishSuggestion.negativeStock.isEmpty {
+                            ReplenishSection(
+                                title: "库存不足（需补豆）",
+                                subtitle: "扣减后库存为负",
+                                color: .red,
+                                items: replenishSuggestion.negativeStock.map {
+                                    ReplenishItem(
+                                        colorCode: $0.colorCode,
+                                        detail: "现有 \($0.currentStock) - 消耗 \($0.usage) = \($0.afterDeduct)",
+                                        amount: $0.replenishAmount
+                                    )
+                                }
+                            )
+                        }
+
+                        // 低库存区域
+                        if !replenishSuggestion.lowStock.isEmpty {
+                            ReplenishSection(
+                                title: "低库存预警（建议补豆）",
+                                subtitle: "扣减后低于阈值 \(lowStockThreshold)",
+                                color: .orange,
+                                items: replenishSuggestion.lowStock.map {
+                                    ReplenishItem(
+                                        colorCode: $0.colorCode,
+                                        detail: "现有 \($0.currentStock) - 消耗 \($0.usage) = \($0.afterDeduct)",
+                                        amount: $0.replenishAmount
+                                    )
+                                }
+                            )
+                        }
+
+                        // 用量大区域
+                        if !replenishSuggestion.highUsage.isEmpty {
+                            ReplenishSection(
+                                title: "用量较大（供参考）",
+                                subtitle: "消耗量排名前20，库存充足",
+                                color: .green,
+                                items: replenishSuggestion.highUsage.map {
+                                    ReplenishItem(
+                                        colorCode: $0.colorCode,
+                                        detail: "消耗量",
+                                        amount: $0.usage
+                                    )
+                                }
+                            )
+                        }
+
+                        // 空状态
+                        if replenishSuggestion.negativeStock.isEmpty &&
+                           replenishSuggestion.lowStock.isEmpty &&
+                           replenishSuggestion.highUsage.isEmpty {
+                            VStack(spacing: 12) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.largeTitle)
+                                    .foregroundColor(.green)
+                                Text("无需补豆")
+                                    .font(.headline)
+                                Text("所选计划未使用任何颜色")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 40)
+                        }
+
+                        // 复制按钮
+                        if !replenishSuggestion.negativeStock.isEmpty ||
+                           !replenishSuggestion.lowStock.isEmpty ||
+                           !replenishSuggestion.highUsage.isEmpty {
+                            Button {
+                                UIPasteboard.general.string = csvText
+                                showCopySuccess = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    showCopySuccess = false
+                                }
+                            } label: {
+                                HStack {
+                                    Image(systemName: showCopySuccess ? "checkmark" : "doc.on.doc")
+                                    Text(showCopySuccess ? "已复制" : "复制 CSV")
+                                }
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .padding()
+                                .frame(maxWidth: .infinity)
+                                .background(showCopySuccess ? Color.green : Color.accentColor)
+                                .cornerRadius(12)
+                            }
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+                        }
+                    } else if !inventoryManager.brands.isEmpty {
+                        // 未选择品牌提示
+                        VStack(spacing: 12) {
+                            Image(systemName: "hand.tap")
+                                .font(.largeTitle)
+                                .foregroundColor(.secondary)
+                            Text("请先选择品牌")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 60)
+                    }
+                }
+                .padding(.vertical)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("补豆建议")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .onAppear {
+            // 默认选中第一个品牌
+            if selectedBrandId == nil, let firstBrand = inventoryManager.brands.first {
+                selectedBrandId = firstBrand.id
+            }
+        }
+    }
+}
+
+// MARK: - 补豆建议结果
+struct ReplenishResult {
+    let negativeStock: [(colorCode: String, currentStock: Int, usage: Int, afterDeduct: Int, replenishAmount: Int)]
+    let lowStock: [(colorCode: String, currentStock: Int, usage: Int, afterDeduct: Int, replenishAmount: Int)]
+    let highUsage: [(colorCode: String, usage: Int)]
+}
+
+// MARK: - 补豆建议项
+struct ReplenishItem {
+    let colorCode: String
+    let detail: String
+    let amount: Int
+}
+
+// MARK: - 补豆建议区域
+struct ReplenishSection: View {
+    let title: String
+    let subtitle: String
+    let color: Color
+    let items: [ReplenishItem]
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var isExpanded = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // 标题
+            Button {
+                withAnimation { isExpanded.toggle() }
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Circle()
+                                .fill(color)
+                                .frame(width: 10, height: 10)
+                            Text(title)
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                        }
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Text("\(items.count) 色")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // 详细列表
+            if isExpanded {
+                Divider()
+
+                ForEach(items, id: \.colorCode) { item in
+                    ReplenishItemRow(item: item, color: color)
+                }
+            }
+        }
+        .padding()
+        .background(color.opacity(0.05))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(color.opacity(0.3), lineWidth: 1)
+        )
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - 补豆建议项行
+struct ReplenishItemRow: View {
+    let item: ReplenishItem
+    let color: Color
+    @EnvironmentObject var inventoryManager: InventoryManager
+
+    var beadColor: BeadColor? {
+        inventoryManager.findColor(byCode: item.colorCode)
+    }
+
+    var displayColor: Color {
+        beadColor?.color ?? .gray
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            // 颜色预览
+            RoundedRectangle(cornerRadius: 4)
+                .fill(displayColor)
+                .frame(width: 28, height: 28)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+
+            // 色号
+            Text(item.colorCode)
+                .font(.system(.subheadline, design: .monospaced))
+                .fontWeight(.medium)
+
+            Spacer()
+
+            // 详情
+            Text(item.detail)
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            // 数量
+            Text("\(item.amount)")
+                .font(.subheadline)
+                .fontWeight(.bold)
+                .foregroundColor(color)
+                .frame(width: 60, alignment: .trailing)
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(Color(.systemBackground))
+        .cornerRadius(6)
     }
 }
 
