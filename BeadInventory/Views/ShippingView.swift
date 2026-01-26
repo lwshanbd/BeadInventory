@@ -911,6 +911,7 @@ struct EditPurchaseRecordSheet: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var recordName: String = ""
+    @State private var selectedBrandId: UUID?
     @State private var note: String = ""
     @State private var items: [EditableItem] = []
     @State private var showingAddColor = false
@@ -927,6 +928,7 @@ struct EditPurchaseRecordSheet: View {
 
     var hasChanges: Bool {
         let nameChanged = recordName != record.name
+        let brandChanged = selectedBrandId != record.brandId
         let noteChanged = note != (record.note ?? "")
         let itemsChanged = items.count != record.items.count ||
             !items.enumerated().allSatisfy { index, item in
@@ -934,7 +936,7 @@ struct EditPurchaseRecordSheet: View {
                 item.colorCode == record.items[index].colorCode &&
                 item.quantity == record.items[index].quantity
             }
-        return nameChanged || noteChanged || itemsChanged
+        return nameChanged || brandChanged || noteChanged || itemsChanged
     }
 
     var body: some View {
@@ -949,6 +951,18 @@ struct EditPurchaseRecordSheet: View {
                                     .foregroundColor(.secondary)
                                 TextField("记录名称", text: $recordName)
                                     .textFieldStyle(.roundedBorder)
+                            }
+
+                            HStack {
+                                Text("品牌")
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Picker("品牌", selection: $selectedBrandId) {
+                                    ForEach(inventoryManager.brands) { brand in
+                                        Text(brand.name).tag(brand.id as UUID?)
+                                    }
+                                }
+                                .pickerStyle(.menu)
                             }
 
                             HStack {
@@ -1044,11 +1058,12 @@ struct EditPurchaseRecordSheet: View {
             }
             .onAppear {
                 recordName = record.name
+                selectedBrandId = record.brandId
                 note = record.note ?? ""
                 items = record.items.map { EditableItem(colorCode: $0.colorCode, quantity: $0.quantity) }
             }
             .sheet(isPresented: $showingAddColor) {
-                AddColorToRecordSheet(brandId: record.brandId) { colorCode, quantity in
+                AddColorToRecordSheet(brandId: selectedBrandId ?? record.brandId) { colorCode, quantity in
                     // 检查是否已存在该颜色
                     if let existingIndex = items.firstIndex(where: { $0.colorCode == colorCode }) {
                         items[existingIndex].quantity += quantity
@@ -1066,6 +1081,7 @@ struct EditPurchaseRecordSheet: View {
         inventoryManager.updatePurchaseRecord(
             id: record.id,
             name: recordName,
+            brandId: selectedBrandId,
             items: purchaseItems,
             note: note.isEmpty ? nil : note
         )

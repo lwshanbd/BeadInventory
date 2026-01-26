@@ -1719,10 +1719,13 @@ class InventoryManager: ObservableObject {
     }
 
     /// 更新购买记录
-    func updatePurchaseRecord(id: UUID, name: String? = nil, items: [PurchaseItem]? = nil, note: String? = nil) {
+    func updatePurchaseRecord(id: UUID, name: String? = nil, brandId: UUID? = nil, items: [PurchaseItem]? = nil, note: String? = nil) {
         guard let index = purchaseRecords.firstIndex(where: { $0.id == id }) else { return }
         if let name = name {
             purchaseRecords[index].name = name
+        }
+        if let brandId = brandId {
+            purchaseRecords[index].brandId = brandId
         }
         if let items = items {
             purchaseRecords[index].items = items
