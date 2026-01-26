@@ -1618,12 +1618,19 @@ class InventoryManager: ObservableObject {
     }
 
     /// 更新项目成品图（仅已执行项目）
+    /// 如果是新增成品图且之前没有完成日期，自动设置为当天
     func updateProjectFinishedImage(_ projectId: UUID, finishedImage: Data?) {
         if let index = projects.firstIndex(where: { $0.id == projectId && !$0.isPlanned }) {
             // 记录历史
             historyManager.recordProject(type: .projectUpdate, project: projects[index])
 
             projects[index].finishedImage = finishedImage
+
+            // 上传成品图时，如果没有完成日期，自动设置为当天
+            if finishedImage != nil && projects[index].completedDate == nil {
+                projects[index].completedDate = Date()
+            }
+
             saveData()
         }
     }
