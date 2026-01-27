@@ -2,7 +2,7 @@
 //  AIService.swift
 //  BeadInventory
 //
-//  AI图像识别服务 - 支持 Kimi、OpenAI、Anthropic、Qwen、DeepSeek 和 Gemini
+//  AI图像识别服务 - 支持 Kimi、OpenAI、Anthropic、Qwen 和 Gemini
 //
 
 import Foundation
@@ -17,7 +17,6 @@ enum AIProvider: String, CaseIterable, Codable {
     case openai = "OpenAI"
     case anthropic = "Anthropic"
     case qwen = "Qwen"
-    case deepseek = "DeepSeek"
     case gemini = "Gemini"
 }
 
@@ -31,7 +30,6 @@ struct AIConfig: Codable {
     static let defaultOpenAIURL = "https://api.openai.com/v1"
     static let defaultAnthropicURL = "https://api.anthropic.com"
     static let defaultQwenURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    static let defaultDeepSeekURL = "https://api.deepseek.com"
     static let defaultGeminiURL = "https://generativelanguage.googleapis.com/v1beta"
 
     // Kimi 仅支持一个模型
@@ -39,7 +37,6 @@ struct AIConfig: Codable {
     static let openAIModels = ["gpt-5-mini", "gpt-5-nano", "gpt-5.2"]
     static let anthropicModels = ["claude-sonnet-4-5-20250929", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"]
     static let qwenModels = ["qwen3-vl-flash", "qwen-vl-max", "qwen3-vl-plus"]
-    static let deepseekModels = ["deepseek-chat", "deepseek-reasoner"]
     static let geminiModels = ["gemini-3-flash-preview", "gemini-3-pro-preview"]
 
     static func defaultModel(for provider: AIProvider) -> String {
@@ -52,8 +49,6 @@ struct AIConfig: Codable {
             return "claude-sonnet-4-5-20250929"
         case .qwen:
             return "qwen3-vl-flash"
-        case .deepseek:
-            return "deepseek-chat"
         case .gemini:
             return "gemini-3-flash-preview"
         }
@@ -76,8 +71,6 @@ struct AIConfig: Codable {
             return baseURL.isEmpty ? AIConfig.defaultAnthropicURL : baseURL
         case .qwen:
             return baseURL.isEmpty ? AIConfig.defaultQwenURL : baseURL
-        case .deepseek:
-            return baseURL.isEmpty ? AIConfig.defaultDeepSeekURL : baseURL
         case .gemini:
             return baseURL.isEmpty ? AIConfig.defaultGeminiURL : baseURL
         }
@@ -134,7 +127,7 @@ class AIServiceManager: ObservableObject {
                     config.model = AIConfig.kimiModel
                 }
             } else {
-                // OpenAI/Anthropic/Qwen/DeepSeek/Gemini：如果当前模型不在新 provider 的模型列表中，则重置
+                // OpenAI/Anthropic/Qwen/Gemini：如果当前模型不在新 provider 的模型列表中，则重置
                 let validModels: [String]
                 switch config.provider {
                 case .openai:
@@ -143,8 +136,6 @@ class AIServiceManager: ObservableObject {
                     validModels = AIConfig.anthropicModels
                 case .qwen:
                     validModels = AIConfig.qwenModels
-                case .deepseek:
-                    validModels = AIConfig.deepseekModels
                 case .gemini:
                     validModels = AIConfig.geminiModels
                 case .kimi:
@@ -300,8 +291,8 @@ class AIServiceManager: ObservableObject {
         print("[AI Debug] Base64长度: \(base64Image.count)")
 
         switch config.provider {
-        case .kimi, .openai, .qwen, .deepseek:
-            // Kimi、OpenAI、Qwen 和 DeepSeek 使用相同的 API 格式（OpenAI 兼容）
+        case .kimi, .openai, .qwen:
+            // Kimi、OpenAI、Qwen 使用相同的 API 格式（OpenAI 兼容）
             return try await recognizeWithOpenAI(base64Image: base64Image, mediaType: mediaType, mode: mode)
         case .anthropic:
             return try await recognizeWithAnthropic(base64Image: base64Image, mediaType: mediaType, mode: mode)
@@ -413,7 +404,7 @@ class AIServiceManager: ObservableObject {
         ]
 
         // 根据提供商设置不同的 token 限制参数
-        // OpenAI 使用 max_completion_tokens，Kimi/Qwen/DeepSeek 使用 max_tokens
+        // OpenAI 使用 max_completion_tokens，Kimi/Qwen 使用 max_tokens
         if config.provider == .openai {
             body["max_completion_tokens"] = 8192
         } else {

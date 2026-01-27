@@ -55,12 +55,6 @@ struct SettingsView: View {
                                 Text(model).tag(model)
                             }
                         }
-                    } else if aiService.config.provider == .deepseek {
-                        Picker("模型", selection: $aiService.config.model) {
-                            ForEach(AIConfig.deepseekModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
                     }
 
                     // 配置状态提示
@@ -82,8 +76,6 @@ struct SettingsView: View {
                         Text("Anthropic API Key 可从 console.anthropic.com 获取。")
                     } else if aiService.config.provider == .qwen {
                         Text("Qwen API Key 可从阿里云百炼平台 bailian.console.aliyun.com 获取。")
-                    } else if aiService.config.provider == .deepseek {
-                        Text("DeepSeek API Key 可从 platform.deepseek.com 获取。")
                     }
                 }
 
