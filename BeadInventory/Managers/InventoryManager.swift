@@ -1637,6 +1637,50 @@ class InventoryManager: ObservableObject {
         return newId
     }
 
+    /// 复制任意项目到计划列表
+    @discardableResult
+    func duplicateProjectAsPlan(_ projectId: UUID) -> UUID? {
+        guard let project = projects.first(where: { $0.id == projectId }) else {
+            return nil
+        }
+
+        let newId = UUID()
+
+        // 复制 beadUsage，生成新的 UUID
+        let newBeadUsage = project.beadUsage.map { usage in
+            BeadUsage(
+                id: UUID(),
+                colorCode: usage.colorCode,
+                brandId: nil,
+                quantity: usage.quantity,
+                isDeducted: false
+            )
+        }
+
+        // 创建副本项目
+        let duplicatedProject = ProjectRecord(
+            id: newId,
+            name: project.name + " (副本)",
+            date: Date(),
+            beadUsage: newBeadUsage,
+            brandId: nil,
+            isArchived: false,
+            parentId: nil,
+            isPlanned: true,
+            executedDate: nil,
+            thumbnail: project.thumbnail
+        )
+
+        // 插入到列表开头
+        projects.insert(duplicatedProject, at: 0)
+        saveData()
+
+        // 记录历史
+        historyManager.recordProject(type: .planAdd, project: duplicatedProject)
+
+        return newId
+    }
+
     /// 更新计划项目名称
     func updatePlannedProjectName(_ projectId: UUID, newName: String) {
         if let index = projects.firstIndex(where: { $0.id == projectId && $0.isPlanned }) {

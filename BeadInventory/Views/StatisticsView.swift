@@ -576,6 +576,12 @@ struct ProjectHistoryView: View {
                                     .foregroundColor(.secondary)
                             }
 
+                            Button {
+                                _ = inventoryManager.duplicateProjectAsPlan(project.id)
+                            } label: {
+                                Label("复制到计划", systemImage: "doc.on.doc")
+                            }
+
                             Divider()
 
                             // 归档/取消归档
