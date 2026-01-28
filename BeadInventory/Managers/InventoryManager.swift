@@ -141,6 +141,94 @@ class InventoryManager: ObservableObject {
         return true
     }
 
+    /// 合并品牌：将源品牌的所有数据转移到目标品牌，然后删除源品牌
+    @discardableResult
+    func mergeBrands(sourceBrandId: UUID, targetBrandId: UUID) -> Bool {
+        // 1. 校验：两个品牌都存在且不相同
+        guard sourceBrandId != targetBrandId,
+              let sourceBrand = brands.first(where: { $0.id == sourceBrandId }),
+              brands.contains(where: { $0.id == targetBrandId }) else {
+            return false
+        }
+
+        // 2. 合并 BrandStock
+        let sourceStocks = brandStocks.filter { $0.brandId == sourceBrandId }
+        for sourceStock in sourceStocks {
+            if let targetIndex = brandStocks.firstIndex(where: {
+                $0.brandId == targetBrandId && $0.mardCode == sourceStock.mardCode
+            }) {
+                // 目标品牌已有该色号 → 累加 stock 和 used
+                brandStocks[targetIndex].stock += sourceStock.stock
+                brandStocks[targetIndex].used += sourceStock.used
+                // 如果源色号未隐藏，目标也取消隐藏
+                if !sourceStock.isHidden {
+                    brandStocks[targetIndex].isHidden = false
+                }
+            } else {
+                // 目标品牌没有该色号 → 创建新 BrandStock
+                let newStock = BrandStock(
+                    brandId: targetBrandId,
+                    mardCode: sourceStock.mardCode,
+                    stock: sourceStock.stock,
+                    used: sourceStock.used,
+                    isHidden: sourceStock.isHidden
+                )
+                brandStocks.append(newStock)
+            }
+        }
+        // 删除源品牌的所有 brandStocks
+        brandStocks.removeAll { $0.brandId == sourceBrandId }
+
+        // 3. 更新 Projects：将 brandId == sourceBrandId 的改为 targetBrandId
+        for i in projects.indices {
+            if projects[i].brandId == sourceBrandId {
+                projects[i].brandId = targetBrandId
+            }
+            // 同时更新 beadUsage 中的 brandId
+            for j in projects[i].beadUsage.indices {
+                if projects[i].beadUsage[j].brandId == sourceBrandId {
+                    projects[i].beadUsage[j] = BeadUsage(
+                        id: projects[i].beadUsage[j].id,
+                        colorCode: projects[i].beadUsage[j].colorCode,
+                        brandId: targetBrandId,
+                        quantity: projects[i].beadUsage[j].quantity,
+                        isDeducted: projects[i].beadUsage[j].isDeducted
+                    )
+                }
+            }
+        }
+
+        // 4. 更新 PurchaseRecords：将 brandId == sourceBrandId 的改为 targetBrandId
+        for i in purchaseRecords.indices {
+            if purchaseRecords[i].brandId == sourceBrandId {
+                purchaseRecords[i] = PurchaseRecord(
+                    id: purchaseRecords[i].id,
+                    name: purchaseRecords[i].name,
+                    date: purchaseRecords[i].date,
+                    brandId: targetBrandId,
+                    items: purchaseRecords[i].items,
+                    note: purchaseRecords[i].note
+                )
+            }
+        }
+
+        // 5. 处理当前品牌：如果当前选中的是源品牌，切换到目标品牌
+        if currentBrandId == sourceBrandId {
+            currentBrandId = targetBrandId
+        }
+
+        // 6. 删除源品牌
+        brands.removeAll { $0.id == sourceBrandId }
+
+        // 7. 记录历史
+        historyManager.recordBrand(type: .brandDelete, brand: sourceBrand)
+
+        // 8. 保存数据
+        saveData()
+
+        return true
+    }
+
     func selectBrand(_ brandId: UUID) {
         if brands.contains(where: { $0.id == brandId }) {
             currentBrandId = brandId

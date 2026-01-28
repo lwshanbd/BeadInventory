@@ -14,6 +14,7 @@ struct BrandManagerView: View {
     @State private var brandToDelete: Brand?
     @State private var brandToEdit: Brand?
     @State private var editingName = ""
+    @State private var showingMergeBrand = false
 
     var body: some View {
         NavigationStack {
@@ -66,6 +67,14 @@ struct BrandManagerView: View {
                     } label: {
                         Label("添加品牌", systemImage: "plus.circle")
                     }
+
+                    if inventoryManager.brands.count >= 2 {
+                        Button {
+                            showingMergeBrand = true
+                        } label: {
+                            Label("合并品牌", systemImage: "arrow.triangle.merge")
+                        }
+                    }
                 } header: {
                     if !inventoryManager.brands.isEmpty {
                         Text("品牌列表")
@@ -81,6 +90,9 @@ struct BrandManagerView: View {
             }
             .sheet(isPresented: $showingAddBrand) {
                 AddBrandView()
+            }
+            .sheet(isPresented: $showingMergeBrand) {
+                MergeBrandSheet()
             }
             .alert("编辑品牌", isPresented: Binding(
                 get: { brandToEdit != nil },
@@ -116,6 +128,136 @@ struct BrandManagerView: View {
                 }
             } message: {
                 Text("删除品牌将同时删除该品牌下的所有库存记录，此操作不可撤销。")
+            }
+        }
+    }
+}
+
+// MARK: - 合并品牌 Sheet
+struct MergeBrandSheet: View {
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @Environment(\.dismiss) var dismiss
+
+    @State private var sourceBrandId: UUID?
+    @State private var targetBrandId: UUID?
+    @State private var showingConfirmation = false
+
+    private var sortedBrands: [Brand] {
+        inventoryManager.brands.sorted(by: { $0.sortOrder < $1.sortOrder })
+    }
+
+    private var sourceBrand: Brand? {
+        guard let id = sourceBrandId else { return nil }
+        return inventoryManager.brands.first { $0.id == id }
+    }
+
+    private var targetBrand: Brand? {
+        guard let id = targetBrandId else { return nil }
+        return inventoryManager.brands.first { $0.id == id }
+    }
+
+    /// 源品牌的库存记录数（非隐藏且有库存的色号数）
+    private var sourceStockCount: Int {
+        guard let id = sourceBrandId else { return 0 }
+        return inventoryManager.brandStocks.filter {
+            $0.brandId == id && ($0.stock > 0 || $0.used > 0)
+        }.count
+    }
+
+    /// 受影响的项目数
+    private var affectedProjectCount: Int {
+        guard let id = sourceBrandId else { return 0 }
+        return inventoryManager.projects.filter { $0.brandId == id }.count
+    }
+
+    /// 受影响的购买记录数
+    private var affectedPurchaseCount: Int {
+        guard let id = sourceBrandId else { return 0 }
+        return inventoryManager.purchaseRecords.filter { $0.brandId == id }.count
+    }
+
+    private var canMerge: Bool {
+        guard let src = sourceBrandId, let tgt = targetBrandId else { return false }
+        return src != tgt
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("源品牌（将被合并删除）", selection: $sourceBrandId) {
+                        Text("请选择").tag(nil as UUID?)
+                        ForEach(sortedBrands) { brand in
+                            Text(brand.name).tag(brand.id as UUID?)
+                        }
+                    }
+
+                    Picker("目标品牌（保留）", selection: $targetBrandId) {
+                        Text("请选择").tag(nil as UUID?)
+                        ForEach(sortedBrands.filter { $0.id != sourceBrandId }) { brand in
+                            Text(brand.name).tag(brand.id as UUID?)
+                        }
+                    }
+                } header: {
+                    Text("选择品牌")
+                } footer: {
+                    Text("源品牌的所有数据将转移到目标品牌，源品牌随后被删除。")
+                }
+
+                if canMerge {
+                    Section("合并预览") {
+                        LabeledContent("库存色号数") {
+                            Text("\(sourceStockCount) 个")
+                        }
+                        LabeledContent("关联项目") {
+                            Text("\(affectedProjectCount) 个")
+                        }
+                        LabeledContent("购买记录") {
+                            Text("\(affectedPurchaseCount) 个")
+                        }
+                    }
+                }
+
+                if canMerge {
+                    Section {
+                        Button(role: .destructive) {
+                            showingConfirmation = true
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Text("执行合并")
+                                    .fontWeight(.semibold)
+                                Spacer()
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("合并品牌")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+            }
+            .onChange(of: sourceBrandId) {
+                // 如果选择的源品牌和目标品牌相同，清除目标选择
+                if sourceBrandId != nil && sourceBrandId == targetBrandId {
+                    targetBrandId = nil
+                }
+            }
+            .alert("确认合并", isPresented: $showingConfirmation) {
+                Button("取消", role: .cancel) {}
+                Button("合并", role: .destructive) {
+                    if let src = sourceBrandId, let tgt = targetBrandId {
+                        inventoryManager.mergeBrands(sourceBrandId: src, targetBrandId: tgt)
+                    }
+                    dismiss()
+                }
+            } message: {
+                if let src = sourceBrand, let tgt = targetBrand {
+                    Text("将「\(src.name)」合并到「\(tgt.name)」，源品牌的库存、项目和购买记录将全部转移到目标品牌，此操作不可撤销。")
+                }
             }
         }
     }
