@@ -36,8 +36,13 @@ struct SettingsView: View {
                         .autocapitalization(.none)
                         .keyboardType(.URL)
 
-                    // Kimi 只有一个模型，不显示选择器
-                    if aiService.config.provider == .openai {
+                    if aiService.config.provider == .kimi {
+                        Picker("模型", selection: $aiService.config.model) {
+                            ForEach(AIConfig.kimiModels, id: \.self) { model in
+                                Text(model).tag(model)
+                            }
+                        }
+                    } else if aiService.config.provider == .openai {
                         Picker("模型", selection: $aiService.config.model) {
                             ForEach(AIConfig.openAIModels, id: \.self) { model in
                                 Text(model).tag(model)
@@ -52,6 +57,12 @@ struct SettingsView: View {
                     } else if aiService.config.provider == .qwen {
                         Picker("模型", selection: $aiService.config.model) {
                             ForEach(AIConfig.qwenModels, id: \.self) { model in
+                                Text(model).tag(model)
+                            }
+                        }
+                    } else if aiService.config.provider == .gemini {
+                        Picker("模型", selection: $aiService.config.model) {
+                            ForEach(AIConfig.geminiModels, id: \.self) { model in
                                 Text(model).tag(model)
                             }
                         }

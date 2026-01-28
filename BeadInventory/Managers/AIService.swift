@@ -32,8 +32,7 @@ struct AIConfig: Codable {
     static let defaultQwenURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     static let defaultGeminiURL = "https://generativelanguage.googleapis.com/v1beta"
 
-    // Kimi 仅支持一个模型
-    static let kimiModel = "kimi-latest"
+    static let kimiModels = ["kimi-k2.5", "kimi-latest"]
     static let openAIModels = ["gpt-5-mini", "gpt-5-nano", "gpt-5.2"]
     static let anthropicModels = ["claude-sonnet-4-5-20250929", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"]
     static let qwenModels = ["qwen3-vl-flash", "qwen-vl-max", "qwen3-vl-plus"]
@@ -42,7 +41,7 @@ struct AIConfig: Codable {
     static func defaultModel(for provider: AIProvider) -> String {
         switch provider {
         case .kimi:
-            return kimiModel
+            return "kimi-k2.5"
         case .openai:
             return "gpt-5-mini"
         case .anthropic:
@@ -81,9 +80,6 @@ struct AIConfig: Codable {
     }
 
     var effectiveModel: String {
-        if provider == .kimi {
-            return AIConfig.kimiModel
-        }
         return model
     }
 }
@@ -121,29 +117,22 @@ class AIServiceManager: ObservableObject {
         didSet {
             saveConfig()
             // 当 provider 改变时，重置模型为对应的默认模型
-            if config.provider == .kimi {
-                // Kimi 只有一个模型，强制设置
-                if config.model != AIConfig.kimiModel {
-                    config.model = AIConfig.kimiModel
-                }
-            } else {
-                // OpenAI/Anthropic/Qwen/Gemini：如果当前模型不在新 provider 的模型列表中，则重置
-                let validModels: [String]
-                switch config.provider {
-                case .openai:
-                    validModels = AIConfig.openAIModels
-                case .anthropic:
-                    validModels = AIConfig.anthropicModels
-                case .qwen:
-                    validModels = AIConfig.qwenModels
-                case .gemini:
-                    validModels = AIConfig.geminiModels
-                case .kimi:
-                    validModels = [AIConfig.kimiModel]
-                }
-                if !validModels.contains(config.model) {
-                    config.model = AIConfig.defaultModel(for: config.provider)
-                }
+            // 如果当前模型不在新 provider 的模型列表中，则重置
+            let validModels: [String]
+            switch config.provider {
+            case .kimi:
+                validModels = AIConfig.kimiModels
+            case .openai:
+                validModels = AIConfig.openAIModels
+            case .anthropic:
+                validModels = AIConfig.anthropicModels
+            case .qwen:
+                validModels = AIConfig.qwenModels
+            case .gemini:
+                validModels = AIConfig.geminiModels
+            }
+            if !validModels.contains(config.model) {
+                config.model = AIConfig.defaultModel(for: config.provider)
             }
         }
     }
