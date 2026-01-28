@@ -96,7 +96,7 @@ struct SettingsView: View {
                         Text("默认初始库存")
                         Spacer()
                         TextField("1000", text: $defaultStock)
-                            .keyboardType(.numberPad)
+                            .keyboardType(.asciiCapableNumberPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
                     }

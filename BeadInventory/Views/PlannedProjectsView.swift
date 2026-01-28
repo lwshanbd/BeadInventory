@@ -2186,7 +2186,7 @@ struct EditableUsageRow: View {
                 .disabled(usage.quantity <= 1)
 
                 TextField("数量", text: $quantityText)
-                    .keyboardType(.numberPad)
+                    .keyboardType(.asciiCapableNumberPad)
                     .multilineTextAlignment(.center)
                     .frame(width: 60)
                     .padding(.vertical, 6)
@@ -2322,7 +2322,7 @@ struct AddColorToProjectSheet: View {
                                 .disabled(quantity <= 1)
 
                                 TextField("数量", text: $quantityText)
-                                    .keyboardType(.numberPad)
+                                    .keyboardType(.asciiCapableNumberPad)
                                     .multilineTextAlignment(.center)
                                     .frame(width: 60)
                                     .padding(.vertical, 6)
@@ -2799,7 +2799,7 @@ struct ReplenishSuggestionSheet: View {
                             Spacer()
                             HStack(spacing: 4) {
                                 TextField("", value: $freeShippingThreshold, format: .number)
-                                    .keyboardType(.numberPad)
+                                    .keyboardType(.asciiCapableNumberPad)
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 60)
                                     .multilineTextAlignment(.center)
@@ -3184,7 +3184,7 @@ struct ReplenishColorRow: View {
                 .disabled(quantity <= 0)
 
                 TextField("", value: $quantity, format: .number)
-                    .keyboardType(.numberPad)
+                    .keyboardType(.asciiCapableNumberPad)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 40)
                     .multilineTextAlignment(.center)

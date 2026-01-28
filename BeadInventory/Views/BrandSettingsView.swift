@@ -87,7 +87,7 @@ struct BrandSettingsView: View {
                             Text("低库存阈值")
                             Spacer()
                             TextField("100", text: $lowStockThreshold)
-                                .keyboardType(.numberPad)
+                                .keyboardType(.asciiCapableNumberPad)
                                 .multilineTextAlignment(.trailing)
                                 .frame(width: 80)
                                 .onChange(of: lowStockThreshold) { _, newValue in
@@ -123,7 +123,7 @@ struct BrandSettingsView: View {
                             Text("重置库存数量")
                             Spacer()
                             TextField("1000", text: $defaultStock)
-                                .keyboardType(.numberPad)
+                                .keyboardType(.asciiCapableNumberPad)
                                 .multilineTextAlignment(.trailing)
                                 .frame(width: 80)
                         }

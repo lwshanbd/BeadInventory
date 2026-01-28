@@ -787,7 +787,7 @@ struct EditStockSheet: View {
                         .frame(width: 120)
 
                         TextField("数量", text: $adjustAmount)
-                            .keyboardType(.numberPad)
+                            .keyboardType(.asciiCapableNumberPad)
                             .textFieldStyle(.roundedBorder)
                             .focused($isInputFocused)
 
@@ -819,7 +819,7 @@ struct EditStockSheet: View {
                             .foregroundColor(.secondary)
                             .frame(width: 50, alignment: .leading)
                         TextField("数量", text: $stockAmount)
-                            .keyboardType(.numberPad)
+                            .keyboardType(.asciiCapableNumberPad)
                             .textFieldStyle(.roundedBorder)
                             .focused($isInputFocused)
                         Button {
@@ -841,7 +841,7 @@ struct EditStockSheet: View {
                             .foregroundColor(.secondary)
                             .frame(width: 50, alignment: .leading)
                         TextField("数量", text: $usedAmount)
-                            .keyboardType(.numberPad)
+                            .keyboardType(.asciiCapableNumberPad)
                             .textFieldStyle(.roundedBorder)
                             .focused($isInputFocused)
                         Button {

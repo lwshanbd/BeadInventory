@@ -51,7 +51,7 @@ struct HiddenColorsManageView: View {
                         Text("恢复时库存数量")
                         Spacer()
                         TextField("1000", text: $defaultUnhideStock)
-                            .keyboardType(.numberPad)
+                            .keyboardType(.asciiCapableNumberPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
                     }

@@ -99,7 +99,7 @@ struct AddBrandView: View {
                             Text("每色库存")
                             Spacer()
                             TextField("1000", value: $defaultStock, format: .number)
-                                .keyboardType(.numberPad)
+                                .keyboardType(.asciiCapableNumberPad)
                                 .multilineTextAlignment(.trailing)
                                 .frame(width: 80)
                             Text("颗")

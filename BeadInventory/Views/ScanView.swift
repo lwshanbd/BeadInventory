@@ -745,7 +745,7 @@ struct RecognizedItemRow: View {
 
                 TextField("数量", text: $editQuantity)
                     .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numberPad)
+                    .keyboardType(.asciiCapableNumberPad)
                     .frame(width: 60)
 
                 Button("保存") {
@@ -827,7 +827,7 @@ struct ManualEntrySheet: View {
                         .textInputAutocapitalization(.characters)
 
                     TextField("数量", text: $quantity)
-                        .keyboardType(.numberPad)
+                        .keyboardType(.asciiCapableNumberPad)
                 }
 
                 Section {
@@ -1099,7 +1099,7 @@ struct RecognizedItemRowNew: View {
 
                 TextField("数量", text: $editQuantity)
                     .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numberPad)
+                    .keyboardType(.asciiCapableNumberPad)
                     .frame(width: 60)
 
                 Button("保存") {
@@ -1457,7 +1457,7 @@ struct ManualEntryQuantityControl: View {
 
             // 数量输入框
             TextField("", text: $editText)
-                .keyboardType(.numberPad)
+                .keyboardType(.asciiCapableNumberPad)
                 .multilineTextAlignment(.center)
                 .font(.system(size: 16, weight: .regular, design: .monospaced))
                 .frame(width: 60, height: 32)
