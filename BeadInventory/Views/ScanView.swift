@@ -446,10 +446,12 @@ struct ScanView: View {
         )
         inventoryManager.addProject(project)
 
-        // 从当前品牌库存扣减
+        // 从当前品牌库存扣减（批量操作，不逐个保存）
         for item in recognizedItems {
-            _ = inventoryManager.deductFromStock(brandId: brandId, colorCode: item.colorCode, amount: item.quantity)
+            _ = inventoryManager.deductFromStock(brandId: brandId, colorCode: item.colorCode, amount: item.quantity, shouldSave: false)
         }
+        // 统一保存
+        inventoryManager.saveData()
 
         // 清除结果
         clearState()

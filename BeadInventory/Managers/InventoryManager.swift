@@ -366,7 +366,7 @@ class InventoryManager: ObservableObject {
         return successCount
     }
 
-    func deductFromStock(brandId: UUID, colorCode: String, amount: Int) -> Bool {
+    func deductFromStock(brandId: UUID, colorCode: String, amount: Int, shouldSave: Bool = true) -> Bool {
         // 先找到对应的 mardCode
         guard let color = findColor(byCode: colorCode) else { return false }
 
@@ -378,21 +378,25 @@ class InventoryManager: ObservableObject {
             if brandStocks[index].isHidden {
                 brandStocks[index].isHidden = false
             }
-            saveData()
+            if shouldSave {
+                saveData()
+            }
             return true
         }
         return false
     }
 
     /// 撤回库存扣减（不记录历史）
-    func revertFromStock(brandId: UUID, colorCode: String, amount: Int) -> Bool {
+    func revertFromStock(brandId: UUID, colorCode: String, amount: Int, shouldSave: Bool = true) -> Bool {
         guard let color = findColor(byCode: colorCode) else { return false }
 
         if let index = brandStocks.firstIndex(where: {
             $0.brandId == brandId && $0.mardCode == color.mardCode
         }) {
             brandStocks[index].used -= amount
-            saveData()
+            if shouldSave {
+                saveData()
+            }
             return true
         }
         return false
@@ -404,9 +408,9 @@ class InventoryManager: ObservableObject {
             return false
         }
 
-        // 恢复库存（把扣减的库存加回去）
+        // 恢复库存（批量操作，不逐个保存）
         for usage in beadUsages {
-            _ = revertFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity)
+            _ = revertFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity, shouldSave: false)
         }
 
         // 恢复项目状态
@@ -1008,8 +1012,9 @@ class InventoryManager: ObservableObject {
     func applyProjectToInventory(_ project: ProjectRecord) {
         guard let brandId = project.brandId else { return }
         for usage in project.beadUsage where !usage.isDeducted {
-            _ = deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity)
+            _ = deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity, shouldSave: false)
         }
+        saveData()
     }
 
     // MARK: - 项目层级管理
@@ -1497,9 +1502,9 @@ class InventoryManager: ObservableObject {
         // 保存执行前的项目状态（用于撤回）
         let beforeProject = project
 
-        // 执行库存扣减
+        // 执行库存扣减（批量操作，不逐个保存）
         for usage in project.beadUsage {
-            _ = deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity)
+            _ = deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity, shouldSave: false)
         }
 
         // 更新项目状态
@@ -1545,11 +1550,11 @@ class InventoryManager: ObservableObject {
         // 获取所有子项目
         let children = childProjects(of: parentId)
 
-        // 执行所有子项目的库存扣减
+        // 执行所有子项目的库存扣减（批量操作，不逐个保存）
         for child in children {
             if let childIndex = projects.firstIndex(where: { $0.id == child.id }) {
                 for usage in child.beadUsage {
-                    _ = deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity)
+                    _ = deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity, shouldSave: false)
                 }
 
                 // 更新子项目状态
