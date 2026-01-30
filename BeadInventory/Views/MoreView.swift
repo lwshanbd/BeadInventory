@@ -10,6 +10,7 @@ import SwiftUI
 struct MoreView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showingImportFullData = false
+    @State private var showingScanHelp = false
 
     var body: some View {
         NavigationStack {
@@ -171,8 +172,25 @@ struct MoreView: View {
                     .foregroundColor(.primary)
                 }
 
-                // 关于
+                // 帮助与关于
                 Section {
+                    Button {
+                        showingScanHelp = true
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("AI扫描帮助")
+                                Text("查看扫描识别使用说明")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "questionmark.circle.fill")
+                                .foregroundColor(.orange)
+                        }
+                    }
+                    .foregroundColor(.primary)
+
                     NavigationLink {
                         AboutView()
                     } label: {
@@ -193,6 +211,11 @@ struct MoreView: View {
             .navigationTitle("更多")
             .sheet(isPresented: $showingImportFullData) {
                 ImportFullDataView()
+            }
+            .sheet(isPresented: $showingScanHelp) {
+                ScanHelpSheet(onDismiss: {
+                    showingScanHelp = false
+                })
             }
         }
     }

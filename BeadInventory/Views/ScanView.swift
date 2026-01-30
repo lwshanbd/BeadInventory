@@ -37,6 +37,10 @@ struct ScanView: View {
     // 图片固定功能
     @State private var isImagePinned = false         // 是否固定图片在顶部
 
+    // 引导弹窗
+    @AppStorage("scanViewHelpShown") private var helpHasBeenDismissed = false
+    @State private var showingHelpSheet = false
+
     init(externalImage: Binding<UIImage?> = .constant(nil)) {
         self._externalImage = externalImage
     }
@@ -380,6 +384,24 @@ struct ScanView: View {
                 }
             } message: {
                 Text("将创建包含 \(totalBeads) 颗豆子（\(recognizedItems.count) 种颜色）的计划项目。执行时需要选择品牌。")
+            }
+            // 引导弹窗
+            .sheet(isPresented: $showingHelpSheet) {
+                ScanHelpSheet(
+                    onDismiss: {
+                        showingHelpSheet = false
+                    },
+                    onNeverShowAgain: {
+                        helpHasBeenDismissed = true
+                        showingHelpSheet = false
+                    }
+                )
+            }
+            .onAppear {
+                // 首次打开时显示引导弹窗
+                if !helpHasBeenDismissed {
+                    showingHelpSheet = true
+                }
             }
         }
     }
@@ -2220,6 +2242,68 @@ struct CropGridShape: Shape {
         path.addLine(to: CGPoint(x: rect.width, y: thirdH * 2))
 
         return path
+    }
+}
+
+// MARK: - 扫描引导弹窗
+struct ScanHelpSheet: View {
+    let onDismiss: () -> Void
+    var onNeverShowAgain: (() -> Void)? = nil  // 可选，从"更多"页面打开时不需要
+
+    var body: some View {
+        VStack(spacing: 20) {
+            // 标题
+            Text("AI扫描帮助")
+                .font(.title2)
+                .fontWeight(.bold)
+                .padding(.top, 24)
+
+            // 图片展示区域
+            TabView {
+                Image("Help1")
+                    .resizable()
+                    .scaledToFit()
+                    .cornerRadius(12)
+                    .padding(.horizontal, 20)
+
+                Image("Help2")
+                    .resizable()
+                    .scaledToFit()
+                    .cornerRadius(12)
+                    .padding(.horizontal, 20)
+            }
+            .tabViewStyle(.page(indexDisplayMode: .always))
+
+            Spacer()
+
+            // 按钮区域
+            VStack(spacing: 12) {
+                Button {
+                    onDismiss()
+                } label: {
+                    Text("好的")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+
+                if let onNeverShowAgain = onNeverShowAgain {
+                    Button {
+                        onNeverShowAgain()
+                    } label: {
+                        Text("不再显示")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .presentationDetents([.large])
     }
 }
 
