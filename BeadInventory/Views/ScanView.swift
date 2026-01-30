@@ -142,7 +142,7 @@ struct ScanView: View {
                                 }
                                 .disabled(isRecognizing || !aiService.isConfigured)
 
-                                // 图纸识别按钮
+                                // 色号统计识别按钮
                                 Button {
                                     recognizeImage(mode: .blueprint)
                                 } label: {
@@ -153,7 +153,7 @@ struct ScanView: View {
                                         } else {
                                             Image(systemName: "doc.richtext")
                                         }
-                                        Text(isRecognizing ? "识别中..." : "图纸识别")
+                                        Text(isRecognizing ? "识别中..." : "色号统计识别")
                                     }
                                     .font(.headline)
                                     .frame(maxWidth: .infinity)
