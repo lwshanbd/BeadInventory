@@ -467,6 +467,27 @@ struct ProjectHistoryView: View {
                         }
                         .disabled(selectedProjects.count < 2)
 
+                        // 复制到计划按钮
+                        Button {
+                            for projectId in selectedProjects {
+                                _ = inventoryManager.duplicateProjectAsPlan(projectId)
+                            }
+                            isSelectMode = false
+                            selectedProjects.removeAll()
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.title3)
+                                Text("复制到计划")
+                                    .font(.caption)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                        }
+
                         // 退回按钮
                         Button {
                             showRevertConfirmSheet = true
@@ -536,7 +557,16 @@ struct ProjectHistoryView: View {
                                 Label("删除", systemImage: "trash")
                             }
                         }
-                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                            // 复制到计划
+                            Button {
+                                _ = inventoryManager.duplicateProjectAsPlan(project.id)
+                            } label: {
+                                Label("复制到计划", systemImage: "doc.on.doc")
+                            }
+                            .tint(.blue)
+
+                            // 归档/取消归档
                             if project.isArchived {
                                 Button {
                                     if isParent {
@@ -547,7 +577,7 @@ struct ProjectHistoryView: View {
                                 } label: {
                                     Label("取消归档", systemImage: "tray.and.arrow.up")
                                 }
-                                .tint(.blue)
+                                .tint(.green)
                             } else {
                                 Button {
                                     if isParent {
@@ -643,7 +673,15 @@ struct ProjectHistoryView: View {
                                         Label("删除", systemImage: "trash")
                                     }
                                 }
-                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                    // 复制到计划
+                                    Button {
+                                        _ = inventoryManager.duplicateProjectAsPlan(child.id)
+                                    } label: {
+                                        Label("复制到计划", systemImage: "doc.on.doc")
+                                    }
+                                    .tint(.blue)
+
                                     Button {
                                         inventoryManager.detachProject(child.id)
                                     } label: {
@@ -658,6 +696,12 @@ struct ProjectHistoryView: View {
                                         showRevertConfirmSheet = true
                                     } label: {
                                         Label("退回计划", systemImage: "arrow.uturn.backward")
+                                    }
+
+                                    Button {
+                                        _ = inventoryManager.duplicateProjectAsPlan(child.id)
+                                    } label: {
+                                        Label("复制到计划", systemImage: "doc.on.doc")
                                     }
 
                                     Divider()
