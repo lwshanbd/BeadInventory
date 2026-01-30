@@ -2316,6 +2316,7 @@ struct ScanHelpSheet: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .always))
+            .indexViewStyle(.page(backgroundDisplayMode: .always))
 
             // 按钮区域
             VStack(spacing: 12) {
