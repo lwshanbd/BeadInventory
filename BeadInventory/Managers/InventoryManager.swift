@@ -1592,7 +1592,7 @@ class InventoryManager: ObservableObject {
         saveData()
     }
 
-    /// 复制计划项目
+    /// 复制计划项目（支持文件夹完整复制）
     @discardableResult
     func duplicatePlannedProject(_ projectId: UUID) -> UUID? {
         guard let index = projects.firstIndex(where: { $0.id == projectId && $0.isPlanned }) else {
@@ -1627,8 +1627,39 @@ class InventoryManager: ObservableObject {
             thumbnail: project.thumbnail
         )
 
-        // 插入到原项目后面，减少列表索引变化
+        // 插入到原项目后面
         projects.insert(duplicatedProject, at: index + 1)
+
+        // 如果是父项目，复制所有子项目
+        if isParentProject(projectId) {
+            let children = childProjects(of: projectId)
+            for child in children {
+                let newChildId = UUID()
+                let newChildBeadUsage = child.beadUsage.map { usage in
+                    BeadUsage(
+                        id: UUID(),
+                        colorCode: usage.colorCode,
+                        brandId: nil,
+                        quantity: usage.quantity,
+                        isDeducted: false
+                    )
+                }
+                let duplicatedChild = ProjectRecord(
+                    id: newChildId,
+                    name: child.name,
+                    date: Date(),
+                    beadUsage: newChildBeadUsage,
+                    brandId: nil,
+                    isArchived: false,
+                    parentId: newId,  // 关联到新的父项目
+                    isPlanned: true,
+                    executedDate: nil,
+                    thumbnail: child.thumbnail
+                )
+                projects.append(duplicatedChild)
+            }
+        }
+
         saveData()
 
         // 记录历史
@@ -1637,7 +1668,7 @@ class InventoryManager: ObservableObject {
         return newId
     }
 
-    /// 复制任意项目到计划列表
+    /// 复制任意项目到计划列表（支持文件夹完整复制）
     @discardableResult
     func duplicateProjectAsPlan(_ projectId: UUID) -> UUID? {
         guard let project = projects.first(where: { $0.id == projectId }) else {
@@ -1673,6 +1704,37 @@ class InventoryManager: ObservableObject {
 
         // 插入到列表开头
         projects.insert(duplicatedProject, at: 0)
+
+        // 如果是父项目，复制所有子项目
+        if isParentProject(projectId) {
+            let children = childProjects(of: projectId)
+            for child in children {
+                let newChildId = UUID()
+                let newChildBeadUsage = child.beadUsage.map { usage in
+                    BeadUsage(
+                        id: UUID(),
+                        colorCode: usage.colorCode,
+                        brandId: nil,
+                        quantity: usage.quantity,
+                        isDeducted: false
+                    )
+                }
+                let duplicatedChild = ProjectRecord(
+                    id: newChildId,
+                    name: child.name,
+                    date: Date(),
+                    beadUsage: newChildBeadUsage,
+                    brandId: nil,
+                    isArchived: false,
+                    parentId: newId,  // 关联到新的父项目
+                    isPlanned: true,
+                    executedDate: nil,
+                    thumbnail: child.thumbnail
+                )
+                projects.append(duplicatedChild)
+            }
+        }
+
         saveData()
 
         // 记录历史

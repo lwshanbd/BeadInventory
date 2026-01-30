@@ -545,7 +545,7 @@ struct ProjectHistoryView: View {
                                 }
                             }
                         )
-                        .swipeActions(edge: .trailing, allowsFullSwipe: !isParent) {
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
                                 if isParent {
                                     projectToDelete = project
@@ -556,8 +556,7 @@ struct ProjectHistoryView: View {
                             } label: {
                                 Label("删除", systemImage: "trash")
                             }
-                        }
-                        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+
                             // 复制到计划
                             Button {
                                 _ = inventoryManager.duplicateProjectAsPlan(project.id)
@@ -565,7 +564,8 @@ struct ProjectHistoryView: View {
                                 Label("复制到计划", systemImage: "doc.on.doc")
                             }
                             .tint(.blue)
-
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
                             // 归档/取消归档
                             if project.isArchived {
                                 Button {
@@ -666,14 +666,13 @@ struct ProjectHistoryView: View {
                                     onToggleExpand: {},
                                     onToggleSelect: {}
                                 )
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
                                         inventoryManager.deleteProject(id: child.id)
                                     } label: {
                                         Label("删除", systemImage: "trash")
                                     }
-                                }
-                                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+
                                     // 复制到计划
                                     Button {
                                         _ = inventoryManager.duplicateProjectAsPlan(child.id)
@@ -681,7 +680,8 @@ struct ProjectHistoryView: View {
                                         Label("复制到计划", systemImage: "doc.on.doc")
                                     }
                                     .tint(.blue)
-
+                                }
+                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                     Button {
                                         inventoryManager.detachProject(child.id)
                                     } label: {
