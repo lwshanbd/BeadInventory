@@ -808,12 +808,11 @@ class HistoryManager: ObservableObject {
                 if let existingRecord = existing.first(where: { $0.id == record.id }) {
                     // 更新现有记录
                     existingRecord.timestamp = record.timestamp
-                    existingRecord.type = record.type.rawValue
-                    existingRecord.targetName = record.targetName
-                    existingRecord.targetId = record.targetId
-                    existingRecord.detail = record.detail
+                    existingRecord.operationType = record.operationType.rawValue
+                    existingRecord.targetName = record.entityName
                     existingRecord.beforeSnapshot = record.beforeSnapshot
                     existingRecord.afterSnapshot = record.afterSnapshot
+                    existingRecord.isReverted = record.isReverted
                 } else {
                     // 插入新记录
                     context.insert(SDHistoryRecord(from: record))
