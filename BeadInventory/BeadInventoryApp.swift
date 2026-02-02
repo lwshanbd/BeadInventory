@@ -18,6 +18,9 @@ struct BeadInventoryApp: App {
     /// 深链接触发扫描的标志
     @State private var shouldOpenScan = false
 
+    /// 监听应用生命周期
+    @Environment(\.scenePhase) private var scenePhase
+
     init() {
         // 设置 SwiftData ModelContainer（使用版本化 Schema 支持数据迁移）
         let schema = Schema(versionedSchema: CurrentSchema.self)
@@ -59,6 +62,24 @@ struct BeadInventoryApp: App {
                 }
         }
         .modelContainer(modelContainer)
+        .onChange(of: scenePhase) { _, newPhase in
+            switch newPhase {
+            case .background:
+                // 应用进入后台时立即保存数据，防止被系统杀死后数据丢失
+                print("[App] 应用进入后台，保存数据...")
+                inventoryManager.saveData()
+                HistoryManager.shared.saveData()
+            case .inactive:
+                // 应用即将进入非活跃状态（如控制中心、通知中心弹出）时也保存
+                print("[App] 应用进入非活跃状态，保存数据...")
+                inventoryManager.saveData()
+                HistoryManager.shared.saveData()
+            case .active:
+                print("[App] 应用恢复活跃状态")
+            @unknown default:
+                break
+            }
+        }
     }
 
     /// 处理传入的 URL Scheme

@@ -23,6 +23,9 @@ class InventoryManager: ObservableObject {
     // SwiftData ModelContext
     private var modelContext: ModelContext?
 
+    // 数据加载完成标志，防止在数据未加载时意外保存空数据
+    private var isDataLoaded = false
+
     // 历史记录管理器
     private var historyManager: HistoryManager { HistoryManager.shared }
 
@@ -692,42 +695,106 @@ class InventoryManager: ObservableObject {
            let decoded = try? JSONDecoder().decode([PurchaseRecord].self, from: data) {
             purchaseRecords = decoded
         }
+
+        // 标记数据加载完成
+        isDataLoaded = true
+        print("[InventoryManager] 数据加载完成")
     }
 
     func saveData() {
         guard let context = modelContext else { return }
 
+        // 防止在数据未加载完成时保存空数据，导致覆盖原有数据
+        guard isDataLoaded else {
+            print("[InventoryManager] 警告：数据尚未加载完成，跳过保存")
+            return
+        }
+
         do {
-            // 删除旧的品牌数据
-            try context.delete(model: SDBrand.self)
-            // 保存新的品牌数据
+            // 使用增量更新而不是全量删除，防止 autosave 导致数据丢失
+
+            // 1. 更新品牌数据
+            let existingBrands = try context.fetch(FetchDescriptor<SDBrand>())
+            let brandIds = Set(brands.map { $0.id })
+
+            // 删除不再存在的品牌
+            for sdBrand in existingBrands where !brandIds.contains(sdBrand.id) {
+                context.delete(sdBrand)
+            }
+            // 更新或插入品牌
             for brand in brands {
-                let sdBrand = SDBrand(from: brand)
-                context.insert(sdBrand)
+                if let existing = existingBrands.first(where: { $0.id == brand.id }) {
+                    existing.name = brand.name
+                    existing.sortOrder = brand.sortOrder
+                    existing.lowStockThreshold = brand.lowStockThreshold
+                } else {
+                    context.insert(SDBrand(from: brand))
+                }
             }
 
-            // 删除旧的库存数据
-            try context.delete(model: SDBrandStock.self)
-            // 保存新的库存数据
+            // 2. 更新库存数据
+            let existingStocks = try context.fetch(FetchDescriptor<SDBrandStock>())
+            let stockIds = Set(brandStocks.map { $0.id })
+
+            for sdStock in existingStocks where !stockIds.contains(sdStock.id) {
+                context.delete(sdStock)
+            }
             for stock in brandStocks {
-                let sdStock = SDBrandStock(from: stock)
-                context.insert(sdStock)
+                if let existing = existingStocks.first(where: { $0.id == stock.id }) {
+                    existing.brandId = stock.brandId
+                    existing.mardCode = stock.mardCode
+                    existing.stock = stock.stock
+                    existing.used = stock.used
+                    existing.isHidden = stock.isHidden
+                } else {
+                    context.insert(SDBrandStock(from: stock))
+                }
             }
 
-            // 删除旧的项目数据
-            try context.delete(model: SDProjectRecord.self)
-            // 保存新的项目数据
+            // 3. 更新项目数据
+            let existingProjects = try context.fetch(FetchDescriptor<SDProjectRecord>())
+            let projectIds = Set(projects.map { $0.id })
+
+            for sdProject in existingProjects where !projectIds.contains(sdProject.id) {
+                context.delete(sdProject)
+            }
             for project in projects {
-                let sdProject = SDProjectRecord(from: project)
-                context.insert(sdProject)
+                if let existing = existingProjects.first(where: { $0.id == project.id }) {
+                    existing.name = project.name
+                    existing.date = project.date
+                    existing.totalBeads = project.totalBeads
+                    existing.brandId = project.brandId
+                    existing.isArchived = project.isArchived
+                    existing.parentId = project.parentId
+                    existing.isPlanned = project.isPlanned
+                    existing.executedDate = project.executedDate
+                    existing.thumbnail = project.thumbnail
+                    existing.finishedImage = project.finishedImage
+                    existing.completedDate = project.completedDate
+                    // 更新 beadUsages
+                    existing.beadUsages.removeAll()
+                    existing.beadUsages = project.beadUsage.map { SDBeadUsage(from: $0) }
+                } else {
+                    context.insert(SDProjectRecord(from: project))
+                }
             }
 
-            // 删除旧的自定义色号数据
-            try context.delete(model: SDCustomColor.self)
-            // 保存新的自定义色号数据
+            // 4. 更新自定义色号数据
+            let existingCustomColors = try context.fetch(FetchDescriptor<SDCustomColor>())
+            let customColorIds = Set(customColors.map { $0.id })
+
+            for sdColor in existingCustomColors where !customColorIds.contains(sdColor.id) {
+                context.delete(sdColor)
+            }
             for customColor in customColors {
-                let sdCustomColor = SDCustomColor(from: customColor)
-                context.insert(sdCustomColor)
+                if let existing = existingCustomColors.first(where: { $0.id == customColor.id }) {
+                    existing.colorCode = customColor.colorCode
+                    existing.colorHex = customColor.colorHex
+                    existing.colorName = customColor.colorName
+                    existing.updatedAt = customColor.updatedAt
+                } else {
+                    context.insert(SDCustomColor(from: customColor))
+                }
             }
 
             try context.save()
@@ -836,6 +903,10 @@ class InventoryManager: ObservableObject {
            let decoded = try? JSONDecoder().decode([PurchaseRecord].self, from: data) {
             purchaseRecords = decoded
         }
+
+        // 标记数据加载完成
+        isDataLoaded = true
+        print("[InventoryManager] 数据从 UserDefaults 加载完成")
     }
 
     // MARK: - 库存操作

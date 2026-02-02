@@ -26,6 +26,9 @@ class HistoryManager: ObservableObject {
     // 是否正在执行撤回操作（撤回时不记录新的历史）
     private var isReverting = false
 
+    // 数据加载完成标志
+    private var isDataLoaded = false
+
     private init() {}
 
     // 设置 ModelContext
@@ -770,6 +773,7 @@ class HistoryManager: ObservableObject {
             )
             let sdRecords = try context.fetch(descriptor)
             records = sdRecords.compactMap { $0.toStruct() }
+            isDataLoaded = true
             print("[History] 加载了 \(records.count) 条历史记录")
         } catch {
             print("[History] 加载历史记录失败: \(error)")
@@ -782,18 +786,38 @@ class HistoryManager: ObservableObject {
             return
         }
 
+        // 防止在数据未加载完成时保存空数据
+        guard isDataLoaded else {
+            print("[History] 警告：数据尚未加载完成，跳过保存")
+            return
+        }
+
         do {
-            // 删除所有旧记录
+            // 使用增量更新而不是全量删除，防止 autosave 导致数据丢失
             let descriptor = FetchDescriptor<SDHistoryRecord>()
             let existing = try context.fetch(descriptor)
-            for record in existing {
-                context.delete(record)
+            let recordIds = Set(records.map { $0.id })
+
+            // 删除不再存在的记录
+            for sdRecord in existing where !recordIds.contains(sdRecord.id) {
+                context.delete(sdRecord)
             }
 
-            // 插入新记录
+            // 更新或插入记录
             for record in records {
-                let sdRecord = SDHistoryRecord(from: record)
-                context.insert(sdRecord)
+                if let existingRecord = existing.first(where: { $0.id == record.id }) {
+                    // 更新现有记录
+                    existingRecord.timestamp = record.timestamp
+                    existingRecord.type = record.type.rawValue
+                    existingRecord.targetName = record.targetName
+                    existingRecord.targetId = record.targetId
+                    existingRecord.detail = record.detail
+                    existingRecord.beforeSnapshot = record.beforeSnapshot
+                    existingRecord.afterSnapshot = record.afterSnapshot
+                } else {
+                    // 插入新记录
+                    context.insert(SDHistoryRecord(from: record))
+                }
             }
 
             try context.save()
