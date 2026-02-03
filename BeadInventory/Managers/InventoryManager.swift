@@ -652,7 +652,8 @@ class InventoryManager: ObservableObject {
             return
         }
 
-        // 重置加载状态标志
+        // 重置加载状态标志（在开始时重置 isDataLoaded，让逻辑更封闭）
+        isDataLoaded = false
         brandsLoadedSuccessfully = false
         stocksLoadedSuccessfully = false
         projectsLoadedSuccessfully = false
