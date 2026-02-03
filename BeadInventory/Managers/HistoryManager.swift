@@ -29,6 +29,10 @@ class HistoryManager: ObservableObject {
     // 数据加载完成标志
     private var isDataLoaded = false
 
+    // 防抖保存：避免频繁调用 saveData 导致 SwiftData 崩溃
+    private var saveWorkItem: DispatchWorkItem?
+    private var pendingSave = false
+
     private init() {}
 
     // 设置 ModelContext
@@ -781,6 +785,37 @@ class HistoryManager: ObservableObject {
     }
 
     func saveData() {
+        // 使用防抖机制，避免频繁保存导致 SwiftData 崩溃
+        pendingSave = true
+
+        // 取消之前的保存任务
+        saveWorkItem?.cancel()
+
+        // 创建新的延迟保存任务
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.performSave()
+        }
+        saveWorkItem = workItem
+
+        // 延迟 0.1 秒执行保存，合并多次保存请求
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: workItem)
+    }
+
+    /// 立即保存数据（用于应用进入后台等紧急情况）
+    func saveDataImmediately() {
+        // 取消待处理的延迟保存
+        saveWorkItem?.cancel()
+        saveWorkItem = nil
+
+        // 只有在有待保存数据时才执行
+        if pendingSave {
+            performSave()
+        }
+    }
+
+    private func performSave() {
+        pendingSave = false
+
         guard let context = modelContext else {
             print("[History] ModelContext 未设置，无法保存数据")
             return
@@ -793,30 +828,19 @@ class HistoryManager: ObservableObject {
         }
 
         do {
-            // 使用增量更新而不是全量删除，防止 autosave 导致数据丢失
+            // 先删除所有现有记录，然后重新插入
+            // 这比增量更新更安全，可以避免 "store went missing" 错误
             let descriptor = FetchDescriptor<SDHistoryRecord>()
             let existing = try context.fetch(descriptor)
-            let recordIds = Set(records.map { $0.id })
 
-            // 删除不再存在的记录
-            for sdRecord in existing where !recordIds.contains(sdRecord.id) {
+            // 删除所有现有记录
+            for sdRecord in existing {
                 context.delete(sdRecord)
             }
 
-            // 更新或插入记录
+            // 插入所有当前记录
             for record in records {
-                if let existingRecord = existing.first(where: { $0.id == record.id }) {
-                    // 更新现有记录
-                    existingRecord.timestamp = record.timestamp
-                    existingRecord.operationType = record.operationType.rawValue
-                    existingRecord.targetName = record.entityName
-                    existingRecord.beforeSnapshot = record.beforeSnapshot
-                    existingRecord.afterSnapshot = record.afterSnapshot
-                    existingRecord.isReverted = record.isReverted
-                } else {
-                    // 插入新记录
-                    context.insert(SDHistoryRecord(from: record))
-                }
+                context.insert(SDHistoryRecord(from: record))
             }
 
             try context.save()

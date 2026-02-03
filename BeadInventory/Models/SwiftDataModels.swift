@@ -123,11 +123,11 @@ final class SDProjectRecord {
 // MARK: - 单色用量模型
 @Model
 final class SDBeadUsage {
-    @Attribute(.unique) var id: UUID
-    var colorCode: String
+    @Attribute(.unique) var id: UUID = UUID()
+    var colorCode: String = ""
     var brandId: UUID?
-    var quantity: Int
-    var isDeducted: Bool
+    var quantity: Int = 0
+    var isDeducted: Bool = false
 
     init(id: UUID = UUID(), colorCode: String, brandId: UUID? = nil, quantity: Int, isDeducted: Bool = false) {
         self.id = id

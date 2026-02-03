@@ -771,8 +771,10 @@ class InventoryManager: ObservableObject {
                     existing.thumbnail = project.thumbnail
                     existing.finishedImage = project.finishedImage
                     existing.completedDate = project.completedDate
-                    // 更新 beadUsages
-                    existing.beadUsages.removeAll()
+                    // 更新 beadUsages：先显式删除旧的对象，避免孤立对象导致验证错误
+                    for usage in existing.beadUsages {
+                        context.delete(usage)
+                    }
                     existing.beadUsages = project.beadUsage.map { SDBeadUsage(from: $0) }
                 } else {
                     context.insert(SDProjectRecord(from: project))
@@ -1974,12 +1976,23 @@ class InventoryManager: ObservableObject {
     func confirmPurchaseRecord(id: UUID) {
         guard let record = purchaseRecords.first(where: { $0.id == id }) else { return }
 
-        // 将购买的物品添加到库存
+        // 批量将购买的物品添加到库存（不记录单独的历史）
         for item in record.items {
-            addStock(brandId: record.brandId, mardCode: item.colorCode, amount: item.quantity)
+            if let index = brandStocks.firstIndex(where: {
+                $0.brandId == record.brandId && $0.mardCode == item.colorCode
+            }) {
+                brandStocks[index].stock += item.quantity
+                // 如果是隐藏的色号，自动取消隐藏
+                if brandStocks[index].isHidden {
+                    brandStocks[index].isHidden = false
+                }
+            }
         }
 
-        // 记录历史
+        // 一次性保存所有库存变更
+        saveData()
+
+        // 记录历史（只记录一次汇总）
         let brandName = brands.first(where: { $0.id == record.brandId })?.name ?? "未知品牌"
         historyManager.record(type: .stockAdd, entityName: "\(brandName) 到货: \(record.name) (\(record.colorCount)色 +\(record.totalBeads)颗)")
 

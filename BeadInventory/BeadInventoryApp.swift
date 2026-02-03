@@ -68,12 +68,12 @@ struct BeadInventoryApp: App {
                 // 应用进入后台时立即保存数据，防止被系统杀死后数据丢失
                 print("[App] 应用进入后台，保存数据...")
                 inventoryManager.saveData()
-                HistoryManager.shared.saveData()
+                HistoryManager.shared.saveDataImmediately()
             case .inactive:
                 // 应用即将进入非活跃状态（如控制中心、通知中心弹出）时也保存
                 print("[App] 应用进入非活跃状态，保存数据...")
                 inventoryManager.saveData()
-                HistoryManager.shared.saveData()
+                HistoryManager.shared.saveDataImmediately()
             case .active:
                 print("[App] 应用恢复活跃状态")
             @unknown default:
