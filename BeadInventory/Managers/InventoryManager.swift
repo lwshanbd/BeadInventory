@@ -26,6 +26,12 @@ class InventoryManager: ObservableObject {
     // 数据加载完成标志，防止在数据未加载时意外保存空数据
     private var isDataLoaded = false
 
+    // 各实体加载成功标志，防止加载失败后保存时误删数据
+    private var brandsLoadedSuccessfully = false
+    private var stocksLoadedSuccessfully = false
+    private var projectsLoadedSuccessfully = false
+    private var customColorsLoadedSuccessfully = false
+
     // 历史记录管理器
     private var historyManager: HistoryManager { HistoryManager.shared }
 
@@ -646,6 +652,12 @@ class InventoryManager: ObservableObject {
             return
         }
 
+        // 重置加载状态标志
+        brandsLoadedSuccessfully = false
+        stocksLoadedSuccessfully = false
+        projectsLoadedSuccessfully = false
+        customColorsLoadedSuccessfully = false
+
         // 检查是否需要迁移
         let needsMigration = !UserDefaults.standard.bool(forKey: migrationCompletedKey)
         if needsMigration {
@@ -653,26 +665,39 @@ class InventoryManager: ObservableObject {
         }
 
         // 从 SwiftData 加载品牌
-        let brandDescriptor = FetchDescriptor<SDBrand>(sortBy: [SortDescriptor(\.sortOrder)])
-        if let sdBrands = try? context.fetch(brandDescriptor) {
+        do {
+            let brandDescriptor = FetchDescriptor<SDBrand>(sortBy: [SortDescriptor(\.sortOrder)])
+            let sdBrands = try context.fetch(brandDescriptor)
             brands = sdBrands.map { $0.toStruct() }
+            brandsLoadedSuccessfully = true
+            print("[InventoryManager] 成功加载 \(brands.count) 个品牌")
+        } catch {
+            print("[InventoryManager] ⚠️ 加载品牌失败: \(error)")
+            // 不修改 brands 数组，保持原状态
         }
 
         // 从 SwiftData 加载品牌库存
-        let stockDescriptor = FetchDescriptor<SDBrandStock>()
-        if let sdStocks = try? context.fetch(stockDescriptor) {
+        do {
+            let stockDescriptor = FetchDescriptor<SDBrandStock>()
+            let sdStocks = try context.fetch(stockDescriptor)
             brandStocks = sdStocks.map { $0.toStruct() }
+            stocksLoadedSuccessfully = true
+            print("[InventoryManager] 成功加载 \(brandStocks.count) 条库存记录")
+        } catch {
+            print("[InventoryManager] ⚠️ 加载库存失败: \(error)")
+            // 不修改 brandStocks 数组，保持原状态
         }
 
         // 从 SwiftData 加载项目记录
-        let projectDescriptor = FetchDescriptor<SDProjectRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
         do {
+            let projectDescriptor = FetchDescriptor<SDProjectRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
             let sdProjects = try context.fetch(projectDescriptor)
             projects = sdProjects.map { $0.toStruct() }
-            print("成功加载 \(projects.count) 个项目记录")
+            projectsLoadedSuccessfully = true
+            print("[InventoryManager] 成功加载 \(projects.count) 个项目记录")
         } catch {
-            print("加载项目记录失败: \(error)")
-            // 不覆盖现有数据，保持 projects 为空数组（初始状态）
+            print("[InventoryManager] ⚠️ 加载项目失败: \(error)")
+            // 不修改 projects 数组，保持原状态
         }
 
         // 加载当前品牌 ID
@@ -685,9 +710,15 @@ class InventoryManager: ObservableObject {
         beadColors = DefaultBeadColors.colors
 
         // 从 SwiftData 加载自定义色号
-        let customColorDescriptor = FetchDescriptor<SDCustomColor>(sortBy: [SortDescriptor(\.createdAt)])
-        if let sdCustomColors = try? context.fetch(customColorDescriptor) {
+        do {
+            let customColorDescriptor = FetchDescriptor<SDCustomColor>(sortBy: [SortDescriptor(\.createdAt)])
+            let sdCustomColors = try context.fetch(customColorDescriptor)
             customColors = sdCustomColors.map { $0.toStruct() }
+            customColorsLoadedSuccessfully = true
+            print("[InventoryManager] 成功加载 \(customColors.count) 个自定义色号")
+        } catch {
+            print("[InventoryManager] ⚠️ 加载自定义色号失败: \(error)")
+            // 不修改 customColors 数组，保持原状态
         }
 
         // 加载运输中的购买记录（存在 UserDefaults 中）
@@ -696,12 +727,21 @@ class InventoryManager: ObservableObject {
             purchaseRecords = decoded
         }
 
-        // 标记数据加载完成
-        isDataLoaded = true
-        print("[InventoryManager] 数据加载完成")
+        // 只有当所有关键数据都成功加载时，才标记为加载完成
+        let allLoaded = brandsLoadedSuccessfully && stocksLoadedSuccessfully && projectsLoadedSuccessfully
+        if allLoaded {
+            isDataLoaded = true
+            print("[InventoryManager] ✅ 数据加载完成")
 
-        // 修复数据一致性问题（仅基于 executedDate 判断）
-        fixProjectConsistency()
+            // 修复数据一致性问题（仅基于 executedDate 判断）
+            fixProjectConsistency()
+        } else {
+            print("[InventoryManager] ❌ 部分数据加载失败，禁止后续保存操作以防数据丢失")
+            print("[InventoryManager]   - 品牌: \(brandsLoadedSuccessfully ? "✅" : "❌")")
+            print("[InventoryManager]   - 库存: \(stocksLoadedSuccessfully ? "✅" : "❌")")
+            print("[InventoryManager]   - 项目: \(projectsLoadedSuccessfully ? "✅" : "❌")")
+            print("[InventoryManager]   - 自定义色号: \(customColorsLoadedSuccessfully ? "✅" : "❌")")
+        }
     }
 
     /// 修复项目数据一致性问题
@@ -737,15 +777,17 @@ class InventoryManager: ObservableObject {
         }
 
         do {
-            // 使用增量更新而不是全量删除，防止 autosave 导致数据丢失
+            // 使用增量更新，只有当对应实体成功加载时才允许删除操作
 
             // 1. 更新品牌数据
             let existingBrands = try context.fetch(FetchDescriptor<SDBrand>())
             let brandIds = Set(brands.map { $0.id })
 
-            // 删除不再存在的品牌
-            for sdBrand in existingBrands where !brandIds.contains(sdBrand.id) {
-                context.delete(sdBrand)
+            // 只有当品牌数据成功加载时，才删除不再存在的品牌
+            if brandsLoadedSuccessfully {
+                for sdBrand in existingBrands where !brandIds.contains(sdBrand.id) {
+                    context.delete(sdBrand)
+                }
             }
             // 更新或插入品牌
             for brand in brands {
@@ -762,8 +804,11 @@ class InventoryManager: ObservableObject {
             let existingStocks = try context.fetch(FetchDescriptor<SDBrandStock>())
             let stockIds = Set(brandStocks.map { $0.id })
 
-            for sdStock in existingStocks where !stockIds.contains(sdStock.id) {
-                context.delete(sdStock)
+            // 只有当库存数据成功加载时，才删除不再存在的库存
+            if stocksLoadedSuccessfully {
+                for sdStock in existingStocks where !stockIds.contains(sdStock.id) {
+                    context.delete(sdStock)
+                }
             }
             for stock in brandStocks {
                 if let existing = existingStocks.first(where: { $0.id == stock.id }) {
@@ -781,8 +826,11 @@ class InventoryManager: ObservableObject {
             let existingProjects = try context.fetch(FetchDescriptor<SDProjectRecord>())
             let projectIds = Set(projects.map { $0.id })
 
-            for sdProject in existingProjects where !projectIds.contains(sdProject.id) {
-                context.delete(sdProject)
+            // 只有当项目数据成功加载时，才删除不再存在的项目
+            if projectsLoadedSuccessfully {
+                for sdProject in existingProjects where !projectIds.contains(sdProject.id) {
+                    context.delete(sdProject)
+                }
             }
             for project in projects {
                 if let existing = existingProjects.first(where: { $0.id == project.id }) {
@@ -815,8 +863,11 @@ class InventoryManager: ObservableObject {
             let existingCustomColors = try context.fetch(FetchDescriptor<SDCustomColor>())
             let customColorIds = Set(customColors.map { $0.id })
 
-            for sdColor in existingCustomColors where !customColorIds.contains(sdColor.id) {
-                context.delete(sdColor)
+            // 只有当自定义色号数据成功加载时，才删除不再存在的自定义色号
+            if customColorsLoadedSuccessfully {
+                for sdColor in existingCustomColors where !customColorIds.contains(sdColor.id) {
+                    context.delete(sdColor)
+                }
             }
             for customColor in customColors {
                 if let existing = existingCustomColors.first(where: { $0.id == customColor.id }) {
@@ -896,6 +947,7 @@ class InventoryManager: ObservableObject {
     }
 
     // 从 UserDefaults 加载（用于 Preview 或无 ModelContext 时）
+    // 注意：此模式不涉及 SwiftData，所以加载标志设为 true 是安全的
     private func loadDataFromUserDefaults() {
         // 加载颜色数据
         beadColors = DefaultBeadColors.colors
@@ -936,7 +988,11 @@ class InventoryManager: ObservableObject {
             purchaseRecords = decoded
         }
 
-        // 标记数据加载完成
+        // UserDefaults 模式下，所有实体都视为"已加载"（不涉及 SwiftData 删除逻辑）
+        brandsLoadedSuccessfully = true
+        stocksLoadedSuccessfully = true
+        projectsLoadedSuccessfully = true
+        customColorsLoadedSuccessfully = true
         isDataLoaded = true
         print("[InventoryManager] 数据从 UserDefaults 加载完成")
     }
