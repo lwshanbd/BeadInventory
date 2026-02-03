@@ -699,6 +699,32 @@ class InventoryManager: ObservableObject {
         // 标记数据加载完成
         isDataLoaded = true
         print("[InventoryManager] 数据加载完成")
+
+        // 修复数据一致性问题（仅基于 executedDate 判断）
+        fixProjectConsistency()
+    }
+
+    /// 修复项目数据一致性问题
+    /// 只修复明确不一致的情况：有 executedDate 但 isPlanned 为 true
+    private func fixProjectConsistency() {
+        var needsSave = false
+
+        for index in projects.indices {
+            let project = projects[index]
+
+            // 唯一的修复条件：有执行日期但状态仍为计划中
+            // 这是明确的不一致状态，说明之前的保存失败了
+            if project.isPlanned && project.executedDate != nil {
+                print("[InventoryManager] 修复项目一致性: \(project.name) (有执行日期但状态为计划中)")
+                projects[index].isPlanned = false
+                needsSave = true
+            }
+        }
+
+        if needsSave {
+            saveData()
+            print("[InventoryManager] 已修复项目数据一致性")
+        }
     }
 
     func saveData() {
@@ -760,6 +786,7 @@ class InventoryManager: ObservableObject {
             }
             for project in projects {
                 if let existing = existingProjects.first(where: { $0.id == project.id }) {
+                    // 更新项目基本属性
                     existing.name = project.name
                     existing.date = project.date
                     existing.totalBeads = project.totalBeads
@@ -771,9 +798,12 @@ class InventoryManager: ObservableObject {
                     existing.thumbnail = project.thumbnail
                     existing.finishedImage = project.finishedImage
                     existing.completedDate = project.completedDate
-                    // 更新 beadUsages：先显式删除旧的对象，避免孤立对象导致验证错误
-                    for usage in existing.beadUsages {
-                        context.delete(usage)
+
+                    // 更新 beadUsages：先复制旧对象引用，再删除，最后添加新的
+                    let oldUsages = Array(existing.beadUsages)
+                    existing.beadUsages.removeAll()
+                    for oldUsage in oldUsages {
+                        context.delete(oldUsage)
                     }
                     existing.beadUsages = project.beadUsage.map { SDBeadUsage(from: $0) }
                 } else {
