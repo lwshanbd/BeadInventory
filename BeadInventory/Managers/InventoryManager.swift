@@ -847,13 +847,34 @@ class InventoryManager: ObservableObject {
                     existing.finishedImage = project.finishedImage
                     existing.completedDate = project.completedDate
 
-                    // 更新 beadUsages：先复制旧对象引用，再删除，最后添加新的
-                    let oldUsages = Array(existing.beadUsages)
-                    existing.beadUsages.removeAll()
-                    for oldUsage in oldUsages {
+                    // 增量更新 beadUsages：只更新变化的项目，减少中断时的影响范围
+                    let newUsageIds = Set(project.beadUsage.map { $0.id })
+                    let existingUsageDict = Dictionary(uniqueKeysWithValues: existing.beadUsages.map { ($0.id, $0) })
+                    let existingUsageIds = Set(existingUsageDict.keys)
+
+                    // 1. 删除不再存在的 beadUsage（先收集再删除，避免遍历时修改数组）
+                    let toDeleteIds = existingUsageIds.subtracting(newUsageIds)
+                    let usagesToDelete = toDeleteIds.compactMap { existingUsageDict[$0] }
+                    for oldUsage in usagesToDelete {
+                        existing.beadUsages.removeAll { $0.id == oldUsage.id }
                         context.delete(oldUsage)
                     }
-                    existing.beadUsages = project.beadUsage.map { SDBeadUsage(from: $0) }
+
+                    // 2. 更新已存在的 beadUsage
+                    for newUsage in project.beadUsage {
+                        if let existingUsage = existingUsageDict[newUsage.id] {
+                            existingUsage.colorCode = newUsage.colorCode
+                            existingUsage.brandId = newUsage.brandId
+                            existingUsage.quantity = newUsage.quantity
+                            existingUsage.isDeducted = newUsage.isDeducted
+                        }
+                    }
+
+                    // 3. 添加新的 beadUsage
+                    let toAddIds = newUsageIds.subtracting(existingUsageIds)
+                    for newUsage in project.beadUsage where toAddIds.contains(newUsage.id) {
+                        existing.beadUsages.append(SDBeadUsage(from: newUsage))
+                    }
                 } else {
                     context.insert(SDProjectRecord(from: project))
                 }
