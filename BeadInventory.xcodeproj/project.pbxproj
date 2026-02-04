@@ -10,6 +10,8 @@
 		3806E5062F00F94200187AA7 /* AddInventoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3806E5052F00F94200187AA7 /* AddInventoryView.swift */; };
 		3806E50A2F00FB3900187AA7 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3806E5082F00FB3900187AA7 /* InfoPlist.strings */; };
 		3806E50E2F00FB4300187AA7 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3806E50C2F00FB4300187AA7 /* InfoPlist.strings */; };
+		386ECBFC2F332DB600BD92E8 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFB2F332DB600BD92E8 /* BackupManager.swift */; };
+		386ECBFE2F332E1500BD92E8 /* BackupRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */; };
 		38B1A0012F01000100000001 /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000011 /* Brand.swift */; };
 		38B1A0012F01000100000002 /* BrandStock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000012 /* BrandStock.swift */; };
 		38B1A0012F01000100000003 /* DataMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000013 /* DataMigration.swift */; };
@@ -82,6 +84,8 @@
 		3806E5052F00F94200187AA7 /* AddInventoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddInventoryView.swift; sourceTree = "<group>"; };
 		3806E5072F00FB3900187AA7 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = InfoPlist.strings; sourceTree = "<group>"; };
 		3806E50B2F00FB4300187AA7 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = InfoPlist.strings; sourceTree = "<group>"; };
+		386ECBFB2F332DB600BD92E8 /* BackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
+		386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreView.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000011 /* Brand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brand.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000012 /* BrandStock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandStock.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000013 /* DataMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataMigration.swift; sourceTree = "<group>"; };
@@ -236,6 +240,7 @@
 		A01234560034 /* Managers */ = {
 			isa = PBXGroup;
 			children = (
+				386ECBFB2F332DB600BD92E8 /* BackupManager.swift */,
 				38FA2CF62F274C4000912E02 /* SharedImageManager.swift */,
 				A01234560015 /* InventoryManager.swift */,
 				A01234560016 /* OCRManager.swift */,
@@ -250,6 +255,7 @@
 		A01234560035 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */,
 				38B1A0012F01000100000020 /* Components */,
 				38B1A0012F01000100000017 /* AboutView.swift */,
 				38B1A0012F01000100000043 /* AddBrandView.swift */,
@@ -402,6 +408,7 @@
 				A01234560006 /* OCRManager.swift in Sources */,
 				A0123456000C /* AIService.swift in Sources */,
 				38B1A0012F01000100000003 /* DataMigration.swift in Sources */,
+				386ECBFE2F332E1500BD92E8 /* BackupRestoreView.swift in Sources */,
 				A01234560007 /* InventoryView.swift in Sources */,
 				A01234560008 /* ScanView.swift in Sources */,
 				A01234560009 /* ColorConverterView.swift in Sources */,
@@ -429,6 +436,7 @@
 				38FA2CDF2F25B67300912E02 /* CustomColor.swift in Sources */,
 				38FA2CE12F25B67400912E02 /* CalendarView.swift in Sources */,
 				38B1A0012F01000100000046 /* SwiftDataMigration.swift in Sources */,
+				386ECBFC2F332DB600BD92E8 /* BackupManager.swift in Sources */,
 				38B1A0012F01000100000048 /* CSVImporter.swift in Sources */,
 				38FA2CF72F274C4000912E02 /* SharedImageManager.swift in Sources */,
 				38B1A0012F0100010000004A /* ImportStockView.swift in Sources */,
