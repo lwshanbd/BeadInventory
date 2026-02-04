@@ -11,6 +11,7 @@ struct MoreView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showingImportFullData = false
     @State private var showingScanHelp = false
+    @State private var showingBackupRestore = false
 
     var body: some View {
         NavigationStack {
@@ -170,6 +171,23 @@ struct MoreView: View {
                         }
                     }
                     .foregroundColor(.primary)
+
+                    Button {
+                        showingBackupRestore = true
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("恢复备份")
+                                Text("从自动备份恢复数据")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "arrow.clockwise.icloud.fill")
+                                .foregroundColor(.cyan)
+                        }
+                    }
+                    .foregroundColor(.primary)
                 }
 
                 // 帮助与关于
@@ -216,6 +234,9 @@ struct MoreView: View {
                 ScanHelpSheet(onDismiss: {
                     showingScanHelp = false
                 })
+            }
+            .sheet(isPresented: $showingBackupRestore) {
+                BackupRestoreView()
             }
         }
     }

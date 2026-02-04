@@ -1,0 +1,592 @@
+//
+//  BackupManager.swift
+//  BeadInventory
+//
+//  自动备份管理器 - 每周首次打开时自动备份数据
+//
+
+import Foundation
+
+class BackupManager {
+    static let shared = BackupManager()
+
+    private let lastBackupDateKey = "lastWeeklyBackupDate"
+    private let backupFolderName = "WeeklyBackups"
+    private let maxBackupCount = 8  // 最多保留8个备份（约2个月）
+
+    private init() {}
+
+    // MARK: - 备份目录
+
+    private var backupDirectory: URL? {
+        guard let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let backupDir = documentsDirectory.appendingPathComponent(backupFolderName)
+
+        // 确保目录存在
+        if !FileManager.default.fileExists(atPath: backupDir.path) {
+            try? FileManager.default.createDirectory(at: backupDir, withIntermediateDirectories: true)
+        }
+
+        return backupDir
+    }
+
+    // MARK: - 周检查
+
+    /// 检查是否需要进行每周备份
+    func checkAndPerformWeeklyBackupIfNeeded(inventoryManager: InventoryManager) {
+        let now = Date()
+
+        // 获取上次备份日期
+        if let lastBackupDate = UserDefaults.standard.object(forKey: lastBackupDateKey) as? Date {
+            // 检查是否在同一周
+            if Calendar.current.isDate(now, equalTo: lastBackupDate, toGranularity: .weekOfYear) {
+                print("[BackupManager] 本周已备份，跳过")
+                return
+            }
+        }
+
+        // 执行备份
+        performBackup(inventoryManager: inventoryManager)
+    }
+
+    // MARK: - 执行备份
+
+    /// 创建备份
+    @discardableResult
+    func performBackup(inventoryManager: InventoryManager) -> Bool {
+        guard let backupDir = backupDirectory else {
+            print("[BackupManager] 无法获取备份目录")
+            return false
+        }
+
+        // 生成备份数据
+        let backupData = createBackupData(from: inventoryManager)
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: backupData, options: [.prettyPrinted, .sortedKeys]) else {
+            print("[BackupManager] 备份数据序列化失败")
+            return false
+        }
+
+        // 生成文件名：backup_2024-01-15_周一.json
+        let fileName = generateBackupFileName()
+        let fileURL = backupDir.appendingPathComponent(fileName)
+
+        do {
+            try jsonData.write(to: fileURL)
+
+            // 更新上次备份日期
+            UserDefaults.standard.set(Date(), forKey: lastBackupDateKey)
+
+            print("[BackupManager] 备份成功: \(fileName)")
+
+            // 清理旧备份
+            cleanupOldBackups()
+
+            return true
+        } catch {
+            print("[BackupManager] 备份写入失败: \(error)")
+            return false
+        }
+    }
+
+    // MARK: - 备份数据生成
+
+    private func createBackupData(from manager: InventoryManager) -> [String: Any] {
+        var data: [String: Any] = [:]
+
+        // 元数据
+        data["backupDate"] = ISO8601DateFormatter().string(from: Date())
+        data["appVersion"] = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        data["backupType"] = "weekly_auto"
+
+        // 品牌数据
+        data["brands"] = manager.brands.map { brand in
+            [
+                "id": brand.id.uuidString,
+                "name": brand.name,
+                "sortOrder": brand.sortOrder,
+                "createdAt": ISO8601DateFormatter().string(from: brand.createdAt),
+                "lowStockThreshold": brand.lowStockThreshold
+            ]
+        }
+
+        // 库存数据
+        data["brandStocks"] = manager.brandStocks.map { stock in
+            [
+                "id": stock.id.uuidString,
+                "brandId": stock.brandId.uuidString,
+                "mardCode": stock.mardCode,
+                "stock": stock.stock,
+                "used": stock.used,
+                "isHidden": stock.isHidden
+            ]
+        }
+
+        // 项目数据
+        data["projects"] = manager.projects.map { project in
+            var projectData: [String: Any] = [
+                "id": project.id.uuidString,
+                "name": project.name,
+                "date": ISO8601DateFormatter().string(from: project.date),
+                "totalBeads": project.totalBeads,
+                "isArchived": project.isArchived,
+                "isPlanned": project.isPlanned
+            ]
+            if let brandId = project.brandId {
+                projectData["brandId"] = brandId.uuidString
+            }
+            if let completedDate = project.completedDate {
+                projectData["completedDate"] = ISO8601DateFormatter().string(from: completedDate)
+            }
+            if let executedDate = project.executedDate {
+                projectData["executedDate"] = ISO8601DateFormatter().string(from: executedDate)
+            }
+            if let parentId = project.parentId {
+                projectData["parentId"] = parentId.uuidString
+            }
+            // 缩略图和成品图保存为 Base64（仅在有数据时）
+            if let thumbnail = project.thumbnail {
+                projectData["thumbnail"] = thumbnail.base64EncodedString()
+            }
+            if let finishedImage = project.finishedImage {
+                projectData["finishedImage"] = finishedImage.base64EncodedString()
+            }
+            projectData["beadUsage"] = project.beadUsage.map { usage in
+                [
+                    "colorCode": usage.colorCode,
+                    "quantity": usage.quantity,
+                    "isDeducted": usage.isDeducted
+                ]
+            }
+            return projectData
+        }
+
+        // 自定义色号
+        data["customColors"] = manager.customColors.map { color in
+            [
+                "id": color.id.uuidString,
+                "colorCode": color.colorCode,
+                "colorHex": color.colorHex,
+                "colorName": color.colorName,
+                "createdAt": ISO8601DateFormatter().string(from: color.createdAt),
+                "updatedAt": ISO8601DateFormatter().string(from: color.updatedAt)
+            ]
+        }
+
+        // 运输中记录
+        data["purchaseRecords"] = manager.purchaseRecords.map { record in
+            var recordData: [String: Any] = [
+                "id": record.id.uuidString,
+                "name": record.name,
+                "date": ISO8601DateFormatter().string(from: record.date),
+                "brandId": record.brandId.uuidString
+            ]
+            if let note = record.note {
+                recordData["note"] = note
+            }
+            recordData["items"] = record.items.map { item in
+                [
+                    "id": item.id.uuidString,
+                    "colorCode": item.colorCode,
+                    "quantity": item.quantity
+                ]
+            }
+            return recordData
+        }
+
+        // 当前品牌ID
+        if let currentBrandId = manager.currentBrandId {
+            data["currentBrandId"] = currentBrandId.uuidString
+        }
+
+        // 统计信息
+        data["stats"] = [
+            "brandsCount": manager.brands.count,
+            "stocksCount": manager.brandStocks.count,
+            "projectsCount": manager.projects.count,
+            "customColorsCount": manager.customColors.count,
+            "purchaseRecordsCount": manager.purchaseRecords.count
+        ]
+
+        return data
+    }
+
+    // MARK: - 文件名生成
+
+    private func generateBackupFileName() -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateString = dateFormatter.string(from: Date())
+
+        // 获取星期几
+        dateFormatter.dateFormat = "EEEE"
+        dateFormatter.locale = Locale(identifier: "zh_CN")
+        let weekdayString = dateFormatter.string(from: Date())
+
+        return "backup_\(dateString)_\(weekdayString).json"
+    }
+
+    // MARK: - 获取备份列表
+
+    struct BackupInfo: Identifiable {
+        let id = UUID()
+        let fileURL: URL
+        let fileName: String
+        let date: Date
+        let fileSize: Int64
+        let stats: BackupStats?
+
+        var formattedDate: String {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy年M月d日 EEEE"
+            formatter.locale = Locale(identifier: "zh_CN")
+            return formatter.string(from: date)
+        }
+
+        var formattedSize: String {
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
+            return formatter.string(fromByteCount: fileSize)
+        }
+    }
+
+    struct BackupStats {
+        let brandsCount: Int
+        let stocksCount: Int
+        let projectsCount: Int
+    }
+
+    /// 获取所有备份
+    func getBackupList() -> [BackupInfo] {
+        guard let backupDir = backupDirectory else { return [] }
+
+        do {
+            let files = try FileManager.default.contentsOfDirectory(
+                at: backupDir,
+                includingPropertiesForKeys: [.creationDateKey, .fileSizeKey],
+                options: .skipsHiddenFiles
+            )
+
+            return files
+                .filter { $0.pathExtension == "json" }
+                .compactMap { fileURL -> BackupInfo? in
+                    guard let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+                          let creationDate = attributes[.creationDate] as? Date,
+                          let fileSize = attributes[.size] as? Int64 else {
+                        return nil
+                    }
+
+                    // 尝试读取统计信息
+                    var stats: BackupStats?
+                    if let data = try? Data(contentsOf: fileURL),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let statsDict = json["stats"] as? [String: Int] {
+                        stats = BackupStats(
+                            brandsCount: statsDict["brandsCount"] ?? 0,
+                            stocksCount: statsDict["stocksCount"] ?? 0,
+                            projectsCount: statsDict["projectsCount"] ?? 0
+                        )
+                    }
+
+                    return BackupInfo(
+                        fileURL: fileURL,
+                        fileName: fileURL.lastPathComponent,
+                        date: creationDate,
+                        fileSize: fileSize,
+                        stats: stats
+                    )
+                }
+                .sorted { $0.date > $1.date }  // 按日期降序
+        } catch {
+            print("[BackupManager] 获取备份列表失败: \(error)")
+            return []
+        }
+    }
+
+    // MARK: - 恢复备份
+
+    /// 从备份恢复数据
+    func restoreBackup(from backup: BackupInfo, to manager: InventoryManager) throws {
+        let data = try Data(contentsOf: backup.fileURL)
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw BackupError.invalidFormat
+        }
+
+        // 解析品牌
+        var restoredBrands: [Brand] = []
+        if let brandsArray = json["brands"] as? [[String: Any]] {
+            for brandDict in brandsArray {
+                guard let idString = brandDict["id"] as? String,
+                      let id = UUID(uuidString: idString),
+                      let name = brandDict["name"] as? String else {
+                    continue
+                }
+
+                let sortOrder = brandDict["sortOrder"] as? Int ?? 0
+                let lowStockThreshold = brandDict["lowStockThreshold"] as? Int ?? 100
+
+                var createdAt = Date()
+                if let createdAtString = brandDict["createdAt"] as? String {
+                    createdAt = ISO8601DateFormatter().date(from: createdAtString) ?? Date()
+                }
+
+                let brand = Brand(
+                    id: id,
+                    name: name,
+                    sortOrder: sortOrder,
+                    createdAt: createdAt,
+                    lowStockThreshold: lowStockThreshold
+                )
+                restoredBrands.append(brand)
+            }
+        }
+
+        // 解析库存
+        var restoredStocks: [BrandStock] = []
+        if let stocksArray = json["brandStocks"] as? [[String: Any]] {
+            for stockDict in stocksArray {
+                guard let idString = stockDict["id"] as? String,
+                      let id = UUID(uuidString: idString),
+                      let brandIdString = stockDict["brandId"] as? String,
+                      let brandId = UUID(uuidString: brandIdString),
+                      let mardCode = stockDict["mardCode"] as? String else {
+                    continue
+                }
+
+                let stock = BrandStock(
+                    id: id,
+                    brandId: brandId,
+                    mardCode: mardCode,
+                    stock: stockDict["stock"] as? Int ?? 0,
+                    used: stockDict["used"] as? Int ?? 0,
+                    isHidden: stockDict["isHidden"] as? Bool ?? false
+                )
+                restoredStocks.append(stock)
+            }
+        }
+
+        // 解析项目
+        var restoredProjects: [ProjectRecord] = []
+        if let projectsArray = json["projects"] as? [[String: Any]] {
+            for projectDict in projectsArray {
+                guard let idString = projectDict["id"] as? String,
+                      let id = UUID(uuidString: idString),
+                      let name = projectDict["name"] as? String else {
+                    continue
+                }
+
+                var date = Date()
+                if let dateString = projectDict["date"] as? String {
+                    date = ISO8601DateFormatter().date(from: dateString) ?? Date()
+                }
+
+                var brandId: UUID?
+                if let brandIdString = projectDict["brandId"] as? String {
+                    brandId = UUID(uuidString: brandIdString)
+                }
+
+                var completedDate: Date?
+                if let completedDateString = projectDict["completedDate"] as? String {
+                    completedDate = ISO8601DateFormatter().date(from: completedDateString)
+                }
+
+                var executedDate: Date?
+                if let executedDateString = projectDict["executedDate"] as? String {
+                    executedDate = ISO8601DateFormatter().date(from: executedDateString)
+                }
+
+                var parentId: UUID?
+                if let parentIdString = projectDict["parentId"] as? String {
+                    parentId = UUID(uuidString: parentIdString)
+                }
+
+                // 解析缩略图和成品图
+                var thumbnail: Data?
+                if let thumbnailBase64 = projectDict["thumbnail"] as? String {
+                    thumbnail = Data(base64Encoded: thumbnailBase64)
+                }
+                var finishedImage: Data?
+                if let finishedImageBase64 = projectDict["finishedImage"] as? String {
+                    finishedImage = Data(base64Encoded: finishedImageBase64)
+                }
+
+                var beadUsage: [BeadUsage] = []
+                if let usageArray = projectDict["beadUsage"] as? [[String: Any]] {
+                    for usageDict in usageArray {
+                        guard let colorCode = usageDict["colorCode"] as? String,
+                              let quantity = usageDict["quantity"] as? Int else {
+                            continue
+                        }
+                        let usage = BeadUsage(
+                            colorCode: colorCode,
+                            quantity: quantity,
+                            isDeducted: usageDict["isDeducted"] as? Bool ?? false
+                        )
+                        beadUsage.append(usage)
+                    }
+                }
+
+                let project = ProjectRecord(
+                    id: id,
+                    name: name,
+                    date: date,
+                    beadUsage: beadUsage,
+                    brandId: brandId,
+                    isArchived: projectDict["isArchived"] as? Bool ?? false,
+                    parentId: parentId,
+                    isPlanned: projectDict["isPlanned"] as? Bool ?? false,
+                    executedDate: executedDate,
+                    thumbnail: thumbnail,
+                    finishedImage: finishedImage,
+                    completedDate: completedDate
+                )
+                restoredProjects.append(project)
+            }
+        }
+
+        // 解析自定义色号
+        var restoredCustomColors: [CustomColor] = []
+        if let colorsArray = json["customColors"] as? [[String: Any]] {
+            for colorDict in colorsArray {
+                guard let idString = colorDict["id"] as? String,
+                      let id = UUID(uuidString: idString),
+                      let colorCode = colorDict["colorCode"] as? String,
+                      let colorHex = colorDict["colorHex"] as? String else {
+                    continue
+                }
+
+                var createdAt = Date()
+                if let createdAtString = colorDict["createdAt"] as? String {
+                    createdAt = ISO8601DateFormatter().date(from: createdAtString) ?? Date()
+                }
+                var updatedAt = Date()
+                if let updatedAtString = colorDict["updatedAt"] as? String {
+                    updatedAt = ISO8601DateFormatter().date(from: updatedAtString) ?? Date()
+                }
+
+                let customColor = CustomColor(
+                    id: id,
+                    colorCode: colorCode,
+                    colorHex: colorHex,
+                    colorName: colorDict["colorName"] as? String ?? "",
+                    createdAt: createdAt,
+                    updatedAt: updatedAt
+                )
+                restoredCustomColors.append(customColor)
+            }
+        }
+
+        // 解析运输中记录
+        var restoredPurchaseRecords: [PurchaseRecord] = []
+        if let recordsArray = json["purchaseRecords"] as? [[String: Any]] {
+            for recordDict in recordsArray {
+                guard let idString = recordDict["id"] as? String,
+                      let id = UUID(uuidString: idString),
+                      let brandIdString = recordDict["brandId"] as? String,
+                      let brandId = UUID(uuidString: brandIdString),
+                      let name = recordDict["name"] as? String else {
+                    continue
+                }
+
+                var date = Date()
+                if let dateString = recordDict["date"] as? String {
+                    date = ISO8601DateFormatter().date(from: dateString) ?? Date()
+                }
+
+                var items: [PurchaseItem] = []
+                if let itemsArray = recordDict["items"] as? [[String: Any]] {
+                    for itemDict in itemsArray {
+                        guard let colorCode = itemDict["colorCode"] as? String,
+                              let quantity = itemDict["quantity"] as? Int else {
+                            continue
+                        }
+                        var itemId = UUID()
+                        if let itemIdString = itemDict["id"] as? String,
+                           let parsedId = UUID(uuidString: itemIdString) {
+                            itemId = parsedId
+                        }
+                        items.append(PurchaseItem(id: itemId, colorCode: colorCode, quantity: quantity))
+                    }
+                }
+
+                let record = PurchaseRecord(
+                    id: id,
+                    name: name,
+                    date: date,
+                    brandId: brandId,
+                    items: items,
+                    note: recordDict["note"] as? String
+                )
+                restoredPurchaseRecords.append(record)
+            }
+        }
+
+        // 解析当前品牌ID
+        var restoredCurrentBrandId: UUID?
+        if let currentBrandIdString = json["currentBrandId"] as? String {
+            restoredCurrentBrandId = UUID(uuidString: currentBrandIdString)
+        }
+
+        // 应用恢复的数据
+        manager.brands = restoredBrands
+        manager.brandStocks = restoredStocks
+        manager.projects = restoredProjects
+        manager.customColors = restoredCustomColors
+        manager.purchaseRecords = restoredPurchaseRecords
+        manager.currentBrandId = restoredCurrentBrandId
+
+        // 保存到持久化存储
+        manager.saveData()
+
+        print("[BackupManager] 恢复成功: \(backup.fileName)")
+    }
+
+    // MARK: - 删除备份
+
+    func deleteBackup(_ backup: BackupInfo) -> Bool {
+        do {
+            try FileManager.default.removeItem(at: backup.fileURL)
+            print("[BackupManager] 删除备份: \(backup.fileName)")
+            return true
+        } catch {
+            print("[BackupManager] 删除备份失败: \(error)")
+            return false
+        }
+    }
+
+    // MARK: - 清理旧备份
+
+    private func cleanupOldBackups() {
+        let backups = getBackupList()
+
+        if backups.count > maxBackupCount {
+            let toDelete = backups.suffix(from: maxBackupCount)
+            for backup in toDelete {
+                _ = deleteBackup(backup)
+            }
+            print("[BackupManager] 清理了 \(toDelete.count) 个旧备份")
+        }
+    }
+
+    // MARK: - 错误类型
+
+    enum BackupError: LocalizedError {
+        case invalidFormat
+        case readFailed
+        case writeFailed
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidFormat:
+                return "备份文件格式无效"
+            case .readFailed:
+                return "读取备份文件失败"
+            case .writeFailed:
+                return "写入备份文件失败"
+            }
+        }
+    }
+}

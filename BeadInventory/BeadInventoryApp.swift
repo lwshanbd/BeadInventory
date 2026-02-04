@@ -59,6 +59,9 @@ struct BeadInventoryApp: App {
                 .onAppear {
                     // App 启动时检查是否有待处理的共享图片
                     sharedImageManager.checkForPendingImage()
+
+                    // 检查并执行每周自动备份
+                    BackupManager.shared.checkAndPerformWeeklyBackupIfNeeded(inventoryManager: inventoryManager)
                 }
         }
         .modelContainer(modelContainer)
