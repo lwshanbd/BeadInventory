@@ -1131,11 +1131,7 @@ class InventoryManager: ObservableObject {
     }
 
     func deleteProject(at offsets: IndexSet) {
-        // 删除项目时，回退库存
-        for index in offsets {
-            let project = projects[index]
-            restoreStockFromProject(project)
-        }
+        // 删除项目只从记录中移除，不回退库存
         projects.remove(atOffsets: offsets)
         saveData()
     }
@@ -1147,7 +1143,7 @@ class InventoryManager: ObservableObject {
             // 记录历史（在删除前）
             historyManager.recordProject(type: .projectDelete, project: project)
 
-            restoreStockFromProject(project)
+            // 删除项目只从记录中移除，不回退库存
             projects.remove(at: index)
             saveData()
         }
