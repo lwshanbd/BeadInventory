@@ -27,7 +27,7 @@ struct AddInventoryView: View {
         let sourceColors = selectedSeries == "#" ? inventoryManager.allBeadColors : inventoryManager.beadColors
 
         return sourceColors.filter { color in
-            let code = color.mardCode
+            let code = color.displayCode(for: inventoryManager.currentColorSystem)
 
             if selectedSeries == "#" {
                 // 自定义色号系列
@@ -49,7 +49,7 @@ struct AddInventoryView: View {
                 if code.hasPrefix("ZG") { return false }
                 return code.hasPrefix(selectedSeries)
             }
-        }.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
+        }.sorted { $0.displayCode(for: inventoryManager.currentColorSystem).localizedStandardCompare($1.displayCode(for: inventoryManager.currentColorSystem)) == .orderedAscending }
     }
 
     var totalToAdd: Int {
@@ -281,6 +281,7 @@ struct ColorAddRow: View {
     let isSelected: Bool
     @Binding var quantity: Double
     let onToggle: () -> Void
+    @EnvironmentObject var inventoryManager: InventoryManager
 
     var body: some View {
         HStack(spacing: 12) {
@@ -314,7 +315,7 @@ struct ColorAddRow: View {
                 )
 
             // 色号
-            Text(color.mardCode)
+            Text(color.displayCode(for: inventoryManager.currentColorSystem))
                 .font(.system(.body, design: .monospaced))
                 .fontWeight(.medium)
 

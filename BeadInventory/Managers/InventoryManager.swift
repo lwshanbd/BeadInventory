@@ -51,6 +51,11 @@ class InventoryManager: ObservableObject {
         return brands.first { $0.id == id }
     }
 
+    // 计算属性：当前品牌的色号体系
+    var currentColorSystem: ColorSystem {
+        currentBrand?.colorSystem ?? .mard
+    }
+
     // 计算属性：当前品牌的库存
     var currentBrandStocks: [BrandStock] {
         guard let brandId = currentBrandId else { return [] }
@@ -77,11 +82,12 @@ class InventoryManager: ObservableObject {
     // MARK: - 品牌管理
 
     @discardableResult
-    func addBrand(name: String, defaultStock: Int = 1000, selectedColors: Set<String>? = nil) -> Brand {
+    func addBrand(name: String, colorSystem: ColorSystem = .mard, defaultStock: Int = 1000, selectedColors: Set<String>? = nil) -> Brand {
         let maxOrder = brands.map { $0.sortOrder }.max() ?? -1
         let brand = Brand(
             name: name,
-            sortOrder: maxOrder + 1
+            sortOrder: maxOrder + 1,
+            colorSystem: colorSystem
         )
         brands.append(brand)
 
@@ -248,8 +254,16 @@ class InventoryManager: ObservableObject {
     // MARK: - 品牌库存操作
 
     func initializeStockForBrand(_ brandId: UUID, defaultStock: Int = 1000, selectedColors: Set<String>? = nil) {
+        // 获取该品牌的色号体系
+        let colorSystem = brands.first(where: { $0.id == brandId })?.colorSystem ?? .mard
+
         // 为预设颜色初始化库存
         for color in beadColors {
+            // 非 MARD 体系时，跳过没有对应编码的颜色
+            if colorSystem != .mard && !color.hasCode(for: colorSystem) {
+                continue
+            }
+
             // 如果指定了 selectedColors，则只有选中的颜色才有库存，未选中的标记为隐藏
             let isSelected = selectedColors?.contains(color.mardCode) ?? true
             let stock = BrandStock(
@@ -523,7 +537,8 @@ class InventoryManager: ObservableObject {
             $0.cocoCode.uppercased() == normalizedCode ||
             $0.manmanCode.uppercased() == normalizedCode ||
             $0.panpanCode.uppercased() == normalizedCode ||
-            $0.mixiaowoCode.uppercased() == normalizedCode
+            $0.mixiaowoCode.uppercased() == normalizedCode ||
+            $0.kakaCode.uppercased() == normalizedCode
         }) {
             return nil
         }
@@ -796,6 +811,7 @@ class InventoryManager: ObservableObject {
                     existing.name = brand.name
                     existing.sortOrder = brand.sortOrder
                     existing.lowStockThreshold = brand.lowStockThreshold
+                    existing.colorSystemRaw = brand.colorSystem.rawValue
                 } else {
                     context.insert(SDBrand(from: brand))
                 }
@@ -1068,7 +1084,8 @@ class InventoryManager: ObservableObject {
             color.cocoCode.uppercased() == code ||
             color.manmanCode.uppercased() == code ||
             color.panpanCode.uppercased() == code ||
-            color.mixiaowoCode.uppercased() == code
+            color.mixiaowoCode.uppercased() == code ||
+            color.kakaCode.uppercased() == code
         }) {
             return brandMatch
         }
@@ -1102,14 +1119,17 @@ class InventoryManager: ObservableObject {
             color.cocoCode.uppercased() == code ||
             color.manmanCode.uppercased() == code ||
             color.panpanCode.uppercased() == code ||
-            color.mixiaowoCode.uppercased() == code
+            color.mixiaowoCode.uppercased() == code ||
+            color.kakaCode.uppercased() == code
         }
     }
 
     func searchColors(_ query: String) -> [BeadColor] {
         guard !query.isEmpty else { return allBeadColors }
         let query = query.uppercased()
+        let system = currentColorSystem
         return allBeadColors.filter { color in
+            color.displayCode(for: system).uppercased().contains(query) ||
             color.mardCode.uppercased().contains(query) ||
             color.colorName.uppercased().contains(query)
         }

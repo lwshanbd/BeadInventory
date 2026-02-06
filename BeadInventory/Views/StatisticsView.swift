@@ -277,7 +277,7 @@ struct UsageRankRow: View {
             // 色号和进度条
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(color.mardCode)
+                    Text(color.displayCode(for: inventoryManager.currentColorSystem))
                         .font(.system(.subheadline, design: .monospaced))
                         .fontWeight(.medium)
 

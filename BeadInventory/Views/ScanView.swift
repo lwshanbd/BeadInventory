@@ -1222,7 +1222,7 @@ struct ManualEntrySheetNew: View {
 
     var colorsInSeries: [BeadColor] {
         inventoryManager.allBeadColors.filter { color in
-            let code = color.mardCode
+            let code = color.displayCode(for: inventoryManager.currentColorSystem)
 
             if selectedSeries == "#" {
                 // 自定义色号（以 # 开头）
@@ -1243,7 +1243,7 @@ struct ManualEntrySheetNew: View {
                 if code.hasPrefix("#") { return false }  // 排除自定义色号
                 return code.hasPrefix(selectedSeries)
             }
-        }.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
+        }.sorted { $0.displayCode(for: inventoryManager.currentColorSystem).localizedStandardCompare($1.displayCode(for: inventoryManager.currentColorSystem)) == .orderedAscending }
     }
 
     var totalToAdd: Int {
@@ -1403,6 +1403,7 @@ struct ManualEntryColorRow: View {
     let isSelected: Bool
     @Binding var quantity: Int
     let onToggle: () -> Void
+    @EnvironmentObject var inventoryManager: InventoryManager
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1436,7 +1437,7 @@ struct ManualEntryColorRow: View {
                 )
 
             // 色号
-            Text(color.mardCode)
+            Text(color.displayCode(for: inventoryManager.currentColorSystem))
                 .font(.system(.body, design: .monospaced))
                 .fontWeight(.medium)
 

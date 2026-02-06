@@ -72,6 +72,13 @@ struct BrandSettingsView: View {
                         }
 
                         HStack {
+                            Text("色号体系")
+                            Spacer()
+                            Text(brand.colorSystem.displayName)
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
                             Text("创建时间")
                             Spacer()
                             Text(brand.createdAt.formatted(date: .abbreviated, time: .omitted))

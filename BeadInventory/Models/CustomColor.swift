@@ -54,6 +54,7 @@ struct CustomColor: Identifiable, Codable, Hashable {
             manmanCode: colorCode,
             panpanCode: colorCode,
             mixiaowoCode: colorCode,
+            kakaCode: colorCode,
             colorName: colorName,
             stock: stock,
             used: used

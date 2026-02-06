@@ -2257,7 +2257,8 @@ struct AddColorToProjectSheet: View {
             color.mardCode.uppercased().contains(search) ||
             color.colorName.uppercased().contains(search) ||
             color.cocoCode.uppercased().contains(search) ||
-            color.manmanCode.uppercased().contains(search)
+            color.manmanCode.uppercased().contains(search) ||
+            color.displayCode(for: inventoryManager.currentColorSystem).uppercased().contains(search)
         }
     }
 
@@ -2298,7 +2299,7 @@ struct AddColorToProjectSheet: View {
                                 )
 
                             VStack(alignment: .leading) {
-                                Text(color.mardCode)
+                                Text(color.displayCode(for: inventoryManager.currentColorSystem))
                                     .font(.headline)
                                 Text(color.colorName)
                                     .font(.caption)
@@ -2368,7 +2369,7 @@ struct AddColorToProjectSheet: View {
                                     )
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(color.mardCode)
+                                    Text(color.displayCode(for: inventoryManager.currentColorSystem))
                                         .font(.system(.subheadline, design: .monospaced))
                                         .fontWeight(.medium)
                                         .foregroundColor(.primary)

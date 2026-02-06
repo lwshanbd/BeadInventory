@@ -57,11 +57,12 @@ struct InventoryView: View {
             return compare(c1, c2)  // 都是或都不是自定义，按原规则排序
         }
 
+        let colorSystem = inventoryManager.currentColorSystem
         let sorted: [BeadColor]
         switch sortOption {
         case .code:
             sorted = visibleColors.sorted { customColorLast($0, $1) {
-                $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending
+                $0.displayCode(for: colorSystem).localizedStandardCompare($1.displayCode(for: colorSystem)) == .orderedAscending
             }}
         case .stock:
             sorted = visibleColors.sorted { customColorLast($0, $1) {
@@ -81,14 +82,16 @@ struct InventoryView: View {
 
     // 按首字母分组的颜色
     var groupedColors: [(prefix: String, colors: [BeadColor])] {
+        let colorSystem = inventoryManager.currentColorSystem
         var groups: [String: [BeadColor]] = [:]
         for color in filteredColors {
             // 自定义色号（以 # 开头）单独分组为 "#"
+            let code = color.displayCode(for: colorSystem)
             let prefix: String
-            if color.mardCode.hasPrefix("#") {
+            if code.hasPrefix("#") {
                 prefix = "#"
             } else {
-                prefix = String(color.mardCode.prefix(1)).uppercased()
+                prefix = String(code.prefix(1)).uppercased()
             }
             if groups[prefix] != nil {
                 groups[prefix]?.append(color)
@@ -234,7 +237,8 @@ struct InventoryView: View {
                                                             color: color,
                                                             stock: stockDict[color.mardCode],
                                                             sortOption: sortOption,
-                                                            lowStockThreshold: lowStockThreshold
+                                                            lowStockThreshold: lowStockThreshold,
+                                                            colorSystem: inventoryManager.currentColorSystem
                                                         )
                                                         .onTapGesture {
                                                             selectedColor = color
@@ -283,7 +287,8 @@ struct InventoryView: View {
                                                     color: color,
                                                     stock: stockDict[color.mardCode],
                                                     sortOption: sortOption,
-                                                    lowStockThreshold: lowStockThreshold
+                                                    lowStockThreshold: lowStockThreshold,
+                                                    colorSystem: inventoryManager.currentColorSystem
                                                 )
                                                 .contentShape(Rectangle())
                                                 .onTapGesture {
@@ -534,14 +539,15 @@ struct ColorCardView: View {
     let stock: BrandStock?
     var sortOption: InventoryView.SortOption = .code
     var lowStockThreshold: Int = 100
+    var colorSystem: ColorSystem = .mard
 
     var available: Int { stock?.available ?? 0 }
     var used: Int { stock?.used ?? 0 }
     var isLowStock: Bool { available < lowStockThreshold }
 
-    // 显示色号：自定义色号保留 # 前缀
+    // 显示色号：根据品牌色号体系显示
     var displayCode: String {
-        color.mardCode
+        color.displayCode(for: colorSystem)
     }
 
     var isCustomColor: Bool {
@@ -612,6 +618,7 @@ struct ColorRowView: View {
     let stock: BrandStock?
     var sortOption: InventoryView.SortOption = .code
     var lowStockThreshold: Int = 100
+    var colorSystem: ColorSystem = .mard
 
     var available: Int { stock?.available ?? 0 }
     var used: Int { stock?.used ?? 0 }
@@ -619,9 +626,9 @@ struct ColorRowView: View {
 
     var isLowStock: Bool { available < lowStockThreshold }
 
-    // 显示色号：自定义色号保留 # 前缀
+    // 显示色号：根据品牌色号体系显示
     var displayCode: String {
-        color.mardCode
+        color.displayCode(for: colorSystem)
     }
 
     var isCustomColor: Bool {
@@ -757,10 +764,17 @@ struct EditStockSheet: View {
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
 
-                    // MARD 色号
-                    Text(color.mardCode)
+                    // 当前品牌色号
+                    Text(color.displayCode(for: inventoryManager.currentColorSystem))
                         .font(.title2)
                         .fontWeight(.bold)
+
+                    // 如果非 MARD 体系，显示 MARD 色号作参考
+                    if inventoryManager.currentColorSystem != .mard {
+                        Text("MARD: \(color.mardCode)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .padding()
                 .background(Color(.systemGray6))
@@ -918,7 +932,7 @@ struct EditStockSheet: View {
                 hideCurrentColor()
             }
         } message: {
-            Text("确定要隐藏 \(color.mardCode) 吗？\n\n库存将被清零，该色号不会出现在库存列表和低库存提醒中。可在品牌设置 > 隐藏色号管理中恢复。")
+            Text("确定要隐藏 \(color.displayCode(for: inventoryManager.currentColorSystem)) 吗？\n\n库存将被清零，该色号不会出现在库存列表和低库存提醒中。可在品牌设置 > 隐藏色号管理中恢复。")
         }
     }
 

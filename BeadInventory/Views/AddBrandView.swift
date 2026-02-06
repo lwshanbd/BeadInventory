@@ -12,6 +12,7 @@ struct AddBrandView: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var brandName = ""
+    @State private var selectedColorSystem: ColorSystem = .mard
     @State private var defaultStock = 1000
     @State private var selectedPreset: ColorPreset = .all
     @State private var customSelectedColors: Set<String> = []
@@ -49,6 +50,19 @@ struct AddBrandView: View {
                     Text("品牌信息")
                 } footer: {
                     Text("例如：品牌名称或供应商名称")
+                }
+
+                // 色号体系
+                Section {
+                    Picker("色号体系", selection: $selectedColorSystem) {
+                        ForEach(ColorSystem.allCases) { system in
+                            Text(system.displayName).tag(system)
+                        }
+                    }
+                } header: {
+                    Text("色号体系")
+                } footer: {
+                    Text("选择该品牌使用的色号编码体系，创建后不可更改。选择后全局将以该体系的色号显示。")
                 }
 
                 // 基础库存
@@ -253,6 +267,7 @@ struct AddBrandView: View {
 
         let brand = inventoryManager.addBrand(
             name: trimmedName,
+            colorSystem: selectedColorSystem,
             defaultStock: initialStock,
             selectedColors: selectedColors
         )

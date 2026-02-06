@@ -17,6 +17,7 @@ struct BeadColor: Identifiable, Codable, Hashable {
     let manmanCode: String         // 漫漫色号
     let panpanCode: String         // 盼盼色号
     let mixiaowoCode: String       // 咪小窝色号
+    let kakaCode: String           // 卡卡色号
     let colorName: String          // 颜色名称
     var stock: Int                 // 库存数量
     var used: Int                  // 已使用数量
@@ -29,6 +30,7 @@ struct BeadColor: Identifiable, Codable, Hashable {
         manmanCode: String = "",
         panpanCode: String = "",
         mixiaowoCode: String = "",
+        kakaCode: String = "",
         colorName: String = "",
         stock: Int = 1000,
         used: Int = 0
@@ -40,9 +42,30 @@ struct BeadColor: Identifiable, Codable, Hashable {
         self.manmanCode = manmanCode
         self.panpanCode = panpanCode
         self.mixiaowoCode = mixiaowoCode
+        self.kakaCode = kakaCode
         self.colorName = colorName
         self.stock = stock
         self.used = used
+    }
+
+    // 自定义解码器，兼容旧数据（没有 kakaCode 字段）
+    private enum BeadColorCodingKeys: String, CodingKey {
+        case id, colorHex, mardCode, cocoCode, manmanCode, panpanCode, mixiaowoCode, kakaCode, colorName, stock, used
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: BeadColorCodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        colorHex = try container.decode(String.self, forKey: .colorHex)
+        mardCode = try container.decode(String.self, forKey: .mardCode)
+        cocoCode = try container.decodeIfPresent(String.self, forKey: .cocoCode) ?? ""
+        manmanCode = try container.decodeIfPresent(String.self, forKey: .manmanCode) ?? ""
+        panpanCode = try container.decodeIfPresent(String.self, forKey: .panpanCode) ?? ""
+        mixiaowoCode = try container.decodeIfPresent(String.self, forKey: .mixiaowoCode) ?? ""
+        kakaCode = try container.decodeIfPresent(String.self, forKey: .kakaCode) ?? ""
+        colorName = try container.decodeIfPresent(String.self, forKey: .colorName) ?? ""
+        stock = try container.decodeIfPresent(Int.self, forKey: .stock) ?? 1000
+        used = try container.decodeIfPresent(Int.self, forKey: .used) ?? 0
     }
 
     var color: Color {
@@ -51,6 +74,32 @@ struct BeadColor: Identifiable, Codable, Hashable {
 
     var available: Int {
         stock - used
+    }
+
+    /// 获取指定色号体系的编码
+    func displayCode(for system: ColorSystem) -> String {
+        let code: String
+        switch system {
+        case .mard: code = mardCode
+        case .coco: code = cocoCode
+        case .manman: code = manmanCode
+        case .panpan: code = panpanCode
+        case .mixiaowo: code = mixiaowoCode
+        case .kaka: code = kakaCode
+        }
+        return code.isEmpty ? mardCode : code
+    }
+
+    /// 判断该颜色在指定色号体系中是否有对应编码
+    func hasCode(for system: ColorSystem) -> Bool {
+        switch system {
+        case .mard: return !mardCode.isEmpty
+        case .coco: return !cocoCode.isEmpty
+        case .manman: return !manmanCode.isEmpty
+        case .panpan: return !panpanCode.isEmpty
+        case .mixiaowo: return !mixiaowoCode.isEmpty
+        case .kaka: return !kakaCode.isEmpty
+        }
     }
 }
 

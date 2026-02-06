@@ -108,7 +108,8 @@ class BackupManager {
                 "name": brand.name,
                 "sortOrder": brand.sortOrder,
                 "createdAt": ISO8601DateFormatter().string(from: brand.createdAt),
-                "lowStockThreshold": brand.lowStockThreshold
+                "lowStockThreshold": brand.lowStockThreshold,
+                "colorSystem": brand.colorSystem.rawValue
             ]
         }
 
@@ -333,12 +334,20 @@ class BackupManager {
                     createdAt = ISO8601DateFormatter().date(from: createdAtString) ?? Date()
                 }
 
+                let colorSystem: ColorSystem
+                if let colorSystemRaw = brandDict["colorSystem"] as? String {
+                    colorSystem = ColorSystem(rawValue: colorSystemRaw) ?? .mard
+                } else {
+                    colorSystem = .mard
+                }
+
                 let brand = Brand(
                     id: id,
                     name: name,
                     sortOrder: sortOrder,
                     createdAt: createdAt,
-                    lowStockThreshold: lowStockThreshold
+                    lowStockThreshold: lowStockThreshold,
+                    colorSystem: colorSystem
                 )
                 restoredBrands.append(brand)
             }

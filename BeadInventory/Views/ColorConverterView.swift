@@ -58,7 +58,7 @@ struct ColorConverterView: View {
                             .font(.headline)
                             .foregroundColor(.secondary)
 
-                        Text("支持 MARD、COCO、漫漫、盼盼、咪小窝 色号")
+                        Text("支持 MARD、COCO、漫漫、盼盼、咪小窝、卡卡 色号")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -126,6 +126,7 @@ struct ColorConversionCard: View {
                 HStack(spacing: 8) {
                     BrandCodeLabel(brand: "盼盼", code: color.panpanCode, color: .green)
                     BrandCodeLabel(brand: "咪小窝", code: color.mixiaowoCode, color: .pink)
+                    BrandCodeLabel(brand: "卡卡", code: color.kakaCode, color: .cyan)
                 }
             }
 
@@ -209,6 +210,8 @@ struct ColorDetailSheet: View {
                         ConversionRow(brand: "盼盼", code: color.panpanCode, brandColor: .green)
                         Divider()
                         ConversionRow(brand: "咪小窝", code: color.mixiaowoCode, brandColor: .pink)
+                        Divider()
+                        ConversionRow(brand: "卡卡", code: color.kakaCode, brandColor: .cyan)
                     }
                     .background(Color(.systemBackground))
                     .cornerRadius(16)

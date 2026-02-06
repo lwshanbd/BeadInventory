@@ -18,11 +18,20 @@ struct HiddenColorsManageView: View {
     var hiddenStocks: [BrandStock] {
         guard let brandId = inventoryManager.currentBrandId else { return [] }
         let hidden = inventoryManager.hiddenColors(for: brandId)
+        let colorSystem = inventoryManager.currentColorSystem
         if searchText.isEmpty {
-            return hidden.sorted { $0.mardCode < $1.mardCode }
+            return hidden.sorted { displayCode(for: $0, system: colorSystem) < displayCode(for: $1, system: colorSystem) }
         }
-        return hidden.filter { $0.mardCode.uppercased().contains(searchText.uppercased()) }
-            .sorted { $0.mardCode < $1.mardCode }
+        let search = searchText.uppercased()
+        return hidden.filter {
+            displayCode(for: $0, system: colorSystem).uppercased().contains(search) ||
+            $0.mardCode.uppercased().contains(search)
+        }
+        .sorted { displayCode(for: $0, system: colorSystem) < displayCode(for: $1, system: colorSystem) }
+    }
+
+    private func displayCode(for stock: BrandStock, system: ColorSystem) -> String {
+        inventoryManager.findColor(byCode: stock.mardCode)?.displayCode(for: system) ?? stock.mardCode
     }
 
     var body: some View {
@@ -189,7 +198,7 @@ struct HiddenColorRow: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(stock.mardCode)
+                Text(color?.displayCode(for: inventoryManager.currentColorSystem) ?? stock.mardCode)
                     .font(.system(.headline, design: .monospaced))
 
                 if let color = color {
