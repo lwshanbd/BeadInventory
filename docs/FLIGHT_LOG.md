@@ -15,3 +15,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Feature] 2026-02-06T01:08:12.620089
+
+**Summary**: Added remote announcement system: AnnouncementManager.swift (new), ContentView.swift (added alert), BeadInventoryApp.swift (trigger on launch), tools/generate_announcement.py (signing tool). Silent URL fetch with HMAC-SHA256 signature validation.
+
+**Risk Analysis**: Medium - network request on every app launch (but with 10s timeout and silent failure); requires user to configure URL and HMAC key before actual use; no impact on existing functionality if URL is unreachable
+
+**Status**: ✅ Committed to Source of Truth
+
+---

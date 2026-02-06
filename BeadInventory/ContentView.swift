@@ -10,6 +10,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @EnvironmentObject var sharedImageManager: SharedImageManager
+    @ObservedObject private var announcementManager = AnnouncementManager.shared
     @Binding var shouldOpenScan: Bool
     @State private var selectedTab = 0
     @State private var showingAddInventory = false
@@ -87,6 +88,20 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingAddInventory) {
             AddInventoryView()
+        }
+        // 远程公告弹窗
+        .alert(
+            announcementManager.currentAnnouncement?.title ?? "",
+            isPresented: Binding(
+                get: { announcementManager.currentAnnouncement != nil },
+                set: { if !$0 { announcementManager.dismiss() } }
+            )
+        ) {
+            Button("我知道了") {
+                announcementManager.dismiss()
+            }
+        } message: {
+            Text(announcementManager.currentAnnouncement?.message ?? "")
         }
         // 监听 URL Scheme 触发的扫描请求
         .onChange(of: shouldOpenScan) { _, newValue in

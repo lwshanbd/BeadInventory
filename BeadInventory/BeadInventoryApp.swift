@@ -62,6 +62,9 @@ struct BeadInventoryApp: App {
 
                     // 检查并执行每周自动备份
                     BackupManager.shared.checkAndPerformWeeklyBackupIfNeeded(inventoryManager: inventoryManager)
+
+                    // 静默检查远程公告（配置好 URL 和密钥后取消注释即可启用）
+                    // AnnouncementManager.shared.checkForAnnouncement()
                 }
         }
         .modelContainer(modelContainer)
