@@ -1386,7 +1386,7 @@ struct StockCheckSheet: View {
     // 获取汇总的颜色用量（父项目或普通项目）
     var requiredUsage: [BeadUsage] {
         if isParentProject {
-            return inventoryManager.aggregatedBeadUsage(for: project.id)
+            return inventoryManager.plannedAggregatedBeadUsage(for: project.id)
         }
         return project.beadUsage
     }
@@ -2435,7 +2435,7 @@ struct MultiProjectStockCheckSheet: View {
             // 如果是父项目，使用汇总的用量
             let usage: [BeadUsage]
             if inventoryManager.isParentProject(project.id) {
-                usage = inventoryManager.aggregatedBeadUsage(for: project.id)
+                usage = inventoryManager.plannedAggregatedBeadUsage(for: project.id)
             } else {
                 usage = project.beadUsage
             }
@@ -2572,7 +2572,7 @@ struct ReplenishSuggestionSheet: View {
         for project in selectedProjects {
             let usage: [BeadUsage]
             if inventoryManager.isParentProject(project.id) {
-                usage = inventoryManager.aggregatedBeadUsage(for: project.id)
+                usage = inventoryManager.plannedAggregatedBeadUsage(for: project.id)
             } else {
                 usage = project.beadUsage
             }
