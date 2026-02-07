@@ -263,7 +263,8 @@ struct InventoryView: View {
                                             color: color,
                                             stock: stockDict[color.mardCode],
                                             sortOption: sortOption,
-                                            lowStockThreshold: lowStockThreshold
+                                            lowStockThreshold: lowStockThreshold,
+                                            colorSystem: inventoryManager.currentColorSystem
                                         )
                                         .onTapGesture {
                                             selectedColor = color
@@ -324,7 +325,8 @@ struct InventoryView: View {
                                         color: color,
                                         stock: stockDict[color.mardCode],
                                         sortOption: sortOption,
-                                        lowStockThreshold: lowStockThreshold
+                                        lowStockThreshold: lowStockThreshold,
+                                        colorSystem: inventoryManager.currentColorSystem
                                     )
                                     .contentShape(Rectangle())
                                     .onTapGesture {
