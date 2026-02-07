@@ -1127,8 +1127,9 @@ class InventoryManager: ObservableObject {
             if let match { return match }
         }
 
-        // 回退到现有逻辑（MARD 优先）
-        return findColor(byCode: code)
+        // 非 MARD 体系下不回退到 MARD 匹配，避免跨体系误扣库存
+        // 例如卡卡的 B3 和 MARD 的 B3 是完全不同的颜色
+        return nil
     }
 
     func findColorIndex(byCode code: String) -> Int? {
@@ -2249,6 +2250,7 @@ class InventoryManager: ObservableObject {
         var newColors: [BeadColor] = []
         var mappedCount = 0
         var newCount = 0
+        var assignedKakaCodes: [String: String] = [:]  // kakaCode → 已分配的 mardCode，用于检测一对多
 
         for i in 1..<lines.count {
             let line = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2262,6 +2264,12 @@ class InventoryManager: ObservableObject {
 
             // 跳过卡卡编码为空或"×"的行
             if kakaCode.isEmpty || kakaCode == "×" { continue }
+
+            // 检测重复卡卡码：同一个卡卡码映射到多个 MARD 码（如 B133→B9 和 B133→B15）
+            if let existingMard = assignedKakaCodes[kakaCode] {
+                print("[InventoryManager] ⚠️ 卡卡码 \(kakaCode) 重复映射：已分配给 \(existingMard)，跳过 \(mardCode)")
+                continue
+            }
 
             // 去除中文字符后缀（如 H1透明 → H1, H2白色 → H2, H7黑色 → H7）
             let cleanedMardCode = mardCode.filter { $0.isASCII }
@@ -2282,6 +2290,7 @@ class InventoryManager: ObservableObject {
                     used: existing.used
                 )
                 beadColors[idx] = updated
+                assignedKakaCodes[kakaCode] = cleanedMardCode
                 mappedCount += 1
             } else if mardCode == "×" {
                 // 卡卡独有颜色 → 合成 mardCode，灰色占位
@@ -2291,6 +2300,7 @@ class InventoryManager: ObservableObject {
                     kakaCode: kakaCode
                 )
                 newColors.append(syntheticColor)
+                assignedKakaCodes[kakaCode] = "KK-\(kakaCode)"
                 newCount += 1
             }
         }

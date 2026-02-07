@@ -75,3 +75,33 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Bugfix] 2026-02-06T21:37:08.538256
+
+**Summary**: InventoryView.swift: 普通网格和普通列表模式的 ColorCardView/ColorRowView 调用缺少 colorSystem 参数，导致卡卡品牌下库存页显示 MARD 色号而非卡卡色号
+
+**Risk Analysis**: Low - 仅补充缺失参数，分组模式已有此参数，逻辑一致
+
+**Status**: ✅ Committed to Source of Truth
+
+---
+
+### [Bugfix] 2026-02-06T21:43:40.923414
+
+**Summary**: colorwithkaka.csv: 修正 H1透明→H1, H2白色→H2, H7黑色→H7，使其能正确映射到卡卡码 B1/B2/B11
+
+**Risk Analysis**: Low - 仅修改 CSV 源数据，代码侧的 ASCII filter 保护仍保留作为兜底
+
+**Status**: ✅ Committed to Source of Truth
+
+---
+
+### [Bugfix] 2026-02-06T21:57:08.287781
+
+**Summary**: 修复两个高风险色号匹配问题：(1) loadKakaCodeMappings() 增加 assignedKakaCodes 去重，当 CSV 中同一卡卡码映射多个 MARD 码时（如 B133→B9/B15, B146→B6/B19, B43→E2/E20），保留首次映射并跳过后续重复，打印警告。(2) findColor(byCode:preferSystem:) 当 preferSystem != .mard 时不再回退到 findColor(byCode:)，避免卡卡的 B3 被错误匹配为 MARD 的 B3 导致跨体系误扣库存
+
+**Risk Analysis**: Low - 去重逻辑仅影响重复卡卡码的后续映射（保留首次映射不变）；移除 MARD 回退后，未匹配的卡卡码会显示为未识别而非静默错扣，更安全
+
+**Status**: ✅ Committed to Source of Truth
+
+---
