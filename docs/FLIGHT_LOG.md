@@ -55,3 +55,23 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Feature] 2026-02-06T17:10:37.738380
+
+**Summary**: 加载卡卡色号映射：BeadColor.swift hasCode排除KK-前缀合成码，InventoryManager.swift新增loadKakaCodeMappings()从colorwithkaka.csv加载150个MARD↔卡卡映射+131个卡卡独有颜色，initializeStockForBrand统一过滤逻辑，project.pbxproj添加CSV资源引用
+
+**Risk Analysis**: Low - 新增功能不影响已有MARD/COCO等品牌数据；KK-前缀排除逻辑确保MARD品牌不受影响；需验证卡卡品牌创建后颜色数量正确
+
+**Status**: ✅ Committed to Source of Truth
+
+---
+
+### [Feature] 2026-02-06T21:28:21.997636
+
+**Summary**: 卡卡模式扫描识别体系支持：(1) InventoryManager.swift - loadKakaCodeMappings() 去除CSV中文后缀(H1透明→H1); 新增 findColor(byCode:preferSystem:) 避免跨品牌色号冲突. (2) AIService.swift - recognizeImage/recognizeWithOpenAI/recognizeWithAnthropic/recognizeWithGemini 增加 colorSystem 参数; 新增 buildPrompts(mode:colorSystem:) 统一提示词生成，卡卡模式使用 B+数字 格式. (3) ScanView.swift - RecognizedItemRowNew 使用 displayCode 显示品牌色号; recognizeImage 传入 colorSystem 并将返回结果转为内部 mardCode; insufficientStockItems/排序 使用 displayCode; 品牌选择器前置到扫描按钮上方
+
+**Risk Analysis**: Medium - AI提示词变更影响所有提供商的识别行为; findColor(byCode:preferSystem:) 改变了色号查找优先级可能影响其他调用点; 需要测试 MARD 品牌下行为不变、卡卡品牌下正确识别和显示
+
+**Status**: ✅ Committed to Source of Truth
+
+---

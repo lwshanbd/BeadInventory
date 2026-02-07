@@ -59,12 +59,15 @@ struct ScanView: View {
     /// 检查扣除后库存会变为负数的颜色
     var insufficientStockItems: [(colorCode: String, currentStock: Int, deductAmount: Int)] {
         guard let brandId = inventoryManager.currentBrandId else { return [] }
+        let colorSystem = inventoryManager.currentColorSystem
         var result: [(colorCode: String, currentStock: Int, deductAmount: Int)] = []
         for item in recognizedItems {
             let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode)
             let currentStock = stock?.stock ?? 0
             if currentStock < item.quantity {
-                result.append((colorCode: item.colorCode, currentStock: currentStock, deductAmount: item.quantity))
+                // 显示当前品牌的色号（而非内部 mardCode）
+                let displayCode = inventoryManager.findColor(byCode: item.colorCode)?.displayCode(for: colorSystem) ?? item.colorCode
+                result.append((colorCode: displayCode, currentStock: currentStock, deductAmount: item.quantity))
             }
         }
         return result
@@ -118,6 +121,26 @@ struct ScanView: View {
                             .padding()
                             .background(Color.orange.opacity(0.1))
                             .cornerRadius(8)
+                            .padding(.horizontal)
+                        }
+
+                        // 识别品牌选择（扫描前选择，影响 AI 提示词的色号体系）
+                        if selectedImage != nil {
+                            HStack {
+                                Text("识别品牌:")
+                                    .foregroundColor(.secondary)
+                                if inventoryManager.currentBrandId != nil {
+                                    Text(inventoryManager.currentBrand?.name ?? "MARD")
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.accentColor)
+                                } else {
+                                    Text("请选择")
+                                        .foregroundColor(.orange)
+                                }
+                                Spacer()
+                                BrandPicker()
+                            }
+                            .font(.subheadline)
                             .padding(.horizontal)
                         }
 
@@ -182,7 +205,7 @@ struct ScanView: View {
                                 .padding(.horizontal)
                         }
 
-                        // 品牌选择（放在识别结果之前，预警颜色与品牌相关）
+                        // 备扣品牌显示（只读，与识别品牌联动）
                         if !recognizedItems.isEmpty {
                             HStack {
                                 Text("备扣品牌:")
@@ -412,11 +435,20 @@ struct ScanView: View {
         isRecognizing = true
         errorMessage = nil
 
+        let colorSystem = inventoryManager.currentColorSystem
+
         Task {
             do {
-                let items = try await aiService.recognizeImage(image, mode: mode)
+                let items = try await aiService.recognizeImage(image, mode: mode, colorSystem: colorSystem)
                 await MainActor.run {
-                    recognizedItems = items.map { RecognizedItem(colorCode: $0.colorCode, quantity: $0.quantity) }
+                    recognizedItems = items.map { item in
+                        // 非 MARD 体系时，AI 返回的是该品牌的色号（如卡卡的 B3），需转为内部 mardCode
+                        if colorSystem != .mard,
+                           let color = inventoryManager.findColor(byCode: item.colorCode, preferSystem: colorSystem) {
+                            return RecognizedItem(colorCode: color.mardCode, quantity: item.quantity)
+                        }
+                        return RecognizedItem(colorCode: item.colorCode, quantity: item.quantity)
+                    }
                     isRecognizing = false
                 }
             } catch {
@@ -950,7 +982,12 @@ struct RecognizedResultsSectionNew: View {
         case .original:
             return items
         case .code:
-            sorted = items.sorted { $0.colorCode.localizedStandardCompare($1.colorCode) == .orderedAscending }
+            let colorSystem = inventoryManager.currentColorSystem
+            sorted = items.sorted {
+                let code0 = inventoryManager.findColor(byCode: $0.colorCode)?.displayCode(for: colorSystem) ?? $0.colorCode
+                let code1 = inventoryManager.findColor(byCode: $1.colorCode)?.displayCode(for: colorSystem) ?? $1.colorCode
+                return code0.localizedStandardCompare(code1) == .orderedAscending
+            }
         case .quantity:
             sorted = items.sorted { $0.quantity < $1.quantity }
         case .stock:
@@ -1133,7 +1170,7 @@ struct RecognizedItemRowNew: View {
                 .font(.caption)
             } else {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.colorCode)
+                    Text(matchedColor?.displayCode(for: inventoryManager.currentColorSystem) ?? item.colorCode)
                         .font(.system(.body, design: .monospaced))
                         .fontWeight(.medium)
 

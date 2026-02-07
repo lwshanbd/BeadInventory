@@ -260,7 +260,7 @@ class InventoryManager: ObservableObject {
         // 为预设颜色初始化库存
         for color in beadColors {
             // 非 MARD 体系时，跳过没有对应编码的颜色
-            if colorSystem != .mard && !color.hasCode(for: colorSystem) {
+            if !color.hasCode(for: colorSystem) {
                 continue
             }
 
@@ -724,6 +724,7 @@ class InventoryManager: ObservableObject {
 
         // 初始化颜色数据
         beadColors = DefaultBeadColors.colors
+        loadKakaCodeMappings()
 
         // 从 SwiftData 加载自定义色号
         do {
@@ -989,6 +990,7 @@ class InventoryManager: ObservableObject {
     private func loadDataFromUserDefaults() {
         // 加载颜色数据
         beadColors = DefaultBeadColors.colors
+        loadKakaCodeMappings()
 
         // 加载品牌
         if let data = UserDefaults.standard.data(forKey: brandsKey),
@@ -1104,6 +1106,29 @@ class InventoryManager: ObservableObject {
         }
 
         return nil
+    }
+
+    /// 根据色号查找颜色，优先匹配指定的色号体系（避免不同品牌间色号冲突，如 B3 在卡卡和 MARD 中是不同颜色）
+    func findColor(byCode code: String, preferSystem: ColorSystem) -> BeadColor? {
+        let code = code.uppercased().trimmingCharacters(in: .whitespaces)
+
+        // 当有明确的品牌偏好且不是 MARD 时，优先匹配该品牌的色号
+        if preferSystem != .mard {
+            let match = beadColors.first { color in
+                switch preferSystem {
+                case .kaka: return color.kakaCode.uppercased() == code
+                case .coco: return color.cocoCode.uppercased() == code
+                case .manman: return color.manmanCode.uppercased() == code
+                case .panpan: return color.panpanCode.uppercased() == code
+                case .mixiaowo: return color.mixiaowoCode.uppercased() == code
+                case .mard: return false
+                }
+            }
+            if let match { return match }
+        }
+
+        // 回退到现有逻辑（MARD 优先）
+        return findColor(byCode: code)
     }
 
     func findColorIndex(byCode code: String) -> Int? {
@@ -2193,6 +2218,85 @@ class InventoryManager: ObservableObject {
     private func initializeDefaultColors() {
         // 初始化221个常用实色 (示例数据，实际使用时可以从文件导入)
         beadColors = DefaultBeadColors.colors
+        loadKakaCodeMappings()
+    }
+
+    // MARK: - 加载卡卡色号映射
+    /// 从 colorwithkaka.csv 加载卡卡色号映射，包括：
+    /// 1. 已有 MARD 颜色的卡卡编码映射
+    /// 2. 卡卡独有颜色（以 KK- 前缀合成 mardCode）
+    private func loadKakaCodeMappings() {
+        guard let url = Bundle.main.url(forResource: "colorwithkaka", withExtension: "csv"),
+              let rawData = try? Data(contentsOf: url),
+              let content = String(data: rawData, encoding: .utf8) else {
+            print("[InventoryManager] 未找到 colorwithkaka.csv 或读取失败")
+            return
+        }
+
+        // 去除 BOM
+        let cleaned = content.hasPrefix("\u{FEFF}") ? String(content.dropFirst()) : content
+        let lines = cleaned.components(separatedBy: .newlines)
+
+        // 跳过表头
+        guard lines.count > 1 else { return }
+
+        // 建立 mardCode → index 映射以快速查找
+        var mardCodeIndex: [String: Int] = [:]
+        for (index, color) in beadColors.enumerated() {
+            mardCodeIndex[color.mardCode] = index
+        }
+
+        var newColors: [BeadColor] = []
+        var mappedCount = 0
+        var newCount = 0
+
+        for i in 1..<lines.count {
+            let line = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty { continue }
+
+            let cols = line.components(separatedBy: ",")
+            guard cols.count >= 3 else { continue }
+
+            let mardCode = cols[0].trimmingCharacters(in: .whitespaces)
+            let kakaCode = cols[2].trimmingCharacters(in: .whitespaces)
+
+            // 跳过卡卡编码为空或"×"的行
+            if kakaCode.isEmpty || kakaCode == "×" { continue }
+
+            // 去除中文字符后缀（如 H1透明 → H1, H2白色 → H2, H7黑色 → H7）
+            let cleanedMardCode = mardCode.filter { $0.isASCII }
+            if cleanedMardCode != "×", let idx = mardCodeIndex[cleanedMardCode] {
+                // 已有 MARD 颜色 → 重建实例填入 kakaCode
+                let existing = beadColors[idx]
+                let updated = BeadColor(
+                    id: existing.id,
+                    colorHex: existing.colorHex,
+                    mardCode: existing.mardCode,
+                    cocoCode: existing.cocoCode,
+                    manmanCode: existing.manmanCode,
+                    panpanCode: existing.panpanCode,
+                    mixiaowoCode: existing.mixiaowoCode,
+                    kakaCode: kakaCode,
+                    colorName: existing.colorName,
+                    stock: existing.stock,
+                    used: existing.used
+                )
+                beadColors[idx] = updated
+                mappedCount += 1
+            } else if mardCode == "×" {
+                // 卡卡独有颜色 → 合成 mardCode，灰色占位
+                let syntheticColor = BeadColor(
+                    colorHex: "CCCCCC",
+                    mardCode: "KK-\(kakaCode)",
+                    kakaCode: kakaCode
+                )
+                newColors.append(syntheticColor)
+                newCount += 1
+            }
+        }
+
+        beadColors.append(contentsOf: newColors)
+        print("[InventoryManager] 卡卡色号加载完成：\(mappedCount) 个映射，\(newCount) 个卡卡独有颜色")
     }
 }
 
