@@ -93,7 +93,7 @@ struct BeadColor: Identifiable, Codable, Hashable {
     /// 判断该颜色在指定色号体系中是否有对应编码
     func hasCode(for system: ColorSystem) -> Bool {
         switch system {
-        case .mard: return !mardCode.isEmpty
+        case .mard: return !mardCode.isEmpty && !mardCode.hasPrefix("KK-")
         case .coco: return !cocoCode.isEmpty
         case .manman: return !manmanCode.isEmpty
         case .panpan: return !panpanCode.isEmpty

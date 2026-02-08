@@ -115,3 +115,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Feature] 2026-02-08T04:00:19.831180
+
+**Summary**: Consolidated all bead color data into unified allcolors.json (597 colors: 291 MARD + 306 Kaka-only, 0 gray). Removed DefaultBeadColors hardcoded struct (~411 lines), loadKakaCodeMappings(), loadKakaColorHexMap() from InventoryManager.swift. New loadAllColorsFromJSON() loads from single JSON. Replaced kakacolor.json refs with allcolors.json in pbxproj. Deleted superseded kakacolor.json.
+
+**Risk Analysis**: Medium - All color data now loads from a single JSON file instead of hardcoded Swift + CSV at runtime. If allcolors.json is missing or malformed, app will have 0 colors. Verified build succeeds. colorwithkaka.csv still in bundle but unused (harmless).
+
+**Status**: ✅ Committed to Source of Truth
+
+---

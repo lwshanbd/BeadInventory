@@ -56,6 +56,8 @@
 		A0123456000A /* StatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001A /* StatisticsView.swift */; };
 		A0123456000B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001B /* SettingsView.swift */; };
 		A0123456000C /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001C /* AIService.swift */; };
+		38B1A0012F01000100000053 /* colorwithkaka.csv in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000052 /* colorwithkaka.csv */; };
+		38B1A0012F01000100000055 /* allcolors.json in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000054 /* allcolors.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -134,6 +136,8 @@
 		A0123456001A /* StatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsView.swift; sourceTree = "<group>"; };
 		A0123456001B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A0123456001C /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
+		38B1A0012F01000100000052 /* colorwithkaka.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = colorwithkaka.csv; sourceTree = "<group>"; };
+		38B1A0012F01000100000054 /* allcolors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = allcolors.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -213,6 +217,8 @@
 				A01234560034 /* Managers */,
 				A01234560035 /* Views */,
 				A01234560013 /* Assets.xcassets */,
+				38B1A0012F01000100000052 /* colorwithkaka.csv */,
+				38B1A0012F01000100000054 /* allcolors.json */,
 			);
 			path = BeadInventory;
 			sourceTree = "<group>";
@@ -385,6 +391,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A01234560003 /* Assets.xcassets in Resources */,
+				38B1A0012F01000100000053 /* colorwithkaka.csv in Resources */,
+				38B1A0012F01000100000055 /* allcolors.json in Resources */,
 				3806E50E2F00FB4300187AA7 /* InfoPlist.strings in Resources */,
 				3806E50A2F00FB3900187AA7 /* InfoPlist.strings in Resources */,
 			);

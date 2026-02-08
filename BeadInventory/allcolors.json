@@ -1,0 +1,5375 @@
+[
+  {
+    "colorHex": "FAF4C8",
+    "mardCode": "A1",
+    "cocoCode": "E02",
+    "manmanCode": "E2",
+    "panpanCode": "65",
+    "mixiaowoCode": "77",
+    "kakaCode": "B257"
+  },
+  {
+    "colorHex": "FFFFD5",
+    "mardCode": "A2",
+    "cocoCode": "E01",
+    "manmanCode": "B1",
+    "panpanCode": "2",
+    "mixiaowoCode": "2",
+    "kakaCode": "B108"
+  },
+  {
+    "colorHex": "FEFF8B",
+    "mardCode": "A3",
+    "cocoCode": "E05",
+    "manmanCode": "B2",
+    "panpanCode": "28",
+    "mixiaowoCode": "28",
+    "kakaCode": "B86"
+  },
+  {
+    "colorHex": "FBED56",
+    "mardCode": "A4",
+    "cocoCode": "E07",
+    "manmanCode": "B3",
+    "panpanCode": "3",
+    "mixiaowoCode": "3",
+    "kakaCode": "B91"
+  },
+  {
+    "colorHex": "F4D738",
+    "mardCode": "A5",
+    "cocoCode": "D03",
+    "manmanCode": "B4",
+    "panpanCode": "74",
+    "mixiaowoCode": "79",
+    "kakaCode": "B90"
+  },
+  {
+    "colorHex": "FEAC4C",
+    "mardCode": "A6",
+    "cocoCode": "D05",
+    "manmanCode": "B5",
+    "panpanCode": "29",
+    "mixiaowoCode": "29",
+    "kakaCode": "B198"
+  },
+  {
+    "colorHex": "FE8B4C",
+    "mardCode": "A7",
+    "cocoCode": "D08",
+    "manmanCode": "B6",
+    "panpanCode": "4",
+    "mixiaowoCode": "4",
+    "kakaCode": "B185"
+  },
+  {
+    "colorHex": "FFDA45",
+    "mardCode": "A8",
+    "cocoCode": "E08",
+    "manmanCode": "B10",
+    "panpanCode": "88",
+    "mixiaowoCode": "98",
+    "kakaCode": "B194"
+  },
+  {
+    "colorHex": "FF995B",
+    "mardCode": "A9",
+    "cocoCode": "D06",
+    "manmanCode": "B11",
+    "panpanCode": "90",
+    "mixiaowoCode": "97",
+    "kakaCode": "B165"
+  },
+  {
+    "colorHex": "F77C31",
+    "mardCode": "A10",
+    "cocoCode": "D07",
+    "manmanCode": "B12",
+    "panpanCode": "89",
+    "mixiaowoCode": "96",
+    "kakaCode": "B68"
+  },
+  {
+    "colorHex": "FFDD99",
+    "mardCode": "A11",
+    "cocoCode": "D01",
+    "manmanCode": "E11",
+    "panpanCode": "100",
+    "mixiaowoCode": "109",
+    "kakaCode": "B180"
+  },
+  {
+    "colorHex": "FE9F72",
+    "mardCode": "A12",
+    "cocoCode": "K09",
+    "manmanCode": "A18",
+    "panpanCode": "99",
+    "mixiaowoCode": "110",
+    "kakaCode": "B66"
+  },
+  {
+    "colorHex": "FFC365",
+    "mardCode": "A13",
+    "cocoCode": "D04",
+    "manmanCode": "B13",
+    "panpanCode": "131",
+    "mixiaowoCode": "116",
+    "kakaCode": "B164"
+  },
+  {
+    "colorHex": "FD543D",
+    "mardCode": "A14",
+    "cocoCode": "C05",
+    "manmanCode": "B14",
+    "panpanCode": "138",
+    "mixiaowoCode": "135",
+    "kakaCode": "B69"
+  },
+  {
+    "colorHex": "FFF365",
+    "mardCode": "A15",
+    "cocoCode": "E04",
+    "manmanCode": "B15",
+    "panpanCode": "150",
+    "mixiaowoCode": "150",
+    "kakaCode": "B163"
+  },
+  {
+    "colorHex": "FFFF9F",
+    "mardCode": "A16",
+    "cocoCode": "E03",
+    "manmanCode": "IC04",
+    "panpanCode": "216",
+    "mixiaowoCode": "216",
+    "kakaCode": "B162"
+  },
+  {
+    "colorHex": "FFE36E",
+    "mardCode": "A17",
+    "cocoCode": "E06",
+    "manmanCode": "IC9",
+    "panpanCode": "213",
+    "mixiaowoCode": "213",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FEBE7D",
+    "mardCode": "A18",
+    "cocoCode": "D02",
+    "manmanCode": "IC14",
+    "panpanCode": "223",
+    "mixiaowoCode": "208",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FD7C72",
+    "mardCode": "A19",
+    "cocoCode": "K10",
+    "manmanCode": "IC15",
+    "panpanCode": "218",
+    "mixiaowoCode": "218",
+    "kakaCode": "B189"
+  },
+  {
+    "colorHex": "FFD568",
+    "mardCode": "A20",
+    "cocoCode": "E09",
+    "manmanCode": "Q6",
+    "panpanCode": "242",
+    "mixiaowoCode": "242",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FFE395",
+    "mardCode": "A21",
+    "cocoCode": "E10",
+    "manmanCode": "R07",
+    "panpanCode": "276",
+    "mixiaowoCode": "261",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F4F57D",
+    "mardCode": "A22",
+    "cocoCode": "E11",
+    "manmanCode": "R06",
+    "panpanCode": "270",
+    "mixiaowoCode": "255",
+    "kakaCode": "B87"
+  },
+  {
+    "colorHex": "E6C9B7",
+    "mardCode": "A23",
+    "cocoCode": "E12",
+    "manmanCode": "R08",
+    "panpanCode": "274",
+    "mixiaowoCode": "259",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F7F8A2",
+    "mardCode": "A24",
+    "cocoCode": "E13",
+    "manmanCode": "G3",
+    "panpanCode": "288",
+    "mixiaowoCode": "273",
+    "kakaCode": "B171"
+  },
+  {
+    "colorHex": "FFD67D",
+    "mardCode": "A25",
+    "cocoCode": "E14",
+    "manmanCode": "G4",
+    "panpanCode": "289",
+    "mixiaowoCode": "274",
+    "kakaCode": "B195"
+  },
+  {
+    "colorHex": "FFC830",
+    "mardCode": "A26",
+    "cocoCode": "E15",
+    "manmanCode": "G5",
+    "panpanCode": "290",
+    "mixiaowoCode": "275",
+    "kakaCode": "B197"
+  },
+  {
+    "colorHex": "E6EE31",
+    "mardCode": "B1",
+    "cocoCode": "F05",
+    "manmanCode": "C1",
+    "panpanCode": "48",
+    "mixiaowoCode": "48",
+    "kakaCode": "B107"
+  },
+  {
+    "colorHex": "63F347",
+    "mardCode": "B2",
+    "cocoCode": "F08",
+    "manmanCode": "C2",
+    "panpanCode": "33",
+    "mixiaowoCode": "33",
+    "kakaCode": "B118"
+  },
+  {
+    "colorHex": "9EF780",
+    "mardCode": "B3",
+    "cocoCode": "F04",
+    "manmanCode": "C7",
+    "panpanCode": "26",
+    "mixiaowoCode": "26",
+    "kakaCode": "B125"
+  },
+  {
+    "colorHex": "5DE035",
+    "mardCode": "B4",
+    "cocoCode": "F09",
+    "manmanCode": "C3",
+    "panpanCode": "66",
+    "mixiaowoCode": "78",
+    "kakaCode": "B169"
+  },
+  {
+    "colorHex": "35E352",
+    "mardCode": "B5",
+    "cocoCode": "F10",
+    "manmanCode": "C4",
+    "panpanCode": "39",
+    "mixiaowoCode": "39",
+    "kakaCode": "B126"
+  },
+  {
+    "colorHex": "65E2A6",
+    "mardCode": "B6",
+    "cocoCode": "G04",
+    "manmanCode": "C9",
+    "panpanCode": "11",
+    "mixiaowoCode": "11",
+    "kakaCode": "B146"
+  },
+  {
+    "colorHex": "3DAF80",
+    "mardCode": "B7",
+    "cocoCode": "G05",
+    "manmanCode": "C10",
+    "panpanCode": "44",
+    "mixiaowoCode": "44",
+    "kakaCode": "B137"
+  },
+  {
+    "colorHex": "1C9C4F",
+    "mardCode": "B8",
+    "cocoCode": "F11",
+    "manmanCode": "C5",
+    "panpanCode": "10",
+    "mixiaowoCode": "10",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "27523A",
+    "mardCode": "B9",
+    "cocoCode": "F16",
+    "manmanCode": "C6",
+    "panpanCode": "79",
+    "mixiaowoCode": "84",
+    "kakaCode": "B133"
+  },
+  {
+    "colorHex": "95D3C2",
+    "mardCode": "B10",
+    "cocoCode": "G03",
+    "manmanCode": "C11",
+    "panpanCode": "96",
+    "mixiaowoCode": "100",
+    "kakaCode": "B136"
+  },
+  {
+    "colorHex": "5D722A",
+    "mardCode": "B11",
+    "cocoCode": "F14",
+    "manmanCode": "C12",
+    "panpanCode": "97",
+    "mixiaowoCode": "99",
+    "kakaCode": "B140"
+  },
+  {
+    "colorHex": "166F41",
+    "mardCode": "B12",
+    "cocoCode": "F12",
+    "manmanCode": "C13",
+    "panpanCode": "106",
+    "mixiaowoCode": "111",
+    "kakaCode": "B168"
+  },
+  {
+    "colorHex": "CAEB7B",
+    "mardCode": "B13",
+    "cocoCode": "F02",
+    "manmanCode": "C14",
+    "panpanCode": "128",
+    "mixiaowoCode": "119",
+    "kakaCode": "B149"
+  },
+  {
+    "colorHex": "ADE946",
+    "mardCode": "B14",
+    "cocoCode": "F06",
+    "manmanCode": "C15",
+    "panpanCode": "129",
+    "mixiaowoCode": "117",
+    "kakaCode": "B122"
+  },
+  {
+    "colorHex": "2E5132",
+    "mardCode": "B15",
+    "cocoCode": "F15",
+    "manmanCode": "C16",
+    "panpanCode": "130",
+    "mixiaowoCode": "122",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "C5ED9C",
+    "mardCode": "B16",
+    "cocoCode": "F03",
+    "manmanCode": "C17",
+    "panpanCode": "141",
+    "mixiaowoCode": "133",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "9BB13A",
+    "mardCode": "B17",
+    "cocoCode": "F13",
+    "manmanCode": "C18",
+    "panpanCode": "142",
+    "mixiaowoCode": "141",
+    "kakaCode": "B119"
+  },
+  {
+    "colorHex": "E6EE49",
+    "mardCode": "B18",
+    "cocoCode": "F07",
+    "manmanCode": "C19",
+    "panpanCode": "147",
+    "mixiaowoCode": "147",
+    "kakaCode": "B106"
+  },
+  {
+    "colorHex": "24B88C",
+    "mardCode": "B19",
+    "cocoCode": "G06",
+    "manmanCode": "DH15",
+    "panpanCode": "191",
+    "mixiaowoCode": "174",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "C2F0CC",
+    "mardCode": "B20",
+    "cocoCode": "G02",
+    "manmanCode": "DH10",
+    "panpanCode": "192",
+    "mixiaowoCode": "175",
+    "kakaCode": "B211"
+  },
+  {
+    "colorHex": "156A6B",
+    "mardCode": "B21",
+    "cocoCode": "G07",
+    "manmanCode": "DH2",
+    "panpanCode": "207",
+    "mixiaowoCode": "194",
+    "kakaCode": "B138"
+  },
+  {
+    "colorHex": "0B3C43",
+    "mardCode": "B22",
+    "cocoCode": "G08",
+    "manmanCode": "DH7",
+    "panpanCode": "206",
+    "mixiaowoCode": "193",
+    "kakaCode": "B147"
+  },
+  {
+    "colorHex": "303A21",
+    "mardCode": "B23",
+    "cocoCode": "F17",
+    "manmanCode": "DH12",
+    "panpanCode": "205",
+    "mixiaowoCode": "192",
+    "kakaCode": "B121"
+  },
+  {
+    "colorHex": "EEFCA5",
+    "mardCode": "B24",
+    "cocoCode": "F01",
+    "manmanCode": "IC5",
+    "panpanCode": "222",
+    "mixiaowoCode": "207",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "4E846D",
+    "mardCode": "B25",
+    "cocoCode": "F18",
+    "manmanCode": "Q13",
+    "panpanCode": "240",
+    "mixiaowoCode": "240",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "8D7A35",
+    "mardCode": "B26",
+    "cocoCode": "F19",
+    "manmanCode": "Q7",
+    "panpanCode": "248",
+    "mixiaowoCode": "248",
+    "kakaCode": "B112"
+  },
+  {
+    "colorHex": "CCE1AF",
+    "mardCode": "B27",
+    "cocoCode": "F20",
+    "manmanCode": "R10",
+    "panpanCode": "262",
+    "mixiaowoCode": "262",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "9EE5B9",
+    "mardCode": "B28",
+    "cocoCode": "F21",
+    "manmanCode": "R11",
+    "panpanCode": "269",
+    "mixiaowoCode": "254",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "C5E254",
+    "mardCode": "B29",
+    "cocoCode": "F22",
+    "manmanCode": "R09",
+    "panpanCode": "268",
+    "mixiaowoCode": "253",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "E2FCB1",
+    "mardCode": "B30",
+    "cocoCode": "F23",
+    "manmanCode": "G6",
+    "panpanCode": "285",
+    "mixiaowoCode": "270",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "B0E792",
+    "mardCode": "B31",
+    "cocoCode": "F24",
+    "manmanCode": "G7",
+    "panpanCode": "286",
+    "mixiaowoCode": "271",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "9CAB5A",
+    "mardCode": "B32",
+    "cocoCode": "F25",
+    "manmanCode": "G12",
+    "panpanCode": "287",
+    "mixiaowoCode": "272",
+    "kakaCode": "B109"
+  },
+  {
+    "colorHex": "E8FFE7",
+    "mardCode": "C1",
+    "cocoCode": "G01",
+    "manmanCode": "C8",
+    "panpanCode": "64",
+    "mixiaowoCode": "76",
+    "kakaCode": "B123"
+  },
+  {
+    "colorHex": "A9F9FC",
+    "mardCode": "C2",
+    "cocoCode": "H03",
+    "manmanCode": "D1",
+    "panpanCode": "30",
+    "mixiaowoCode": "30",
+    "kakaCode": "B143"
+  },
+  {
+    "colorHex": "A0E2FB",
+    "mardCode": "C3",
+    "cocoCode": "H04",
+    "manmanCode": "D2",
+    "panpanCode": "63",
+    "mixiaowoCode": "75",
+    "kakaCode": "B160"
+  },
+  {
+    "colorHex": "41CCFF",
+    "mardCode": "C4",
+    "cocoCode": "H05",
+    "manmanCode": "D3",
+    "panpanCode": "77",
+    "mixiaowoCode": "82",
+    "kakaCode": "B220"
+  },
+  {
+    "colorHex": "01ACEB",
+    "mardCode": "C5",
+    "cocoCode": "H07",
+    "manmanCode": "D7",
+    "panpanCode": "34",
+    "mixiaowoCode": "34",
+    "kakaCode": "B227"
+  },
+  {
+    "colorHex": "50AAF0",
+    "mardCode": "C6",
+    "cocoCode": "H08",
+    "manmanCode": "D4",
+    "panpanCode": "25",
+    "mixiaowoCode": "25",
+    "kakaCode": "B154"
+  },
+  {
+    "colorHex": "3677D2",
+    "mardCode": "C7",
+    "cocoCode": "H13",
+    "manmanCode": "D8",
+    "panpanCode": "9",
+    "mixiaowoCode": "9",
+    "kakaCode": "B155"
+  },
+  {
+    "colorHex": "0F54C0",
+    "mardCode": "C8",
+    "cocoCode": "H14",
+    "manmanCode": "D9",
+    "panpanCode": "52",
+    "mixiaowoCode": "71",
+    "kakaCode": "B157"
+  },
+  {
+    "colorHex": "324BCA",
+    "mardCode": "C9",
+    "cocoCode": "H16",
+    "manmanCode": "N5",
+    "panpanCode": "42",
+    "mixiaowoCode": "42",
+    "kakaCode": "B156"
+  },
+  {
+    "colorHex": "3EBCE2",
+    "mardCode": "C10",
+    "cocoCode": "H09",
+    "manmanCode": "D25",
+    "panpanCode": "121",
+    "mixiaowoCode": "130",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "28DDDE",
+    "mardCode": "C11",
+    "cocoCode": "H10",
+    "manmanCode": "D28",
+    "panpanCode": "122",
+    "mixiaowoCode": "113",
+    "kakaCode": "B145"
+  },
+  {
+    "colorHex": "1C334D",
+    "mardCode": "C12",
+    "cocoCode": "H23",
+    "manmanCode": "D26",
+    "panpanCode": "120",
+    "mixiaowoCode": "120",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "CDE8FF",
+    "mardCode": "C13",
+    "cocoCode": "H01",
+    "manmanCode": "D30",
+    "panpanCode": "140",
+    "mixiaowoCode": "142",
+    "kakaCode": "B151"
+  },
+  {
+    "colorHex": "D5FDFF",
+    "mardCode": "C14",
+    "cocoCode": "H02",
+    "manmanCode": "D29",
+    "panpanCode": "139",
+    "mixiaowoCode": "136",
+    "kakaCode": "B209"
+  },
+  {
+    "colorHex": "22C4C6",
+    "mardCode": "C15",
+    "cocoCode": "H11",
+    "manmanCode": "D31",
+    "panpanCode": "143",
+    "mixiaowoCode": "132",
+    "kakaCode": "B144"
+  },
+  {
+    "colorHex": "1557A8",
+    "mardCode": "C16",
+    "cocoCode": "H18",
+    "manmanCode": "D32",
+    "panpanCode": "149",
+    "mixiaowoCode": "149",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "04D1F6",
+    "mardCode": "C17",
+    "cocoCode": "H19",
+    "manmanCode": "D36",
+    "panpanCode": "163",
+    "mixiaowoCode": "156",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "1D3344",
+    "mardCode": "C18",
+    "cocoCode": "H24",
+    "manmanCode": "DH6",
+    "panpanCode": "196",
+    "mixiaowoCode": "196",
+    "kakaCode": "B240"
+  },
+  {
+    "colorHex": "7F9698",
+    "mardCode": "C19",
+    "cocoCode": "H12",
+    "manmanCode": "DH9",
+    "panpanCode": "202",
+    "mixiaowoCode": "202",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "176DAF",
+    "mardCode": "C20",
+    "cocoCode": "H17",
+    "manmanCode": "DH14",
+    "panpanCode": "197",
+    "mixiaowoCode": "197",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "BEDDFF",
+    "mardCode": "C21",
+    "cocoCode": "H06",
+    "manmanCode": "IC3",
+    "panpanCode": "212",
+    "mixiaowoCode": "212",
+    "kakaCode": "B208"
+  },
+  {
+    "colorHex": "67B4BE",
+    "mardCode": "C22",
+    "cocoCode": "H25",
+    "manmanCode": "Q11",
+    "panpanCode": "239",
+    "mixiaowoCode": "239",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "C8E2FF",
+    "mardCode": "C23",
+    "cocoCode": "H26",
+    "manmanCode": "R13",
+    "panpanCode": "263",
+    "mixiaowoCode": "263",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "7CC4FF",
+    "mardCode": "C24",
+    "cocoCode": "H27",
+    "manmanCode": "R14",
+    "panpanCode": "267",
+    "mixiaowoCode": "252",
+    "kakaCode": "B153"
+  },
+  {
+    "colorHex": "A9E5E5",
+    "mardCode": "C25",
+    "cocoCode": "H28",
+    "manmanCode": "R12",
+    "panpanCode": "271",
+    "mixiaowoCode": "256",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "3CAED8",
+    "mardCode": "C26",
+    "cocoCode": "H29",
+    "manmanCode": "R15",
+    "panpanCode": "265",
+    "mixiaowoCode": "250",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "D3DFFA",
+    "mardCode": "C27",
+    "cocoCode": "H30",
+    "manmanCode": "G13",
+    "panpanCode": "279",
+    "mixiaowoCode": "264",
+    "kakaCode": "B207"
+  },
+  {
+    "colorHex": "BBCFED",
+    "mardCode": "C28",
+    "cocoCode": "H31",
+    "manmanCode": "G14",
+    "panpanCode": "280",
+    "mixiaowoCode": "265",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "34488E",
+    "mardCode": "C29",
+    "cocoCode": "H32",
+    "manmanCode": "G15",
+    "panpanCode": "281",
+    "mixiaowoCode": "266",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "AEB4F2",
+    "mardCode": "D1",
+    "cocoCode": "J07",
+    "manmanCode": "D5",
+    "panpanCode": "46",
+    "mixiaowoCode": "46",
+    "kakaCode": "B230"
+  },
+  {
+    "colorHex": "858EDD",
+    "mardCode": "D2",
+    "cocoCode": "J08",
+    "manmanCode": "D6",
+    "panpanCode": "36",
+    "mixiaowoCode": "36",
+    "kakaCode": "B231"
+  },
+  {
+    "colorHex": "2F54AF",
+    "mardCode": "D3",
+    "cocoCode": "H15",
+    "manmanCode": "D10",
+    "panpanCode": "8",
+    "mixiaowoCode": "8",
+    "kakaCode": "B158"
+  },
+  {
+    "colorHex": "182A84",
+    "mardCode": "D4",
+    "cocoCode": "H20",
+    "manmanCode": "D11",
+    "panpanCode": "75",
+    "mixiaowoCode": "80",
+    "kakaCode": "B159"
+  },
+  {
+    "colorHex": "B843C5",
+    "mardCode": "D5",
+    "cocoCode": "J12",
+    "manmanCode": "D13",
+    "panpanCode": "32",
+    "mixiaowoCode": "32",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "AC7BDE",
+    "mardCode": "D6",
+    "cocoCode": "J11",
+    "manmanCode": "D14",
+    "panpanCode": "27",
+    "mixiaowoCode": "27",
+    "kakaCode": "B24"
+  },
+  {
+    "colorHex": "8854B3",
+    "mardCode": "D7",
+    "cocoCode": "J15",
+    "manmanCode": "D12",
+    "panpanCode": "7",
+    "mixiaowoCode": "7",
+    "kakaCode": "B103"
+  },
+  {
+    "colorHex": "E2D3FF",
+    "mardCode": "D8",
+    "cocoCode": "J03",
+    "manmanCode": "D16",
+    "panpanCode": "94",
+    "mixiaowoCode": "89",
+    "kakaCode": "B19"
+  },
+  {
+    "colorHex": "D5B9F8",
+    "mardCode": "D9",
+    "cocoCode": "J04",
+    "manmanCode": "D17",
+    "panpanCode": "93",
+    "mixiaowoCode": "90",
+    "kakaCode": "B234"
+  },
+  {
+    "colorHex": "361B51",
+    "mardCode": "D10",
+    "cocoCode": "J19",
+    "manmanCode": "D15",
+    "panpanCode": "92",
+    "mixiaowoCode": "91",
+    "kakaCode": "B27"
+  },
+  {
+    "colorHex": "B9BAE1",
+    "mardCode": "D11",
+    "cocoCode": "J06",
+    "manmanCode": "D19",
+    "panpanCode": "105",
+    "mixiaowoCode": "104",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "DE9AD4",
+    "mardCode": "D12",
+    "cocoCode": "J10",
+    "manmanCode": "D20",
+    "panpanCode": "104",
+    "mixiaowoCode": "105",
+    "kakaCode": "B22"
+  },
+  {
+    "colorHex": "B90095",
+    "mardCode": "D13",
+    "cocoCode": "J14",
+    "manmanCode": "D21",
+    "panpanCode": "103",
+    "mixiaowoCode": "106",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "8B279B",
+    "mardCode": "D14",
+    "cocoCode": "J16",
+    "manmanCode": "D22",
+    "panpanCode": "102",
+    "mixiaowoCode": "107",
+    "kakaCode": "B101"
+  },
+  {
+    "colorHex": "2F1F90",
+    "mardCode": "D15",
+    "cocoCode": "H22",
+    "manmanCode": "D18",
+    "panpanCode": "101",
+    "mixiaowoCode": "108",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "E3E1EE",
+    "mardCode": "D16",
+    "cocoCode": "J01",
+    "manmanCode": "D23",
+    "panpanCode": "118",
+    "mixiaowoCode": "126",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "C4D4F6",
+    "mardCode": "D17",
+    "cocoCode": "J05",
+    "manmanCode": "D24",
+    "panpanCode": "119",
+    "mixiaowoCode": "128",
+    "kakaCode": "B224"
+  },
+  {
+    "colorHex": "A45EC7",
+    "mardCode": "D18",
+    "cocoCode": "J13",
+    "manmanCode": "D27",
+    "panpanCode": "124",
+    "mixiaowoCode": "125",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "D8C3D7",
+    "mardCode": "D19",
+    "cocoCode": "J09",
+    "manmanCode": "D33",
+    "panpanCode": "153",
+    "mixiaowoCode": "153",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "9C32B2",
+    "mardCode": "D20",
+    "cocoCode": "J17",
+    "manmanCode": "D34",
+    "panpanCode": "161",
+    "mixiaowoCode": "155",
+    "kakaCode": "B99"
+  },
+  {
+    "colorHex": "9A009B",
+    "mardCode": "D21",
+    "cocoCode": "J18",
+    "manmanCode": "D35",
+    "panpanCode": "162",
+    "mixiaowoCode": "158",
+    "kakaCode": "B100"
+  },
+  {
+    "colorHex": "333A95",
+    "mardCode": "D22",
+    "cocoCode": "H21",
+    "manmanCode": "DH1",
+    "panpanCode": "198",
+    "mixiaowoCode": "198",
+    "kakaCode": "B233"
+  },
+  {
+    "colorHex": "EBDAFC",
+    "mardCode": "D23",
+    "cocoCode": "J02",
+    "manmanCode": "IC8",
+    "panpanCode": "217",
+    "mixiaowoCode": "217",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "7786E5",
+    "mardCode": "D24",
+    "cocoCode": "J20",
+    "manmanCode": "Q14",
+    "panpanCode": "244",
+    "mixiaowoCode": "244",
+    "kakaCode": "B232"
+  },
+  {
+    "colorHex": "494FC7",
+    "mardCode": "D25",
+    "cocoCode": "J21",
+    "manmanCode": "Q15",
+    "panpanCode": "249",
+    "mixiaowoCode": "234",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "DFC2F8",
+    "mardCode": "D26",
+    "cocoCode": "J22",
+    "manmanCode": "R01",
+    "panpanCode": "273",
+    "mixiaowoCode": "258",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FDD3CC",
+    "mardCode": "E1",
+    "cocoCode": "K03",
+    "manmanCode": "E1",
+    "panpanCode": "18",
+    "mixiaowoCode": "18",
+    "kakaCode": "B177"
+  },
+  {
+    "colorHex": "FEC0DF",
+    "mardCode": "E2",
+    "cocoCode": "K15",
+    "manmanCode": "A7",
+    "panpanCode": "38",
+    "mixiaowoCode": "38",
+    "kakaCode": "B43"
+  },
+  {
+    "colorHex": "FFB7E7",
+    "mardCode": "E3",
+    "cocoCode": "K17",
+    "manmanCode": "A8",
+    "panpanCode": "62",
+    "mixiaowoCode": "74",
+    "kakaCode": "B48"
+  },
+  {
+    "colorHex": "E8649E",
+    "mardCode": "E4",
+    "cocoCode": "K21",
+    "manmanCode": "A9",
+    "panpanCode": "6",
+    "mixiaowoCode": "6",
+    "kakaCode": "B52"
+  },
+  {
+    "colorHex": "F551A2",
+    "mardCode": "E5",
+    "cocoCode": "K19",
+    "manmanCode": "A10",
+    "panpanCode": "40",
+    "mixiaowoCode": "40",
+    "kakaCode": "B79"
+  },
+  {
+    "colorHex": "F13D74",
+    "mardCode": "E6",
+    "cocoCode": "K22",
+    "manmanCode": "A11",
+    "panpanCode": "20",
+    "mixiaowoCode": "20",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "C63478",
+    "mardCode": "E7",
+    "cocoCode": "K25",
+    "manmanCode": "A12",
+    "panpanCode": "41",
+    "mixiaowoCode": "41",
+    "kakaCode": "B82"
+  },
+  {
+    "colorHex": "FFDBE9",
+    "mardCode": "E8",
+    "cocoCode": "K12",
+    "manmanCode": "A13",
+    "panpanCode": "84",
+    "mixiaowoCode": "103",
+    "kakaCode": "B37"
+  },
+  {
+    "colorHex": "E970CC",
+    "mardCode": "E9",
+    "cocoCode": "K18",
+    "manmanCode": "A14",
+    "panpanCode": "98",
+    "mixiaowoCode": "95",
+    "kakaCode": "B78"
+  },
+  {
+    "colorHex": "D33793",
+    "mardCode": "E10",
+    "cocoCode": "K23",
+    "manmanCode": "A16",
+    "panpanCode": "83",
+    "mixiaowoCode": "94",
+    "kakaCode": "B80"
+  },
+  {
+    "colorHex": "FCDDD2",
+    "mardCode": "E11",
+    "cocoCode": "K02",
+    "manmanCode": "A19",
+    "panpanCode": "125",
+    "mixiaowoCode": "131",
+    "kakaCode": "B175"
+  },
+  {
+    "colorHex": "F78FC3",
+    "mardCode": "E12",
+    "cocoCode": "K16",
+    "manmanCode": "A20",
+    "panpanCode": "126",
+    "mixiaowoCode": "112",
+    "kakaCode": "B45"
+  },
+  {
+    "colorHex": "B5006D",
+    "mardCode": "E13",
+    "cocoCode": "K24",
+    "manmanCode": "A21",
+    "panpanCode": "127",
+    "mixiaowoCode": "124",
+    "kakaCode": "B84"
+  },
+  {
+    "colorHex": "FFD1BA",
+    "mardCode": "E14",
+    "cocoCode": "K05",
+    "manmanCode": "E21",
+    "panpanCode": "137",
+    "mixiaowoCode": "140",
+    "kakaCode": "B176"
+  },
+  {
+    "colorHex": "F8C7C9",
+    "mardCode": "E15",
+    "cocoCode": "K04",
+    "manmanCode": "A23",
+    "panpanCode": "135",
+    "mixiaowoCode": "139",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FFF3EB",
+    "mardCode": "E16",
+    "cocoCode": "K01",
+    "manmanCode": "IC2",
+    "panpanCode": "221",
+    "mixiaowoCode": "206",
+    "kakaCode": "B219"
+  },
+  {
+    "colorHex": "FFE2EA",
+    "mardCode": "E17",
+    "cocoCode": "K11",
+    "manmanCode": "IC7",
+    "panpanCode": "220",
+    "mixiaowoCode": "205",
+    "kakaCode": "B216"
+  },
+  {
+    "colorHex": "FFC7DB",
+    "mardCode": "E18",
+    "cocoCode": "K13",
+    "manmanCode": "IC13",
+    "panpanCode": "210",
+    "mixiaowoCode": "210",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FEBAD5",
+    "mardCode": "E19",
+    "cocoCode": "K14",
+    "manmanCode": "IC12",
+    "panpanCode": "215",
+    "mixiaowoCode": "215",
+    "kakaCode": "B44"
+  },
+  {
+    "colorHex": "D8C7D1",
+    "mardCode": "E20",
+    "cocoCode": "K26",
+    "manmanCode": "Q1",
+    "panpanCode": "241",
+    "mixiaowoCode": "241",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "BD9DA1",
+    "mardCode": "E21",
+    "cocoCode": "K27",
+    "manmanCode": "Q2",
+    "panpanCode": "253",
+    "mixiaowoCode": "238",
+    "kakaCode": "B39"
+  },
+  {
+    "colorHex": "B785A1",
+    "mardCode": "E22",
+    "cocoCode": "K28",
+    "manmanCode": "Q4",
+    "panpanCode": "252",
+    "mixiaowoCode": "237",
+    "kakaCode": "B264"
+  },
+  {
+    "colorHex": "937A8D",
+    "mardCode": "E23",
+    "cocoCode": "K29",
+    "manmanCode": "Q3",
+    "panpanCode": "250",
+    "mixiaowoCode": "235",
+    "kakaCode": "B265"
+  },
+  {
+    "colorHex": "E1BCE8",
+    "mardCode": "E24",
+    "cocoCode": "K30",
+    "manmanCode": "G8",
+    "panpanCode": "282",
+    "mixiaowoCode": "267",
+    "kakaCode": "B217"
+  },
+  {
+    "colorHex": "FD957B",
+    "mardCode": "F1",
+    "cocoCode": "K08",
+    "manmanCode": "A1",
+    "panpanCode": "35",
+    "mixiaowoCode": "35",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FC3D46",
+    "mardCode": "F2",
+    "cocoCode": "C02",
+    "manmanCode": "A2",
+    "panpanCode": "31",
+    "mixiaowoCode": "31",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F74941",
+    "mardCode": "F3",
+    "cocoCode": "C03",
+    "manmanCode": "A3",
+    "panpanCode": "53",
+    "mixiaowoCode": "72",
+    "kakaCode": "B54"
+  },
+  {
+    "colorHex": "FC283C",
+    "mardCode": "F4",
+    "cocoCode": "C06",
+    "manmanCode": "A4",
+    "panpanCode": "54",
+    "mixiaowoCode": "73",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "E7002F",
+    "mardCode": "F5",
+    "cocoCode": "C07",
+    "manmanCode": "A5",
+    "panpanCode": "5",
+    "mixiaowoCode": "5",
+    "kakaCode": "B62"
+  },
+  {
+    "colorHex": "943630",
+    "mardCode": "F6",
+    "cocoCode": "Z21",
+    "manmanCode": "E9",
+    "panpanCode": "16",
+    "mixiaowoCode": "16",
+    "kakaCode": "B74"
+  },
+  {
+    "colorHex": "971937",
+    "mardCode": "F7",
+    "cocoCode": "C10",
+    "manmanCode": "A6",
+    "panpanCode": "47",
+    "mixiaowoCode": "47",
+    "kakaCode": "B60"
+  },
+  {
+    "colorHex": "BC0028",
+    "mardCode": "F8",
+    "cocoCode": "C09",
+    "manmanCode": "A17",
+    "panpanCode": "81",
+    "mixiaowoCode": "92",
+    "kakaCode": "B56"
+  },
+  {
+    "colorHex": "E2677A",
+    "mardCode": "F9",
+    "cocoCode": "K20",
+    "manmanCode": "A15",
+    "panpanCode": "82",
+    "mixiaowoCode": "93",
+    "kakaCode": "B191"
+  },
+  {
+    "colorHex": "8A4526",
+    "mardCode": "F10",
+    "cocoCode": "Z20",
+    "manmanCode": "E15",
+    "panpanCode": "116",
+    "mixiaowoCode": "115",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "5A2121",
+    "mardCode": "F11",
+    "cocoCode": "Z23",
+    "manmanCode": "E16",
+    "panpanCode": "117",
+    "mixiaowoCode": "129",
+    "kakaCode": "B95"
+  },
+  {
+    "colorHex": "FD4E6A",
+    "mardCode": "F12",
+    "cocoCode": "C01",
+    "manmanCode": "A22",
+    "panpanCode": "136",
+    "mixiaowoCode": "134",
+    "kakaCode": "B130"
+  },
+  {
+    "colorHex": "F35744",
+    "mardCode": "F13",
+    "cocoCode": "C04",
+    "manmanCode": "A24",
+    "panpanCode": "148",
+    "mixiaowoCode": "148",
+    "kakaCode": "B72"
+  },
+  {
+    "colorHex": "FFA9AD",
+    "mardCode": "F14",
+    "cocoCode": "K07",
+    "manmanCode": "A25",
+    "panpanCode": "154",
+    "mixiaowoCode": "154",
+    "kakaCode": "B188"
+  },
+  {
+    "colorHex": "D30022",
+    "mardCode": "F15",
+    "cocoCode": "C08",
+    "manmanCode": "DH8",
+    "panpanCode": "204",
+    "mixiaowoCode": "191",
+    "kakaCode": "B63"
+  },
+  {
+    "colorHex": "FEC2A6",
+    "mardCode": "F16",
+    "cocoCode": "K06",
+    "manmanCode": "IC10",
+    "panpanCode": "211",
+    "mixiaowoCode": "211",
+    "kakaCode": "B268"
+  },
+  {
+    "colorHex": "E69C79",
+    "mardCode": "F17",
+    "cocoCode": "K31",
+    "manmanCode": "Q9",
+    "panpanCode": "245",
+    "mixiaowoCode": "245",
+    "kakaCode": "B187"
+  },
+  {
+    "colorHex": "D37C46",
+    "mardCode": "F18",
+    "cocoCode": "K32",
+    "manmanCode": "Q10",
+    "panpanCode": "246",
+    "mixiaowoCode": "246",
+    "kakaCode": "B50"
+  },
+  {
+    "colorHex": "C1444A",
+    "mardCode": "F19",
+    "cocoCode": "K33",
+    "manmanCode": "Q05",
+    "panpanCode": "243",
+    "mixiaowoCode": "243",
+    "kakaCode": "B57"
+  },
+  {
+    "colorHex": "CD9391",
+    "mardCode": "F20",
+    "cocoCode": "K34",
+    "manmanCode": "R04",
+    "panpanCode": "275",
+    "mixiaowoCode": "260",
+    "kakaCode": "B42"
+  },
+  {
+    "colorHex": "F7B4C6",
+    "mardCode": "F21",
+    "cocoCode": "K35",
+    "manmanCode": "R03",
+    "panpanCode": "266",
+    "mixiaowoCode": "251",
+    "kakaCode": "B186"
+  },
+  {
+    "colorHex": "FDC0D0",
+    "mardCode": "F22",
+    "cocoCode": "K36",
+    "manmanCode": "R02",
+    "panpanCode": "272",
+    "mixiaowoCode": "257",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F67E66",
+    "mardCode": "F23",
+    "cocoCode": "K37",
+    "manmanCode": "R05",
+    "panpanCode": "264",
+    "mixiaowoCode": "249",
+    "kakaCode": "B71"
+  },
+  {
+    "colorHex": "E698AA",
+    "mardCode": "F24",
+    "cocoCode": "K38",
+    "manmanCode": "G9",
+    "panpanCode": "283",
+    "mixiaowoCode": "268",
+    "kakaCode": "B47"
+  },
+  {
+    "colorHex": "E54B4F",
+    "mardCode": "F25",
+    "cocoCode": "K39",
+    "manmanCode": "G10",
+    "panpanCode": "284",
+    "mixiaowoCode": "269",
+    "kakaCode": "B53"
+  },
+  {
+    "colorHex": "FFE2CE",
+    "mardCode": "G1",
+    "cocoCode": "Z02",
+    "manmanCode": "E3",
+    "panpanCode": "76",
+    "mixiaowoCode": "81",
+    "kakaCode": "B179"
+  },
+  {
+    "colorHex": "FFC4AA",
+    "mardCode": "G2",
+    "cocoCode": "Z05",
+    "manmanCode": "E4",
+    "panpanCode": "49",
+    "mixiaowoCode": "49",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F4C3A5",
+    "mardCode": "G3",
+    "cocoCode": "Z06",
+    "manmanCode": "E5",
+    "panpanCode": "80",
+    "mixiaowoCode": "85",
+    "kakaCode": "B172"
+  },
+  {
+    "colorHex": "E1B383",
+    "mardCode": "G4",
+    "cocoCode": "Z08",
+    "manmanCode": "E6",
+    "panpanCode": "19",
+    "mixiaowoCode": "19",
+    "kakaCode": "B273"
+  },
+  {
+    "colorHex": "EDB045",
+    "mardCode": "G5",
+    "cocoCode": "Z10",
+    "manmanCode": "B7",
+    "panpanCode": "43",
+    "mixiaowoCode": "43",
+    "kakaCode": "B182"
+  },
+  {
+    "colorHex": "E99C17",
+    "mardCode": "G6",
+    "cocoCode": "Z11",
+    "manmanCode": "B8",
+    "panpanCode": "50",
+    "mixiaowoCode": "50",
+    "kakaCode": "B92"
+  },
+  {
+    "colorHex": "9D5B3E",
+    "mardCode": "G7",
+    "cocoCode": "Z18",
+    "manmanCode": "E7",
+    "panpanCode": "17",
+    "mixiaowoCode": "17",
+    "kakaCode": "B97"
+  },
+  {
+    "colorHex": "753B32",
+    "mardCode": "G8",
+    "cocoCode": "Z22",
+    "manmanCode": "E8",
+    "panpanCode": "12",
+    "mixiaowoCode": "12",
+    "kakaCode": "B170"
+  },
+  {
+    "colorHex": "E6B483",
+    "mardCode": "G9",
+    "cocoCode": "Z09",
+    "manmanCode": "E10",
+    "panpanCode": "91",
+    "mixiaowoCode": "102",
+    "kakaCode": "B196"
+  },
+  {
+    "colorHex": "D98C39",
+    "mardCode": "G10",
+    "cocoCode": "Z15",
+    "manmanCode": "B9",
+    "panpanCode": "87",
+    "mixiaowoCode": "101",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "E0C593",
+    "mardCode": "G11",
+    "cocoCode": "Z07",
+    "manmanCode": "E12",
+    "panpanCode": "112",
+    "mixiaowoCode": "118",
+    "kakaCode": "B242"
+  },
+  {
+    "colorHex": "FFC890",
+    "mardCode": "G12",
+    "cocoCode": "Z13",
+    "manmanCode": "E13",
+    "panpanCode": "113",
+    "mixiaowoCode": "127",
+    "kakaCode": "B269"
+  },
+  {
+    "colorHex": "B7714A",
+    "mardCode": "G13",
+    "cocoCode": "Z14",
+    "manmanCode": "E17",
+    "panpanCode": "115",
+    "mixiaowoCode": "114",
+    "kakaCode": "B93"
+  },
+  {
+    "colorHex": "8D614C",
+    "mardCode": "G14",
+    "cocoCode": "Z17",
+    "manmanCode": "E14",
+    "panpanCode": "114",
+    "mixiaowoCode": "123",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FCF9E0",
+    "mardCode": "G15",
+    "cocoCode": "Z03",
+    "manmanCode": "E19",
+    "panpanCode": "133",
+    "mixiaowoCode": "143",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F2D9BA",
+    "mardCode": "G16",
+    "cocoCode": "Z04",
+    "manmanCode": "E20",
+    "panpanCode": "134",
+    "mixiaowoCode": "138",
+    "kakaCode": "B270"
+  },
+  {
+    "colorHex": "7B524B",
+    "mardCode": "G17",
+    "cocoCode": "Z16",
+    "manmanCode": "E22",
+    "panpanCode": "144",
+    "mixiaowoCode": "137",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FFE4CC",
+    "mardCode": "G18",
+    "cocoCode": "Z01",
+    "manmanCode": "DH5",
+    "panpanCode": "203",
+    "mixiaowoCode": "203",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "E07935",
+    "mardCode": "G19",
+    "cocoCode": "Z12",
+    "manmanCode": "DH3",
+    "panpanCode": "208",
+    "mixiaowoCode": "195",
+    "kakaCode": "B199"
+  },
+  {
+    "colorHex": "A94023",
+    "mardCode": "G20",
+    "cocoCode": "Z19",
+    "manmanCode": "DH13",
+    "panpanCode": "199",
+    "mixiaowoCode": "199",
+    "kakaCode": "B94"
+  },
+  {
+    "colorHex": "B88558",
+    "mardCode": "G21",
+    "cocoCode": "Z24",
+    "manmanCode": "Q8",
+    "panpanCode": "247",
+    "mixiaowoCode": "247",
+    "kakaCode": "B254"
+  },
+  {
+    "colorHex": "FDFBFF",
+    "mardCode": "H1",
+    "cocoCode": "A02",
+    "manmanCode": "F1",
+    "panpanCode": "15",
+    "mixiaowoCode": "15",
+    "kakaCode": "B1"
+  },
+  {
+    "colorHex": "FEFFFF",
+    "mardCode": "H2",
+    "cocoCode": "A01",
+    "manmanCode": "F2",
+    "panpanCode": "1",
+    "mixiaowoCode": "1",
+    "kakaCode": "B2"
+  },
+  {
+    "colorHex": "B6B1BA",
+    "mardCode": "H3",
+    "cocoCode": "B03",
+    "manmanCode": "F3",
+    "panpanCode": "13",
+    "mixiaowoCode": "13",
+    "kakaCode": "B5"
+  },
+  {
+    "colorHex": "89858C",
+    "mardCode": "H4",
+    "cocoCode": "B05",
+    "manmanCode": "F4",
+    "panpanCode": "78",
+    "mixiaowoCode": "83",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "48464E",
+    "mardCode": "H5",
+    "cocoCode": "B06",
+    "manmanCode": "F5",
+    "panpanCode": "45",
+    "mixiaowoCode": "45",
+    "kakaCode": "B7"
+  },
+  {
+    "colorHex": "2F2B2F",
+    "mardCode": "H6",
+    "cocoCode": "B07",
+    "manmanCode": "F6",
+    "panpanCode": "51",
+    "mixiaowoCode": "70",
+    "kakaCode": "B8"
+  },
+  {
+    "colorHex": "000000",
+    "mardCode": "H7",
+    "cocoCode": "B09",
+    "manmanCode": "F7",
+    "panpanCode": "14",
+    "mixiaowoCode": "14",
+    "kakaCode": "B11"
+  },
+  {
+    "colorHex": "E7D6DB",
+    "mardCode": "H8",
+    "cocoCode": "A09",
+    "manmanCode": "F8",
+    "panpanCode": "85",
+    "mixiaowoCode": "86",
+    "kakaCode": "B218"
+  },
+  {
+    "colorHex": "EDEDED",
+    "mardCode": "H9",
+    "cocoCode": "A08",
+    "manmanCode": "F10",
+    "panpanCode": "95",
+    "mixiaowoCode": "87",
+    "kakaCode": "B3"
+  },
+  {
+    "colorHex": "EEE9EA",
+    "mardCode": "H10",
+    "cocoCode": "A10",
+    "manmanCode": "F9",
+    "panpanCode": "86",
+    "mixiaowoCode": "88",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "CECDD5",
+    "mardCode": "H11",
+    "cocoCode": "B01",
+    "manmanCode": "F11",
+    "panpanCode": "123",
+    "mixiaowoCode": "121",
+    "kakaCode": "B4"
+  },
+  {
+    "colorHex": "FFF5ED",
+    "mardCode": "H12",
+    "cocoCode": "A04",
+    "manmanCode": "E18",
+    "panpanCode": "132",
+    "mixiaowoCode": "144",
+    "kakaCode": "B213"
+  },
+  {
+    "colorHex": "F5ECD2",
+    "mardCode": "H13",
+    "cocoCode": "A06",
+    "manmanCode": "E23",
+    "panpanCode": "145",
+    "mixiaowoCode": "146",
+    "kakaCode": "B28"
+  },
+  {
+    "colorHex": "CFD7D3",
+    "mardCode": "H14",
+    "cocoCode": "B02",
+    "manmanCode": "F12",
+    "panpanCode": "146",
+    "mixiaowoCode": "145",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "98A6A8",
+    "mardCode": "H15",
+    "cocoCode": "B04",
+    "manmanCode": "DH4",
+    "panpanCode": "201",
+    "mixiaowoCode": "201",
+    "kakaCode": "B259"
+  },
+  {
+    "colorHex": "1D1414",
+    "mardCode": "H16",
+    "cocoCode": "B08",
+    "manmanCode": "DH11",
+    "panpanCode": "200",
+    "mixiaowoCode": "200",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F1EDED",
+    "mardCode": "H17",
+    "cocoCode": "A07",
+    "manmanCode": "IC6",
+    "panpanCode": "214",
+    "mixiaowoCode": "214",
+    "kakaCode": "B205"
+  },
+  {
+    "colorHex": "FFFDF0",
+    "mardCode": "H18",
+    "cocoCode": "A03",
+    "manmanCode": "IC1",
+    "panpanCode": "219",
+    "mixiaowoCode": "204",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F6EFE2",
+    "mardCode": "H19",
+    "cocoCode": "A05",
+    "manmanCode": "IC11",
+    "panpanCode": "209",
+    "mixiaowoCode": "209",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "949FA3",
+    "mardCode": "H20",
+    "cocoCode": "B10",
+    "manmanCode": "Q12",
+    "panpanCode": "251",
+    "mixiaowoCode": "236",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FFFBE1",
+    "mardCode": "H21",
+    "cocoCode": "A11",
+    "manmanCode": "G1",
+    "panpanCode": "291",
+    "mixiaowoCode": "276",
+    "kakaCode": "B214"
+  },
+  {
+    "colorHex": "CACAD4",
+    "mardCode": "H22",
+    "cocoCode": "A12",
+    "manmanCode": "G2",
+    "panpanCode": "277",
+    "mixiaowoCode": "277",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "9A9D94",
+    "mardCode": "H23",
+    "cocoCode": "B11",
+    "manmanCode": "G11",
+    "panpanCode": "278",
+    "mixiaowoCode": "278",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "BCC6B8",
+    "mardCode": "M1",
+    "cocoCode": "Y01",
+    "manmanCode": "YX11",
+    "panpanCode": "168",
+    "mixiaowoCode": "168",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "8AA386",
+    "mardCode": "M2",
+    "cocoCode": "Y02",
+    "manmanCode": "YX12",
+    "panpanCode": "172",
+    "mixiaowoCode": "172",
+    "kakaCode": "B253"
+  },
+  {
+    "colorHex": "697D80",
+    "mardCode": "M3",
+    "cocoCode": "Y03",
+    "manmanCode": "YX2",
+    "panpanCode": "166",
+    "mixiaowoCode": "166",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "E3D2BC",
+    "mardCode": "M4",
+    "cocoCode": "Y04",
+    "manmanCode": "YX15",
+    "panpanCode": "167",
+    "mixiaowoCode": "167",
+    "kakaCode": "B278"
+  },
+  {
+    "colorHex": "D0CCAA",
+    "mardCode": "M5",
+    "cocoCode": "Y05",
+    "manmanCode": "YX6",
+    "panpanCode": "174",
+    "mixiaowoCode": "159",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "B0A782",
+    "mardCode": "M6",
+    "cocoCode": "Y06",
+    "manmanCode": "YX1",
+    "panpanCode": "169",
+    "mixiaowoCode": "169",
+    "kakaCode": "B244"
+  },
+  {
+    "colorHex": "B4A497",
+    "mardCode": "M7",
+    "cocoCode": "Y07",
+    "manmanCode": "YX13",
+    "panpanCode": "171",
+    "mixiaowoCode": "171",
+    "kakaCode": "B30"
+  },
+  {
+    "colorHex": "B38281",
+    "mardCode": "M8",
+    "cocoCode": "Y08",
+    "manmanCode": "YX14",
+    "panpanCode": "177",
+    "mixiaowoCode": "162",
+    "kakaCode": "B29"
+  },
+  {
+    "colorHex": "A58767",
+    "mardCode": "M9",
+    "cocoCode": "Y09",
+    "manmanCode": "YX10",
+    "panpanCode": "170",
+    "mixiaowoCode": "170",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "C5B2BC",
+    "mardCode": "M10",
+    "cocoCode": "Y10",
+    "manmanCode": "YX9",
+    "panpanCode": "164",
+    "mixiaowoCode": "164",
+    "kakaCode": "B263"
+  },
+  {
+    "colorHex": "9F7594",
+    "mardCode": "M11",
+    "cocoCode": "Y11",
+    "manmanCode": "YX4",
+    "panpanCode": "176",
+    "mixiaowoCode": "161",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "644749",
+    "mardCode": "M12",
+    "cocoCode": "Y12",
+    "manmanCode": "YX5",
+    "panpanCode": "173",
+    "mixiaowoCode": "173",
+    "kakaCode": "B33"
+  },
+  {
+    "colorHex": "D19066",
+    "mardCode": "M13",
+    "cocoCode": "Y13",
+    "manmanCode": "YX8",
+    "panpanCode": "175",
+    "mixiaowoCode": "160",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "C77362",
+    "mardCode": "M14",
+    "cocoCode": "Y14",
+    "manmanCode": "YX3",
+    "panpanCode": "165",
+    "mixiaowoCode": "165",
+    "kakaCode": "B73"
+  },
+  {
+    "colorHex": "757D7B",
+    "mardCode": "M15",
+    "cocoCode": "Y15",
+    "manmanCode": "YX7",
+    "panpanCode": "178",
+    "mixiaowoCode": "163",
+    "kakaCode": "B6"
+  },
+  {
+    "colorHex": "FCF7F8",
+    "mardCode": "P1",
+    "cocoCode": "M01",
+    "manmanCode": "P1",
+    "panpanCode": "71",
+    "mixiaowoCode": "62",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "B0A9AC",
+    "mardCode": "P2",
+    "cocoCode": "M02",
+    "manmanCode": "P2",
+    "panpanCode": "55",
+    "mixiaowoCode": "69",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "AFDCAB",
+    "mardCode": "P3",
+    "cocoCode": "M03",
+    "manmanCode": "P4",
+    "panpanCode": "73",
+    "mixiaowoCode": "66",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FEA49F",
+    "mardCode": "P4",
+    "cocoCode": "M04",
+    "manmanCode": "P5",
+    "panpanCode": "72",
+    "mixiaowoCode": "64",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "EE8C3E",
+    "mardCode": "P5",
+    "cocoCode": "M05",
+    "manmanCode": "P3",
+    "panpanCode": "56/56",
+    "mixiaowoCode": "63",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "5FD0A7",
+    "mardCode": "P6",
+    "cocoCode": "M06",
+    "manmanCode": "P8",
+    "panpanCode": "157/70",
+    "mixiaowoCode": "65",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "EB9270",
+    "mardCode": "P7",
+    "cocoCode": "M07",
+    "manmanCode": "P6",
+    "panpanCode": "159/68",
+    "mixiaowoCode": "68",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F0D958",
+    "mardCode": "P8",
+    "cocoCode": "M08",
+    "manmanCode": "P7",
+    "panpanCode": "158/67",
+    "mixiaowoCode": "67",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "D9D9D9",
+    "mardCode": "P9",
+    "cocoCode": "M09",
+    "manmanCode": "P13",
+    "panpanCode": "195",
+    "mixiaowoCode": "178",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "D9C7EA",
+    "mardCode": "P10",
+    "cocoCode": "M10",
+    "manmanCode": "P18",
+    "panpanCode": "187",
+    "mixiaowoCode": "187",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F3ECC9",
+    "mardCode": "P11",
+    "cocoCode": "M11",
+    "manmanCode": "P9",
+    "panpanCode": "185",
+    "mixiaowoCode": "185",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "E6EEF2",
+    "mardCode": "P12",
+    "cocoCode": "M12",
+    "manmanCode": "P12",
+    "panpanCode": "190",
+    "mixiaowoCode": "190",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "AACBEF",
+    "mardCode": "P13",
+    "cocoCode": "M13",
+    "manmanCode": "P17",
+    "panpanCode": "193",
+    "mixiaowoCode": "176",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "3376B0",
+    "mardCode": "P14",
+    "cocoCode": "M14",
+    "manmanCode": "P22",
+    "panpanCode": "183",
+    "mixiaowoCode": "183",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "668575",
+    "mardCode": "P15",
+    "cocoCode": "M15",
+    "manmanCode": "P23",
+    "panpanCode": "184",
+    "mixiaowoCode": "184",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FEBF45",
+    "mardCode": "P16",
+    "cocoCode": "M16",
+    "manmanCode": "P14",
+    "panpanCode": "182",
+    "mixiaowoCode": "182",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FEA324",
+    "mardCode": "P17",
+    "cocoCode": "M17",
+    "manmanCode": "P19",
+    "panpanCode": "179",
+    "mixiaowoCode": "179",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FEB89F",
+    "mardCode": "P18",
+    "cocoCode": "M18",
+    "manmanCode": "P11",
+    "panpanCode": "194",
+    "mixiaowoCode": "177",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FFE0E9",
+    "mardCode": "P19",
+    "cocoCode": "M19",
+    "manmanCode": "P10",
+    "panpanCode": "186",
+    "mixiaowoCode": "186",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FEBECF",
+    "mardCode": "P20",
+    "cocoCode": "M21",
+    "manmanCode": "P15",
+    "panpanCode": "188",
+    "mixiaowoCode": "180",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "ECBEBF",
+    "mardCode": "P21",
+    "cocoCode": "M20",
+    "manmanCode": "P20",
+    "panpanCode": "180",
+    "mixiaowoCode": "188",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "E4A89F",
+    "mardCode": "P22",
+    "cocoCode": "M22",
+    "manmanCode": "P16",
+    "panpanCode": "189",
+    "mixiaowoCode": "189",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "A56268",
+    "mardCode": "P23",
+    "cocoCode": "M23",
+    "manmanCode": "P21",
+    "panpanCode": "181",
+    "mixiaowoCode": "181",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F2A5E8",
+    "mardCode": "Q1",
+    "cocoCode": "W3",
+    "manmanCode": "W3",
+    "panpanCode": "109",
+    "mixiaowoCode": "W3",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "E9EC91",
+    "mardCode": "Q2",
+    "cocoCode": "W4",
+    "manmanCode": "W4",
+    "panpanCode": "111",
+    "mixiaowoCode": "W4",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FFFF00",
+    "mardCode": "Q3",
+    "cocoCode": "W1",
+    "manmanCode": "W1",
+    "panpanCode": "107",
+    "mixiaowoCode": "W1",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FFEBFA",
+    "mardCode": "Q4",
+    "cocoCode": "W2",
+    "manmanCode": "W2",
+    "panpanCode": "110",
+    "mixiaowoCode": "W2",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "76CEDE",
+    "mardCode": "Q5",
+    "cocoCode": "W5",
+    "manmanCode": "W5",
+    "panpanCode": "108",
+    "mixiaowoCode": "W5",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "D50D21",
+    "mardCode": "R1",
+    "cocoCode": "L01",
+    "manmanCode": "T1",
+    "panpanCode": "67",
+    "mixiaowoCode": "52",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F92F83",
+    "mardCode": "R2",
+    "cocoCode": "L02",
+    "manmanCode": "N1",
+    "panpanCode": "24",
+    "mixiaowoCode": "24",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FD8324",
+    "mardCode": "R3",
+    "cocoCode": "L03",
+    "manmanCode": "N2",
+    "panpanCode": "22",
+    "mixiaowoCode": "22",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F8EC31",
+    "mardCode": "R4",
+    "cocoCode": "L04",
+    "manmanCode": "N3",
+    "panpanCode": "21",
+    "mixiaowoCode": "21",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "35C75B",
+    "mardCode": "R5",
+    "cocoCode": "L05",
+    "manmanCode": "N4",
+    "panpanCode": "23",
+    "mixiaowoCode": "23",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "23B891",
+    "mardCode": "R6",
+    "cocoCode": "L06",
+    "manmanCode": "T4",
+    "panpanCode": "69",
+    "mixiaowoCode": "55",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "19779D",
+    "mardCode": "R7",
+    "cocoCode": "L07",
+    "manmanCode": "T5",
+    "panpanCode": "37",
+    "mixiaowoCode": "37",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "1A60C3",
+    "mardCode": "R8",
+    "cocoCode": "L08",
+    "manmanCode": "T3",
+    "panpanCode": "68",
+    "mixiaowoCode": "54",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "9A56B4",
+    "mardCode": "R9",
+    "cocoCode": "L09",
+    "manmanCode": "T2",
+    "panpanCode": "70",
+    "mixiaowoCode": "56",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FFDB4C",
+    "mardCode": "R10",
+    "cocoCode": "L10",
+    "manmanCode": "L2",
+    "panpanCode": "156",
+    "mixiaowoCode": "53",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FFEBFA",
+    "mardCode": "R11",
+    "cocoCode": "L11",
+    "manmanCode": "T6",
+    "panpanCode": "151",
+    "mixiaowoCode": "151",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "D8D5CE",
+    "mardCode": "R12",
+    "cocoCode": "L12",
+    "manmanCode": "T7",
+    "panpanCode": "160",
+    "mixiaowoCode": "157",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "55514C",
+    "mardCode": "R13",
+    "cocoCode": "L13",
+    "manmanCode": "-",
+    "panpanCode": "152",
+    "mixiaowoCode": "152",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "9FE4DF",
+    "mardCode": "R14",
+    "cocoCode": "S1",
+    "manmanCode": "S1",
+    "panpanCode": "231",
+    "mixiaowoCode": "231",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "77CEE9",
+    "mardCode": "R15",
+    "cocoCode": "S2",
+    "manmanCode": "S2",
+    "panpanCode": "237",
+    "mixiaowoCode": "224",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "3ECFCA",
+    "mardCode": "R16",
+    "cocoCode": "S3",
+    "manmanCode": "S3",
+    "panpanCode": "238",
+    "mixiaowoCode": "225",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "4A867A",
+    "mardCode": "R17",
+    "cocoCode": "S4",
+    "manmanCode": "S5",
+    "panpanCode": "233",
+    "mixiaowoCode": "233",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "7FCD9D",
+    "mardCode": "R18",
+    "cocoCode": "S5",
+    "manmanCode": "S4",
+    "panpanCode": "235",
+    "mixiaowoCode": "222",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "CDE55D",
+    "mardCode": "R19",
+    "cocoCode": "S6",
+    "manmanCode": "S11",
+    "panpanCode": "227",
+    "mixiaowoCode": "227",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "E8C7B4",
+    "mardCode": "R20",
+    "cocoCode": "S7",
+    "manmanCode": "S6",
+    "panpanCode": "230",
+    "mixiaowoCode": "230",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "AD6F3C",
+    "mardCode": "R21",
+    "cocoCode": "S8",
+    "manmanCode": "S13",
+    "panpanCode": "234",
+    "mixiaowoCode": "221",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "6C372F",
+    "mardCode": "R22",
+    "cocoCode": "S9",
+    "manmanCode": "S15",
+    "panpanCode": "226",
+    "mixiaowoCode": "226",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FEB872",
+    "mardCode": "R23",
+    "cocoCode": "S10",
+    "manmanCode": "S12",
+    "panpanCode": "224",
+    "mixiaowoCode": "219",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "F3C1C0",
+    "mardCode": "R24",
+    "cocoCode": "S11",
+    "manmanCode": "S4",
+    "panpanCode": "228",
+    "mixiaowoCode": "228",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "C9675E",
+    "mardCode": "R25",
+    "cocoCode": "S12",
+    "manmanCode": "S14",
+    "panpanCode": "225",
+    "mixiaowoCode": "220",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "D293BE",
+    "mardCode": "R26",
+    "cocoCode": "S13",
+    "manmanCode": "S9",
+    "panpanCode": "229",
+    "mixiaowoCode": "229",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "EA8CB1",
+    "mardCode": "R27",
+    "cocoCode": "S14",
+    "manmanCode": "S8",
+    "panpanCode": "232",
+    "mixiaowoCode": "232",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "9C87D6",
+    "mardCode": "R28",
+    "cocoCode": "S15",
+    "manmanCode": "S10",
+    "panpanCode": "236",
+    "mixiaowoCode": "223",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FFFFFF",
+    "mardCode": "T1",
+    "cocoCode": "L14",
+    "manmanCode": "L6",
+    "panpanCode": "155",
+    "mixiaowoCode": "51",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FD6FB4",
+    "mardCode": "Y1",
+    "cocoCode": "N01",
+    "manmanCode": "Y1",
+    "panpanCode": "59",
+    "mixiaowoCode": "59",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "FEB481",
+    "mardCode": "Y2",
+    "cocoCode": "N02",
+    "manmanCode": "Y2",
+    "panpanCode": "60",
+    "mixiaowoCode": "60",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "D7FAA0",
+    "mardCode": "Y3",
+    "cocoCode": "N03",
+    "manmanCode": "Y3",
+    "panpanCode": "57",
+    "mixiaowoCode": "57",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "8BDBFA",
+    "mardCode": "Y4",
+    "cocoCode": "N04",
+    "manmanCode": "Y4",
+    "panpanCode": "58",
+    "mixiaowoCode": "58",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "E987EA",
+    "mardCode": "Y5",
+    "cocoCode": "N05",
+    "manmanCode": "Y5",
+    "panpanCode": "61",
+    "mixiaowoCode": "61",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "DAABB3",
+    "mardCode": "ZG1",
+    "cocoCode": "GB1",
+    "manmanCode": "ZG1",
+    "panpanCode": "254",
+    "mixiaowoCode": "ZG1",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "D6AA87",
+    "mardCode": "ZG2",
+    "cocoCode": "GB2",
+    "manmanCode": "ZG2",
+    "panpanCode": "255",
+    "mixiaowoCode": "ZG2",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "C1BD8D",
+    "mardCode": "ZG3",
+    "cocoCode": "GB3",
+    "manmanCode": "ZG3",
+    "panpanCode": "256",
+    "mixiaowoCode": "ZG3",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "96B69F",
+    "mardCode": "ZG4",
+    "cocoCode": "GB4",
+    "manmanCode": "ZG4",
+    "panpanCode": "257",
+    "mixiaowoCode": "ZG4",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "849DC6",
+    "mardCode": "ZG5",
+    "cocoCode": "GB5",
+    "manmanCode": "ZG5",
+    "panpanCode": "258",
+    "mixiaowoCode": "ZG5",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "94BFE2",
+    "mardCode": "ZG6",
+    "cocoCode": "GB6",
+    "manmanCode": "ZG6",
+    "panpanCode": "259",
+    "mixiaowoCode": "ZG6",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "E2A9D2",
+    "mardCode": "ZG7",
+    "cocoCode": "GB7",
+    "manmanCode": "ZG7",
+    "panpanCode": "260",
+    "mixiaowoCode": "ZG7",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "AB91C0",
+    "mardCode": "ZG8",
+    "cocoCode": "GB8",
+    "manmanCode": "ZG8",
+    "panpanCode": "261",
+    "mixiaowoCode": "ZG8",
+    "kakaCode": ""
+  },
+  {
+    "colorHex": "2B2A2B",
+    "mardCode": "KK-B9",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B9"
+  },
+  {
+    "colorHex": "191917",
+    "mardCode": "KK-B10",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B10"
+  },
+  {
+    "colorHex": "848D9B",
+    "mardCode": "KK-B12",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B12"
+  },
+  {
+    "colorHex": "404D62",
+    "mardCode": "KK-B13",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B13"
+  },
+  {
+    "colorHex": "333E59",
+    "mardCode": "KK-B14",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B14"
+  },
+  {
+    "colorHex": "575C85",
+    "mardCode": "KK-B15",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B15"
+  },
+  {
+    "colorHex": "13141C",
+    "mardCode": "KK-B16",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B16"
+  },
+  {
+    "colorHex": "232B3F",
+    "mardCode": "KK-B17",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B17"
+  },
+  {
+    "colorHex": "1B1C23",
+    "mardCode": "KK-B18",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B18"
+  },
+  {
+    "colorHex": "816ECB",
+    "mardCode": "KK-B20",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B20"
+  },
+  {
+    "colorHex": "200F55",
+    "mardCode": "KK-B21",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B21"
+  },
+  {
+    "colorHex": "3A278D",
+    "mardCode": "KK-B23",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B23"
+  },
+  {
+    "colorHex": "3B278B",
+    "mardCode": "KK-B25",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B25"
+  },
+  {
+    "colorHex": "101140",
+    "mardCode": "KK-B26",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B26"
+  },
+  {
+    "colorHex": "5E4643",
+    "mardCode": "KK-B31",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B31"
+  },
+  {
+    "colorHex": "705156",
+    "mardCode": "KK-B32",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B32"
+  },
+  {
+    "colorHex": "2E2320",
+    "mardCode": "KK-B34",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B34"
+  },
+  {
+    "colorHex": "737069",
+    "mardCode": "KK-B35",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B35"
+  },
+  {
+    "colorHex": "F1BFD6",
+    "mardCode": "KK-B36",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B36"
+  },
+  {
+    "colorHex": "E597B4",
+    "mardCode": "KK-B38",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B38"
+  },
+  {
+    "colorHex": "BA938D",
+    "mardCode": "KK-B40",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B40"
+  },
+  {
+    "colorHex": "AC6A65",
+    "mardCode": "KK-B41",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B41"
+  },
+  {
+    "colorHex": "F3ACD1",
+    "mardCode": "KK-B46",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B46"
+  },
+  {
+    "colorHex": "ED435D",
+    "mardCode": "KK-B49",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B49"
+  },
+  {
+    "colorHex": "F0486D",
+    "mardCode": "KK-B51",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B51"
+  },
+  {
+    "colorHex": "D72B44",
+    "mardCode": "KK-B55",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B55"
+  },
+  {
+    "colorHex": "781E35",
+    "mardCode": "KK-B58",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B58"
+  },
+  {
+    "colorHex": "6E2444",
+    "mardCode": "KK-B59",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B59"
+  },
+  {
+    "colorHex": "F2B6CE",
+    "mardCode": "KK-B61",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B61"
+  },
+  {
+    "colorHex": "EDBD9A",
+    "mardCode": "KK-B64",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B64"
+  },
+  {
+    "colorHex": "F9E3C4",
+    "mardCode": "KK-B65",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B65"
+  },
+  {
+    "colorHex": "F08F52",
+    "mardCode": "KK-B67",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B67"
+  },
+  {
+    "colorHex": "FD866C",
+    "mardCode": "KK-B70",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B70"
+  },
+  {
+    "colorHex": "7C372E",
+    "mardCode": "KK-B75",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B75"
+  },
+  {
+    "colorHex": "F49DE1",
+    "mardCode": "KK-B76",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B76"
+  },
+  {
+    "colorHex": "F99AED",
+    "mardCode": "KK-B77",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B77"
+  },
+  {
+    "colorHex": "E42891",
+    "mardCode": "KK-B81",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B81"
+  },
+  {
+    "colorHex": "842249",
+    "mardCode": "KK-B83",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B83"
+  },
+  {
+    "colorHex": "7E2D6D",
+    "mardCode": "KK-B85",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B85"
+  },
+  {
+    "colorHex": "F2D95D",
+    "mardCode": "KK-B88",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B88"
+  },
+  {
+    "colorHex": "F6CF4B",
+    "mardCode": "KK-B89",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B89"
+  },
+  {
+    "colorHex": "4B3530",
+    "mardCode": "KK-B96",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B96"
+  },
+  {
+    "colorHex": "AA62B2",
+    "mardCode": "KK-B98",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B98"
+  },
+  {
+    "colorHex": "3B0B3F",
+    "mardCode": "KK-B102",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B102"
+  },
+  {
+    "colorHex": "453E63",
+    "mardCode": "KK-B104",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B104"
+  },
+  {
+    "colorHex": "889B30",
+    "mardCode": "KK-B105",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B105"
+  },
+  {
+    "colorHex": "CACB40",
+    "mardCode": "KK-B110",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B110"
+  },
+  {
+    "colorHex": "7E7D27",
+    "mardCode": "KK-B111",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B111"
+  },
+  {
+    "colorHex": "3B340E",
+    "mardCode": "KK-B113",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B113"
+  },
+  {
+    "colorHex": "1D1A0D",
+    "mardCode": "KK-B114",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B114"
+  },
+  {
+    "colorHex": "C0D84F",
+    "mardCode": "KK-B115",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B115"
+  },
+  {
+    "colorHex": "C7F38A",
+    "mardCode": "KK-B116",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B116"
+  },
+  {
+    "colorHex": "7BC24E",
+    "mardCode": "KK-B117",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B117"
+  },
+  {
+    "colorHex": "263D12",
+    "mardCode": "KK-B120",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B120"
+  },
+  {
+    "colorHex": "6EE57F",
+    "mardCode": "KK-B124",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B124"
+  },
+  {
+    "colorHex": "33C660",
+    "mardCode": "KK-B127",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B127"
+  },
+  {
+    "colorHex": "2D9A40",
+    "mardCode": "KK-B128",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B128"
+  },
+  {
+    "colorHex": "143E30",
+    "mardCode": "KK-B129",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B129"
+  },
+  {
+    "colorHex": "397037",
+    "mardCode": "KK-B131",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B131"
+  },
+  {
+    "colorHex": "233623",
+    "mardCode": "KK-B132",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B132"
+  },
+  {
+    "colorHex": "3FB79A",
+    "mardCode": "KK-B134",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B134"
+  },
+  {
+    "colorHex": "1F8462",
+    "mardCode": "KK-B135",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B135"
+  },
+  {
+    "colorHex": "083321",
+    "mardCode": "KK-B139",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B139"
+  },
+  {
+    "colorHex": "188A99",
+    "mardCode": "KK-B141",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B141"
+  },
+  {
+    "colorHex": "7ECABB",
+    "mardCode": "KK-B142",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B142"
+  },
+  {
+    "colorHex": "192F3D",
+    "mardCode": "KK-B148",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B148"
+  },
+  {
+    "colorHex": "DADD8D",
+    "mardCode": "KK-B150",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B150"
+  },
+  {
+    "colorHex": "5DB0E0",
+    "mardCode": "KK-B152",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B152"
+  },
+  {
+    "colorHex": "6CE4F2",
+    "mardCode": "KK-B161",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B161"
+  },
+  {
+    "colorHex": "FAA794",
+    "mardCode": "KK-B166",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B166"
+  },
+  {
+    "colorHex": "F846BA",
+    "mardCode": "KK-B167",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B167"
+  },
+  {
+    "colorHex": "D9ABA6",
+    "mardCode": "KK-B173",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B173"
+  },
+  {
+    "colorHex": "ECC4C4",
+    "mardCode": "KK-B174",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B174"
+  },
+  {
+    "colorHex": "FBE9DF",
+    "mardCode": "KK-B178",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B178"
+  },
+  {
+    "colorHex": "F5AA75",
+    "mardCode": "KK-B181",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B181"
+  },
+  {
+    "colorHex": "F9A573",
+    "mardCode": "KK-B183",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B183"
+  },
+  {
+    "colorHex": "E76930",
+    "mardCode": "KK-B184",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B184"
+  },
+  {
+    "colorHex": "F37D97",
+    "mardCode": "KK-B190",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B190"
+  },
+  {
+    "colorHex": "C5CF5C",
+    "mardCode": "KK-B192",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B192"
+  },
+  {
+    "colorHex": "DAE26A",
+    "mardCode": "KK-B193",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B193"
+  },
+  {
+    "colorHex": "EE6B50",
+    "mardCode": "KK-B200",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B200"
+  },
+  {
+    "colorHex": "0E9A47",
+    "mardCode": "KK-B201",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B201"
+  },
+  {
+    "colorHex": "3B532F",
+    "mardCode": "KK-B202",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B202"
+  },
+  {
+    "colorHex": "47493B",
+    "mardCode": "KK-B203",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B203"
+  },
+  {
+    "colorHex": "D0AE56",
+    "mardCode": "KK-B204",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B204"
+  },
+  {
+    "colorHex": "D0CDE0",
+    "mardCode": "KK-B206",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B206"
+  },
+  {
+    "colorHex": "D7E6E9",
+    "mardCode": "KK-B210",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B210"
+  },
+  {
+    "colorHex": "BCB5B0",
+    "mardCode": "KK-B212",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B212"
+  },
+  {
+    "colorHex": "A3AD98",
+    "mardCode": "KK-B215",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B215"
+  },
+  {
+    "colorHex": "1676BA",
+    "mardCode": "KK-B221",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B221"
+  },
+  {
+    "colorHex": "2C84E5",
+    "mardCode": "KK-B222",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B222"
+  },
+  {
+    "colorHex": "1E77D7",
+    "mardCode": "KK-B223",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B223"
+  },
+  {
+    "colorHex": "799BB2",
+    "mardCode": "KK-B225",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B225"
+  },
+  {
+    "colorHex": "5FAFF2",
+    "mardCode": "KK-B226",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B226"
+  },
+  {
+    "colorHex": "075C9A",
+    "mardCode": "KK-B228",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B228"
+  },
+  {
+    "colorHex": "5BD4DA",
+    "mardCode": "KK-B229",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B229"
+  },
+  {
+    "colorHex": "4D54B0",
+    "mardCode": "KK-B235",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B235"
+  },
+  {
+    "colorHex": "0E0E5A",
+    "mardCode": "KK-B236",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B236"
+  },
+  {
+    "colorHex": "0D0E2A",
+    "mardCode": "KK-B237",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B237"
+  },
+  {
+    "colorHex": "080D20",
+    "mardCode": "KK-B238",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B238"
+  },
+  {
+    "colorHex": "09213F",
+    "mardCode": "KK-B239",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B239"
+  },
+  {
+    "colorHex": "091B16",
+    "mardCode": "KK-B241",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B241"
+  },
+  {
+    "colorHex": "BBA07A",
+    "mardCode": "KK-B243",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B243"
+  },
+  {
+    "colorHex": "AE7741",
+    "mardCode": "KK-B245",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B245"
+  },
+  {
+    "colorHex": "C88433",
+    "mardCode": "KK-B246",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B246"
+  },
+  {
+    "colorHex": "6B525F",
+    "mardCode": "KK-B247",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B247"
+  },
+  {
+    "colorHex": "402F32",
+    "mardCode": "KK-B248",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B248"
+  },
+  {
+    "colorHex": "7E2A1C",
+    "mardCode": "KK-B249",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B249"
+  },
+  {
+    "colorHex": "552126",
+    "mardCode": "KK-B250",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B250"
+  },
+  {
+    "colorHex": "0D0507",
+    "mardCode": "KK-B251",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B251"
+  },
+  {
+    "colorHex": "779D42",
+    "mardCode": "KK-B252",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B252"
+  },
+  {
+    "colorHex": "9CBCA7",
+    "mardCode": "KK-B255",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B255"
+  },
+  {
+    "colorHex": "35335C",
+    "mardCode": "KK-B256",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B256"
+  },
+  {
+    "colorHex": "097C45",
+    "mardCode": "KK-B258",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B258"
+  },
+  {
+    "colorHex": "04201F",
+    "mardCode": "KK-B260",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B260"
+  },
+  {
+    "colorHex": "507B70",
+    "mardCode": "KK-B261",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B261"
+  },
+  {
+    "colorHex": "1B4D47",
+    "mardCode": "KK-B262",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B262"
+  },
+  {
+    "colorHex": "1A1018",
+    "mardCode": "KK-B266",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B266"
+  },
+  {
+    "colorHex": "C4915D",
+    "mardCode": "KK-B267",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B267"
+  },
+  {
+    "colorHex": "F3DEDA",
+    "mardCode": "KK-B271",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B271"
+  },
+  {
+    "colorHex": "3B0C0A",
+    "mardCode": "KK-B272",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B272"
+  },
+  {
+    "colorHex": "C41A1A",
+    "mardCode": "KK-B274",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B274"
+  },
+  {
+    "colorHex": "054311",
+    "mardCode": "KK-B275",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B275"
+  },
+  {
+    "colorHex": "917B59",
+    "mardCode": "KK-B276",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B276"
+  },
+  {
+    "colorHex": "54493A",
+    "mardCode": "KK-B277",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B277"
+  },
+  {
+    "colorHex": "C0AFA0",
+    "mardCode": "KK-B279",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B279"
+  },
+  {
+    "colorHex": "5B5545",
+    "mardCode": "KK-B280",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B280"
+  },
+  {
+    "colorHex": "79756B",
+    "mardCode": "KK-B281",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B281"
+  },
+  {
+    "colorHex": "757470",
+    "mardCode": "KK-B282",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B282"
+  },
+  {
+    "colorHex": "403D36",
+    "mardCode": "KK-B283",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B283"
+  },
+  {
+    "colorHex": "2E292F",
+    "mardCode": "KK-B284",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B284"
+  },
+  {
+    "colorHex": "C08B60",
+    "mardCode": "KK-P1",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P1"
+  },
+  {
+    "colorHex": "C68551",
+    "mardCode": "KK-P2",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P2"
+  },
+  {
+    "colorHex": "B37642",
+    "mardCode": "KK-P3",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P3"
+  },
+  {
+    "colorHex": "A95F34",
+    "mardCode": "KK-P4",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P4"
+  },
+  {
+    "colorHex": "242529",
+    "mardCode": "KK-P5",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P5"
+  },
+  {
+    "colorHex": "DAD9E0",
+    "mardCode": "KK-P6",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P6"
+  },
+  {
+    "colorHex": "EEE8E3",
+    "mardCode": "KK-P7",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P7"
+  },
+  {
+    "colorHex": "353A40",
+    "mardCode": "KK-P8",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P8"
+  },
+  {
+    "colorHex": "40AEA8",
+    "mardCode": "KK-P9",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P9"
+  },
+  {
+    "colorHex": "A6656B",
+    "mardCode": "KK-P10",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P10"
+  },
+  {
+    "colorHex": "E8BB9A",
+    "mardCode": "KK-P11",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P11"
+  },
+  {
+    "colorHex": "F4A36F",
+    "mardCode": "KK-P12",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P12"
+  },
+  {
+    "colorHex": "580603",
+    "mardCode": "KK-P13",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P13"
+  },
+  {
+    "colorHex": "A3A480",
+    "mardCode": "KK-P14",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P14"
+  },
+  {
+    "colorHex": "D4C29D",
+    "mardCode": "KK-P15",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P15"
+  },
+  {
+    "colorHex": "DFD2AA",
+    "mardCode": "KK-P16",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P16"
+  },
+  {
+    "colorHex": "36826D",
+    "mardCode": "KK-P17",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P17"
+  },
+  {
+    "colorHex": "F8C2E0",
+    "mardCode": "KK-P18",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P18"
+  },
+  {
+    "colorHex": "E5B8C5",
+    "mardCode": "KK-P19",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P19"
+  },
+  {
+    "colorHex": "ADD493",
+    "mardCode": "KK-P20",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P20"
+  },
+  {
+    "colorHex": "85E1CA",
+    "mardCode": "KK-P21",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P21"
+  },
+  {
+    "colorHex": "7DD8CF",
+    "mardCode": "KK-P22",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P22"
+  },
+  {
+    "colorHex": "DACB50",
+    "mardCode": "KK-P23",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P23"
+  },
+  {
+    "colorHex": "CF8635",
+    "mardCode": "KK-P24",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P24"
+  },
+  {
+    "colorHex": "CCA882",
+    "mardCode": "KK-P25",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P25"
+  },
+  {
+    "colorHex": "C98168",
+    "mardCode": "KK-P26",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P26"
+  },
+  {
+    "colorHex": "E0E3DA",
+    "mardCode": "KK-P27",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P27"
+  },
+  {
+    "colorHex": "B1978B",
+    "mardCode": "KK-P28",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P28"
+  },
+  {
+    "colorHex": "B798AA",
+    "mardCode": "KK-P29",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P29"
+  },
+  {
+    "colorHex": "B293A2",
+    "mardCode": "KK-P30",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P30"
+  },
+  {
+    "colorHex": "E8C6E8",
+    "mardCode": "KK-P31",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P31"
+  },
+  {
+    "colorHex": "E1D3EA",
+    "mardCode": "KK-P32",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P32"
+  },
+  {
+    "colorHex": "5D4389",
+    "mardCode": "KK-P33",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P33"
+  },
+  {
+    "colorHex": "747CBE",
+    "mardCode": "KK-P34",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P34"
+  },
+  {
+    "colorHex": "5BBECF",
+    "mardCode": "KK-P35",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P35"
+  },
+  {
+    "colorHex": "46C3E5",
+    "mardCode": "KK-P36",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P36"
+  },
+  {
+    "colorHex": "8FBFE3",
+    "mardCode": "KK-P37",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P37"
+  },
+  {
+    "colorHex": "1A4EA0",
+    "mardCode": "KK-P38",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P38"
+  },
+  {
+    "colorHex": "6E82BA",
+    "mardCode": "KK-P39",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P39"
+  },
+  {
+    "colorHex": "5B92B5",
+    "mardCode": "KK-P40",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P40"
+  },
+  {
+    "colorHex": "1778B6",
+    "mardCode": "KK-P41",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P41"
+  },
+  {
+    "colorHex": "8999A9",
+    "mardCode": "KK-P42",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P42"
+  },
+  {
+    "colorHex": "C0D1E4",
+    "mardCode": "KK-P43",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P43"
+  },
+  {
+    "colorHex": "404142",
+    "mardCode": "KK-P44",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P44"
+  },
+  {
+    "colorHex": "75AD73",
+    "mardCode": "KK-P45",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P45"
+  },
+  {
+    "colorHex": "2E4A46",
+    "mardCode": "KK-P46",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P46"
+  },
+  {
+    "colorHex": "443A0B",
+    "mardCode": "KK-P47",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P47"
+  },
+  {
+    "colorHex": "4C7280",
+    "mardCode": "KK-P48",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P48"
+  },
+  {
+    "colorHex": "19080D",
+    "mardCode": "KK-P49",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P49"
+  },
+  {
+    "colorHex": "D8231E",
+    "mardCode": "KK-P50",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "P50"
+  },
+  {
+    "colorHex": "E4EB83",
+    "mardCode": "KK-R1",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R1"
+  },
+  {
+    "colorHex": "E4AE5F",
+    "mardCode": "KK-R2",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R2"
+  },
+  {
+    "colorHex": "F181A9",
+    "mardCode": "KK-R3",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R3"
+  },
+  {
+    "colorHex": "50EDCC",
+    "mardCode": "KK-R4",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R4"
+  },
+  {
+    "colorHex": "079AF5",
+    "mardCode": "KK-R5",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R5"
+  },
+  {
+    "colorHex": "139FE6",
+    "mardCode": "KK-R6",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R6"
+  },
+  {
+    "colorHex": "7D27BB",
+    "mardCode": "KK-R7",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R7"
+  },
+  {
+    "colorHex": "F98FC2",
+    "mardCode": "KK-R8",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R8"
+  },
+  {
+    "colorHex": "EE95E8",
+    "mardCode": "KK-R9",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R9"
+  },
+  {
+    "colorHex": "FBD4DA",
+    "mardCode": "KK-R10",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R10"
+  },
+  {
+    "colorHex": "F8B4E4",
+    "mardCode": "KK-R11",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R11"
+  },
+  {
+    "colorHex": "8ABBFB",
+    "mardCode": "KK-R12",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R12"
+  },
+  {
+    "colorHex": "5ED176",
+    "mardCode": "KK-R13",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R13"
+  },
+  {
+    "colorHex": "35C8BC",
+    "mardCode": "KK-R14",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R14"
+  },
+  {
+    "colorHex": "12C2D4",
+    "mardCode": "KK-R15",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R15"
+  },
+  {
+    "colorHex": "E282AC",
+    "mardCode": "KK-R16",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R16"
+  },
+  {
+    "colorHex": "E68F7A",
+    "mardCode": "KK-R17",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R17"
+  },
+  {
+    "colorHex": "1377D4",
+    "mardCode": "KK-R18",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R18"
+  },
+  {
+    "colorHex": "8ECA64",
+    "mardCode": "KK-R19",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R19"
+  },
+  {
+    "colorHex": "CFC170",
+    "mardCode": "KK-R20",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R20"
+  },
+  {
+    "colorHex": "DCDA57",
+    "mardCode": "KK-R21",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R21"
+  },
+  {
+    "colorHex": "9E89EE",
+    "mardCode": "KK-R22",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R22"
+  },
+  {
+    "colorHex": "777C8B",
+    "mardCode": "KK-R23",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R23"
+  },
+  {
+    "colorHex": "111219",
+    "mardCode": "KK-R24",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R24"
+  },
+  {
+    "colorHex": "EEECF5",
+    "mardCode": "KK-R25",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R25"
+  },
+  {
+    "colorHex": "1B1B1B",
+    "mardCode": "KK-R26",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R26"
+  },
+  {
+    "colorHex": "DAC9AF",
+    "mardCode": "KK-R27",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R27"
+  },
+  {
+    "colorHex": "C7A687",
+    "mardCode": "KK-R28",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R28"
+  },
+  {
+    "colorHex": "B65E43",
+    "mardCode": "KK-R29",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R29"
+  },
+  {
+    "colorHex": "886048",
+    "mardCode": "KK-R30",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R30"
+  },
+  {
+    "colorHex": "855A4E",
+    "mardCode": "KK-R31",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R31"
+  },
+  {
+    "colorHex": "8A5559",
+    "mardCode": "KK-R32",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R32"
+  },
+  {
+    "colorHex": "6C4344",
+    "mardCode": "KK-R33",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R33"
+  },
+  {
+    "colorHex": "E2E4A6",
+    "mardCode": "KK-R34",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R34"
+  },
+  {
+    "colorHex": "F0A04B",
+    "mardCode": "KK-R35",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R35"
+  },
+  {
+    "colorHex": "E8AFC9",
+    "mardCode": "KK-R36",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R36"
+  },
+  {
+    "colorHex": "E0F8F0",
+    "mardCode": "KK-R37",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R37"
+  },
+  {
+    "colorHex": "7680A4",
+    "mardCode": "KK-R38",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R38"
+  },
+  {
+    "colorHex": "556987",
+    "mardCode": "KK-R39",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R39"
+  },
+  {
+    "colorHex": "0781D7",
+    "mardCode": "KK-R40",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R40"
+  },
+  {
+    "colorHex": "258CBD",
+    "mardCode": "KK-R41",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R41"
+  },
+  {
+    "colorHex": "7CC8E8",
+    "mardCode": "KK-R42",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R42"
+  },
+  {
+    "colorHex": "89DEED",
+    "mardCode": "KK-R43",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R43"
+  },
+  {
+    "colorHex": "F4CD88",
+    "mardCode": "KK-R44",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R44"
+  },
+  {
+    "colorHex": "F5A3AF",
+    "mardCode": "KK-R45",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R45"
+  },
+  {
+    "colorHex": "F33B3B",
+    "mardCode": "KK-R46",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R46"
+  },
+  {
+    "colorHex": "E9D8B3",
+    "mardCode": "KK-R47",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R47"
+  },
+  {
+    "colorHex": "F6CACF",
+    "mardCode": "KK-R48",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R48"
+  },
+  {
+    "colorHex": "F9F1B1",
+    "mardCode": "KK-R49",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R49"
+  },
+  {
+    "colorHex": "E7E752",
+    "mardCode": "KK-R50",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R50"
+  },
+  {
+    "colorHex": "F2E998",
+    "mardCode": "KK-R51",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R51"
+  },
+  {
+    "colorHex": "B0C368",
+    "mardCode": "KK-R52",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R52"
+  },
+  {
+    "colorHex": "8BE0B1",
+    "mardCode": "KK-R53",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R53"
+  },
+  {
+    "colorHex": "9AD7A3",
+    "mardCode": "KK-R54",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R54"
+  },
+  {
+    "colorHex": "7AE6D4",
+    "mardCode": "KK-R55",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R55"
+  },
+  {
+    "colorHex": "C0E8A5",
+    "mardCode": "KK-R56",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R56"
+  },
+  {
+    "colorHex": "96F0ED",
+    "mardCode": "KK-R57",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R57"
+  },
+  {
+    "colorHex": "439593",
+    "mardCode": "KK-R58",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R58"
+  },
+  {
+    "colorHex": "05A9B6",
+    "mardCode": "KK-R59",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R59"
+  },
+  {
+    "colorHex": "58BA63",
+    "mardCode": "KK-R60",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R60"
+  },
+  {
+    "colorHex": "8966BD",
+    "mardCode": "KK-R61",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R61"
+  },
+  {
+    "colorHex": "FB98ED",
+    "mardCode": "KK-R62",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R62"
+  },
+  {
+    "colorHex": "6F4FBD",
+    "mardCode": "KK-R63",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R63"
+  },
+  {
+    "colorHex": "6A7CCD",
+    "mardCode": "KK-R64",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R64"
+  },
+  {
+    "colorHex": "95349D",
+    "mardCode": "KK-R65",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R65"
+  },
+  {
+    "colorHex": "95318F",
+    "mardCode": "KK-R66",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R66"
+  },
+  {
+    "colorHex": "093CA2",
+    "mardCode": "KK-R67",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R67"
+  },
+  {
+    "colorHex": "FDB6D6",
+    "mardCode": "KK-R68",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R68"
+  },
+  {
+    "colorHex": "F6B7D6",
+    "mardCode": "KK-R69",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R69"
+  },
+  {
+    "colorHex": "E46D96",
+    "mardCode": "KK-R70",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R70"
+  },
+  {
+    "colorHex": "EEB0E4",
+    "mardCode": "KK-R71",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R71"
+  },
+  {
+    "colorHex": "DA63BD",
+    "mardCode": "KK-R72",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R72"
+  },
+  {
+    "colorHex": "EC7FD7",
+    "mardCode": "KK-R73",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R73"
+  },
+  {
+    "colorHex": "EBEBF0",
+    "mardCode": "KK-R74",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R74"
+  },
+  {
+    "colorHex": "F5F4FC",
+    "mardCode": "KK-R75",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R75"
+  },
+  {
+    "colorHex": "6CD5F4",
+    "mardCode": "KK-R76",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R76"
+  },
+  {
+    "colorHex": "05A0E1",
+    "mardCode": "KK-R77",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R77"
+  },
+  {
+    "colorHex": "A3BCF0",
+    "mardCode": "KK-R78",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R78"
+  },
+  {
+    "colorHex": "4E68E0",
+    "mardCode": "KK-R79",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R79"
+  },
+  {
+    "colorHex": "1B5CB6",
+    "mardCode": "KK-R80",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R80"
+  },
+  {
+    "colorHex": "9DDEC8",
+    "mardCode": "KK-R81",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R81"
+  },
+  {
+    "colorHex": "87EDFB",
+    "mardCode": "KK-R82",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R82"
+  },
+  {
+    "colorHex": "04A3CD",
+    "mardCode": "KK-R83",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R83"
+  },
+  {
+    "colorHex": "48B39B",
+    "mardCode": "KK-R84",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R84"
+  },
+  {
+    "colorHex": "1C9777",
+    "mardCode": "KK-R85",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R85"
+  },
+  {
+    "colorHex": "4F57BB",
+    "mardCode": "KK-R86",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R86"
+  },
+  {
+    "colorHex": "232B98",
+    "mardCode": "KK-R87",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R87"
+  },
+  {
+    "colorHex": "7430B2",
+    "mardCode": "KK-R88",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R88"
+  },
+  {
+    "colorHex": "F4EA60",
+    "mardCode": "KK-R89",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R89"
+  },
+  {
+    "colorHex": "F97BA0",
+    "mardCode": "KK-R90",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R90"
+  },
+  {
+    "colorHex": "FCA58E",
+    "mardCode": "KK-R91",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R91"
+  },
+  {
+    "colorHex": "FB956C",
+    "mardCode": "KK-R92",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R92"
+  },
+  {
+    "colorHex": "CE2939",
+    "mardCode": "KK-R93",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R93"
+  },
+  {
+    "colorHex": "F9424D",
+    "mardCode": "KK-R94",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R94"
+  },
+  {
+    "colorHex": "F8C695",
+    "mardCode": "KK-R95",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R95"
+  },
+  {
+    "colorHex": "FD7E5B",
+    "mardCode": "KK-R96",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R96"
+  },
+  {
+    "colorHex": "8F6641",
+    "mardCode": "KK-R97",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R97"
+  },
+  {
+    "colorHex": "A97373",
+    "mardCode": "KK-R98",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R98"
+  },
+  {
+    "colorHex": "4A5E7E",
+    "mardCode": "KK-R99",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R99"
+  },
+  {
+    "colorHex": "1B2232",
+    "mardCode": "KK-R100",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R100"
+  },
+  {
+    "colorHex": "262F11",
+    "mardCode": "KK-R101",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R101"
+  },
+  {
+    "colorHex": "445119",
+    "mardCode": "KK-R102",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R102"
+  },
+  {
+    "colorHex": "BD2F38",
+    "mardCode": "KK-R103",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R103"
+  },
+  {
+    "colorHex": "E86463",
+    "mardCode": "KK-R104",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R104"
+  },
+  {
+    "colorHex": "EEAA78",
+    "mardCode": "KK-R105",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R105"
+  },
+  {
+    "colorHex": "F29866",
+    "mardCode": "KK-R106",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R106"
+  },
+  {
+    "colorHex": "EFA259",
+    "mardCode": "KK-R107",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R107"
+  },
+  {
+    "colorHex": "BB3C05",
+    "mardCode": "KK-R108",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R108"
+  },
+  {
+    "colorHex": "ED7140",
+    "mardCode": "KK-R109",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R109"
+  },
+  {
+    "colorHex": "753042",
+    "mardCode": "KK-R110",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R110"
+  },
+  {
+    "colorHex": "5B1124",
+    "mardCode": "KK-R111",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R111"
+  },
+  {
+    "colorHex": "69425F",
+    "mardCode": "KK-R112",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R112"
+  },
+  {
+    "colorHex": "5E2D4B",
+    "mardCode": "KK-R113",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R113"
+  },
+  {
+    "colorHex": "675676",
+    "mardCode": "KK-R114",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R114"
+  },
+  {
+    "colorHex": "1A0925",
+    "mardCode": "KK-R115",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R115"
+  },
+  {
+    "colorHex": "6E7399",
+    "mardCode": "KK-R116",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R116"
+  },
+  {
+    "colorHex": "52567C",
+    "mardCode": "KK-R117",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R117"
+  },
+  {
+    "colorHex": "788FB9",
+    "mardCode": "KK-R118",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R118"
+  },
+  {
+    "colorHex": "122142",
+    "mardCode": "KK-R119",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R119"
+  },
+  {
+    "colorHex": "486F96",
+    "mardCode": "KK-R120",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R120"
+  },
+  {
+    "colorHex": "2A4C7A",
+    "mardCode": "KK-R121",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R121"
+  },
+  {
+    "colorHex": "063C69",
+    "mardCode": "KK-R122",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R122"
+  },
+  {
+    "colorHex": "346088",
+    "mardCode": "KK-R123",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R123"
+  },
+  {
+    "colorHex": "2B70A0",
+    "mardCode": "KK-R124",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R124"
+  },
+  {
+    "colorHex": "072B5E",
+    "mardCode": "KK-R125",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R125"
+  }
+]
