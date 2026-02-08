@@ -55,9 +55,8 @@ struct AddBrandView: View {
                 // 色号体系
                 Section {
                     Picker("色号体系", selection: $selectedColorSystem) {
-                        ForEach(ColorSystem.allCases) { system in
-                            Text(system.displayName).tag(system)
-                        }
+                        Text(ColorSystem.mard.displayName).tag(ColorSystem.mard)
+                        Text(ColorSystem.kaka.displayName).tag(ColorSystem.kaka)
                     }
                 } header: {
                     Text("色号体系")
