@@ -415,7 +415,7 @@ class HistoryManager: ObservableObject {
     // MARK: - 撤回操作
 
     /// 检查某个记录是否可以撤回
-    func canRevert(_ record: HistoryRecord) -> Bool {
+    @MainActor func canRevert(_ record: HistoryRecord) -> Bool {
         switch record.operationType {
         case .stockReset:
             // 库存重置不支持撤回
@@ -466,7 +466,7 @@ class HistoryManager: ObservableObject {
     }
 
     /// 获取不能撤回的原因
-    func revertDisabledReason(_ record: HistoryRecord) -> String? {
+    @MainActor func revertDisabledReason(_ record: HistoryRecord) -> String? {
         switch record.operationType {
         case .stockReset:
             return "库存重置影响范围太大，不支持撤回"

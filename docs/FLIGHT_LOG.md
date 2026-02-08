@@ -265,3 +265,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Bugfix] 2026-02-08T17:42:06.172283
+
+**Summary**: Added @MainActor to canRevert() and revertDisabledReason() in HistoryManager.swift (lines 418, 469) to fix 'main actor-isolated property projects cannot be referenced from nonisolated context' build errors
+
+**Risk Analysis**: Low - these methods are only called from UI context which is already on MainActor
+
+**Status**: ✅ Committed to Source of Truth
+
+---
