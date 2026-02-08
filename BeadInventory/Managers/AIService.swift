@@ -32,7 +32,7 @@ struct AIConfig: Codable {
     static let defaultQwenURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     static let defaultGeminiURL = "https://generativelanguage.googleapis.com/v1beta"
 
-    static let kimiModels = ["kimi-k2.5", "kimi-latest"]
+    static let kimiModels = ["kimi-k2.5"]
     static let openAIModels = ["gpt-5-mini", "gpt-5-nano", "gpt-5.2"]
     static let anthropicModels = ["claude-sonnet-4-5-20250929", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"]
     static let qwenModels = ["qwen3-vl-flash", "qwen-vl-max", "qwen3-vl-plus"]
