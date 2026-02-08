@@ -44,6 +44,7 @@ class InventoryManager: ObservableObject {
     private let migrationCompletedKey = "swiftDataMigrationCompleted"
     private let customColorsKey = "customColors"
     private let purchaseRecordsKey = "purchaseRecords"
+    private let hasExistingDataKey = "hasExistingData"
 
     // 计算属性：当前选中的品牌
     var currentBrand: Brand? {
@@ -747,8 +748,23 @@ class InventoryManager: ObservableObject {
         // 只有当所有关键数据都成功加载时，才标记为加载完成
         let allLoaded = brandsLoadedSuccessfully && stocksLoadedSuccessfully && projectsLoadedSuccessfully
         if allLoaded {
+            // 防护：如果用户之前有数据，但本次 fetch 全部返回空，说明 SwiftData 加载异常
+            // 拒绝标记为加载成功，阻止后续 saveData() 把空数据写入数据库覆盖原有记录
+            let allEmpty = brands.isEmpty && brandStocks.isEmpty && projects.isEmpty
+            let hadDataBefore = UserDefaults.standard.bool(forKey: hasExistingDataKey)
+            if allEmpty && hadDataBefore {
+                print("[InventoryManager] ⚠️ 异常：数据库应有数据但加载全部为空，拒绝标记为加载成功以防覆盖")
+                // 不设置 isDataLoaded = true，saveData() 会被 guard 拦截
+                return
+            }
+
             isDataLoaded = true
             print("[InventoryManager] ✅ 数据加载完成")
+
+            // 标记用户已有数据（只要有任何一项非空就标记）
+            if !allEmpty {
+                UserDefaults.standard.set(true, forKey: hasExistingDataKey)
+            }
 
             // 修复数据一致性问题（仅基于 executedDate 判断）
             fixProjectConsistency()
@@ -923,7 +939,9 @@ class InventoryManager: ObservableObject {
             saveCurrentBrandId()
             savePurchaseRecords()
         } catch {
-            print("保存数据失败: \(error)")
+            print("[InventoryManager] ⚠️ 保存数据失败: \(error)")
+            // 回滚 context 中所有未提交的变更，防止残留的删除/插入操作被后续 save 意外提交
+            context.rollback()
         }
     }
 

@@ -105,3 +105,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Bugfix] 2026-02-08T02:48:54.705151
+
+**Summary**: InventoryManager.swift: (1) loadData() 新增空数据防护——如果 hasExistingData 标记为 true 但 fetch 全返回空，拒绝标记 isDataLoaded=true 阻止 saveData 覆盖。(2) saveData() catch 中新增 context.rollback() 清除失败后的残留变更。
+
+**Risk Analysis**: Low - 纯防御性改动，不改变正常流程。hasExistingDataKey 首次使用时 UserDefaults 无此 key 默认为 false，不影响新用户。
+
+**Status**: ✅ Committed to Source of Truth
+
+---
