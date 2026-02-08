@@ -225,3 +225,23 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Bugfix] 2026-02-08T05:21:46.054506
+
+**Summary**: Fixed PlannedProjectsView search+select interaction in PlannedProjectsView.swift: replaced Button wrappers in select mode with .onTapGesture on entire row to prevent keyboard dismissal from consuming taps; added .scrollDismissesKeyboard(.immediately) to List
+
+**Risk Analysis**: Low - only affects select mode tap handling in planned projects list; non-select mode unchanged; visual behavior identical
+
+**Status**: ✅ Committed to Source of Truth
+
+---
+
+### [Feature] 2026-02-08T05:27:22.611401
+
+**Summary**: PlannedProjectsView.swift: 搜索结果添加复选框支持选择操作。PlannedProjectRow 新增 showSearchCheckbox 参数，搜索时在每行前显示复选框；点击复选框自动进入多选模式；行内容仍保持 NavigationLink 可导航
+
+**Risk Analysis**: Low - 仅在搜索时新增复选框UI，不影响现有多选模式和导航功能；选择逻辑复用现有 selectedProjects 机制
+
+**Status**: ✅ Committed to Source of Truth
+
+---

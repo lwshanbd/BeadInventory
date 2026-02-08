@@ -106,6 +106,7 @@ struct PlannedProjectsView: View {
                                     isExpanded: isExpanded,
                                     isSelectMode: isSelectMode,
                                     isSelected: selectedProjects.contains(project.id),
+                                    showSearchCheckbox: !searchText.isEmpty && !isSelectMode,
                                     onToggleExpand: {
                                         withAnimation {
                                             if isExpanded {
@@ -116,6 +117,10 @@ struct PlannedProjectsView: View {
                                         }
                                     },
                                     onToggleSelect: {
+                                        // 搜索时点击复选框自动进入多选模式
+                                        if !isSelectMode {
+                                            withAnimation { isSelectMode = true }
+                                        }
                                         if selectedProjects.contains(project.id) {
                                             selectedProjects.remove(project.id)
                                         } else {
@@ -159,6 +164,7 @@ struct PlannedProjectsView: View {
                             }
                         }
                         .listStyle(.insetGrouped)
+                        .scrollDismissesKeyboard(.immediately)
                     }
                 }
             }
@@ -283,6 +289,7 @@ struct PlannedProjectsListView: View {
                         isExpanded: isExpanded,
                         isSelectMode: isSelectMode,
                         isSelected: selectedProjects.contains(project.id),
+                        showSearchCheckbox: false,
                         onToggleExpand: {
                             withAnimation {
                                 if isExpanded {
@@ -362,6 +369,7 @@ struct PlannedProjectRow: View {
     let isExpanded: Bool
     let isSelectMode: Bool
     let isSelected: Bool
+    let showSearchCheckbox: Bool
     let onToggleExpand: () -> Void
     let onToggleSelect: () -> Void
     let onExecute: () -> Void
@@ -393,85 +401,75 @@ struct PlannedProjectRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            // 选择模式复选框
-            if isSelectMode {
-                Button {
-                    onToggleSelect()
-                } label: {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(isSelected ? .accentColor : .secondary)
-                        .font(.title2)
-                        .frame(width: 44, height: 44) // 增大点击区域
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .zIndex(10) // 确保在最上层
-            }
+        if isSelectMode {
+            // 选择模式：整行使用 onTapGesture，避免 Button 在搜索键盘弹出时被吞掉点击
+            HStack(spacing: 8) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(isSelected ? .accentColor : .secondary)
+                    .font(.title2)
+                    .frame(width: 44, height: 44)
 
-            // 展开/折叠按钮
-            if isParent && !isSelectMode {
-                Button {
-                    onToggleExpand()
-                } label: {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .frame(width: 20)
+                if let image = thumbnailImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 50, height: 50)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        )
                 }
-                .buttonStyle(.plain)
-            }
 
-            // 缩略图（如果有）- 选择模式下点击也触发选择
-            if let image = thumbnailImage {
-                Group {
-                    if isSelectMode {
-                        Button {
-                            onToggleSelect()
-                        } label: {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 50, height: 50)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 50, height: 50)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                            )
+                projectContentView
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { onToggleSelect() }
+        } else {
+            // 非选择模式：NavigationLink + 按钮
+            HStack(spacing: 8) {
+                // 搜索时显示复选框，点击后自动进入多选模式
+                if showSearchCheckbox {
+                    Button {
+                        onToggleSelect()
+                    } label: {
+                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(isSelected ? .accentColor : .secondary)
+                            .font(.title3)
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
-            }
 
-            // 项目内容
-            if isSelectMode {
-                // 选择模式下，点击内容区域也触发选择
-                Button {
-                    onToggleSelect()
-                } label: {
-                    projectContentView
+                if isParent {
+                    Button {
+                        onToggleExpand()
+                    } label: {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .frame(width: 20)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-            } else {
-                // 非选择模式下，使用 NavigationLink
+
+                if let image = thumbnailImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 50, height: 50)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        )
+                }
+
                 NavigationLink(destination: PlannedProjectDetailView(project: project)) {
                     projectContentView
                 }
-            }
 
-            // 执行按钮（非选择模式下显示）
-            if !isSelectMode {
                 Button {
                     onExecute()
                 } label: {
