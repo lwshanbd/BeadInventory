@@ -128,19 +128,17 @@ struct ScanView: View {
                         }
 
                         // 色号体系选择（独立于品牌，影响 AI 提示词和计划绑定）
-                        if selectedImage != nil {
-                            HStack {
-                                Text("色号体系:")
-                                    .foregroundColor(.secondary)
-                                    .font(.subheadline)
-                                Picker("色号体系", selection: $scanColorSystem) {
-                                    Text("MARD").tag(ColorSystem.mard)
-                                    Text("卡卡").tag(ColorSystem.kaka)
-                                }
-                                .pickerStyle(.segmented)
+                        HStack {
+                            Text("色号体系:")
+                                .foregroundColor(.secondary)
+                                .font(.subheadline)
+                            Picker("色号体系", selection: $scanColorSystem) {
+                                Text("MARD").tag(ColorSystem.mard)
+                                Text("卡卡").tag(ColorSystem.kaka)
                             }
-                            .padding(.horizontal)
+                            .pickerStyle(.segmented)
                         }
+                        .padding(.horizontal)
 
                         // 识别按钮
                         if selectedImage != nil {

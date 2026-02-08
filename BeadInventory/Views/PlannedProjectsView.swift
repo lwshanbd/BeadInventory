@@ -1427,6 +1427,11 @@ struct StockCheckSheet: View {
         inventoryManager.isParentProject(project.id)
     }
 
+    // 仅本色系的品牌
+    var matchingBrands: [Brand] {
+        inventoryManager.brands.filter { $0.colorSystem == project.colorSystem }
+    }
+
     // 获取汇总的颜色用量（父项目或普通项目）
     var requiredUsage: [BeadUsage] {
         if isParentProject {
@@ -1454,12 +1459,12 @@ struct StockCheckSheet: View {
                     .padding(.horizontal)
 
                     // 各品牌库存检查结果
-                    if inventoryManager.brands.isEmpty {
+                    if matchingBrands.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.largeTitle)
                                 .foregroundColor(.orange)
-                            Text("暂无品牌")
+                            Text("暂无\(project.colorSystem.displayName)体系的品牌")
                                 .font(.headline)
                             Text("请先创建品牌以检查库存")
                                 .font(.subheadline)
@@ -1469,7 +1474,7 @@ struct StockCheckSheet: View {
                         .padding(.vertical, 40)
                     } else {
                         // 全部品牌汇总检查
-                        AllBrandsStockCheckCard(requiredUsage: requiredUsage)
+                        AllBrandsStockCheckCard(requiredUsage: requiredUsage, brands: matchingBrands)
 
                         // 分隔线
                         HStack {
@@ -1485,7 +1490,7 @@ struct StockCheckSheet: View {
                         }
                         .padding(.horizontal)
 
-                        ForEach(inventoryManager.brands) { brand in
+                        ForEach(matchingBrands) { brand in
                             BrandStockCheckCard(
                                 brand: brand,
                                 requiredUsage: requiredUsage
@@ -1511,6 +1516,7 @@ struct StockCheckSheet: View {
 // MARK: - 全部品牌汇总库存检查卡片
 struct AllBrandsStockCheckCard: View {
     let requiredUsage: [BeadUsage]
+    let brands: [Brand]
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var isExpanded = false
 
@@ -1521,7 +1527,7 @@ struct AllBrandsStockCheckCard: View {
         for usage in requiredUsage {
             // 计算所有品牌该颜色的库存总和
             var totalAvailable = 0
-            for brand in inventoryManager.brands {
+            for brand in brands {
                 if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: usage.colorCode) {
                     totalAvailable += stock.available
                 }
@@ -2478,6 +2484,15 @@ struct MultiProjectStockCheckSheet: View {
         }
     }
 
+    // 收集选中项目涉及的色系，过滤匹配品牌
+    var involvedColorSystems: Set<ColorSystem> {
+        Set(selectedProjects.map { $0.colorSystem })
+    }
+
+    var matchingBrands: [Brand] {
+        inventoryManager.brands.filter { involvedColorSystems.contains($0.colorSystem) }
+    }
+
     // 汇总所有选中项目的颜色用量
     var aggregatedUsage: [BeadUsage] {
         var usageDict: [String: Int] = [:]
@@ -2545,12 +2560,12 @@ struct MultiProjectStockCheckSheet: View {
                     .padding(.horizontal)
 
                     // 各品牌库存检查结果
-                    if inventoryManager.brands.isEmpty {
+                    if matchingBrands.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.largeTitle)
                                 .foregroundColor(.orange)
-                            Text("暂无品牌")
+                            Text("暂无匹配色系的品牌")
                                 .font(.headline)
                             Text("请先创建品牌以检查库存")
                                 .font(.subheadline)
@@ -2560,7 +2575,7 @@ struct MultiProjectStockCheckSheet: View {
                         .padding(.vertical, 40)
                     } else {
                         // 全部品牌汇总检查
-                        AllBrandsStockCheckCard(requiredUsage: aggregatedUsage)
+                        AllBrandsStockCheckCard(requiredUsage: aggregatedUsage, brands: matchingBrands)
 
                         // 分隔线
                         HStack {
@@ -2576,7 +2591,7 @@ struct MultiProjectStockCheckSheet: View {
                         }
                         .padding(.horizontal)
 
-                        ForEach(inventoryManager.brands) { brand in
+                        ForEach(matchingBrands) { brand in
                             BrandStockCheckCard(
                                 brand: brand,
                                 requiredUsage: aggregatedUsage
@@ -2615,6 +2630,15 @@ struct ReplenishSuggestionSheet: View {
         projectIds.compactMap { id in
             inventoryManager.projects.first { $0.id == id }
         }
+    }
+
+    // 收集选中项目涉及的色系，仅显示匹配品牌
+    var involvedColorSystems: Set<ColorSystem> {
+        Set(selectedProjects.map { $0.colorSystem })
+    }
+
+    var matchingBrands: [Brand] {
+        inventoryManager.brands.filter { involvedColorSystems.contains($0.colorSystem) }
     }
 
     // 汇总所有选中项目的颜色用量
@@ -2812,14 +2836,14 @@ struct ReplenishSuggestionSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("选择品牌")
                             .font(.headline)
-                        if inventoryManager.brands.isEmpty {
-                            Text("暂无品牌，请先创建品牌")
+                        if matchingBrands.isEmpty {
+                            Text("暂无匹配色系的品牌，请先创建品牌")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         } else {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 10) {
-                                    ForEach(inventoryManager.brands) { brand in
+                                    ForEach(matchingBrands) { brand in
                                         Button {
                                             selectedBrandId = brand.id
                                             initializeDefaultQuantities()
@@ -3022,7 +3046,7 @@ struct ReplenishSuggestionSheet: View {
         }
         .presentationDetents([.large])
         .onAppear {
-            if selectedBrandId == nil, let firstBrand = inventoryManager.brands.first {
+            if selectedBrandId == nil, let firstBrand = matchingBrands.first {
                 selectedBrandId = firstBrand.id
             }
             initializeDefaultQuantities()
