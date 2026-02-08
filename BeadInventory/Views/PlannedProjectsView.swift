@@ -105,7 +105,7 @@ struct PlannedProjectsView: View {
                                     isExpanded: isExpanded,
                                     isSelectMode: isSelectMode,
                                     isSelected: selectedProjects.contains(project.id),
-                                    showSearchCheckbox: false,
+                                    showSearchCheckbox: !searchText.isEmpty && !isSelectMode,
                                     onToggleExpand: {
                                         withAnimation {
                                             if isExpanded {
@@ -116,6 +116,10 @@ struct PlannedProjectsView: View {
                                         }
                                     },
                                     onToggleSelect: {
+                                        // 搜索时点击复选框自动进入多选模式
+                                        if !isSelectMode && !searchText.isEmpty {
+                                            withAnimation { isSelectMode = true }
+                                        }
                                         if selectedProjects.contains(project.id) {
                                             selectedProjects.remove(project.id)
                                         } else {
