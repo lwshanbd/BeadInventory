@@ -35,7 +35,7 @@ class BackupManager {
     // MARK: - 周检查
 
     /// 检查是否需要进行每周备份
-    func checkAndPerformWeeklyBackupIfNeeded(inventoryManager: InventoryManager) {
+    @MainActor func checkAndPerformWeeklyBackupIfNeeded(inventoryManager: InventoryManager) {
         let now = Date()
 
         // 获取上次备份日期
@@ -55,7 +55,7 @@ class BackupManager {
 
     /// 创建备份
     @discardableResult
-    func performBackup(inventoryManager: InventoryManager) -> Bool {
+    @MainActor func performBackup(inventoryManager: InventoryManager) -> Bool {
         guard let backupDir = backupDirectory else {
             print("[BackupManager] 无法获取备份目录")
             return false
@@ -93,7 +93,7 @@ class BackupManager {
 
     // MARK: - 备份数据生成
 
-    private func createBackupData(from manager: InventoryManager) -> [String: Any] {
+    @MainActor private func createBackupData(from manager: InventoryManager) -> [String: Any] {
         var data: [String: Any] = [:]
 
         // 元数据
@@ -310,7 +310,7 @@ class BackupManager {
     // MARK: - 恢复备份
 
     /// 从备份恢复数据
-    func restoreBackup(from backup: BackupInfo, to manager: InventoryManager) throws {
+    @MainActor func restoreBackup(from backup: BackupInfo, to manager: InventoryManager) throws {
         let data = try Data(contentsOf: backup.fileURL)
 
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {

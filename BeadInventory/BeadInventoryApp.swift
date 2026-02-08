@@ -76,7 +76,8 @@ struct BeadInventoryApp: App {
                 inventoryManager.saveData()
                 HistoryManager.shared.saveDataImmediately()
             case .inactive:
-                // 应用即将进入非活跃状态（如控制中心、通知中心弹出）时也保存
+                // .inactive 可能是切后台前的过渡态，也可能是控制中心/通知中心弹出
+                // 这里也保存，saveData() 内部有重入保护，不会重复执行
                 print("[App] 应用进入非活跃状态，保存数据...")
                 inventoryManager.saveData()
                 HistoryManager.shared.saveDataImmediately()

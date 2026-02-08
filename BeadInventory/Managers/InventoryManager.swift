@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 import SwiftData
 
+@MainActor
 class InventoryManager: ObservableObject {
     @Published var beadColors: [BeadColor] = []
     @Published var projects: [ProjectRecord] = []
@@ -31,6 +32,9 @@ class InventoryManager: ObservableObject {
     private var stocksLoadedSuccessfully = false
     private var projectsLoadedSuccessfully = false
     private var customColorsLoadedSuccessfully = false
+
+    // 防止 saveData() 重入（如 .inactive → .background 快速连续触发）
+    private var isSaving = false
 
     // 历史记录管理器
     private var historyManager: HistoryManager { HistoryManager.shared }
@@ -831,6 +835,14 @@ class InventoryManager: ObservableObject {
             return
         }
 
+        // 防止重入：.inactive → .background 快速连续触发时，避免并发修改 SwiftData 关系
+        guard !isSaving else {
+            print("[InventoryManager] 警告：saveData() 正在执行中，跳过重复调用")
+            return
+        }
+        isSaving = true
+        defer { isSaving = false }
+
         do {
             // 使用增量更新，只有当对应实体成功加载时才允许删除操作
 
@@ -905,7 +917,32 @@ class InventoryManager: ObservableObject {
 
                     // 增量更新 beadUsages：只更新变化的项目，减少中断时的影响范围
                     let newUsageIds = Set(project.beadUsage.map { $0.id })
-                    let existingUsageDict = Dictionary(uniqueKeysWithValues: existing.beadUsages.map { ($0.id, $0) })
+
+                    // 清理可能存在的重复 beadUsage（防止历史数据损坏导致后续崩溃）
+                    // 区分"同一对象重复引用"与"不同对象但 id 相同"两种情况：
+                    //   - 同一对象重复引用：仅移除多余引用，不 delete（保留该对象）
+                    //   - 不同对象相同 id：保留首个，delete 其余实例
+                    var keeperByID: [UUID: SDBeadUsage] = [:]
+                    var indicesToRemove: [Int] = []
+                    var objectsToDelete: [SDBeadUsage] = []
+                    for (index, usage) in existing.beadUsages.enumerated() {
+                        if let keeper = keeperByID[usage.id] {
+                            indicesToRemove.append(index)
+                            if usage !== keeper {
+                                objectsToDelete.append(usage)
+                            }
+                        } else {
+                            keeperByID[usage.id] = usage
+                        }
+                    }
+                    for index in indicesToRemove.reversed() {
+                        existing.beadUsages.remove(at: index)
+                    }
+                    for obj in objectsToDelete {
+                        context.delete(obj)
+                    }
+
+                    let existingUsageDict = Dictionary(existing.beadUsages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                     let existingUsageIds = Set(existingUsageDict.keys)
 
                     // 1. 删除不再存在的 beadUsage（先收集再删除，避免遍历时修改数组）

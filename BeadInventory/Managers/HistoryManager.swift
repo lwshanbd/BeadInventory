@@ -508,7 +508,7 @@ class HistoryManager: ObservableObject {
 
     /// 撤回一个操作
     @discardableResult
-    func revert(_ recordId: UUID) -> Bool {
+    @MainActor func revert(_ recordId: UUID) -> Bool {
         guard let index = records.firstIndex(where: { $0.id == recordId }) else {
             print("[History] 找不到记录: \(recordId)")
             return false
@@ -543,7 +543,7 @@ class HistoryManager: ObservableObject {
         return success
     }
 
-    private func performRevert(record: HistoryRecord, manager: InventoryManager) -> Bool {
+    @MainActor private func performRevert(record: HistoryRecord, manager: InventoryManager) -> Bool {
         switch record.operationType {
         // 品牌操作撤回
         case .brandAdd:
