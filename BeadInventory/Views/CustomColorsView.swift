@@ -29,6 +29,11 @@ struct CustomColorsView: View {
 
     var body: some View {
         List {
+            Section {
+            } footer: {
+                Text("自定义色号仅在 MARD 色号体系下生效，切换到卡卡体系时不会显示。")
+            }
+
             if inventoryManager.customColors.isEmpty {
                 emptyStateView
             } else {

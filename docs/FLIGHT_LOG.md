@@ -185,3 +185,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Feature] 2026-02-08T04:58:56.305866
+
+**Summary**: CustomColorsView.swift 列表顶部添加提示footer; CustomColorEditView.swift 色号输入section添加footer提示: 自定义色号仅在MARD色号体系下生效
+
+**Risk Analysis**: Low - 仅添加UI提示文本，无逻辑变更
+
+**Status**: ✅ Committed to Source of Truth
+
+---

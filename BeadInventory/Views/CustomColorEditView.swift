@@ -57,7 +57,7 @@ struct CustomColorEditView: View {
                 }
 
                 // 基本信息
-                Section(header: Text("基本信息")) {
+                Section(header: Text("基本信息"), footer: Text("自定义色号仅在 MARD 色号体系下生效")) {
                     HStack {
                         Text("色号")
                         Spacer()
