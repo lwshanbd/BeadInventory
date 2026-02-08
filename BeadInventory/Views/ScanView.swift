@@ -1084,7 +1084,15 @@ struct RecognizedResultsSectionNew: View {
                     colorSystem: colorSystem,
                     onUpdate: { code, qty in
                         if let index = items.firstIndex(where: { $0.id == item.id }) {
-                            if let c = code { items[index].colorCode = c.uppercased() }
+                            if let c = code {
+                                // 非 MARD 色系时，用户输入的可能是该色系的色号，需转为内部 mardCode
+                                if colorSystem != .mard,
+                                   let color = inventoryManager.findColor(byCode: c, preferSystem: colorSystem) {
+                                    items[index].colorCode = color.mardCode
+                                } else {
+                                    items[index].colorCode = c.uppercased()
+                                }
+                            }
                             if let q = qty { items[index].quantity = q }
                         }
                     },
@@ -1227,7 +1235,8 @@ struct RecognizedItemRowNew: View {
                 // 操作按钮
                 Menu {
                     Button {
-                        editCode = item.colorCode
+                        // 编辑时显示当前色系的色号，而非内部 MARD 码
+                        editCode = matchedColor?.displayCode(for: colorSystem) ?? item.colorCode
                         editQuantity = "\(item.quantity)"
                         isEditing = true
                     } label: {

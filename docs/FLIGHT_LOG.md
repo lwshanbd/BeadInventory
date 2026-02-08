@@ -255,3 +255,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Bugfix] 2026-02-08T17:40:15.543895
+
+**Summary**: Fixed scan edit showing MARD codes instead of current color system codes in ScanView.swift. Two changes: (1) Line 1237: editCode now uses matchedColor.displayCode(for: colorSystem) instead of raw item.colorCode; (2) Lines 1087-1094: onUpdate callback now converts user-entered color code back to mardCode via findColor(byCode:preferSystem:) for non-MARD systems.
+
+**Risk Analysis**: Low - changes are isolated to the scan result editing flow. Display logic and save logic both properly handle color system conversion now. Pre-existing HistoryManager build errors unrelated.
+
+**Status**: ✅ Committed to Source of Truth
+
+---
