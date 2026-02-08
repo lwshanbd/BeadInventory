@@ -1,150 +1,162 @@
 # BeadInventory 啃豆小仓
 
-一款专为拼豆爱好者设计的 iOS 库存管理应用，帮助你轻松管理各色豆子的库存、AI 识别图纸用量、规划项目、转换不同品牌色号。
+一款面向拼豆爱好者的 iOS 库存与项目管理应用，聚焦「库存管理 + AI 识别图纸 + 项目执行 + 色号转换 + 数据备份恢复」。
 
-## 功能特点
+## 功能总览
 
-### 库存管理
-- 查看所有颜色的库存状态
-- 支持多品牌管理（MARD、vivid、漫漫、卡卡等）
-- 自定义添加新品牌
-- 实时追踪库存数量和使用记录
-- 低库存预警提示
-- 批量导入库存数据
+### 1. 库存管理（Inventory）
+- 多品牌库存管理，品牌可新增、编辑、删除、合并
+- 每个品牌独立库存与低库存阈值
+- 支持列表/网格两种视图，支持排序、分组、搜索
+- 支持隐藏色号与批量恢复
+- 支持自定义色号（`#` 前缀），可编辑颜色与名称
+- 支持快速增库、库存编辑、库存重置、使用记录清除
 
-### AI 图纸识别
-- 拍照或从相册选择色号表格图片
-- 支持四大 AI 服务商：
-  - **Kimi**（月之暗面）- 内置免费额度
-  - **OpenAI** - GPT-5 系列模型
-  - **Anthropic** - Claude Sonnet 4.5 等模型
-  - **Qwen**（通义千问）- qwen-vl 系列模型
-- 自动提取色号和对应数量
-- 图片预处理减少水印干扰
-- 可手动编辑识别结果
-- 支持扣减库存或添加到计划项目
+### 2. AI 图纸识别（Scan）
+- 支持拍照、相册导入、Share Extension 分享导入
+- 支持两种识别模式：
+  - 表格识别
+  - 色号统计识别（图纸统计）
+- 内置图像预处理（对比度增强、锐化、高光压制）以降低水印干扰
+- 识别结果可手动增删改
+- 识别后可直接：
+  - 创建计划项目
+  - 扣减库存（按品牌与色号体系匹配）
 
-### 计划项目
-- 将识别结果保存为计划项目
-- 项目合并与归档管理
-- 查看项目所需材料清单
-- 一键从库存扣减
+支持的 AI Provider（当前代码）：
+- Kimi
+- OpenAI
+- Anthropic
+- Qwen
+- Gemini
 
-### 历史记录
-- 完整的操作历史追踪
-- 支持撤销操作（Undo）
-- 查看每次操作的详细信息
+### 3. 计划项目（Planned Projects）
+- 从扫描结果一键创建计划
+- 计划可执行为已完成项目（自动扣减库存）
+- 支持项目复制、编辑、删除、归档
+- 支持多选批量操作：库存确认、补豆建议、合并计划
+- 支持父子项目结构、项目缩略图与成品图
 
-### 色号转换
-- 输入任意品牌色号快速查询
-- 自动显示对应的其他品牌色号
-- 支持多品牌对照
-- 一键复制色号
+### 4. 统计与历史
+- 使用统计：总库存/已用/剩余、低库存筛选、使用排行
+- 项目记录：计划/执行历史管理
+- 操作历史：记录关键操作并支持撤回（Undo）
+- 成品日历：按完成日期查看成品图
 
-### 统计分析
-- 整体库存使用情况概览
-- 颜色使用量排行榜
-- 项目历史记录
-- 低库存颜色汇总
+### 5. 更多工具
+- 色号转换：支持多品牌色号互查
+- 运输中：管理待到货购买记录，支持粘贴补豆 CSV
+- 数据导出：导出 CSV / JSON
+- 历史数据导入：从导出文件恢复品牌、库存、项目
+- 自动备份：每周首次打开自动备份，最多保留 8 份，可视化恢复
 
-## 系统要求
+## 色号体系说明
+
+- 色号转换查询支持：`MARD / COCO / 漫漫 / 盼盼 / 咪小窝 / 卡卡`
+- 当前品牌创建页支持选择的品牌色号体系：`MARD`、`卡卡`
+
+## 技术栈
+
+- SwiftUI
+- SwiftData（含版本化 Schema）
+- Async/Await
+- Share Extension（图片分享到扫描页）
+
+## 项目结构
+
+```text
+BeadInventory/
+├── BeadInventory/                 # 主 App（SwiftUI + SwiftData）
+│   ├── Managers/                  # 业务逻辑（库存/AI/历史/备份等）
+│   ├── Models/                    # 领域模型 + SwiftData 模型
+│   ├── Views/                     # 各功能页面
+│   ├── Assets.xcassets/           # 图标与资源
+│   ├── zh-Hans.lproj/             # 简体中文资源
+│   └── en.lproj/                  # 英文资源
+├── ShareExtension/                # 分享扩展（图片导入扫描）
+├── BeadInventory.xcodeproj/       # Xcode 工程
+├── ci_scripts/                    # Xcode Cloud 构建脚本
+├── SHARE_EXTENSION_SETUP.md       # Share Extension 配置文档
+└── README.md
+```
+
+## 环境要求
 
 - iOS 17.0+
 - Xcode 15.0+
+- macOS（用于本地编译）
 
-## 安装
+## 快速开始
 
-1. 克隆仓库
 ```bash
-git clone https://github.com/lwshanbd/BeadInventory.git
-```
-
-2. 打开项目
-```bash
+git clone git@github.com:lwshanbd/BeadInventory.git
 cd BeadInventory
 open BeadInventory.xcodeproj
 ```
 
-3. 在 Xcode 中选择目标设备，点击运行
+## 命令行构建
 
-## 配置 AI 识别
-
-应用支持四种 AI 服务商：
-
-### Kimi
-1. 前往 [Moonshot AI](https://platform.moonshot.cn/) 获取 API Key
-2. 在应用「更多」→「设置」→「AI 图像识别」中选择 Kimi
-3. 填入 API Key
-
-### OpenAI
-1. 前往 [OpenAI Platform](https://platform.openai.com/) 获取 API Key
-2. 在应用设置中选择 OpenAI
-3. 填入 API Key
-4. 可选：填写自定义 API 地址（用于代理）
-
-### Anthropic (Claude)
-1. 前往 [Anthropic Console](https://console.anthropic.com/) 获取 API Key
-2. 在应用设置中选择 Anthropic
-3. 填入 API Key
-
-
-### Qwen（通义千问）
-1. 前往 [阿里云](https://dashscope.console.aliyun.com/) 获取 API Key
-2. 在应用设置中选择 Qwen
-3. 填入 API Key
-
-## 项目结构
-
-```
-BeadInventory/
-├── BeadInventoryApp.swift       # 应用入口
-├── ContentView.swift            # 主界面 TabView
-├── color.json                   # MARD 色号数据
-├── convert.csv                  # 跨品牌色号转换表
-├── Models/
-│   └── BeadColor.swift          # 数据模型（结构体 + SwiftData）
-├── Managers/
-│   ├── InventoryManager.swift   # 库存状态管理
-│   ├── AIService.swift          # AI 识别服务（多服务商）
-│   ├── HistoryManager.swift     # 历史记录与撤销
-│   ├── CSVImporter.swift        # CSV 导入工具
-│   └── DataMigration.swift      # 数据迁移工具
-└── Views/
-    ├── InventoryView.swift      # 库存页面
-    ├── ScanView.swift           # 扫描识别页面
-    ├── PlannedProjectsView.swift # 计划项目页面
-    ├── StatisticsView.swift     # 统计页面
-    ├── MoreView.swift           # 更多功能入口
-    ├── HistoryView.swift        # 历史记录页面
-    ├── ColorConverterView.swift # 色号转换页面
-    ├── SettingsView.swift       # 设置页面
-    ├── BrandSettingsView.swift  # 品牌管理页面
-    ├── AddInventoryView.swift   # 添加库存页面
-    ├── ImportStockView.swift    # 导入库存页面
-    └── AboutView.swift          # 关于页面
+```bash
+xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 16' build
 ```
 
-## 使用技巧
+> 如果需要单独构建分享扩展，可使用 `ShareExtension` scheme。
 
-- 首次使用建议先在「品牌管理」中添加你使用的品牌
-- 可通过「导入库存」批量导入初始库存数据
-- 识别有水印图片时，应用会自动进行预处理
-- 低库存颜色会以红色标识
-- 所有操作都会记录在历史中，可随时撤销
+## 测试
 
-## 技术栈
+当前仓库尚未提交测试 Target；如后续补齐，可使用：
 
-- **SwiftUI** - 声明式 UI 框架
-- **SwiftData** - 数据持久化
-- **Async/Await** - 现代异步编程
+```bash
+xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 16' test
+```
+
+## AI 配置说明
+
+在 App 中进入：`更多 -> 设置 -> AI 图像识别`
+
+配置项：
+- AI 提供商
+- API Key
+- API 地址（可选，自定义代理/网关）
+- 模型
+
+各 Provider 官方入口：
+- Kimi: https://platform.moonshot.cn/
+- OpenAI: https://platform.openai.com/
+- Anthropic: https://console.anthropic.com/
+- Qwen: https://bailian.console.aliyun.com/
+- Gemini: https://aistudio.google.com/
+
+## Share Extension
+
+项目已包含 `ShareExtension` target 代码，可将其他 App 中的图片分享到「啃豆小仓」扫描页。
+
+完整配置见：`SHARE_EXTENSION_SETUP.md`
+
+关键配置点：
+- App Group（主 App 与 Share Extension 一致）
+- URL Scheme（`beadinventory://scan`）
+- 两个 target 的 entitlements 配置
+
+## 数据导入 / 导出 / 备份
+
+- 导入库存：支持 CSV（自动识别常见色号/数量列名）
+- 导出数据：支持 CSV / JSON
+- 导入历史数据：支持从导出文件恢复品牌、库存、项目
+- 自动备份：每周自动备份一次，可在「恢复备份」中回滚
+
+## 安全说明
+
+- 不要在仓库中提交 API Key（OpenAI / Anthropic / Kimi / Qwen / Gemini）
+- 建议仅在本地设置页配置密钥，或在 CI 中通过密钥管理注入
 
 ## 声明
 
-**支持原创，拒绝抄袭** - 啃豆小仓与每一份拼豆图纸都凝聚着创作者的心血，请尊重原创。
+支持原创，拒绝抄袭。请尊重每一份拼豆图纸创作者的劳动成果。
 
 ## 支持作者
 
-如果这个应用对你有帮助，欢迎请作者喝杯咖啡 ☕
+如果这个应用对你有帮助，欢迎支持：
 
 <img src="wxpay.jpg" width="200" alt="微信赞赏码">
 
