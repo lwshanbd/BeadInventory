@@ -190,7 +190,7 @@ class FullDataImporter {
         var brands: [ImportedBrand] = []
         var stocks: [ImportedStock] = []
         var projects: [ImportedProject] = []
-        var parseErrors: [String] = []
+        let parseErrors: [String] = []
 
         // 用于临时存储项目用量
         var projectUsageMap: [String: [ImportedBeadUsage]] = [:]
@@ -202,7 +202,7 @@ class FullDataImporter {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
 
-        for (index, line) in lines.enumerated() {
+        for (_, line) in lines.enumerated() {
             let trimmedLine = line.trimmingCharacters(in: .whitespaces)
 
             // 跳过空行
