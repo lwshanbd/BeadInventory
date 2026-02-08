@@ -275,3 +275,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Bugfix] 2026-02-08T18:00:06.345923
+
+**Summary**: 修正卡卡色号 AI 识别 prompt，从仅 B+数字 改为 B/P/R+数字三种前缀（AIService.swift table 和 blueprint 模式）
+
+**Risk Analysis**: Low - 仅修改 prompt 文本，不影响代码逻辑
+
+**Status**: ✅ Committed to Source of Truth
+
+---
