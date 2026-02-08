@@ -215,3 +215,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Bugfix] 2026-02-08T05:14:19.391343
+
+**Summary**: ScanView.swift 扫描页色系不匹配品牌时可继续扣减的 P0 风险: (1) 新增 brandMatchesScanSystem 计算属性校验品牌色系==扫描色系; (2) 扣减按钮 .disabled(\!brandMatchesScanSystem) 替代原来仅检查 brandId\!=nil; (3) applyToInventory() guard 增加 brandMatchesScanSystem 校验; (4) 提示文案区分'未选品牌'和'色系不匹配'两种情况
+
+**Risk Analysis**: Low - 纯防御性改动，增加约束不影响正常匹配流程; 不匹配时按钮灰色+提示文案，applyToInventory 有双重 guard 保护
+
+**Status**: ✅ Committed to Source of Truth
+
+---

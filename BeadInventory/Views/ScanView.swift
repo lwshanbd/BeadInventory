@@ -60,6 +60,12 @@ struct ScanView: View {
         recognizedItems.reduce(0) { $0 + $1.quantity }
     }
 
+    /// 当前品牌的色系是否与扫描色系匹配
+    var brandMatchesScanSystem: Bool {
+        guard let brand = inventoryManager.currentBrand else { return false }
+        return brand.colorSystem == scanColorSystem
+    }
+
     /// 检查扣除后库存会变为负数的颜色
     var insufficientStockItems: [(colorCode: String, currentStock: Int, deductAmount: Int)] {
         guard let brandId = inventoryManager.currentBrandId else { return [] }
@@ -281,7 +287,7 @@ struct ScanView: View {
                                         .cornerRadius(12)
                                     }
 
-                                    // 扣减库存按钮（需要选择品牌）
+                                    // 扣减库存按钮（需要选择匹配色系的品牌）
                                     Button {
                                         showingConfirmation = true
                                     } label: {
@@ -292,20 +298,22 @@ struct ScanView: View {
                                         .font(.headline)
                                         .frame(maxWidth: .infinity)
                                         .padding()
-                                        .background(inventoryManager.currentBrandId != nil ? (insufficientStockItems.isEmpty ? Color.green : Color.red) : Color.gray)
+                                        .background(brandMatchesScanSystem ? (insufficientStockItems.isEmpty ? Color.green : Color.red) : Color.gray)
                                         .foregroundColor(.white)
                                         .cornerRadius(12)
                                     }
-                                    .disabled(inventoryManager.currentBrandId == nil)
+                                    .disabled(!brandMatchesScanSystem)
                                 }
                                 .padding(.horizontal)
 
                                 // 提示信息
-                                if inventoryManager.currentBrandId == nil {
+                                if !brandMatchesScanSystem {
                                     HStack {
-                                        Image(systemName: "info.circle")
-                                            .foregroundColor(.blue)
-                                        Text("创建计划无需选择品牌，执行时再选择")
+                                        Image(systemName: inventoryManager.currentBrandId == nil ? "info.circle" : "exclamationmark.triangle")
+                                            .foregroundColor(inventoryManager.currentBrandId == nil ? .blue : .orange)
+                                        Text(inventoryManager.currentBrandId == nil
+                                             ? "创建计划无需选择品牌，执行时再选择"
+                                             : "当前品牌色系与扫描色系不匹配，请切换品牌")
                                             .font(.caption)
                                             .foregroundColor(.secondary)
                                     }
@@ -462,7 +470,8 @@ struct ScanView: View {
     }
 
     func applyToInventory() {
-        guard let brandId = inventoryManager.currentBrandId else { return }
+        guard let brandId = inventoryManager.currentBrandId,
+              brandMatchesScanSystem else { return }
 
         // 生成压缩的缩略图数据
         let thumbnailData = generateThumbnailData()
