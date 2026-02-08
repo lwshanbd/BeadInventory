@@ -135,3 +135,23 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Bugfix] 2026-02-08T04:42:28.690054
+
+**Summary**: 修复两个色系隔离问题：(1) ScanView.swift 色系选择器移除 selectedImage 条件，无图片时也可切换色系用于手动添加 (2) PlannedProjectsView.swift StockCheckSheet/MultiProjectStockCheckSheet/AllBrandsStockCheckCard/ReplenishSuggestionSheet 按项目 colorSystem 过滤品牌，确保库存检查和补豆建议只考虑本色系品牌
+
+**Risk Analysis**: Low - 仅限制品牌显示范围，不影响数据逻辑，已有品牌色系绑定保证正确性
+
+**Status**: ✅ Committed to Source of Truth
+
+---
+
+### [Bugfix] 2026-02-08T04:45:45.254330
+
+**Summary**: Fixed hasExistingDataKey one-way lock bug in InventoryManager.swift: (1) saveData() now syncs hasExistingDataKey to actual data state after successful save, resetting to false when user legitimately empties all data; (2) allEmpty check in loadFromSwiftData() now includes customColors to prevent false positive empty detection
+
+**Risk Analysis**: Low - the SwiftData glitch protection still works correctly: flag only resets after a successful saveData(), which requires isDataLoaded=true. If SwiftData glitches on load, isDataLoaded stays false, saveData is blocked, flag stays true. No regression path.
+
+**Status**: ✅ Committed to Source of Truth
+
+---

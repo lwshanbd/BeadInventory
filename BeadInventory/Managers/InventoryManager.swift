@@ -772,7 +772,7 @@ class InventoryManager: ObservableObject {
         if allLoaded {
             // 防护：如果用户之前有数据，但本次 fetch 全部返回空，说明 SwiftData 加载异常
             // 拒绝标记为加载成功，阻止后续 saveData() 把空数据写入数据库覆盖原有记录
-            let allEmpty = brands.isEmpty && brandStocks.isEmpty && projects.isEmpty
+            let allEmpty = brands.isEmpty && brandStocks.isEmpty && projects.isEmpty && customColors.isEmpty
             let hadDataBefore = UserDefaults.standard.bool(forKey: hasExistingDataKey)
             if allEmpty && hadDataBefore {
                 print("[InventoryManager] ⚠️ 异常：数据库应有数据但加载全部为空，拒绝标记为加载成功以防覆盖")
@@ -960,6 +960,11 @@ class InventoryManager: ObservableObject {
             try context.save()
             saveCurrentBrandId()
             savePurchaseRecords()
+
+            // 同步 hasExistingDataKey：用户合法删空数据后重置标志，
+            // 防止下次启动时误判为"SwiftData加载异常"而锁死
+            let currentlyHasData = !brands.isEmpty || !brandStocks.isEmpty || !projects.isEmpty || !customColors.isEmpty
+            UserDefaults.standard.set(currentlyHasData, forKey: hasExistingDataKey)
         } catch {
             print("[InventoryManager] ⚠️ 保存数据失败: \(error)")
             // 回滚 context 中所有未提交的变更，防止残留的删除/插入操作被后续 save 意外提交
