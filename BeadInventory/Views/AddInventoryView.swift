@@ -11,31 +11,32 @@ struct AddInventoryView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
-    // 色系列表（"其他"包含特殊色号如 Any，"#"为自定义色号）
-    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他", "#"]
+    var currentSystem: ColorSystem { inventoryManager.currentColorSystem }
 
     @State private var selectedSeries = "A"
     @State private var selectedColors: Set<UUID> = []
     @State private var quantities: [UUID: Double] = [:]  // 数量（单位：千颗）
     @State private var showingImportStock = false
 
-    // 已知的标准色系前缀
-    let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
-
     var colorsInSeries: [BeadColor] {
         // 自定义色号使用 allBeadColors
         let sourceColors = selectedSeries == "#" ? inventoryManager.allBeadColors : inventoryManager.beadColors
+        let system = currentSystem
+        let prefixes = system.standardPrefixes
 
         return sourceColors.filter { color in
-            let code = color.displayCode(for: inventoryManager.currentColorSystem)
+            // 非 MARD 体系下仅显示有对应色号的颜色
+            if system != .mard && !color.hasCode(for: system) {
+                return false
+            }
+
+            let code = color.displayCode(for: system)
 
             if selectedSeries == "#" {
-                // 自定义色号系列
                 return code.hasPrefix("#")
             } else if selectedSeries == "其他" {
-                // "其他"系列：不属于任何标准色系的颜色（排除自定义色号）
                 if code.hasPrefix("#") { return false }
-                return !standardPrefixes.contains { prefix in
+                return !prefixes.contains { prefix in
                     if prefix == "ZG" {
                         return code.hasPrefix("ZG")
                     } else {
@@ -45,11 +46,10 @@ struct AddInventoryView: View {
             } else if selectedSeries == "ZG" {
                 return code.hasPrefix("ZG")
             } else {
-                // 确保不匹配 ZG 系列
                 if code.hasPrefix("ZG") { return false }
                 return code.hasPrefix(selectedSeries)
             }
-        }.sorted { $0.displayCode(for: inventoryManager.currentColorSystem).localizedStandardCompare($1.displayCode(for: inventoryManager.currentColorSystem)) == .orderedAscending }
+        }.sorted { $0.displayCode(for: system).localizedStandardCompare($1.displayCode(for: system)) == .orderedAscending }
     }
 
     var totalToAdd: Int {
@@ -84,7 +84,7 @@ struct AddInventoryView: View {
 
                 // 色系选择器
                 SeriesSelector(
-                    series: colorSeries,
+                    series: currentSystem.colorSeries,
                     selectedSeries: $selectedSeries
                 )
                 .padding(.vertical, 8)
@@ -184,6 +184,9 @@ struct AddInventoryView: View {
                     ImportStockView(mode: .forExistingBrand(brandId))
                 }
             }
+            .onAppear {
+                selectedSeries = currentSystem.defaultSeries
+            }
         }
     }
 
@@ -281,7 +284,12 @@ struct ColorAddRow: View {
     let isSelected: Bool
     @Binding var quantity: Double
     let onToggle: () -> Void
+    var colorSystem: ColorSystem? = nil
     @EnvironmentObject var inventoryManager: InventoryManager
+
+    private var displaySystem: ColorSystem {
+        colorSystem ?? inventoryManager.currentColorSystem
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -315,7 +323,7 @@ struct ColorAddRow: View {
                 )
 
             // 色号
-            Text(color.displayCode(for: inventoryManager.currentColorSystem))
+            Text(color.displayCode(for: displaySystem))
                 .font(.system(.body, design: .monospaced))
                 .fontWeight(.medium)
 

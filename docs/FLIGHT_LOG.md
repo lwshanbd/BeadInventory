@@ -195,3 +195,23 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Feature] 2026-02-08T05:08:18.581762
+
+**Summary**: 卡卡色系系列索引和颜色过滤修复: (1) ColorSystem.swift 新增 colorSeries/standardPrefixes/defaultSeries 属性 (卡卡=[B,P,R], MARD=[A-ZG]); (2) AddInventoryView.swift 使用动态 colorSeries+defaultSeries，新增非 MARD 色号过滤; (3) ShippingView.swift AddPurchaseRecordView 按所选品牌色系动态显示系列+onChange 切换品牌重置; AddColorToRecordSheet 按记录品牌色系显示+onAppear 设默认系列; (4) ScanView.swift ManualEntrySheetNew 使用 colorSystem.colorSeries/standardPrefixes+onAppear 设默认系列
+
+**Risk Analysis**: Medium - 影响 4 个视图的系列选择器和颜色列表过滤; 品牌切换时清空选择可能影响用户操作流程; 卡卡系列仅 B/P/R 三个，其余颜色归入'其他'或不显示; 需测试 MARD 品牌下行为不变
+
+**Status**: ✅ Committed to Source of Truth
+
+---
+
+### [Bugfix] 2026-02-08T05:11:20.881433
+
+**Summary**: ColorAddRow 色号显示使用硬编码 currentColorSystem 导致购买记录页选择 MARD 品牌时仍显示卡卡色号: AddInventoryView.swift ColorAddRow 新增可选 colorSystem 参数 (默认 nil 回退 currentColorSystem); ShippingView.swift AddPurchaseRecordView 传入 selectedColorSystem 确保按所选品牌色系显示
+
+**Risk Analysis**: Low - ColorAddRow 新增可选参数，不传时行为不变; AddInventoryView 调用站不传此参数保持原有逻辑
+
+**Status**: ✅ Committed to Source of Truth
+
+---

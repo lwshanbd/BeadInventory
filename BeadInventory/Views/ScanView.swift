@@ -1254,30 +1254,26 @@ struct ManualEntrySheetNew: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
-    // 色系列表（"#"为自定义色号）
-    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他", "#"]
-    let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
-
     @State private var selectedSeries = "A"
     @State private var selectedColors: Set<UUID> = []
     @State private var quantities: [UUID: Int] = [:]  // 每个颜色的数量（以颜色ID为key）
     @State private var isInitialized = false
 
     var colorsInSeries: [BeadColor] {
-        inventoryManager.allBeadColors.filter { color in
-            // 卡卡体系下仅显示有 kakaCode 的颜色
-            if colorSystem == .kaka && !color.hasCode(for: .kaka) {
+        let prefixes = colorSystem.standardPrefixes
+
+        return inventoryManager.allBeadColors.filter { color in
+            // 非 MARD 体系下仅显示有对应色号的颜色
+            if colorSystem != .mard && !color.hasCode(for: colorSystem) {
                 return false
             }
 
             let code = color.displayCode(for: colorSystem)
 
             if selectedSeries == "#" {
-                // 自定义色号（以 # 开头）
                 return code.hasPrefix("#")
             } else if selectedSeries == "其他" {
-                // 既不是标准系列，也不是自定义色号
-                return !standardPrefixes.contains { prefix in
+                return !prefixes.contains { prefix in
                     if prefix == "ZG" {
                         return code.hasPrefix("ZG")
                     } else {
@@ -1288,7 +1284,7 @@ struct ManualEntrySheetNew: View {
                 return code.hasPrefix("ZG")
             } else {
                 if code.hasPrefix("ZG") { return false }
-                if code.hasPrefix("#") { return false }  // 排除自定义色号
+                if code.hasPrefix("#") { return false }
                 return code.hasPrefix(selectedSeries)
             }
         }.sorted { $0.displayCode(for: colorSystem).localizedStandardCompare($1.displayCode(for: colorSystem)) == .orderedAscending }
@@ -1308,7 +1304,7 @@ struct ManualEntrySheetNew: View {
             VStack(spacing: 0) {
                 // 色系选择器
                 ManualEntrySeriesSelector(
-                    series: colorSeries,
+                    series: colorSystem.colorSeries,
                     selectedSeries: $selectedSeries
                 )
                 .padding(.vertical, 8)
@@ -1364,6 +1360,7 @@ struct ManualEntrySheetNew: View {
                 }
             }
             .onAppear {
+                selectedSeries = colorSystem.defaultSeries
                 initializeFromRecognizedItems()
             }
         }

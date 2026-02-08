@@ -17,4 +17,34 @@ enum ColorSystem: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
     var displayName: String { rawValue }
+
+    /// 色系列表（用于系列选择器）
+    var colorSeries: [String] {
+        switch self {
+        case .kaka:
+            return ["B", "P", "R", "其他", "#"]
+        default:
+            return ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他", "#"]
+        }
+    }
+
+    /// 标准色系前缀
+    var standardPrefixes: [String] {
+        switch self {
+        case .kaka:
+            return ["B", "P", "R"]
+        default:
+            return ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
+        }
+    }
+
+    /// 默认选中的系列
+    var defaultSeries: String {
+        switch self {
+        case .kaka:
+            return "B"
+        default:
+            return "A"
+        }
+    }
 }

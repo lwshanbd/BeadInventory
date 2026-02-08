@@ -679,21 +679,33 @@ struct AddPurchaseRecordView: View {
     @State private var quantities: [UUID: Double] = [:]
     @State private var selectedSeries = "A"
 
-    // 色系列表
-    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他", "#"]
-    let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
+    /// 所选品牌的色号体系
+    var selectedColorSystem: ColorSystem {
+        guard let brandId = selectedBrandId,
+              let brand = inventoryManager.brands.first(where: { $0.id == brandId }) else {
+            return inventoryManager.currentColorSystem
+        }
+        return brand.colorSystem
+    }
 
     var colorsInSeries: [BeadColor] {
         let sourceColors = selectedSeries == "#" ? inventoryManager.allBeadColors : inventoryManager.beadColors
+        let system = selectedColorSystem
+        let prefixes = system.standardPrefixes
 
         return sourceColors.filter { color in
-            let code = color.displayCode(for: inventoryManager.currentColorSystem)
+            // 非 MARD 体系下仅显示有对应色号的颜色
+            if system != .mard && !color.hasCode(for: system) {
+                return false
+            }
+
+            let code = color.displayCode(for: system)
 
             if selectedSeries == "#" {
                 return code.hasPrefix("#")
             } else if selectedSeries == "其他" {
                 if code.hasPrefix("#") { return false }
-                return !standardPrefixes.contains { prefix in
+                return !prefixes.contains { prefix in
                     if prefix == "ZG" {
                         return code.hasPrefix("ZG")
                     } else {
@@ -706,7 +718,7 @@ struct AddPurchaseRecordView: View {
                 if code.hasPrefix("ZG") { return false }
                 return code.hasPrefix(selectedSeries)
             }
-        }.sorted { $0.displayCode(for: inventoryManager.currentColorSystem).localizedStandardCompare($1.displayCode(for: inventoryManager.currentColorSystem)) == .orderedAscending }
+        }.sorted { $0.displayCode(for: system).localizedStandardCompare($1.displayCode(for: system)) == .orderedAscending }
     }
 
     var totalToAdd: Int {
@@ -762,7 +774,7 @@ struct AddPurchaseRecordView: View {
 
                 // 色系选择器
                 SeriesSelector(
-                    series: colorSeries,
+                    series: selectedColorSystem.colorSeries,
                     selectedSeries: $selectedSeries
                 )
                 .padding(.vertical, 8)
@@ -780,7 +792,8 @@ struct AddPurchaseRecordView: View {
                                 ),
                                 onToggle: {
                                     toggleSelection(color.id)
-                                }
+                                },
+                                colorSystem: selectedColorSystem
                             )
                         }
                     }
@@ -788,6 +801,11 @@ struct AddPurchaseRecordView: View {
                     .padding(.bottom, 100)
                 }
                 .scrollDismissesKeyboard(.immediately)
+                .onChange(of: selectedBrandId) { _, _ in
+                    // 切换品牌时重置系列选择
+                    selectedSeries = selectedColorSystem.defaultSeries
+                    selectedColors.removeAll()
+                }
 
                 // 底部确认栏
                 if !selectedColors.isEmpty {
@@ -1186,21 +1204,29 @@ struct AddColorToRecordSheet: View {
     @State private var selectedColorId: UUID?
     @State private var quantity: Double = 1.0  // 千颗
 
-    // 色系列表
-    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他", "#"]
-    let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
+    /// 该记录品牌的色号体系
+    var brandColorSystem: ColorSystem {
+        inventoryManager.brands.first(where: { $0.id == brandId })?.colorSystem ?? .mard
+    }
 
     var colorsInSeries: [BeadColor] {
         let sourceColors = selectedSeries == "#" ? inventoryManager.allBeadColors : inventoryManager.beadColors
+        let system = brandColorSystem
+        let prefixes = system.standardPrefixes
 
         return sourceColors.filter { color in
-            let code = color.displayCode(for: inventoryManager.currentColorSystem)
+            // 非 MARD 体系下仅显示有对应色号的颜色
+            if system != .mard && !color.hasCode(for: system) {
+                return false
+            }
+
+            let code = color.displayCode(for: system)
 
             if selectedSeries == "#" {
                 return code.hasPrefix("#")
             } else if selectedSeries == "其他" {
                 if code.hasPrefix("#") { return false }
-                return !standardPrefixes.contains { prefix in
+                return !prefixes.contains { prefix in
                     if prefix == "ZG" {
                         return code.hasPrefix("ZG")
                     } else {
@@ -1213,7 +1239,7 @@ struct AddColorToRecordSheet: View {
                 if code.hasPrefix("ZG") { return false }
                 return code.hasPrefix(selectedSeries)
             }
-        }.sorted { $0.displayCode(for: inventoryManager.currentColorSystem).localizedStandardCompare($1.displayCode(for: inventoryManager.currentColorSystem)) == .orderedAscending }
+        }.sorted { $0.displayCode(for: system).localizedStandardCompare($1.displayCode(for: system)) == .orderedAscending }
     }
 
     var selectedColor: BeadColor? {
@@ -1226,7 +1252,7 @@ struct AddColorToRecordSheet: View {
             VStack(spacing: 0) {
                 // 色系选择器
                 SeriesSelector(
-                    series: colorSeries,
+                    series: brandColorSystem.colorSeries,
                     selectedSeries: $selectedSeries
                 )
                 .padding(.vertical, 8)
@@ -1247,7 +1273,7 @@ struct AddColorToRecordSheet: View {
                                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                                         )
 
-                                    Text(color.displayCode(for: inventoryManager.currentColorSystem))
+                                    Text(color.displayCode(for: brandColorSystem))
                                         .font(.system(.body, design: .monospaced))
                                         .fontWeight(.medium)
                                         .foregroundColor(.primary)
@@ -1281,7 +1307,7 @@ struct AddColorToRecordSheet: View {
                                     RoundedRectangle(cornerRadius: 4)
                                         .fill(color.color)
                                         .frame(width: 24, height: 24)
-                                    Text(color.displayCode(for: inventoryManager.currentColorSystem))
+                                    Text(color.displayCode(for: brandColorSystem))
                                         .font(.headline)
                                 }
                                 Spacer()
@@ -1347,6 +1373,9 @@ struct AddColorToRecordSheet: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") { dismiss() }
                 }
+            }
+            .onAppear {
+                selectedSeries = brandColorSystem.defaultSeries
             }
         }
     }
