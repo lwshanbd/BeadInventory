@@ -448,61 +448,6 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-// MARK: - 导入色号表
-struct ImportColorSheet: View {
-    @Environment(\.dismiss) var dismiss
-    @State private var csvText = ""
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 16) {
-                Text("粘贴CSV格式的色号对照表")
-                    .font(.headline)
-
-                Text("格式：MARD色号,vivid色号,漫漫色号,卡卡色号,颜色名称,HEX颜色")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                TextEditor(text: $csvText)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 200)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
-
-                Button {
-                    importColors()
-                } label: {
-                    Text("导入")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.accentColor)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                }
-                .disabled(csvText.isEmpty)
-
-                Spacer()
-            }
-            .padding()
-            .navigationTitle("导入色号表")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") { dismiss() }
-                }
-            }
-        }
-    }
-
-    func importColors() {
-        // TODO: 实现CSV解析和导入
-        dismiss()
-    }
-}
-
 // MARK: - 帮助页面
 struct HelpView: View {
     var body: some View {

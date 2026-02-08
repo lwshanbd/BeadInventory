@@ -13,7 +13,6 @@ struct MoreView: View {
     @State private var showingScanHelp = false
     @State private var showingBackupRestore = false
     @State private var showingExportSheet = false
-    @State private var showingImportColorSheet = false
 
     var body: some View {
         NavigationStack {
@@ -176,22 +175,6 @@ struct MoreView: View {
                     }
                     .foregroundColor(.primary)
 
-                    Button {
-                        showingImportColorSheet = true
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("导入色号表")
-                                Text("从 CSV 导入色号对照数据")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "tablecells.fill")
-                                .foregroundColor(.purple)
-                        }
-                    }
-                    .foregroundColor(.primary)
                 }
 
                 // 设置
@@ -295,9 +278,6 @@ struct MoreView: View {
             }
             .sheet(isPresented: $showingExportSheet) {
                 ExportDataSheet(inventoryManager: inventoryManager)
-            }
-            .sheet(isPresented: $showingImportColorSheet) {
-                ImportColorSheet()
             }
         }
     }

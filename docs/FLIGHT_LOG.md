@@ -175,3 +175,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Refactor] 2026-02-08T04:57:44.138593
+
+**Summary**: 删除未实现的ImportColorSheet组件: MoreView.swift移除导入色号表入口按钮及相关state/sheet; SettingsView.swift移除ImportColorSheet struct(其importColors函数体仅为TODO注释)
+
+**Risk Analysis**: Low - 删除的是从未实现的死代码，无功能影响
+
+**Status**: ✅ Committed to Source of Truth
+
+---
