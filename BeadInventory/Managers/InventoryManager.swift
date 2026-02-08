@@ -919,23 +919,27 @@ class InventoryManager: ObservableObject {
                     let newUsageIds = Set(project.beadUsage.map { $0.id })
 
                     // 清理可能存在的重复 beadUsage（防止历史数据损坏导致后续崩溃）
-                    // 按对象身份去重，避免同一实例被重复 append 时对同一对象多次 delete
-                    var seenUsageIds = Set<UUID>()
-                    var duplicateUsages: [SDBeadUsage] = []
-                    for usage in existing.beadUsages {
-                        if seenUsageIds.contains(usage.id) {
-                            duplicateUsages.append(usage)
+                    // 区分"同一对象重复引用"与"不同对象但 id 相同"两种情况：
+                    //   - 同一对象重复引用：仅移除多余引用，不 delete（保留该对象）
+                    //   - 不同对象相同 id：保留首个，delete 其余实例
+                    var keeperByID: [UUID: SDBeadUsage] = [:]
+                    var indicesToRemove: [Int] = []
+                    var objectsToDelete: [SDBeadUsage] = []
+                    for (index, usage) in existing.beadUsages.enumerated() {
+                        if let keeper = keeperByID[usage.id] {
+                            indicesToRemove.append(index)
+                            if usage !== keeper {
+                                objectsToDelete.append(usage)
+                            }
                         } else {
-                            seenUsageIds.insert(usage.id)
+                            keeperByID[usage.id] = usage
                         }
                     }
-                    var seenDuplicateObjects = Set<ObjectIdentifier>()
-                    for dup in duplicateUsages {
-                        let oid = ObjectIdentifier(dup)
-                        guard !seenDuplicateObjects.contains(oid) else { continue }
-                        seenDuplicateObjects.insert(oid)
-                        existing.beadUsages.removeAll { $0 === dup }
-                        context.delete(dup)
+                    for index in indicesToRemove.reversed() {
+                        existing.beadUsages.remove(at: index)
+                    }
+                    for obj in objectsToDelete {
+                        context.delete(obj)
                     }
 
                     let existingUsageDict = Dictionary(existing.beadUsages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
