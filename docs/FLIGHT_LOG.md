@@ -155,3 +155,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Feature] 2026-02-08T04:48:10.703100
+
+**Summary**: Added search functionality to PlannedProjectsView (PlannedProjectsView.swift). Added @State searchText, filteredProjects computed property using localizedCaseInsensitiveContains on project name, .searchable modifier with prompt '搜索计划名称'. Select-all in multi-select mode operates on filtered results.
+
+**Risk Analysis**: Low - additive change only, no existing logic modified. searchable is a standard SwiftUI modifier.
+
+**Status**: ✅ Committed to Source of Truth
+
+---

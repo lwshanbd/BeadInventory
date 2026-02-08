@@ -17,9 +17,17 @@ struct PlannedProjectsView: View {
     @State private var showMultiStockCheckSheet = false
     @State private var showReplenishSuggestionSheet = false
     @State private var projectToExecute: ProjectRecord?
+    @State private var searchText = ""
 
     var plannedProjects: [ProjectRecord] {
         inventoryManager.plannedProjects()
+    }
+
+    var filteredProjects: [ProjectRecord] {
+        if searchText.isEmpty {
+            return plannedProjects
+        }
+        return plannedProjects.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
 
     var body: some View {
@@ -88,7 +96,7 @@ struct PlannedProjectsView: View {
                         }
 
                         List {
-                            ForEach(plannedProjects) { project in
+                            ForEach(filteredProjects) { project in
                                 let isParent = inventoryManager.isParentProject(project.id)
                                 let isExpanded = expandedProjects.contains(project.id)
 
@@ -156,17 +164,18 @@ struct PlannedProjectsView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("计划项目")
+            .searchable(text: $searchText, prompt: "搜索计划名称")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if isSelectMode {
                         Button {
-                            if selectedProjects.count == plannedProjects.count {
+                            if selectedProjects.count == filteredProjects.count {
                                 selectedProjects.removeAll()
                             } else {
-                                selectedProjects = Set(plannedProjects.map { $0.id })
+                                selectedProjects = Set(filteredProjects.map { $0.id })
                             }
                         } label: {
-                            Text(selectedProjects.count == plannedProjects.count ? "取消全选" : "全选")
+                            Text(selectedProjects.count == filteredProjects.count ? "取消全选" : "全选")
                         }
                     }
                 }
