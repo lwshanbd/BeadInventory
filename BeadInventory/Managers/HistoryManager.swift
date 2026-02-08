@@ -173,7 +173,8 @@ class HistoryManager: ObservableObject {
             executedDate: project.executedDate,
             beadUsages: usageSnapshots,
             thumbnail: project.thumbnail,
-            finishedImage: project.finishedImage
+            finishedImage: project.finishedImage,
+            colorSystem: project.colorSystem
         )
 
         let snapshotData = try? JSONEncoder().encode(snapshot)
@@ -239,7 +240,8 @@ class HistoryManager: ObservableObject {
             executedDate: beforeProject.executedDate,
             beadUsages: beforeUsages,
             thumbnail: beforeProject.thumbnail,
-            finishedImage: beforeProject.finishedImage
+            finishedImage: beforeProject.finishedImage,
+            colorSystem: beforeProject.colorSystem
         )
 
         // 执行后快照
@@ -258,7 +260,8 @@ class HistoryManager: ObservableObject {
             executedDate: afterProject.executedDate,
             beadUsages: afterUsages,
             thumbnail: afterProject.thumbnail,
-            finishedImage: afterProject.finishedImage
+            finishedImage: afterProject.finishedImage,
+            colorSystem: afterProject.colorSystem
         )
 
         let beforeData = try? JSONEncoder().encode(beforeSnapshot)
@@ -306,7 +309,8 @@ class HistoryManager: ObservableObject {
                 executedDate: project.executedDate,
                 beadUsages: usageSnapshots,
                 thumbnail: project.thumbnail,
-                finishedImage: project.finishedImage
+                finishedImage: project.finishedImage,
+                colorSystem: project.colorSystem
             )
         }
 
@@ -357,7 +361,8 @@ class HistoryManager: ObservableObject {
             executedDate: project.executedDate,
             beadUsages: projectUsages,
             thumbnail: project.thumbnail,
-            finishedImage: project.finishedImage
+            finishedImage: project.finishedImage,
+            colorSystem: project.colorSystem
         )
 
         // 创建子项目快照
@@ -377,7 +382,8 @@ class HistoryManager: ObservableObject {
                 executedDate: child.executedDate,
                 beadUsages: childUsages,
                 thumbnail: child.thumbnail,
-                finishedImage: child.finishedImage
+                finishedImage: child.finishedImage,
+                colorSystem: child.colorSystem
             )
         }
 
@@ -753,7 +759,8 @@ class HistoryManager: ObservableObject {
             isPlanned: snapshot.isPlanned,
             executedDate: snapshot.executedDate,
             thumbnail: snapshot.thumbnail,
-            finishedImage: snapshot.finishedImage
+            finishedImage: snapshot.finishedImage,
+            colorSystem: snapshot.colorSystem
         )
     }
 

@@ -186,6 +186,7 @@ struct ProjectSnapshot: Codable {
     let beadUsages: [BeadUsageSnapshot]
     let thumbnail: Data?
     let finishedImage: Data?
+    let colorSystem: ColorSystem
 
     // 自定义解码器，兼容旧数据
     init(from decoder: Decoder) throws {
@@ -203,9 +204,10 @@ struct ProjectSnapshot: Codable {
         // 向后兼容：旧数据没有这些字段
         thumbnail = try container.decodeIfPresent(Data.self, forKey: .thumbnail)
         finishedImage = try container.decodeIfPresent(Data.self, forKey: .finishedImage)
+        colorSystem = try container.decodeIfPresent(ColorSystem.self, forKey: .colorSystem) ?? .mard
     }
 
-    init(id: UUID, name: String, date: Date, totalBeads: Int, brandId: UUID?, isArchived: Bool, parentId: UUID?, isPlanned: Bool, executedDate: Date?, beadUsages: [BeadUsageSnapshot], thumbnail: Data? = nil, finishedImage: Data? = nil) {
+    init(id: UUID, name: String, date: Date, totalBeads: Int, brandId: UUID?, isArchived: Bool, parentId: UUID?, isPlanned: Bool, executedDate: Date?, beadUsages: [BeadUsageSnapshot], thumbnail: Data? = nil, finishedImage: Data? = nil, colorSystem: ColorSystem = .mard) {
         self.id = id
         self.name = name
         self.date = date
@@ -218,6 +220,7 @@ struct ProjectSnapshot: Codable {
         self.beadUsages = beadUsages
         self.thumbnail = thumbnail
         self.finishedImage = finishedImage
+        self.colorSystem = colorSystem
     }
 }
 

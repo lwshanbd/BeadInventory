@@ -660,6 +660,29 @@ class InventoryManager: ObservableObject {
         mardCode.hasPrefix("#") || mardCode.hasPrefix("C_") || customColors.contains { $0.colorCode.uppercased() == mardCode.uppercased() }
     }
 
+    // MARK: - 数据迁移
+
+    /// 迁移旧 SDProjectRecord：补充 colorSystemRaw 字段（nil → "MARD"）
+    func migrateProjectColorSystem() {
+        guard let context = modelContext else { return }
+        do {
+            let descriptor = FetchDescriptor<SDProjectRecord>()
+            let records = try context.fetch(descriptor)
+            var updated = false
+            for record in records {
+                if record.colorSystemRaw == nil {
+                    record.colorSystemRaw = ColorSystem.mard.rawValue
+                    updated = true
+                }
+            }
+            if updated {
+                try context.save()
+            }
+        } catch {
+            print("[DataMigration] migrateProjectColorSystem error: \(error)")
+        }
+    }
+
     // MARK: - 数据持久化 (SwiftData)
 
     func loadData() {
@@ -1477,7 +1500,8 @@ class InventoryManager: ObservableObject {
             // 记录合并前的状态：所有子项目 + 所有父项目
             let originalProjects = allChildrenProjects + parentProjects
 
-            // 创建新的父项目
+            // 创建新的父项目（继承第一个子项目的色号体系）
+            let mergedColorSystem = allChildrenProjects.first?.colorSystem ?? .mard
             let newParentProject = ProjectRecord(
                 name: newName,
                 date: Date(),
@@ -1485,7 +1509,8 @@ class InventoryManager: ObservableObject {
                 brandId: nil,
                 isArchived: false,
                 parentId: nil,
-                isPlanned: allPlanned
+                isPlanned: allPlanned,
+                colorSystem: mergedColorSystem
             )
 
             // 将所有子项目设为新父项目的子项目
@@ -1520,6 +1545,8 @@ class InventoryManager: ObservableObject {
         // 记录合并前的状态
         let originalProjects = independentProjects
 
+        // 继承第一个子项目的色号体系
+        let mergedColorSystem = independentProjects.first?.colorSystem ?? .mard
         let newParentProject = ProjectRecord(
             name: newName,
             date: Date(),
@@ -1527,7 +1554,8 @@ class InventoryManager: ObservableObject {
             brandId: nil,
             isArchived: false,
             parentId: nil,
-            isPlanned: allPlanned
+            isPlanned: allPlanned,
+            colorSystem: mergedColorSystem
         )
 
         // 将独立项目设为新父项目的子项目
@@ -1594,7 +1622,8 @@ class InventoryManager: ObservableObject {
                         isArchived: projectSnapshot.isArchived,
                         parentId: projectSnapshot.parentId,
                         isPlanned: projectSnapshot.isPlanned,
-                        executedDate: projectSnapshot.executedDate
+                        executedDate: projectSnapshot.executedDate,
+                        colorSystem: projectSnapshot.colorSystem
                     )
                     projects.append(restoredProject)
                 }
@@ -1733,6 +1762,12 @@ class InventoryManager: ObservableObject {
         let project = projects[index]
         guard project.isPlanned else { return false }
 
+        // 防御性校验：品牌色号体系必须与项目色号体系一致
+        guard let brand = brands.first(where: { $0.id == brandId }),
+              brand.colorSystem == project.colorSystem else {
+            return false
+        }
+
         // 如果是父项目，递归执行所有子项目
         if isParentProject(projectId) {
             return executePlannedParentProject(projectId, withBrand: brandId)
@@ -1868,7 +1903,8 @@ class InventoryManager: ObservableObject {
             parentId: nil,  // 副本总是顶级项目
             isPlanned: true,
             executedDate: nil,
-            thumbnail: project.thumbnail
+            thumbnail: project.thumbnail,
+            colorSystem: project.colorSystem
         )
 
         // 插入到原项目后面
@@ -1898,7 +1934,8 @@ class InventoryManager: ObservableObject {
                     parentId: newId,  // 关联到新的父项目
                     isPlanned: true,
                     executedDate: nil,
-                    thumbnail: child.thumbnail
+                    thumbnail: child.thumbnail,
+                    colorSystem: child.colorSystem
                 )
                 projects.append(duplicatedChild)
             }
@@ -1943,7 +1980,8 @@ class InventoryManager: ObservableObject {
             parentId: nil,
             isPlanned: true,
             executedDate: nil,
-            thumbnail: project.thumbnail
+            thumbnail: project.thumbnail,
+            colorSystem: project.colorSystem
         )
 
         // 插入到列表开头
@@ -1973,7 +2011,8 @@ class InventoryManager: ObservableObject {
                     parentId: newId,  // 关联到新的父项目
                     isPlanned: true,
                     executedDate: nil,
-                    thumbnail: child.thumbnail
+                    thumbnail: child.thumbnail,
+                    colorSystem: child.colorSystem
                 )
                 projects.append(duplicatedChild)
             }

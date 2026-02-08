@@ -9,7 +9,7 @@ import Foundation
 
 class DataMigration {
     static let migrationVersionKey = "dataMigrationVersion"
-    static let currentVersion = 2  // 版本 2 = 支持多品牌
+    static let currentVersion = 3  // 版本 3 = 项目绑定色号体系
 
     static func migrateIfNeeded(manager: InventoryManager) {
         let currentMigrationVersion = UserDefaults.standard.integer(forKey: migrationVersionKey)
@@ -18,6 +18,18 @@ class DataMigration {
             migrateToMultiBrand(manager: manager)
             UserDefaults.standard.set(2, forKey: migrationVersionKey)
         }
+
+        if currentMigrationVersion < 3 {
+            migrateToColorSystemAware(manager: manager)
+            UserDefaults.standard.set(3, forKey: migrationVersionKey)
+        }
+    }
+
+    /// 版本 3 迁移：为旧的 SDProjectRecord 补充 colorSystemRaw 字段
+    private static func migrateToColorSystemAware(manager: InventoryManager) {
+        // struct 层的 ProjectRecord 已通过 init(from decoder:) 的 decodeIfPresent 处理
+        // SwiftData 层：确保所有 SDProjectRecord 的 colorSystemRaw 有值
+        manager.migrateProjectColorSystem()
     }
 
     private static func migrateToMultiBrand(manager: InventoryManager) {

@@ -133,7 +133,8 @@ class BackupManager {
                 "date": ISO8601DateFormatter().string(from: project.date),
                 "totalBeads": project.totalBeads,
                 "isArchived": project.isArchived,
-                "isPlanned": project.isPlanned
+                "isPlanned": project.isPlanned,
+                "colorSystem": project.colorSystem.rawValue
             ]
             if let brandId = project.brandId {
                 projectData["brandId"] = brandId.uuidString
@@ -438,6 +439,10 @@ class BackupManager {
                     }
                 }
 
+                // 读取色号体系（兼容旧备份数据）
+                let colorSystemRaw = projectDict["colorSystem"] as? String ?? "MARD"
+                let colorSystem = ColorSystem(rawValue: colorSystemRaw) ?? .mard
+
                 let project = ProjectRecord(
                     id: id,
                     name: name,
@@ -450,7 +455,8 @@ class BackupManager {
                     executedDate: executedDate,
                     thumbnail: thumbnail,
                     finishedImage: finishedImage,
-                    completedDate: completedDate
+                    completedDate: completedDate,
+                    colorSystem: colorSystem
                 )
                 restoredProjects.append(project)
             }

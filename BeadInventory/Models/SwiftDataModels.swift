@@ -85,6 +85,7 @@ final class SDProjectRecord {
     var thumbnail: Data?          // 缩略图数据（可选，压缩后的JPEG）
     var finishedImage: Data?      // 成品图数据（可选，压缩后的JPEG，仅已执行项目使用）
     var completedDate: Date?      // 完成日期（用于日历展示）
+    var colorSystemRaw: String?   // 色号体系，可选以兼容旧数据，默认为 MARD
 
     @Relationship(deleteRule: .cascade)
     var beadUsages: [SDBeadUsage]
@@ -94,7 +95,7 @@ final class SDProjectRecord {
         isPlanned ?? false
     }
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), totalBeads: Int = 0, brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, finishedImage: Data? = nil, completedDate: Date? = nil, beadUsages: [SDBeadUsage] = []) {
+    init(id: UUID = UUID(), name: String, date: Date = Date(), totalBeads: Int = 0, brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, finishedImage: Data? = nil, completedDate: Date? = nil, colorSystemRaw: String? = nil, beadUsages: [SDBeadUsage] = []) {
         self.id = id
         self.name = name
         self.date = date
@@ -107,17 +108,18 @@ final class SDProjectRecord {
         self.thumbnail = thumbnail
         self.finishedImage = finishedImage
         self.completedDate = completedDate
+        self.colorSystemRaw = colorSystemRaw
         self.beadUsages = beadUsages
     }
 
     convenience init(from record: ProjectRecord) {
         let usages = record.beadUsage.map { SDBeadUsage(from: $0) }
-        self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, parentId: record.parentId, isPlanned: record.isPlanned, executedDate: record.executedDate, thumbnail: record.thumbnail, finishedImage: record.finishedImage, completedDate: record.completedDate, beadUsages: usages)
+        self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, parentId: record.parentId, isPlanned: record.isPlanned, executedDate: record.executedDate, thumbnail: record.thumbnail, finishedImage: record.finishedImage, completedDate: record.completedDate, colorSystemRaw: record.colorSystem.rawValue, beadUsages: usages)
     }
 
     func toStruct() -> ProjectRecord {
         let usages = beadUsages.map { $0.toStruct() }
-        return ProjectRecord(id: id, name: name, date: date, beadUsage: usages, brandId: brandId, isArchived: isArchived, parentId: parentId, isPlanned: isPlannedValue, executedDate: executedDate, thumbnail: thumbnail, finishedImage: finishedImage, completedDate: completedDate)
+        return ProjectRecord(id: id, name: name, date: date, beadUsage: usages, brandId: brandId, isArchived: isArchived, parentId: parentId, isPlanned: isPlannedValue, executedDate: executedDate, thumbnail: thumbnail, finishedImage: finishedImage, completedDate: completedDate, colorSystem: ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard)
     }
 }
 

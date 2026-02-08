@@ -37,6 +37,10 @@ struct ScanView: View {
     // 图片固定功能
     @State private var isImagePinned = false         // 是否固定图片在顶部
 
+    // 色号体系选择（独立于品牌）
+    @AppStorage("defaultColorSystem") private var defaultColorSystemRaw: String = "MARD"
+    @State private var scanColorSystem: ColorSystem = .mard
+
     // 引导弹窗
     @AppStorage("scanViewHelpShown") private var helpHasBeenDismissed = false
     @State private var showingHelpSheet = false
@@ -59,14 +63,13 @@ struct ScanView: View {
     /// 检查扣除后库存会变为负数的颜色
     var insufficientStockItems: [(colorCode: String, currentStock: Int, deductAmount: Int)] {
         guard let brandId = inventoryManager.currentBrandId else { return [] }
-        let colorSystem = inventoryManager.currentColorSystem
         var result: [(colorCode: String, currentStock: Int, deductAmount: Int)] = []
         for item in recognizedItems {
             let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode)
             let currentStock = stock?.stock ?? 0
             if currentStock < item.quantity {
-                // 显示当前品牌的色号（而非内部 mardCode）
-                let displayCode = inventoryManager.findColor(byCode: item.colorCode)?.displayCode(for: colorSystem) ?? item.colorCode
+                // 显示当前扫描色号体系的色号（而非内部 mardCode）
+                let displayCode = inventoryManager.findColor(byCode: item.colorCode)?.displayCode(for: scanColorSystem) ?? item.colorCode
                 result.append((colorCode: displayCode, currentStock: currentStock, deductAmount: item.quantity))
             }
         }
@@ -124,23 +127,18 @@ struct ScanView: View {
                             .padding(.horizontal)
                         }
 
-                        // 识别品牌选择（扫描前选择，影响 AI 提示词的色号体系）
+                        // 色号体系选择（独立于品牌，影响 AI 提示词和计划绑定）
                         if selectedImage != nil {
                             HStack {
-                                Text("识别品牌:")
+                                Text("色号体系:")
                                     .foregroundColor(.secondary)
-                                if inventoryManager.currentBrandId != nil {
-                                    Text(inventoryManager.currentBrand?.name ?? "MARD")
-                                        .fontWeight(.medium)
-                                        .foregroundColor(.accentColor)
-                                } else {
-                                    Text("请选择")
-                                        .foregroundColor(.orange)
+                                    .font(.subheadline)
+                                Picker("色号体系", selection: $scanColorSystem) {
+                                    Text("MARD").tag(ColorSystem.mard)
+                                    Text("卡卡").tag(ColorSystem.kaka)
                                 }
-                                Spacer()
-                                BrandPicker()
+                                .pickerStyle(.segmented)
                             }
-                            .font(.subheadline)
                             .padding(.horizontal)
                         }
 
@@ -205,13 +203,15 @@ struct ScanView: View {
                                 .padding(.horizontal)
                         }
 
-                        // 备扣品牌显示（只读，与识别品牌联动）
+                        // 备扣品牌显示（仅显示与当前色号体系匹配的品牌）
                         if !recognizedItems.isEmpty {
                             HStack {
                                 Text("备扣品牌:")
                                     .foregroundColor(.secondary)
-                                if inventoryManager.currentBrandId != nil {
-                                    Text(inventoryManager.currentBrand?.name ?? "")
+                                if inventoryManager.currentBrandId != nil,
+                                   let brand = inventoryManager.currentBrand,
+                                   brand.colorSystem == scanColorSystem {
+                                    Text(brand.name)
                                         .fontWeight(.medium)
                                         .foregroundColor(.accentColor)
                                 } else {
@@ -219,7 +219,7 @@ struct ScanView: View {
                                         .foregroundColor(.orange)
                                 }
                                 Spacer()
-                                BrandPicker()
+                                BrandPicker(colorSystemFilter: scanColorSystem)
                             }
                             .font(.subheadline)
                             .padding(.horizontal)
@@ -231,6 +231,7 @@ struct ScanView: View {
                                 items: $recognizedItems,
                                 totalBeads: totalBeads,
                                 inventoryManager: inventoryManager,
+                                colorSystem: scanColorSystem,
                                 onClear: clearState
                             )
                         }
@@ -366,7 +367,7 @@ struct ScanView: View {
                 }
             }
             .sheet(isPresented: $showingManualEntry) {
-                ManualEntrySheetNew(recognizedItems: $recognizedItems)
+                ManualEntrySheetNew(recognizedItems: $recognizedItems, colorSystem: scanColorSystem)
                     .environmentObject(inventoryManager)
             }
             .fullScreenCover(isPresented: $showingCropView) {
@@ -421,6 +422,8 @@ struct ScanView: View {
                 )
             }
             .onAppear {
+                // 从设置中读取默认色号体系
+                scanColorSystem = ColorSystem(rawValue: defaultColorSystemRaw) ?? .mard
                 // 首次打开时显示引导弹窗
                 if !helpHasBeenDismissed {
                     showingHelpSheet = true
@@ -435,7 +438,7 @@ struct ScanView: View {
         isRecognizing = true
         errorMessage = nil
 
-        let colorSystem = inventoryManager.currentColorSystem
+        let colorSystem = scanColorSystem
 
         Task {
             do {
@@ -474,7 +477,8 @@ struct ScanView: View {
             name: projectName.isEmpty ? "图纸\(Date().formatted(date: .numeric, time: .omitted))" : projectName,
             beadUsage: beadUsages,
             brandId: brandId,
-            thumbnail: thumbnailData
+            thumbnail: thumbnailData,
+            colorSystem: scanColorSystem
         )
         inventoryManager.addProject(project)
 
@@ -502,7 +506,8 @@ struct ScanView: View {
             beadUsage: beadUsages,
             brandId: nil,
             isPlanned: true,
-            thumbnail: thumbnailData
+            thumbnail: thumbnailData,
+            colorSystem: scanColorSystem
         )
         inventoryManager.addPlannedProject(project)
 
@@ -960,6 +965,7 @@ struct RecognizedResultsSectionNew: View {
     @Binding var items: [ScanView.RecognizedItem]
     let totalBeads: Int
     let inventoryManager: InventoryManager
+    var colorSystem: ColorSystem = .mard
     var onClear: (() -> Void)? = nil
 
     @State private var showingClearAlert = false
@@ -982,7 +988,6 @@ struct RecognizedResultsSectionNew: View {
         case .original:
             return items
         case .code:
-            let colorSystem = inventoryManager.currentColorSystem
             sorted = items.sorted {
                 let code0 = inventoryManager.findColor(byCode: $0.colorCode)?.displayCode(for: colorSystem) ?? $0.colorCode
                 let code1 = inventoryManager.findColor(byCode: $1.colorCode)?.displayCode(for: colorSystem) ?? $1.colorCode
@@ -1069,6 +1074,7 @@ struct RecognizedResultsSectionNew: View {
                 RecognizedItemRowNew(
                     item: item,
                     inventoryManager: inventoryManager,
+                    colorSystem: colorSystem,
                     onUpdate: { code, qty in
                         if let index = items.firstIndex(where: { $0.id == item.id }) {
                             if let c = code { items[index].colorCode = c.uppercased() }
@@ -1099,6 +1105,7 @@ struct RecognizedResultsSectionNew: View {
 struct RecognizedItemRowNew: View {
     let item: ScanView.RecognizedItem
     let inventoryManager: InventoryManager
+    var colorSystem: ColorSystem = .mard
     let onUpdate: (String?, Int?) -> Void
     let onRemove: () -> Void
 
@@ -1170,7 +1177,7 @@ struct RecognizedItemRowNew: View {
                 .font(.caption)
             } else {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(matchedColor?.displayCode(for: inventoryManager.currentColorSystem) ?? item.colorCode)
+                    Text(matchedColor?.displayCode(for: colorSystem) ?? item.colorCode)
                         .font(.system(.body, design: .monospaced))
                         .fontWeight(.medium)
 
@@ -1245,6 +1252,7 @@ struct RecognizedItemRowNew: View {
 // MARK: - 新版手动添加弹窗（类似添加库存的UI，支持多选，与已有结果同步）
 struct ManualEntrySheetNew: View {
     @Binding var recognizedItems: [ScanView.RecognizedItem]
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
@@ -1259,7 +1267,12 @@ struct ManualEntrySheetNew: View {
 
     var colorsInSeries: [BeadColor] {
         inventoryManager.allBeadColors.filter { color in
-            let code = color.displayCode(for: inventoryManager.currentColorSystem)
+            // 卡卡体系下仅显示有 kakaCode 的颜色
+            if colorSystem == .kaka && !color.hasCode(for: .kaka) {
+                return false
+            }
+
+            let code = color.displayCode(for: colorSystem)
 
             if selectedSeries == "#" {
                 // 自定义色号（以 # 开头）
@@ -1280,7 +1293,7 @@ struct ManualEntrySheetNew: View {
                 if code.hasPrefix("#") { return false }  // 排除自定义色号
                 return code.hasPrefix(selectedSeries)
             }
-        }.sorted { $0.displayCode(for: inventoryManager.currentColorSystem).localizedStandardCompare($1.displayCode(for: inventoryManager.currentColorSystem)) == .orderedAscending }
+        }.sorted { $0.displayCode(for: colorSystem).localizedStandardCompare($1.displayCode(for: colorSystem)) == .orderedAscending }
     }
 
     var totalToAdd: Int {
@@ -1312,7 +1325,8 @@ struct ManualEntrySheetNew: View {
                                 quantity: bindingForColor(color.id),
                                 onToggle: {
                                     toggleSelection(color.id)
-                                }
+                                },
+                                colorSystem: colorSystem
                             )
                         }
                     }
@@ -1440,6 +1454,7 @@ struct ManualEntryColorRow: View {
     let isSelected: Bool
     @Binding var quantity: Int
     let onToggle: () -> Void
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var body: some View {
@@ -1474,7 +1489,7 @@ struct ManualEntryColorRow: View {
                 )
 
             // 色号
-            Text(color.displayCode(for: inventoryManager.currentColorSystem))
+            Text(color.displayCode(for: colorSystem))
                 .font(.system(.body, design: .monospaced))
                 .fontWeight(.medium)
 

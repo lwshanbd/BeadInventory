@@ -125,3 +125,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Feature] 2026-02-08T04:31:53.914151
+
+**Summary**: 统一颜色体系：为 ProjectRecord/SDProjectRecord 添加 colorSystem 字段，ScanView 独立色号体系选择器，PlannedProjectsView 色号体系标签和品牌过滤，SettingsView 默认色号体系设置，blueprint AI prompt 统一，v3 数据迁移，执行扣减防御性校验。涉及文件：BeadColor.swift, SwiftDataModels.swift, ScanView.swift, PlannedProjectsView.swift, SettingsView.swift, AIService.swift, InventoryManager.swift, DataMigration.swift, HistoryRecord.swift, HistoryManager.swift, BackupManager.swift, BrandPicker.swift
+
+**Risk Analysis**: Medium - 影响扫描/计划/执行全链路，SwiftData schema 变更需要验证旧数据迁移，多处 ProjectRecord 创建站点需确认 colorSystem 正确传递
+
+**Status**: ✅ Committed to Source of Truth
+
+---

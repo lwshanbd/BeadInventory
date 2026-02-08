@@ -494,6 +494,15 @@ struct PlannedProjectRow: View {
                     .font(.headline)
                     .foregroundColor(.primary)
 
+                // 色号体系徽章
+                Text(project.colorSystem.displayName)
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Color.blue.opacity(0.15))
+                    .foregroundColor(project.colorSystem == .kaka ? .purple : .blue)
+                    .cornerRadius(4)
+
                 Spacer()
 
                 Text(project.date.formatted(date: .abbreviated, time: .omitted))
@@ -528,7 +537,9 @@ struct PlannedProjectRow: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
                         ForEach(project.beadUsage.prefix(8)) { usage in
-                            Text(usage.colorCode)
+                            let displayCode = inventoryManager.findColor(byCode: usage.colorCode)?
+                                .displayCode(for: project.colorSystem) ?? usage.colorCode
+                            Text(displayCode)
                                 .font(.caption2)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
@@ -582,6 +593,16 @@ struct PlannedChildProjectRow: View {
                     HStack {
                         Text(project.name)
                             .font(.subheadline)
+
+                        // 色号体系徽章
+                        Text(project.colorSystem.displayName)
+                            .font(.caption2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Color.blue.opacity(0.15))
+                            .foregroundColor(project.colorSystem == .kaka ? .purple : .blue)
+                            .cornerRadius(4)
+
                         Spacer()
                         Text(project.date.formatted(date: .abbreviated, time: .omitted))
                             .font(.caption)
@@ -612,6 +633,11 @@ struct ExecutePlannedProjectSheet: View {
     @Environment(\.dismiss) var dismiss
     @State private var selectedBrandId: UUID?
     @State private var showConfirmation = false
+
+    /// 匹配当前项目色号体系的品牌
+    var matchingBrands: [Brand] {
+        inventoryManager.brands.filter { $0.colorSystem == project.colorSystem }
+    }
 
     var selectedBrand: Brand? {
         guard let id = selectedBrandId else { return nil }
@@ -694,15 +720,15 @@ struct ExecutePlannedProjectSheet: View {
                 }
 
                 Section("选择扣减品牌") {
-                    if inventoryManager.brands.isEmpty {
+                    if matchingBrands.isEmpty {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundColor(.orange)
-                            Text("请先创建品牌")
+                            Text("暂无\(project.colorSystem.displayName)体系的品牌，请先创建")
                                 .foregroundColor(.secondary)
                         }
                     } else {
-                        ForEach(inventoryManager.brands) { brand in
+                        ForEach(matchingBrands) { brand in
                             Button {
                                 selectedBrandId = brand.id
                             } label: {
@@ -762,8 +788,13 @@ struct ExecutePlannedProjectSheet: View {
         }
         .presentationDetents([.medium, .large])
         .onAppear {
-            // 默认选择当前品牌
-            selectedBrandId = inventoryManager.currentBrandId
+            // 默认选择当前品牌（如果匹配色号体系），否则选择第一个匹配品牌
+            if let currentId = inventoryManager.currentBrandId,
+               matchingBrands.contains(where: { $0.id == currentId }) {
+                selectedBrandId = currentId
+            } else {
+                selectedBrandId = matchingBrands.first?.id
+            }
         }
     }
 }
@@ -1080,7 +1111,7 @@ struct PlannedProjectDetailView: View {
     private var usageListView: some View {
         LazyVStack(spacing: 8) {
             ForEach(sortedUsage) { usage in
-                PlannedBeadUsageRow(usage: usage)
+                PlannedBeadUsageRow(usage: usage, colorSystem: (currentProject ?? project).colorSystem)
             }
         }
         .padding(.horizontal)
@@ -1218,13 +1249,24 @@ struct PlannedProjectInfoCard: View {
 
                 Spacer()
 
-                Label("计划中", systemImage: "clock.fill")
-                    .font(.caption)
-                    .foregroundColor(.orange)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.orange.opacity(0.1))
-                    .cornerRadius(6)
+                HStack(spacing: 6) {
+                    // 色号体系徽章
+                    Text(project.colorSystem.displayName)
+                        .font(.caption)
+                        .foregroundColor(project.colorSystem == .kaka ? .purple : .blue)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(project.colorSystem == .kaka ? Color.purple.opacity(0.1) : Color.blue.opacity(0.1))
+                        .cornerRadius(6)
+
+                    Label("计划中", systemImage: "clock.fill")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(6)
+                }
             }
 
             Divider()
@@ -1273,6 +1315,7 @@ struct PlannedProjectInfoCard: View {
 // MARK: - 计划用量行
 struct PlannedBeadUsageRow: View {
     let usage: BeadUsage
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var beadColor: BeadColor? {
@@ -1294,7 +1337,8 @@ struct PlannedBeadUsageRow: View {
                 )
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(usage.colorCode)
+                let displayCode = beadColor?.displayCode(for: colorSystem) ?? usage.colorCode
+                Text(displayCode)
                     .font(.system(.headline, design: .monospaced))
             }
 
@@ -2056,7 +2100,8 @@ struct EditPlannedProjectSheet: View {
                             usage: $usage,
                             onDelete: {
                                 beadUsages.removeAll { $0.id == usage.id }
-                            }
+                            },
+                            colorSystem: project.colorSystem
                         )
                     }
                     .onDelete { indexSet in
@@ -2099,7 +2144,7 @@ struct EditPlannedProjectSheet: View {
                 }
             }
             .sheet(isPresented: $showAddColorSheet) {
-                AddColorToProjectSheet { colorCode, quantity in
+                AddColorToProjectSheet(onAdd: { colorCode, quantity in
                     // 检查是否已存在
                     if let index = beadUsages.firstIndex(where: { $0.colorCode == colorCode }) {
                         beadUsages[index].quantity += quantity
@@ -2111,7 +2156,7 @@ struct EditPlannedProjectSheet: View {
                             isDeducted: false
                         )))
                     }
-                }
+                }, colorSystem: project.colorSystem)
                 .environmentObject(inventoryManager)
             }
         }
@@ -2140,6 +2185,7 @@ struct EditPlannedProjectSheet: View {
 struct EditableUsageRow: View {
     @Binding var usage: EditPlannedProjectSheet.EditableBeadUsage
     let onDelete: () -> Void
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var quantityText: String = ""
     @FocusState private var isQuantityFocused: Bool
@@ -2164,7 +2210,7 @@ struct EditableUsageRow: View {
                 )
 
             // 色号
-            Text(usage.colorCode)
+            Text(beadColor?.displayCode(for: colorSystem) ?? usage.colorCode)
                 .font(.system(.body, design: .monospaced))
                 .fontWeight(.medium)
 
@@ -2239,6 +2285,7 @@ struct EditableUsageRow: View {
 // MARK: - 添加颜色到项目弹窗
 struct AddColorToProjectSheet: View {
     let onAdd: (String, Int) -> Void
+    var colorSystem: ColorSystem = .mard
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var inventoryManager: InventoryManager
 
@@ -2249,16 +2296,19 @@ struct AddColorToProjectSheet: View {
     @FocusState private var isSearchFocused: Bool
 
     var filteredColors: [BeadColor] {
+        let base = colorSystem == .kaka
+            ? inventoryManager.allBeadColors.filter { $0.hasCode(for: .kaka) }
+            : inventoryManager.allBeadColors
         if searchText.isEmpty {
-            return Array(inventoryManager.allBeadColors.prefix(50))
+            return Array(base.prefix(50))
         }
         let search = searchText.uppercased()
-        return inventoryManager.allBeadColors.filter { color in
+        return base.filter { color in
             color.mardCode.uppercased().contains(search) ||
             color.colorName.uppercased().contains(search) ||
             color.cocoCode.uppercased().contains(search) ||
             color.manmanCode.uppercased().contains(search) ||
-            color.displayCode(for: inventoryManager.currentColorSystem).uppercased().contains(search)
+            color.displayCode(for: colorSystem).uppercased().contains(search)
         }
     }
 
@@ -2299,7 +2349,7 @@ struct AddColorToProjectSheet: View {
                                 )
 
                             VStack(alignment: .leading) {
-                                Text(color.displayCode(for: inventoryManager.currentColorSystem))
+                                Text(color.displayCode(for: colorSystem))
                                     .font(.headline)
                                 Text(color.colorName)
                                     .font(.caption)
@@ -2369,7 +2419,7 @@ struct AddColorToProjectSheet: View {
                                     )
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(color.displayCode(for: inventoryManager.currentColorSystem))
+                                    Text(color.displayCode(for: colorSystem))
                                         .font(.system(.subheadline, design: .monospaced))
                                         .fontWeight(.medium)
                                         .foregroundColor(.primary)

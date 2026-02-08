@@ -10,6 +10,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @ObservedObject private var aiService = AIServiceManager.shared
+    @AppStorage("defaultColorSystem") private var defaultColorSystemRaw: String = "MARD"
     @State private var showingResetAlert = false
     @State private var showingResetUsageAlert = false
     @State private var defaultStock = "1000"
@@ -88,6 +89,21 @@ struct SettingsView: View {
                     } else if aiService.config.provider == .qwen {
                         Text("Qwen API Key 可从阿里云百炼平台 bailian.console.aliyun.com 获取。")
                     }
+                }
+
+                // 扫描默认设置
+                Section {
+                    Picker("默认色号体系", selection: Binding(
+                        get: { ColorSystem(rawValue: defaultColorSystemRaw) ?? .mard },
+                        set: { defaultColorSystemRaw = $0.rawValue }
+                    )) {
+                        Text("MARD").tag(ColorSystem.mard)
+                        Text("卡卡").tag(ColorSystem.kaka)
+                    }
+                } header: {
+                    Text("扫描默认设置")
+                } footer: {
+                    Text("新开扫描页面时默认使用的色号体系")
                 }
 
                 // 库存设置
