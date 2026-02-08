@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 import SwiftData
 
+@MainActor
 class InventoryManager: ObservableObject {
     @Published var beadColors: [BeadColor] = []
     @Published var projects: [ProjectRecord] = []
@@ -918,6 +919,7 @@ class InventoryManager: ObservableObject {
                     let newUsageIds = Set(project.beadUsage.map { $0.id })
 
                     // 清理可能存在的重复 beadUsage（防止历史数据损坏导致后续崩溃）
+                    // 按对象身份去重，避免同一实例被重复 append 时对同一对象多次 delete
                     var seenUsageIds = Set<UUID>()
                     var duplicateUsages: [SDBeadUsage] = []
                     for usage in existing.beadUsages {
@@ -927,7 +929,11 @@ class InventoryManager: ObservableObject {
                             seenUsageIds.insert(usage.id)
                         }
                     }
+                    var seenDuplicateObjects = Set<ObjectIdentifier>()
                     for dup in duplicateUsages {
+                        let oid = ObjectIdentifier(dup)
+                        guard !seenDuplicateObjects.contains(oid) else { continue }
+                        seenDuplicateObjects.insert(oid)
                         existing.beadUsages.removeAll { $0 === dup }
                         context.delete(dup)
                     }
