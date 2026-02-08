@@ -14,9 +14,6 @@ struct SettingsView: View {
     @State private var showingResetAlert = false
     @State private var showingResetUsageAlert = false
     @State private var defaultStock = "1000"
-    @State private var showingImportSheet = false
-    @State private var showingExportSheet = false
-    @State private var exportURL: URL?
 
     var body: some View {
         NavigationStack {
@@ -150,54 +147,6 @@ struct SettingsView: View {
                     }
                 }
 
-                // 数据管理
-                Section {
-                    Button {
-                        showingImportSheet = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "square.and.arrow.down")
-                            Text("导入色号表")
-                        }
-                    }
-
-                    Button {
-                        showingExportSheet = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "square.and.arrow.up")
-                            Text("导出库存数据")
-                        }
-                    }
-                } header: {
-                    Text("数据管理")
-                }
-
-                // 关于
-                Section {
-                    NavigationLink {
-                        AboutView()
-                    } label: {
-                        HStack {
-                            Image(systemName: "info.circle")
-                            Text("关于啃豆小仓")
-                        }
-                    }
-                } header: {
-                    Text("关于")
-                }
-
-                // 使用说明
-                Section {
-                    NavigationLink {
-                        HelpView()
-                    } label: {
-                        HStack {
-                            Image(systemName: "questionmark.circle")
-                            Text("使用帮助")
-                        }
-                    }
-                }
             }
             .navigationTitle("设置")
             .alert("重置库存", isPresented: $showingResetAlert) {
@@ -224,12 +173,6 @@ struct SettingsView: View {
                 } else {
                     Text("将清除所有颜色的使用记录，库存数量不变。此操作不可撤销。")
                 }
-            }
-            .sheet(isPresented: $showingImportSheet) {
-                ImportColorSheet()
-            }
-            .sheet(isPresented: $showingExportSheet) {
-                ExportDataSheet(inventoryManager: inventoryManager)
             }
         }
     }

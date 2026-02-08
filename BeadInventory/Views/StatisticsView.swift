@@ -9,7 +9,7 @@ import SwiftUI
 
 struct StatisticsView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
-    @State private var selectedSegment = 0
+    @State private var selectedSegment = 1
 
     var body: some View {
         NavigationStack {
@@ -439,7 +439,7 @@ struct ProjectHistoryView: View {
                             }
                         }
                     } label: {
-                        Text(isSelectMode ? "取消" : "编辑")
+                        Text(isSelectMode ? "取消" : "多选")
                             .font(.subheadline)
                     }
                 }

@@ -12,6 +12,8 @@ struct MoreView: View {
     @State private var showingImportFullData = false
     @State private var showingScanHelp = false
     @State private var showingBackupRestore = false
+    @State private var showingExportSheet = false
+    @State private var showingImportColorSheet = false
 
     var body: some View {
         NavigationStack {
@@ -121,39 +123,24 @@ struct MoreView: View {
                     }
                 }
 
-                // 设置相关
+                // 数据管理
                 Section {
-                    NavigationLink {
-                        BrandSettingsView()
+                    Button {
+                        showingExportSheet = true
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("品牌管理")
-                                Text("添加、编辑品牌信息")
+                                Text("导出库存数据")
+                                Text("导出为 CSV 或 JSON 文件")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
                         } icon: {
-                            Image(systemName: "tag.fill")
+                            Image(systemName: "square.and.arrow.up.fill")
                                 .foregroundColor(.blue)
                         }
                     }
-
-                    NavigationLink {
-                        SettingsView()
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("设置")
-                                Text("数据导出、导入等")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "gearshape.fill")
-                                .foregroundColor(.gray)
-                        }
-                    }
+                    .foregroundColor(.primary)
 
                     Button {
                         showingImportFullData = true
@@ -188,6 +175,58 @@ struct MoreView: View {
                         }
                     }
                     .foregroundColor(.primary)
+
+                    Button {
+                        showingImportColorSheet = true
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("导入色号表")
+                                Text("从 CSV 导入色号对照数据")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "tablecells.fill")
+                                .foregroundColor(.purple)
+                        }
+                    }
+                    .foregroundColor(.primary)
+                }
+
+                // 设置
+                Section {
+                    NavigationLink {
+                        BrandSettingsView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("品牌管理")
+                                Text("添加、编辑品牌信息")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "tag.fill")
+                                .foregroundColor(.blue)
+                        }
+                    }
+
+                    NavigationLink {
+                        SettingsView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("设置")
+                                Text("AI识别、库存等配置")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "gearshape.fill")
+                                .foregroundColor(.gray)
+                        }
+                    }
                 }
 
                 // 帮助与关于
@@ -210,12 +249,28 @@ struct MoreView: View {
                     .foregroundColor(.primary)
 
                     NavigationLink {
+                        HelpView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("使用帮助")
+                                Text("功能介绍与使用技巧")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "book.fill")
+                                .foregroundColor(.teal)
+                        }
+                    }
+
+                    NavigationLink {
                         AboutView()
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("关于")
-                                Text("版本信息与帮助")
+                                Text("版本信息")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -237,6 +292,12 @@ struct MoreView: View {
             }
             .sheet(isPresented: $showingBackupRestore) {
                 BackupRestoreView()
+            }
+            .sheet(isPresented: $showingExportSheet) {
+                ExportDataSheet(inventoryManager: inventoryManager)
+            }
+            .sheet(isPresented: $showingImportColorSheet) {
+                ImportColorSheet()
             }
         }
     }

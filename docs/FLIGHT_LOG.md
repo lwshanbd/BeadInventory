@@ -165,3 +165,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Feature] 2026-02-08T04:54:59.686600
+
+**Summary**: UI优化三处: (1) StatisticsView.swift - 默认显示项目记录tab (selectedSegment=1); (2) StatisticsView.swift:442 - ProjectHistoryView多选按钮从'编辑'改为'多选'与PlannedProjectsView一致; (3) MoreView.swift - 新增'数据管理'section整合导出库存/导入历史/恢复备份/导入色号表，设置section描述更新，帮助section增加使用帮助; SettingsView.swift - 移除已迁移到MoreView的数据管理/关于/使用帮助sections及相关state
+
+**Risk Analysis**: Low - 纯UI层变更，无数据逻辑修改。ExportDataSheet和ImportColorSheet定义仍在SettingsView.swift中，只是调用入口移到MoreView
+
+**Status**: ✅ Committed to Source of Truth
+
+---
