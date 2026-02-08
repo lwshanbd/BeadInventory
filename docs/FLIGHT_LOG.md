@@ -245,3 +245,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Bugfix] 2026-02-08T05:33:38.377031
+
+**Summary**: 3项修复: 1) PlannedProjectsView.swift - 操作按钮(库存确认/补豆建议/合并)移入List内部随列表滚动; 2) AddBrandView.swift/AddInventoryView.swift - 非MARD体系(如卡卡)隐藏预设颜色包,仅保留全选和自定义; 3) ContentView.swift - 浮动加号按钮仅在库存页(selectedTab==0)显示
+
+**Risk Analysis**: Low - 均为UI层修改,不影响数据逻辑; 品牌创建切换色系时自动重置preset为.all防止无效选择
+
+**Status**: ✅ Committed to Source of Truth
+
+---

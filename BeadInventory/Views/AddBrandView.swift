@@ -152,11 +152,13 @@ struct AddBrandView: View {
                 // 颜色模式（仅在统一数量模式下显示）
                 if !useImportedStock {
                     Section {
-                        ForEach(ColorPreset.allCases) { preset in
+                        // 非 MARD 体系只显示"全部颜色"和"自定义"，预设色号包基于 MARD 不适用
+                        ForEach(ColorPreset.allCases.filter { preset in
+                            selectedColorSystem == .mard || preset.isAll || preset.isCustom
+                        }) { preset in
                             Button {
                                 selectedPreset = preset
                                 if preset.isCustom && customSelectedColors.isEmpty {
-                                    // 自定义模式默认选中全部 291 色
                                     customSelectedColors = Set(inventoryManager.beadColors.map { $0.mardCode })
                                 }
                             } label: {
@@ -228,6 +230,12 @@ struct AddBrandView: View {
                         createBrand()
                     }
                     .disabled(!canCreate)
+                }
+            }
+            .onChange(of: selectedColorSystem) { _, newSystem in
+                // 切换到非 MARD 体系时，重置为"全部颜色"（预设色号包仅适用于 MARD）
+                if newSystem != .mard && !selectedPreset.isAll && !selectedPreset.isCustom {
+                    selectedPreset = .all
                 }
             }
             .sheet(isPresented: $showingColorSelection) {

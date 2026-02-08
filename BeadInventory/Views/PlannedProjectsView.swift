@@ -37,65 +37,64 @@ struct PlannedProjectsView: View {
                     EmptyPlannedProjectsView()
                 } else {
                     VStack(spacing: 0) {
-                        // 多选操作按钮区域
-                        if isSelectMode && !selectedProjects.isEmpty {
-                            VStack(spacing: 8) {
-                                HStack(spacing: 8) {
-                                    // 库存确认按钮
-                                    Button {
-                                        showMultiStockCheckSheet = true
-                                    } label: {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "checklist")
-                                            Text("库存确认")
+                        List {
+                            // 多选操作按钮区域（放在 List 内部，随列表滚动）
+                            if isSelectMode && !selectedProjects.isEmpty {
+                                Section {
+                                    HStack(spacing: 8) {
+                                        // 库存确认按钮
+                                        Button {
+                                            showMultiStockCheckSheet = true
+                                        } label: {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "checklist")
+                                                Text("库存确认")
+                                            }
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundColor(.white)
+                                            .padding(.vertical, 12)
+                                            .frame(maxWidth: .infinity)
+                                            .background(Color.blue)
+                                            .cornerRadius(10)
                                         }
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundColor(.white)
-                                        .padding(.vertical, 12)
-                                        .frame(maxWidth: .infinity)
-                                        .background(Color.blue)
-                                        .cornerRadius(10)
-                                    }
 
-                                    // 补豆建议按钮
-                                    Button {
-                                        showReplenishSuggestionSheet = true
-                                    } label: {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "cart.badge.plus")
-                                            Text("补豆建议")
+                                        // 补豆建议按钮
+                                        Button {
+                                            showReplenishSuggestionSheet = true
+                                        } label: {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "cart.badge.plus")
+                                                Text("补豆建议")
+                                            }
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundColor(.white)
+                                            .padding(.vertical, 12)
+                                            .frame(maxWidth: .infinity)
+                                            .background(Color.orange)
+                                            .cornerRadius(10)
                                         }
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundColor(.white)
-                                        .padding(.vertical, 12)
-                                        .frame(maxWidth: .infinity)
-                                        .background(Color.orange)
-                                        .cornerRadius(10)
-                                    }
 
-                                    // 合并按钮（需要选中 2 个及以上）
-                                    Button {
-                                        showMergeSheet = true
-                                    } label: {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "arrow.triangle.merge")
-                                            Text("合并")
+                                        // 合并按钮（需要选中 2 个及以上）
+                                        Button {
+                                            showMergeSheet = true
+                                        } label: {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "arrow.triangle.merge")
+                                                Text("合并")
+                                            }
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundColor(.white)
+                                            .padding(.vertical, 12)
+                                            .frame(maxWidth: .infinity)
+                                            .background(selectedProjects.count >= 2 ? Color.accentColor : Color.gray)
+                                            .cornerRadius(10)
                                         }
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundColor(.white)
-                                        .padding(.vertical, 12)
-                                        .frame(maxWidth: .infinity)
-                                        .background(selectedProjects.count >= 2 ? Color.accentColor : Color.gray)
-                                        .cornerRadius(10)
+                                        .disabled(selectedProjects.count < 2)
                                     }
-                                    .disabled(selectedProjects.count < 2)
+                                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                                 }
                             }
-                            .padding(.horizontal)
-                            .padding(.vertical, 8)
-                        }
 
-                        List {
                             ForEach(filteredProjects) { project in
                                 let isParent = inventoryManager.isParentProject(project.id)
                                 let isExpanded = expandedProjects.contains(project.id)
@@ -106,7 +105,7 @@ struct PlannedProjectsView: View {
                                     isExpanded: isExpanded,
                                     isSelectMode: isSelectMode,
                                     isSelected: selectedProjects.contains(project.id),
-                                    showSearchCheckbox: !searchText.isEmpty && !isSelectMode,
+                                    showSearchCheckbox: false,
                                     onToggleExpand: {
                                         withAnimation {
                                             if isExpanded {
@@ -117,10 +116,6 @@ struct PlannedProjectsView: View {
                                         }
                                     },
                                     onToggleSelect: {
-                                        // 搜索时点击复选框自动进入多选模式
-                                        if !isSelectMode {
-                                            withAnimation { isSelectMode = true }
-                                        }
                                         if selectedProjects.contains(project.id) {
                                             selectedProjects.remove(project.id)
                                         } else {

@@ -62,7 +62,8 @@ struct ContentView: View {
             }
             .tint(Color("AccentColor"))
 
-            // 右侧浮动加号按钮
+            // 右侧浮动加号按钮（仅在库存页显示）
+            if selectedTab == 0 {
             VStack {
                 Spacer()
                 HStack {
@@ -84,6 +85,7 @@ struct ContentView: View {
                     .padding(.trailing, 20)
                     .padding(.bottom, 80)
                 }
+            }
             }
         }
         .sheet(isPresented: $showingAddInventory) {

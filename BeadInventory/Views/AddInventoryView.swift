@@ -153,17 +153,20 @@ struct AddInventoryView: View {
 
                         Divider()
 
-                        Section("预设颜色包") {
-                            ForEach(ColorPreset.allCases.filter { !$0.isCustom && !$0.isAll }) { preset in
-                                Button {
-                                    selectPreset(preset)
-                                } label: {
-                                    Label("选中 \(preset.count) 色", systemImage: "checkmark.square.fill")
+                        // 预设颜色包仅适用于 MARD 体系
+                        if currentSystem == .mard {
+                            Section("预设颜色包") {
+                                ForEach(ColorPreset.allCases.filter { !$0.isCustom && !$0.isAll }) { preset in
+                                    Button {
+                                        selectPreset(preset)
+                                    } label: {
+                                        Label("选中 \(preset.count) 色", systemImage: "checkmark.square.fill")
+                                    }
                                 }
                             }
-                        }
 
-                        Divider()
+                            Divider()
+                        }
 
                         Button {
                             showingImportStock = true
