@@ -36,6 +36,9 @@ class InventoryManager: ObservableObject {
     // 防止 saveData() 重入（如 .inactive → .background 快速连续触发）
     private var isSaving = false
 
+    // 全量清空授权（防止异常空数据被误同步到 iCloud）
+    private var fullPurgeAuthorizedUntil: Date?
+
     // 保存基线：用于 iCloud 同步冲突管理（仅写入本地改动，避免覆盖远端新数据）
     private var baselineBrandsByID: [UUID: Brand] = [:]
     private var baselineStocksByID: [UUID: BrandStock] = [:]
@@ -877,6 +880,25 @@ class InventoryManager: ObservableObject {
         isSaving = true
         defer { isSaving = false }
 
+        // 保险丝：
+        // 当本地主数据被“整体清空”且基线曾有数据时，默认阻止写回，
+        // 仅允许在明确授权窗口内执行全量清空同步。
+        let baselineHadData = !baselineBrandsByID.isEmpty
+            || !baselineStocksByID.isEmpty
+            || !baselineProjectsByID.isEmpty
+            || !baselineCustomColorsByID.isEmpty
+        let currentAllEmpty = brands.isEmpty
+            && brandStocks.isEmpty
+            && projects.isEmpty
+            && customColors.isEmpty
+        let isFullPurgeAuthorized = fullPurgeAuthorizedUntil.map { Date() <= $0 } ?? false
+
+        if currentAllEmpty && baselineHadData && !isFullPurgeAuthorized {
+            print("[InventoryManager] ⚠️ 拦截到未授权的全量清空保存，已阻止写入以防误同步到 iCloud")
+            refreshFromPersistentStore(reason: "blockedUnexpectedFullPurge")
+            return
+        }
+
         do {
             // 仅写入本地改动，避免把另一台设备新同步的数据“当作缺失”删除
 
@@ -1128,6 +1150,11 @@ class InventoryManager: ObservableObject {
             // 防止下次启动时误判为"SwiftData加载异常"而锁死
             let currentlyHasData = !brands.isEmpty || !brandStocks.isEmpty || !projects.isEmpty || !customColors.isEmpty
             UserDefaults.standard.set(currentlyHasData, forKey: hasExistingDataKey)
+
+            // 消费一次全量清空授权
+            if isFullPurgeAuthorized {
+                fullPurgeAuthorizedUntil = nil
+            }
         } catch {
             print("[InventoryManager] ⚠️ 保存数据失败: \(error)")
             // 回滚 context 中所有未提交的变更，防止残留的删除/插入操作被后续 save 意外提交
@@ -2431,11 +2458,19 @@ class InventoryManager: ObservableObject {
     }
 
     func clearAllData() {
+        // 仅 clearAllData 触发显式全量清空授权，避免异常空数据误写入
+        authorizeFullPurge()
+
         // 清除所有品牌库存数据
         brandStocks.removeAll()
         // 清除所有项目记录
         projects.removeAll()
         saveData()
+    }
+
+    /// 授权一次全量清空（默认 15 秒有效）
+    private func authorizeFullPurge(validFor seconds: TimeInterval = 15) {
+        fullPurgeAuthorizedUntil = Date().addingTimeInterval(seconds)
     }
 
     // MARK: - 初始化默认颜色数据
