@@ -9,6 +9,7 @@ import SwiftUI
 
 struct MoreView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
+    @EnvironmentObject var cloudSyncStatusManager: CloudSyncStatusManager
     @State private var showingImportFullData = false
     @State private var showingScanHelp = false
     @State private var showingBackupRestore = false
@@ -119,6 +120,51 @@ struct MoreView: View {
                             Image(systemName: "eyedropper.halffull")
                                 .foregroundColor(.pink)
                         }
+                    }
+                }
+
+                // iCloud 同步状态
+                Section("iCloud 同步") {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: cloudSyncStatusManager.statusIconName)
+                            .foregroundColor(cloudSyncStatusManager.statusColor)
+                            .font(.title3)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Text(cloudSyncStatusManager.primaryStatusText)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+
+                                if cloudSyncStatusManager.isCheckingAccount {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                }
+                            }
+
+                            Text(cloudSyncStatusManager.secondaryStatusText)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            Text("提示：iCloud 同步不是实时的，跨设备同步通常需要几秒到几分钟，请稍等一会再查看。")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+
+                            if let checkedAt = cloudSyncStatusManager.lastCheckedAt {
+                                Text("上次检查：\(checkedAt.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    if cloudSyncStatusManager.shouldAllowManualRefresh {
+                        Button {
+                            cloudSyncStatusManager.refreshAccountStatus(force: true)
+                        } label: {
+                            Label("刷新 iCloud 状态", systemImage: "arrow.clockwise")
+                        }
+                        .disabled(cloudSyncStatusManager.isCheckingAccount)
                     }
                 }
 
@@ -279,6 +325,9 @@ struct MoreView: View {
             .sheet(isPresented: $showingExportSheet) {
                 ExportDataSheet(inventoryManager: inventoryManager)
             }
+            .onAppear {
+                cloudSyncStatusManager.refreshAccountStatus()
+            }
         }
     }
 }
@@ -286,4 +335,5 @@ struct MoreView: View {
 #Preview {
     MoreView()
         .environmentObject(InventoryManager())
+        .environmentObject(CloudSyncStatusManager(mode: .iCloudEnabled))
 }

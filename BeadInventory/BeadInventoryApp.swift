@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import CloudKit
 
 @main
 struct BeadInventoryApp: App {
@@ -14,6 +15,7 @@ struct BeadInventoryApp: App {
 
     @StateObject private var inventoryManager: InventoryManager
     @StateObject private var sharedImageManager = SharedImageManager.shared
+    @StateObject private var cloudSyncStatusManager: CloudSyncStatusManager
 
     /// 深链接触发扫描的标志
     @State private var shouldOpenScan = false
@@ -37,12 +39,14 @@ struct BeadInventoryApp: App {
         )
 
         let container: ModelContainer
+        let isCloudSyncEnabled: Bool
         do {
             container = try ModelContainer(
                 for: schema,
                 migrationPlan: BeadInventoryMigrationPlan.self,
                 configurations: [cloudConfiguration]
             )
+            isCloudSyncEnabled = true
             print("[App] ✅ iCloud 同步容器初始化成功")
         } catch {
             let nsError = error as NSError
@@ -57,6 +61,7 @@ struct BeadInventoryApp: App {
                     migrationPlan: BeadInventoryMigrationPlan.self,
                     configurations: [localFallbackConfiguration]
                 )
+                isCloudSyncEnabled = false
                 print("[App] ✅ 已回退为本地存储模式，确保旧数据可用")
             } catch {
                 fatalError("无法创建 ModelContainer: \(error)")
@@ -67,6 +72,11 @@ struct BeadInventoryApp: App {
         // 创建 InventoryManager 并传入 ModelContext
         let manager = InventoryManager(modelContext: container.mainContext)
         self._inventoryManager = StateObject(wrappedValue: manager)
+        self._cloudSyncStatusManager = StateObject(
+            wrappedValue: CloudSyncStatusManager(
+                mode: isCloudSyncEnabled ? .iCloudEnabled : .localFallback
+            )
+        )
 
         // 初始化 HistoryManager
         HistoryManager.shared.setModelContext(container.mainContext)
@@ -78,6 +88,7 @@ struct BeadInventoryApp: App {
             ContentView(shouldOpenScan: $shouldOpenScan)
                 .environmentObject(inventoryManager)
                 .environmentObject(sharedImageManager)
+                .environmentObject(cloudSyncStatusManager)
                 .onOpenURL { url in
                     handleIncomingURL(url)
                 }
@@ -87,6 +98,8 @@ struct BeadInventoryApp: App {
 
                     // 检查并执行每周自动备份
                     BackupManager.shared.checkAndPerformWeeklyBackupIfNeeded(inventoryManager: inventoryManager)
+                    // 启动时检查 iCloud 状态
+                    cloudSyncStatusManager.refreshAccountStatus()
 
                     // 静默检查远程公告（配置好 URL 和密钥后取消注释即可启用）
                     // AnnouncementManager.shared.checkForAnnouncement()
@@ -109,6 +122,7 @@ struct BeadInventoryApp: App {
             case .active:
                 print("[App] 应用恢复活跃状态")
                 inventoryManager.refreshFromPersistentStore(reason: "scenePhase.active")
+                cloudSyncStatusManager.refreshAccountStatus()
             @unknown default:
                 break
             }
@@ -123,6 +137,151 @@ struct BeadInventoryApp: App {
             sharedImageManager.checkForPendingImage()
             // 触发跳转到扫描页
             shouldOpenScan = true
+        }
+    }
+}
+
+/// iCloud 同步状态管理（仅用于 UI 状态展示）
+class CloudSyncStatusManager: ObservableObject {
+    enum Mode {
+        case iCloudEnabled
+        case localFallback
+    }
+
+    @Published private(set) var mode: Mode
+    @Published private(set) var accountStatus: CKAccountStatus?
+    @Published private(set) var isCheckingAccount = false
+    @Published private(set) var lastCheckedAt: Date?
+    @Published private(set) var lastErrorMessage: String?
+
+    private let container = CKContainer(identifier: "iCloud.com.beadinventory.app")
+    private var lastRefreshRequestedAt: Date?
+
+    init(mode: Mode) {
+        self.mode = mode
+    }
+
+    var statusIconName: String {
+        switch mode {
+        case .localFallback:
+            return "internaldrive.fill"
+        case .iCloudEnabled:
+            if isCheckingAccount {
+                return "icloud"
+            }
+            switch accountStatus {
+            case .available:
+                return "checkmark.icloud.fill"
+            case .noAccount, .restricted, .temporarilyUnavailable:
+                return "exclamationmark.icloud.fill"
+            case .couldNotDetermine, .none:
+                return "icloud.slash.fill"
+            @unknown default:
+                return "icloud.slash.fill"
+            }
+        }
+    }
+
+    var statusColor: Color {
+        switch mode {
+        case .localFallback:
+            return .orange
+        case .iCloudEnabled:
+            switch accountStatus {
+            case .available:
+                return .green
+            case .noAccount, .restricted, .temporarilyUnavailable:
+                return .orange
+            case .couldNotDetermine, .none:
+                return .secondary
+            @unknown default:
+                return .secondary
+            }
+        }
+    }
+
+    var primaryStatusText: String {
+        switch mode {
+        case .localFallback:
+            return "当前为本地存储模式"
+        case .iCloudEnabled:
+            if isCheckingAccount && accountStatus == nil {
+                return "正在检查 iCloud 状态..."
+            }
+            switch accountStatus {
+            case .available:
+                return "iCloud 同步已启用"
+            case .noAccount:
+                return "未登录 iCloud 账号"
+            case .restricted:
+                return "iCloud 权限受限"
+            case .temporarilyUnavailable:
+                return "iCloud 暂时不可用"
+            case .couldNotDetermine, .none:
+                return "iCloud 状态暂时未知"
+            @unknown default:
+                return "iCloud 状态暂时未知"
+            }
+        }
+    }
+
+    var secondaryStatusText: String {
+        switch mode {
+        case .localFallback:
+            return "应用已自动回退到本地存储，现有数据可继续正常使用。"
+        case .iCloudEnabled:
+            if let lastErrorMessage {
+                return "状态检查失败：\(lastErrorMessage)"
+            }
+            switch accountStatus {
+            case .available:
+                return "已连接 iCloud，可在多设备间同步数据。"
+            case .noAccount:
+                return "当前设备未登录 iCloud，无法进行云同步。"
+            case .restricted:
+                return "当前设备或账号限制了 iCloud 使用。"
+            case .temporarilyUnavailable:
+                return "iCloud 服务暂时不可用，请稍后再试。"
+            case .couldNotDetermine, .none:
+                return "暂时无法确认账号状态，请稍后点击刷新。"
+            @unknown default:
+                return "暂时无法确认账号状态，请稍后点击刷新。"
+            }
+        }
+    }
+
+    var shouldAllowManualRefresh: Bool {
+        mode == .iCloudEnabled
+    }
+
+    func refreshAccountStatus(force: Bool = false) {
+        guard mode == .iCloudEnabled else { return }
+        guard !isCheckingAccount else { return }
+
+        if !force,
+           let lastRefreshRequestedAt,
+           Date().timeIntervalSince(lastRefreshRequestedAt) < 5 {
+            return
+        }
+
+        isCheckingAccount = true
+        lastErrorMessage = nil
+        lastRefreshRequestedAt = Date()
+
+        container.accountStatus { [weak self] status, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isCheckingAccount = false
+                self.lastCheckedAt = Date()
+
+                if let error {
+                    self.accountStatus = .couldNotDetermine
+                    self.lastErrorMessage = error.localizedDescription
+                    return
+                }
+
+                self.accountStatus = status
+            }
         }
     }
 }

@@ -150,4 +150,5 @@ struct ContentView: View {
     ContentView()
         .environmentObject(InventoryManager())
         .environmentObject(SharedImageManager.shared)
+        .environmentObject(CloudSyncStatusManager(mode: .iCloudEnabled))
 }
