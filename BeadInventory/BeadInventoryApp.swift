@@ -24,28 +24,53 @@ struct BeadInventoryApp: App {
     init() {
         // 设置 SwiftData ModelContainer（使用版本化 Schema 支持数据迁移）
         let schema = Schema(versionedSchema: CurrentSchema.self)
-        let modelConfiguration = ModelConfiguration(
+        let cloudConfiguration = ModelConfiguration(
             schema: schema,
-            isStoredInMemoryOnly: false
+            isStoredInMemoryOnly: false,
+            cloudKitDatabase: .automatic
         )
 
+        let localFallbackConfiguration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: false,
+            cloudKitDatabase: .none
+        )
+
+        let container: ModelContainer
         do {
-            let container = try ModelContainer(
+            container = try ModelContainer(
                 for: schema,
                 migrationPlan: BeadInventoryMigrationPlan.self,
-                configurations: [modelConfiguration]
+                configurations: [cloudConfiguration]
             )
-            self.modelContainer = container
-            // 创建 InventoryManager 并传入 ModelContext
-            let manager = InventoryManager(modelContext: container.mainContext)
-            self._inventoryManager = StateObject(wrappedValue: manager)
-
-            // 初始化 HistoryManager
-            HistoryManager.shared.setModelContext(container.mainContext)
-            HistoryManager.shared.inventoryManager = manager
+            print("[App] ✅ iCloud 同步容器初始化成功")
         } catch {
-            fatalError("无法创建 ModelContainer: \(error)")
+            let nsError = error as NSError
+            print("[App] ⚠️ iCloud 同步容器初始化失败，回退本地存储: \(error)")
+            print("[App]   - domain: \(nsError.domain), code: \(nsError.code)")
+            if !nsError.userInfo.isEmpty {
+                print("[App]   - userInfo: \(nsError.userInfo)")
+            }
+            do {
+                container = try ModelContainer(
+                    for: schema,
+                    migrationPlan: BeadInventoryMigrationPlan.self,
+                    configurations: [localFallbackConfiguration]
+                )
+                print("[App] ✅ 已回退为本地存储模式，确保旧数据可用")
+            } catch {
+                fatalError("无法创建 ModelContainer: \(error)")
+            }
         }
+
+        self.modelContainer = container
+        // 创建 InventoryManager 并传入 ModelContext
+        let manager = InventoryManager(modelContext: container.mainContext)
+        self._inventoryManager = StateObject(wrappedValue: manager)
+
+        // 初始化 HistoryManager
+        HistoryManager.shared.setModelContext(container.mainContext)
+        HistoryManager.shared.inventoryManager = manager
     }
 
     var body: some Scene {
@@ -83,6 +108,7 @@ struct BeadInventoryApp: App {
                 HistoryManager.shared.saveDataImmediately()
             case .active:
                 print("[App] 应用恢复活跃状态")
+                inventoryManager.refreshFromPersistentStore(reason: "scenePhase.active")
             @unknown default:
                 break
             }

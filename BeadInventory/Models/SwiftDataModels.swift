@@ -11,10 +11,10 @@ import SwiftData
 // MARK: - 品牌模型
 @Model
 final class SDBrand {
-    @Attribute(.unique) var id: UUID
-    var name: String
-    var sortOrder: Int
-    var createdAt: Date
+    var id: UUID = UUID()
+    var name: String = ""
+    var sortOrder: Int = 0
+    var createdAt: Date = Date()
     var lowStockThreshold: Int?  // 低库存阈值，可选以兼容旧数据，默认为100
     var colorSystemRaw: String?  // 色号体系，可选以兼容旧数据，默认为 MARD
 
@@ -41,11 +41,11 @@ final class SDBrand {
 // MARK: - 品牌库存模型
 @Model
 final class SDBrandStock {
-    @Attribute(.unique) var id: UUID
-    var brandId: UUID
-    var mardCode: String
-    var stock: Int
-    var used: Int
+    var id: UUID = UUID()
+    var brandId: UUID = UUID()
+    var mardCode: String = ""
+    var stock: Int = 1000
+    var used: Int = 0
     var isHidden: Bool = false  // 是否隐藏（隐藏的色号不显示在库存列表中）
 
     var available: Int {
@@ -73,12 +73,12 @@ final class SDBrandStock {
 // MARK: - 项目记录模型
 @Model
 final class SDProjectRecord {
-    @Attribute(.unique) var id: UUID
-    var name: String
-    var date: Date
-    var totalBeads: Int
+    var id: UUID = UUID()
+    var name: String = ""
+    var date: Date = Date()
+    var totalBeads: Int = 0
     var brandId: UUID?
-    var isArchived: Bool
+    var isArchived: Bool = false
     var parentId: UUID?           // 父项目ID，nil表示顶级项目
     var isPlanned: Bool?          // 是否为计划项目（可选，nil视为false）
     var executedDate: Date?       // 执行日期
@@ -87,8 +87,8 @@ final class SDProjectRecord {
     var completedDate: Date?      // 完成日期（用于日历展示）
     var colorSystemRaw: String?   // 色号体系，可选以兼容旧数据，默认为 MARD
 
-    @Relationship(deleteRule: .cascade)
-    var beadUsages: [SDBeadUsage]
+    @Relationship(deleteRule: .cascade, inverse: \SDBeadUsage.project)
+    var beadUsages: [SDBeadUsage]?
 
     // 计算属性：安全获取 isPlanned 值
     var isPlannedValue: Bool {
@@ -118,7 +118,7 @@ final class SDProjectRecord {
     }
 
     func toStruct() -> ProjectRecord {
-        let usages = beadUsages.map { $0.toStruct() }
+        let usages = (beadUsages ?? []).map { $0.toStruct() }
         return ProjectRecord(id: id, name: name, date: date, beadUsage: usages, brandId: brandId, isArchived: isArchived, parentId: parentId, isPlanned: isPlannedValue, executedDate: executedDate, thumbnail: thumbnail, finishedImage: finishedImage, completedDate: completedDate, colorSystem: ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard)
     }
 }
@@ -126,11 +126,12 @@ final class SDProjectRecord {
 // MARK: - 单色用量模型
 @Model
 final class SDBeadUsage {
-    @Attribute(.unique) var id: UUID = UUID()
+    var id: UUID = UUID()
     var colorCode: String = ""
     var brandId: UUID?
     var quantity: Int = 0
     var isDeducted: Bool = false
+    var project: SDProjectRecord?
 
     init(id: UUID = UUID(), colorCode: String, brandId: UUID? = nil, quantity: Int, isDeducted: Bool = false) {
         self.id = id
@@ -152,12 +153,12 @@ final class SDBeadUsage {
 // MARK: - 自定义色号模型
 @Model
 final class SDCustomColor {
-    @Attribute(.unique) var id: UUID
-    var colorCode: String       // 用户定义的色号
-    var colorHex: String        // 颜色十六进制值
-    var colorName: String       // 颜色名称
-    var createdAt: Date         // 创建时间
-    var updatedAt: Date         // 更新时间
+    var id: UUID = UUID()
+    var colorCode: String = ""  // 用户定义的色号
+    var colorHex: String = ""   // 颜色十六进制值
+    var colorName: String = ""  // 颜色名称
+    var createdAt: Date = Date()// 创建时间
+    var updatedAt: Date = Date()// 更新时间
 
     init(
         id: UUID = UUID(),
@@ -201,14 +202,14 @@ final class SDCustomColor {
 // MARK: - 历史记录模型
 @Model
 final class SDHistoryRecord {
-    @Attribute(.unique) var id: UUID
-    var timestamp: Date
-    var operationType: String        // 存储 HistoryOperationType.rawValue
+    var id: UUID = UUID()
+    var timestamp: Date = Date()
+    var operationType: String = ""   // 存储 HistoryOperationType.rawValue
     @Attribute(originalName: "entityName")
-    var targetName: String           // 注意：避免使用 entityName（与 SwiftData 系统属性冲突），使用 originalName 保持数据兼容
+    var targetName: String = ""      // 注意：避免使用 entityName（与 SwiftData 系统属性冲突），使用 originalName 保持数据兼容
     var beforeSnapshot: Data?
     var afterSnapshot: Data?
-    var isReverted: Bool
+    var isReverted: Bool = false
 
     init(
         id: UUID = UUID(),

@@ -106,7 +106,7 @@ enum HistoryOperationType: String, Codable, CaseIterable {
 
 // MARK: - 历史记录模型
 
-struct HistoryRecord: Identifiable, Codable {
+struct HistoryRecord: Identifiable, Codable, Equatable {
     let id: UUID
     let timestamp: Date
     let operationType: HistoryOperationType
