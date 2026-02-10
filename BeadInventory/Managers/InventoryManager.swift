@@ -48,6 +48,21 @@ class InventoryManager: ObservableObject {
     private var baselineProjectsByID: [UUID: ProjectRecord] = [:]
     private var baselineCustomColorsByID: [UUID: CustomColor] = [:]
 
+    private struct InMemorySnapshot {
+        let beadColors: [BeadColor]
+        let projects: [ProjectRecord]
+        let customColors: [CustomColor]
+        let purchaseRecords: [PurchaseRecord]
+        let brands: [Brand]
+        let brandStocks: [BrandStock]
+        let currentBrandId: UUID?
+        let isDataLoaded: Bool
+        let brandsLoadedSuccessfully: Bool
+        let stocksLoadedSuccessfully: Bool
+        let projectsLoadedSuccessfully: Bool
+        let customColorsLoadedSuccessfully: Bool
+    }
+
     // 历史记录管理器
     private var historyManager: HistoryManager { HistoryManager.shared }
 
@@ -700,15 +715,15 @@ class InventoryManager: ObservableObject {
     }
 
     /// 应用回到前台时刷新 SwiftData，拉取 iCloud 端已合并的数据
-    func refreshFromPersistentStore(reason: String) {
+    func refreshFromPersistentStore(reason: String, preserveInMemoryOnFailure: Bool = true) {
         guard modelContext != nil else { return }
         guard !isSaving else { return }
         print("[InventoryManager] 前台刷新数据: \(reason)")
-        loadData()
+        loadData(preserveInMemoryOnFailure: preserveInMemoryOnFailure)
     }
 
     /// 远程变更到达时的防抖刷新（避免 CloudKit 短时间多次通知导致频繁全量 reload）
-    func scheduleRefreshFromPersistentStore(reason: String, debounceSeconds: TimeInterval = 1.2) {
+    func scheduleRefreshFromPersistentStore(reason: String, debounceSeconds: TimeInterval = 1.2, retryCount: Int = 0) {
         guard modelContext != nil else { return }
 
         remoteRefreshWorkItem?.cancel()
@@ -717,7 +732,16 @@ class InventoryManager: ObservableObject {
             guard let self else { return }
             guard !self.isSaving else {
                 // 保存进行中时稍后再试，避免与 saveData 并发
-                self.scheduleRefreshFromPersistentStore(reason: "\(reason)-retryAfterSaving", debounceSeconds: 1.0)
+                let maxRetryCount = 5
+                guard retryCount < maxRetryCount else {
+                    print("[InventoryManager] 远程刷新重试次数已达上限，放弃本轮刷新: \(reason)")
+                    return
+                }
+                self.scheduleRefreshFromPersistentStore(
+                    reason: reason,
+                    debounceSeconds: 1.0,
+                    retryCount: retryCount + 1
+                )
                 return
             }
             self.refreshFromPersistentStore(reason: reason)
@@ -725,6 +749,38 @@ class InventoryManager: ObservableObject {
 
         remoteRefreshWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + debounceSeconds, execute: workItem)
+    }
+
+    private func makeInMemorySnapshot() -> InMemorySnapshot {
+        InMemorySnapshot(
+            beadColors: beadColors,
+            projects: projects,
+            customColors: customColors,
+            purchaseRecords: purchaseRecords,
+            brands: brands,
+            brandStocks: brandStocks,
+            currentBrandId: currentBrandId,
+            isDataLoaded: isDataLoaded,
+            brandsLoadedSuccessfully: brandsLoadedSuccessfully,
+            stocksLoadedSuccessfully: stocksLoadedSuccessfully,
+            projectsLoadedSuccessfully: projectsLoadedSuccessfully,
+            customColorsLoadedSuccessfully: customColorsLoadedSuccessfully
+        )
+    }
+
+    private func restoreInMemorySnapshot(_ snapshot: InMemorySnapshot) {
+        beadColors = snapshot.beadColors
+        projects = snapshot.projects
+        customColors = snapshot.customColors
+        purchaseRecords = snapshot.purchaseRecords
+        brands = snapshot.brands
+        brandStocks = snapshot.brandStocks
+        currentBrandId = snapshot.currentBrandId
+        isDataLoaded = snapshot.isDataLoaded
+        brandsLoadedSuccessfully = snapshot.brandsLoadedSuccessfully
+        stocksLoadedSuccessfully = snapshot.stocksLoadedSuccessfully
+        projectsLoadedSuccessfully = snapshot.projectsLoadedSuccessfully
+        customColorsLoadedSuccessfully = snapshot.customColorsLoadedSuccessfully
     }
 
     private func makeMapByID<T: Identifiable>(_ items: [T]) -> [UUID: T] where T.ID == UUID {
@@ -740,7 +796,9 @@ class InventoryManager: ObservableObject {
 
     // MARK: - 数据持久化 (SwiftData)
 
-    func loadData() {
+    func loadData(preserveInMemoryOnFailure: Bool = false) {
+        let fallbackSnapshot = preserveInMemoryOnFailure ? makeInMemorySnapshot() : nil
+
         guard let context = modelContext else {
             loadDataFromUserDefaults()
             return
@@ -832,6 +890,10 @@ class InventoryManager: ObservableObject {
             if allEmpty && hadDataBefore {
                 print("[InventoryManager] ⚠️ 异常：数据库应有数据但加载全部为空，拒绝标记为加载成功以防覆盖")
                 // 不设置 isDataLoaded = true，saveData() 会被 guard 拦截
+                if let snapshot = fallbackSnapshot {
+                    print("[InventoryManager] 已回滚到刷新前的内存数据，保持当前可用状态")
+                    restoreInMemorySnapshot(snapshot)
+                }
                 return
             }
 
@@ -860,6 +922,10 @@ class InventoryManager: ObservableObject {
             print("[InventoryManager]   - 库存: \(stocksLoadedSuccessfully ? "✅" : "❌")")
             print("[InventoryManager]   - 项目: \(projectsLoadedSuccessfully ? "✅" : "❌")")
             print("[InventoryManager]   - 自定义色号: \(customColorsLoadedSuccessfully ? "✅" : "❌")")
+            if let snapshot = fallbackSnapshot {
+                print("[InventoryManager] 已回滚到刷新前的内存数据，避免进入不可保存状态")
+                restoreInMemorySnapshot(snapshot)
+            }
         }
     }
 
@@ -918,7 +984,10 @@ class InventoryManager: ObservableObject {
 
         if currentAllEmpty && baselineHadData && !isFullPurgeAuthorized {
             print("[InventoryManager] ⚠️ 拦截到未授权的全量清空保存，已阻止写入以防误同步到 iCloud")
-            refreshFromPersistentStore(reason: "blockedUnexpectedFullPurge")
+            refreshFromPersistentStore(
+                reason: "blockedUnexpectedFullPurge",
+                preserveInMemoryOnFailure: false
+            )
             return
         }
 
