@@ -9,6 +9,7 @@ import SwiftUI
 import UIKit
 
 /// 共享图片管理器 - 用于主 App 和 Share Extension 之间传递图片
+@MainActor
 class SharedImageManager: ObservableObject {
     static let shared = SharedImageManager()
 

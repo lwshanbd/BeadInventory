@@ -9,6 +9,7 @@ import Foundation
 import Vision
 import UIKit
 
+@MainActor
 class OCRManager: ObservableObject {
     @Published var isProcessing = false
     @Published var recognizedItems: [RecognizedBeadItem] = []

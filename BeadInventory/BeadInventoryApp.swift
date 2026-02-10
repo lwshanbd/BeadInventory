@@ -9,6 +9,7 @@ import SwiftUI
 import SwiftData
 import CloudKit
 import CoreData
+import Combine
 
 @main
 struct BeadInventoryApp: App {
@@ -105,7 +106,11 @@ struct BeadInventoryApp: App {
                     // 静默检查远程公告（配置好 URL 和密钥后取消注释即可启用）
                     // AnnouncementManager.shared.checkForAnnouncement()
                 }
-                .onReceive(NotificationCenter.default.publisher(for: .NSPersistentStoreRemoteChange)) { _ in
+                .onReceive(
+                    NotificationCenter.default
+                        .publisher(for: .NSPersistentStoreRemoteChange)
+                        .receive(on: RunLoop.main)
+                ) { _ in
                     // 仅在前台时处理远程变更，后台/非活跃阶段统一在恢复活跃时刷新
                     guard scenePhase == .active else { return }
                     inventoryManager.scheduleRefreshFromPersistentStore(reason: "remoteChangeNotification")
@@ -148,6 +153,7 @@ struct BeadInventoryApp: App {
 }
 
 /// iCloud 同步状态管理（仅用于 UI 状态展示）
+@MainActor
 class CloudSyncStatusManager: ObservableObject {
     enum Mode {
         case iCloudEnabled
@@ -261,6 +267,13 @@ class CloudSyncStatusManager: ObservableObject {
     }
 
     func refreshAccountStatus(force: Bool = false) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.refreshAccountStatus(force: force)
+            }
+            return
+        }
+
         guard mode == .iCloudEnabled else { return }
         guard !isCheckingAccount else { return }
 
