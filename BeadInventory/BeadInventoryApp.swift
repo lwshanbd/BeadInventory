@@ -132,7 +132,11 @@ struct BeadInventoryApp: App {
                 HistoryManager.shared.saveDataImmediately()
             case .active:
                 print("[App] 应用恢复活跃状态")
-                inventoryManager.refreshFromPersistentStore(reason: "scenePhase.active")
+                // 前台恢复与远程通知共用同一防抖刷新队列，避免短时间重复全量加载
+                inventoryManager.scheduleRefreshFromPersistentStore(
+                    reason: "scenePhase.active",
+                    debounceSeconds: 0.25
+                )
                 cloudSyncStatusManager.refreshAccountStatus()
             @unknown default:
                 break

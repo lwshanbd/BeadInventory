@@ -38,6 +38,9 @@ class InventoryManager: ObservableObject {
 
     // 远程变更刷新防抖
     private var remoteRefreshWorkItem: DispatchWorkItem?
+    private var remoteRefreshScheduledAt: Date?
+    private var lastPersistentRefreshAt: Date = .distantPast
+    private let minimumRefreshInterval: TimeInterval = 1.5
 
     // 全量清空授权（防止异常空数据被误同步到 iCloud）
     private var fullPurgeAuthorizedUntil: Date?
@@ -47,6 +50,8 @@ class InventoryManager: ObservableObject {
     private var baselineStocksByID: [UUID: BrandStock] = [:]
     private var baselineProjectsByID: [UUID: ProjectRecord] = [:]
     private var baselineCustomColorsByID: [UUID: CustomColor] = [:]
+    private var baselineCurrentBrandId: UUID?
+    private var baselinePurchaseRecords: [PurchaseRecord] = []
 
     private struct InMemorySnapshot {
         let beadColors: [BeadColor]
@@ -718,6 +723,7 @@ class InventoryManager: ObservableObject {
     func refreshFromPersistentStore(reason: String, preserveInMemoryOnFailure: Bool = true) {
         guard modelContext != nil else { return }
         guard !isSaving else { return }
+        lastPersistentRefreshAt = Date()
         print("[InventoryManager] 前台刷新数据: \(reason)")
         loadData(preserveInMemoryOnFailure: preserveInMemoryOnFailure)
     }
@@ -726,10 +732,27 @@ class InventoryManager: ObservableObject {
     func scheduleRefreshFromPersistentStore(reason: String, debounceSeconds: TimeInterval = 1.2, retryCount: Int = 0) {
         guard modelContext != nil else { return }
 
-        remoteRefreshWorkItem?.cancel()
+        let now = Date()
+        let remainingInterval = max(0, minimumRefreshInterval - now.timeIntervalSince(lastPersistentRefreshAt))
+        let effectiveDebounce = max(debounceSeconds, remainingInterval)
+        let fireDate = now.addingTimeInterval(effectiveDebounce)
+
+        if let existingWorkItem = remoteRefreshWorkItem,
+           !existingWorkItem.isCancelled,
+           let scheduledAt = remoteRefreshScheduledAt {
+            // 已经有更早的刷新任务时，保留更早任务，避免持续重排导致“始终不触发”。
+            if scheduledAt <= fireDate {
+                return
+            }
+            existingWorkItem.cancel()
+        } else {
+            remoteRefreshWorkItem?.cancel()
+        }
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            self.remoteRefreshWorkItem = nil
+            self.remoteRefreshScheduledAt = nil
             guard !self.isSaving else {
                 // 保存进行中时稍后再试，避免与 saveData 并发
                 let maxRetryCount = 5
@@ -748,7 +771,8 @@ class InventoryManager: ObservableObject {
         }
 
         remoteRefreshWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + debounceSeconds, execute: workItem)
+        remoteRefreshScheduledAt = fireDate
+        DispatchQueue.main.asyncAfter(deadline: .now() + effectiveDebounce, execute: workItem)
     }
 
     private func makeInMemorySnapshot() -> InMemorySnapshot {
@@ -792,6 +816,42 @@ class InventoryManager: ObservableObject {
         baselineStocksByID = makeMapByID(brandStocks)
         baselineProjectsByID = makeMapByID(projects)
         baselineCustomColorsByID = makeMapByID(customColors)
+        baselineCurrentBrandId = currentBrandId
+        baselinePurchaseRecords = purchaseRecords
+    }
+
+    private func hasModelChangesComparedToBaseline() -> Bool {
+        let localBrandsByID = makeMapByID(brands)
+        if localBrandsByID != baselineBrandsByID {
+            return true
+        }
+
+        let localStocksByID = makeMapByID(brandStocks)
+        if localStocksByID != baselineStocksByID {
+            return true
+        }
+
+        let localProjectsByID = makeMapByID(projects)
+        if localProjectsByID != baselineProjectsByID {
+            return true
+        }
+
+        let localCustomColorsByID = makeMapByID(customColors)
+        if localCustomColorsByID != baselineCustomColorsByID {
+            return true
+        }
+
+        return false
+    }
+
+    private func hasMetadataChangesComparedToBaseline() -> Bool {
+        if currentBrandId != baselineCurrentBrandId {
+            return true
+        }
+        if purchaseRecords != baselinePurchaseRecords {
+            return true
+        }
+        return false
     }
 
     // MARK: - 数据持久化 (SwiftData)
@@ -968,6 +1028,23 @@ class InventoryManager: ObservableObject {
         }
         isSaving = true
         defer { isSaving = false }
+
+        let hasModelChanges = hasModelChangesComparedToBaseline()
+        let hasMetadataChanges = hasMetadataChangesComparedToBaseline()
+
+        if !hasModelChanges && !hasMetadataChanges {
+            print("[InventoryManager] 无本地改动，跳过保存")
+            return
+        }
+
+        if !hasModelChanges && hasMetadataChanges {
+            saveCurrentBrandId()
+            savePurchaseRecords()
+            baselineCurrentBrandId = currentBrandId
+            baselinePurchaseRecords = purchaseRecords
+            print("[InventoryManager] 仅元数据变更，执行轻量保存")
+            return
+        }
 
         // 保险丝：
         // 当本地主数据被“整体清空”且基线曾有数据时，默认阻止写回，
