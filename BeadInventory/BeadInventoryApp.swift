@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import CloudKit
+import CoreData
 
 @main
 struct BeadInventoryApp: App {
@@ -103,6 +104,11 @@ struct BeadInventoryApp: App {
 
                     // 静默检查远程公告（配置好 URL 和密钥后取消注释即可启用）
                     // AnnouncementManager.shared.checkForAnnouncement()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .NSPersistentStoreRemoteChange)) { _ in
+                    // 仅在前台时处理远程变更，后台/非活跃阶段统一在恢复活跃时刷新
+                    guard scenePhase == .active else { return }
+                    inventoryManager.scheduleRefreshFromPersistentStore(reason: "remoteChangeNotification")
                 }
         }
         .modelContainer(modelContainer)

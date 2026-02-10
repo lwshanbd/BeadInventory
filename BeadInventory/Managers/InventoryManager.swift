@@ -36,6 +36,9 @@ class InventoryManager: ObservableObject {
     // 防止 saveData() 重入（如 .inactive → .background 快速连续触发）
     private var isSaving = false
 
+    // 远程变更刷新防抖
+    private var remoteRefreshWorkItem: DispatchWorkItem?
+
     // 全量清空授权（防止异常空数据被误同步到 iCloud）
     private var fullPurgeAuthorizedUntil: Date?
 
@@ -702,6 +705,26 @@ class InventoryManager: ObservableObject {
         guard !isSaving else { return }
         print("[InventoryManager] 前台刷新数据: \(reason)")
         loadData()
+    }
+
+    /// 远程变更到达时的防抖刷新（避免 CloudKit 短时间多次通知导致频繁全量 reload）
+    func scheduleRefreshFromPersistentStore(reason: String, debounceSeconds: TimeInterval = 1.2) {
+        guard modelContext != nil else { return }
+
+        remoteRefreshWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard !self.isSaving else {
+                // 保存进行中时稍后再试，避免与 saveData 并发
+                self.scheduleRefreshFromPersistentStore(reason: "\(reason)-retryAfterSaving", debounceSeconds: 1.0)
+                return
+            }
+            self.refreshFromPersistentStore(reason: reason)
+        }
+
+        remoteRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + debounceSeconds, execute: workItem)
     }
 
     private func makeMapByID<T: Identifiable>(_ items: [T]) -> [UUID: T] where T.ID == UUID {
