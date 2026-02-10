@@ -18,75 +18,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                // AI 识别设置
-                Section {
-                    Picker("AI 提供商", selection: $aiService.config.provider) {
-                        ForEach(AIProvider.allCases, id: \.self) { provider in
-                            Text(provider.rawValue).tag(provider)
-                        }
-                    }
-
-                    SecureField("API Key", text: $aiService.config.apiKey)
-                        .textContentType(.password)
-                        .autocapitalization(.none)
-
-                    TextField("API 地址（可选）", text: $aiService.config.baseURL)
-                        .autocapitalization(.none)
-                        .keyboardType(.URL)
-
-                    if aiService.config.provider == .kimi {
-                        Picker("模型", selection: $aiService.config.model) {
-                            ForEach(AIConfig.kimiModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                    } else if aiService.config.provider == .openai {
-                        Picker("模型", selection: $aiService.config.model) {
-                            ForEach(AIConfig.openAIModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                    } else if aiService.config.provider == .anthropic {
-                        Picker("模型", selection: $aiService.config.model) {
-                            ForEach(AIConfig.anthropicModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                    } else if aiService.config.provider == .qwen {
-                        Picker("模型", selection: $aiService.config.model) {
-                            ForEach(AIConfig.qwenModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                    } else if aiService.config.provider == .gemini {
-                        Picker("模型", selection: $aiService.config.model) {
-                            ForEach(AIConfig.geminiModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                    }
-
-                    // 配置状态提示
-                    HStack {
-                        Image(systemName: aiService.isConfigured ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                            .foregroundColor(aiService.isConfigured ? .green : .orange)
-                        Text(aiService.isConfigured ? "已配置" : "请填写 API Key")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                } header: {
-                    Text("AI 图像识别")
-                } footer: {
-                    if aiService.config.provider == .kimi {
-                        Text("Kimi API Key 可从 platform.moonshot.cn 获取")
-                    } else if aiService.config.provider == .openai {
-                        Text("OpenAI API Key 可从 platform.openai.com 获取。如需代理可填写自定义 API 地址。")
-                    } else if aiService.config.provider == .anthropic {
-                        Text("Anthropic API Key 可从 console.anthropic.com 获取。")
-                    } else if aiService.config.provider == .qwen {
-                        Text("Qwen API Key 可从阿里云百炼平台 bailian.console.aliyun.com 获取。")
-                    }
-                }
+                // [Challenge] AI 识别设置已隐藏（离线模式）
 
                 // 扫描默认设置
                 Section {

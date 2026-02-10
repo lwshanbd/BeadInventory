@@ -114,24 +114,7 @@ struct ScanView: View {
                             )
                         }
 
-                        // AI 配置状态提示
-                        if !aiService.isConfigured {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
-                                Text("请先在设置中配置 AI API")
-                                    .font(.caption)
-                                Spacer()
-                                NavigationLink("去设置") {
-                                    AISettingsView(aiService: aiService)
-                                }
-                                .font(.caption)
-                            }
-                            .padding()
-                            .background(Color.orange.opacity(0.1))
-                            .cornerRadius(8)
-                            .padding(.horizontal)
-                        }
+                        // [Challenge] 离线模式 - AI 识别已禁用
 
                         // 色号体系选择（独立于品牌，影响 AI 提示词和计划绑定）
                         HStack {
@@ -146,55 +129,7 @@ struct ScanView: View {
                         }
                         .padding(.horizontal)
 
-                        // 识别按钮
-                        if selectedImage != nil {
-                            HStack(spacing: 12) {
-                                // 表格识别按钮
-                                Button {
-                                    recognizeImage(mode: .table)
-                                } label: {
-                                    HStack {
-                                        if isRecognizing {
-                                            ProgressView()
-                                                .tint(.white)
-                                        } else {
-                                            Image(systemName: "tablecells")
-                                        }
-                                        Text(isRecognizing ? "识别中..." : "表格识别")
-                                    }
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(aiService.isConfigured ? Color.accentColor : Color.gray)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(12)
-                                }
-                                .disabled(isRecognizing || !aiService.isConfigured)
-
-                                // 色号统计识别按钮
-                                Button {
-                                    recognizeImage(mode: .blueprint)
-                                } label: {
-                                    HStack {
-                                        if isRecognizing {
-                                            ProgressView()
-                                                .tint(.white)
-                                        } else {
-                                            Image(systemName: "doc.richtext")
-                                        }
-                                        Text(isRecognizing ? "识别中..." : "色号统计识别")
-                                    }
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(aiService.isConfigured ? Color.orange : Color.gray)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(12)
-                                }
-                                .disabled(isRecognizing || !aiService.isConfigured)
-                            }
-                            .padding(.horizontal)
-                        }
+                        // [Challenge] AI 识别按钮已移除，使用手动添加
 
                         // 错误提示
                         if let error = errorMessage {

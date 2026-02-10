@@ -11,7 +11,7 @@ struct MoreView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @EnvironmentObject var cloudSyncStatusManager: CloudSyncStatusManager
     @State private var showingImportFullData = false
-    @State private var showingScanHelp = false
+    // [Challenge] showingScanHelp removed - AI help disabled
     @State private var showingBackupRestore = false
     @State private var showingExportSheet = false
 
@@ -123,50 +123,7 @@ struct MoreView: View {
                     }
                 }
 
-                // iCloud 同步状态
-                Section("iCloud 同步") {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: cloudSyncStatusManager.statusIconName)
-                            .foregroundColor(cloudSyncStatusManager.statusColor)
-                            .font(.title3)
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 8) {
-                                Text(cloudSyncStatusManager.primaryStatusText)
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-
-                                if cloudSyncStatusManager.isCheckingAccount {
-                                    ProgressView()
-                                        .scaleEffect(0.8)
-                                }
-                            }
-
-                            Text(cloudSyncStatusManager.secondaryStatusText)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-
-                            Text("提示：iCloud 同步不是实时的，跨设备同步通常需要几秒到几分钟，请稍等一会再查看。")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-
-                            if let checkedAt = cloudSyncStatusManager.lastCheckedAt {
-                                Text("上次检查：\(checkedAt.formatted(date: .abbreviated, time: .shortened))")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-
-                    if cloudSyncStatusManager.shouldAllowManualRefresh {
-                        Button {
-                            cloudSyncStatusManager.refreshAccountStatus(force: true)
-                        } label: {
-                            Label("刷新 iCloud 状态", systemImage: "arrow.clockwise")
-                        }
-                        .disabled(cloudSyncStatusManager.isCheckingAccount)
-                    }
-                }
+                // [Challenge] iCloud 同步状态已隐藏
 
                 // 数据管理
                 Section {
@@ -247,7 +204,7 @@ struct MoreView: View {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("设置")
-                                Text("AI识别、库存等配置")
+                                Text("库存等配置")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -260,22 +217,7 @@ struct MoreView: View {
 
                 // 帮助与关于
                 Section {
-                    Button {
-                        showingScanHelp = true
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("AI扫描帮助")
-                                Text("查看扫描识别使用说明")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "questionmark.circle.fill")
-                                .foregroundColor(.orange)
-                        }
-                    }
-                    .foregroundColor(.primary)
+                    // [Challenge] AI扫描帮助已移除
 
                     NavigationLink {
                         HelpView()
@@ -314,20 +256,14 @@ struct MoreView: View {
             .sheet(isPresented: $showingImportFullData) {
                 ImportFullDataView()
             }
-            .sheet(isPresented: $showingScanHelp) {
-                ScanHelpSheet(onDismiss: {
-                    showingScanHelp = false
-                })
-            }
+            // [Challenge] AI scan help sheet removed
             .sheet(isPresented: $showingBackupRestore) {
                 BackupRestoreView()
             }
             .sheet(isPresented: $showingExportSheet) {
                 ExportDataSheet(inventoryManager: inventoryManager)
             }
-            .onAppear {
-                cloudSyncStatusManager.refreshAccountStatus()
-            }
+            // [Challenge] iCloud refresh disabled
         }
     }
 }
