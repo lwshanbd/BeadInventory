@@ -2630,6 +2630,7 @@ struct ReplenishSuggestionSheet: View {
     @State private var showExportSuccess = false
     @State private var freeShippingThreshold: Int = 50  // 包邮额度（以10g为单位）
     @State private var replenishQuantities: [String: Int] = [:]  // 每个色号的补豆数量（以10g为单位）
+    @State private var selectedColorSystemFilter: ColorSystem = .mard  // 色系筛选
 
     // 获取选中的项目列表
     var selectedProjects: [ProjectRecord] {
@@ -2638,13 +2639,16 @@ struct ReplenishSuggestionSheet: View {
         }
     }
 
-    // 收集选中项目涉及的色系，仅显示匹配品牌
-    var involvedColorSystems: Set<ColorSystem> {
-        Set(selectedProjects.map { $0.colorSystem })
+    // 用户拥有的所有色系（根据已创建的品牌）
+    var availableColorSystems: [ColorSystem] {
+        let systems = Set(inventoryManager.brands.map { $0.colorSystem })
+        // 按固定顺序返回
+        return ColorSystem.allCases.filter { systems.contains($0) }
     }
 
+    // 根据选中的色系筛选品牌
     var matchingBrands: [Brand] {
-        inventoryManager.brands.filter { involvedColorSystems.contains($0.colorSystem) }
+        inventoryManager.brands.filter { $0.colorSystem == selectedColorSystemFilter }
     }
 
     // 汇总所有选中项目的颜色用量
@@ -2711,6 +2715,11 @@ struct ReplenishSuggestionSheet: View {
         var processedCodes: Set<String> = []
 
         for (colorCode, usage) in aggregatedUsage {
+            // 跳过在当前品牌色系中没有对应编码的颜色
+            if let color = inventoryManager.findColor(byCode: colorCode), !color.hasCode(for: brand.colorSystem) {
+                continue
+            }
+
             let currentStock = inventoryManager.getStock(brandId: brand.id, mardCode: colorCode)?.available ?? 0
             let inTransit = inTransitQuantity(for: colorCode, brandId: brand.id)
             let effectiveStock = currentStock + inTransit
@@ -2855,12 +2864,36 @@ struct ReplenishSuggestionSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    // 品牌选择
-                    VStack(alignment: .leading, spacing: 8) {
+                    // 色系 & 品牌选择
+                    VStack(alignment: .leading, spacing: 12) {
+                        // 色系切换器
+                        if availableColorSystems.count > 1 {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("色号体系")
+                                    .font(.headline)
+                                Picker("色号体系", selection: $selectedColorSystemFilter) {
+                                    ForEach(availableColorSystems, id: \.self) { system in
+                                        Text(system.displayName).tag(system)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                .onChange(of: selectedColorSystemFilter) { _ in
+                                    // 切换色系时，自动选中该色系的第一个品牌
+                                    if let firstBrand = matchingBrands.first {
+                                        selectedBrandId = firstBrand.id
+                                    } else {
+                                        selectedBrandId = nil
+                                    }
+                                    initializeDefaultQuantities()
+                                }
+                            }
+                        }
+
+                        // 品牌选择
                         Text("选择品牌")
                             .font(.headline)
                         if matchingBrands.isEmpty {
-                            Text("暂无匹配色系的品牌，请先创建品牌")
+                            Text("暂无该色系的品牌，请先创建品牌")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         } else {
@@ -3072,6 +3105,14 @@ struct ReplenishSuggestionSheet: View {
         }
         .presentationDetents([.large])
         .onAppear {
+            // 默认色系：优先使用选中项目的色系，其次使用当前品牌的色系
+            let projectSystems = Set(selectedProjects.map { $0.colorSystem })
+            if let currentSystem = inventoryManager.currentBrand?.colorSystem, projectSystems.contains(currentSystem) {
+                selectedColorSystemFilter = currentSystem
+            } else if let firstSystem = projectSystems.first {
+                selectedColorSystemFilter = firstSystem
+            }
+            // 自动选中第一个匹配品牌
             if selectedBrandId == nil, let firstBrand = matchingBrands.first {
                 selectedBrandId = firstBrand.id
             }

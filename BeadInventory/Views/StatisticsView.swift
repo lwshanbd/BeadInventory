@@ -1119,7 +1119,9 @@ struct ProjectRowWithHierarchy: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 4) {
                                 ForEach(project.beadUsage.prefix(10)) { usage in
-                                    Text(usage.colorCode)
+                                    let displayCode = inventoryManager.findColor(byCode: usage.colorCode)?
+                                        .displayCode(for: project.colorSystem) ?? usage.colorCode
+                                    Text(displayCode)
                                         .font(.caption2)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)

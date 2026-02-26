@@ -158,7 +158,7 @@ struct ProjectDetailView: View {
                 // 颜色用量列表
                 LazyVStack(spacing: 8) {
                     ForEach(sortedUsage) { usage in
-                        BeadUsageRow(usage: usage)
+                        BeadUsageRow(usage: usage, colorSystem: project.colorSystem)
                     }
                 }
                 .padding(.horizontal)
@@ -481,6 +481,7 @@ struct ProjectInfoCardEnhanced: View {
 // MARK: - 颜色用量行
 struct BeadUsageRow: View {
     let usage: BeadUsage
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var beadColor: BeadColor? {
@@ -493,6 +494,11 @@ struct BeadUsageRow: View {
 
     var colorName: String {
         beadColor?.colorName ?? ""
+    }
+
+    /// 根据项目色号体系显示对应的色号
+    var displayCodeText: String {
+        beadColor?.displayCode(for: colorSystem) ?? usage.colorCode
     }
 
     var body: some View {
@@ -508,7 +514,7 @@ struct BeadUsageRow: View {
 
             // 色号和名称
             VStack(alignment: .leading, spacing: 4) {
-                Text(usage.colorCode)
+                Text(displayCodeText)
                     .font(.system(.headline, design: .monospaced))
 
                 if !colorName.isEmpty {
