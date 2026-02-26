@@ -285,3 +285,23 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Bugfix] 2026-02-26T10:55:11.873223
+
+**Summary**: Fixed ReplenishSuggestionSheet showing MARD codes when Kaka brand selected (PlannedProjectsView.swift:2673-2800,3086-3270). Added colorSystem propagation from selected brand through ReplenishSectionView, HighUsageSectionView, ReplenishColorRow. Display now uses beadColor.displayCode(for:) instead of raw mardCode. CSV output also converts to brand codes. highUsageColors now filtered to only show colors with codes in the selected brand's color system.
+
+**Risk Analysis**: Low - display-only changes in replenishment suggestion sheet; internal mardCode keys unchanged for stock lookup and shipping export; existing data and behavior preserved
+
+**Status**: ✅ Committed to Source of Truth
+
+---
+
+### [Bugfix] 2026-02-26T12:26:34.488187
+
+**Summary**: Fixed mixed MARD/Kaka color code display in statistics and project detail views. StatisticsView.swift:1122 now converts usage.colorCode via displayCode(for: project.colorSystem). ProjectDetailView.swift BeadUsageRow now accepts colorSystem param and displays brand-specific codes. Also added color system picker to ReplenishSuggestionSheet and filtered replenishData to exclude colors without codes in selected system.
+
+**Risk Analysis**: Medium - affects display in statistics, project detail, and replenishment views; internal storage unchanged; verify Kaka projects show Kaka codes consistently
+
+**Status**: ✅ Committed to Source of Truth
+
+---

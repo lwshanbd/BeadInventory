@@ -2630,6 +2630,7 @@ struct ReplenishSuggestionSheet: View {
     @State private var showExportSuccess = false
     @State private var freeShippingThreshold: Int = 50  // 包邮额度（以10g为单位）
     @State private var replenishQuantities: [String: Int] = [:]  // 每个色号的补豆数量（以10g为单位）
+    @State private var selectedColorSystemFilter: ColorSystem = .mard  // 色系筛选
 
     // 获取选中的项目列表
     var selectedProjects: [ProjectRecord] {
@@ -2638,13 +2639,16 @@ struct ReplenishSuggestionSheet: View {
         }
     }
 
-    // 收集选中项目涉及的色系，仅显示匹配品牌
-    var involvedColorSystems: Set<ColorSystem> {
-        Set(selectedProjects.map { $0.colorSystem })
+    // 用户拥有的所有色系（根据已创建的品牌）
+    var availableColorSystems: [ColorSystem] {
+        let systems = Set(inventoryManager.brands.map { $0.colorSystem })
+        // 按固定顺序返回
+        return ColorSystem.allCases.filter { systems.contains($0) }
     }
 
+    // 根据选中的色系筛选品牌
     var matchingBrands: [Brand] {
-        inventoryManager.brands.filter { involvedColorSystems.contains($0.colorSystem) }
+        inventoryManager.brands.filter { $0.colorSystem == selectedColorSystemFilter }
     }
 
     // 汇总所有选中项目的颜色用量
@@ -2670,9 +2674,19 @@ struct ReplenishSuggestionSheet: View {
         return inventoryManager.brands.first { $0.id == id }
     }
 
+    // 选中品牌的色号体系
+    var selectedColorSystem: ColorSystem {
+        selectedBrand?.colorSystem ?? .mard
+    }
+
     // 低库存阈值
     var lowStockThreshold: Int {
         selectedBrand?.lowStockThreshold ?? 100
+    }
+
+    // 将内部 mardCode 转换为当前品牌的显示色号
+    func displayCode(for mardCode: String) -> String {
+        inventoryManager.findColor(byCode: mardCode)?.displayCode(for: selectedColorSystem) ?? mardCode
     }
 
     // 获取某个色号在选中品牌的运输中数量
@@ -2701,6 +2715,11 @@ struct ReplenishSuggestionSheet: View {
         var processedCodes: Set<String> = []
 
         for (colorCode, usage) in aggregatedUsage {
+            // 跳过在当前品牌色系中没有对应编码的颜色
+            if let color = inventoryManager.findColor(byCode: colorCode), !color.hasCode(for: brand.colorSystem) {
+                continue
+            }
+
             let currentStock = inventoryManager.getStock(brandId: brand.id, mardCode: colorCode)?.available ?? 0
             let inTransit = inTransitQuantity(for: colorCode, brandId: brand.id)
             let effectiveStock = currentStock + inTransit
@@ -2744,7 +2763,7 @@ struct ReplenishSuggestionSheet: View {
         )
     }
 
-    // 基于全部历史用量 + 选中计划用量计算用量较大的色号（不过滤）
+    // 基于全部历史用量 + 选中计划用量计算用量较大的色号（过滤仅保留当前品牌色系可用的色号）
     var highUsageColors: [HighUsageColorInfo] {
         var totalUsageDict: [String: Int] = [:]
         for project in inventoryManager.projects {
@@ -2756,7 +2775,13 @@ struct ReplenishSuggestionSheet: View {
         for (colorCode, quantity) in aggregatedUsage {
             totalUsageDict[colorCode, default: 0] += quantity
         }
-        let sortedUsage = totalUsageDict.sorted { $0.value > $1.value }
+        // 过滤：仅保留在当前品牌色系中有对应编码的颜色
+        let cs = selectedColorSystem
+        let filtered = totalUsageDict.filter { (mardCode, _) in
+            guard let color = inventoryManager.findColor(byCode: mardCode) else { return true }
+            return color.hasCode(for: cs)
+        }
+        let sortedUsage = filtered.sorted { $0.value > $1.value }
         return sortedUsage.prefix(20).map { HighUsageColorInfo(colorCode: $0.key, totalUsage: $0.value) }
     }
 
@@ -2770,12 +2795,13 @@ struct ReplenishSuggestionSheet: View {
         max(0, freeShippingThreshold - totalSelectedQuantity)
     }
 
-    // 生成 CSV 文本（克数 = quantity * 10g）
+    // 生成 CSV 文本（克数 = quantity * 10g），使用品牌色号体系的显示色号
     var csvText: String {
         var lines: [String] = ["色号,克数"]
-        for (colorCode, quantity) in replenishQuantities.sorted(by: { $0.key < $1.key }) {
+        for (mardCode, quantity) in replenishQuantities.sorted(by: { $0.key < $1.key }) {
             if quantity > 0 {
-                lines.append("\(colorCode),\(quantity * 10)")
+                let code = displayCode(for: mardCode)
+                lines.append("\(code),\(quantity * 10)")
             }
         }
         return lines.joined(separator: "\n")
@@ -2838,12 +2864,36 @@ struct ReplenishSuggestionSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    // 品牌选择
-                    VStack(alignment: .leading, spacing: 8) {
+                    // 色系 & 品牌选择
+                    VStack(alignment: .leading, spacing: 12) {
+                        // 色系切换器
+                        if availableColorSystems.count > 1 {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("色号体系")
+                                    .font(.headline)
+                                Picker("色号体系", selection: $selectedColorSystemFilter) {
+                                    ForEach(availableColorSystems, id: \.self) { system in
+                                        Text(system.displayName).tag(system)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                .onChange(of: selectedColorSystemFilter) { _ in
+                                    // 切换色系时，自动选中该色系的第一个品牌
+                                    if let firstBrand = matchingBrands.first {
+                                        selectedBrandId = firstBrand.id
+                                    } else {
+                                        selectedBrandId = nil
+                                    }
+                                    initializeDefaultQuantities()
+                                }
+                            }
+                        }
+
+                        // 品牌选择
                         Text("选择品牌")
                             .font(.headline)
                         if matchingBrands.isEmpty {
-                            Text("暂无匹配色系的品牌，请先创建品牌")
+                            Text("暂无该色系的品牌，请先创建品牌")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         } else {
@@ -2942,7 +2992,8 @@ struct ReplenishSuggestionSheet: View {
                                 items: replenishData.negativeStock,
                                 processedCodes: replenishData.processedCodes,
                                 quantities: $replenishQuantities,
-                                showWarning: false
+                                showWarning: false,
+                                colorSystem: selectedColorSystem
                             )
                         }
 
@@ -2955,7 +3006,8 @@ struct ReplenishSuggestionSheet: View {
                                 items: replenishData.lowStock,
                                 processedCodes: replenishData.processedCodes,
                                 quantities: $replenishQuantities,
-                                showWarning: false
+                                showWarning: false,
+                                colorSystem: selectedColorSystem
                             )
                         }
 
@@ -2966,7 +3018,8 @@ struct ReplenishSuggestionSheet: View {
                                 subtitle: "历史用量+选中计划，排名前20",
                                 items: replenishData.highUsage,
                                 processedCodes: replenishData.processedCodes,
-                                quantities: $replenishQuantities
+                                quantities: $replenishQuantities,
+                                colorSystem: selectedColorSystem
                             )
                         }
 
@@ -3052,6 +3105,14 @@ struct ReplenishSuggestionSheet: View {
         }
         .presentationDetents([.large])
         .onAppear {
+            // 默认色系：优先使用选中项目的色系，其次使用当前品牌的色系
+            let projectSystems = Set(selectedProjects.map { $0.colorSystem })
+            if let currentSystem = inventoryManager.currentBrand?.colorSystem, projectSystems.contains(currentSystem) {
+                selectedColorSystemFilter = currentSystem
+            } else if let firstSystem = projectSystems.first {
+                selectedColorSystemFilter = firstSystem
+            }
+            // 自动选中第一个匹配品牌
             if selectedBrandId == nil, let firstBrand = matchingBrands.first {
                 selectedBrandId = firstBrand.id
             }
@@ -3091,6 +3152,7 @@ struct ReplenishSectionView: View {
     let processedCodes: Set<String>
     @Binding var quantities: [String: Int]
     let showWarning: Bool
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var isExpanded = true
 
@@ -3126,7 +3188,8 @@ struct ReplenishSectionView: View {
                             get: { quantities[item.colorCode] ?? 0 },
                             set: { quantities[item.colorCode] = $0 }
                         ),
-                        showWarning: false
+                        showWarning: false,
+                        colorSystem: colorSystem
                     )
                 }
             }
@@ -3146,6 +3209,7 @@ struct HighUsageSectionView: View {
     let items: [HighUsageColorInfo]
     let processedCodes: Set<String>
     @Binding var quantities: [String: Int]
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var isExpanded = true
 
@@ -3182,7 +3246,8 @@ struct HighUsageSectionView: View {
                             get: { quantities[item.colorCode] ?? 0 },
                             set: { quantities[item.colorCode] = $0 }
                         ),
-                        showWarning: isAlreadyListed
+                        showWarning: isAlreadyListed,
+                        colorSystem: colorSystem
                     )
                 }
             }
@@ -3197,11 +3262,12 @@ struct HighUsageSectionView: View {
 
 // MARK: - 补豆色号行
 struct ReplenishColorRow: View {
-    let colorCode: String
+    let colorCode: String  // 内部 mardCode
     let detail: String
     let color: Color
     @Binding var quantity: Int
     let showWarning: Bool
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showWarningTip = false
 
@@ -3211,6 +3277,11 @@ struct ReplenishColorRow: View {
 
     var displayColor: Color {
         beadColor?.color ?? .gray
+    }
+
+    /// 根据品牌色号体系显示对应的色号
+    var displayCodeText: String {
+        beadColor?.displayCode(for: colorSystem) ?? colorCode
     }
 
     var body: some View {
@@ -3224,7 +3295,7 @@ struct ReplenishColorRow: View {
             // 色号
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
-                    Text(colorCode)
+                    Text(displayCodeText)
                         .font(.system(.subheadline, design: .monospaced))
                         .fontWeight(.medium)
                     if showWarning {
