@@ -2670,9 +2670,19 @@ struct ReplenishSuggestionSheet: View {
         return inventoryManager.brands.first { $0.id == id }
     }
 
+    // 选中品牌的色号体系
+    var selectedColorSystem: ColorSystem {
+        selectedBrand?.colorSystem ?? .mard
+    }
+
     // 低库存阈值
     var lowStockThreshold: Int {
         selectedBrand?.lowStockThreshold ?? 100
+    }
+
+    // 将内部 mardCode 转换为当前品牌的显示色号
+    func displayCode(for mardCode: String) -> String {
+        inventoryManager.findColor(byCode: mardCode)?.displayCode(for: selectedColorSystem) ?? mardCode
     }
 
     // 获取某个色号在选中品牌的运输中数量
@@ -2744,7 +2754,7 @@ struct ReplenishSuggestionSheet: View {
         )
     }
 
-    // 基于全部历史用量 + 选中计划用量计算用量较大的色号（不过滤）
+    // 基于全部历史用量 + 选中计划用量计算用量较大的色号（过滤仅保留当前品牌色系可用的色号）
     var highUsageColors: [HighUsageColorInfo] {
         var totalUsageDict: [String: Int] = [:]
         for project in inventoryManager.projects {
@@ -2756,7 +2766,13 @@ struct ReplenishSuggestionSheet: View {
         for (colorCode, quantity) in aggregatedUsage {
             totalUsageDict[colorCode, default: 0] += quantity
         }
-        let sortedUsage = totalUsageDict.sorted { $0.value > $1.value }
+        // 过滤：仅保留在当前品牌色系中有对应编码的颜色
+        let cs = selectedColorSystem
+        let filtered = totalUsageDict.filter { (mardCode, _) in
+            guard let color = inventoryManager.findColor(byCode: mardCode) else { return true }
+            return color.hasCode(for: cs)
+        }
+        let sortedUsage = filtered.sorted { $0.value > $1.value }
         return sortedUsage.prefix(20).map { HighUsageColorInfo(colorCode: $0.key, totalUsage: $0.value) }
     }
 
@@ -2770,12 +2786,13 @@ struct ReplenishSuggestionSheet: View {
         max(0, freeShippingThreshold - totalSelectedQuantity)
     }
 
-    // 生成 CSV 文本（克数 = quantity * 10g）
+    // 生成 CSV 文本（克数 = quantity * 10g），使用品牌色号体系的显示色号
     var csvText: String {
         var lines: [String] = ["色号,克数"]
-        for (colorCode, quantity) in replenishQuantities.sorted(by: { $0.key < $1.key }) {
+        for (mardCode, quantity) in replenishQuantities.sorted(by: { $0.key < $1.key }) {
             if quantity > 0 {
-                lines.append("\(colorCode),\(quantity * 10)")
+                let code = displayCode(for: mardCode)
+                lines.append("\(code),\(quantity * 10)")
             }
         }
         return lines.joined(separator: "\n")
@@ -2942,7 +2959,8 @@ struct ReplenishSuggestionSheet: View {
                                 items: replenishData.negativeStock,
                                 processedCodes: replenishData.processedCodes,
                                 quantities: $replenishQuantities,
-                                showWarning: false
+                                showWarning: false,
+                                colorSystem: selectedColorSystem
                             )
                         }
 
@@ -2955,7 +2973,8 @@ struct ReplenishSuggestionSheet: View {
                                 items: replenishData.lowStock,
                                 processedCodes: replenishData.processedCodes,
                                 quantities: $replenishQuantities,
-                                showWarning: false
+                                showWarning: false,
+                                colorSystem: selectedColorSystem
                             )
                         }
 
@@ -2966,7 +2985,8 @@ struct ReplenishSuggestionSheet: View {
                                 subtitle: "历史用量+选中计划，排名前20",
                                 items: replenishData.highUsage,
                                 processedCodes: replenishData.processedCodes,
-                                quantities: $replenishQuantities
+                                quantities: $replenishQuantities,
+                                colorSystem: selectedColorSystem
                             )
                         }
 
@@ -3091,6 +3111,7 @@ struct ReplenishSectionView: View {
     let processedCodes: Set<String>
     @Binding var quantities: [String: Int]
     let showWarning: Bool
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var isExpanded = true
 
@@ -3126,7 +3147,8 @@ struct ReplenishSectionView: View {
                             get: { quantities[item.colorCode] ?? 0 },
                             set: { quantities[item.colorCode] = $0 }
                         ),
-                        showWarning: false
+                        showWarning: false,
+                        colorSystem: colorSystem
                     )
                 }
             }
@@ -3146,6 +3168,7 @@ struct HighUsageSectionView: View {
     let items: [HighUsageColorInfo]
     let processedCodes: Set<String>
     @Binding var quantities: [String: Int]
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var isExpanded = true
 
@@ -3182,7 +3205,8 @@ struct HighUsageSectionView: View {
                             get: { quantities[item.colorCode] ?? 0 },
                             set: { quantities[item.colorCode] = $0 }
                         ),
-                        showWarning: isAlreadyListed
+                        showWarning: isAlreadyListed,
+                        colorSystem: colorSystem
                     )
                 }
             }
@@ -3197,11 +3221,12 @@ struct HighUsageSectionView: View {
 
 // MARK: - 补豆色号行
 struct ReplenishColorRow: View {
-    let colorCode: String
+    let colorCode: String  // 内部 mardCode
     let detail: String
     let color: Color
     @Binding var quantity: Int
     let showWarning: Bool
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showWarningTip = false
 
@@ -3211,6 +3236,11 @@ struct ReplenishColorRow: View {
 
     var displayColor: Color {
         beadColor?.color ?? .gray
+    }
+
+    /// 根据品牌色号体系显示对应的色号
+    var displayCodeText: String {
+        beadColor?.displayCode(for: colorSystem) ?? colorCode
     }
 
     var body: some View {
@@ -3224,7 +3254,7 @@ struct ReplenishColorRow: View {
             // 色号
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
-                    Text(colorCode)
+                    Text(displayCodeText)
                         .font(.system(.subheadline, design: .monospaced))
                         .fontWeight(.medium)
                     if showWarning {
