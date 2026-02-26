@@ -1480,7 +1480,7 @@ struct StockCheckSheet: View {
                         .padding(.vertical, 40)
                     } else {
                         // 全部品牌汇总检查
-                        AllBrandsStockCheckCard(requiredUsage: requiredUsage, brands: matchingBrands)
+                        AllBrandsStockCheckCard(requiredUsage: requiredUsage, brands: matchingBrands, colorSystem: project.colorSystem)
 
                         // 分隔线
                         HStack {
@@ -1523,6 +1523,7 @@ struct StockCheckSheet: View {
 struct AllBrandsStockCheckCard: View {
     let requiredUsage: [BeadUsage]
     let brands: [Brand]
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var isExpanded = false
 
@@ -1629,7 +1630,8 @@ struct AllBrandsStockCheckCard: View {
                             colorCode: item.colorCode,
                             required: item.required,
                             totalAvailable: item.totalAvailable,
-                            shortage: item.shortage
+                            shortage: item.shortage,
+                            colorSystem: colorSystem
                         )
                     }
                 }
@@ -1648,10 +1650,11 @@ struct AllBrandsStockCheckCard: View {
 
 // MARK: - 全部品牌汇总不足颜色行
 struct AllBrandsInsufficientColorRow: View {
-    let colorCode: String
+    let colorCode: String  // 内部 mardCode
     let required: Int
     let totalAvailable: Int
     let shortage: Int
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var beadColor: BeadColor? {
@@ -1674,7 +1677,7 @@ struct AllBrandsInsufficientColorRow: View {
                 )
 
             // 色号
-            Text(colorCode)
+            Text(beadColor?.displayCode(for: colorSystem) ?? colorCode)
                 .font(.system(.subheadline, design: .monospaced))
                 .fontWeight(.medium)
 
@@ -1888,7 +1891,8 @@ struct BrandStockCheckCard: View {
                             colorCode: item.colorCode,
                             required: item.required,
                             available: item.available,
-                            shortage: item.shortage
+                            shortage: item.shortage,
+                            colorSystem: brand.colorSystem
                         )
                     }
 
@@ -1899,7 +1903,8 @@ struct BrandStockCheckCard: View {
                             required: item.required,
                             available: item.available,
                             afterDeduct: item.afterDeduct,
-                            threshold: lowStockThreshold
+                            threshold: lowStockThreshold,
+                            colorSystem: brand.colorSystem
                         )
                     }
                 }
@@ -1918,10 +1923,11 @@ struct BrandStockCheckCard: View {
 
 // MARK: - 库存不足颜色行（红色）
 struct InsufficientColorRow: View {
-    let colorCode: String
+    let colorCode: String  // 内部 mardCode
     let required: Int
     let available: Int
     let shortage: Int
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var beadColor: BeadColor? {
@@ -1944,7 +1950,7 @@ struct InsufficientColorRow: View {
                 )
 
             // 色号
-            Text(colorCode)
+            Text(beadColor?.displayCode(for: colorSystem) ?? colorCode)
                 .font(.system(.subheadline, design: .monospaced))
                 .fontWeight(.medium)
 
@@ -1987,11 +1993,12 @@ struct InsufficientColorRow: View {
 
 // MARK: - 低库存预警颜色行（黄色）
 struct LowStockColorRow: View {
-    let colorCode: String
+    let colorCode: String  // 内部 mardCode
     let required: Int
     let available: Int
     let afterDeduct: Int
     let threshold: Int
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var beadColor: BeadColor? {
@@ -2014,7 +2021,7 @@ struct LowStockColorRow: View {
                 )
 
             // 色号
-            Text(colorCode)
+            Text(beadColor?.displayCode(for: colorSystem) ?? colorCode)
                 .font(.system(.subheadline, design: .monospaced))
                 .fontWeight(.medium)
 
@@ -2581,7 +2588,8 @@ struct MultiProjectStockCheckSheet: View {
                         .padding(.vertical, 40)
                     } else {
                         // 全部品牌汇总检查
-                        AllBrandsStockCheckCard(requiredUsage: aggregatedUsage, brands: matchingBrands)
+                        let primaryColorSystem = selectedProjects.first?.colorSystem ?? .mard
+                        AllBrandsStockCheckCard(requiredUsage: aggregatedUsage, brands: matchingBrands, colorSystem: primaryColorSystem)
 
                         // 分隔线
                         HStack {

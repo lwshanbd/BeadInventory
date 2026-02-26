@@ -305,3 +305,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Bugfix] 2026-02-26T12:51:28.326091
+
+**Summary**: Fixed stock check confirmation views (AllBrandsInsufficientColorRow, InsufficientColorRow, LowStockColorRow, AllBrandsStockCheckCard, BrandStockCheckCard, StockCheckSheet, MultiProjectStockCheckSheet) in PlannedProjectsView.swift to pass colorSystem parameter and display brand-specific color codes instead of raw MARD codes
+
+**Risk Analysis**: Low - isolated display-only changes matching the same pattern already applied to replenishment and statistics views
+
+**Status**: ✅ Committed to Source of Truth
+
+---
