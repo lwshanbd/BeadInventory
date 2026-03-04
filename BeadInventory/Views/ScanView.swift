@@ -72,7 +72,7 @@ struct ScanView: View {
         var result: [(colorCode: String, currentStock: Int, deductAmount: Int)] = []
         for item in recognizedItems {
             let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode)
-            let currentStock = stock?.stock ?? 0
+            let currentStock = stock?.available ?? 0
             if currentStock < item.quantity {
                 // 显示当前扫描色号体系的色号（而非内部 mardCode）
                 let displayCode = inventoryManager.findColor(byCode: item.colorCode)?.displayCode(for: scanColorSystem) ?? item.colorCode
