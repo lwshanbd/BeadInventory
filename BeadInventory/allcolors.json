@@ -3798,6 +3798,24 @@
     "kakaCode": "B284"
   },
   {
+    "colorHex": "C89A96",
+    "mardCode": "KK-B173plus",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B173plus"
+  },
+  {
+    "colorHex": "9585B0",
+    "mardCode": "KK-B285",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "B285"
+  },
+  {
     "colorHex": "C08B60",
     "mardCode": "KK-P1",
     "cocoCode": "",
@@ -5371,5 +5389,14 @@
     "panpanCode": "",
     "mixiaowoCode": "",
     "kakaCode": "R125"
+  },
+  {
+    "colorHex": "8B2828",
+    "mardCode": "KK-R126",
+    "cocoCode": "",
+    "manmanCode": "",
+    "panpanCode": "",
+    "mixiaowoCode": "",
+    "kakaCode": "R126"
   }
 ]
