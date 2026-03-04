@@ -70,6 +70,7 @@ struct PlannedProjectsView: View {
                                             .background(Color.blue)
                                             .cornerRadius(10)
                                         }
+                                        .buttonStyle(.borderless)
 
                                         // 补豆建议按钮
                                         Button {
@@ -86,6 +87,7 @@ struct PlannedProjectsView: View {
                                             .background(Color.orange)
                                             .cornerRadius(10)
                                         }
+                                        .buttonStyle(.borderless)
 
                                         // 合并按钮（需要选中 2 个及以上）
                                         Button {
@@ -102,6 +104,7 @@ struct PlannedProjectsView: View {
                                             .background(selectedProjects.count >= 2 ? Color.accentColor : Color.gray)
                                             .cornerRadius(10)
                                         }
+                                        .buttonStyle(.borderless)
                                         .disabled(selectedProjects.count < 2)
                                     }
                                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
