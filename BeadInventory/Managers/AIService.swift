@@ -25,6 +25,7 @@ struct AIConfig: Codable {
     var apiKey: String
     var baseURL: String  // 自定义API地址，空则使用默认
     var model: String
+    var enableCustomURL: Bool  // 是否启用自定义API地址
 
     static let defaultKimiURL = "https://api.moonshot.cn/v1"
     static let defaultOpenAIURL = "https://api.openai.com/v1"
@@ -53,30 +54,53 @@ struct AIConfig: Codable {
         }
     }
 
-    init(provider: AIProvider = .kimi, apiKey: String = "", baseURL: String = "", model: String = "") {
+    init(provider: AIProvider = .kimi, apiKey: String = "", baseURL: String = "", model: String = "", enableCustomURL: Bool = false) {
         self.provider = provider
         self.apiKey = apiKey
         self.baseURL = baseURL
         self.model = model.isEmpty ? AIConfig.defaultModel(for: provider) : model
+        self.enableCustomURL = enableCustomURL
+    }
+
+    // 兼容旧版配置（没有 enableCustomURL 字段）
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try container.decode(AIProvider.self, forKey: .provider)
+        apiKey = try container.decode(String.self, forKey: .apiKey)
+        baseURL = try container.decode(String.self, forKey: .baseURL)
+        model = try container.decode(String.self, forKey: .model)
+        enableCustomURL = try container.decodeIfPresent(Bool.self, forKey: .enableCustomURL) ?? false
     }
 
     var effectiveBaseURL: String {
+        let customURL = enableCustomURL ? baseURL : ""
         switch provider {
         case .kimi:
-            return baseURL.isEmpty ? AIConfig.defaultKimiURL : baseURL
+            return customURL.isEmpty ? AIConfig.defaultKimiURL : customURL
         case .openai:
-            return baseURL.isEmpty ? AIConfig.defaultOpenAIURL : baseURL
+            return customURL.isEmpty ? AIConfig.defaultOpenAIURL : customURL
         case .anthropic:
-            return baseURL.isEmpty ? AIConfig.defaultAnthropicURL : baseURL
+            return customURL.isEmpty ? AIConfig.defaultAnthropicURL : customURL
         case .qwen:
-            return baseURL.isEmpty ? AIConfig.defaultQwenURL : baseURL
+            return customURL.isEmpty ? AIConfig.defaultQwenURL : customURL
         case .gemini:
-            return baseURL.isEmpty ? AIConfig.defaultGeminiURL : baseURL
+            return customURL.isEmpty ? AIConfig.defaultGeminiURL : customURL
         }
     }
 
     var effectiveAPIKey: String {
         return apiKey
+    }
+
+    /// 检查当前 provider 的 API Key 格式是否可疑（不以 sk- 开头）
+    var hasKeyFormatWarning: Bool {
+        guard !apiKey.isEmpty else { return false }
+        switch provider {
+        case .kimi, .openai, .qwen:
+            return !apiKey.hasPrefix("sk-")
+        case .anthropic, .gemini:
+            return false
+        }
     }
 
     var effectiveModel: String {

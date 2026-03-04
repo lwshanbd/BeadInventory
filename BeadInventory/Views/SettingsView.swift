@@ -30,9 +30,25 @@ struct SettingsView: View {
                         .textContentType(.password)
                         .autocapitalization(.none)
 
-                    TextField("API 地址（可选）", text: $aiService.config.baseURL)
-                        .autocapitalization(.none)
-                        .keyboardType(.URL)
+                    // API Key 格式警告
+                    if aiService.config.hasKeyFormatWarning {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                            Text("\(aiService.config.provider.rawValue) 的 API Key 通常以 \"sk-\" 开头，你当前填写的 Key 格式可能不正确，请确认。")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                    }
+
+                    Toggle("自定义 API 地址", isOn: $aiService.config.enableCustomURL)
+
+                    if aiService.config.enableCustomURL {
+                        TextField("API 地址", text: $aiService.config.baseURL)
+                            .autocapitalization(.none)
+                            .keyboardType(.URL)
+                    }
 
                     if aiService.config.provider == .kimi {
                         Picker("模型", selection: $aiService.config.model) {
