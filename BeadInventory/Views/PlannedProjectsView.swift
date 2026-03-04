@@ -9,14 +9,27 @@ import SwiftUI
 import PhotosUI
 
 struct PlannedProjectsView: View {
+    enum ActiveSheet: Identifiable {
+        case merge
+        case multiStockCheck
+        case replenishSuggestion
+        case execute(ProjectRecord)
+
+        var id: String {
+            switch self {
+            case .merge: return "merge"
+            case .multiStockCheck: return "multiStockCheck"
+            case .replenishSuggestion: return "replenishSuggestion"
+            case .execute(let project): return "execute-\(project.id)"
+            }
+        }
+    }
+
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var expandedProjects: Set<UUID> = []
     @State private var isSelectMode = false
     @State private var selectedProjects: Set<UUID> = []
-    @State private var showMergeSheet = false
-    @State private var showMultiStockCheckSheet = false
-    @State private var showReplenishSuggestionSheet = false
-    @State private var projectToExecute: ProjectRecord?
+    @State private var activeSheet: ActiveSheet?
     @State private var searchText = ""
 
     var plannedProjects: [ProjectRecord] {
@@ -44,7 +57,7 @@ struct PlannedProjectsView: View {
                                     HStack(spacing: 8) {
                                         // 库存确认按钮
                                         Button {
-                                            showMultiStockCheckSheet = true
+                                            activeSheet = .multiStockCheck
                                         } label: {
                                             HStack(spacing: 4) {
                                                 Image(systemName: "checklist")
@@ -60,7 +73,7 @@ struct PlannedProjectsView: View {
 
                                         // 补豆建议按钮
                                         Button {
-                                            showReplenishSuggestionSheet = true
+                                            activeSheet = .replenishSuggestion
                                         } label: {
                                             HStack(spacing: 4) {
                                                 Image(systemName: "cart.badge.plus")
@@ -76,7 +89,7 @@ struct PlannedProjectsView: View {
 
                                         // 合并按钮（需要选中 2 个及以上）
                                         Button {
-                                            showMergeSheet = true
+                                            activeSheet = .merge
                                         } label: {
                                             HStack(spacing: 4) {
                                                 Image(systemName: "arrow.triangle.merge")
@@ -127,7 +140,7 @@ struct PlannedProjectsView: View {
                                         }
                                     },
                                     onExecute: {
-                                        projectToExecute = project
+                                        activeSheet = .execute(project)
                                     }
                                 )
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -146,7 +159,7 @@ struct PlannedProjectsView: View {
                                 }
                                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                     Button {
-                                        projectToExecute = project
+                                        activeSheet = .execute(project)
                                     } label: {
                                         Label("执行", systemImage: "play.fill")
                                     }
@@ -200,24 +213,24 @@ struct PlannedProjectsView: View {
                 }
             }
             // 使用与统计页面相同的方式：传递 projectIds
-            .sheet(isPresented: $showMergeSheet) {
-                MergePlannedProjectsSheet(projectIds: Array(selectedProjects)) {
-                    isSelectMode = false
-                    selectedProjects.removeAll()
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .merge:
+                    MergePlannedProjectsSheet(projectIds: Array(selectedProjects)) {
+                        isSelectMode = false
+                        selectedProjects.removeAll()
+                    }
+                    .environmentObject(inventoryManager)
+                case .multiStockCheck:
+                    MultiProjectStockCheckSheet(projectIds: Array(selectedProjects))
+                        .environmentObject(inventoryManager)
+                case .replenishSuggestion:
+                    ReplenishSuggestionSheet(projectIds: Array(selectedProjects))
+                        .environmentObject(inventoryManager)
+                case .execute(let project):
+                    ExecutePlannedProjectSheet(project: project)
+                        .environmentObject(inventoryManager)
                 }
-                .environmentObject(inventoryManager)
-            }
-            .sheet(isPresented: $showMultiStockCheckSheet) {
-                MultiProjectStockCheckSheet(projectIds: Array(selectedProjects))
-                    .environmentObject(inventoryManager)
-            }
-            .sheet(isPresented: $showReplenishSuggestionSheet) {
-                ReplenishSuggestionSheet(projectIds: Array(selectedProjects))
-                    .environmentObject(inventoryManager)
-            }
-            .sheet(item: $projectToExecute) { project in
-                ExecutePlannedProjectSheet(project: project)
-                    .environmentObject(inventoryManager)
             }
         }
     }
