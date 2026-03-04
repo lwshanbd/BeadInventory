@@ -805,6 +805,7 @@ struct AddPurchaseRecordView: View {
                     // 切换品牌时重置系列选择
                     selectedSeries = selectedColorSystem.defaultSeries
                     selectedColors.removeAll()
+                    quantities.removeAll()
                 }
 
                 // 底部确认栏
@@ -857,6 +858,7 @@ struct AddPurchaseRecordView: View {
 
                         Button {
                             selectedColors.removeAll()
+                            quantities.removeAll()
                         } label: {
                             Label("全部取消", systemImage: "circle")
                         }
@@ -871,6 +873,7 @@ struct AddPurchaseRecordView: View {
     func toggleSelection(_ colorId: UUID) {
         if selectedColors.contains(colorId) {
             selectedColors.remove(colorId)
+            quantities.removeValue(forKey: colorId)
         } else {
             selectedColors.insert(colorId)
             if quantities[colorId] == nil {

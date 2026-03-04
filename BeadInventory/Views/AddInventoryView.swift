@@ -147,6 +147,7 @@ struct AddInventoryView: View {
 
                         Button {
                             selectedColors.removeAll()
+                            quantities.removeAll()
                         } label: {
                             Label("全部取消", systemImage: "circle")
                         }
@@ -196,6 +197,7 @@ struct AddInventoryView: View {
     func toggleSelection(_ colorId: UUID) {
         if selectedColors.contains(colorId) {
             selectedColors.remove(colorId)
+            quantities.removeValue(forKey: colorId)
         } else {
             selectedColors.insert(colorId)
             // 默认数量为1（即1000颗）
@@ -226,6 +228,7 @@ struct AddInventoryView: View {
     func selectPreset(_ preset: ColorPreset) {
         // 先清空选择
         selectedColors.removeAll()
+        quantities.removeAll()
 
         // 获取预设的色号集合
         guard let presetCodes = preset.colorCodes else { return }
