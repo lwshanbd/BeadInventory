@@ -325,3 +325,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Bugfix] 2026-03-03T22:59:15.901680
+
+**Summary**: Fixed AddBrandView showing hardcoded 291 colors for all color systems. Added allColorCount computed property that dynamically counts colors with hasCode(for: selectedColorSystem). Now shows 291 for MARD, 462 for Kaka.
+
+**Risk Analysis**: Low - display-only change, no data logic affected
+
+**Status**: ✅ Committed to Source of Truth
+
+---

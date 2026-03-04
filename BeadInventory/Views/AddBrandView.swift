@@ -23,6 +23,10 @@ struct AddBrandView: View {
     @State private var importedStockItems: [StockImportItem] = []
     @State private var useImportedStock = false
 
+    var allColorCount: Int {
+        inventoryManager.beadColors.filter { $0.hasCode(for: selectedColorSystem) }.count
+    }
+
     var selectedColorsCount: Int {
         if selectedPreset.isCustom {
             return customSelectedColors.count
@@ -165,7 +169,7 @@ struct AddBrandView: View {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(preset.rawValue)
                                             .foregroundColor(.primary)
-                                        Text(preset.description)
+                                        Text(preset.isAll ? "包含所有\(allColorCount)种颜色" : preset.description)
                                             .font(.caption)
                                             .foregroundColor(.secondary)
                                     }
@@ -179,7 +183,7 @@ struct AddBrandView: View {
                                                 .foregroundColor(.secondary)
                                         }
                                     } else {
-                                        Text("\(preset.count) 色")
+                                        Text("\(preset.isAll ? allColorCount : preset.count) 色")
                                             .font(.caption)
                                             .foregroundColor(.secondary)
                                     }
