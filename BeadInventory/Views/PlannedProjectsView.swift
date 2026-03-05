@@ -697,8 +697,10 @@ struct ExecutePlannedProjectSheet: View {
         guard let brandId = selectedBrandId else { return [] }
         var result: [(colorCode: String, currentStock: Int, deductAmount: Int)] = []
         for usage in allBeadUsages {
-            let stock = inventoryManager.getStock(brandId: brandId, mardCode: usage.colorCode)
-            let currentStock = stock?.stock ?? 0
+            // 将色号转换为 mardCode 以正确查询库存
+            let mardCode = inventoryManager.findColor(byCode: usage.colorCode)?.mardCode ?? usage.colorCode
+            let stock = inventoryManager.getStock(brandId: brandId, mardCode: mardCode)
+            let currentStock = stock?.available ?? 0
             if currentStock < usage.quantity {
                 result.append((colorCode: usage.colorCode, currentStock: currentStock, deductAmount: usage.quantity))
             }
@@ -1548,10 +1550,12 @@ struct AllBrandsStockCheckCard: View {
         var result: [(colorCode: String, required: Int, totalAvailable: Int, shortage: Int)] = []
 
         for usage in requiredUsage {
+            // 将色号转换为 mardCode 以正确查询库存
+            let mardCode = inventoryManager.findColor(byCode: usage.colorCode)?.mardCode ?? usage.colorCode
             // 计算所有品牌该颜色的库存总和
             var totalAvailable = 0
             for brand in brands {
-                if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: usage.colorCode) {
+                if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: mardCode) {
                     totalAvailable += stock.available
                 }
             }
@@ -1751,8 +1755,9 @@ struct BrandStockCheckCard: View {
         var result: [(colorCode: String, required: Int, available: Int, shortage: Int)] = []
 
         for usage in requiredUsage {
-            // 根据 colorCode (MARD) 找到对应的库存
-            if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: usage.colorCode) {
+            // 将色号转换为 mardCode 以正确查询库存
+            let mardCode = inventoryManager.findColor(byCode: usage.colorCode)?.mardCode ?? usage.colorCode
+            if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: mardCode) {
                 if stock.available < usage.quantity {
                     result.append((
                         colorCode: usage.colorCode,
@@ -1780,7 +1785,8 @@ struct BrandStockCheckCard: View {
         var result: [(colorCode: String, required: Int, available: Int, afterDeduct: Int)] = []
 
         for usage in requiredUsage {
-            if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: usage.colorCode) {
+            let mardCode = inventoryManager.findColor(byCode: usage.colorCode)?.mardCode ?? usage.colorCode
+            if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: mardCode) {
                 let afterDeduct = stock.available - usage.quantity
                 // 扣减后不为负（不在 insufficientColors 中），但低于低库存阈值
                 if afterDeduct >= 0 && afterDeduct < lowStockThreshold {
@@ -2739,13 +2745,17 @@ struct ReplenishSuggestionSheet: View {
         var processedCodes: Set<String> = []
 
         for (colorCode, usage) in aggregatedUsage {
+            // 将色号转换为 mardCode（BeadUsage 中可能存储了非 MARD 色号）
+            let resolvedColor = inventoryManager.findColor(byCode: colorCode)
+            let mardCode = resolvedColor?.mardCode ?? colorCode
+
             // 跳过在当前品牌色系中没有对应编码的颜色
-            if let color = inventoryManager.findColor(byCode: colorCode), !color.hasCode(for: brand.colorSystem) {
+            if let resolvedColor, !resolvedColor.hasCode(for: brand.colorSystem) {
                 continue
             }
 
-            let currentStock = inventoryManager.getStock(brandId: brand.id, mardCode: colorCode)?.available ?? 0
-            let inTransit = inTransitQuantity(for: colorCode, brandId: brand.id)
+            let currentStock = inventoryManager.getStock(brandId: brand.id, mardCode: mardCode)?.available ?? 0
+            let inTransit = inTransitQuantity(for: mardCode, brandId: brand.id)
             let effectiveStock = currentStock + inTransit
             let afterDeduct = effectiveStock - usage
 
@@ -2753,26 +2763,26 @@ struct ReplenishSuggestionSheet: View {
                 let deficit = lowStockThreshold - afterDeduct
                 let defaultAmount = (deficit + 999) / 1000
                 negativeStock.append(ReplenishColorInfo(
-                    colorCode: colorCode,
+                    colorCode: mardCode,
                     currentStock: currentStock,
                     inTransit: inTransit,
                     usage: usage,
                     afterDeduct: afterDeduct,
                     defaultAmount: defaultAmount
                 ))
-                processedCodes.insert(colorCode)
+                processedCodes.insert(mardCode)
             } else if afterDeduct < lowStockThreshold {
                 let deficit = lowStockThreshold - afterDeduct
                 let defaultAmount = (deficit + 999) / 1000
                 lowStock.append(ReplenishColorInfo(
-                    colorCode: colorCode,
+                    colorCode: mardCode,
                     currentStock: currentStock,
                     inTransit: inTransit,
                     usage: usage,
                     afterDeduct: afterDeduct,
                     defaultAmount: defaultAmount
                 ))
-                processedCodes.insert(colorCode)
+                processedCodes.insert(mardCode)
             }
         }
 
@@ -2793,11 +2803,14 @@ struct ReplenishSuggestionSheet: View {
         for project in inventoryManager.projects {
             guard !project.isPlanned else { continue }
             for usage in project.beadUsage {
-                totalUsageDict[usage.colorCode, default: 0] += usage.quantity
+                // 统一转换为 mardCode
+                let mardCode = inventoryManager.findColor(byCode: usage.colorCode)?.mardCode ?? usage.colorCode
+                totalUsageDict[mardCode, default: 0] += usage.quantity
             }
         }
         for (colorCode, quantity) in aggregatedUsage {
-            totalUsageDict[colorCode, default: 0] += quantity
+            let mardCode = inventoryManager.findColor(byCode: colorCode)?.mardCode ?? colorCode
+            totalUsageDict[mardCode, default: 0] += quantity
         }
         // 过滤：仅保留在当前品牌色系中有对应编码的颜色
         let cs = selectedColorSystem
