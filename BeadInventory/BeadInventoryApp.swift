@@ -26,6 +26,8 @@ struct BeadInventoryApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        AppLogger.shared.info("App", "bootstrap_started")
+
         // 设置 SwiftData ModelContainer（使用版本化 Schema 支持数据迁移）
         let schema = Schema(versionedSchema: CurrentSchema.self)
         let cloudConfiguration = ModelConfiguration(
@@ -50,10 +52,19 @@ struct BeadInventoryApp: App {
             )
             isCloudSyncEnabled = true
             print("[App] ✅ iCloud 同步容器初始化成功")
+            AppLogger.shared.info("App", "model_container_initialized", metadata: ["cloudKit": "automatic"])
         } catch {
             let nsError = error as NSError
             print("[App] ⚠️ iCloud 同步容器初始化失败，回退本地存储: \(error)")
             print("[App]   - domain: \(nsError.domain), code: \(nsError.code)")
+            AppLogger.shared.warning(
+                "App",
+                "model_container_fallback_to_local",
+                metadata: [
+                    "domain": nsError.domain,
+                    "code": nsError.code
+                ]
+            )
             if !nsError.userInfo.isEmpty {
                 print("[App]   - userInfo: \(nsError.userInfo)")
             }
@@ -65,7 +76,9 @@ struct BeadInventoryApp: App {
                 )
                 isCloudSyncEnabled = false
                 print("[App] ✅ 已回退为本地存储模式，确保旧数据可用")
+                AppLogger.shared.info("App", "model_container_local_mode_enabled")
             } catch {
+                AppLogger.shared.error("App", "fatal_model_container_creation_failed", metadata: ["error": "\(error)"])
                 fatalError("无法创建 ModelContainer: \(error)")
             }
         }
@@ -95,6 +108,7 @@ struct BeadInventoryApp: App {
                     handleIncomingURL(url)
                 }
                 .onAppear {
+                    AppLogger.shared.info("App", "root_view_appeared")
                     // App 启动时检查是否有待处理的共享图片
                     sharedImageManager.checkForPendingImage()
 
@@ -112,12 +126,21 @@ struct BeadInventoryApp: App {
                         .receive(on: RunLoop.main)
                 ) { _ in
                     // 仅在前台时处理远程变更，后台/非活跃阶段统一在恢复活跃时刷新
-                    guard scenePhase == .active else { return }
+                    guard scenePhase == .active else {
+                        AppLogger.shared.debug(
+                            "CloudSync",
+                            "remote_change_ignored",
+                            metadata: ["scenePhase": "\(scenePhase)"]
+                        )
+                        return
+                    }
+                    AppLogger.shared.info("CloudSync", "remote_change_received")
                     inventoryManager.scheduleRefreshFromPersistentStore(reason: "remoteChangeNotification")
                 }
         }
         .modelContainer(modelContainer)
         .onChange(of: scenePhase) { _, newPhase in
+            AppLogger.shared.info("AppLifecycle", "scene_phase_changed", metadata: ["phase": "\(newPhase)"])
             switch newPhase {
             case .background:
                 // 应用进入后台时立即保存数据，防止被系统杀死后数据丢失
@@ -148,6 +171,7 @@ struct BeadInventoryApp: App {
     private func handleIncomingURL(_ url: URL) {
         // 处理 beadinventory://scan
         if url.scheme == "beadinventory" && url.host == "scan" {
+            AppLogger.shared.info("DeepLink", "open_scan", metadata: ["url": url.absoluteString])
             // 检查共享图片
             sharedImageManager.checkForPendingImage()
             // 触发跳转到扫描页
@@ -175,6 +199,7 @@ class CloudSyncStatusManager: ObservableObject {
 
     init(mode: Mode) {
         self.mode = mode
+        AppLogger.shared.info("CloudSync", "status_manager_initialized", metadata: ["mode": "\(mode)"])
     }
 
     var statusIconName: String {
@@ -278,18 +303,26 @@ class CloudSyncStatusManager: ObservableObject {
             return
         }
 
-        guard mode == .iCloudEnabled else { return }
-        guard !isCheckingAccount else { return }
+        guard mode == .iCloudEnabled else {
+            AppLogger.shared.debug("CloudSync", "refresh_skipped_local_mode")
+            return
+        }
+        guard !isCheckingAccount else {
+            AppLogger.shared.debug("CloudSync", "refresh_skipped_already_checking")
+            return
+        }
 
         if !force,
            let lastRefreshRequestedAt,
            Date().timeIntervalSince(lastRefreshRequestedAt) < 5 {
+            AppLogger.shared.debug("CloudSync", "refresh_skipped_rate_limited")
             return
         }
 
         isCheckingAccount = true
         lastErrorMessage = nil
         lastRefreshRequestedAt = Date()
+        AppLogger.shared.info("CloudSync", "account_status_check_started", metadata: ["force": force])
 
         container.accountStatus { [weak self] status, error in
             DispatchQueue.main.async {
@@ -300,10 +333,16 @@ class CloudSyncStatusManager: ObservableObject {
                 if let error {
                     self.accountStatus = .couldNotDetermine
                     self.lastErrorMessage = error.localizedDescription
+                    AppLogger.shared.warning(
+                        "CloudSync",
+                        "account_status_check_failed",
+                        metadata: ["error": error.localizedDescription]
+                    )
                     return
                 }
 
                 self.accountStatus = status
+                AppLogger.shared.info("CloudSync", "account_status_updated", metadata: ["status": "\(status.rawValue)"])
             }
         }
     }

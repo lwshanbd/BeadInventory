@@ -106,6 +106,7 @@ class InventoryManager: ObservableObject {
     // 带 ModelContext 的初始化器
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
+        logInfo("init_with_model_context")
         loadData()
         if beadColors.isEmpty {
             initializeDefaultColors()
@@ -114,10 +115,23 @@ class InventoryManager: ObservableObject {
 
     // 默认初始化器（用于 Preview）
     init() {
+        logInfo("init_preview_mode")
         loadDataFromUserDefaults()
         if beadColors.isEmpty {
             initializeDefaultColors()
         }
+    }
+
+    private func logInfo(_ event: String, metadata: [String: Any] = [:]) {
+        AppLogger.shared.info("InventoryManager", event, metadata: metadata)
+    }
+
+    private func logWarning(_ event: String, metadata: [String: Any] = [:]) {
+        AppLogger.shared.warning("InventoryManager", event, metadata: metadata)
+    }
+
+    private func logError(_ event: String, metadata: [String: Any] = [:]) {
+        AppLogger.shared.error("InventoryManager", event, metadata: metadata)
     }
 
     // MARK: - 品牌管理
@@ -721,24 +735,39 @@ class InventoryManager: ObservableObject {
             }
             if updated {
                 try context.save()
+                logInfo("migrate_project_color_system_saved")
             }
         } catch {
             print("[DataMigration] migrateProjectColorSystem error: \(error)")
+            logError("migrate_project_color_system_failed", metadata: ["error": "\(error)"])
         }
     }
 
     /// 应用回到前台时刷新 SwiftData，拉取 iCloud 端已合并的数据
     func refreshFromPersistentStore(reason: String, preserveInMemoryOnFailure: Bool = true) {
-        guard modelContext != nil else { return }
-        guard !isSaving else { return }
+        guard modelContext != nil else {
+            logWarning("refresh_skipped_no_model_context", metadata: ["reason": reason])
+            return
+        }
+        guard !isSaving else {
+            logWarning("refresh_skipped_while_saving", metadata: ["reason": reason])
+            return
+        }
         lastPersistentRefreshAt = Date()
         print("[InventoryManager] 前台刷新数据: \(reason)")
+        logInfo("refresh_from_persistent_store", metadata: [
+            "reason": reason,
+            "preserveInMemoryOnFailure": preserveInMemoryOnFailure
+        ])
         loadData(preserveInMemoryOnFailure: preserveInMemoryOnFailure)
     }
 
     /// 远程变更到达时的防抖刷新（避免 CloudKit 短时间多次通知导致频繁全量 reload）
     func scheduleRefreshFromPersistentStore(reason: String, debounceSeconds: TimeInterval = 1.2, retryCount: Int = 0) {
-        guard modelContext != nil else { return }
+        guard modelContext != nil else {
+            logWarning("schedule_refresh_skipped_no_model_context", metadata: ["reason": reason])
+            return
+        }
 
         let now = Date()
         let remainingInterval = max(0, minimumRefreshInterval - now.timeIntervalSince(lastPersistentRefreshAt))
@@ -766,6 +795,10 @@ class InventoryManager: ObservableObject {
                 let maxRetryCount = 5
                 guard retryCount < maxRetryCount else {
                     print("[InventoryManager] 远程刷新重试次数已达上限，放弃本轮刷新: \(reason)")
+                    self.logWarning("schedule_refresh_retry_exhausted", metadata: [
+                        "reason": reason,
+                        "retryCount": retryCount
+                    ])
                     return
                 }
                 self.scheduleRefreshFromPersistentStore(
@@ -780,6 +813,11 @@ class InventoryManager: ObservableObject {
 
         remoteRefreshWorkItem = workItem
         remoteRefreshScheduledAt = fireDate
+        logInfo("schedule_refresh", metadata: [
+            "reason": reason,
+            "debounceSeconds": effectiveDebounce,
+            "retryCount": retryCount
+        ])
         DispatchQueue.main.asyncAfter(deadline: .now() + effectiveDebounce, execute: workItem)
     }
 
@@ -866,8 +904,12 @@ class InventoryManager: ObservableObject {
 
     func loadData(preserveInMemoryOnFailure: Bool = false) {
         let fallbackSnapshot = preserveInMemoryOnFailure ? makeInMemorySnapshot() : nil
+        logInfo("load_data_started", metadata: [
+            "preserveInMemoryOnFailure": preserveInMemoryOnFailure
+        ])
 
         guard let context = modelContext else {
+            logWarning("load_data_use_user_defaults_mode")
             loadDataFromUserDefaults()
             return
         }
@@ -901,8 +943,10 @@ class InventoryManager: ObservableObject {
             loadedBrands = sdBrands.map { $0.toStruct() }
             brandsLoadedSuccessfully = true
             print("[InventoryManager] 成功加载 \(loadedBrands.count) 个品牌")
+            logInfo("load_brands_success", metadata: ["count": loadedBrands.count])
         } catch {
             print("[InventoryManager] ⚠️ 加载品牌失败: \(error)")
+            logError("load_brands_failed", metadata: ["error": "\(error)"])
         }
 
         // 从 SwiftData 加载品牌库存
@@ -912,8 +956,10 @@ class InventoryManager: ObservableObject {
             loadedBrandStocks = sdStocks.map { $0.toStruct() }
             stocksLoadedSuccessfully = true
             print("[InventoryManager] 成功加载 \(loadedBrandStocks.count) 条库存记录")
+            logInfo("load_stocks_success", metadata: ["count": loadedBrandStocks.count])
         } catch {
             print("[InventoryManager] ⚠️ 加载库存失败: \(error)")
+            logError("load_stocks_failed", metadata: ["error": "\(error)"])
         }
 
         // 从 SwiftData 加载项目记录
@@ -923,8 +969,10 @@ class InventoryManager: ObservableObject {
             loadedProjects = sdProjects.map { $0.toStruct() }
             projectsLoadedSuccessfully = true
             print("[InventoryManager] 成功加载 \(loadedProjects.count) 个项目记录")
+            logInfo("load_projects_success", metadata: ["count": loadedProjects.count])
         } catch {
             print("[InventoryManager] ⚠️ 加载项目失败: \(error)")
+            logError("load_projects_failed", metadata: ["error": "\(error)"])
         }
 
         // 加载当前品牌 ID
@@ -940,8 +988,10 @@ class InventoryManager: ObservableObject {
             loadedCustomColors = sdCustomColors.map { $0.toStruct() }
             customColorsLoadedSuccessfully = true
             print("[InventoryManager] 成功加载 \(loadedCustomColors.count) 个自定义色号")
+            logInfo("load_custom_colors_success", metadata: ["count": loadedCustomColors.count])
         } catch {
             print("[InventoryManager] ⚠️ 加载自定义色号失败: \(error)")
+            logError("load_custom_colors_failed", metadata: ["error": "\(error)"])
         }
 
         // 加载运输中的购买记录（存在 UserDefaults 中）
@@ -972,6 +1022,12 @@ class InventoryManager: ObservableObject {
 
                 if suspiciousBrandDrop || suspiciousStockDrop {
                     print("[InventoryManager] ⚠️ 检测到异常骤减（品牌/库存），判定为同步中间态，保留当前内存数据")
+                    logWarning("load_data_suspicious_drop", metadata: [
+                        "previousBrands": snapshot.brands.count,
+                        "loadedBrands": loadedBrands.count,
+                        "previousStocks": snapshot.brandStocks.count,
+                        "loadedStocks": loadedBrandStocks.count
+                    ])
                     restoreInMemorySnapshot(snapshot)
                     return
                 }
@@ -979,6 +1035,7 @@ class InventoryManager: ObservableObject {
 
             if allEmpty && hadDataBefore {
                 print("[InventoryManager] ⚠️ 异常：数据库应有数据但加载全部为空，拒绝标记为加载成功以防覆盖")
+                logWarning("load_data_rejected_all_empty_after_existing_data")
                 // 不设置 isDataLoaded = true，saveData() 会被 guard 拦截
                 if let snapshot = fallbackSnapshot {
                     print("[InventoryManager] 已回滚到刷新前的内存数据，保持当前可用状态")
@@ -1004,6 +1061,12 @@ class InventoryManager: ObservableObject {
 
             isDataLoaded = true
             print("[InventoryManager] ✅ 数据加载完成")
+            logInfo("load_data_completed", metadata: [
+                "brands": brands.count,
+                "stocks": brandStocks.count,
+                "projects": projects.count,
+                "customColors": customColors.count
+            ])
 
             // 标记用户已有数据（只要有任何一项非空就标记）
             if !allEmpty {
@@ -1021,6 +1084,12 @@ class InventoryManager: ObservableObject {
             print("[InventoryManager]   - 库存: \(stocksLoadedSuccessfully ? "✅" : "❌")")
             print("[InventoryManager]   - 项目: \(projectsLoadedSuccessfully ? "✅" : "❌")")
             print("[InventoryManager]   - 自定义色号: \(customColorsLoadedSuccessfully ? "✅" : "❌")")
+            logError("load_data_partial_failure", metadata: [
+                "brandsLoaded": brandsLoadedSuccessfully,
+                "stocksLoaded": stocksLoadedSuccessfully,
+                "projectsLoaded": projectsLoadedSuccessfully,
+                "customColorsLoaded": customColorsLoadedSuccessfully
+            ])
             if let snapshot = fallbackSnapshot {
                 print("[InventoryManager] 已回滚到刷新前的内存数据，避免进入不可保存状态")
                 restoreInMemorySnapshot(snapshot)
@@ -1043,6 +1112,7 @@ class InventoryManager: ObservableObject {
             // 这是明确的不一致状态，说明之前的保存失败了
             if project.isPlanned && project.executedDate != nil {
                 print("[InventoryManager] 修复项目一致性: \(project.name) (有执行日期但状态为计划中)")
+                logWarning("fix_project_consistency_applied", metadata: ["projectName": project.name])
                 projects[index].isPlanned = false
                 needsSave = true
             }
@@ -1051,6 +1121,7 @@ class InventoryManager: ObservableObject {
         if needsSave {
             saveData()
             print("[InventoryManager] 已修复项目数据一致性")
+            logInfo("fix_project_consistency_saved")
         }
     }
 

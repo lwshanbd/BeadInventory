@@ -14,6 +14,13 @@ struct MoreView: View {
     @State private var showingScanHelp = false
     @State private var showingBackupRestore = false
     @State private var showingExportSheet = false
+    @State private var showingDiagnosticsShareSheet = false
+    @State private var diagnosticsExportURL: URL?
+    @State private var isExportingDiagnostics = false
+    @State private var isClearingDiagnostics = false
+    @State private var showingClearDiagnosticsAlert = false
+    @State private var diagnosticsNoticeMessage = ""
+    @State private var showingDiagnosticsNotice = false
 
     var body: some View {
         NavigationStack {
@@ -221,6 +228,52 @@ struct MoreView: View {
                     }
                     .foregroundColor(.primary)
 
+                    Button {
+                        exportDiagnosticsLogs()
+                    } label: {
+                        HStack {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("导出诊断日志")
+                                    Text("仅在排查问题时导出给开发者")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: "doc.text.magnifyingglass")
+                                    .foregroundColor(.indigo)
+                            }
+                            Spacer()
+                            if isExportingDiagnostics {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .foregroundColor(.primary)
+                    .disabled(isExportingDiagnostics || isClearingDiagnostics)
+
+                    Button(role: .destructive) {
+                        showingClearDiagnosticsAlert = true
+                    } label: {
+                        HStack {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("清空诊断日志")
+                                    Text("只清空本机日志，不影响库存数据")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: "trash.circle.fill")
+                                    .foregroundColor(.red)
+                            }
+                            Spacer()
+                            if isClearingDiagnostics {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isExportingDiagnostics || isClearingDiagnostics)
                 }
 
                 // 设置
@@ -325,9 +378,53 @@ struct MoreView: View {
             .sheet(isPresented: $showingExportSheet) {
                 ExportDataSheet(inventoryManager: inventoryManager)
             }
+            .sheet(isPresented: $showingDiagnosticsShareSheet, onDismiss: {
+                diagnosticsExportURL = nil
+            }) {
+                if let diagnosticsExportURL {
+                    ShareSheet(items: [diagnosticsExportURL])
+                }
+            }
+            .alert("清空诊断日志", isPresented: $showingClearDiagnosticsAlert) {
+                Button("取消", role: .cancel) {}
+                Button("清空", role: .destructive) {
+                    clearDiagnosticsLogs()
+                }
+            } message: {
+                Text("仅会删除当前设备上的诊断日志文件，不会影响库存、项目或云同步数据。")
+            }
+            .alert("诊断日志", isPresented: $showingDiagnosticsNotice) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(diagnosticsNoticeMessage)
+            }
             .onAppear {
                 cloudSyncStatusManager.refreshAccountStatus()
             }
+        }
+    }
+
+    private func exportDiagnosticsLogs() {
+        isExportingDiagnostics = true
+        AppLogger.shared.exportDiagnostics { result in
+            isExportingDiagnostics = false
+            switch result {
+            case .success(let url):
+                diagnosticsExportURL = url
+                showingDiagnosticsShareSheet = true
+            case .failure(let error):
+                diagnosticsNoticeMessage = "导出失败：\(error.localizedDescription)"
+                showingDiagnosticsNotice = true
+            }
+        }
+    }
+
+    private func clearDiagnosticsLogs() {
+        isClearingDiagnostics = true
+        AppLogger.shared.clearLogs {
+            isClearingDiagnostics = false
+            diagnosticsNoticeMessage = "诊断日志已清空。"
+            showingDiagnosticsNotice = true
         }
     }
 }
