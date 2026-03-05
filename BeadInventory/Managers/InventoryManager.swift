@@ -8,6 +8,7 @@
 import Foundation
 import SwiftUI
 import SwiftData
+import CryptoKit
 
 @MainActor
 class InventoryManager: ObservableObject {
@@ -44,6 +45,9 @@ class InventoryManager: ObservableObject {
 
     // 全量清空授权（防止异常空数据被误同步到 iCloud）
     private var fullPurgeAuthorizedUntil: Date?
+
+    // 仅在显式删除品牌（删除/合并）时记录，避免把意外缺失误判为“本地删除”
+    private var pendingDeletedBrandIDs: Set<UUID> = []
 
     // 保存基线：用于 iCloud 同步冲突管理（仅写入本地改动，避免覆盖远端新数据）
     private var baselineBrandsByID: [UUID: Brand] = [:]
@@ -180,6 +184,9 @@ class InventoryManager: ObservableObject {
             historyManager.recordBrand(type: .brandDelete, brand: brand)
         }
 
+        // 标记为显式删除，saveData() 才会真正删除持久层记录
+        pendingDeletedBrandIDs.insert(brandId)
+
         // 删除品牌及其库存
         brands.removeAll { $0.id == brandId }
         brandStocks.removeAll { $0.brandId == brandId }
@@ -270,6 +277,7 @@ class InventoryManager: ObservableObject {
         }
 
         // 6. 删除源品牌
+        pendingDeletedBrandIDs.insert(sourceBrandId)
         brands.removeAll { $0.id == sourceBrandId }
 
         // 7. 记录历史
@@ -877,67 +885,69 @@ class InventoryManager: ObservableObject {
             migrateFromUserDefaults()
         }
 
+        // 先拉取到临时变量，避免半成功状态直接污染当前内存数据
+        var loadedBrands = brands
+        var loadedBrandStocks = brandStocks
+        var loadedProjects = projects
+        var loadedCustomColors = customColors
+        var loadedCurrentBrandId = currentBrandId
+        var loadedPurchaseRecords = purchaseRecords
+        let loadedBeadColors = loadAllColorsFromJSON()
+
         // 从 SwiftData 加载品牌
         do {
             let brandDescriptor = FetchDescriptor<SDBrand>(sortBy: [SortDescriptor(\.sortOrder)])
             let sdBrands = try context.fetch(brandDescriptor)
-            brands = sdBrands.map { $0.toStruct() }
+            loadedBrands = sdBrands.map { $0.toStruct() }
             brandsLoadedSuccessfully = true
-            print("[InventoryManager] 成功加载 \(brands.count) 个品牌")
+            print("[InventoryManager] 成功加载 \(loadedBrands.count) 个品牌")
         } catch {
             print("[InventoryManager] ⚠️ 加载品牌失败: \(error)")
-            // 不修改 brands 数组，保持原状态
         }
 
         // 从 SwiftData 加载品牌库存
         do {
             let stockDescriptor = FetchDescriptor<SDBrandStock>()
             let sdStocks = try context.fetch(stockDescriptor)
-            brandStocks = sdStocks.map { $0.toStruct() }
+            loadedBrandStocks = sdStocks.map { $0.toStruct() }
             stocksLoadedSuccessfully = true
-            print("[InventoryManager] 成功加载 \(brandStocks.count) 条库存记录")
+            print("[InventoryManager] 成功加载 \(loadedBrandStocks.count) 条库存记录")
         } catch {
             print("[InventoryManager] ⚠️ 加载库存失败: \(error)")
-            // 不修改 brandStocks 数组，保持原状态
         }
 
         // 从 SwiftData 加载项目记录
         do {
             let projectDescriptor = FetchDescriptor<SDProjectRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
             let sdProjects = try context.fetch(projectDescriptor)
-            projects = sdProjects.map { $0.toStruct() }
+            loadedProjects = sdProjects.map { $0.toStruct() }
             projectsLoadedSuccessfully = true
-            print("[InventoryManager] 成功加载 \(projects.count) 个项目记录")
+            print("[InventoryManager] 成功加载 \(loadedProjects.count) 个项目记录")
         } catch {
             print("[InventoryManager] ⚠️ 加载项目失败: \(error)")
-            // 不修改 projects 数组，保持原状态
         }
 
         // 加载当前品牌 ID
         if let idString = UserDefaults.standard.string(forKey: currentBrandIdKey),
            let id = UUID(uuidString: idString) {
-            currentBrandId = id
+            loadedCurrentBrandId = id
         }
-
-        // 初始化颜色数据
-        beadColors = loadAllColorsFromJSON()
 
         // 从 SwiftData 加载自定义色号
         do {
             let customColorDescriptor = FetchDescriptor<SDCustomColor>(sortBy: [SortDescriptor(\.createdAt)])
             let sdCustomColors = try context.fetch(customColorDescriptor)
-            customColors = sdCustomColors.map { $0.toStruct() }
+            loadedCustomColors = sdCustomColors.map { $0.toStruct() }
             customColorsLoadedSuccessfully = true
-            print("[InventoryManager] 成功加载 \(customColors.count) 个自定义色号")
+            print("[InventoryManager] 成功加载 \(loadedCustomColors.count) 个自定义色号")
         } catch {
             print("[InventoryManager] ⚠️ 加载自定义色号失败: \(error)")
-            // 不修改 customColors 数组，保持原状态
         }
 
         // 加载运输中的购买记录（存在 UserDefaults 中）
         if let data = UserDefaults.standard.data(forKey: purchaseRecordsKey),
            let decoded = try? JSONDecoder().decode([PurchaseRecord].self, from: data) {
-            purchaseRecords = decoded
+            loadedPurchaseRecords = decoded
         }
 
         // 只有当所有关键数据都成功加载时，才标记为加载完成
@@ -945,8 +955,28 @@ class InventoryManager: ObservableObject {
         if allLoaded {
             // 防护：如果用户之前有数据，但本次 fetch 全部返回空，说明 SwiftData 加载异常
             // 拒绝标记为加载成功，阻止后续 saveData() 把空数据写入数据库覆盖原有记录
-            let allEmpty = brands.isEmpty && brandStocks.isEmpty && projects.isEmpty && customColors.isEmpty
+            let allEmpty = loadedBrands.isEmpty
+                && loadedBrandStocks.isEmpty
+                && loadedProjects.isEmpty
+                && loadedCustomColors.isEmpty
             let hadDataBefore = UserDefaults.standard.bool(forKey: hasExistingDataKey)
+
+            // 防护：刷新期间若出现“品牌/库存骤减”，优先认为是同步中的中间态，不覆盖当前内存
+            if let snapshot = fallbackSnapshot {
+                let suspiciousBrandDrop = snapshot.brands.count >= 3
+                    && loadedBrands.count > 0
+                    && loadedBrands.count * 2 < snapshot.brands.count
+                let suspiciousStockDrop = snapshot.brandStocks.count >= 200
+                    && loadedBrandStocks.count > 0
+                    && loadedBrandStocks.count * 2 < snapshot.brandStocks.count
+
+                if suspiciousBrandDrop || suspiciousStockDrop {
+                    print("[InventoryManager] ⚠️ 检测到异常骤减（品牌/库存），判定为同步中间态，保留当前内存数据")
+                    restoreInMemorySnapshot(snapshot)
+                    return
+                }
+            }
+
             if allEmpty && hadDataBefore {
                 print("[InventoryManager] ⚠️ 异常：数据库应有数据但加载全部为空，拒绝标记为加载成功以防覆盖")
                 // 不设置 isDataLoaded = true，saveData() 会被 guard 拦截
@@ -958,10 +988,19 @@ class InventoryManager: ObservableObject {
             }
 
             // 当前品牌不存在时回退到首个品牌，避免引用悬空
-            if let selectedBrandId = currentBrandId,
-               !brands.contains(where: { $0.id == selectedBrandId }) {
-                currentBrandId = brands.first?.id
+            if let selectedBrandId = loadedCurrentBrandId,
+               !loadedBrands.contains(where: { $0.id == selectedBrandId }) {
+                loadedCurrentBrandId = loadedBrands.first?.id
             }
+
+            // 原子提交：避免中途状态导致 UI 看到“品牌突然消失”
+            brands = loadedBrands
+            brandStocks = loadedBrandStocks
+            projects = loadedProjects
+            customColors = loadedCustomColors
+            currentBrandId = loadedCurrentBrandId
+            purchaseRecords = loadedPurchaseRecords
+            beadColors = loadedBeadColors
 
             isDataLoaded = true
             print("[InventoryManager] ✅ 数据加载完成")
@@ -985,6 +1024,9 @@ class InventoryManager: ObservableObject {
             if let snapshot = fallbackSnapshot {
                 print("[InventoryManager] 已回滚到刷新前的内存数据，避免进入不可保存状态")
                 restoreInMemorySnapshot(snapshot)
+            } else {
+                // 保持颜色数据可用（用于界面展示），其余实体维持原内存状态
+                beadColors = loadedBeadColors
             }
         }
     }
@@ -1078,10 +1120,12 @@ class InventoryManager: ObservableObject {
 
             if brandsLoadedSuccessfully {
                 var remoteBrandsToAppend: [Brand] = []
+                var appliedBrandDeletionIDs = Set<UUID>()
                 for sdBrand in existingBrands where localBrandByID[sdBrand.id] == nil {
-                    if baselineBrandsByID[sdBrand.id] != nil {
-                        // 基线里存在、当前本地不存在 -> 本地确实删除
+                    if pendingDeletedBrandIDs.contains(sdBrand.id) {
+                        // 仅允许“显式删除”的品牌执行持久层删除
                         context.delete(sdBrand)
+                        appliedBrandDeletionIDs.insert(sdBrand.id)
                     } else {
                         // 远端新增，合并进本地内存避免“看不见但下次可能被覆盖”
                         remoteBrandsToAppend.append(sdBrand.toStruct())
@@ -1091,9 +1135,19 @@ class InventoryManager: ObservableObject {
                     brands.append(contentsOf: remoteBrandsToAppend)
                     brands.sort { $0.sortOrder < $1.sortOrder }
                 }
+
+                // 清理已处理完的待删 ID：
+                // 1) 本轮已成功删除
+                // 2) 持久层中已不存在（说明此前已删除/或无效 ID）
+                let existingBrandIDs = Set(existingBrands.map { $0.id })
+                let resolvedDeletedIDs = appliedBrandDeletionIDs.union(
+                    pendingDeletedBrandIDs.subtracting(existingBrandIDs)
+                )
+                if !resolvedDeletedIDs.isEmpty {
+                    pendingDeletedBrandIDs.subtract(resolvedDeletedIDs)
+                }
             }
 
-            var staleLocalBrandIDs = Set<UUID>()
             for brand in brands {
                 let baseline = baselineBrandsByID[brand.id]
                 let changedLocally = baseline == nil || baseline != brand
@@ -1107,12 +1161,9 @@ class InventoryManager: ObservableObject {
                 } else if changedLocally {
                     context.insert(SDBrand(from: brand))
                 } else {
-                    // 本地未改且云端已删除，丢弃本地过期副本
-                    staleLocalBrandIDs.insert(brand.id)
+                    // 本地未改且持久层暂未命中：保守保留内存副本，避免误删/误隐藏品牌
+                    continue
                 }
-            }
-            if !staleLocalBrandIDs.isEmpty {
-                brands.removeAll { staleLocalBrandIDs.contains($0.id) }
             }
             if let selectedBrandId = currentBrandId,
                !brands.contains(where: { $0.id == selectedBrandId }) {
@@ -2660,8 +2711,9 @@ class InventoryManager: ObservableObject {
 
         do {
             let entries = try JSONDecoder().decode([[String: String]].self, from: data)
-            return entries.map { entry in
+            return entries.enumerated().map { index, entry in
                 BeadColor(
+                    id: stableColorID(for: entry, index: index),
                     colorHex: entry["colorHex"] ?? "CCCCCC",
                     mardCode: entry["mardCode"] ?? "",
                     cocoCode: entry["cocoCode"] ?? "",
@@ -2675,6 +2727,39 @@ class InventoryManager: ObservableObject {
             print("[InventoryManager] ⚠️ allcolors.json 解析失败: \(error)")
             return []
         }
+    }
+
+    /// 为 JSON 颜色生成稳定 ID，避免重载后 UUID 漂移导致 UI 选中状态错乱
+    private func stableColorID(for entry: [String: String], index: Int) -> UUID {
+        let mardCode = (entry["mardCode"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let key: String
+        if !mardCode.isEmpty {
+            key = "mard:\(mardCode)"
+        } else {
+            // 理论上不会触发（allcolors.json 的 mardCode 不为空），仅做兜底保证唯一性
+            let fallbackParts = [
+                entry["cocoCode"] ?? "",
+                entry["manmanCode"] ?? "",
+                entry["panpanCode"] ?? "",
+                entry["mixiaowoCode"] ?? "",
+                entry["kakaCode"] ?? "",
+                "\(index)"
+            ]
+            key = "fallback:\(fallbackParts.joined(separator: "|"))"
+        }
+        return stableUUID(for: key)
+    }
+
+    private func stableUUID(for key: String) -> UUID {
+        let digest = SHA256.hash(data: Data(key.utf8))
+        let bytes = Array(digest.prefix(16))
+        let tuple = uuid_t(
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15]
+        )
+        return UUID(uuid: tuple)
     }
 
 }
