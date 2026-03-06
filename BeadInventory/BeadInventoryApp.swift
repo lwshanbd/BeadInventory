@@ -188,14 +188,52 @@ class CloudSyncStatusManager: ObservableObject {
         case localFallback
     }
 
+    private struct CloudRecordTypes {
+        let brands: [String]
+        let stocks: [String]
+        let projects: [String]
+        let customColors: [String]
+
+        static let `default` = CloudRecordTypes(
+            brands: ["CD_SDBrand", "SDBrand"],
+            stocks: ["CD_SDBrandStock", "SDBrandStock"],
+            projects: ["CD_SDProjectRecord", "SDProjectRecord"],
+            customColors: ["CD_SDCustomColor", "SDCustomColor"]
+        )
+    }
+
+    private struct CloudDataCounts {
+        let brands: Int?
+        let stocks: Int?
+        let projects: Int?
+        let plannedProjects: Int?
+        let customColors: Int?
+    }
+
+    private enum CloudDataQueryError: Error {
+        case invalidRecordType(String)
+    }
+
     @Published private(set) var mode: Mode
     @Published private(set) var accountStatus: CKAccountStatus?
     @Published private(set) var isCheckingAccount = false
     @Published private(set) var lastCheckedAt: Date?
     @Published private(set) var lastErrorMessage: String?
+    @Published private(set) var isCheckingCloudData = false
+    @Published private(set) var cloudDataSummaryText: String?
+    @Published private(set) var cloudDataCheckedAt: Date?
+    @Published private(set) var cloudDataErrorMessage: String?
 
     private let container = CKContainer(identifier: "iCloud.com.beadinventory.app")
     private var lastRefreshRequestedAt: Date?
+    private var lastCloudDataRequestedAt: Date?
+    private let cloudDataRefreshInterval: TimeInterval = 60
+    private let cloudRecordTypes = CloudRecordTypes.default
+    private let plannedProjectFieldCandidates = ["CD_isPlanned", "isPlanned"]
+    private let cloudQueryZoneIDs: [CKRecordZone.ID] = [
+        CKRecordZone.ID(zoneName: "com.apple.coredata.cloudkit.zone", ownerName: CKCurrentUserDefaultName),
+        CKRecordZone.default().zoneID
+    ]
 
     init(mode: Mode) {
         self.mode = mode
@@ -295,6 +333,14 @@ class CloudSyncStatusManager: ObservableObject {
         mode == .iCloudEnabled
     }
 
+    /// 云端统计已下线，仅保留账号状态展示。
+    private func clearCloudDataStatus() {
+        isCheckingCloudData = false
+        cloudDataSummaryText = nil
+        cloudDataCheckedAt = nil
+        cloudDataErrorMessage = nil
+    }
+
     func refreshAccountStatus(force: Bool = false) {
         if !Thread.isMainThread {
             DispatchQueue.main.async { [weak self] in
@@ -305,8 +351,11 @@ class CloudSyncStatusManager: ObservableObject {
 
         guard mode == .iCloudEnabled else {
             AppLogger.shared.debug("CloudSync", "refresh_skipped_local_mode")
+            clearCloudDataStatus()
             return
         }
+        clearCloudDataStatus()
+
         guard !isCheckingAccount else {
             AppLogger.shared.debug("CloudSync", "refresh_skipped_already_checking")
             return
@@ -338,12 +387,546 @@ class CloudSyncStatusManager: ObservableObject {
                         "account_status_check_failed",
                         metadata: ["error": error.localizedDescription]
                     )
+                    self.clearCloudDataStatus()
                     return
                 }
 
                 self.accountStatus = status
                 AppLogger.shared.info("CloudSync", "account_status_updated", metadata: ["status": "\(status.rawValue)"])
+                self.clearCloudDataStatus()
             }
         }
+    }
+
+    private func refreshCloudDataSummary(force: Bool) {
+        guard mode == .iCloudEnabled else { return }
+        guard accountStatus == .available else { return }
+        guard !isCheckingCloudData else {
+            AppLogger.shared.debug("CloudSync", "cloud_data_refresh_skipped_already_checking")
+            return
+        }
+
+        if !force,
+           let lastCloudDataRequestedAt,
+           Date().timeIntervalSince(lastCloudDataRequestedAt) < cloudDataRefreshInterval {
+            AppLogger.shared.debug("CloudSync", "cloud_data_refresh_skipped_rate_limited")
+            return
+        }
+
+        isCheckingCloudData = true
+        cloudDataErrorMessage = nil
+        lastCloudDataRequestedAt = Date()
+
+        let database = container.privateCloudDatabase
+        let recordTypes = cloudRecordTypes
+        let plannedFields = plannedProjectFieldCandidates
+        let preferredZoneIDs = cloudQueryZoneIDs
+
+        AppLogger.shared.info("CloudSync", "cloud_data_refresh_started", metadata: ["force": force])
+
+        Task.detached(priority: .utility) {
+            do {
+                let resolvedZoneIDs = await Self.resolveCloudQueryZoneIDs(
+                    database: database,
+                    preferredZoneIDs: preferredZoneIDs
+                )
+                let counts = try await Self.fetchCloudDataCounts(
+                    database: database,
+                    zoneIDs: resolvedZoneIDs,
+                    recordTypes: recordTypes,
+                    plannedFieldCandidates: plannedFields
+                )
+
+                await MainActor.run {
+                    self.isCheckingCloudData = false
+                    self.cloudDataSummaryText = Self.makeCloudDataSummaryText(counts)
+                    self.cloudDataCheckedAt = Date()
+                    self.cloudDataErrorMessage = nil
+                    AppLogger.shared.info(
+                        "CloudSync",
+                        "cloud_data_refresh_succeeded",
+                        metadata: [
+                            "brands": counts.brands ?? -1,
+                            "stocks": counts.stocks ?? -1,
+                            "projects": counts.projects ?? -1,
+                            "plannedProjects": counts.plannedProjects ?? -1,
+                            "customColors": counts.customColors ?? -1,
+                            "zoneCount": resolvedZoneIDs.count
+                        ]
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    self.isCheckingCloudData = false
+                    self.cloudDataErrorMessage = Self.makeCloudDataErrorMessage(error)
+                    self.cloudDataCheckedAt = Date()
+                    AppLogger.shared.warning(
+                        "CloudSync",
+                        "cloud_data_refresh_failed",
+                        metadata: Self.cloudErrorMetadata(error)
+                    )
+                }
+            }
+        }
+    }
+
+    nonisolated private static func makeCloudDataSummaryText(_ counts: CloudDataCounts) -> String {
+        let brandText = formatCloudCount(counts.brands)
+        let stockText = formatCloudCount(counts.stocks)
+        let projectText = formatCloudCount(counts.projects)
+        let plannedText = formatCloudCount(counts.plannedProjects)
+        let customColorText = formatCloudCount(counts.customColors)
+        return "云端：品牌 \(brandText) · 库存 \(stockText) · 项目 \(projectText) · 计划 \(plannedText) · 自定义 \(customColorText)"
+    }
+
+    nonisolated private static func formatCloudCount(_ value: Int?) -> String {
+        guard let value else { return "未知" }
+        return "\(value)"
+    }
+
+    nonisolated private static func makeCloudDataErrorMessage(_ error: Error) -> String {
+        if let queryError = error as? CloudDataQueryError {
+            switch queryError {
+            case .invalidRecordType:
+                return "云端统计配置错误"
+            }
+        }
+
+        guard let ckError = error as? CKError else {
+            return "请稍后重试"
+        }
+
+        if isQueryCapabilityLimitationError(ckError) {
+            return "云端架构暂不支持该统计"
+        }
+
+        switch ckError.code {
+        case .networkUnavailable, .networkFailure:
+            return "网络不可用"
+        case .notAuthenticated:
+            return "未登录 iCloud"
+        case .requestRateLimited, .serviceUnavailable:
+            return "请求过于频繁，请稍后重试"
+        case .zoneNotFound:
+            return "云端分区未就绪"
+        default:
+            return "请稍后重试"
+        }
+    }
+
+    nonisolated private static func cloudErrorMetadata(_ error: Error) -> [String: Any] {
+        if let queryError = error as? CloudDataQueryError {
+            switch queryError {
+            case .invalidRecordType(let recordType):
+                return [
+                    "error": "invalid_record_type",
+                    "recordType": recordType
+                ]
+            }
+        }
+
+        guard let ckError = error as? CKError else {
+            return ["error": error.localizedDescription]
+        }
+        return [
+            "error": ckError.localizedDescription,
+            "code": ckError.code.rawValue
+        ]
+    }
+
+    nonisolated private static func fetchCloudDataCounts(
+        database: CKDatabase,
+        zoneIDs: [CKRecordZone.ID],
+        recordTypes: CloudRecordTypes,
+        plannedFieldCandidates: [String]
+    ) async throws -> CloudDataCounts {
+        let brandCount = try await countForRecordTypeCandidates(
+            recordTypes.brands,
+            database: database,
+            zoneIDs: zoneIDs
+        )
+        let stockCount = try await countForRecordTypeCandidates(
+            recordTypes.stocks,
+            database: database,
+            zoneIDs: zoneIDs
+        )
+        let customColorCount = try await countForRecordTypeCandidates(
+            recordTypes.customColors,
+            database: database,
+            zoneIDs: zoneIDs
+        )
+
+        let projectRecordType = try await resolveRecordTypeIfPossible(
+            recordTypes.projects,
+            database: database,
+            zoneIDs: zoneIDs
+        )
+
+        let projectCount: Int?
+        let plannedProjectCount: Int?
+        if let projectRecordType {
+            do {
+                projectCount = try await countRecordsAcrossKnownZones(
+                    recordType: projectRecordType,
+                    database: database,
+                    zoneIDs: zoneIDs
+                )
+            } catch let ckError as CKError where isQueryCapabilityLimitationError(ckError) {
+                projectCount = nil
+            }
+
+            do {
+                plannedProjectCount = try await countPlannedProjectsAcrossKnownZones(
+                    recordType: projectRecordType,
+                    database: database,
+                    zoneIDs: zoneIDs,
+                    fieldCandidates: plannedFieldCandidates
+                )
+            } catch let ckError as CKError where isQueryCapabilityLimitationError(ckError) {
+                plannedProjectCount = nil
+            }
+        } else {
+            projectCount = nil
+            plannedProjectCount = nil
+        }
+
+        return CloudDataCounts(
+            brands: brandCount,
+            stocks: stockCount,
+            projects: projectCount,
+            plannedProjects: plannedProjectCount,
+            customColors: customColorCount
+        )
+    }
+
+    nonisolated private static func countForRecordTypeCandidates(
+        _ candidates: [String],
+        database: CKDatabase,
+        zoneIDs: [CKRecordZone.ID]
+    ) async throws -> Int? {
+        do {
+            guard let recordType = try await resolveRecordTypeIfPossible(
+                candidates,
+                database: database,
+                zoneIDs: zoneIDs
+            ) else {
+                return nil
+            }
+
+            return try await countRecordsAcrossKnownZones(
+                recordType: recordType,
+                database: database,
+                zoneIDs: zoneIDs
+            )
+        } catch let ckError as CKError where isQueryCapabilityLimitationError(ckError) {
+            return nil
+        }
+    }
+
+    nonisolated private static func resolveRecordTypeIfPossible(
+        _ candidates: [String],
+        database: CKDatabase,
+        zoneIDs: [CKRecordZone.ID]
+    ) async throws -> String? {
+        for candidate in candidates {
+            guard isValidRecordTypeName(candidate) else {
+                continue
+            }
+            do {
+                _ = try await countRecordsAcrossKnownZones(
+                    recordType: candidate,
+                    database: database,
+                    zoneIDs: zoneIDs,
+                    predicate: NSPredicate(value: true),
+                    resultsLimit: 1
+                )
+                return candidate
+            } catch let ckError as CKError where isUnsupportedRecordTypeError(ckError) {
+                continue
+            } catch let ckError as CKError where isQueryCapabilityLimitationError(ckError) {
+                continue
+            }
+        }
+        return nil
+    }
+
+    nonisolated private static func countPlannedProjectsAcrossKnownZones(
+        recordType: String,
+        database: CKDatabase,
+        zoneIDs: [CKRecordZone.ID],
+        fieldCandidates: [String]
+    ) async throws -> Int? {
+        for field in fieldCandidates {
+            do {
+                return try await countRecordsAcrossKnownZones(
+                    recordType: recordType,
+                    database: database,
+                    zoneIDs: zoneIDs,
+                    predicate: NSPredicate(format: "%K == %@", field, NSNumber(value: true))
+                )
+            } catch let ckError as CKError where isInvalidFieldError(ckError, fieldName: field) {
+                continue
+            }
+        }
+        return nil
+    }
+
+    nonisolated private static func countRecordsAcrossKnownZones(
+        recordType: String,
+        database: CKDatabase,
+        zoneIDs: [CKRecordZone.ID],
+        predicate: NSPredicate = NSPredicate(value: true),
+        resultsLimit: Int = 200
+    ) async throws -> Int {
+        var total = 0
+        var hasSuccessfulZone = false
+
+        for zoneID in zoneIDs {
+            do {
+                let zoneCount = try await countRecords(
+                    recordType: recordType,
+                    database: database,
+                    zoneID: zoneID,
+                    predicate: predicate,
+                    resultsLimit: resultsLimit
+                )
+                hasSuccessfulZone = true
+                total += zoneCount
+            } catch let ckError as CKError {
+                if shouldIgnoreZoneError(ckError) {
+                    continue
+                }
+                throw ckError
+            }
+        }
+
+        if hasSuccessfulZone {
+            return total
+        }
+
+        // 兜底：不指定 zone 查询，兼容某些环境只支持默认行为
+        return try await countRecords(
+            recordType: recordType,
+            database: database,
+            zoneID: nil,
+            predicate: predicate,
+            resultsLimit: resultsLimit
+        )
+    }
+
+    nonisolated private static func countRecords(
+        recordType: String,
+        database: CKDatabase,
+        zoneID: CKRecordZone.ID?,
+        predicate: NSPredicate,
+        resultsLimit: Int
+    ) async throws -> Int {
+        guard isValidRecordTypeName(recordType) else {
+            throw CloudDataQueryError.invalidRecordType(recordType)
+        }
+
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int, Error>) in
+            var total = 0
+            let lock = NSLock()
+
+            func enqueueOperation(cursor: CKQueryOperation.Cursor?) {
+                let operation: CKQueryOperation
+                if let cursor {
+                    operation = CKQueryOperation(cursor: cursor)
+                } else {
+                    let query = CKQuery(recordType: recordType, predicate: predicate)
+                    operation = CKQueryOperation(query: query)
+                    operation.zoneID = zoneID
+                }
+
+                operation.resultsLimit = resultsLimit
+                operation.desiredKeys = []
+                operation.recordMatchedBlock = { _, result in
+                    if case .success = result {
+                        lock.lock()
+                        total += 1
+                        lock.unlock()
+                    }
+                }
+
+                operation.queryResultBlock = { result in
+                    switch result {
+                    case .success(let nextCursor):
+                        if let nextCursor {
+                            enqueueOperation(cursor: nextCursor)
+                        } else {
+                            lock.lock()
+                            let finalCount = total
+                            lock.unlock()
+                            continuation.resume(returning: finalCount)
+                        }
+                    case .failure(let error):
+                        continuation.resume(throwing: error)
+                    }
+                }
+
+                database.add(operation)
+            }
+
+            enqueueOperation(cursor: nil)
+        }
+    }
+
+    nonisolated private static func isValidRecordTypeName(_ recordType: String) -> Bool {
+        guard let first = recordType.unicodeScalars.first else {
+            return false
+        }
+
+        let asciiLetters = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_")
+
+        guard asciiLetters.contains(first) else {
+            return false
+        }
+
+        return recordType.unicodeScalars.allSatisfy { allowed.contains($0) }
+    }
+
+    nonisolated private static func isUnsupportedRecordTypeError(_ error: CKError) -> Bool {
+        let partialErrors = partialCKErrors(from: error)
+        if !partialErrors.isEmpty {
+            return partialErrors.contains { isUnsupportedRecordTypeError($0) }
+        }
+
+        if error.code == .unknownItem {
+            return true
+        }
+
+        if error.code == .invalidArguments {
+            let description = error.localizedDescription.lowercased()
+            if description.contains("record type"),
+               (description.contains("unknown") || description.contains("invalid") || description.contains("not found")) {
+                return true
+            }
+        }
+
+        if error.code == .serverRejectedRequest {
+            let description = error.localizedDescription.lowercased()
+            if description.contains("record type"),
+               (description.contains("unknown") || description.contains("invalid") || description.contains("not found")) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    nonisolated private static func isQueryCapabilityLimitationError(_ error: CKError) -> Bool {
+        let partialErrors = partialCKErrors(from: error)
+        if !partialErrors.isEmpty {
+            return partialErrors.contains { isQueryCapabilityLimitationError($0) }
+        }
+
+        let description = error.localizedDescription.lowercased()
+        if error.code == .invalidArguments || error.code == .serverRejectedRequest || error.code == .partialFailure {
+            if description.contains("queryable")
+                || description.contains("indexed")
+                || description.contains("index")
+                || description.contains("predicate")
+                || description.contains("keypath")
+                || description.contains("recordname")
+                || description.contains("field") {
+                return true
+            }
+        }
+        return false
+    }
+
+    nonisolated private static func shouldIgnoreZoneError(_ error: CKError) -> Bool {
+        let partialErrors = partialCKErrors(from: error)
+        if !partialErrors.isEmpty {
+            return partialErrors.allSatisfy { partialError in
+                shouldIgnoreZoneError(partialError) || isQueryCapabilityLimitationError(partialError)
+            }
+        }
+
+        switch error.code {
+        case .zoneNotFound, .userDeletedZone, .unknownItem, .invalidArguments:
+            return true
+        default:
+            return false
+        }
+    }
+
+    nonisolated private static func isInvalidFieldError(_ error: CKError, fieldName: String) -> Bool {
+        let partialErrors = partialCKErrors(from: error)
+        if !partialErrors.isEmpty {
+            return partialErrors.contains { isInvalidFieldError($0, fieldName: fieldName) }
+        }
+
+        if error.code == .invalidArguments || error.code == .serverRejectedRequest || error.code == .partialFailure {
+            let description = error.localizedDescription.lowercased()
+            if description.contains("field")
+                || description.contains(fieldName.lowercased())
+                || description.contains("keypath")
+                || description.contains("recordname")
+                || description.contains("predicate") {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    nonisolated private static func partialCKErrors(from error: CKError) -> [CKError] {
+        guard error.code == .partialFailure,
+              let errorsByItem = error.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Error] else {
+            return []
+        }
+
+        return errorsByItem.values.compactMap { $0 as? CKError }
+    }
+
+    nonisolated private static func resolveCloudQueryZoneIDs(
+        database: CKDatabase,
+        preferredZoneIDs: [CKRecordZone.ID]
+    ) async -> [CKRecordZone.ID] {
+        do {
+            let fetchedZoneIDs = try await fetchAllZoneIDs(database: database)
+            let merged = uniqueZoneIDs(fetchedZoneIDs + preferredZoneIDs)
+            if merged.isEmpty {
+                return preferredZoneIDs
+            }
+            return merged
+        } catch {
+            return preferredZoneIDs
+        }
+    }
+
+    nonisolated private static func fetchAllZoneIDs(database: CKDatabase) async throws -> [CKRecordZone.ID] {
+        try await withCheckedThrowingContinuation { continuation in
+            var zoneIDs: [CKRecordZone.ID] = []
+            let operation = CKFetchRecordZonesOperation.fetchAllRecordZonesOperation()
+            operation.perRecordZoneResultBlock = { zoneID, result in
+                if case .success = result {
+                    zoneIDs.append(zoneID)
+                }
+            }
+            operation.fetchRecordZonesResultBlock = { result in
+                switch result {
+                case .success:
+                    continuation.resume(returning: zoneIDs)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+            database.add(operation)
+        }
+    }
+
+    nonisolated private static func uniqueZoneIDs(_ zoneIDs: [CKRecordZone.ID]) -> [CKRecordZone.ID] {
+        var seen: Set<String> = []
+        var ordered: [CKRecordZone.ID] = []
+        for zoneID in zoneIDs {
+            let key = "\(zoneID.ownerName)|\(zoneID.zoneName)"
+            guard seen.insert(key).inserted else { continue }
+            ordered.append(zoneID)
+        }
+        return ordered
     }
 }

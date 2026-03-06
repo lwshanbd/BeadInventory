@@ -10,23 +10,11 @@ import SwiftUI
 struct MoreView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @EnvironmentObject var cloudSyncStatusManager: CloudSyncStatusManager
-    @State private var showingImportFullData = false
-    @State private var showingScanHelp = false
-    @State private var showingBackupRestore = false
-    @State private var showingExportSheet = false
-    @State private var showingDiagnosticsShareSheet = false
-    @State private var diagnosticsExportURL: URL?
-    @State private var isExportingDiagnostics = false
-    @State private var isClearingDiagnostics = false
-    @State private var showingClearDiagnosticsAlert = false
-    @State private var diagnosticsNoticeMessage = ""
-    @State private var showingDiagnosticsNotice = false
 
     var body: some View {
         NavigationStack {
             List {
-                // 运输中
-                Section {
+                Section("工作台") {
                     NavigationLink {
                         ShippingView()
                     } label: {
@@ -55,10 +43,6 @@ struct MoreView: View {
                                 .foregroundColor(.orange)
                         }
                     }
-                }
-
-                // 成品展示
-                Section {
                     NavigationLink {
                         CalendarView()
                     } label: {
@@ -74,10 +58,6 @@ struct MoreView: View {
                                 .foregroundColor(.green)
                         }
                     }
-                }
-
-                // 历史记录
-                Section {
                     NavigationLink {
                         HistoryView()
                     } label: {
@@ -95,8 +75,7 @@ struct MoreView: View {
                     }
                 }
 
-                // 颜色管理
-                Section {
+                Section("色号工具") {
                     NavigationLink {
                         ColorConverterView()
                     } label: {
@@ -130,41 +109,8 @@ struct MoreView: View {
                     }
                 }
 
-                // iCloud 同步状态
-                Section("iCloud 同步") {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: cloudSyncStatusManager.statusIconName)
-                            .foregroundColor(cloudSyncStatusManager.statusColor)
-                            .font(.title3)
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 8) {
-                                Text(cloudSyncStatusManager.primaryStatusText)
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-
-                                if cloudSyncStatusManager.isCheckingAccount {
-                                    ProgressView()
-                                        .scaleEffect(0.8)
-                                }
-                            }
-
-                            Text(cloudSyncStatusManager.secondaryStatusText)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-
-                            Text("提示：iCloud 同步不是实时的，跨设备同步通常需要几秒到几分钟，请稍等一会再查看。")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-
-                            if let checkedAt = cloudSyncStatusManager.lastCheckedAt {
-                                Text("上次检查：\(checkedAt.formatted(date: .abbreviated, time: .shortened))")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-
+                Section("数据与同步") {
+                    cloudSyncStatusView
                     if cloudSyncStatusManager.shouldAllowManualRefresh {
                         Button {
                             cloudSyncStatusManager.refreshAccountStatus(force: true)
@@ -173,111 +119,41 @@ struct MoreView: View {
                         }
                         .disabled(cloudSyncStatusManager.isCheckingAccount)
                     }
-                }
 
-                // 数据管理
-                Section {
-                    Button {
-                        showingExportSheet = true
+                    NavigationLink {
+                        DataToolsView()
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("导出库存数据")
-                                Text("导出为 CSV 或 JSON 文件")
+                                Text("数据与备份")
+                                Text("导入导出与备份恢复")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
                         } icon: {
-                            Image(systemName: "square.and.arrow.up.fill")
-                                .foregroundColor(.blue)
-                        }
-                    }
-                    .foregroundColor(.primary)
-
-                    Button {
-                        showingImportFullData = true
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("导入历史数据")
-                                Text("从备份文件恢复全部数据")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "arrow.down.doc.fill")
-                                .foregroundColor(.green)
-                        }
-                    }
-                    .foregroundColor(.primary)
-
-                    Button {
-                        showingBackupRestore = true
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("恢复备份")
-                                Text("从自动备份恢复数据")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "arrow.clockwise.icloud.fill")
+                            Image(systemName: "externaldrive.badge.icloud")
                                 .foregroundColor(.cyan)
                         }
                     }
-                    .foregroundColor(.primary)
 
-                    Button {
-                        exportDiagnosticsLogs()
+                    NavigationLink {
+                        DiagnosticsToolsView()
                     } label: {
-                        HStack {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("导出诊断日志")
-                                    Text("仅在排查问题时导出给开发者")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            } icon: {
-                                Image(systemName: "doc.text.magnifyingglass")
-                                    .foregroundColor(.indigo)
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("诊断与帮助")
+                                Text("日志导出、扫描帮助与使用说明")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                             }
-                            Spacer()
-                            if isExportingDiagnostics {
-                                ProgressView()
-                            }
+                        } icon: {
+                            Image(systemName: "stethoscope")
+                                .foregroundColor(.indigo)
                         }
                     }
-                    .foregroundColor(.primary)
-                    .disabled(isExportingDiagnostics || isClearingDiagnostics)
-
-                    Button(role: .destructive) {
-                        showingClearDiagnosticsAlert = true
-                    } label: {
-                        HStack {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("清空诊断日志")
-                                    Text("只清空本机日志，不影响库存数据")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            } icon: {
-                                Image(systemName: "trash.circle.fill")
-                                    .foregroundColor(.red)
-                            }
-                            Spacer()
-                            if isClearingDiagnostics {
-                                ProgressView()
-                            }
-                        }
-                    }
-                    .disabled(isExportingDiagnostics || isClearingDiagnostics)
                 }
 
-                // 设置
-                Section {
+                Section("设置与关于") {
                     NavigationLink {
                         BrandSettingsView()
                     } label: {
@@ -309,42 +185,6 @@ struct MoreView: View {
                                 .foregroundColor(.gray)
                         }
                     }
-                }
-
-                // 帮助与关于
-                Section {
-                    Button {
-                        showingScanHelp = true
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("AI扫描帮助")
-                                Text("查看扫描识别使用说明")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "questionmark.circle.fill")
-                                .foregroundColor(.orange)
-                        }
-                    }
-                    .foregroundColor(.primary)
-
-                    NavigationLink {
-                        HelpView()
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("使用帮助")
-                                Text("功能介绍与使用技巧")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "book.fill")
-                                .foregroundColor(.teal)
-                        }
-                    }
 
                     NavigationLink {
                         AboutView()
@@ -364,43 +204,249 @@ struct MoreView: View {
                 }
             }
             .navigationTitle("更多")
-            .sheet(isPresented: $showingImportFullData) {
-                ImportFullDataView()
-            }
-            .sheet(isPresented: $showingScanHelp) {
-                ScanHelpSheet(onDismiss: {
-                    showingScanHelp = false
-                })
-            }
-            .sheet(isPresented: $showingBackupRestore) {
-                BackupRestoreView()
-            }
-            .sheet(isPresented: $showingExportSheet) {
-                ExportDataSheet(inventoryManager: inventoryManager)
-            }
-            .sheet(isPresented: $showingDiagnosticsShareSheet, onDismiss: {
-                diagnosticsExportURL = nil
-            }) {
-                if let diagnosticsExportURL {
-                    ShareSheet(items: [diagnosticsExportURL])
-                }
-            }
-            .alert("清空诊断日志", isPresented: $showingClearDiagnosticsAlert) {
-                Button("取消", role: .cancel) {}
-                Button("清空", role: .destructive) {
-                    clearDiagnosticsLogs()
-                }
-            } message: {
-                Text("仅会删除当前设备上的诊断日志文件，不会影响库存、项目或云同步数据。")
-            }
-            .alert("诊断日志", isPresented: $showingDiagnosticsNotice) {
-                Button("知道了", role: .cancel) {}
-            } message: {
-                Text(diagnosticsNoticeMessage)
-            }
             .onAppear {
                 cloudSyncStatusManager.refreshAccountStatus()
             }
+        }
+    }
+
+    private var cloudSyncStatusView: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: cloudSyncStatusManager.statusIconName)
+                .foregroundColor(cloudSyncStatusManager.statusColor)
+                .font(.title3)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(cloudSyncStatusManager.primaryStatusText)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+
+                    if cloudSyncStatusManager.isCheckingAccount {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    }
+                }
+
+                Text(cloudSyncStatusManager.secondaryStatusText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Text("提示：iCloud 同步不是实时的，跨设备同步通常需要几秒到几分钟，请稍等一会再查看。")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+
+                if let checkedAt = cloudSyncStatusManager.lastCheckedAt {
+                    Text("上次检查：\(checkedAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+}
+
+struct DataToolsView: View {
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var showingImportFullData = false
+    @State private var showingBackupRestore = false
+    @State private var showingExportSheet = false
+
+    var body: some View {
+        List {
+            Section("导入导出") {
+                Button {
+                    showingExportSheet = true
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("导出库存数据")
+                            Text("导出为 CSV 或 JSON 文件")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "square.and.arrow.up.fill")
+                            .foregroundColor(.blue)
+                    }
+                }
+                .foregroundColor(.primary)
+
+                Button {
+                    showingImportFullData = true
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("导入历史数据")
+                            Text("从备份文件恢复全部数据")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "arrow.down.doc.fill")
+                            .foregroundColor(.green)
+                    }
+                }
+                .foregroundColor(.primary)
+            }
+
+            Section {
+                Button {
+                    showingBackupRestore = true
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("恢复备份")
+                            Text("从自动备份恢复数据")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "arrow.clockwise.icloud.fill")
+                            .foregroundColor(.cyan)
+                    }
+                }
+                .foregroundColor(.primary)
+            } header: {
+                Text("备份恢复")
+            } footer: {
+                Text("涉及全量数据修改时，建议先导出库存数据留存。")
+            }
+        }
+        .navigationTitle("数据与备份")
+        .sheet(isPresented: $showingImportFullData) {
+            ImportFullDataView()
+        }
+        .sheet(isPresented: $showingBackupRestore) {
+            BackupRestoreView()
+        }
+        .sheet(isPresented: $showingExportSheet) {
+            ExportDataSheet(inventoryManager: inventoryManager)
+        }
+    }
+}
+
+struct DiagnosticsToolsView: View {
+    @State private var showingScanHelp = false
+    @State private var showingDiagnosticsShareSheet = false
+    @State private var diagnosticsExportURL: URL?
+    @State private var isExportingDiagnostics = false
+    @State private var isClearingDiagnostics = false
+    @State private var showingClearDiagnosticsAlert = false
+    @State private var diagnosticsNoticeMessage = ""
+    @State private var showingDiagnosticsNotice = false
+
+    var body: some View {
+        List {
+            Section("帮助") {
+                Button {
+                    showingScanHelp = true
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("AI扫描帮助")
+                            Text("查看扫描识别使用说明")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "questionmark.circle.fill")
+                            .foregroundColor(.orange)
+                    }
+                }
+                .foregroundColor(.primary)
+
+                NavigationLink {
+                    HelpView()
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("使用帮助")
+                            Text("功能介绍与使用技巧")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "book.fill")
+                            .foregroundColor(.teal)
+                    }
+                }
+            }
+
+            Section("诊断日志") {
+                Button {
+                    exportDiagnosticsLogs()
+                } label: {
+                    HStack {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("导出诊断日志")
+                                Text("仅在排查问题时导出给开发者")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .foregroundColor(.indigo)
+                        }
+                        Spacer()
+                        if isExportingDiagnostics {
+                            ProgressView()
+                        }
+                    }
+                }
+                .foregroundColor(.primary)
+                .disabled(isExportingDiagnostics || isClearingDiagnostics)
+
+                Button(role: .destructive) {
+                    showingClearDiagnosticsAlert = true
+                } label: {
+                    HStack {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("清空诊断日志")
+                                Text("只清空本机日志，不影响库存数据")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "trash.circle.fill")
+                                .foregroundColor(.red)
+                        }
+                        Spacer()
+                        if isClearingDiagnostics {
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(isExportingDiagnostics || isClearingDiagnostics)
+            }
+        }
+        .navigationTitle("诊断与帮助")
+        .sheet(isPresented: $showingScanHelp) {
+            ScanHelpSheet(onDismiss: {
+                showingScanHelp = false
+            })
+        }
+        .sheet(isPresented: $showingDiagnosticsShareSheet, onDismiss: {
+            diagnosticsExportURL = nil
+        }) {
+            if let diagnosticsExportURL {
+                ShareSheet(items: [diagnosticsExportURL])
+            }
+        }
+        .alert("清空诊断日志", isPresented: $showingClearDiagnosticsAlert) {
+            Button("取消", role: .cancel) {}
+            Button("清空", role: .destructive) {
+                clearDiagnosticsLogs()
+            }
+        } message: {
+            Text("仅会删除当前设备上的诊断日志文件，不会影响库存、项目或云同步数据。")
+        }
+        .alert("诊断日志", isPresented: $showingDiagnosticsNotice) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(diagnosticsNoticeMessage)
         }
     }
 
