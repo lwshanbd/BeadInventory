@@ -38,27 +38,27 @@ enum LocalRecognitionModel: String, CaseIterable, Codable, Identifiable {
     var displayName: String {
         switch self {
         case .qwen35_08b:
-            return "Qwen3.5 0.8B"
+            return "Qwen3.5 0.8B (4bit)"
         case .qwen35_2b:
-            return "Qwen3.5 2B"
+            return "Qwen3.5 2B (4bit)"
         }
     }
 
     var repositoryID: String {
         switch self {
         case .qwen35_08b:
-            return "mlx-community/Qwen3.5-0.8B-MLX-8bit"
+            return "mlx-community/Qwen3.5-0.8B-MLX-4bit"
         case .qwen35_2b:
-            return "mlx-community/Qwen3.5-2B-MLX-8bit"
+            return "mlx-community/Qwen3.5-2B-4bit"
         }
     }
 
     var approximateDownloadSize: String {
         switch self {
         case .qwen35_08b:
-            return "约 1.0 GB"
+            return "约 625 MB"
         case .qwen35_2b:
-            return "约 2.66 GB"
+            return "约 1.72 GB"
         }
     }
 
@@ -281,17 +281,36 @@ final class LocalModelManager: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: downloadedPathsKey),
            let saved = try? JSONDecoder().decode([LocalRecognitionModel: String].self, from: data) {
             let fileManager = FileManager.default
-            self.downloadedPaths = saved.filter { fileManager.fileExists(atPath: $0.value) }
+            var filtered: [LocalRecognitionModel: String] = [:]
+
+            for (model, path) in saved {
+                guard fileManager.fileExists(atPath: path) else {
+                    continue
+                }
+
+                if isPathCompatible(path, for: model) {
+                    filtered[model] = path
+                } else {
+                    try? fileManager.removeItem(atPath: path)
+                }
+            }
+
+            self.downloadedPaths = filtered
+            if self.downloadedPaths.count != saved.count {
+                persistDownloadedPaths()
+            }
         }
     }
 
     func isDownloaded(_ model: LocalRecognitionModel) -> Bool {
         guard let path = downloadedPaths[model] else { return false }
-        return FileManager.default.fileExists(atPath: path)
+        return FileManager.default.fileExists(atPath: path) && isPathCompatible(path, for: model)
     }
 
     func localDirectory(for model: LocalRecognitionModel) -> URL? {
-        guard let path = downloadedPaths[model], FileManager.default.fileExists(atPath: path) else {
+        guard let path = downloadedPaths[model],
+              FileManager.default.fileExists(atPath: path),
+              isPathCompatible(path, for: model) else {
             return nil
         }
         return URL(fileURLWithPath: path, isDirectory: true)
@@ -299,6 +318,12 @@ final class LocalModelManager: ObservableObject {
 
     func progress(for model: LocalRecognitionModel) -> Double {
         downloadProgress[model] ?? 0
+    }
+
+    private func isPathCompatible(_ path: String, for model: LocalRecognitionModel) -> Bool {
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        let expectedFragment = "/models/\(model.repositoryID)"
+        return normalizedPath.contains(expectedFragment)
     }
 
     func errorMessage(for model: LocalRecognitionModel) -> String? {
@@ -687,46 +712,6 @@ class AIServiceManager: ObservableObject {
 
     // MARK: - 提示词生成
 
-    private func buildLocalPrompts(mode: RecognitionMode, colorSystem: ColorSystem) -> (system: String, user: String) {
-        switch mode {
-        case .table:
-            if colorSystem == .kaka {
-                let system = """
-                你是拼豆表格识别助手。
-                识别图片里卡卡色号和数量，只输出 JSON。
-                卡卡色号格式只接受 B/P/R + 数字。
-                如果图片里有两个表格区块，需要合并结果。
-                输出格式必须是 {"items":[{"color_code":"B3","quantity":100}]}。
-                无法确认的列直接跳过。
-                """
-                let user = "识别这张表格，提取所有卡卡色号和数量，只返回 JSON。"
-                return (system, user)
-            } else {
-                let system = """
-                你是拼豆表格识别助手。
-                识别图片里 MARD 色号和数量，只输出 JSON。
-                MARD 色号通常是字母+数字，如 F8、A17、B195、DH01。
-                如果图片里有两个表格区块，需要合并结果。
-                输出格式必须是 {"items":[{"color_code":"F8","quantity":100}]}。
-                无法确认的列直接跳过。
-                """
-                let user = "识别这张表格，提取所有 MARD 色号和数量，只返回 JSON。"
-                return (system, user)
-            }
-        case .blueprint:
-            let system = """
-            你是拼豆图纸识别助手。
-            找出图片中所有色号和对应数量，只输出 JSON。
-            色号通常是字母+数字，如 F8、A17、B3、B257。
-            数量在色号附近。
-            输出格式必须是 {"items":[{"color_code":"F8","quantity":100}]}。
-            无法确认数量的项目直接跳过。
-            """
-            let user = "识别这张拼豆图纸，提取所有色号和数量，只返回 JSON。"
-            return (system, user)
-        }
-    }
-
     /// 根据识别模式和色号体系生成 AI 提示词
     private func buildPrompts(mode: RecognitionMode, colorSystem: ColorSystem) -> (system: String, user: String) {
         switch mode {
@@ -766,11 +751,15 @@ class AIServiceManager: ObservableObject {
                 注意：
                 - 只返回卡卡色号（B/P/R+数字格式），忽略其他品牌行
                 - color_code是字符串，quantity是整数
+                - 顶层必须是单个JSON对象，格式必须是 {"items":[...]}
+                - 不要返回裸数组 [...]，不要返回单个条目对象
+                - 不要使用```json代码块，不要输出任何额外说明文字
+                - quantity必须是纯整数，不能加括号，不能是字符串
                 - 如果某列无法识别，跳过该列
                 - 只输出JSON，不要解释
                 - 图片可能有水印干扰，请仔细辨认文字
                 """
-                let user = "请识别这张色号表格图片，提取所有卡卡色号和对应的数量。卡卡色号有B、P、R三种前缀（如B3, B257, P12, R5），格式为单个字母+数字。先判断表格结构，找到卡卡行和数量行。如有多个表格区块请全部识别。只返回JSON。"
+                let user = "请识别这张色号表格图片，提取所有卡卡色号和对应的数量。卡卡色号有B、P、R三种前缀（如B3, B257, P12, R5），格式为单个字母+数字。先判断表格结构，找到卡卡行和数量行。如有多个表格区块请全部识别。返回内容必须且只能是严格JSON，顶层必须是 {\"items\":[...]}，不要返回裸数组，不要使用代码块，quantity必须是整数。"
                 return (system, user)
 
             default:
@@ -804,11 +793,15 @@ class AIServiceManager: ObservableObject {
                 注意：
                 - 只返回MARD色号，忽略其他品牌行
                 - color_code是字符串，quantity是整数
+                - 顶层必须是单个JSON对象，格式必须是 {"items":[...]}
+                - 不要返回裸数组 [...]，不要返回单个条目对象
+                - 不要使用```json代码块，不要输出任何额外说明文字
+                - quantity必须是纯整数，不能加括号，不能是字符串
                 - 如果某列无法识别，跳过该列
                 - 只输出JSON，不要解释
                 - 图片可能有水印干扰，请仔细辨认文字
                 """
-                let user = "请识别这张色号表格图片，提取所有MARD色号和对应的数量。先判断表格结构，找到MARD行和数量行。如有多个表格区块请全部识别。只返回JSON。"
+                let user = "请识别这张色号表格图片，提取所有MARD色号和对应的数量。先判断表格结构，找到MARD行和数量行。如有多个表格区块请全部识别。返回内容必须且只能是严格JSON，顶层必须是 {\"items\":[...]}，不要返回裸数组，不要使用代码块，quantity必须是整数。"
                 return (system, user)
             }
 
@@ -837,18 +830,22 @@ class AIServiceManager: ObservableObject {
 
             注意：
             - color_code是字符串（字母+数字），quantity是整数
+            - 顶层必须是单个JSON对象，格式必须是 {"items":[...]}
+            - 不要返回裸数组 [...]，不要返回单个条目对象
+            - 不要使用```json代码块，不要输出任何额外说明文字
+            - quantity必须是纯整数，不能加括号，不能是字符串
             - 如果某个色号无法识别数量，跳过该项
             - 只输出JSON，不要解释
             - 图片可能有水印干扰，请仔细辨认文字
             - 数量通常在色号的下方或旁边
             """
-            let user = "请识别这张拼豆图纸，找出所有色号和对应的数量。色号通常是字母+数字（如F8, A17, B3, B257），数量在色号附近。只返回JSON。"
+            let user = "请识别这张拼豆图纸，找出所有色号和对应的数量。色号通常是字母+数字（如F8, A17, B3, B257），数量在色号附近。返回内容必须且只能是严格JSON，顶层必须是 {\"items\":[...]}，不要返回裸数组，不要使用代码块，quantity必须是整数。"
             return (system, user)
         }
     }
 
     private func recognizeWithLocalModel(image: UIImage, mode: RecognitionMode, colorSystem: ColorSystem) async throws -> [AIRecognizedItem] {
-        let prompts = buildLocalPrompts(mode: mode, colorSystem: colorSystem)
+        let prompts = buildPrompts(mode: mode, colorSystem: colorSystem)
         let output = try await LocalModelManager.shared.recognize(
             image: image,
             model: config.localModel,
