@@ -110,36 +110,6 @@ struct SettingsView: View {
     }
 }
 
-enum RecognitionSetupGate {
-    static let completedKey = "recognitionSetupFlowCompleted"
-
-    @MainActor
-    static func shouldPresent(for aiService: AIServiceManager) -> Bool {
-        let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: completedKey) else { return false }
-        guard !aiService.isConfigured else { return false }
-        return !isLikelyExistingInstall(defaults: defaults)
-    }
-
-    static func markCompleted() {
-        UserDefaults.standard.set(true, forKey: completedKey)
-    }
-
-    private static func isLikelyExistingInstall(defaults: UserDefaults) -> Bool {
-        let legacyKeys = [
-            "hasExistingData",
-            "migrationVersion",
-            "scanViewHelpShown",
-            "currentBrandId",
-            "purchaseRecords",
-            "AIServiceConfig",
-            "lastBackupDate"
-        ]
-
-        return legacyKeys.contains { defaults.object(forKey: $0) != nil }
-    }
-}
-
 struct RecognitionSettingsScreen: View {
     @ObservedObject private var aiService = AIServiceManager.shared
 
@@ -151,58 +121,12 @@ struct RecognitionSettingsScreen: View {
     }
 }
 
-struct RecognitionSetupSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var aiService = AIServiceManager.shared
-
-    private var completionButtonTitle: String {
-        aiService.isConfigured ? "开始使用" : "稍后再说"
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("先选择识别方式")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-
-                        Text("你可以直接配置云端 API，也可以下载本地模型。")
-                            .foregroundColor(.secondary)
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            Label("本地识别免去 API 配置，但准确度略差于云端，速度更慢，也可能造成发热。", systemImage: "iphone.gen3")
-                            Label("iPhone 14 及以上推荐 0.8B；iPhone 15 及以上再考虑 2B。", systemImage: "cpu")
-                            Label("云端识别通常更快、更准，但需要 API Key。", systemImage: "cloud")
-                        }
-                        .font(.subheadline)
-                    }
-                    .padding(.vertical, 4)
-                }
-
-                RecognitionSettingsSections(aiService: aiService)
-            }
-            .navigationTitle("欢迎")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(completionButtonTitle) {
-                        RecognitionSetupGate.markCompleted()
-                        dismiss()
-                    }
-                }
-            }
-        }
-        .presentationDetents([.large])
-        .onDisappear {
-            RecognitionSetupGate.markCompleted()
-        }
-    }
-}
-
 struct RecognitionSettingsSections: View {
     @ObservedObject var aiService: AIServiceManager
     @ObservedObject private var localModelManager = LocalModelManager.shared
+    @State private var showingCloudSetupHelp = false
+
+    private let cloudSetupTutorialURL = URL(string: "http://xhslink.com/o/4CKj0aSSeO9")!
 
     private var deviceProfile: LocalModelDeviceProfile {
         .current
@@ -244,6 +168,26 @@ struct RecognitionSettingsSections: View {
                 }
             }
         }
+        .sheet(isPresented: $showingCloudSetupHelp) {
+            NavigationStack {
+                List {
+                    Section {
+                        Text("如果你想知道如何配置 API，可以参考小红书教程。")
+                        Link("打开小红书教程", destination: cloudSetupTutorialURL)
+                    }
+                }
+                .navigationTitle("API 配置帮助")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("完成") {
+                            showingCloudSetupHelp = false
+                        }
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+        }
     }
 
     private var localBackendContent: some View {
@@ -267,6 +211,23 @@ struct RecognitionSettingsSections: View {
 
     private var cloudBackendContent: some View {
         Group {
+            HStack {
+                Text("API 配置")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                Spacer()
+
+                Button {
+                    showingCloudSetupHelp = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("API 配置帮助")
+            }
+
             Picker("AI 提供商", selection: $aiService.config.provider) {
                 ForEach(AIProvider.allCases, id: \.self) { provider in
                     Text(provider.rawValue).tag(provider)
@@ -399,7 +360,6 @@ struct LocalModelOptionCard: View {
                 if localModelManager.isDownloaded(model) {
                     aiService.config.backend = .local
                     aiService.config.localModel = model
-                    RecognitionSetupGate.markCompleted()
                 } else {
                     isStartingDownload = true
                     aiService.config.backend = .local
@@ -408,7 +368,6 @@ struct LocalModelOptionCard: View {
                         do {
                             try await localModelManager.downloadModel(model)
                             await MainActor.run {
-                                RecognitionSetupGate.markCompleted()
                                 isStartingDownload = false
                             }
                         } catch {

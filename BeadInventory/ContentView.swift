@@ -11,11 +11,9 @@ struct ContentView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @EnvironmentObject var sharedImageManager: SharedImageManager
     @ObservedObject private var announcementManager = AnnouncementManager.shared
-    @ObservedObject private var aiService = AIServiceManager.shared
     @Binding var shouldOpenScan: Bool
     @State private var selectedTab = 0
     @State private var showingAddInventory = false
-    @State private var showingRecognitionSetup = false
 
     /// 从 Share Extension 传入的图片
     @State private var externalImage: UIImage?
@@ -93,9 +91,6 @@ struct ContentView: View {
         .sheet(isPresented: $showingAddInventory) {
             AddInventoryView()
         }
-        .sheet(isPresented: $showingRecognitionSetup) {
-            RecognitionSetupSheet()
-        }
         // 远程公告弹窗
         .alert(
             announcementManager.currentAnnouncement?.title ?? "",
@@ -146,10 +141,6 @@ struct ContentView: View {
             // 延迟一点检查，确保视图已准备好
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 sharedImageManager.checkForPendingImage()
-            }
-
-            if RecognitionSetupGate.shouldPresent(for: aiService) {
-                showingRecognitionSetup = true
             }
         }
     }
