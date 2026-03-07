@@ -12,6 +12,7 @@ import UIKit
 struct ScanView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @ObservedObject private var aiService = AIServiceManager.shared
+    @ObservedObject private var localModelManager = LocalModelManager.shared
 
     /// 从外部传入的图片（如 Share Extension）
     @Binding var externalImage: UIImage?
@@ -119,16 +120,40 @@ struct ScanView: View {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundColor(.orange)
-                                Text("请先在设置中配置 AI API")
-                                    .font(.caption)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(aiService.statusMessage)
+                                        .font(.caption)
+                                    Text(aiService.setupBannerText)
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+
+                                    if aiService.config.backend == .local,
+                                       localModelManager.isDownloading.contains(aiService.config.localModel) {
+                                        ProgressView(value: localModelManager.progress(for: aiService.config.localModel))
+                                            .progressViewStyle(.linear)
+                                    }
+                                }
+                                .font(.caption)
                                 Spacer()
-                                NavigationLink("去设置") {
-                                    AISettingsView(aiService: aiService)
+                                NavigationLink(aiService.setupActionTitle) {
+                                    RecognitionSettingsScreen()
                                 }
                                 .font(.caption)
                             }
                             .padding()
                             .background(Color.orange.opacity(0.1))
+                            .cornerRadius(8)
+                            .padding(.horizontal)
+                        } else if aiService.config.backend == .local {
+                            HStack(alignment: .top) {
+                                Image(systemName: "iphone.gen3")
+                                    .foregroundColor(.blue)
+                                Text("当前使用 \(aiService.config.localModel.displayName) 本地识别。无需 API，但速度相对更慢，也可能引起发热。")
+                                    .font(.caption)
+                                Spacer()
+                            }
+                            .padding()
+                            .background(Color.blue.opacity(0.08))
                             .cornerRadius(8)
                             .padding(.horizontal)
                         }
@@ -1809,79 +1834,7 @@ struct AISettingsView: View {
     @ObservedObject var aiService: AIServiceManager
 
     var body: some View {
-        Form {
-            Section {
-                Picker("AI 提供商", selection: $aiService.config.provider) {
-                    ForEach(AIProvider.allCases, id: \.self) { provider in
-                        Text(provider.rawValue).tag(provider)
-                    }
-                }
-
-                SecureField("API Key", text: $aiService.config.apiKey)
-                    .textContentType(.password)
-                    .autocapitalization(.none)
-
-                // API Key 格式警告
-                if aiService.config.hasKeyFormatWarning {
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                            .font(.caption)
-                        Text("\(aiService.config.provider.rawValue) 的 API Key 通常以 \"sk-\" 开头，你当前填写的 Key 格式可能不正确，请确认。")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                    }
-                }
-
-                Toggle("自定义 API 地址", isOn: $aiService.config.enableCustomURL)
-
-                if aiService.config.enableCustomURL {
-                    TextField("API 地址", text: $aiService.config.baseURL)
-                        .autocapitalization(.none)
-                        .keyboardType(.URL)
-                }
-
-                // Kimi 只有一个模型，不显示选择器
-                if aiService.config.provider == .openai {
-                    Picker("模型", selection: $aiService.config.model) {
-                        ForEach(AIConfig.openAIModels, id: \.self) { model in
-                            Text(model).tag(model)
-                        }
-                    }
-                } else if aiService.config.provider == .anthropic {
-                    Picker("模型", selection: $aiService.config.model) {
-                        ForEach(AIConfig.anthropicModels, id: \.self) { model in
-                            Text(model).tag(model)
-                        }
-                    }
-                }
-            } header: {
-                Text("AI 配置")
-            } footer: {
-                switch aiService.config.provider {
-                case .kimi:
-                    Text("Kimi API Key 可从 platform.moonshot.cn 获取")
-                case .openai:
-                    Text("OpenAI API Key 可从 platform.openai.com 获取。如需代理可填写自定义 API 地址。")
-                case .anthropic:
-                    Text("Anthropic API Key 可从 console.anthropic.com 获取。")
-                case .qwen:
-                    Text("Qwen API Key 可从阿里云百炼平台 bailian.console.aliyun.com 获取")
-                case .gemini:
-                    Text("Gemini API Key 可从 aistudio.google.com 获取")
-                }
-            }
-
-            Section {
-                HStack {
-                    Image(systemName: aiService.isConfigured ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                        .foregroundColor(aiService.isConfigured ? .green : .orange)
-                    Text(aiService.isConfigured ? "已配置，可以使用 AI 识别" : "请填写 API Key")
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .navigationTitle("AI 设置")
+        RecognitionSettingsScreen()
     }
 }
 
@@ -2348,7 +2301,7 @@ struct ScanHelpSheet: View {
                             .padding(.top, 24)
 
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("1. 配置AI API Key（请参考啃豆小仓小红书教程）")
+                            Text("1. 先选择识别方式：可下载本地模型，也可配置云端 API")
                             Text("2. 裁切图纸，请只保留图纸下方豆量汇总")
                             Text("3. 扫描")
                         }
