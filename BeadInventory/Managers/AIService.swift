@@ -11,6 +11,7 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import Combine
 import Hub
+import MLX
 import MLXLMCommon
 import MLXVLM
 
@@ -370,12 +371,21 @@ final class LocalModelManager: ObservableObject {
             return container
         }
 
+        if loadedModel != model {
+            container = nil
+            loadedModel = nil
+            Memory.clearCache()
+        }
+
         guard let directory = localDirectory(for: model) else {
             throw AIError.localModelNotDownloaded(model.displayName)
         }
 
         isLoadingModel = true
         defer { isLoadingModel = false }
+
+        Memory.cacheLimit = Self.localCacheLimit(for: model)
+        print("[AI Debug] MLX cache limit: \(Self.debugMemoryDescription(Memory.cacheLimit))")
 
         let configuration = ModelConfiguration(directory: directory)
         let loadedContainer = try await VLMModelFactory.shared.loadContainer(configuration: configuration)
@@ -387,7 +397,7 @@ final class LocalModelManager: ObservableObject {
     func recognize(image: UIImage, model: LocalRecognitionModel, systemPrompt: String, userPrompt: String) async throws -> String {
         let container = try await ensureLoaded(model)
 
-        guard let ciImage = preparedCIImage(from: image) else {
+        guard let ciImage = preparedCIImage(from: image, for: model) else {
             throw AIError.imageProcessingFailed
         }
 
@@ -396,18 +406,123 @@ final class LocalModelManager: ObservableObject {
             .user(userPrompt, images: [.ciImage(ciImage)])
         ])
 
-        let result = try await container.perform { context in
-            let preparedInput = try await context.processor.prepare(input: input)
-            return try MLXLMCommon.generate(
-                input: preparedInput,
-                parameters: GenerateParameters(maxTokens: 2048, temperature: 0.1, topP: 0.9),
-                context: context
-            ) { tokens in
-                tokens.count >= 2048 ? .stop : .more
-            }
+        Memory.clearCache()
+        Memory.peakMemory = 0
+
+        defer {
+            Memory.clearCache()
+            let clearedMemory = Memory.snapshot()
+            print("[AI Debug] MLX 内存(clearCache 后): \(Self.debugSnapshotLine(clearedMemory))")
         }
 
-        return result.output
+        let result = try await container.perform { context in
+            let prepareStartMemory = Memory.snapshot()
+            let preparedInput = try await context.processor.prepare(input: input)
+            let prepareEndMemory = Memory.snapshot()
+            let promptMemoryGrowth = prepareStartMemory.delta(prepareEndMemory)
+
+            let promptTokens = preparedInput.text.tokens.asArray(Int.self)
+            let imageFrames = preparedInput.image?.frames ?? []
+
+            var imageTokenIndex: Int?
+            var spatialMergeSize: Int?
+
+            switch context.model {
+            case let qwen35 as Qwen35:
+                imageTokenIndex = qwen35.config.imageTokenIndex
+                spatialMergeSize = qwen35.config.visionConfiguration.spatialMergeSize
+            case let qwen3VL as Qwen3VL:
+                imageTokenIndex = qwen3VL.config.imageTokenIndex
+                spatialMergeSize = qwen3VL.config.visionConfiguration.spatialMergeSize
+            default:
+                break
+            }
+
+            let imageTokenCount =
+                imageTokenIndex.map { tokenIndex in
+                    promptTokens.reduce(into: 0) { count, token in
+                        if token == tokenIndex {
+                            count += 1
+                        }
+                    }
+                }
+
+            let estimatedImageTokenCount: Int? = {
+                guard let spatialMergeSize, !imageFrames.isEmpty else {
+                    return nil
+                }
+                let mergeArea = spatialMergeSize * spatialMergeSize
+                return imageFrames.reduce(0) { total, frame in
+                    total + (frame.product / mergeArea)
+                }
+            }()
+
+            let frameSummary = imageFrames.map { frame in
+                "\(frame.t)x\(frame.h)x\(frame.w)"
+            }.joined(separator: ", ")
+
+            if let imageTokenCount {
+                print(
+                    "[AI Debug] 本地 prompt tokens: 总计 \(promptTokens.count)，图像占位 \(imageTokenCount)，其余 \(max(promptTokens.count - imageTokenCount, 0))"
+                )
+            } else {
+                print("[AI Debug] 本地 prompt tokens: 总计 \(promptTokens.count)，图像占位 token 无法直接统计")
+            }
+
+            if !frameSummary.isEmpty {
+                print("[AI Debug] 本地图像网格 THW: \(frameSummary)")
+            }
+
+            if let estimatedImageTokenCount {
+                if let spatialMergeSize {
+                    print(
+                        "[AI Debug] 本地图像 token 估算: \(estimatedImageTokenCount) (spatial merge size: \(spatialMergeSize))"
+                    )
+                } else {
+                    print("[AI Debug] 本地图像 token 估算: \(estimatedImageTokenCount)")
+                }
+            }
+
+                let maxGeneratedTokens = Self.localMaxGeneratedTokens(for: model)
+                let maxKVSize = promptTokens.count + maxGeneratedTokens + 64
+                let prefillStepSize = Self.localPrefillStepSize(for: model)
+                let parameters = GenerateParameters(
+                    maxTokens: maxGeneratedTokens,
+                    maxKVSize: maxKVSize,
+                    temperature: 0.1,
+                    topP: 0.9,
+                    prefillStepSize: prefillStepSize
+                )
+
+                print(
+                    "[AI Debug] 本地生成参数: maxTokens=\(maxGeneratedTokens), maxKVSize=\(maxKVSize), prefillStepSize=\(prefillStepSize)"
+                )
+                print(
+                    "[AI Debug] MLX 内存(prepare 增量): \(Self.debugSnapshotLine(promptMemoryGrowth))"
+                )
+
+                let generationStartMemory = Memory.snapshot()
+                let generated = try MLXLMCommon.generate(
+                    input: preparedInput,
+                    parameters: parameters,
+                    context: context
+                ) { tokens in
+                    tokens.count >= maxGeneratedTokens ? .stop : .more
+                }
+                let generationEndMemory = Memory.snapshot()
+                let generationGrowth = generationStartMemory.delta(generationEndMemory)
+
+                print(
+                    "[AI Debug] MLX 内存(generate 结束): \(Self.debugSnapshotLine(generationEndMemory))"
+                )
+                print(
+                    "[AI Debug] MLX 内存(generate 增量): \(Self.debugSnapshotLine(generationGrowth))"
+                )
+
+                return generated.output
+        }
+
+        return result
     }
 
     private func persistDownloadedPaths() {
@@ -416,23 +531,91 @@ final class LocalModelManager: ObservableObject {
         }
     }
 
-    private func preparedCIImage(from image: UIImage) -> CIImage? {
-        let maxDimension: CGFloat = 1536
-        let longestEdge = max(image.size.width, image.size.height)
+    private func preparedCIImage(from image: UIImage, for model: LocalRecognitionModel) -> CIImage? {
+        guard var ciImage = CIImage(image: image) else {
+            return nil
+        }
+
+        // 本地视觉模型更容易受显存/内存峰值影响。这里做一次轻微锐化，
+        // 再按比例缩图，尽量保留表格边缘，同时压低峰值内存。
+        if let sharpenFilter = CIFilter(name: "CISharpenLuminance") {
+            sharpenFilter.setValue(ciImage, forKey: kCIInputImageKey)
+            sharpenFilter.setValue(0.22, forKey: kCIInputSharpnessKey)
+            if let output = sharpenFilter.outputImage {
+                ciImage = output
+            }
+        }
+
+        let maxDimension = localImageMaxDimension(for: model)
+        let extent = ciImage.extent.integral
+        let longestEdge = max(extent.width, extent.height)
 
         guard longestEdge > maxDimension else {
-            return CIImage(image: image)
+            return ciImage
         }
 
         let scale = maxDimension / longestEdge
-        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        if let lanczosFilter = CIFilter(name: "CILanczosScaleTransform") {
+            lanczosFilter.setValue(ciImage, forKey: kCIInputImageKey)
+            lanczosFilter.setValue(scale, forKey: kCIInputScaleKey)
+            lanczosFilter.setValue(1.0, forKey: kCIInputAspectRatioKey)
+            if let output = lanczosFilter.outputImage {
+                ciImage = output
+            }
+        } else {
+            ciImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        }
 
-        UIGraphicsBeginImageContextWithOptions(newSize, false, 1)
-        image.draw(in: CGRect(origin: .zero, size: newSize))
-        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
+        print("[AI Debug] 本地图像预处理完成：最长边 \(Int(longestEdge)) -> \(Int(maxDimension))")
+        return ciImage
+    }
 
-        return CIImage(image: resizedImage ?? image)
+    private func localImageMaxDimension(for model: LocalRecognitionModel) -> CGFloat {
+        switch model {
+        case .qwen35_08b:
+            return 1152
+        case .qwen35_2b:
+            return 960
+        }
+    }
+
+    nonisolated private static func localCacheLimit(for model: LocalRecognitionModel) -> Int {
+        switch model {
+        case .qwen35_08b:
+            return 96 * 1024 * 1024
+        case .qwen35_2b:
+            return 64 * 1024 * 1024
+        }
+    }
+
+    nonisolated private static func localMaxGeneratedTokens(for model: LocalRecognitionModel) -> Int {
+        switch model {
+        case .qwen35_08b:
+            return 512
+        case .qwen35_2b:
+            return 384
+        }
+    }
+
+    nonisolated private static func localPrefillStepSize(for model: LocalRecognitionModel) -> Int {
+        switch model {
+        case .qwen35_08b:
+            return 384
+        case .qwen35_2b:
+            return 256
+        }
+    }
+
+    nonisolated private static func debugMemoryDescription(_ bytes: Int) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .memory
+        formatter.includesUnit = true
+        formatter.isAdaptive = true
+        return formatter.string(fromByteCount: Int64(bytes))
+    }
+
+    nonisolated private static func debugSnapshotLine(_ snapshot: Memory.Snapshot) -> String {
+        snapshot.description.replacingOccurrences(of: "\n", with: " | ")
     }
 }
 
