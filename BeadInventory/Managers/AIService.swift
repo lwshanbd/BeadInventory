@@ -9,8 +9,17 @@ import Foundation
 import UIKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
+import Combine
+import Hub
+import MLXLMCommon
+import MLXVLM
 
 // MARK: - AI 配置
+
+enum RecognitionBackend: String, CaseIterable, Codable {
+    case cloud = "云端模型"
+    case local = "本地模型"
+}
 
 enum AIProvider: String, CaseIterable, Codable {
     case kimi = "Kimi"
@@ -20,12 +29,144 @@ enum AIProvider: String, CaseIterable, Codable {
     case gemini = "Gemini"
 }
 
-struct AIConfig: Codable {
+enum LocalRecognitionModel: String, CaseIterable, Codable, Identifiable {
+    case qwen35_08b
+    case qwen35_2b
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .qwen35_08b:
+            return "Qwen3.5 0.8B"
+        case .qwen35_2b:
+            return "Qwen3.5 2B"
+        }
+    }
+
+    var repositoryID: String {
+        switch self {
+        case .qwen35_08b:
+            return "mlx-community/Qwen3.5-0.8B-MLX-8bit"
+        case .qwen35_2b:
+            return "mlx-community/Qwen3.5-2B-MLX-8bit"
+        }
+    }
+
+    var approximateDownloadSize: String {
+        switch self {
+        case .qwen35_08b:
+            return "约 1.0 GB"
+        case .qwen35_2b:
+            return "约 2.66 GB"
+        }
+    }
+
+    var approximateStorageSize: String {
+        approximateDownloadSize
+    }
+
+    var minimumRecommendedIPhoneGeneration: Int {
+        switch self {
+        case .qwen35_08b:
+            return 14
+        case .qwen35_2b:
+            return 15
+        }
+    }
+
+    var recommendationText: String {
+        switch self {
+        case .qwen35_08b:
+            return "推荐 iPhone 14 及以上机型优先选择，门槛更低，下载更小。"
+        case .qwen35_2b:
+            return "推荐 iPhone 15 及以上机型选择，效果通常更好，但体积和负载更高。"
+        }
+    }
+
+    var cautionText: String {
+        switch self {
+        case .qwen35_08b:
+            return "准确度会略低于云端识别，速度相对更慢，也可能带来发热。"
+        case .qwen35_2b:
+            return "准确度通常高于 0.8B，但首次加载更久，更容易造成发热和内存压力。"
+        }
+    }
+}
+
+struct LocalModelDeviceProfile {
+    let identifier: String
+
+    static var current: LocalModelDeviceProfile {
+        LocalModelDeviceProfile(identifier: currentIdentifier())
+    }
+
+    private static func currentIdentifier() -> String {
+        if let simulatorModel = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"],
+           !simulatorModel.isEmpty {
+            return simulatorModel
+        }
+
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        return withUnsafePointer(to: &systemInfo.machine) { pointer in
+            pointer.withMemoryRebound(to: CChar.self, capacity: 1) { cString in
+                String(cString: cString)
+            }
+        }
+    }
+
+    private var marketedIPhoneGeneration: Int? {
+        switch identifier {
+        case "iPhone14,7", "iPhone14,8", "iPhone15,2", "iPhone15,3":
+            return 14
+        case "iPhone15,4", "iPhone15,5", "iPhone16,1", "iPhone16,2":
+            return 15
+        case let value where value.hasPrefix("iPhone17,"):
+            return 16
+        case let value where value.hasPrefix("iPhone18,"):
+            return 17
+        default:
+            return nil
+        }
+    }
+
+    func recommendation(for model: LocalRecognitionModel) -> String {
+        guard let marketedIPhoneGeneration else {
+            return "\(model.recommendationText) 如果机型较老，建议优先使用云端识别。"
+        }
+
+        if marketedIPhoneGeneration >= model.minimumRecommendedIPhoneGeneration {
+            return "当前设备约为 iPhone \(marketedIPhoneGeneration) 或更新机型，\(model.displayName) 可以尝试。"
+        }
+
+        return "当前设备约为 iPhone \(marketedIPhoneGeneration)，不建议选择 \(model.displayName)。建议改用云端识别，或退而求其次选择更小的本地模型。"
+    }
+
+    var summaryText: String {
+        guard let marketedIPhoneGeneration else {
+            return "建议按机型选择：iPhone 14 及以上优先尝试 0.8B，iPhone 15 及以上再考虑 2B。"
+        }
+
+        switch marketedIPhoneGeneration {
+        case 15...:
+            return "当前设备约为 iPhone \(marketedIPhoneGeneration) 或更新机型，可优先尝试 2B；如更看重下载体积、速度和发热，也可以选 0.8B。"
+        case 14:
+            return "当前设备约为 iPhone 14 系列，建议优先选择 0.8B；2B 负载偏高，不建议。"
+        default:
+            return "当前设备约为 iPhone \(marketedIPhoneGeneration)，更建议使用云端识别；若必须本地运行，请谨慎尝试 0.8B。"
+        }
+    }
+}
+
+struct AIConfig: Codable, Equatable {
+    var backend: RecognitionBackend
     var provider: AIProvider
     var apiKey: String
     var baseURL: String  // 自定义API地址，空则使用默认
     var model: String
     var enableCustomURL: Bool  // 是否启用自定义API地址
+    var localModel: LocalRecognitionModel
 
     static let defaultKimiURL = "https://api.moonshot.cn/v1"
     static let defaultOpenAIURL = "https://api.openai.com/v1"
@@ -54,22 +195,34 @@ struct AIConfig: Codable {
         }
     }
 
-    init(provider: AIProvider = .kimi, apiKey: String = "", baseURL: String = "", model: String = "", enableCustomURL: Bool = false) {
+    init(
+        backend: RecognitionBackend = .cloud,
+        provider: AIProvider = .kimi,
+        apiKey: String = "",
+        baseURL: String = "",
+        model: String = "",
+        enableCustomURL: Bool = false,
+        localModel: LocalRecognitionModel = .qwen35_08b
+    ) {
+        self.backend = backend
         self.provider = provider
         self.apiKey = apiKey
         self.baseURL = baseURL
         self.model = model.isEmpty ? AIConfig.defaultModel(for: provider) : model
         self.enableCustomURL = enableCustomURL
+        self.localModel = localModel
     }
 
-    // 兼容旧版配置（没有 enableCustomURL 字段）
+    // 兼容旧版配置（没有 backend / localModel / enableCustomURL 字段）
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        backend = try container.decodeIfPresent(RecognitionBackend.self, forKey: .backend) ?? .cloud
         provider = try container.decode(AIProvider.self, forKey: .provider)
         apiKey = try container.decode(String.self, forKey: .apiKey)
         baseURL = try container.decode(String.self, forKey: .baseURL)
         model = try container.decode(String.self, forKey: .model)
         enableCustomURL = try container.decodeIfPresent(Bool.self, forKey: .enableCustomURL) ?? false
+        localModel = try container.decodeIfPresent(LocalRecognitionModel.self, forKey: .localModel) ?? .qwen35_08b
     }
 
     var effectiveBaseURL: String {
@@ -108,6 +261,156 @@ struct AIConfig: Codable {
     }
 }
 
+// MARK: - 本地模型管理
+
+@MainActor
+final class LocalModelManager: ObservableObject {
+    static let shared = LocalModelManager()
+
+    @Published private(set) var downloadProgress: [LocalRecognitionModel: Double] = [:]
+    @Published private(set) var isDownloading: Set<LocalRecognitionModel> = []
+    @Published private(set) var lastErrorByModel: [LocalRecognitionModel: String] = [:]
+    @Published private(set) var downloadedPaths: [LocalRecognitionModel: String] = [:]
+    @Published private(set) var loadedModel: LocalRecognitionModel?
+    @Published private(set) var isLoadingModel = false
+
+    private let downloadedPathsKey = "LocalRecognitionModelDownloadedPaths"
+    private var container: ModelContainer?
+
+    private init() {
+        if let data = UserDefaults.standard.data(forKey: downloadedPathsKey),
+           let saved = try? JSONDecoder().decode([LocalRecognitionModel: String].self, from: data) {
+            let fileManager = FileManager.default
+            self.downloadedPaths = saved.filter { fileManager.fileExists(atPath: $0.value) }
+        }
+    }
+
+    func isDownloaded(_ model: LocalRecognitionModel) -> Bool {
+        guard let path = downloadedPaths[model] else { return false }
+        return FileManager.default.fileExists(atPath: path)
+    }
+
+    func localDirectory(for model: LocalRecognitionModel) -> URL? {
+        guard let path = downloadedPaths[model], FileManager.default.fileExists(atPath: path) else {
+            return nil
+        }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    func progress(for model: LocalRecognitionModel) -> Double {
+        downloadProgress[model] ?? 0
+    }
+
+    func errorMessage(for model: LocalRecognitionModel) -> String? {
+        lastErrorByModel[model]
+    }
+
+    func downloadModel(_ model: LocalRecognitionModel) async throws {
+        guard !isDownloading.contains(model) else { return }
+
+        isDownloading.insert(model)
+        downloadProgress[model] = 0
+        lastErrorByModel[model] = nil
+
+        defer {
+            isDownloading.remove(model)
+            if isDownloaded(model) {
+                downloadProgress[model] = 1
+            }
+        }
+
+        do {
+            let repo = Hub.Repo(id: model.repositoryID)
+            let directory = try await Hub.snapshot(from: repo) { progress in
+                let total = progress.totalUnitCount
+                let fraction = total > 0
+                    ? Double(progress.completedUnitCount) / Double(total)
+                    : progress.fractionCompleted
+
+                Task { @MainActor in
+                    self.downloadProgress[model] = max(0, min(fraction, 1))
+                }
+            }
+
+            downloadedPaths[model] = directory.path
+            persistDownloadedPaths()
+        } catch {
+            lastErrorByModel[model] = error.localizedDescription
+            throw error
+        }
+    }
+
+    func ensureLoaded(_ model: LocalRecognitionModel) async throws -> ModelContainer {
+        if loadedModel == model, let container {
+            return container
+        }
+
+        guard let directory = localDirectory(for: model) else {
+            throw AIError.localModelNotDownloaded(model.displayName)
+        }
+
+        isLoadingModel = true
+        defer { isLoadingModel = false }
+
+        let configuration = ModelConfiguration(directory: directory)
+        let loadedContainer = try await VLMModelFactory.shared.loadContainer(configuration: configuration)
+        self.container = loadedContainer
+        self.loadedModel = model
+        return loadedContainer
+    }
+
+    func recognize(image: UIImage, model: LocalRecognitionModel, systemPrompt: String, userPrompt: String) async throws -> String {
+        let container = try await ensureLoaded(model)
+
+        guard let ciImage = preparedCIImage(from: image) else {
+            throw AIError.imageProcessingFailed
+        }
+
+        let input = UserInput(chat: [
+            .system(systemPrompt),
+            .user(userPrompt, images: [.ciImage(ciImage)])
+        ])
+
+        let result = try await container.perform { context in
+            let preparedInput = try await context.processor.prepare(input: input)
+            return try MLXLMCommon.generate(
+                input: preparedInput,
+                parameters: GenerateParameters(maxTokens: 2048, temperature: 0.1, topP: 0.9),
+                context: context
+            ) { tokens in
+                tokens.count >= 2048 ? .stop : .more
+            }
+        }
+
+        return result.output
+    }
+
+    private func persistDownloadedPaths() {
+        if let data = try? JSONEncoder().encode(downloadedPaths) {
+            UserDefaults.standard.set(data, forKey: downloadedPathsKey)
+        }
+    }
+
+    private func preparedCIImage(from image: UIImage) -> CIImage? {
+        let maxDimension: CGFloat = 1536
+        let longestEdge = max(image.size.width, image.size.height)
+
+        guard longestEdge > maxDimension else {
+            return CIImage(image: image)
+        }
+
+        let scale = maxDimension / longestEdge
+        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1)
+        image.draw(in: CGRect(origin: .zero, size: newSize))
+        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+
+        return CIImage(image: resizedImage ?? image)
+    }
+}
+
 // MARK: - 识别模式
 
 enum RecognitionMode {
@@ -133,30 +436,18 @@ struct AIRecognitionResult: Codable {
 
 // MARK: - AI 服务管理器
 
+@MainActor
 class AIServiceManager: ObservableObject {
     // 单例模式，确保所有视图共享同一配置
     static let shared = AIServiceManager()
 
     @Published var config: AIConfig {
         didSet {
-            saveConfig()
-            // 当 provider 改变时，重置模型为对应的默认模型
-            // 如果当前模型不在新 provider 的模型列表中，则重置
-            let validModels: [String]
-            switch config.provider {
-            case .kimi:
-                validModels = AIConfig.kimiModels
-            case .openai:
-                validModels = AIConfig.openAIModels
-            case .anthropic:
-                validModels = AIConfig.anthropicModels
-            case .qwen:
-                validModels = AIConfig.qwenModels
-            case .gemini:
-                validModels = AIConfig.geminiModels
-            }
-            if !validModels.contains(config.model) {
-                config.model = AIConfig.defaultModel(for: config.provider)
+            let normalized = Self.normalizedConfig(from: config)
+            if normalized != config {
+                config = normalized
+            } else {
+                saveConfig()
             }
         }
     }
@@ -164,14 +455,21 @@ class AIServiceManager: ObservableObject {
     @Published var errorMessage: String?
 
     private let configKey = "AIServiceConfig"
+    private var cancellables = Set<AnyCancellable>()
 
     init() {
         if let data = UserDefaults.standard.data(forKey: configKey),
            let saved = try? JSONDecoder().decode(AIConfig.self, from: data) {
-            self.config = saved
+            self.config = Self.normalizedConfig(from: saved)
         } else {
             self.config = AIConfig()
         }
+
+        LocalModelManager.shared.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
     }
 
     private func saveConfig() {
@@ -187,8 +485,64 @@ class AIServiceManager: ObservableObject {
     }
 
     var isConfigured: Bool {
-        // 所有提供商都需要 API Key
-        return !config.apiKey.isEmpty
+        switch config.backend {
+        case .cloud:
+            return !config.apiKey.isEmpty
+        case .local:
+            return LocalModelManager.shared.isDownloaded(config.localModel)
+        }
+    }
+
+    var statusMessage: String {
+        switch config.backend {
+        case .cloud:
+            return isConfigured ? "云端识别已配置" : "请填写 API Key"
+        case .local:
+            if LocalModelManager.shared.isDownloading.contains(config.localModel) {
+                return "正在下载 \(config.localModel.displayName)"
+            }
+            if LocalModelManager.shared.isDownloaded(config.localModel) {
+                return "\(config.localModel.displayName) 已下载，可直接识别"
+            }
+            return "请先下载本地模型"
+        }
+    }
+
+    var setupActionTitle: String {
+        config.backend == .local ? "去下载" : "去设置"
+    }
+
+    var setupBannerText: String {
+        switch config.backend {
+        case .cloud:
+            return "云端识别通常更准确也更快，但需要配置 API Key。"
+        case .local:
+            return "本地识别可免去 API 配置，但准确度会略差于云端，速度更慢，也可能造成手机发热。"
+        }
+    }
+
+    private static func normalizedConfig(from config: AIConfig) -> AIConfig {
+        var normalized = config
+
+        let validModels: [String]
+        switch normalized.provider {
+        case .kimi:
+            validModels = AIConfig.kimiModels
+        case .openai:
+            validModels = AIConfig.openAIModels
+        case .anthropic:
+            validModels = AIConfig.anthropicModels
+        case .qwen:
+            validModels = AIConfig.qwenModels
+        case .gemini:
+            validModels = AIConfig.geminiModels
+        }
+
+        if !validModels.contains(normalized.model) {
+            normalized.model = AIConfig.defaultModel(for: normalized.provider)
+        }
+
+        return normalized
     }
 
     // MARK: - 图像预处理（减少水印影响）
@@ -257,8 +611,15 @@ class AIServiceManager: ObservableObject {
     // MARK: - 图像识别
 
     func recognizeImage(_ image: UIImage, mode: RecognitionMode = .table, colorSystem: ColorSystem = .mard) async throws -> [AIRecognizedItem] {
-        guard isConfigured else {
-            throw AIError.notConfigured
+        switch config.backend {
+        case .cloud:
+            guard !config.apiKey.isEmpty else {
+                throw AIError.notConfigured
+            }
+        case .local:
+            guard LocalModelManager.shared.isDownloaded(config.localModel) else {
+                throw AIError.localModelNotDownloaded(config.localModel.displayName)
+            }
         }
 
         // 预处理图片（减少水印影响）
@@ -266,12 +627,21 @@ class AIServiceManager: ObservableObject {
 
         // 打印 AI 配置信息
         print("[AI Debug] ========== AI 识别开始 ==========")
-        print("[AI Debug] AI 提供商: \(config.provider.rawValue)")
-        print("[AI Debug] 模型: \(config.effectiveModel)")
-        print("[AI Debug] API 地址: \(config.effectiveBaseURL)")
+        print("[AI Debug] 识别方式: \(config.backend.rawValue)")
+        if config.backend == .cloud {
+            print("[AI Debug] AI 提供商: \(config.provider.rawValue)")
+            print("[AI Debug] 模型: \(config.effectiveModel)")
+            print("[AI Debug] API 地址: \(config.effectiveBaseURL)")
+        } else {
+            print("[AI Debug] 本地模型: \(config.localModel.displayName)")
+        }
         print("[AI Debug] 原图尺寸: \(image.size), 处理后: \(processedImage.size)")
         print("[AI Debug] 识别模式: \(mode == .table ? "表格识别" : "图纸识别")")
         print("[AI Debug] 色号体系: \(colorSystem.rawValue)")
+
+        if config.backend == .local {
+            return try await recognizeWithLocalModel(image: processedImage, mode: mode, colorSystem: colorSystem)
+        }
 
         // 优先使用PNG格式（无损），如果太大则使用高质量JPEG
         // PNG对于表格文字识别效果更好，不会有JPEG压缩伪影
@@ -316,6 +686,46 @@ class AIServiceManager: ObservableObject {
     }
 
     // MARK: - 提示词生成
+
+    private func buildLocalPrompts(mode: RecognitionMode, colorSystem: ColorSystem) -> (system: String, user: String) {
+        switch mode {
+        case .table:
+            if colorSystem == .kaka {
+                let system = """
+                你是拼豆表格识别助手。
+                识别图片里卡卡色号和数量，只输出 JSON。
+                卡卡色号格式只接受 B/P/R + 数字。
+                如果图片里有两个表格区块，需要合并结果。
+                输出格式必须是 {"items":[{"color_code":"B3","quantity":100}]}。
+                无法确认的列直接跳过。
+                """
+                let user = "识别这张表格，提取所有卡卡色号和数量，只返回 JSON。"
+                return (system, user)
+            } else {
+                let system = """
+                你是拼豆表格识别助手。
+                识别图片里 MARD 色号和数量，只输出 JSON。
+                MARD 色号通常是字母+数字，如 F8、A17、B195、DH01。
+                如果图片里有两个表格区块，需要合并结果。
+                输出格式必须是 {"items":[{"color_code":"F8","quantity":100}]}。
+                无法确认的列直接跳过。
+                """
+                let user = "识别这张表格，提取所有 MARD 色号和数量，只返回 JSON。"
+                return (system, user)
+            }
+        case .blueprint:
+            let system = """
+            你是拼豆图纸识别助手。
+            找出图片中所有色号和对应数量，只输出 JSON。
+            色号通常是字母+数字，如 F8、A17、B3、B257。
+            数量在色号附近。
+            输出格式必须是 {"items":[{"color_code":"F8","quantity":100}]}。
+            无法确认数量的项目直接跳过。
+            """
+            let user = "识别这张拼豆图纸，提取所有色号和数量，只返回 JSON。"
+            return (system, user)
+        }
+    }
 
     /// 根据识别模式和色号体系生成 AI 提示词
     private func buildPrompts(mode: RecognitionMode, colorSystem: ColorSystem) -> (system: String, user: String) {
@@ -435,6 +845,29 @@ class AIServiceManager: ObservableObject {
             let user = "请识别这张拼豆图纸，找出所有色号和对应的数量。色号通常是字母+数字（如F8, A17, B3, B257），数量在色号附近。只返回JSON。"
             return (system, user)
         }
+    }
+
+    private func recognizeWithLocalModel(image: UIImage, mode: RecognitionMode, colorSystem: ColorSystem) async throws -> [AIRecognizedItem] {
+        let prompts = buildLocalPrompts(mode: mode, colorSystem: colorSystem)
+        let output = try await LocalModelManager.shared.recognize(
+            image: image,
+            model: config.localModel,
+            systemPrompt: prompts.system,
+            userPrompt: prompts.user
+        )
+
+        print("[AI Debug] 本地模型原始回复:\n\(output)")
+
+        let jsonText = extractJSON(from: output)
+        print("[AI Debug] 本地模型提取 JSON:\n\(jsonText)")
+
+        guard let jsonData = jsonText.data(using: .utf8) else {
+            throw AIError.parseError("无法转换本地模型返回的 JSON 文本")
+        }
+
+        let result = try JSONDecoder().decode(AIRecognitionResult.self, from: jsonData)
+        print("[AI Debug] 本地模型解析成功，识别到 \(result.items.count) 个色号")
+        return result.items
     }
 
     // MARK: - OpenAI 实现
@@ -792,6 +1225,7 @@ class AIServiceManager: ObservableObject {
 
 enum AIError: LocalizedError {
     case notConfigured
+    case localModelNotDownloaded(String)
     case imageProcessingFailed
     case networkError(String)
     case apiError(String)
@@ -800,7 +1234,9 @@ enum AIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConfigured:
-            return "请先在设置中配置 AI API"
+            return "请先配置云端 API，或下载本地模型"
+        case .localModelNotDownloaded(let modelName):
+            return "请先下载本地模型：\(modelName)"
         case .imageProcessingFailed:
             return "图片处理失败"
         case .networkError(let msg):

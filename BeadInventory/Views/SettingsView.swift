@@ -18,91 +18,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                // AI 识别设置
-                Section {
-                    Picker("AI 提供商", selection: $aiService.config.provider) {
-                        ForEach(AIProvider.allCases, id: \.self) { provider in
-                            Text(provider.rawValue).tag(provider)
-                        }
-                    }
-
-                    SecureField("API Key", text: $aiService.config.apiKey)
-                        .textContentType(.password)
-                        .autocapitalization(.none)
-
-                    // API Key 格式警告
-                    if aiService.config.hasKeyFormatWarning {
-                        HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange)
-                                .font(.caption)
-                            Text("\(aiService.config.provider.rawValue) 的 API Key 通常以 \"sk-\" 开头，你当前填写的 Key 格式可能不正确，请确认。")
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                        }
-                    }
-
-                    Toggle("自定义 API 地址", isOn: $aiService.config.enableCustomURL)
-
-                    if aiService.config.enableCustomURL {
-                        TextField("API 地址", text: $aiService.config.baseURL)
-                            .autocapitalization(.none)
-                            .keyboardType(.URL)
-                    }
-
-                    if aiService.config.provider == .kimi {
-                        Picker("模型", selection: $aiService.config.model) {
-                            ForEach(AIConfig.kimiModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                    } else if aiService.config.provider == .openai {
-                        Picker("模型", selection: $aiService.config.model) {
-                            ForEach(AIConfig.openAIModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                    } else if aiService.config.provider == .anthropic {
-                        Picker("模型", selection: $aiService.config.model) {
-                            ForEach(AIConfig.anthropicModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                    } else if aiService.config.provider == .qwen {
-                        Picker("模型", selection: $aiService.config.model) {
-                            ForEach(AIConfig.qwenModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                    } else if aiService.config.provider == .gemini {
-                        Picker("模型", selection: $aiService.config.model) {
-                            ForEach(AIConfig.geminiModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                    }
-
-                    // 配置状态提示
-                    HStack {
-                        Image(systemName: aiService.isConfigured ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                            .foregroundColor(aiService.isConfigured ? .green : .orange)
-                        Text(aiService.isConfigured ? "已配置" : "请填写 API Key")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                } header: {
-                    Text("AI 图像识别")
-                } footer: {
-                    if aiService.config.provider == .kimi {
-                        Text("Kimi API Key 可从 platform.moonshot.cn 获取")
-                    } else if aiService.config.provider == .openai {
-                        Text("OpenAI API Key 可从 platform.openai.com 获取。如需代理可填写自定义 API 地址。")
-                    } else if aiService.config.provider == .anthropic {
-                        Text("Anthropic API Key 可从 console.anthropic.com 获取。")
-                    } else if aiService.config.provider == .qwen {
-                        Text("Qwen API Key 可从阿里云百炼平台 bailian.console.aliyun.com 获取。")
-                    }
-                }
+                RecognitionSettingsSections(aiService: aiService)
 
                 // 扫描默认设置
                 Section {
@@ -191,6 +107,340 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+}
+
+enum RecognitionSetupGate {
+    static let completedKey = "recognitionSetupFlowCompleted"
+
+    @MainActor
+    static func shouldPresent(for aiService: AIServiceManager) -> Bool {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: completedKey) else { return false }
+        guard !aiService.isConfigured else { return false }
+        return !isLikelyExistingInstall(defaults: defaults)
+    }
+
+    static func markCompleted() {
+        UserDefaults.standard.set(true, forKey: completedKey)
+    }
+
+    private static func isLikelyExistingInstall(defaults: UserDefaults) -> Bool {
+        let legacyKeys = [
+            "hasExistingData",
+            "migrationVersion",
+            "scanViewHelpShown",
+            "currentBrandId",
+            "purchaseRecords",
+            "AIServiceConfig",
+            "lastBackupDate"
+        ]
+
+        return legacyKeys.contains { defaults.object(forKey: $0) != nil }
+    }
+}
+
+struct RecognitionSettingsScreen: View {
+    @ObservedObject private var aiService = AIServiceManager.shared
+
+    var body: some View {
+        Form {
+            RecognitionSettingsSections(aiService: aiService)
+        }
+        .navigationTitle("识别设置")
+    }
+}
+
+struct RecognitionSetupSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var aiService = AIServiceManager.shared
+
+    private var completionButtonTitle: String {
+        aiService.isConfigured ? "开始使用" : "稍后再说"
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("先选择识别方式")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+
+                        Text("你可以直接配置云端 API，也可以下载本地模型。")
+                            .foregroundColor(.secondary)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("本地识别免去 API 配置，但准确度略差于云端，速度更慢，也可能造成发热。", systemImage: "iphone.gen3")
+                            Label("iPhone 14 及以上推荐 0.8B；iPhone 15 及以上再考虑 2B。", systemImage: "cpu")
+                            Label("云端识别通常更快、更准，但需要 API Key。", systemImage: "cloud")
+                        }
+                        .font(.subheadline)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                RecognitionSettingsSections(aiService: aiService)
+            }
+            .navigationTitle("欢迎")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(completionButtonTitle) {
+                        RecognitionSetupGate.markCompleted()
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .onDisappear {
+            RecognitionSetupGate.markCompleted()
+        }
+    }
+}
+
+struct RecognitionSettingsSections: View {
+    @ObservedObject var aiService: AIServiceManager
+    @ObservedObject private var localModelManager = LocalModelManager.shared
+
+    private var deviceProfile: LocalModelDeviceProfile {
+        .current
+    }
+
+    var body: some View {
+        Section {
+            Picker("识别方式", selection: $aiService.config.backend) {
+                ForEach(RecognitionBackend.allCases, id: \.self) { backend in
+                    Text(backend.rawValue).tag(backend)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if aiService.config.backend == .local {
+                localBackendContent
+            } else {
+                cloudBackendContent
+            }
+        } header: {
+            Text("AI 图像识别")
+        } footer: {
+            Text(sectionFooterText)
+        }
+
+        Section("当前状态") {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: aiService.isConfigured ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .foregroundColor(aiService.isConfigured ? .green : .orange)
+                    .font(.headline)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(aiService.statusMessage)
+                        .font(.subheadline)
+
+                    Text(aiService.setupBannerText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private var localBackendContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(deviceProfile.summaryText)
+                .font(.footnote)
+                .foregroundColor(.secondary)
+
+            ForEach(LocalRecognitionModel.allCases) { model in
+                LocalModelOptionCard(
+                    model: model,
+                    isSelected: aiService.config.localModel == model,
+                    aiService: aiService,
+                    localModelManager: localModelManager,
+                    recommendationText: deviceProfile.recommendation(for: model)
+                )
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var cloudBackendContent: some View {
+        Group {
+            Picker("AI 提供商", selection: $aiService.config.provider) {
+                ForEach(AIProvider.allCases, id: \.self) { provider in
+                    Text(provider.rawValue).tag(provider)
+                }
+            }
+
+            SecureField("API Key", text: $aiService.config.apiKey)
+                .textContentType(.password)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+            if aiService.config.hasKeyFormatWarning {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                        .font(.caption)
+                    Text("\(aiService.config.provider.rawValue) 的 API Key 通常以 \"sk-\" 开头，你当前填写的 Key 格式可能不正确，请确认。")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+            }
+
+            Toggle("自定义 API 地址", isOn: $aiService.config.enableCustomURL)
+
+            if aiService.config.enableCustomURL {
+                TextField("API 地址", text: $aiService.config.baseURL)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .autocorrectionDisabled()
+            }
+
+            Picker("模型", selection: $aiService.config.model) {
+                ForEach(models(for: aiService.config.provider), id: \.self) { model in
+                    Text(model).tag(model)
+                }
+            }
+        }
+    }
+
+    private var sectionFooterText: String {
+        if aiService.config.backend == .local {
+            return "模型参数会从 Hugging Face 下载。下载前请确认机型和存储空间，本地识别虽免 API 配置，但识别速度更慢，也可能造成手机发热。"
+        }
+
+        return cloudProviderFooterText(for: aiService.config.provider)
+    }
+
+    private func models(for provider: AIProvider) -> [String] {
+        switch provider {
+        case .kimi:
+            return AIConfig.kimiModels
+        case .openai:
+            return AIConfig.openAIModels
+        case .anthropic:
+            return AIConfig.anthropicModels
+        case .qwen:
+            return AIConfig.qwenModels
+        case .gemini:
+            return AIConfig.geminiModels
+        }
+    }
+
+    private func cloudProviderFooterText(for provider: AIProvider) -> String {
+        switch provider {
+        case .kimi:
+            return "Kimi API Key 可从 platform.moonshot.cn 获取。"
+        case .openai:
+            return "OpenAI API Key 可从 platform.openai.com 获取；如需代理可填写自定义 API 地址。"
+        case .anthropic:
+            return "Anthropic API Key 可从 console.anthropic.com 获取。"
+        case .qwen:
+            return "Qwen API Key 可从阿里云百炼平台 bailian.console.aliyun.com 获取。"
+        case .gemini:
+            return "Gemini API Key 可从 aistudio.google.com 获取。"
+        }
+    }
+}
+
+struct LocalModelOptionCard: View {
+    let model: LocalRecognitionModel
+    let isSelected: Bool
+    @ObservedObject var aiService: AIServiceManager
+    @ObservedObject var localModelManager: LocalModelManager
+    let recommendationText: String
+
+    @State private var isStartingDownload = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(model.displayName)
+                        .font(.headline)
+
+                    Text("下载 \(model.approximateDownloadSize) · 占用约 \(model.approximateStorageSize)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                if localModelManager.isDownloaded(model) {
+                    Label("已下载", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                }
+            }
+
+            Text(recommendationText)
+                .font(.subheadline)
+
+            Text(model.cautionText)
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            if localModelManager.isDownloading.contains(model) {
+                ProgressView(value: localModelManager.progress(for: model))
+                Text("下载中 \(Int(localModelManager.progress(for: model) * 100))%")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            if let errorMessage = localModelManager.errorMessage(for: model) {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+
+            Button {
+                if localModelManager.isDownloaded(model) {
+                    aiService.config.backend = .local
+                    aiService.config.localModel = model
+                    RecognitionSetupGate.markCompleted()
+                } else {
+                    isStartingDownload = true
+                    aiService.config.backend = .local
+                    aiService.config.localModel = model
+                    Task {
+                        do {
+                            try await localModelManager.downloadModel(model)
+                            await MainActor.run {
+                                RecognitionSetupGate.markCompleted()
+                                isStartingDownload = false
+                            }
+                        } catch {
+                            await MainActor.run {
+                                isStartingDownload = false
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack {
+                    if isStartingDownload {
+                        ProgressView()
+                    }
+                    Text(buttonTitle)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(localModelManager.isDownloading.contains(model) || isStartingDownload)
+            .tint(isSelected ? .green : .accentColor)
+        }
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var buttonTitle: String {
+        if localModelManager.isDownloaded(model) {
+            return isSelected ? "当前已选" : "使用此模型"
+        }
+        return "下载并使用"
     }
 }
 
