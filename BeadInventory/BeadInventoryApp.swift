@@ -21,6 +21,7 @@ struct BeadInventoryApp: App {
 
     /// 深链接触发扫描的标志
     @State private var shouldOpenScan = false
+    @State private var hasSeenInitialActivePhase = false
 
     /// 监听应用生命周期
     @Environment(\.scenePhase) private var scenePhase
@@ -108,6 +109,7 @@ struct BeadInventoryApp: App {
                     handleIncomingURL(url)
                 }
                 .onAppear {
+                    inventoryManager.performInitialLoadIfNeeded(reason: "rootView.onAppear")
                     AppLogger.shared.info("App", "root_view_appeared")
                     // App 启动时检查是否有待处理的共享图片
                     sharedImageManager.checkForPendingImage()
@@ -144,22 +146,26 @@ struct BeadInventoryApp: App {
             switch newPhase {
             case .background:
                 // 应用进入后台时立即保存数据，防止被系统杀死后数据丢失
+                inventoryManager.cancelScheduledRefresh(reason: "scenePhase.background")
                 print("[App] 应用进入后台，保存数据...")
                 inventoryManager.saveData()
                 HistoryManager.shared.saveDataImmediately()
             case .inactive:
-                // .inactive 可能是切后台前的过渡态，也可能是控制中心/通知中心弹出
-                // 这里也保存，saveData() 内部有重入保护，不会重复执行
-                print("[App] 应用进入非活跃状态，保存数据...")
-                inventoryManager.saveData()
-                HistoryManager.shared.saveDataImmediately()
+                // .inactive 频繁出现（例如控制中心、系统弹窗），这里只取消待执行刷新，避免切后台时再触发全量读取。
+                print("[App] 应用进入非活跃状态")
+                inventoryManager.cancelScheduledRefresh(reason: "scenePhase.inactive")
             case .active:
                 print("[App] 应用恢复活跃状态")
-                // 前台恢复与远程通知共用同一防抖刷新队列，避免短时间重复全量加载
-                inventoryManager.scheduleRefreshFromPersistentStore(
-                    reason: "scenePhase.active",
-                    debounceSeconds: 0.25
-                )
+                if hasSeenInitialActivePhase {
+                    // 前台恢复与远程通知共用同一防抖刷新队列，避免短时间重复全量加载
+                    inventoryManager.scheduleRefreshFromPersistentStore(
+                        reason: "scenePhase.active",
+                        debounceSeconds: 0.25
+                    )
+                } else {
+                    hasSeenInitialActivePhase = true
+                    inventoryManager.performInitialLoadIfNeeded(reason: "scenePhase.active.initial")
+                }
                 cloudSyncStatusManager.refreshAccountStatus()
             @unknown default:
                 break

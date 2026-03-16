@@ -789,17 +789,19 @@ class HistoryManager: ObservableObject {
             return
         }
 
-        do {
-            let descriptor = FetchDescriptor<SDHistoryRecord>(
-                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-            )
-            let sdRecords = try context.fetch(descriptor)
-            records = sdRecords.compactMap { $0.toStruct() }
-            isDataLoaded = true
-            refreshBaseline()
-            print("[History] 加载了 \(records.count) 条历史记录")
-        } catch {
-            print("[History] 加载历史记录失败: \(error)")
+        AppBackgroundTaskManager.shared.perform(named: "HistoryLoad") {
+            do {
+                let descriptor = FetchDescriptor<SDHistoryRecord>(
+                    sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+                )
+                let sdRecords = try context.fetch(descriptor)
+                records = sdRecords.compactMap { $0.toStruct() }
+                isDataLoaded = true
+                refreshBaseline()
+                print("[History] 加载了 \(records.count) 条历史记录")
+            } catch {
+                print("[History] 加载历史记录失败: \(error)")
+            }
         }
     }
 
@@ -846,54 +848,56 @@ class HistoryManager: ObservableObject {
             return
         }
 
-        do {
-            let existing = try context.fetch(FetchDescriptor<SDHistoryRecord>())
-            let existingByID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            let localByID = makeMapByID(records)
+        AppBackgroundTaskManager.shared.perform(named: "HistorySave") {
+            do {
+                let existing = try context.fetch(FetchDescriptor<SDHistoryRecord>())
+                let existingByID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                let localByID = makeMapByID(records)
 
-            // 本地确实删除（trim/clear）才执行删除；云端新增则保留并合并进本地
-            var remoteRecordsToAppend: [HistoryRecord] = []
-            for sdRecord in existing where localByID[sdRecord.id] == nil {
-                if baselineRecordsByID[sdRecord.id] != nil {
-                    context.delete(sdRecord)
-                } else if let remoteRecord = sdRecord.toStruct() {
-                    remoteRecordsToAppend.append(remoteRecord)
+                // 本地确实删除（trim/clear）才执行删除；云端新增则保留并合并进本地
+                var remoteRecordsToAppend: [HistoryRecord] = []
+                for sdRecord in existing where localByID[sdRecord.id] == nil {
+                    if baselineRecordsByID[sdRecord.id] != nil {
+                        context.delete(sdRecord)
+                    } else if let remoteRecord = sdRecord.toStruct() {
+                        remoteRecordsToAppend.append(remoteRecord)
+                    }
                 }
-            }
-            if !remoteRecordsToAppend.isEmpty {
-                records.append(contentsOf: remoteRecordsToAppend)
-                records.sort { $0.timestamp > $1.timestamp }
-                trimRecords()
-            }
-
-            var staleLocalIDs = Set<UUID>()
-            for record in records {
-                let baseline = baselineRecordsByID[record.id]
-                let changedLocally = baseline == nil || baseline != record
-
-                if let existingRecord = existingByID[record.id] {
-                    guard changedLocally else { continue }
-                    existingRecord.timestamp = record.timestamp
-                    existingRecord.operationType = record.operationType.rawValue
-                    existingRecord.targetName = record.entityName
-                    existingRecord.beforeSnapshot = record.beforeSnapshot
-                    existingRecord.afterSnapshot = record.afterSnapshot
-                    existingRecord.isReverted = record.isReverted
-                } else if changedLocally {
-                    context.insert(SDHistoryRecord(from: record))
-                } else {
-                    staleLocalIDs.insert(record.id)
+                if !remoteRecordsToAppend.isEmpty {
+                    records.append(contentsOf: remoteRecordsToAppend)
+                    records.sort { $0.timestamp > $1.timestamp }
+                    trimRecords()
                 }
-            }
-            if !staleLocalIDs.isEmpty {
-                records.removeAll { staleLocalIDs.contains($0.id) }
-            }
 
-            try context.save()
-            refreshBaseline()
-            print("[History] 保存了 \(records.count) 条历史记录")
-        } catch {
-            print("[History] 保存历史记录失败: \(error)")
+                var staleLocalIDs = Set<UUID>()
+                for record in records {
+                    let baseline = baselineRecordsByID[record.id]
+                    let changedLocally = baseline == nil || baseline != record
+
+                    if let existingRecord = existingByID[record.id] {
+                        guard changedLocally else { continue }
+                        existingRecord.timestamp = record.timestamp
+                        existingRecord.operationType = record.operationType.rawValue
+                        existingRecord.targetName = record.entityName
+                        existingRecord.beforeSnapshot = record.beforeSnapshot
+                        existingRecord.afterSnapshot = record.afterSnapshot
+                        existingRecord.isReverted = record.isReverted
+                    } else if changedLocally {
+                        context.insert(SDHistoryRecord(from: record))
+                    } else {
+                        staleLocalIDs.insert(record.id)
+                    }
+                }
+                if !staleLocalIDs.isEmpty {
+                    records.removeAll { staleLocalIDs.contains($0.id) }
+                }
+
+                try context.save()
+                refreshBaseline()
+                print("[History] 保存了 \(records.count) 条历史记录")
+            } catch {
+                print("[History] 保存历史记录失败: \(error)")
+            }
         }
     }
 
