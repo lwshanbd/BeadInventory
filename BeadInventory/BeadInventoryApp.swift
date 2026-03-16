@@ -169,8 +169,9 @@ struct BeadInventoryApp: App {
                     )
                 } else {
                     hasSeenInitialActivePhase = true
+                    let hadCompletedInitialLoadBeforeActive = inventoryManager.hasCompletedInitialLoad
                     inventoryManager.performInitialLoadIfNeeded(reason: "scenePhase.active.initial")
-                    if inventoryManager.hasCompletedInitialLoad {
+                    if !hadCompletedInitialLoadBeforeActive && inventoryManager.hasCompletedInitialLoad {
                         inventoryManager.scheduleRefreshFromPersistentStore(
                             reason: "scenePhase.active.initialCatchUp",
                             debounceSeconds: 0.25

@@ -43,7 +43,7 @@ class InventoryManager: ObservableObject {
     private var isLoadingPersistentStore = false
     private var hasCompletedInitialPersistentLoad = false
     private var initialLoadAttemptCount = 0
-    private let maxAutomaticInitialLoadAttempts = 2
+    private let maxAutomaticInitialLoadAttempts = 3
 
     private struct DeferredRefreshRequest {
         let reason: String
@@ -816,13 +816,15 @@ class InventoryManager: ObservableObject {
         if force {
             initialLoadErrorMessage = nil
         }
+        let preserveInMemoryOnFailure = force || initialLoadAttemptCount > 1
         lastPersistentRefreshAt = Date()
         logInfo("initial_load_triggered", metadata: [
             "reason": reason,
             "attempt": initialLoadAttemptCount,
-            "force": force
+            "force": force,
+            "preserveInMemoryOnFailure": preserveInMemoryOnFailure
         ])
-        loadData()
+        loadData(preserveInMemoryOnFailure: preserveInMemoryOnFailure)
     }
 
     func cancelScheduledRefresh(reason: String) {
@@ -1761,6 +1763,7 @@ class InventoryManager: ObservableObject {
         customColorsLoadedSuccessfully = true
         isDataLoaded = true
         hasCompletedInitialPersistentLoad = true
+        finishInitialLoadSuccess()
         refreshBaselines()
         print("[InventoryManager] 数据从 UserDefaults 加载完成")
     }
