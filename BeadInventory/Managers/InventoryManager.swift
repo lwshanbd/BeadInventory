@@ -16,6 +16,8 @@ class InventoryManager: ObservableObject {
     @Published var projects: [ProjectRecord] = []
     @Published var customColors: [CustomColor] = []  // 自定义色号
     @Published var purchaseRecords: [PurchaseRecord] = []  // 运输中的购买记录
+    @Published private(set) var isInitialLoadInProgress = false
+    @Published private(set) var initialLoadErrorMessage: String?
 
     // 品牌相关
     @Published var brands: [Brand] = []
@@ -40,6 +42,15 @@ class InventoryManager: ObservableObject {
     // 防止重复触发持久层全量读取
     private var isLoadingPersistentStore = false
     private var hasCompletedInitialPersistentLoad = false
+    private var initialLoadAttemptCount = 0
+    private let maxAutomaticInitialLoadAttempts = 2
+
+    private struct DeferredRefreshRequest {
+        let reason: String
+        let preserveInMemoryOnFailure: Bool
+        let debounceSeconds: TimeInterval?
+    }
+    private var deferredRefreshRequest: DeferredRefreshRequest?
 
     // 远程变更刷新防抖
     private var remoteRefreshWorkItem: DispatchWorkItem?
@@ -137,6 +148,12 @@ class InventoryManager: ObservableObject {
 
     var hasCompletedInitialLoad: Bool {
         hasCompletedInitialPersistentLoad
+    }
+
+    func retryInitialLoad(reason: String = "manualRetry") {
+        initialLoadAttemptCount = 0
+        initialLoadErrorMessage = nil
+        performInitialLoadIfNeeded(reason: reason, force: true)
     }
 
     // MARK: - 品牌管理
@@ -763,6 +780,10 @@ class InventoryManager: ObservableObject {
             return
         }
         guard !isLoadingPersistentStore else {
+            deferRefreshUntilLoadFinishes(
+                reason: reason,
+                preserveInMemoryOnFailure: preserveInMemoryOnFailure
+            )
             logWarning("refresh_skipped_while_loading", metadata: ["reason": reason])
             return
         }
@@ -775,7 +796,7 @@ class InventoryManager: ObservableObject {
         loadData(preserveInMemoryOnFailure: preserveInMemoryOnFailure)
     }
 
-    func performInitialLoadIfNeeded(reason: String) {
+    func performInitialLoadIfNeeded(reason: String, force: Bool = false) {
         guard modelContext != nil else {
             logWarning("initial_load_skipped_no_model_context", metadata: ["reason": reason])
             return
@@ -785,9 +806,22 @@ class InventoryManager: ObservableObject {
             logWarning("initial_load_skipped_while_loading", metadata: ["reason": reason])
             return
         }
+        if !force && initialLoadErrorMessage != nil {
+            logWarning("initial_load_blocked_after_failure", metadata: ["reason": reason])
+            return
+        }
 
+        initialLoadAttemptCount += 1
+        isInitialLoadInProgress = true
+        if force {
+            initialLoadErrorMessage = nil
+        }
         lastPersistentRefreshAt = Date()
-        logInfo("initial_load_triggered", metadata: ["reason": reason])
+        logInfo("initial_load_triggered", metadata: [
+            "reason": reason,
+            "attempt": initialLoadAttemptCount,
+            "force": force
+        ])
         loadData()
     }
 
@@ -810,6 +844,11 @@ class InventoryManager: ObservableObject {
             return
         }
         guard !isLoadingPersistentStore else {
+            deferRefreshUntilLoadFinishes(
+                reason: reason,
+                preserveInMemoryOnFailure: true,
+                debounceSeconds: debounceSeconds
+            )
             logWarning("schedule_refresh_skipped_while_loading", metadata: [
                 "reason": reason,
                 "retryCount": retryCount
@@ -867,6 +906,77 @@ class InventoryManager: ObservableObject {
             "retryCount": retryCount
         ])
         DispatchQueue.main.asyncAfter(deadline: .now() + effectiveDebounce, execute: workItem)
+    }
+
+    private func deferRefreshUntilLoadFinishes(
+        reason: String,
+        preserveInMemoryOnFailure: Bool,
+        debounceSeconds: TimeInterval? = nil
+    ) {
+        if let existing = deferredRefreshRequest {
+            let mergedDebounce: TimeInterval?
+            switch (existing.debounceSeconds, debounceSeconds) {
+            case (nil, _), (_, nil):
+                mergedDebounce = nil
+            case let (lhs?, rhs?):
+                mergedDebounce = min(lhs, rhs)
+            }
+
+            deferredRefreshRequest = DeferredRefreshRequest(
+                reason: reason,
+                preserveInMemoryOnFailure: existing.preserveInMemoryOnFailure || preserveInMemoryOnFailure,
+                debounceSeconds: mergedDebounce
+            )
+        } else {
+            deferredRefreshRequest = DeferredRefreshRequest(
+                reason: reason,
+                preserveInMemoryOnFailure: preserveInMemoryOnFailure,
+                debounceSeconds: debounceSeconds
+            )
+        }
+
+        logInfo("refresh_deferred_until_load_finishes", metadata: [
+            "reason": reason,
+            "debounceSeconds": debounceSeconds as Any
+        ])
+    }
+
+    private func replayDeferredRefreshIfNeeded() {
+        guard let request = deferredRefreshRequest else { return }
+        deferredRefreshRequest = nil
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if let debounceSeconds = request.debounceSeconds {
+                self.scheduleRefreshFromPersistentStore(
+                    reason: request.reason,
+                    debounceSeconds: debounceSeconds
+                )
+            } else {
+                self.refreshFromPersistentStore(
+                    reason: request.reason,
+                    preserveInMemoryOnFailure: request.preserveInMemoryOnFailure
+                )
+            }
+        }
+    }
+
+    private func finishInitialLoadSuccess() {
+        isInitialLoadInProgress = false
+        initialLoadErrorMessage = nil
+        initialLoadAttemptCount = 0
+    }
+
+    private func finishInitialLoadFailure(userMessage: String, metadata: [String: Any] = [:]) {
+        guard !hasCompletedInitialPersistentLoad else { return }
+        isInitialLoadInProgress = false
+
+        guard initialLoadAttemptCount >= maxAutomaticInitialLoadAttempts else { return }
+
+        initialLoadErrorMessage = userMessage
+        logError("initial_load_retry_limit_reached", metadata: metadata.merging([
+            "attempts": initialLoadAttemptCount
+        ]) { _, new in new })
     }
 
     private func makeInMemorySnapshot() -> InMemorySnapshot {
@@ -959,7 +1069,10 @@ class InventoryManager: ObservableObject {
         }
 
         isLoadingPersistentStore = true
-        defer { isLoadingPersistentStore = false }
+        defer {
+            isLoadingPersistentStore = false
+            replayDeferredRefreshIfNeeded()
+        }
 
         AppBackgroundTaskManager.shared.perform(named: "InventoryLoad") {
             let fallbackSnapshot = preserveInMemoryOnFailure ? makeInMemorySnapshot() : nil
@@ -1088,6 +1201,16 @@ class InventoryManager: ObservableObject {
                             "loadedStocks": loadedBrandStocks.count
                         ])
                         restoreInMemorySnapshot(snapshot)
+                        finishInitialLoadFailure(
+                            userMessage: "云端数据仍在同步中，请稍后重试。",
+                            metadata: [
+                                "failure": "suspiciousDrop",
+                                "previousBrands": snapshot.brands.count,
+                                "loadedBrands": loadedBrands.count,
+                                "previousStocks": snapshot.brandStocks.count,
+                                "loadedStocks": loadedBrandStocks.count
+                            ]
+                        )
                         return
                     }
                 }
@@ -1100,6 +1223,10 @@ class InventoryManager: ObservableObject {
                         print("[InventoryManager] 已回滚到刷新前的内存数据，保持当前可用状态")
                         restoreInMemorySnapshot(snapshot)
                     }
+                    finishInitialLoadFailure(
+                        userMessage: "暂时无法确认已有数据，请稍后重试。",
+                        metadata: ["failure": "unexpectedAllEmpty"]
+                    )
                     return
                 }
 
@@ -1119,6 +1246,7 @@ class InventoryManager: ObservableObject {
                 beadColors = loadedBeadColors
 
                 isDataLoaded = true
+                finishInitialLoadSuccess()
                 hasCompletedInitialPersistentLoad = true
                 print("[InventoryManager] ✅ 数据加载完成")
                 logInfo("load_data_completed", metadata: [
@@ -1157,6 +1285,16 @@ class InventoryManager: ObservableObject {
                     // 保持颜色数据可用（用于界面展示），其余实体维持原内存状态
                     beadColors = loadedBeadColors
                 }
+                finishInitialLoadFailure(
+                    userMessage: "部分数据加载失败，请点击重试。",
+                    metadata: [
+                        "failure": "partialLoad",
+                        "brandsLoaded": brandsLoadedSuccessfully,
+                        "stocksLoaded": stocksLoadedSuccessfully,
+                        "projectsLoaded": projectsLoadedSuccessfully,
+                        "customColorsLoaded": customColorsLoadedSuccessfully
+                    ]
+                )
             }
         }
     }

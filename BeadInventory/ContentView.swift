@@ -87,6 +87,48 @@ struct ContentView: View {
                 }
             }
             }
+
+            if !inventoryManager.hasCompletedInitialLoad {
+                ZStack {
+                    Color(.systemBackground)
+                        .opacity(0.96)
+                        .ignoresSafeArea()
+
+                    VStack(spacing: 16) {
+                        if let errorMessage = inventoryManager.initialLoadErrorMessage {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.orange)
+
+                            Text("数据加载失败")
+                                .font(.headline)
+
+                            Text(errorMessage)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+
+                            Button("重试") {
+                                inventoryManager.retryInitialLoad(reason: "contentView.retryButton")
+                            }
+                            .buttonStyle(.borderedProminent)
+                        } else {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+
+                            Text("正在加载数据...")
+                                .font(.headline)
+
+                            Text("首次启动或 iCloud 同步中可能需要几秒钟。")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                    .padding(24)
+                }
+                .transition(.opacity)
+            }
         }
         .sheet(isPresented: $showingAddInventory) {
             AddInventoryView()

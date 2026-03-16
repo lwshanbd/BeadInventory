@@ -151,9 +151,14 @@ struct BeadInventoryApp: App {
                 inventoryManager.saveData()
                 HistoryManager.shared.saveDataImmediately()
             case .inactive:
-                // .inactive 频繁出现（例如控制中心、系统弹窗），这里只取消待执行刷新，避免切后台时再触发全量读取。
+                // .inactive 频繁出现（例如控制中心、系统弹窗），先取消待执行刷新；
+                // 若首次加载已完成，则补一次保守保存，降低系统在 .inactive 直接终止时的数据丢失风险。
                 print("[App] 应用进入非活跃状态")
                 inventoryManager.cancelScheduledRefresh(reason: "scenePhase.inactive")
+                if inventoryManager.hasCompletedInitialLoad {
+                    inventoryManager.saveData()
+                    HistoryManager.shared.saveDataImmediately()
+                }
             case .active:
                 print("[App] 应用恢复活跃状态")
                 if hasSeenInitialActivePhase {
@@ -165,6 +170,12 @@ struct BeadInventoryApp: App {
                 } else {
                     hasSeenInitialActivePhase = true
                     inventoryManager.performInitialLoadIfNeeded(reason: "scenePhase.active.initial")
+                    if inventoryManager.hasCompletedInitialLoad {
+                        inventoryManager.scheduleRefreshFromPersistentStore(
+                            reason: "scenePhase.active.initialCatchUp",
+                            debounceSeconds: 0.25
+                        )
+                    }
                 }
                 cloudSyncStatusManager.refreshAccountStatus()
             @unknown default:
