@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import Vision
+@preconcurrency import Vision
 import UIKit
 
 @MainActor
@@ -77,40 +77,39 @@ class OCRManager: ObservableObject {
             return
         }
 
-        let request = VNRecognizeTextRequest { [weak self] request, error in
-            DispatchQueue.main.async {
-                self?.isProcessing = false
-
-                if let error = error {
-                    self?.errorMessage = "识别失败: \(error.localizedDescription)"
-                    completion([])
-                    return
-                }
-
-                guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                    self?.errorMessage = "无法获取识别结果"
-                    completion([])
-                    return
-                }
-
-                let items = self?.parseRecognizedText(observations) ?? []
-                self?.recognizedItems = items
-                completion(items)
-            }
-        }
-
-        // 配置识别参数
-        request.recognitionLevel = .accurate
-        request.recognitionLanguages = ["zh-Hans", "en-US"]
-        request.usesLanguageCorrection = true
-
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-
         DispatchQueue.global(qos: .userInitiated).async {
+            let request = VNRecognizeTextRequest { [weak self] request, error in
+                Task { @MainActor in
+                    self?.isProcessing = false
+
+                    if let error = error {
+                        self?.errorMessage = "识别失败: \(error.localizedDescription)"
+                        completion([])
+                        return
+                    }
+
+                    guard let observations = request.results as? [VNRecognizedTextObservation] else {
+                        self?.errorMessage = "无法获取识别结果"
+                        completion([])
+                        return
+                    }
+
+                    let items = self?.parseRecognizedText(observations) ?? []
+                    self?.recognizedItems = items
+                    completion(items)
+                }
+            }
+
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["zh-Hans", "en-US"]
+            request.usesLanguageCorrection = true
+
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+
             do {
                 try handler.perform([request])
             } catch {
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     self.errorMessage = "处理失败: \(error.localizedDescription)"
                     self.isProcessing = false
                     completion([])

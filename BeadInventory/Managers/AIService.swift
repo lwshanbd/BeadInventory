@@ -483,43 +483,56 @@ final class LocalModelManager: ObservableObject {
                 }
             }
 
-                let maxGeneratedTokens = Self.localMaxGeneratedTokens(for: model)
-                let maxKVSize = promptTokens.count + maxGeneratedTokens + 64
-                let prefillStepSize = Self.localPrefillStepSize(for: model)
-                let parameters = GenerateParameters(
-                    maxTokens: maxGeneratedTokens,
-                    maxKVSize: maxKVSize,
-                    temperature: 0.1,
-                    topP: 0.9,
-                    prefillStepSize: prefillStepSize
-                )
+            let maxGeneratedTokens = Self.localMaxGeneratedTokens(for: model)
+            let maxKVSize = promptTokens.count + maxGeneratedTokens + 64
+            let prefillStepSize = Self.localPrefillStepSize(for: model)
+            let parameters = GenerateParameters(
+                maxTokens: maxGeneratedTokens,
+                maxKVSize: maxKVSize,
+                temperature: 0.1,
+                topP: 0.9,
+                prefillStepSize: prefillStepSize
+            )
 
-                print(
-                    "[AI Debug] 本地生成参数: maxTokens=\(maxGeneratedTokens), maxKVSize=\(maxKVSize), prefillStepSize=\(prefillStepSize)"
-                )
-                print(
-                    "[AI Debug] MLX 内存(prepare 增量): \(Self.debugSnapshotLine(promptMemoryGrowth))"
-                )
+            print(
+                "[AI Debug] 本地生成参数: maxTokens=\(maxGeneratedTokens), maxKVSize=\(maxKVSize), prefillStepSize=\(prefillStepSize)"
+            )
+            print(
+                "[AI Debug] MLX 内存(prepare 增量): \(Self.debugSnapshotLine(promptMemoryGrowth))"
+            )
 
-                let generationStartMemory = Memory.snapshot()
-                let generated = try MLXLMCommon.generate(
-                    input: preparedInput,
-                    parameters: parameters,
-                    context: context
-                ) { tokens in
-                    tokens.count >= maxGeneratedTokens ? .stop : .more
+            let generationStartMemory = Memory.snapshot()
+            let stream = try MLXLMCommon.generate(
+                input: preparedInput,
+                parameters: parameters,
+                context: context
+            )
+            var generatedOutput = ""
+
+            for await generation in stream {
+                switch generation {
+                case .chunk(let chunk):
+                    generatedOutput += chunk
+                case .info(let info):
+                    print(
+                        "[AI Debug] 本地生成完成: promptTokens=\(info.promptTokenCount), generationTokens=\(info.generationTokenCount), stopReason=\(info.stopReason)"
+                    )
+                case .toolCall(let call):
+                    print("[AI Debug] 本地生成 tool call: \(call.function.name)")
                 }
-                let generationEndMemory = Memory.snapshot()
-                let generationGrowth = generationStartMemory.delta(generationEndMemory)
+            }
 
-                print(
-                    "[AI Debug] MLX 内存(generate 结束): \(Self.debugSnapshotLine(generationEndMemory))"
-                )
-                print(
-                    "[AI Debug] MLX 内存(generate 增量): \(Self.debugSnapshotLine(generationGrowth))"
-                )
+            let generationEndMemory = Memory.snapshot()
+            let generationGrowth = generationStartMemory.delta(generationEndMemory)
 
-                return generated.output
+            print(
+                "[AI Debug] MLX 内存(generate 结束): \(Self.debugSnapshotLine(generationEndMemory))"
+            )
+            print(
+                "[AI Debug] MLX 内存(generate 增量): \(Self.debugSnapshotLine(generationGrowth))"
+            )
+
+            return generatedOutput
         }
 
         return result

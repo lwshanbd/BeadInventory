@@ -2914,7 +2914,7 @@ struct ReplenishSuggestionSheet: View {
                                     }
                                 }
                                 .pickerStyle(.segmented)
-                                .onChange(of: selectedColorSystemFilter) { _ in
+                                .onChange(of: selectedColorSystemFilter) { _, _ in
                                     // 切换色系时，自动选中该色系的第一个品牌
                                     if let firstBrand = matchingBrands.first {
                                         selectedBrandId = firstBrand.id
