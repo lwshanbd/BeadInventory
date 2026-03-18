@@ -669,6 +669,7 @@ struct PinnedImageView: View {
 
             Divider()
         }
+        .frame(maxWidth: .infinity)
         .background(Color(.systemBackground))
     }
 }
@@ -788,15 +789,12 @@ struct ScanPreviewImageView: View {
     var shadowRadius: CGFloat = 0
 
     var body: some View {
-        GeometryReader { geometry in
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(width: geometry.size.width, height: maxHeight)
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                .shadow(radius: shadowRadius)
-        }
-        .frame(height: maxHeight)
+        Image(uiImage: image)
+            .resizable()
+            .scaledToFit()
+            .frame(maxWidth: .infinity, maxHeight: maxHeight)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .shadow(radius: shadowRadius)
     }
 }
 
