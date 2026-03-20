@@ -188,6 +188,9 @@ struct RecognitionSettingsSections: View {
             }
             .presentationDetents([.medium])
         }
+        .onAppear {
+            localModelManager.refreshDownloadedModels()
+        }
     }
 
     private var localBackendContent: some View {
@@ -314,6 +317,7 @@ struct LocalModelOptionCard: View {
     let recommendationText: String
 
     @State private var isStartingDownload = false
+    @State private var showingDeleteConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -356,11 +360,42 @@ struct LocalModelOptionCard: View {
                     .foregroundColor(.red)
             }
 
-            Button {
-                if localModelManager.isDownloaded(model) {
-                    aiService.config.backend = .local
-                    aiService.config.localModel = model
-                } else {
+            if localModelManager.isDownloaded(model) {
+                HStack(spacing: 10) {
+                    Button {
+                        aiService.config.backend = .local
+                        aiService.config.localModel = model
+                    } label: {
+                        HStack {
+                            Text(buttonTitle)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(localModelManager.isDeleting.contains(model) || isSelected)
+                    .tint(isSelected ? .green : .accentColor)
+
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        HStack {
+                            if localModelManager.isDeleting.contains(model) {
+                                ProgressView()
+                            }
+                            Text(localModelManager.isDeleting.contains(model) ? "删除中" : "删除模型")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(
+                        localModelManager.isDownloading.contains(model) ||
+                        localModelManager.isDeleting.contains(model) ||
+                        localModelManager.isLoadingModel
+                    )
+                    .tint(.red)
+                }
+            } else {
+                Button {
                     isStartingDownload = true
                     aiService.config.backend = .local
                     aiService.config.localModel = model
@@ -376,23 +411,37 @@ struct LocalModelOptionCard: View {
                             }
                         }
                     }
-                }
-            } label: {
-                HStack {
-                    if isStartingDownload {
-                        ProgressView()
+                } label: {
+                    HStack {
+                        if isStartingDownload {
+                            ProgressView()
+                        }
+                        Text(buttonTitle)
                     }
-                    Text(buttonTitle)
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
+                .buttonStyle(.borderedProminent)
+                .disabled(
+                    localModelManager.isDownloading.contains(model) ||
+                    localModelManager.isDeleting.contains(model) ||
+                    isStartingDownload
+                )
+                .tint(isSelected ? .green : .accentColor)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(localModelManager.isDownloading.contains(model) || isStartingDownload)
-            .tint(isSelected ? .green : .accentColor)
         }
         .padding(12)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .alert("删除 \(model.displayName)？", isPresented: $showingDeleteConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("删除模型", role: .destructive) {
+                Task {
+                    try? await localModelManager.deleteModel(model)
+                }
+            }
+        } message: {
+            Text("删除后会释放本地存储空间；如果之后还要使用，需要重新下载。")
+        }
     }
 
     private var buttonTitle: String {
