@@ -26,7 +26,7 @@ struct AppIconView: View {
                 endPoint: .bottomTrailing
             )
 
-            // 珠子排列 - 3x3 网格
+            // 拼豆排列 - 3x3 网格
             VStack(spacing: size * 0.06) {
                 ForEach(0..<3) { row in
                     HStack(spacing: size * 0.06) {
@@ -47,7 +47,7 @@ struct BeadShape: View {
     let row: Int
     let col: Int
 
-    // 不同位置的珠子颜色
+    // 不同位置的拼豆颜色
     var beadColor: Color {
         let colors: [[Color]] = [
             [.red, .orange, .yellow],
@@ -59,7 +59,7 @@ struct BeadShape: View {
 
     var body: some View {
         ZStack {
-            // 珠子主体
+            // 拼豆主体
             Circle()
                 .fill(
                     RadialGradient(
@@ -91,7 +91,7 @@ struct BeadShape: View {
                 .frame(width: size * 0.6, height: size * 0.6)
                 .offset(x: -size * 0.15, y: -size * 0.15)
 
-            // 珠子孔
+            // 拼豆孔
             Circle()
                 .fill(Color.black.opacity(0.3))
                 .frame(width: size * 0.15, height: size * 0.15)
