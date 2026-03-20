@@ -270,6 +270,7 @@ final class LocalModelManager: ObservableObject {
 
     @Published private(set) var downloadProgress: [LocalRecognitionModel: Double] = [:]
     @Published private(set) var isDownloading: Set<LocalRecognitionModel> = []
+    @Published private(set) var isDeleting: Set<LocalRecognitionModel> = []
     @Published private(set) var lastErrorByModel: [LocalRecognitionModel: String] = [:]
     @Published private(set) var downloadedPaths: [LocalRecognitionModel: String] = [:]
     @Published private(set) var loadedModel: LocalRecognitionModel?
@@ -281,40 +282,18 @@ final class LocalModelManager: ObservableObject {
     private init() {
         if let data = UserDefaults.standard.data(forKey: downloadedPathsKey),
            let saved = try? JSONDecoder().decode([LocalRecognitionModel: String].self, from: data) {
-            let fileManager = FileManager.default
-            var filtered: [LocalRecognitionModel: String] = [:]
-
-            for (model, path) in saved {
-                guard fileManager.fileExists(atPath: path) else {
-                    continue
-                }
-
-                if isPathCompatible(path, for: model) {
-                    filtered[model] = path
-                } else {
-                    try? fileManager.removeItem(atPath: path)
-                }
-            }
-
-            self.downloadedPaths = filtered
-            if self.downloadedPaths.count != saved.count {
-                persistDownloadedPaths()
-            }
+            self.downloadedPaths = saved
         }
+
+        refreshDownloadedModels()
     }
 
     func isDownloaded(_ model: LocalRecognitionModel) -> Bool {
-        guard let path = downloadedPaths[model] else { return false }
-        return FileManager.default.fileExists(atPath: path) && isPathCompatible(path, for: model)
+        installedDirectory(for: model) != nil
     }
 
     func localDirectory(for model: LocalRecognitionModel) -> URL? {
-        guard let path = downloadedPaths[model],
-              FileManager.default.fileExists(atPath: path),
-              isPathCompatible(path, for: model) else {
-            return nil
-        }
-        return URL(fileURLWithPath: path, isDirectory: true)
+        installedDirectory(for: model)
     }
 
     func progress(for model: LocalRecognitionModel) -> Double {
@@ -322,16 +301,41 @@ final class LocalModelManager: ObservableObject {
     }
 
     private func isPathCompatible(_ path: String, for model: LocalRecognitionModel) -> Bool {
-        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-        let expectedFragment = "/models/\(model.repositoryID)"
-        return normalizedPath.contains(expectedFragment)
+        let normalizedComponents = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
+        let expectedComponents = ["models"] + model.repositoryID.split(separator: "/").map(String.init)
+        return Array(normalizedComponents.suffix(expectedComponents.count)) == expectedComponents
     }
 
     func errorMessage(for model: LocalRecognitionModel) -> String? {
         lastErrorByModel[model]
     }
 
+    func refreshDownloadedModels() {
+        let resolvedPaths = LocalRecognitionModel.allCases.reduce(into: [LocalRecognitionModel: String]()) { result, model in
+            if let directory = installedDirectory(for: model) {
+                result[model] = directory.path
+            }
+        }
+
+        if downloadedPaths != resolvedPaths {
+            downloadedPaths = resolvedPaths
+            persistDownloadedPaths()
+        }
+
+        if let loadedModel, resolvedPaths[loadedModel] == nil {
+            unloadCurrentModel()
+        }
+    }
+
     func downloadModel(_ model: LocalRecognitionModel) async throws {
+        if let existingDirectory = installedDirectory(for: model) {
+            downloadedPaths[model] = existingDirectory.path
+            downloadProgress[model] = 1
+            lastErrorByModel[model] = nil
+            persistDownloadedPaths()
+            return
+        }
+
         guard !isDownloading.contains(model) else { return }
 
         isDownloading.insert(model)
@@ -358,10 +362,53 @@ final class LocalModelManager: ObservableObject {
                 }
             }
 
+            guard isInstalledDirectory(directory) else {
+                throw AIError.parseError("模型文件不完整，请重试下载")
+            }
+
             downloadedPaths[model] = directory.path
             persistDownloadedPaths()
         } catch {
             lastErrorByModel[model] = error.localizedDescription
+            throw error
+        }
+    }
+
+    func deleteModel(_ model: LocalRecognitionModel) async throws {
+        guard !isDeleting.contains(model) else { return }
+        guard !isDownloading.contains(model) else {
+            throw AIError.parseError("模型正在下载，暂时不能删除")
+        }
+
+        isDeleting.insert(model)
+        lastErrorByModel[model] = nil
+
+        defer {
+            isDeleting.remove(model)
+        }
+
+        if loadedModel == model {
+            unloadCurrentModel()
+        }
+
+        let fileManager = FileManager.default
+        let directories = candidateDirectories(for: model).filter {
+            fileManager.fileExists(atPath: $0.path) && isPathCompatible($0.path, for: model)
+        }
+
+        do {
+            for directory in directories {
+                try fileManager.removeItem(at: directory)
+            }
+
+            downloadedPaths.removeValue(forKey: model)
+            downloadProgress.removeValue(forKey: model)
+            lastErrorByModel[model] = nil
+            persistDownloadedPaths()
+            refreshDownloadedModels()
+        } catch {
+            lastErrorByModel[model] = error.localizedDescription
+            refreshDownloadedModels()
             throw error
         }
     }
@@ -372,9 +419,7 @@ final class LocalModelManager: ObservableObject {
         }
 
         if loadedModel != model {
-            container = nil
-            loadedModel = nil
-            Memory.clearCache()
+            unloadCurrentModel()
         }
 
         guard let directory = localDirectory(for: model) else {
@@ -542,6 +587,91 @@ final class LocalModelManager: ObservableObject {
         if let data = try? JSONEncoder().encode(downloadedPaths) {
             UserDefaults.standard.set(data, forKey: downloadedPathsKey)
         }
+    }
+
+    private func unloadCurrentModel() {
+        container = nil
+        loadedModel = nil
+        Memory.clearCache()
+    }
+
+    private func installedDirectory(for model: LocalRecognitionModel) -> URL? {
+        candidateDirectories(for: model).first(where: isInstalledDirectory(_:))
+    }
+
+    private func candidateDirectories(for model: LocalRecognitionModel) -> [URL] {
+        var candidates: [URL] = []
+
+        if let savedPath = downloadedPaths[model], isPathCompatible(savedPath, for: model) {
+            candidates.append(URL(fileURLWithPath: savedPath, isDirectory: true))
+        }
+
+        candidates.append(expectedDirectory(for: model, searchDirectory: .documentDirectory))
+        candidates.append(expectedDirectory(for: model, searchDirectory: .cachesDirectory))
+
+        var uniquePaths = Set<String>()
+        return candidates.filter { url in
+            uniquePaths.insert(url.standardizedFileURL.path).inserted
+        }
+    }
+
+    private func expectedDirectory(
+        for model: LocalRecognitionModel,
+        searchDirectory: FileManager.SearchPathDirectory
+    ) -> URL {
+        let baseDirectory = FileManager.default.urls(for: searchDirectory, in: .userDomainMask).first!
+        return model.repositoryID
+            .split(separator: "/")
+            .reduce(
+                baseDirectory
+                    .appendingPathComponent("huggingface", isDirectory: true)
+                    .appendingPathComponent("models", isDirectory: true)
+            ) { partialURL, component in
+                partialURL.appendingPathComponent(String(component), isDirectory: true)
+            }
+    }
+
+    private func isInstalledDirectory(_ directory: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        let fileManager = FileManager.default
+
+        guard fileManager.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return false
+        }
+
+        let requiredFiles = [
+            "config.json",
+            "tokenizer.json",
+            "tokenizer_config.json"
+        ]
+
+        guard requiredFiles.allSatisfy({ fileManager.fileExists(atPath: directory.appendingPathComponent($0).path) }) else {
+            return false
+        }
+
+        let hasProcessorConfig =
+            fileManager.fileExists(atPath: directory.appendingPathComponent("preprocessor_config.json").path) ||
+            fileManager.fileExists(atPath: directory.appendingPathComponent("processor_config.json").path)
+
+        guard hasProcessorConfig else {
+            return false
+        }
+
+        guard let enumerator = fileManager.enumerator(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return false
+        }
+
+        for case let fileURL as URL in enumerator {
+            if fileURL.pathExtension == "safetensors" {
+                return true
+            }
+        }
+
+        return false
     }
 
     private func preparedCIImage(from image: UIImage, for model: LocalRecognitionModel) -> CIImage? {
@@ -915,7 +1045,7 @@ class AIServiceManager: ObservableObject {
             switch colorSystem {
             case .kaka:
                 let system = """
-                你是一个珠子色号表格识别助手。请仔细分析图片中的表格。
+                你是一个拼豆色号表格识别助手。请仔细分析图片中的表格。
 
                 表格结构说明：
                 - 这是一个多行多列的表格，每一列代表一种颜色
@@ -961,7 +1091,7 @@ class AIServiceManager: ObservableObject {
             default:
                 // MARD 及其他品牌使用默认的 MARD 提示词
                 let system = """
-                你是一个珠子色号表格识别助手。请仔细分析图片中的表格。
+                你是一个拼豆色号表格识别助手。请仔细分析图片中的表格。
 
                 表格结构说明：
                 - 这是一个多行多列的表格，每一列代表一种颜色
@@ -1004,7 +1134,7 @@ class AIServiceManager: ObservableObject {
         case .blueprint:
             // 色号统计识别：统一为一套 prompt，不区分体系，识别所有格式色号
             let system = """
-            你是一个珠子图纸识别助手。请仔细分析图片中的拼豆图纸。
+            你是一个拼豆图纸识别助手。请仔细分析图片中的拼豆图纸。
 
             图纸结构说明：
             - 这是一张拼豆图纸，上面标注了各种颜色的色号和对应数量
