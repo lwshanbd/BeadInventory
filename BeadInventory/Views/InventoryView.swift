@@ -938,6 +938,15 @@ struct EditStockSheet: View {
         }
     }
 
+    /// 先收起键盘、再修改数据、最后延迟 dismiss，
+    /// 避免 iPad form sheet 上键盘收起 + @Published 变更 + dismiss 三者竞争导致闪退。
+    private func dismissAfterDataChange() {
+        isInputFocused = false
+        DispatchQueue.main.async {
+            dismiss()
+        }
+    }
+
     func applyAdjustment() {
         guard let amount = Int(adjustAmount), amount > 0,
               let brandId = inventoryManager.currentBrandId else { return }
@@ -953,14 +962,14 @@ struct EditStockSheet: View {
             }
         }
         adjustAmount = ""
-        dismiss()
+        dismissAfterDataChange()
     }
 
     func setStock() {
         guard let newStock = Int(stockAmount), newStock >= 0,
               let brandId = inventoryManager.currentBrandId else { return }
         inventoryManager.updateStock(brandId: brandId, mardCode: color.mardCode, newStock: newStock)
-        dismiss()
+        dismissAfterDataChange()
     }
 
     func setUsed() {
@@ -972,13 +981,13 @@ struct EditStockSheet: View {
             inventoryManager.brandStocks[index].used = newUsed
             inventoryManager.saveData()
         }
-        dismiss()
+        dismissAfterDataChange()
     }
 
     func hideCurrentColor() {
         guard let brandId = inventoryManager.currentBrandId else { return }
         inventoryManager.hideColor(brandId: brandId, mardCode: color.mardCode)
-        dismiss()
+        dismissAfterDataChange()
     }
 }
 
