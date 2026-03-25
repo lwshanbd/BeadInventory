@@ -254,13 +254,16 @@ class OCRManager: ObservableObject {
 
     func updateItem(id: UUID, colorCode: String?, quantity: Int?) {
         if let index = recognizedItems.firstIndex(where: { $0.id == id }) {
+            // 合并多次属性修改为一次数组写入，避免 @Published 数组多次触发 SwiftUI 更新
+            var updatedItem = recognizedItems[index]
             if let code = colorCode {
-                recognizedItems[index].colorCode = code.uppercased()
+                updatedItem.colorCode = code.uppercased()
             }
             if let qty = quantity {
-                recognizedItems[index].quantity = qty
+                updatedItem.quantity = qty
             }
-            recognizedItems[index].isConfirmed = true
+            updatedItem.isConfirmed = true
+            recognizedItems[index] = updatedItem
         }
     }
 
