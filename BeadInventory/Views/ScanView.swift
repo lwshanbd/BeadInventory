@@ -588,22 +588,6 @@ struct ScanView: View {
         isImagePinned = false
     }
 
-    func removeItem(id: UUID) {
-        recognizedItems.removeAll { $0.id == id }
-    }
-
-    func updateItem(id: UUID, colorCode: String?, quantity: Int?) {
-        if let index = recognizedItems.firstIndex(where: { $0.id == id }) {
-            var updatedItem = recognizedItems[index]
-            if let code = colorCode {
-                updatedItem.colorCode = code.uppercased()
-            }
-            if let qty = quantity {
-                updatedItem.quantity = qty
-            }
-            recognizedItems[index] = updatedItem
-        }
-    }
 }
 
 // MARK: - 固定在顶部的图片视图
@@ -797,192 +781,6 @@ struct ScanPreviewImageView: View {
             .frame(maxWidth: .infinity, maxHeight: maxHeight)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             .shadow(radius: shadowRadius)
-    }
-}
-
-// MARK: - 识别结果区域
-struct RecognizedResultsSection: View {
-    @ObservedObject var ocrManager: OCRManager
-    let totalBeads: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("识别结果")
-                    .font(.headline)
-                Spacer()
-                Text("共 \(ocrManager.recognizedItems.count) 色 / \(totalBeads) 颗")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            ForEach(ocrManager.recognizedItems) { item in
-                RecognizedItemRow(item: item, ocrManager: ocrManager)
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .padding(.horizontal)
-    }
-}
-
-struct RecognizedItemRow: View {
-    let item: OCRManager.RecognizedBeadItem
-    @ObservedObject var ocrManager: OCRManager
-    @EnvironmentObject var inventoryManager: InventoryManager
-    @State private var isEditing = false
-    @State private var editCode: String = ""
-    @State private var editQuantity: String = ""
-
-    var matchedColor: BeadColor? {
-        inventoryManager.findColor(byCode: item.colorCode)
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            // 颜色预览
-            if let color = matchedColor {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(color.color)
-                    .frame(width: 36, height: 36)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
-            } else {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 36, height: 36)
-                    .overlay(
-                        Image(systemName: "questionmark")
-                            .foregroundColor(.gray)
-                    )
-            }
-
-            // 色号和数量
-            if isEditing {
-                TextField("色号", text: $editCode)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 80)
-
-                TextField("数量", text: $editQuantity)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.asciiCapableNumberPad)
-                    .frame(width: 60)
-
-                Button("保存") {
-                    // 数量校验：无效或 ≤0 时回退到修改前的值
-                    let validQty = Int(editQuantity).flatMap { $0 > 0 ? $0 : nil } ?? item.quantity
-                    let validCode = editCode.isEmpty ? nil : editCode
-                    ocrManager.updateItem(id: item.id, colorCode: validCode, quantity: validQty)
-                    isEditing = false
-                }
-                .font(.caption)
-            } else {
-                VStack(alignment: .leading) {
-                    Text(item.colorCode)
-                        .font(.system(.body, design: .monospaced))
-                        .fontWeight(.medium)
-
-                    if matchedColor == nil {
-                        Text("未匹配")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                    }
-                }
-
-                Spacer()
-
-                Text("×\(item.quantity)")
-                    .font(.headline)
-                    .foregroundColor(.accentColor)
-
-                // 操作按钮
-                Menu {
-                    Button {
-                        editCode = item.colorCode
-                        editQuantity = "\(item.quantity)"
-                        isEditing = true
-                    } label: {
-                        Label("编辑", systemImage: "pencil")
-                    }
-
-                    Button(role: .destructive) {
-                        ocrManager.removeItem(id: item.id)
-                    } label: {
-                        Label("删除", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background(Color(.systemGray6))
-        .cornerRadius(10)
-    }
-}
-
-// MARK: - 手动添加弹窗
-struct ManualEntrySheet: View {
-    @ObservedObject var ocrManager: OCRManager
-    @Environment(\.dismiss) var dismiss
-
-    @State private var colorCode = ""
-    @State private var quantity = ""
-    @State private var selectedBrand = "MARD"
-
-    let brands = ["MARD", "vivid", "漫漫", "卡卡"]
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("色号信息") {
-                    Picker("品牌", selection: $selectedBrand) {
-                        ForEach(brands, id: \.self) { brand in
-                            Text(brand).tag(brand)
-                        }
-                    }
-
-                    TextField("色号", text: $colorCode)
-                        .textInputAutocapitalization(.characters)
-
-                    TextField("数量", text: $quantity)
-                        .keyboardType(.asciiCapableNumberPad)
-                }
-
-                Section {
-                    Button {
-                        addItem()
-                    } label: {
-                        HStack {
-                            Spacer()
-                            Text("添加")
-                                .fontWeight(.medium)
-                            Spacer()
-                        }
-                    }
-                    .disabled(colorCode.isEmpty || quantity.isEmpty)
-                }
-            }
-            .navigationTitle("手动添加")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") { dismiss() }
-                }
-            }
-        }
-    }
-
-    func addItem() {
-        guard let qty = Int(quantity), qty > 0 else { return }
-        ocrManager.addItem(colorCode: colorCode, quantity: qty, brand: selectedBrand)
-        colorCode = ""
-        quantity = ""
     }
 }
 
@@ -1187,6 +985,7 @@ struct RecognizedItemRowNew: View {
     @State private var isEditing = false
     @State private var editCode: String = ""
     @State private var editQuantity: String = ""
+    @State private var showQuantityError = false
 
     var matchedColor: BeadColor? {
         inventoryManager.findColor(byCode: item.colorCode)
@@ -1244,11 +1043,21 @@ struct RecognizedItemRowNew: View {
                     .textFieldStyle(.roundedBorder)
                     .keyboardType(.asciiCapableNumberPad)
                     .frame(width: 60)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(showQuantityError ? Color.red : Color.clear, lineWidth: 1)
+                    )
+                    .onChange(of: editQuantity) { _, _ in
+                        showQuantityError = false
+                    }
 
                 Button("保存") {
-                    // 数量校验：无效或 ≤0 时回退到修改前的值
-                    let validQty = Int(editQuantity).flatMap { $0 > 0 ? $0 : nil } ?? item.quantity
-                    onUpdate(editCode.isEmpty ? nil : editCode, validQty)
+                    guard let qty = Int(editQuantity), qty > 0 else {
+                        showQuantityError = true
+                        return
+                    }
+                    showQuantityError = false
+                    onUpdate(editCode.isEmpty ? nil : editCode, qty)
                     isEditing = false
                 }
                 .font(.caption)
