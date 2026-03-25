@@ -594,12 +594,14 @@ struct ScanView: View {
 
     func updateItem(id: UUID, colorCode: String?, quantity: Int?) {
         if let index = recognizedItems.firstIndex(where: { $0.id == id }) {
+            var updatedItem = recognizedItems[index]
             if let code = colorCode {
-                recognizedItems[index].colorCode = code.uppercased()
+                updatedItem.colorCode = code.uppercased()
             }
             if let qty = quantity {
-                recognizedItems[index].quantity = qty
+                updatedItem.quantity = qty
             }
+            recognizedItems[index] = updatedItem
         }
     }
 }
@@ -870,9 +872,10 @@ struct RecognizedItemRow: View {
                     .frame(width: 60)
 
                 Button("保存") {
-                    if let qty = Int(editQuantity) {
-                        ocrManager.updateItem(id: item.id, colorCode: editCode, quantity: qty)
-                    }
+                    // 数量校验：无效或 ≤0 时回退到修改前的值
+                    let validQty = Int(editQuantity).flatMap { $0 > 0 ? $0 : nil } ?? item.quantity
+                    let validCode = editCode.isEmpty ? nil : editCode
+                    ocrManager.updateItem(id: item.id, colorCode: validCode, quantity: validQty)
                     isEditing = false
                 }
                 .font(.caption)
@@ -1137,16 +1140,20 @@ struct RecognizedResultsSectionNew: View {
                     colorSystem: colorSystem,
                     onUpdate: { code, qty in
                         if let index = items.firstIndex(where: { $0.id == item.id }) {
+                            // 将所有修改合并到一个副本中，最后一次性写回，
+                            // 避免多次触发 @Binding 更新导致 SwiftUI 在 ForEach 中崩溃
+                            var updatedItem = items[index]
                             if let c = code {
                                 // 非 MARD 色系时，用户输入的可能是该色系的色号，需转为内部 mardCode
                                 if colorSystem != .mard,
                                    let color = inventoryManager.findColor(byCode: c, preferSystem: colorSystem) {
-                                    items[index].colorCode = color.mardCode
+                                    updatedItem.colorCode = color.mardCode
                                 } else {
-                                    items[index].colorCode = c.uppercased()
+                                    updatedItem.colorCode = c.uppercased()
                                 }
                             }
-                            if let q = qty { items[index].quantity = q }
+                            if let q = qty { updatedItem.quantity = q }
+                            items[index] = updatedItem
                         }
                     },
                     onRemove: {
@@ -1239,7 +1246,9 @@ struct RecognizedItemRowNew: View {
                     .frame(width: 60)
 
                 Button("保存") {
-                    onUpdate(editCode.isEmpty ? nil : editCode, Int(editQuantity))
+                    // 数量校验：无效或 ≤0 时回退到修改前的值
+                    let validQty = Int(editQuantity).flatMap { $0 > 0 ? $0 : nil } ?? item.quantity
+                    onUpdate(editCode.isEmpty ? nil : editCode, validQty)
                     isEditing = false
                 }
                 .font(.caption)
