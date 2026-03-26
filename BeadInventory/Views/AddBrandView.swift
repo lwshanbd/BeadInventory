@@ -167,7 +167,7 @@ struct AddBrandView: View {
                             } label: {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(preset.rawValue)
+                                        Text(preset.displayName)
                                             .foregroundColor(.primary)
                                         Text(preset.isAll ? "包含所有\(allColorCount)种颜色" : preset.description)
                                             .font(.caption)
@@ -242,7 +242,7 @@ struct AddBrandView: View {
                 }
             }
             .sheet(isPresented: $showingColorSelection) {
-                ColorSelectionView(selectedColors: $customSelectedColors)
+                ColorSelectionView(selectedColors: $customSelectedColors, colorSystem: selectedColorSystem)
             }
             .sheet(isPresented: $showingImportStock) {
                 ImportStockView(mode: .forNewBrand) { items in

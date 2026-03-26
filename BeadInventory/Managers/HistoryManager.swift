@@ -472,15 +472,15 @@ class HistoryManager: ObservableObject {
     @MainActor func revertDisabledReason(_ record: HistoryRecord) -> String? {
         switch record.operationType {
         case .stockReset:
-            return "库存重置影响范围太大，不支持撤回"
+            return String(localized: "库存重置影响范围太大，不支持撤回")
         case .projectMerge:
             // 检查是否有合并快照
             if record.beforeSnapshot == nil {
-                return "缺少合并快照，无法撤回（旧版本记录）"
+                return String(localized: "缺少合并快照，无法撤回（旧版本记录）")
             }
             if let beforeData = record.beforeSnapshot,
                (try? JSONDecoder().decode(MergeSnapshot.self, from: beforeData)) == nil {
-                return "合并快照格式无效，无法撤回"
+                return String(localized: "合并快照格式无效，无法撤回")
             }
             return nil
         case .planAdd:
@@ -489,18 +489,18 @@ class HistoryManager: ObservableObject {
                let manager = inventoryManager,
                let currentProject = manager.projects.first(where: { $0.id == snapshot.id }),
                !currentProject.isPlanned {
-                return "计划已执行，请先撤回「执行计划」操作"
+                return String(localized: "计划已执行，请先撤回「执行计划」操作")
             }
             return nil
         case .planExecute:
             if let afterData = record.afterSnapshot,
                let afterSnapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: afterData) {
                 if afterSnapshot.brandId == nil {
-                    return "缺少品牌信息，无法撤回"
+                    return String(localized: "缺少品牌信息，无法撤回")
                 }
                 if let manager = inventoryManager,
                    !manager.projects.contains(where: { $0.id == afterSnapshot.id }) {
-                    return "项目已被删除，无法撤回"
+                    return String(localized: "项目已被删除，无法撤回")
                 }
             }
             return nil
@@ -922,12 +922,12 @@ class HistoryManager: ObservableObject {
             let key: String
 
             if recordDate == today {
-                key = "今天"
+                key = String(localized: "今天")
             } else if recordDate == yesterday {
-                key = "昨天"
+                key = String(localized: "昨天")
             } else {
                 let formatter = DateFormatter()
-                formatter.dateFormat = "MM月dd日"
+                formatter.setLocalizedDateFormatFromTemplate("MMMMd")
                 key = formatter.string(from: record.timestamp)
             }
 
@@ -938,12 +938,17 @@ class HistoryManager: ObservableObject {
         }
 
         // 排序：今天 > 昨天 > 其他日期（按时间倒序）
+        // 使用 group 中第一条记录的实际时间戳排序，避免本地化日期字符串字典序不等于时间序
+        let todayLabel = String(localized: "今天")
+        let yesterdayLabel = String(localized: "昨天")
         let sortedKeys = groups.keys.sorted { key1, key2 in
-            if key1 == "今天" { return true }
-            if key2 == "今天" { return false }
-            if key1 == "昨天" { return true }
-            if key2 == "昨天" { return false }
-            return key1 > key2
+            if key1 == todayLabel { return true }
+            if key2 == todayLabel { return false }
+            if key1 == yesterdayLabel { return true }
+            if key2 == yesterdayLabel { return false }
+            let date1 = groups[key1]?.first?.timestamp ?? .distantPast
+            let date2 = groups[key2]?.first?.timestamp ?? .distantPast
+            return date1 > date2
         }
 
         return sortedKeys.map { ($0, groups[$0] ?? []) }

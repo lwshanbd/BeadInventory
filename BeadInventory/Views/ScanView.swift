@@ -838,6 +838,15 @@ struct RecognizedResultsSectionNew: View {
         case code = "色号"
         case quantity = "数量"
         case stock = "库存"
+
+        var localizedName: String {
+            switch self {
+            case .original: return String(localized: "默认")
+            case .code: return String(localized: "色号")
+            case .quantity: return String(localized: "数量")
+            case .stock: return String(localized: "库存")
+            }
+        }
     }
 
     // 排序后的结果
@@ -913,7 +922,7 @@ struct RecognizedResultsSectionNew: View {
                             }
                         } label: {
                             HStack(spacing: 4) {
-                                Text(option.rawValue)
+                                Text(option.localizedName)
                                 if sortOption == option && option != .original {
                                     Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
                                         .font(.caption2)
@@ -1316,7 +1325,7 @@ struct ManualEntrySeriesSelector: View {
                     Button {
                         withAnimation { selectedSeries = s }
                     } label: {
-                        Text(s)
+                        Text(ColorSystem.localizedSeriesName(s))
                             .font(.system(.subheadline, design: .rounded))
                             .fontWeight(.medium)
                             .padding(.horizontal, 16)

@@ -84,7 +84,7 @@ class CSVImporter {
             .filter { !$0.isEmpty }
 
         guard !lines.isEmpty else {
-            parseErrors.append("CSV 文件为空")
+            parseErrors.append(String(localized: "CSV 文件为空"))
             return CSVImportResult(
                 validItems: [],
                 invalidItems: [],
@@ -125,7 +125,7 @@ class CSVImporter {
                     quantityIndex = 1
                 }
             } else if headers.count == 1 {
-                parseErrors.append("CSV 需要至少两列：色号和数量")
+                parseErrors.append(String(localized: "CSV 需要至少两列：色号和数量"))
                 return CSVImportResult(
                     validItems: [],
                     invalidItems: [],
@@ -136,7 +136,7 @@ class CSVImporter {
         }
 
         guard let codeIdx = colorCodeIndex, let qtyIdx = quantityIndex else {
-            parseErrors.append("无法识别 CSV 列：需要包含「色号」和「数量」列")
+            parseErrors.append(String(localized: "无法识别 CSV 列：需要包含「色号」和「数量」列"))
             return CSVImportResult(
                 validItems: [],
                 invalidItems: [],
@@ -163,7 +163,7 @@ class CSVImporter {
             let columns = parseCSVLine(line, delimiter: delimiter)
 
             guard columns.count > max(codeIdx, qtyIdx) else {
-                parseErrors.append("第 \(lineNumber) 行列数不足")
+                parseErrors.append(String(localized: "第 \(lineNumber) 行列数不足"))
                 continue
             }
 
@@ -176,12 +176,12 @@ class CSVImporter {
                 .replacingOccurrences(of: ",", with: "")
 
             guard !colorCode.isEmpty else {
-                parseErrors.append("第 \(lineNumber) 行色号为空")
+                parseErrors.append(String(localized: "第 \(lineNumber) 行色号为空"))
                 continue
             }
 
             guard let quantity = Int(quantityStr), quantity > 0 else {
-                parseErrors.append("第 \(lineNumber) 行数量无效：\(quantityStr)")
+                parseErrors.append(String(localized: "第 \(lineNumber) 行数量无效：\(quantityStr)"))
                 continue
             }
 

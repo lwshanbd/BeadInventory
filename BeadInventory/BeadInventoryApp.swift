@@ -300,24 +300,24 @@ class CloudSyncStatusManager: ObservableObject {
     var primaryStatusText: String {
         switch mode {
         case .localFallback:
-            return "当前为本地存储模式"
+            return String(localized: "当前为本地存储模式")
         case .iCloudEnabled:
             if isCheckingAccount && accountStatus == nil {
-                return "正在检查 iCloud 状态..."
+                return String(localized: "正在检查 iCloud 状态...")
             }
             switch accountStatus {
             case .available:
-                return "iCloud 同步已启用"
+                return String(localized: "iCloud 同步已启用")
             case .noAccount:
-                return "未登录 iCloud 账号"
+                return String(localized: "未登录 iCloud 账号")
             case .restricted:
-                return "iCloud 权限受限"
+                return String(localized: "iCloud 权限受限")
             case .temporarilyUnavailable:
-                return "iCloud 暂时不可用"
+                return String(localized: "iCloud 暂时不可用")
             case .couldNotDetermine, .none:
-                return "iCloud 状态暂时未知"
+                return String(localized: "iCloud 状态暂时未知")
             @unknown default:
-                return "iCloud 状态暂时未知"
+                return String(localized: "iCloud 状态暂时未知")
             }
         }
     }
@@ -325,24 +325,24 @@ class CloudSyncStatusManager: ObservableObject {
     var secondaryStatusText: String {
         switch mode {
         case .localFallback:
-            return "应用已自动回退到本地存储，现有数据可继续正常使用。"
+            return String(localized: "应用已自动回退到本地存储，现有数据可继续正常使用。")
         case .iCloudEnabled:
             if let lastErrorMessage {
-                return "状态检查失败：\(lastErrorMessage)"
+                return String(localized: "状态检查失败：\(lastErrorMessage)")
             }
             switch accountStatus {
             case .available:
-                return "已连接 iCloud，可在多设备间同步数据。"
+                return String(localized: "已连接 iCloud，可在多设备间同步数据。")
             case .noAccount:
-                return "当前设备未登录 iCloud，无法进行云同步。"
+                return String(localized: "当前设备未登录 iCloud，无法进行云同步。")
             case .restricted:
-                return "当前设备或账号限制了 iCloud 使用。"
+                return String(localized: "当前设备或账号限制了 iCloud 使用。")
             case .temporarilyUnavailable:
-                return "iCloud 服务暂时不可用，请稍后再试。"
+                return String(localized: "iCloud 服务暂时不可用，请稍后再试。")
             case .couldNotDetermine, .none:
-                return "暂时无法确认账号状态，请稍后点击刷新。"
+                return String(localized: "暂时无法确认账号状态，请稍后点击刷新。")
             @unknown default:
-                return "暂时无法确认账号状态，请稍后点击刷新。"
+                return String(localized: "暂时无法确认账号状态，请稍后点击刷新。")
             }
         }
     }
@@ -494,11 +494,11 @@ class CloudSyncStatusManager: ObservableObject {
         let projectText = formatCloudCount(counts.projects)
         let plannedText = formatCloudCount(counts.plannedProjects)
         let customColorText = formatCloudCount(counts.customColors)
-        return "云端：品牌 \(brandText) · 库存 \(stockText) · 项目 \(projectText) · 计划 \(plannedText) · 自定义 \(customColorText)"
+        return String(localized: "云端：品牌 \(brandText) · 库存 \(stockText) · 项目 \(projectText) · 计划 \(plannedText) · 自定义 \(customColorText)")
     }
 
     nonisolated private static func formatCloudCount(_ value: Int?) -> String {
-        guard let value else { return "未知" }
+        guard let value else { return String(localized: "未知") }
         return "\(value)"
     }
 
@@ -506,29 +506,29 @@ class CloudSyncStatusManager: ObservableObject {
         if let queryError = error as? CloudDataQueryError {
             switch queryError {
             case .invalidRecordType:
-                return "云端统计配置错误"
+                return String(localized: "云端统计配置错误")
             }
         }
 
         guard let ckError = error as? CKError else {
-            return "请稍后重试"
+            return String(localized: "请稍后重试")
         }
 
         if isQueryCapabilityLimitationError(ckError) {
-            return "云端架构暂不支持该统计"
+            return String(localized: "云端架构暂不支持该统计")
         }
 
         switch ckError.code {
         case .networkUnavailable, .networkFailure:
-            return "网络不可用"
+            return String(localized: "网络不可用")
         case .notAuthenticated:
-            return "未登录 iCloud"
+            return String(localized: "未登录 iCloud")
         case .requestRateLimited, .serviceUnavailable:
-            return "请求过于频繁，请稍后重试"
+            return String(localized: "请求过于频繁，请稍后重试")
         case .zoneNotFound:
-            return "云端分区未就绪"
+            return String(localized: "云端分区未就绪")
         default:
-            return "请稍后重试"
+            return String(localized: "请稍后重试")
         }
     }
 

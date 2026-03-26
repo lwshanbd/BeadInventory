@@ -136,7 +136,7 @@ struct RecognitionSettingsSections: View {
         Section {
             Picker("识别方式", selection: $aiService.config.backend) {
                 ForEach(RecognitionBackend.allCases, id: \.self) { backend in
-                    Text(backend.rawValue).tag(backend)
+                    Text(backend.displayName).tag(backend)
                 }
             }
             .pickerStyle(.segmented)
@@ -465,6 +465,13 @@ struct ExportDataSheet: View {
     enum ExportType: String, CaseIterable {
         case currentBrand = "当前品牌"
         case allBrands = "所有品牌"
+
+        var localizedName: String {
+            switch self {
+            case .currentBrand: return String(localized: "当前品牌")
+            case .allBrands: return String(localized: "所有品牌")
+            }
+        }
     }
 
     var body: some View {
@@ -473,7 +480,7 @@ struct ExportDataSheet: View {
                 Section {
                     Picker("导出范围", selection: $exportType) {
                         ForEach(ExportType.allCases, id: \.self) { type in
-                            Text(type.rawValue).tag(type)
+                            Text(type.localizedName).tag(type)
                         }
                     }
                     .pickerStyle(.segmented)
