@@ -3191,6 +3191,8 @@ struct DirectPurchaseSheet: View {
     @Environment(\.dismiss) var dismiss
     @State private var showCopySuccess = false
     @State private var showExportSuccess = false
+    @State private var hasExported = false  // 防止重复导出
+    @State private var showEmptyExportWarning = false  // 空导出提示
     @State private var selectedBrandId: UUID?
     @State private var selectedColorSystemFilter: ColorSystem = .mard
     @State private var purchaseQuantities: [String: Int] = [:]  // mardCode -> 数量（以10g为单位）
@@ -3246,12 +3248,12 @@ struct DirectPurchaseSheet: View {
             .sorted { $0.quantity > $1.quantity }
     }
 
-    // 过滤后的用量（仅保留当前品牌色系可用的色号）
+    // 过滤后的用量（仅保留当前品牌色系可用的色号，未识别色号排除）
     var filteredUsage: [(mardCode: String, quantity: Int)] {
         guard selectedBrand != nil else { return aggregatedUsage }
         let cs = selectedColorSystem
         return aggregatedUsage.filter { item in
-            guard let color = inventoryManager.findColor(byCode: item.mardCode) else { return true }
+            guard let color = inventoryManager.findColor(byCode: item.mardCode) else { return false }
             return color.hasCode(for: cs)
         }
     }
@@ -3292,14 +3294,25 @@ struct DirectPurchaseSheet: View {
         purchaseQuantities = quantities
     }
 
-    // 生成 CSV 文本（克数 = quantity * 10g），使用品牌色号体系的显示色号
+    // 当前有效的色号集合（与 filteredUsage 一致）
+    var validCodes: Set<String> {
+        Set(filteredUsage.map { $0.mardCode })
+    }
+
+    // 按 filteredUsage 排序的有效购买项（与 UI 排序一致）
+    var orderedPurchaseItems: [(mardCode: String, quantity: Int)] {
+        filteredUsage.compactMap { item in
+            let qty = purchaseQuantities[item.mardCode] ?? 0
+            return qty > 0 ? (mardCode: item.mardCode, quantity: qty) : nil
+        }
+    }
+
+    // 生成 CSV 文本（克数 = quantity * 10g），按 UI 排序，使用品牌色号体系的显示色号
     var csvText: String {
         var lines: [String] = ["色号,克数"]
-        for (mardCode, quantity) in purchaseQuantities.sorted(by: { $0.key < $1.key }) {
-            if quantity > 0 {
-                let code = displayCode(for: mardCode)
-                lines.append("\(code),\(quantity * 10)")
-            }
+        for item in orderedPurchaseItems {
+            let code = displayCode(for: item.mardCode)
+            lines.append("\(code),\(item.quantity * 10)")
         }
         return lines.joined(separator: "\n")
     }
@@ -3313,15 +3326,19 @@ struct DirectPurchaseSheet: View {
         formatter.dateFormat = "M月d日补豆"
         let recordName = formatter.string(from: Date())
 
-        var items: [PurchaseItem] = []
-        for (colorCode, quantity) in purchaseQuantities.sorted(by: { $0.key < $1.key }) {
-            if quantity > 0 {
-                // quantity 是以 10g 为单位，1g = 100颗，所以 quantity * 10g * 100 = quantity * 1000
-                items.append(PurchaseItem(colorCode: colorCode, quantity: quantity * 1000))
-            }
+        // 仅导出当前品牌色系有效的色号，按 UI 排序
+        let items: [PurchaseItem] = orderedPurchaseItems.map { item in
+            // quantity 是以 10g 为单位，1g = 100颗，所以 quantity * 10g * 100 = quantity * 1000
+            PurchaseItem(colorCode: item.mardCode, quantity: item.quantity * 1000)
         }
 
-        guard !items.isEmpty else { return }
+        guard !items.isEmpty else {
+            showEmptyExportWarning = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                showEmptyExportWarning = false
+            }
+            return
+        }
 
         inventoryManager.addPurchaseRecord(
             name: recordName,
@@ -3330,6 +3347,7 @@ struct DirectPurchaseSheet: View {
             note: "从直接补豆导出"
         )
 
+        hasExported = true
         showExportSuccess = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             showExportSuccess = false
@@ -3421,6 +3439,9 @@ struct DirectPurchaseSheet: View {
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 60)
                                     .multilineTextAlignment(.center)
+                                    .onChange(of: freeShippingThreshold) { _, newValue in
+                                        if newValue < 0 { freeShippingThreshold = 0 }
+                                    }
                                 Text("×10g")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
@@ -3505,42 +3526,56 @@ struct DirectPurchaseSheet: View {
                             .padding(.horizontal)
                         }
 
-                        // 操作按钮
-                        if totalSelectedQuantity > 0 {
-                            VStack(spacing: 12) {
-                                Button {
-                                    exportToShipping()
-                                } label: {
-                                    HStack {
-                                        Image(systemName: showExportSuccess ? "checkmark" : "shippingbox.fill")
-                                        Text(showExportSuccess ? "已添加到运输中" : "导出到运输中（\(totalSelectedQuantity)×10g）")
-                                    }
-                                    .font(.headline)
-                                    .foregroundColor(.white)
-                                    .padding()
-                                    .frame(maxWidth: .infinity)
-                                    .background(showExportSuccess ? Color.green : Color.green.opacity(0.8))
-                                    .cornerRadius(12)
-                                }
-
-                                Button {
-                                    UIPasteboard.general.string = csvText
-                                    showCopySuccess = true
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                        showCopySuccess = false
-                                    }
-                                } label: {
-                                    HStack {
-                                        Image(systemName: showCopySuccess ? "checkmark" : "doc.on.doc")
-                                        Text(showCopySuccess ? "已复制" : "复制补豆计划")
-                                    }
+                        // 空导出提示
+                        if showEmptyExportWarning {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                Text("所有色号补豆数量为 0，无法导出")
                                     .font(.subheadline)
-                                    .foregroundColor(.green)
-                                }
+                                    .foregroundColor(.orange)
                             }
+                            .padding()
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(10)
                             .padding(.horizontal)
-                            .padding(.top, 8)
                         }
+
+                        // 操作按钮
+                        VStack(spacing: 12) {
+                            Button {
+                                exportToShipping()
+                            } label: {
+                                HStack {
+                                    Image(systemName: hasExported ? "checkmark" : "shippingbox.fill")
+                                    Text(hasExported ? "已添加到运输中" : "导出到运输中（\(totalSelectedQuantity)×10g）")
+                                }
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .padding()
+                                .frame(maxWidth: .infinity)
+                                .background(hasExported ? Color.green : Color.green.opacity(0.8))
+                                .cornerRadius(12)
+                            }
+                            .disabled(hasExported)
+
+                            Button {
+                                UIPasteboard.general.string = csvText
+                                showCopySuccess = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    showCopySuccess = false
+                                }
+                            } label: {
+                                HStack {
+                                    Image(systemName: showCopySuccess ? "checkmark" : "doc.on.doc")
+                                    Text(showCopySuccess ? "已复制" : "复制补豆计划")
+                                }
+                                .font(.subheadline)
+                                .foregroundColor(.green)
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 8)
                     } else if !inventoryManager.brands.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "hand.tap")
@@ -3639,6 +3674,9 @@ struct DirectPurchaseColorRow: View {
                     .frame(width: 40)
                     .multilineTextAlignment(.center)
                     .font(.subheadline.monospacedDigit())
+                    .onChange(of: quantity) { _, newValue in
+                        if newValue < 0 { quantity = 0 }
+                    }
 
                 Text("×10g")
                     .font(.caption)
