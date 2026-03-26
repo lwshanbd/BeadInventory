@@ -22,9 +22,9 @@ enum ColorSystem: String, Codable, CaseIterable, Identifiable {
     var colorSeries: [String] {
         switch self {
         case .kaka:
-            return ["B", "P", "R", "其他", "#"]
+            return ["B", "P", "R", String(localized: "其他"), "#"]
         default:
-            return ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他", "#"]
+            return ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", String(localized: "其他"), "#"]
         }
     }
 

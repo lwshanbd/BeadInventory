@@ -19,16 +19,29 @@ enum ColorPreset: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// 本地化显示名称（rawValue 用作枚举标识，不可修改）
+    var displayName: String {
+        switch self {
+        case .all: return String(localized: "全部颜色")
+        case .colors221: return String(localized: "全部色")
+        case .colors144: return String(localized: "144色")
+        case .colors120: return String(localized: "120色")
+        case .colors96: return String(localized: "96色")
+        case .colors72: return String(localized: "72色")
+        case .custom: return String(localized: "自定义")
+        }
+    }
+
     /// 预设描述
     var description: String {
         switch self {
-        case .all: return "包含所有291种颜色"
-        case .colors221: return "221种常用实色"
-        case .colors144: return "常用颜色"
-        case .colors120: return "精选颜色"
-        case .colors96: return "基础颜色"
-        case .colors72: return "入门颜色"
-        case .custom: return "自选颜色"
+        case .all: return String(localized: "包含所有291种颜色")
+        case .colors221: return String(localized: "221种常用实色")
+        case .colors144: return String(localized: "常用颜色")
+        case .colors120: return String(localized: "精选颜色")
+        case .colors96: return String(localized: "基础颜色")
+        case .colors72: return String(localized: "入门颜色")
+        case .custom: return String(localized: "自选颜色")
         }
     }
 

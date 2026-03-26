@@ -1204,7 +1204,7 @@ class InventoryManager: ObservableObject {
                         ])
                         restoreInMemorySnapshot(snapshot)
                         finishInitialLoadFailure(
-                            userMessage: "云端数据仍在同步中，请稍后重试。",
+                            userMessage: String(localized: "云端数据仍在同步中，请稍后重试。"),
                             metadata: [
                                 "failure": "suspiciousDrop",
                                 "previousBrands": snapshot.brands.count,
@@ -1226,7 +1226,7 @@ class InventoryManager: ObservableObject {
                         restoreInMemorySnapshot(snapshot)
                     }
                     finishInitialLoadFailure(
-                        userMessage: "暂时无法确认已有数据，请稍后重试。",
+                        userMessage: String(localized: "暂时无法确认已有数据，请稍后重试。"),
                         metadata: ["failure": "unexpectedAllEmpty"]
                     )
                     return
@@ -1288,7 +1288,7 @@ class InventoryManager: ObservableObject {
                     beadColors = loadedBeadColors
                 }
                 finishInitialLoadFailure(
-                    userMessage: "部分数据加载失败，请点击重试。",
+                    userMessage: String(localized: "部分数据加载失败，请点击重试。"),
                     metadata: [
                         "failure": "partialLoad",
                         "brandsLoaded": brandsLoadedSuccessfully,
@@ -2587,7 +2587,7 @@ class InventoryManager: ObservableObject {
         // 创建副本项目
         let duplicatedProject = ProjectRecord(
             id: newId,
-            name: project.name + " (副本)",
+            name: project.name + String(localized: " (副本)"),
             date: Date(),
             beadUsage: newBeadUsage,
             brandId: nil,
@@ -2664,7 +2664,7 @@ class InventoryManager: ObservableObject {
         // 创建副本项目
         let duplicatedProject = ProjectRecord(
             id: newId,
-            name: project.name + " (副本)",
+            name: project.name + String(localized: " (副本)"),
             date: Date(),
             beadUsage: newBeadUsage,
             brandId: nil,
@@ -2890,8 +2890,8 @@ class InventoryManager: ObservableObject {
         saveData()
 
         // 记录历史（只记录一次汇总）
-        let brandName = brands.first(where: { $0.id == record.brandId })?.name ?? "未知品牌"
-        historyManager.record(type: .stockAdd, entityName: "\(brandName) 到货: \(record.name) (\(record.colorCount)色 +\(record.totalBeads)颗)")
+        let brandName = brands.first(where: { $0.id == record.brandId })?.name ?? String(localized: "未知品牌")
+        historyManager.record(type: .stockAdd, entityName: String(localized: "\(brandName) 到货: \(record.name) (\(record.colorCount)色 +\(record.totalBeads)颗)"))
 
         // 删除记录
         purchaseRecords.removeAll { $0.id == id }
@@ -2927,7 +2927,7 @@ class InventoryManager: ObservableObject {
         guard let brandId = currentBrandId else { return }
 
         // 获取当前品牌名称用于历史记录
-        let brandName = brands.first(where: { $0.id == brandId })?.name ?? "未知品牌"
+        let brandName = brands.first(where: { $0.id == brandId })?.name ?? String(localized: "未知品牌")
 
         // 清除当前品牌的所有库存记录
         brandStocks.removeAll { $0.brandId == brandId }

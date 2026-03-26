@@ -71,7 +71,7 @@ class OCRManager: ObservableObject {
         let processedImage = preprocessImage(image) ?? image
 
         guard let cgImage = processedImage.cgImage else {
-            errorMessage = "无法处理图片"
+            errorMessage = String(localized: "无法处理图片")
             isProcessing = false
             completion([])
             return
@@ -83,13 +83,13 @@ class OCRManager: ObservableObject {
                     self?.isProcessing = false
 
                     if let error = error {
-                        self?.errorMessage = "识别失败: \(error.localizedDescription)"
+                        self?.errorMessage = String(localized: "识别失败: \(error.localizedDescription)")
                         completion([])
                         return
                     }
 
                     guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                        self?.errorMessage = "无法获取识别结果"
+                        self?.errorMessage = String(localized: "无法获取识别结果")
                         completion([])
                         return
                     }
@@ -110,7 +110,7 @@ class OCRManager: ObservableObject {
                 try handler.perform([request])
             } catch {
                 Task { @MainActor in
-                    self.errorMessage = "处理失败: \(error.localizedDescription)"
+                    self.errorMessage = String(localized: "处理失败: \(error.localizedDescription)")
                     self.isProcessing = false
                     completion([])
                 }

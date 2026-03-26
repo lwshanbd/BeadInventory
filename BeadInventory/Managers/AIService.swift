@@ -20,6 +20,13 @@ import MLXVLM
 enum RecognitionBackend: String, CaseIterable, Codable {
     case cloud = "云端模型"
     case local = "本地模型"
+
+    var displayName: String {
+        switch self {
+        case .cloud: return String(localized: "云端模型")
+        case .local: return String(localized: "本地模型")
+        }
+    }
 }
 
 enum AIProvider: String, CaseIterable, Codable {
@@ -57,9 +64,9 @@ enum LocalRecognitionModel: String, CaseIterable, Codable, Identifiable {
     var approximateDownloadSize: String {
         switch self {
         case .qwen35_08b:
-            return "约 625 MB"
+            return String(localized: "约 625 MB")
         case .qwen35_2b:
-            return "约 1.72 GB"
+            return String(localized: "约 1.72 GB")
         }
     }
 
@@ -79,18 +86,18 @@ enum LocalRecognitionModel: String, CaseIterable, Codable, Identifiable {
     var recommendationText: String {
         switch self {
         case .qwen35_08b:
-            return "推荐 iPhone 14 及以上机型优先选择，门槛更低，下载更小。"
+            return String(localized: "推荐 iPhone 14 及以上机型优先选择，门槛更低，下载更小。")
         case .qwen35_2b:
-            return "推荐 iPhone 15 及以上机型选择，效果通常更好，但体积和负载更高。"
+            return String(localized: "推荐 iPhone 15 及以上机型选择，效果通常更好，但体积和负载更高。")
         }
     }
 
     var cautionText: String {
         switch self {
         case .qwen35_08b:
-            return "准确度会略低于云端识别，速度相对更慢，也可能带来发热。"
+            return String(localized: "准确度会略低于云端识别，速度相对更慢，也可能带来发热。")
         case .qwen35_2b:
-            return "准确度通常高于 0.8B，但首次加载更久，更容易造成发热和内存压力。"
+            return String(localized: "准确度通常高于 0.8B，但首次加载更久，更容易造成发热和内存压力。")
         }
     }
 }
@@ -134,28 +141,28 @@ struct LocalModelDeviceProfile {
 
     func recommendation(for model: LocalRecognitionModel) -> String {
         guard let marketedIPhoneGeneration else {
-            return "\(model.recommendationText) 如果机型较老，建议优先使用云端识别。"
+            return String(localized: "\(model.recommendationText) 如果机型较老，建议优先使用云端识别。")
         }
 
         if marketedIPhoneGeneration >= model.minimumRecommendedIPhoneGeneration {
-            return "当前设备约为 iPhone \(marketedIPhoneGeneration) 或更新机型，\(model.displayName) 可以尝试。"
+            return String(localized: "当前设备约为 iPhone \(marketedIPhoneGeneration) 或更新机型，\(model.displayName) 可以尝试。")
         }
 
-        return "当前设备约为 iPhone \(marketedIPhoneGeneration)，不建议选择 \(model.displayName)。建议改用云端识别，或退而求其次选择更小的本地模型。"
+        return String(localized: "当前设备约为 iPhone \(marketedIPhoneGeneration)，不建议选择 \(model.displayName)。建议改用云端识别，或退而求其次选择更小的本地模型。")
     }
 
     var summaryText: String {
         guard let marketedIPhoneGeneration else {
-            return "建议按机型选择：iPhone 14 及以上优先尝试 0.8B，iPhone 15 及以上再考虑 2B。"
+            return String(localized: "建议按机型选择：iPhone 14 及以上优先尝试 0.8B，iPhone 15 及以上再考虑 2B。")
         }
 
         switch marketedIPhoneGeneration {
         case 15...:
-            return "当前设备约为 iPhone \(marketedIPhoneGeneration) 或更新机型，可优先尝试 2B；如更看重下载体积、速度和发热，也可以选 0.8B。"
+            return String(localized: "当前设备约为 iPhone \(marketedIPhoneGeneration) 或更新机型，可优先尝试 2B；如更看重下载体积、速度和发热，也可以选 0.8B。")
         case 14:
-            return "当前设备约为 iPhone 14 系列，建议优先选择 0.8B；2B 负载偏高，不建议。"
+            return String(localized: "当前设备约为 iPhone 14 系列，建议优先选择 0.8B；2B 负载偏高，不建议。")
         default:
-            return "当前设备约为 iPhone \(marketedIPhoneGeneration)，更建议使用云端识别；若必须本地运行，请谨慎尝试 0.8B。"
+            return String(localized: "当前设备约为 iPhone \(marketedIPhoneGeneration)，更建议使用云端识别；若必须本地运行，请谨慎尝试 0.8B。")
         }
     }
 }
@@ -363,7 +370,7 @@ final class LocalModelManager: ObservableObject {
             }
 
             guard isInstalledDirectory(directory) else {
-                throw AIError.parseError("模型文件不完整，请重试下载")
+                throw AIError.parseError(String(localized: "模型文件不完整，请重试下载"))
             }
 
             downloadedPaths[model] = directory.path
@@ -377,7 +384,7 @@ final class LocalModelManager: ObservableObject {
     func deleteModel(_ model: LocalRecognitionModel) async throws {
         guard !isDeleting.contains(model) else { return }
         guard !isDownloading.contains(model) else {
-            throw AIError.parseError("模型正在下载，暂时不能删除")
+            throw AIError.parseError(String(localized: "模型正在下载，暂时不能删除"))
         }
 
         isDeleting.insert(model)
@@ -847,28 +854,28 @@ class AIServiceManager: ObservableObject {
     var statusMessage: String {
         switch config.backend {
         case .cloud:
-            return isConfigured ? "云端识别已配置" : "请填写 API Key"
+            return isConfigured ? String(localized: "云端识别已配置") : String(localized: "请填写 API Key")
         case .local:
             if LocalModelManager.shared.isDownloading.contains(config.localModel) {
-                return "正在下载 \(config.localModel.displayName)"
+                return String(localized: "正在下载 \(config.localModel.displayName)")
             }
             if LocalModelManager.shared.isDownloaded(config.localModel) {
-                return "\(config.localModel.displayName) 已下载，可直接识别"
+                return String(localized: "\(config.localModel.displayName) 已下载，可直接识别")
             }
-            return "请先下载本地模型"
+            return String(localized: "请先下载本地模型")
         }
     }
 
     var setupActionTitle: String {
-        config.backend == .local ? "去下载" : "去设置"
+        config.backend == .local ? String(localized: "去下载") : String(localized: "去设置")
     }
 
     var setupBannerText: String {
         switch config.backend {
         case .cloud:
-            return "云端识别通常更准确也更快，但需要配置 API Key。"
+            return String(localized: "云端识别通常更准确也更快，但需要配置 API Key。")
         case .local:
-            return "本地识别可免去 API 配置，但准确度会略差于云端，速度更慢，也可能造成手机发热。"
+            return String(localized: "本地识别可免去 API 配置，但准确度会略差于云端，速度更慢，也可能造成手机发热。")
         }
     }
 
@@ -1241,7 +1248,7 @@ class AIServiceManager: ObservableObject {
         print("[AI Debug] 本地模型提取 JSON:\n\(jsonText)")
 
         guard let jsonData = jsonText.data(using: .utf8) else {
-            throw AIError.parseError("无法转换本地模型返回的 JSON 文本")
+            throw AIError.parseError(String(localized: "无法转换本地模型返回的 JSON 文本"))
         }
 
         let result = try JSONDecoder().decode(AIRecognitionResult.self, from: jsonData)
@@ -1329,7 +1336,7 @@ class AIServiceManager: ObservableObject {
         print("[AI Debug] 提取的JSON:\n\(jsonText)")
 
         guard let jsonData = jsonText.data(using: .utf8) else {
-            throw AIError.parseError("无法转换JSON文本")
+            throw AIError.parseError(String(localized: "无法转换JSON文本"))
         }
 
         let result = try JSONDecoder().decode(AIRecognitionResult.self, from: jsonData)
@@ -1405,7 +1412,7 @@ class AIServiceManager: ObservableObject {
                 print("[AI Debug] 提取的JSON:\n\(jsonText)")
 
                 guard let jsonData = jsonText.data(using: .utf8) else {
-                    throw AIError.parseError("无法转换JSON文本")
+                    throw AIError.parseError(String(localized: "无法转换JSON文本"))
                 }
 
                 let result = try JSONDecoder().decode(AIRecognitionResult.self, from: jsonData)
@@ -1481,7 +1488,7 @@ class AIServiceManager: ObservableObject {
                 print("[AI Debug] 提取的JSON:\n\(jsonText)")
 
                 guard let jsonData = jsonText.data(using: .utf8) else {
-                    throw AIError.parseError("无法转换JSON文本")
+                    throw AIError.parseError(String(localized: "无法转换JSON文本"))
                 }
 
                 let result = try JSONDecoder().decode(AIRecognitionResult.self, from: jsonData)
@@ -1602,19 +1609,19 @@ enum AIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConfigured:
-            return "请先配置云端 API，或下载本地模型"
+            return String(localized: "请先配置云端 API，或下载本地模型")
         case .localModelNotDownloaded(let modelName):
-            return "请先下载本地模型：\(modelName)"
+            return String(localized: "请先下载本地模型：\(modelName)")
         case .imageProcessingFailed:
-            return "图片处理失败"
+            return String(localized: "图片处理失败")
         case .networkError(let msg):
-            return "网络错误: \(msg)"
+            return String(localized: "网络错误: \(msg)")
         case .apiError(let msg):
-            return "API 错误: \(msg)"
+            return String(localized: "API 错误: \(msg)")
         case .serverOverloaded:
-            return "请求过于频繁或服务繁忙，请稍等片刻再试"
+            return String(localized: "请求过于频繁或服务繁忙，请稍等片刻再试")
         case .parseError(let msg):
-            return "解析错误: \(msg)"
+            return String(localized: "解析错误: \(msg)")
         }
     }
 }

@@ -28,6 +28,15 @@ struct InventoryView: View {
         case stock = "库存"
         case used = "已用"
         case name = "名称"
+
+        var localizedName: String {
+            switch self {
+            case .code: return String(localized: "色号")
+            case .stock: return String(localized: "库存")
+            case .used: return String(localized: "已用")
+            case .name: return String(localized: "名称")
+            }
+        }
     }
 
     // 获取当前品牌的库存字典（排除隐藏的色号）
@@ -143,7 +152,7 @@ struct InventoryView: View {
                         HStack(spacing: 12) {
                             ForEach(SortOption.allCases, id: \.self) { option in
                                 SortChip(
-                                    title: option.rawValue,
+                                    title: option.localizedName,
                                     isSelected: sortOption == option
                                 ) {
                                     withAnimation {

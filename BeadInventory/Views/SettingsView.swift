@@ -136,7 +136,7 @@ struct RecognitionSettingsSections: View {
         Section {
             Picker("识别方式", selection: $aiService.config.backend) {
                 ForEach(RecognitionBackend.allCases, id: \.self) { backend in
-                    Text(backend.rawValue).tag(backend)
+                    Text(backend.displayName).tag(backend)
                 }
             }
             .pickerStyle(.segmented)

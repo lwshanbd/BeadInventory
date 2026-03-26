@@ -596,11 +596,11 @@ class BackupManager {
         var errorDescription: String? {
             switch self {
             case .invalidFormat:
-                return "备份文件格式无效"
+                return String(localized: "备份文件格式无效")
             case .readFailed:
-                return "读取备份文件失败"
+                return String(localized: "读取备份文件失败")
             case .writeFailed:
-                return "写入备份文件失败"
+                return String(localized: "写入备份文件失败")
             }
         }
     }

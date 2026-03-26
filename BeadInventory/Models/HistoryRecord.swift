@@ -38,23 +38,23 @@ enum HistoryOperationType: String, Codable, CaseIterable {
     // 显示名称
     var displayName: String {
         switch self {
-        case .brandAdd: return "添加品牌"
-        case .brandUpdate: return "修改品牌"
-        case .brandDelete: return "删除品牌"
-        case .stockAdd: return "增加库存"
-        case .stockUpdate: return "修改库存"
-        case .stockDeduct: return "扣减库存"
-        case .stockReset: return "重置库存"
-        case .projectAdd: return "添加项目"
-        case .projectUpdate: return "修改项目"
-        case .projectDelete: return "删除项目"
-        case .projectArchive: return "归档项目"
-        case .projectUnarchive: return "取消归档"
-        case .projectMerge: return "合并项目"
-        case .planAdd: return "添加计划"
-        case .planExecute: return "执行计划"
-        case .planDelete: return "删除计划"
-        case .planUpdate: return "修改计划"
+        case .brandAdd: return String(localized: "添加品牌")
+        case .brandUpdate: return String(localized: "修改品牌")
+        case .brandDelete: return String(localized: "删除品牌")
+        case .stockAdd: return String(localized: "增加库存")
+        case .stockUpdate: return String(localized: "修改库存")
+        case .stockDeduct: return String(localized: "扣减库存")
+        case .stockReset: return String(localized: "重置库存")
+        case .projectAdd: return String(localized: "添加项目")
+        case .projectUpdate: return String(localized: "修改项目")
+        case .projectDelete: return String(localized: "删除项目")
+        case .projectArchive: return String(localized: "归档项目")
+        case .projectUnarchive: return String(localized: "取消归档")
+        case .projectMerge: return String(localized: "合并项目")
+        case .planAdd: return String(localized: "添加计划")
+        case .planExecute: return String(localized: "执行计划")
+        case .planDelete: return String(localized: "删除计划")
+        case .planUpdate: return String(localized: "修改计划")
         }
     }
 
