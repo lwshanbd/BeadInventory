@@ -380,7 +380,7 @@
 			};
 			buildConfigurationList = A01234560070 /* Build configuration list for PBXProject "BeadInventory" */;
 			compatibilityVersion = "Xcode 14.0";
-			developmentRegion = en;
+			developmentRegion = "zh-Hans";
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
