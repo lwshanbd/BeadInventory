@@ -6631,6 +6631,86 @@
           }
         }
       }
+    },
+    "建议按机型选择：iPhone 14 及以上优先尝试 0.8B，iPhone 15 及以上再考虑 2B。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose by device: iPhone 14+ try 0.8B first, iPhone 15+ consider 2B."
+          }
+        }
+      }
+    },
+    "当前设备约为 iPhone 14 系列，建议优先选择 0.8B；2B 负载偏高，不建议。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your device is approximately iPhone 14 series. 0.8B is recommended; 2B has high resource usage and is not recommended."
+          }
+        }
+      }
+    },
+    "%@ 如果机型较老，建议优先使用云端识别。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ If your device is older, cloud recognition is recommended."
+          }
+        }
+      }
+    },
+    "当前设备约为 iPhone %lld 或更新机型，%@ 可以尝试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your device is approximately iPhone %lld or newer. %@ is worth trying."
+          }
+        }
+      }
+    },
+    "当前设备约为 iPhone %lld，不建议选择 %@。建议改用云端识别，或退而求其次选择更小的本地模型。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your device is approximately iPhone %lld. %@ is not recommended. Consider cloud recognition, or try a smaller local model."
+          }
+        }
+      }
+    },
+    "当前设备约为 iPhone %lld 或更新机型，可优先尝试 2B；如更看重下载体积、速度和发热，也可以选 0.8B。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your device is approximately iPhone %lld or newer. 2B is recommended; choose 0.8B if you prefer smaller download and less heating."
+          }
+        }
+      }
+    },
+    "当前设备约为 iPhone %lld，更建议使用云端识别；若必须本地运行，请谨慎尝试 0.8B。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your device is approximately iPhone %lld. Cloud recognition is recommended; if local is required, try 0.8B with caution."
+          }
+        }
+      }
+    },
+    "%@ 已下载，可直接识别": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ downloaded, ready for recognition"
+          }
+        }
+      }
     }
   }
 }
