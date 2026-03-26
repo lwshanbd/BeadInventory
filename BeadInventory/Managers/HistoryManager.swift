@@ -938,6 +938,7 @@ class HistoryManager: ObservableObject {
         }
 
         // 排序：今天 > 昨天 > 其他日期（按时间倒序）
+        // 使用 group 中第一条记录的实际时间戳排序，避免本地化日期字符串字典序不等于时间序
         let todayLabel = String(localized: "今天")
         let yesterdayLabel = String(localized: "昨天")
         let sortedKeys = groups.keys.sorted { key1, key2 in
@@ -945,7 +946,9 @@ class HistoryManager: ObservableObject {
             if key2 == todayLabel { return false }
             if key1 == yesterdayLabel { return true }
             if key2 == yesterdayLabel { return false }
-            return key1 > key2
+            let date1 = groups[key1]?.first?.timestamp ?? .distantPast
+            let date2 = groups[key2]?.first?.timestamp ?? .distantPast
+            return date1 > date2
         }
 
         return sortedKeys.map { ($0, groups[$0] ?? []) }
