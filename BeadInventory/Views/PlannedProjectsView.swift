@@ -13,6 +13,7 @@ struct PlannedProjectsView: View {
         case merge
         case multiStockCheck
         case replenishSuggestion
+        case directPurchase
         case execute(ProjectRecord)
 
         var id: String {
@@ -20,6 +21,7 @@ struct PlannedProjectsView: View {
             case .merge: return "merge"
             case .multiStockCheck: return "multiStockCheck"
             case .replenishSuggestion: return "replenishSuggestion"
+            case .directPurchase: return "directPurchase"
             case .execute(let project): return "execute-\(project.id)"
             }
         }
@@ -54,58 +56,79 @@ struct PlannedProjectsView: View {
                             // 多选操作按钮区域（放在 List 内部，随列表滚动）
                             if isSelectMode && !selectedProjects.isEmpty {
                                 Section {
-                                    HStack(spacing: 8) {
-                                        // 库存确认按钮
-                                        Button {
-                                            activeSheet = .multiStockCheck
-                                        } label: {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "checklist")
-                                                Text("库存确认")
+                                    VStack(spacing: 8) {
+                                        HStack(spacing: 8) {
+                                            // 库存确认按钮
+                                            Button {
+                                                activeSheet = .multiStockCheck
+                                            } label: {
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: "checklist")
+                                                    Text("库存确认")
+                                                }
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundColor(.white)
+                                                .padding(.vertical, 12)
+                                                .frame(maxWidth: .infinity)
+                                                .background(Color.blue)
+                                                .cornerRadius(10)
                                             }
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundColor(.white)
-                                            .padding(.vertical, 12)
-                                            .frame(maxWidth: .infinity)
-                                            .background(Color.blue)
-                                            .cornerRadius(10)
-                                        }
-                                        .buttonStyle(.borderless)
+                                            .buttonStyle(.borderless)
 
-                                        // 补豆建议按钮
-                                        Button {
-                                            activeSheet = .replenishSuggestion
-                                        } label: {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "cart.badge.plus")
-                                                Text("补豆建议")
+                                            // 补豆建议按钮
+                                            Button {
+                                                activeSheet = .replenishSuggestion
+                                            } label: {
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: "cart.badge.plus")
+                                                    Text("补豆建议")
+                                                }
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundColor(.white)
+                                                .padding(.vertical, 12)
+                                                .frame(maxWidth: .infinity)
+                                                .background(Color.orange)
+                                                .cornerRadius(10)
                                             }
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundColor(.white)
-                                            .padding(.vertical, 12)
-                                            .frame(maxWidth: .infinity)
-                                            .background(Color.orange)
-                                            .cornerRadius(10)
+                                            .buttonStyle(.borderless)
                                         }
-                                        .buttonStyle(.borderless)
 
-                                        // 合并按钮（需要选中 2 个及以上）
-                                        Button {
-                                            activeSheet = .merge
-                                        } label: {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "arrow.triangle.merge")
-                                                Text("合并")
+                                        HStack(spacing: 8) {
+                                            // 直接补豆按钮
+                                            Button {
+                                                activeSheet = .directPurchase
+                                            } label: {
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: "bag.badge.plus")
+                                                    Text("直接补豆")
+                                                }
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundColor(.white)
+                                                .padding(.vertical, 12)
+                                                .frame(maxWidth: .infinity)
+                                                .background(Color.green)
+                                                .cornerRadius(10)
                                             }
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundColor(.white)
-                                            .padding(.vertical, 12)
-                                            .frame(maxWidth: .infinity)
-                                            .background(selectedProjects.count >= 2 ? Color.accentColor : Color.gray)
-                                            .cornerRadius(10)
+                                            .buttonStyle(.borderless)
+
+                                            // 合并按钮（需要选中 2 个及以上）
+                                            Button {
+                                                activeSheet = .merge
+                                            } label: {
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: "arrow.triangle.merge")
+                                                    Text("合并")
+                                                }
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundColor(.white)
+                                                .padding(.vertical, 12)
+                                                .frame(maxWidth: .infinity)
+                                                .background(selectedProjects.count >= 2 ? Color.accentColor : Color.gray)
+                                                .cornerRadius(10)
+                                            }
+                                            .buttonStyle(.borderless)
+                                            .disabled(selectedProjects.count < 2)
                                         }
-                                        .buttonStyle(.borderless)
-                                        .disabled(selectedProjects.count < 2)
                                     }
                                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                                 }
@@ -229,6 +252,9 @@ struct PlannedProjectsView: View {
                         .environmentObject(inventoryManager)
                 case .replenishSuggestion:
                     ReplenishSuggestionSheet(projectIds: Array(selectedProjects))
+                        .environmentObject(inventoryManager)
+                case .directPurchase:
+                    DirectPurchaseSheet(projectIds: Array(selectedProjects))
                         .environmentObject(inventoryManager)
                 case .execute(let project):
                     ExecutePlannedProjectSheet(project: project)
@@ -3155,6 +3181,482 @@ struct ReplenishSuggestionSheet: View {
             }
             initializeDefaultQuantities()
         }
+    }
+}
+
+// MARK: - 直接补豆弹窗（不比对库存，直接汇总计划用量）
+struct DirectPurchaseSheet: View {
+    let projectIds: [UUID]
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @Environment(\.dismiss) var dismiss
+    @State private var showCopySuccess = false
+    @State private var showExportSuccess = false
+    @State private var selectedBrandId: UUID?
+    @State private var selectedColorSystemFilter: ColorSystem = .mard
+    @State private var purchaseQuantities: [String: Int] = [:]  // mardCode -> 数量（以10g为单位）
+    @State private var freeShippingThreshold: Int = 50  // 包邮额度（以10g为单位）
+
+    // 获取选中的项目列表
+    var selectedProjects: [ProjectRecord] {
+        projectIds.compactMap { id in
+            inventoryManager.projects.first { $0.id == id }
+        }
+    }
+
+    // 用户拥有的所有色系（根据已创建的品牌）
+    var availableColorSystems: [ColorSystem] {
+        let systems = Set(inventoryManager.brands.map { $0.colorSystem })
+        return ColorSystem.allCases.filter { systems.contains($0) }
+    }
+
+    // 根据选中的色系筛选品牌
+    var matchingBrands: [Brand] {
+        inventoryManager.brands.filter { $0.colorSystem == selectedColorSystemFilter }
+    }
+
+    // 选中品牌
+    var selectedBrand: Brand? {
+        guard let id = selectedBrandId else { return nil }
+        return inventoryManager.brands.first { $0.id == id }
+    }
+
+    // 选中品牌的色号体系
+    var selectedColorSystem: ColorSystem {
+        selectedBrand?.colorSystem ?? selectedColorSystemFilter
+    }
+
+    // 汇总所有选中项目的颜色用量（不比对库存）
+    var aggregatedUsage: [(mardCode: String, quantity: Int)] {
+        var usageDict: [String: Int] = [:]
+        for project in selectedProjects {
+            let usage: [BeadUsage]
+            if inventoryManager.isParentProject(project.id) {
+                usage = inventoryManager.plannedAggregatedBeadUsage(for: project.id)
+            } else {
+                usage = project.beadUsage
+            }
+            for item in usage {
+                let resolvedColor = inventoryManager.findColor(byCode: item.colorCode)
+                let mardCode = resolvedColor?.mardCode ?? item.colorCode
+                usageDict[mardCode, default: 0] += item.quantity
+            }
+        }
+        // 按用量从大到小排序
+        return usageDict.map { (mardCode: $0.key, quantity: $0.value) }
+            .sorted { $0.quantity > $1.quantity }
+    }
+
+    // 过滤后的用量（仅保留当前品牌色系可用的色号）
+    var filteredUsage: [(mardCode: String, quantity: Int)] {
+        guard selectedBrand != nil else { return aggregatedUsage }
+        let cs = selectedColorSystem
+        return aggregatedUsage.filter { item in
+            guard let color = inventoryManager.findColor(byCode: item.mardCode) else { return true }
+            return color.hasCode(for: cs)
+        }
+    }
+
+    // 将内部 mardCode 转换为当前品牌的显示色号
+    func displayCode(for mardCode: String) -> String {
+        inventoryManager.findColor(byCode: mardCode)?.displayCode(for: selectedColorSystem) ?? mardCode
+    }
+
+    // 总颜色数
+    var totalColors: Int {
+        filteredUsage.count
+    }
+
+    // 总颗数
+    var totalBeads: Int {
+        filteredUsage.reduce(0) { $0 + $1.quantity }
+    }
+
+    // 已选补豆总量（以10g为单位）
+    var totalSelectedQuantity: Int {
+        purchaseQuantities.values.reduce(0, +)
+    }
+
+    // 还差多少包邮（以10g为单位）
+    var remainingForFreeShipping: Int {
+        max(0, freeShippingThreshold - totalSelectedQuantity)
+    }
+
+    // 初始化默认补豆数量（每个色号按用量换算为10g单位，1g≈100颗）
+    func initializeDefaultQuantities() {
+        var quantities: [String: Int] = [:]
+        for item in filteredUsage {
+            // quantity 是颗数，转换为10g：quantity / 100 / 10 = quantity / 1000，向上取整
+            let amount = max(1, (item.quantity + 999) / 1000)
+            quantities[item.mardCode] = amount
+        }
+        purchaseQuantities = quantities
+    }
+
+    // 生成 CSV 文本（克数 = quantity * 10g），使用品牌色号体系的显示色号
+    var csvText: String {
+        var lines: [String] = ["色号,克数"]
+        for (mardCode, quantity) in purchaseQuantities.sorted(by: { $0.key < $1.key }) {
+            if quantity > 0 {
+                let code = displayCode(for: mardCode)
+                lines.append("\(code),\(quantity * 10)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // 导出到运输中
+    func exportToShipping() {
+        guard let brandId = selectedBrandId else { return }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M月d日补豆"
+        let recordName = formatter.string(from: Date())
+
+        var items: [PurchaseItem] = []
+        for (colorCode, quantity) in purchaseQuantities.sorted(by: { $0.key < $1.key }) {
+            if quantity > 0 {
+                // quantity 是以 10g 为单位，1g = 100颗，所以 quantity * 10g * 100 = quantity * 1000
+                items.append(PurchaseItem(colorCode: colorCode, quantity: quantity * 1000))
+            }
+        }
+
+        guard !items.isEmpty else { return }
+
+        inventoryManager.addPurchaseRecord(
+            name: recordName,
+            brandId: brandId,
+            items: items,
+            note: "从直接补豆导出"
+        )
+
+        showExportSuccess = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            showExportSuccess = false
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // 说明信息
+                    HStack {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.green)
+                        Text("已选 \(selectedProjects.count) 个计划，共 \(totalColors) 色 \(totalBeads) 颗")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .padding()
+                    .background(Color.green.opacity(0.1))
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+
+                    // 色系 & 品牌选择
+                    VStack(alignment: .leading, spacing: 12) {
+                        if availableColorSystems.count > 1 {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("色号体系")
+                                    .font(.headline)
+                                Picker("色号体系", selection: $selectedColorSystemFilter) {
+                                    ForEach(availableColorSystems, id: \.self) { system in
+                                        Text(system.displayName).tag(system)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                .onChange(of: selectedColorSystemFilter) { _, _ in
+                                    if let firstBrand = matchingBrands.first {
+                                        selectedBrandId = firstBrand.id
+                                    } else {
+                                        selectedBrandId = nil
+                                    }
+                                    initializeDefaultQuantities()
+                                }
+                            }
+                        }
+
+                        Text("选择品牌")
+                            .font(.headline)
+                        if matchingBrands.isEmpty {
+                            Text("暂无该色系的品牌，请先创建品牌")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 10) {
+                                    ForEach(matchingBrands) { brand in
+                                        Button {
+                                            selectedBrandId = brand.id
+                                            initializeDefaultQuantities()
+                                        } label: {
+                                            Text(brand.name)
+                                                .font(.subheadline)
+                                                .padding(.horizontal, 16)
+                                                .padding(.vertical, 10)
+                                                .background(selectedBrandId == brand.id ? Color.green : Color.gray.opacity(0.2))
+                                                .foregroundColor(selectedBrandId == brand.id ? .white : .primary)
+                                                .cornerRadius(20)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+
+                    if selectedBrand != nil {
+                        // 包邮额度
+                        HStack {
+                            Text("包邮额度")
+                                .font(.subheadline)
+                            Spacer()
+                            HStack(spacing: 4) {
+                                TextField("", value: $freeShippingThreshold, format: .number)
+                                    .keyboardType(.asciiCapableNumberPad)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 60)
+                                    .multilineTextAlignment(.center)
+                                Text("×10g")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+
+                        // 状态栏
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("已选补豆")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("\(totalSelectedQuantity)×10g")
+                                    .font(.headline)
+                                    .foregroundColor(.green)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Text("还差包邮")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(remainingForFreeShipping > 0 ? "\(remainingForFreeShipping)×10g" : "已达标 ✓")
+                                    .font(.headline)
+                                    .foregroundColor(remainingForFreeShipping > 0 ? .orange : .green)
+                            }
+                        }
+                        .padding()
+                        .background(remainingForFreeShipping > 0 ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+
+                        // 用量列表
+                        if filteredUsage.isEmpty {
+                            VStack(spacing: 12) {
+                                Image(systemName: "tray")
+                                    .font(.largeTitle)
+                                    .foregroundColor(.secondary)
+                                Text("无可用色号")
+                                    .font(.headline)
+                                Text("所选计划未使用该色系的颜色")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 40)
+                        } else {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack {
+                                    HStack {
+                                        Circle().fill(Color.green).frame(width: 10, height: 10)
+                                        Text("计划用量汇总")
+                                            .font(.headline)
+                                    }
+                                    Spacer()
+                                    Text("\(filteredUsage.count) 色")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Divider()
+
+                                ForEach(filteredUsage, id: \.mardCode) { item in
+                                    DirectPurchaseColorRow(
+                                        colorCode: item.mardCode,
+                                        neededQuantity: item.quantity,
+                                        quantity: Binding(
+                                            get: { purchaseQuantities[item.mardCode] ?? 0 },
+                                            set: { purchaseQuantities[item.mardCode] = $0 }
+                                        ),
+                                        colorSystem: selectedColorSystem
+                                    )
+                                }
+                            }
+                            .padding()
+                            .background(Color.green.opacity(0.05))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.3), lineWidth: 1))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                        }
+
+                        // 操作按钮
+                        if totalSelectedQuantity > 0 {
+                            VStack(spacing: 12) {
+                                Button {
+                                    exportToShipping()
+                                } label: {
+                                    HStack {
+                                        Image(systemName: showExportSuccess ? "checkmark" : "shippingbox.fill")
+                                        Text(showExportSuccess ? "已添加到运输中" : "导出到运输中（\(totalSelectedQuantity)×10g）")
+                                    }
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .frame(maxWidth: .infinity)
+                                    .background(showExportSuccess ? Color.green : Color.green.opacity(0.8))
+                                    .cornerRadius(12)
+                                }
+
+                                Button {
+                                    UIPasteboard.general.string = csvText
+                                    showCopySuccess = true
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                        showCopySuccess = false
+                                    }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: showCopySuccess ? "checkmark" : "doc.on.doc")
+                                        Text(showCopySuccess ? "已复制" : "复制补豆计划")
+                                    }
+                                    .font(.subheadline)
+                                    .foregroundColor(.green)
+                                }
+                            }
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+                        }
+                    } else if !inventoryManager.brands.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "hand.tap")
+                                .font(.largeTitle)
+                                .foregroundColor(.secondary)
+                            Text("请先选择品牌")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 60)
+                    }
+                }
+                .padding(.vertical)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("直接补豆")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .onAppear {
+            let projectSystems = Set(selectedProjects.map { $0.colorSystem })
+            if let currentSystem = inventoryManager.currentBrand?.colorSystem, projectSystems.contains(currentSystem) {
+                selectedColorSystemFilter = currentSystem
+            } else if let firstSystem = projectSystems.first {
+                selectedColorSystemFilter = firstSystem
+            }
+            if selectedBrandId == nil, let firstBrand = matchingBrands.first {
+                selectedBrandId = firstBrand.id
+            }
+            initializeDefaultQuantities()
+        }
+    }
+}
+
+// MARK: - 直接补豆色号行
+struct DirectPurchaseColorRow: View {
+    let colorCode: String  // 内部 mardCode
+    let neededQuantity: Int  // 计划需要的颗数
+    @Binding var quantity: Int  // 补豆数量（以10g为单位）
+    var colorSystem: ColorSystem = .mard
+    @EnvironmentObject var inventoryManager: InventoryManager
+
+    var beadColor: BeadColor? {
+        inventoryManager.findColor(byCode: colorCode)
+    }
+
+    var displayColor: Color {
+        beadColor?.color ?? .gray
+    }
+
+    var displayCodeText: String {
+        beadColor?.displayCode(for: colorSystem) ?? colorCode
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // 颜色预览
+            RoundedRectangle(cornerRadius: 4)
+                .fill(displayColor)
+                .frame(width: 28, height: 28)
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.gray.opacity(0.3), lineWidth: 1))
+
+            // 色号 + 需要颗数
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayCodeText)
+                    .font(.system(.subheadline, design: .monospaced))
+                    .fontWeight(.medium)
+                Text("需 \(neededQuantity) 颗")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            // 数量调节器
+            HStack(spacing: 4) {
+                Button {
+                    if quantity > 0 { quantity -= 1 }
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(quantity > 0 ? .green : .gray)
+                }
+                .disabled(quantity <= 0)
+
+                TextField("", value: $quantity, format: .number)
+                    .keyboardType(.asciiCapableNumberPad)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 40)
+                    .multilineTextAlignment(.center)
+                    .font(.subheadline.monospacedDigit())
+
+                Text("×10g")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Button {
+                    quantity += 1
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(.green)
+                }
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(Color(.systemBackground))
+        .cornerRadius(8)
     }
 }
 
