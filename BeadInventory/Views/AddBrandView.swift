@@ -242,7 +242,7 @@ struct AddBrandView: View {
                 }
             }
             .sheet(isPresented: $showingColorSelection) {
-                ColorSelectionView(selectedColors: $customSelectedColors)
+                ColorSelectionView(selectedColors: $customSelectedColors, colorSystem: selectedColorSystem)
             }
             .sheet(isPresented: $showingImportStock) {
                 ImportStockView(mode: .forNewBrand) { items in

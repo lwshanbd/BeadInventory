@@ -402,7 +402,7 @@ struct PurchaseRecordRow: View {
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var brandName: String {
-        inventoryManager.brands.first(where: { $0.id == record.brandId })?.name ?? "未知品牌"
+        inventoryManager.brands.first(where: { $0.id == record.brandId })?.name ?? String(localized: "未知品牌")
     }
 
     var body: some View {
@@ -472,7 +472,7 @@ struct PurchaseRecordDetailView: View {
     }
 
     var brandName: String {
-        inventoryManager.brands.first(where: { $0.id == currentRecord.brandId })?.name ?? "未知品牌"
+        inventoryManager.brands.first(where: { $0.id == currentRecord.brandId })?.name ?? String(localized: "未知品牌")
     }
 
     var body: some View {

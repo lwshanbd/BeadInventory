@@ -9,12 +9,13 @@ import SwiftUI
 
 struct ColorSelectionView: View {
     @Binding var selectedColors: Set<String>
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
-    // 色系列表（"#"为自定义色号）
-    let colorSeries = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG", "其他", "#"]
-    let standardPrefixes = ["A", "B", "C", "D", "E", "F", "G", "H", "M", "P", "Q", "R", "T", "Y", "ZG"]
+    // 色系列表和标准前缀从 ColorSystem 获取
+    var colorSeries: [String] { colorSystem.colorSeries }
+    var standardPrefixes: [String] { colorSystem.standardPrefixes }
 
     @State private var selectedSeries = "A"
 

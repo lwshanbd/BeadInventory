@@ -927,7 +927,7 @@ class HistoryManager: ObservableObject {
                 key = String(localized: "昨天")
             } else {
                 let formatter = DateFormatter()
-                formatter.dateFormat = "MM月dd日"
+                formatter.setLocalizedDateFormatFromTemplate("MMMMd")
                 key = formatter.string(from: record.timestamp)
             }
 

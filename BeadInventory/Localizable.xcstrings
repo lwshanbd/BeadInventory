@@ -6511,6 +6511,136 @@
           }
         }
       }
+    },
+    "网络错误: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network error: %@"
+          }
+        }
+      }
+    },
+    "API 错误: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API error: %@"
+          }
+        }
+      }
+    },
+    "解析错误: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parse error: %@"
+          }
+        }
+      }
+    },
+    "请先下载本地模型：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please download the local model first: %@"
+          }
+        }
+      }
+    },
+    "无法转换JSON文本": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot convert JSON text"
+          }
+        }
+      }
+    },
+    "无法转换本地模型返回的 JSON 文本": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot convert JSON text from local model"
+          }
+        }
+      }
+    },
+    "识别失败: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recognition failed: %@"
+          }
+        }
+      }
+    },
+    "处理失败: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Processing failed: %@"
+          }
+        }
+      }
+    },
+    "状态检查失败：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status check failed: %@"
+          }
+        }
+      }
+    },
+    "云端：品牌 %@ · 库存 %@ · 项目 %@ · 计划 %@ · 自定义 %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud: Brands %@ · Stock %@ · Projects %@ · Plans %@ · Custom %@"
+          }
+        }
+      }
+    },
+    "第 %lld 行数量无效：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Row %lld: invalid quantity: %@"
+          }
+        }
+      }
+    },
+    "包含所有%lld种颜色": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Includes all %lld colors"
+          }
+        }
+      }
+    },
+    "%@ 到货: %@ (%@色 +%@颗)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ arrived: %@ (%@ colors +%@ pcs)"
+          }
+        }
+      }
     }
   }
 }

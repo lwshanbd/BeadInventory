@@ -268,7 +268,7 @@ struct SeriesSelector: View {
                     Button {
                         withAnimation { selectedSeries = s }
                     } label: {
-                        Text(s)
+                        Text(ColorSystem.localizedSeriesName(s))
                             .font(.system(.subheadline, design: .rounded))
                             .fontWeight(.medium)
                             .padding(.horizontal, 16)
