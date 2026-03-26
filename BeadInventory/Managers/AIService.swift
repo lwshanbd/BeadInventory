@@ -959,6 +959,46 @@ class AIServiceManager: ObservableObject {
         return UIImage(cgImage: cgImage)
     }
 
+    /// 等比例缩放图片，使其编码后数据不超过指定大小
+    private func compressImageIfNeeded(_ image: UIImage, maxBytes: Int = 10 * 1024 * 1024) -> UIImage {
+        // 先检查 PNG 大小，不超限就直接返回
+        if let pngData = image.pngData(), pngData.count <= maxBytes {
+            return image
+        }
+
+        // 超限了，逐步缩小到 JPEG 不超限为止
+        var scale: CGFloat = 0.9
+        var current = image
+        for _ in 0..<5 {
+            let newSize = CGSize(width: current.size.width * scale, height: current.size.height * scale)
+            UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+            let resized = UIGraphicsGetImageFromCurrentImageContext()
+            UIGraphicsEndImageContext()
+
+            guard let resized = resized else { break }
+
+            // 用 JPEG 检测大小（比 PNG 更稳定地反映最终上传体积）
+            if let data = resized.jpegData(compressionQuality: 0.95), data.count <= maxBytes {
+                print("[AI Debug] 图片超限，等比例缩放至 \(Int(newSize.width))×\(Int(newSize.height))，JPEG 大小: \(data.count / 1024)KB")
+                return resized
+            }
+
+            scale *= 0.8
+        }
+
+        // 兜底：强制缩放到长边 2048px
+        let maxDim: CGFloat = 2048
+        let ratio = min(maxDim / image.size.width, maxDim / image.size.height, 1.0)
+        let finalSize = CGSize(width: image.size.width * ratio, height: image.size.height * ratio)
+        UIGraphicsBeginImageContextWithOptions(finalSize, false, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: finalSize))
+        let final = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        print("[AI Debug] 图片兜底缩放至 \(Int(finalSize.width))×\(Int(finalSize.height))")
+        return final ?? image
+    }
+
     // MARK: - 图像识别
 
     func recognizeImage(_ image: UIImage, mode: RecognitionMode = .table, colorSystem: ColorSystem = .mard) async throws -> [AIRecognizedItem] {
@@ -994,27 +1034,28 @@ class AIServiceManager: ObservableObject {
             return try await recognizeWithLocalModel(image: processedImage, mode: mode, colorSystem: colorSystem)
         }
 
+        // 如果图片数据超过 10MB，先等比例缩放
+        let finalImage = compressImageIfNeeded(processedImage)
+
         // 优先使用PNG格式（无损），如果太大则使用高质量JPEG
         // PNG对于表格文字识别效果更好，不会有JPEG压缩伪影
         let imageData: Data
         let mediaType: String
 
-        if let pngData = processedImage.pngData() {
-            // PNG文件如果小于10MB，直接使用PNG
+        if let pngData = finalImage.pngData() {
             if pngData.count < 10 * 1024 * 1024 {
                 imageData = pngData
                 mediaType = "image/png"
                 print("[AI Debug] 使用PNG格式，大小: \(pngData.count / 1024)KB")
             } else {
-                // 太大则使用高质量JPEG
-                guard let jpegData = processedImage.jpegData(compressionQuality: 0.95) else {
+                guard let jpegData = finalImage.jpegData(compressionQuality: 0.95) else {
                     throw AIError.imageProcessingFailed
                 }
                 imageData = jpegData
                 mediaType = "image/jpeg"
                 print("[AI Debug] PNG太大，使用JPEG格式，大小: \(jpegData.count / 1024)KB")
             }
-        } else if let jpegData = processedImage.jpegData(compressionQuality: 0.95) {
+        } else if let jpegData = finalImage.jpegData(compressionQuality: 0.95) {
             imageData = jpegData
             mediaType = "image/jpeg"
             print("[AI Debug] 使用JPEG格式，大小: \(jpegData.count / 1024)KB")
@@ -1250,6 +1291,9 @@ class AIServiceManager: ObservableObject {
         if httpResponse.statusCode != 200 {
             let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
             print("[AI Debug] API错误: \(errorText)")
+            if httpResponse.statusCode == 429 {
+                throw AIError.serverOverloaded
+            }
             throw AIError.apiError("HTTP \(httpResponse.statusCode): \(errorText)")
         }
 
@@ -1337,6 +1381,9 @@ class AIServiceManager: ObservableObject {
         if httpResponse.statusCode != 200 {
             let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
             print("[AI Debug] API错误: \(errorText)")
+            if httpResponse.statusCode == 429 {
+                throw AIError.serverOverloaded
+            }
             throw AIError.apiError("HTTP \(httpResponse.statusCode): \(errorText)")
         }
 
@@ -1416,6 +1463,9 @@ class AIServiceManager: ObservableObject {
         if httpResponse.statusCode != 200 {
             let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
             print("[AI Debug] API错误: \(errorText)")
+            if httpResponse.statusCode == 429 {
+                throw AIError.serverOverloaded
+            }
             throw AIError.apiError("HTTP \(httpResponse.statusCode): \(errorText)")
         }
 
@@ -1552,6 +1602,7 @@ enum AIError: LocalizedError {
     case imageProcessingFailed
     case networkError(String)
     case apiError(String)
+    case serverOverloaded
     case parseError(String)
 
     var errorDescription: String? {
@@ -1566,6 +1617,8 @@ enum AIError: LocalizedError {
             return "网络错误: \(msg)"
         case .apiError(let msg):
             return "API 错误: \(msg)"
+        case .serverOverloaded:
+            return "云端服务器当前繁忙（GPU 资源不足），请稍后再试"
         case .parseError(let msg):
             return "解析错误: \(msg)"
         }
