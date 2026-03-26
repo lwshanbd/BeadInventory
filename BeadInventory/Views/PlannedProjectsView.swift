@@ -3190,7 +3190,6 @@ struct DirectPurchaseSheet: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
     @State private var showCopySuccess = false
-    @State private var showExportSuccess = false
     @State private var hasExported = false  // 防止重复导出
     @State private var showEmptyExportWarning = false  // 空导出提示
     @State private var selectedBrandId: UUID?
@@ -3294,11 +3293,6 @@ struct DirectPurchaseSheet: View {
         purchaseQuantities = quantities
     }
 
-    // 当前有效的色号集合（与 filteredUsage 一致）
-    var validCodes: Set<String> {
-        Set(filteredUsage.map { $0.mardCode })
-    }
-
     // 按 filteredUsage 排序的有效购买项（与 UI 排序一致）
     var orderedPurchaseItems: [(mardCode: String, quantity: Int)] {
         filteredUsage.compactMap { item in
@@ -3348,10 +3342,6 @@ struct DirectPurchaseSheet: View {
         )
 
         hasExported = true
-        showExportSuccess = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            showExportSuccess = false
-        }
     }
 
     var body: some View {
@@ -3390,6 +3380,7 @@ struct DirectPurchaseSheet: View {
                                     } else {
                                         selectedBrandId = nil
                                     }
+                                    hasExported = false
                                     initializeDefaultQuantities()
                                 }
                             }
@@ -3407,6 +3398,7 @@ struct DirectPurchaseSheet: View {
                                     ForEach(matchingBrands) { brand in
                                         Button {
                                             selectedBrandId = brand.id
+                                            hasExported = false
                                             initializeDefaultQuantities()
                                         } label: {
                                             Text(brand.name)
