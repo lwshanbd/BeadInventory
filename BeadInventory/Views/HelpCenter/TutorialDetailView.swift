@@ -107,7 +107,7 @@ struct StepCardView: View {
 
             if let action = step.action {
                 NavigationLink {
-                    actionDestinationView(for: action.destination)
+                    action.destination.targetView
                 } label: {
                     HStack(spacing: 4) {
                         Text(String(localized: String.LocalizationValue(action.labelKey)))
@@ -133,25 +133,4 @@ struct StepCardView: View {
         .padding(.horizontal)
     }
 
-    @ViewBuilder
-    private func actionDestinationView(for destination: HelpDestination) -> some View {
-        switch destination {
-        case .scan:
-            TutorialDetailView(section: TutorialContent.scan)
-        case .quickStart:
-            TutorialDetailView(section: TutorialContent.quickStart)
-        case .inventory:
-            TutorialDetailView(section: TutorialContent.inventory)
-        case .plans:
-            TutorialDetailView(section: TutorialContent.plans)
-        case .colorConverter:
-            TutorialDetailView(section: TutorialContent.colorTools)
-        case .data:
-            TutorialDetailView(section: TutorialContent.dataAndSync)
-        case .scanAPISetup:
-            TutorialDetailView(section: TutorialContent.scan, highlightStep: .scanAPISetup)
-        case .faq:
-            FAQView()
-        }
-    }
 }

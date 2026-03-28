@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import TipKit
 import PhotosUI
 
 struct PlannedProjectsView: View {
@@ -53,6 +54,10 @@ struct PlannedProjectsView: View {
                 } else {
                     VStack(spacing: 0) {
                         List {
+                            if plannedProjects.count >= 2 {
+                                TipView(PlanMergeTip())
+                            }
+                            TipView(ReplenishTip())
                             // 多选操作按钮区域（放在 List 内部，随列表滚动）
                             if isSelectMode && !selectedProjects.isEmpty {
                                 Section {

@@ -18,6 +18,28 @@ enum HelpDestination: Hashable {
     case colorConverter
     case data
     case faq
+
+    @ViewBuilder
+    var targetView: some View {
+        switch self {
+        case .quickStart:
+            TutorialDetailView(section: TutorialContent.quickStart)
+        case .inventory:
+            TutorialDetailView(section: TutorialContent.inventory)
+        case .scan:
+            TutorialDetailView(section: TutorialContent.scan)
+        case .scanAPISetup:
+            TutorialDetailView(section: TutorialContent.scan, highlightStep: .scanAPISetup)
+        case .plans:
+            TutorialDetailView(section: TutorialContent.plans)
+        case .colorConverter:
+            TutorialDetailView(section: TutorialContent.colorTools)
+        case .data:
+            TutorialDetailView(section: TutorialContent.dataAndSync)
+        case .faq:
+            FAQView()
+        }
+    }
 }
 
 struct TutorialSection: Identifiable {

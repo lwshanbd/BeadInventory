@@ -33,7 +33,7 @@ struct HelpCenterView: View {
         .searchable(text: $searchText, prompt: Text("help.center.search.prompt"))
         .navigationDestination(isPresented: $didNavigateInitial) {
             if let dest = initialDestination {
-                destinationView(for: dest)
+                dest.targetView
             }
         }
         .onAppear {
@@ -129,29 +129,6 @@ struct HelpCenterView: View {
         }
     }
 
-    // MARK: - Deep-link 目标视图
-
-    @ViewBuilder
-    private func destinationView(for destination: HelpDestination) -> some View {
-        switch destination {
-        case .quickStart:
-            TutorialDetailView(section: TutorialContent.quickStart)
-        case .inventory:
-            TutorialDetailView(section: TutorialContent.inventory)
-        case .scan:
-            TutorialDetailView(section: TutorialContent.scan)
-        case .scanAPISetup:
-            TutorialDetailView(section: TutorialContent.scan, highlightStep: .scanAPISetup)
-        case .plans:
-            TutorialDetailView(section: TutorialContent.plans)
-        case .colorConverter:
-            TutorialDetailView(section: TutorialContent.colorTools)
-        case .data:
-            TutorialDetailView(section: TutorialContent.dataAndSync)
-        case .faq:
-            FAQView()
-        }
-    }
 }
 
 // MARK: - 帮助中心导航容器（用于 sheet 弹出场景）

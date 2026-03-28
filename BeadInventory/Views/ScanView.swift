@@ -109,6 +109,12 @@ struct ScanView: View {
                 GeometryReader { geometry in
                     ScrollView {
                         VStack(spacing: 20) {
+                            TipView(ScanTip())
+                                .padding(.horizontal)
+                            if !aiService.isConfigured {
+                                TipView(APISetupTip())
+                                    .padding(.horizontal)
+                            }
                             // 图片选择区域（当未固定时显示）
                             if !isImagePinned {
                                 ImageSelectionSection(

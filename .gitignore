@@ -5,6 +5,7 @@ local-external-files/
 .claude/settings.local.json
 .claude/skills/
 .claude/worktrees/
+.context/
 
 # Xcode user-specific files
 BeadInventory.xcodeproj/xcuserdata/*/xcdebugger/
