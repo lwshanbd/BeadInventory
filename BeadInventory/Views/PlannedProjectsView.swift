@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import TipKit
 import PhotosUI
 
 struct PlannedProjectsView: View {
@@ -53,6 +54,10 @@ struct PlannedProjectsView: View {
                 } else {
                     VStack(spacing: 0) {
                         List {
+                            if plannedProjects.count >= 2 {
+                                TipView(PlanMergeTip())
+                            }
+                            TipView(ReplenishTip())
                             // 多选操作按钮区域（放在 List 内部，随列表滚动）
                             if isSelectMode && !selectedProjects.isEmpty {
                                 Section {
@@ -268,21 +273,11 @@ struct PlannedProjectsView: View {
 // MARK: - 空状态视图
 struct EmptyPlannedProjectsView: View {
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "calendar.badge.clock")
-                .font(.system(size: 60))
-                .foregroundColor(.secondary.opacity(0.5))
-
-            Text("暂无计划项目")
-                .font(.headline)
-                .foregroundColor(.secondary)
-
-            Text("扫描图纸后选择「创建计划」\n可在此处管理和执行")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        EmptyStateView(
+            icon: "calendar.badge.clock",
+            title: "暂无计划项目",
+            description: "扫描图纸后选择「创建计划」\n可在此处管理和执行"
+        )
     }
 }
 

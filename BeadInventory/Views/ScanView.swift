@@ -8,6 +8,7 @@
 import SwiftUI
 import PhotosUI
 import UIKit
+import TipKit
 
 struct ScanView: View {
     enum Layout {
@@ -51,7 +52,6 @@ struct ScanView: View {
     // 引导弹窗
     @AppStorage("scanViewHelpShown") private var helpHasBeenDismissed = false
     @State private var showingHelpSheet = false
-
     init(externalImage: Binding<UIImage?> = .constant(nil)) {
         self._externalImage = externalImage
     }
@@ -109,6 +109,12 @@ struct ScanView: View {
                 GeometryReader { geometry in
                     ScrollView {
                         VStack(spacing: 20) {
+                            TipView(ScanTip())
+                                .padding(.horizontal)
+                            if !aiService.isConfigured {
+                                TipView(APISetupTip())
+                                    .padding(.horizontal)
+                            }
                             // 图片选择区域（当未固定时显示）
                             if !isImagePinned {
                                 ImageSelectionSection(
@@ -451,7 +457,7 @@ struct ScanView: View {
             } message: {
                 Text("将创建包含 \(totalBeads) 颗豆子（\(recognizedItems.count) 种颜色）的计划项目。执行时需要选择品牌。")
             }
-            // 引导弹窗
+            // 首次使用引导弹窗
             .sheet(isPresented: $showingHelpSheet) {
                 ScanHelpSheet(
                     onDismiss: {

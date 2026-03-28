@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import TipKit
 
 struct InventoryView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
@@ -119,6 +120,9 @@ struct InventoryView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                TipView(ColorConverterTip())
+                    .padding(.horizontal)
+
                 // 品牌选择器
                 HStack {
                     BrandPicker()

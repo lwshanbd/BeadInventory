@@ -124,9 +124,7 @@ struct RecognitionSettingsScreen: View {
 struct RecognitionSettingsSections: View {
     @ObservedObject var aiService: AIServiceManager
     @ObservedObject private var localModelManager = LocalModelManager.shared
-    @State private var showingCloudSetupHelp = false
-
-    private let cloudSetupTutorialURL = URL(string: "http://xhslink.com/o/4CKj0aSSeO9")!
+    @State private var showingAPIHelpSheet = false
 
     private var deviceProfile: LocalModelDeviceProfile {
         .current
@@ -168,28 +166,15 @@ struct RecognitionSettingsSections: View {
                 }
             }
         }
-        .sheet(isPresented: $showingCloudSetupHelp) {
-            NavigationStack {
-                List {
-                    Section {
-                        Text("如果你想知道如何配置 API，可以参考小红书教程。")
-                        Link("打开小红书教程", destination: cloudSetupTutorialURL)
-                    }
-                }
-                .navigationTitle("API 配置帮助")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("完成") {
-                            showingCloudSetupHelp = false
-                        }
-                    }
-                }
-            }
-            .presentationDetents([.medium])
+        .sheet(isPresented: $showingAPIHelpSheet) {
+            HelpCenterNavigationView(initialDestination: .scanAPISetup)
         }
         .onAppear {
             localModelManager.refreshDownloadedModels()
+            APISetupTip.hasConfiguredAPI = aiService.isConfigured
+        }
+        .onChange(of: aiService.isConfigured) { _, newValue in
+            APISetupTip.hasConfiguredAPI = newValue
         }
     }
 
@@ -222,7 +207,7 @@ struct RecognitionSettingsSections: View {
                 Spacer()
 
                 Button {
-                    showingCloudSetupHelp = true
+                    showingAPIHelpSheet = true
                 } label: {
                     Image(systemName: "questionmark.circle")
                         .foregroundColor(.secondary)
@@ -729,99 +714,6 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-// MARK: - 帮助页面
-struct HelpView: View {
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                HelpSection(
-                    icon: "square.grid.3x3.fill",
-                    title: "库存管理",
-                    content: """
-                    • 查看所有颜色的库存状态
-                    • 点击颜色卡片可编辑库存
-                    • 支持按品牌色号显示
-                    • 可搜索任意品牌的色号
-                    """
-                )
-
-                HelpSection(
-                    icon: "doc.text.viewfinder",
-                    title: "图纸扫描",
-                    content: """
-                    • 拍照或选择色号表格图片
-                    • 自动识别色号和数量
-                    • 可手动编辑识别结果
-                    • 确认后自动从库存扣减
-                    """
-                )
-
-                HelpSection(
-                    icon: "paintpalette.fill",
-                    title: "色号转换",
-                    content: """
-                    • 输入任意品牌色号查询
-                    • 自动显示对应的其他品牌色号
-                    • 支持 MARD、vivid、漫漫、卡卡
-                    • 点击可复制色号
-                    """
-                )
-
-                HelpSection(
-                    icon: "chart.bar.fill",
-                    title: "统计功能",
-                    content: """
-                    • 查看整体库存使用情况
-                    • 使用量排行榜
-                    • 低库存预警
-                    • 项目历史记录
-                    """
-                )
-
-                HelpSection(
-                    icon: "lightbulb.fill",
-                    title: "使用技巧",
-                    content: """
-                    • 建议初始库存设为1000颗/色
-                    • 识别有水印图片时，可手动调整结果
-                    • 定期导出数据做备份
-                    • 低库存颜色会红色标识
-                    """
-                )
-            }
-            .padding()
-        }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle("使用帮助")
-    }
-}
-
-struct HelpSection: View {
-    let icon: String
-    let title: String
-    let content: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: icon)
-                    .foregroundColor(.accentColor)
-                    .font(.title2)
-
-                Text(title)
-                    .font(.headline)
-            }
-
-            Text(content)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-    }
-}
 
 #Preview {
     SettingsView()

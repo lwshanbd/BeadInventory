@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import TipKit
 
 struct MoreView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
@@ -14,6 +15,27 @@ struct MoreView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    NavigationLink {
+                        HelpCenterView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("help.center.entry.title")
+                                Text("help.center.entry.subtitle")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "book.fill")
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+
+                    TipView(BackupTip())
+                    TipView(ICloudSyncTip())
+                }
+
                 Section("工作台") {
                     NavigationLink {
                         ShippingView()
@@ -141,8 +163,8 @@ struct MoreView: View {
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("诊断与帮助")
-                                Text("日志导出、扫描帮助与使用说明")
+                                Text("诊断工具")
+                                Text("日志导出与排查")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -244,6 +266,7 @@ struct MoreView: View {
             }
         }
     }
+
 }
 
 struct DataToolsView: View {
@@ -327,7 +350,6 @@ struct DataToolsView: View {
 }
 
 struct DiagnosticsToolsView: View {
-    @State private var showingScanHelp = false
     @State private var showingDiagnosticsShareSheet = false
     @State private var diagnosticsExportURL: URL?
     @State private var isExportingDiagnostics = false
@@ -338,41 +360,6 @@ struct DiagnosticsToolsView: View {
 
     var body: some View {
         List {
-            Section("帮助") {
-                Button {
-                    showingScanHelp = true
-                } label: {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("AI扫描帮助")
-                            Text("查看扫描识别使用说明")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "questionmark.circle.fill")
-                            .foregroundColor(.orange)
-                    }
-                }
-                .foregroundColor(.primary)
-
-                NavigationLink {
-                    HelpView()
-                } label: {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("使用帮助")
-                            Text("功能介绍与使用技巧")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "book.fill")
-                            .foregroundColor(.teal)
-                    }
-                }
-            }
-
             Section("诊断日志") {
                 Button {
                     exportDiagnosticsLogs()
@@ -422,12 +409,7 @@ struct DiagnosticsToolsView: View {
                 .disabled(isExportingDiagnostics || isClearingDiagnostics)
             }
         }
-        .navigationTitle("诊断与帮助")
-        .sheet(isPresented: $showingScanHelp) {
-            ScanHelpSheet(onDismiss: {
-                showingScanHelp = false
-            })
-        }
+        .navigationTitle("诊断工具")
         .sheet(isPresented: $showingDiagnosticsShareSheet, onDismiss: {
             diagnosticsExportURL = nil
         }) {
