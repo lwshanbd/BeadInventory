@@ -51,7 +51,6 @@ struct ScanView: View {
     // 引导弹窗
     @AppStorage("scanViewHelpShown") private var helpHasBeenDismissed = false
     @State private var showingHelpSheet = false
-
     init(externalImage: Binding<UIImage?> = .constant(nil)) {
         self._externalImage = externalImage
     }
@@ -451,7 +450,7 @@ struct ScanView: View {
             } message: {
                 Text("将创建包含 \(totalBeads) 颗豆子（\(recognizedItems.count) 种颜色）的计划项目。执行时需要选择品牌。")
             }
-            // 引导弹窗
+            // 引导弹窗（保留旧版兼容，首次弹出）
             .sheet(isPresented: $showingHelpSheet) {
                 ScanHelpSheet(
                     onDismiss: {
