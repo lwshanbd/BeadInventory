@@ -17,21 +17,36 @@ struct ColorSelectionView: View {
     var colorSeries: [String] { colorSystem.colorSeries }
     var standardPrefixes: [String] { colorSystem.standardPrefixes }
 
-    @State private var selectedSeries = "A"
+    @State private var selectedSeries: String
+
+    init(selectedColors: Binding<Set<String>>, colorSystem: ColorSystem = .mard) {
+        self._selectedColors = selectedColors
+        self.colorSystem = colorSystem
+        self._selectedSeries = State(initialValue: colorSystem.defaultSeries)
+    }
+
+    /// 当前色号体系下的颜色总数
+    var totalColorsForSystem: Int {
+        inventoryManager.beadColors.filter { $0.hasCode(for: colorSystem) }.count
+    }
 
     var colorsInSeries: [BeadColor] {
         // 自定义色号使用 allBeadColors
         let sourceColors = selectedSeries == "#" ? inventoryManager.allBeadColors : inventoryManager.beadColors
 
         return sourceColors.filter { color in
-            let code = color.mardCode
+            // 只显示属于当前色号体系的颜色
+            guard color.hasCode(for: colorSystem) else { return false }
+
+            // 使用当前体系的色号进行系列匹配
+            let code = color.displayCode(for: colorSystem)
 
             if selectedSeries == "#" {
-                // 自定义色号系列
-                return code.hasPrefix("#")
+                // 自定义色号始终用 mardCode 判断（自定义色号 mardCode 以 # 开头）
+                return color.mardCode.hasPrefix("#")
             } else if selectedSeries == "其他" {
                 // "其他"系列：不属于任何标准色系的颜色（排除自定义色号）
-                if code.hasPrefix("#") { return false }
+                if color.mardCode.hasPrefix("#") { return false }
                 return !standardPrefixes.contains { prefix in
                     if prefix == "ZG" {
                         return code.hasPrefix("ZG")
@@ -43,10 +58,10 @@ struct ColorSelectionView: View {
                 return code.hasPrefix("ZG")
             } else {
                 if code.hasPrefix("ZG") { return false }
-                if code.hasPrefix("#") { return false }  // 排除自定义色号
+                if color.mardCode.hasPrefix("#") { return false }  // 排除自定义色号
                 return code.hasPrefix(selectedSeries)
             }
-        }.sorted { $0.mardCode.localizedStandardCompare($1.mardCode) == .orderedAscending }
+        }.sorted { $0.displayCode(for: colorSystem).localizedStandardCompare($1.displayCode(for: colorSystem)) == .orderedAscending }
     }
 
     // 当前色系的选中数量
@@ -69,7 +84,7 @@ struct ColorSelectionView: View {
                     Text("\(selectedColors.count)")
                         .fontWeight(.bold)
                         .foregroundColor(.accentColor)
-                    Text("/ \(inventoryManager.beadColors.count) 色")
+                    Text("/ \(totalColorsForSystem) 色")
                         .foregroundColor(.secondary)
                     Spacer()
 
@@ -78,7 +93,7 @@ struct ColorSelectionView: View {
                         Button {
                             selectAll()
                         } label: {
-                            Label("全选所有 (\(inventoryManager.beadColors.count)色)", systemImage: "checkmark.circle.fill")
+                            Label("全选所有 (\(totalColorsForSystem)色)", systemImage: "checkmark.circle.fill")
                         }
 
                         Button {
@@ -125,6 +140,7 @@ struct ColorSelectionView: View {
                         ForEach(colorsInSeries) { color in
                             ColorSelectRow(
                                 color: color,
+                                colorSystem: colorSystem,
                                 isSelected: selectedColors.contains(color.mardCode),
                                 onToggle: {
                                     toggleColor(color.mardCode)
@@ -164,7 +180,7 @@ struct ColorSelectionView: View {
     }
 
     private func selectAll() {
-        for color in inventoryManager.beadColors {
+        for color in inventoryManager.beadColors where color.hasCode(for: colorSystem) {
             selectedColors.insert(color.mardCode)
         }
     }
@@ -201,6 +217,7 @@ struct ColorSelectionView: View {
 // MARK: - 颜色选择行
 struct ColorSelectRow: View {
     let color: BeadColor
+    var colorSystem: ColorSystem = .mard
     let isSelected: Bool
     let onToggle: () -> Void
 
@@ -236,7 +253,7 @@ struct ColorSelectRow: View {
 
                 // 色号和名称
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(color.mardCode)
+                    Text(color.displayCode(for: colorSystem))
                         .font(.system(.body, design: .monospaced))
                         .fontWeight(.medium)
                         .foregroundColor(.primary)

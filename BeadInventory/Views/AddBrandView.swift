@@ -162,7 +162,7 @@ struct AddBrandView: View {
                             Button {
                                 selectedPreset = preset
                                 if preset.isCustom && customSelectedColors.isEmpty {
-                                    customSelectedColors = Set(inventoryManager.beadColors.map { $0.mardCode })
+                                    customSelectedColors = Set(inventoryManager.beadColors.filter { $0.hasCode(for: selectedColorSystem) }.map { $0.mardCode })
                                 }
                             } label: {
                                 HStack {
@@ -205,7 +205,7 @@ struct AddBrandView: View {
                                     Image(systemName: "square.grid.3x3")
                                     Text("选择颜色")
                                     Spacer()
-                                    Text("\(customSelectedColors.count) / \(inventoryManager.beadColors.count)")
+                                    Text("\(customSelectedColors.count) / \(allColorCount)")
                                         .foregroundColor(.secondary)
                                     Image(systemName: "chevron.right")
                                         .font(.caption)
