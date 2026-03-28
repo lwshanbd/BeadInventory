@@ -171,6 +171,10 @@ struct RecognitionSettingsSections: View {
         }
         .onAppear {
             localModelManager.refreshDownloadedModels()
+            APISetupTip.hasConfiguredAPI = aiService.isConfigured
+        }
+        .onChange(of: aiService.isConfigured) { _, newValue in
+            APISetupTip.hasConfiguredAPI = newValue
         }
     }
 
@@ -710,7 +714,6 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-// MARK: - 旧帮助页面已迁移到 HelpCenter
 
 #Preview {
     SettingsView()

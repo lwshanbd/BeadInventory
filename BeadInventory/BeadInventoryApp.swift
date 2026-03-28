@@ -100,10 +100,14 @@ struct BeadInventoryApp: App {
         HistoryManager.shared.inventoryManager = manager
 
         // 初始化 TipKit
-        try? Tips.configure([
-            .displayFrequency(.daily),
-            .datastoreLocation(.applicationDefault)
-        ])
+        do {
+            try Tips.configure([
+                .displayFrequency(.daily),
+                .datastoreLocation(.applicationDefault)
+            ])
+        } catch {
+            AppLogger.shared.error("TipKit", "初始化失败: \(error.localizedDescription)")
+        }
     }
 
     var body: some Scene {

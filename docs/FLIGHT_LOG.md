@@ -335,3 +335,13 @@
 **Status**: ✅ Committed to Source of Truth
 
 ---
+
+### [Bugfix] 2026-03-04T22:17:14.280941
+
+**Summary**: 移除 AddInventoryView.swift ScrollView 上的 .onTapGesture，改用 .scrollDismissesKeyboard(.interactively)，修复增加库存界面点击圆圈选色后立即取消选中的bug
+
+**Risk Analysis**: Low - 仅移除了一个手势识别器并更改键盘收起方式，不影响其他功能
+
+**Status**: ✅ Committed to Source of Truth
+
+---

@@ -8,3 +8,4 @@ local-external-files/
 
 # Xcode user-specific files
 BeadInventory.xcodeproj/xcuserdata/*/xcdebugger/
+.gstack/

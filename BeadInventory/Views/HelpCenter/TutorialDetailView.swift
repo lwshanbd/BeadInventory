@@ -17,7 +17,6 @@ struct TutorialDetailView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    // 标题区域
                     HStack(spacing: 12) {
                         Image(systemName: section.icon)
                             .font(.title)
@@ -38,7 +37,6 @@ struct TutorialDetailView: View {
                     .padding(.horizontal)
                     .padding(.top, 8)
 
-                    // 步骤列表
                     ForEach(Array(section.steps.enumerated()), id: \.element.id) { index, step in
                         StepCardView(step: step, index: index + 1, isHighlighted: step.id == highlightedStepId)
                             .id(step.id)
@@ -57,15 +55,7 @@ struct TutorialDetailView: View {
     private func scrollToHighlight(proxy: ScrollViewProxy) {
         guard let highlight = highlightStep else { return }
 
-        var targetStep: TutorialStep?
-        switch highlight {
-        case .scanAPISetup:
-            targetStep = section.steps.first { $0.searchKeywords.contains("API") }
-        case .scanCrop:
-            targetStep = section.steps.first { $0.searchKeywords.contains("裁切") }
-        default:
-            break
-        }
+        let targetStep = section.steps.first { $0.anchor == highlight }
 
         if let step = targetStep {
             highlightedStepId = step.id
@@ -87,7 +77,6 @@ struct StepCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // 步骤编号 + 标题
             HStack(alignment: .top, spacing: 12) {
                 Text("\(index)")
                     .font(.caption)
@@ -108,7 +97,6 @@ struct StepCardView: View {
                 }
             }
 
-            // 教程图片
             if let imageName = step.imageName {
                 Image(imageName)
                     .resizable()
@@ -117,13 +105,12 @@ struct StepCardView: View {
                     .padding(.leading, 36)
             }
 
-            // 操作按钮
-            if let actionLabel = step.actionLabel, let dest = step.actionDestination {
+            if let action = step.action {
                 NavigationLink {
-                    actionDestinationView(for: dest)
+                    actionDestinationView(for: action.destination)
                 } label: {
                     HStack(spacing: 4) {
-                        Text(String(localized: String.LocalizationValue(actionLabel)))
+                        Text(String(localized: String.LocalizationValue(action.labelKey)))
                         Image(systemName: "chevron.right")
                             .font(.caption2)
                     }
@@ -149,10 +136,8 @@ struct StepCardView: View {
     @ViewBuilder
     private func actionDestinationView(for destination: HelpDestination) -> some View {
         switch destination {
-        case .scanAPISetup, .scan:
-            TutorialDetailView(section: TutorialContent.scan, highlightStep: .scanAPISetup)
-        case .scanCrop:
-            TutorialDetailView(section: TutorialContent.scan, highlightStep: .scanCrop)
+        case .scan:
+            TutorialDetailView(section: TutorialContent.scan)
         case .quickStart:
             TutorialDetailView(section: TutorialContent.quickStart)
         case .inventory:
@@ -163,6 +148,8 @@ struct StepCardView: View {
             TutorialDetailView(section: TutorialContent.colorTools)
         case .data:
             TutorialDetailView(section: TutorialContent.dataAndSync)
+        case .scanAPISetup:
+            TutorialDetailView(section: TutorialContent.scan, highlightStep: .scanAPISetup)
         case .faq:
             FAQView()
         }

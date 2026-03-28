@@ -14,7 +14,6 @@ enum HelpDestination: Hashable {
     case inventory
     case scan
     case scanAPISetup
-    case scanCrop
     case plans
     case colorConverter
     case data
@@ -26,7 +25,6 @@ struct TutorialSection: Identifiable {
     let icon: String
     let titleKey: String
     let subtitleKey: String
-    let destination: HelpDestination
     let searchKeywords: [String]
     let steps: [TutorialStep]
 
@@ -39,22 +37,27 @@ struct TutorialSection: Identifiable {
     }
 }
 
+struct StepAction {
+    let labelKey: String
+    let destination: HelpDestination
+}
+
 struct TutorialStep: Identifiable {
     let id = UUID()
     let titleKey: String
     let descriptionKey: String
     let imageName: String?
     let searchKeywords: [String]
-    let actionLabel: String?
-    let actionDestination: HelpDestination?
+    let anchor: HelpDestination?
+    let action: StepAction?
 
-    init(titleKey: String, descriptionKey: String, imageName: String? = nil, searchKeywords: [String] = [], actionLabel: String? = nil, actionDestination: HelpDestination? = nil) {
+    init(titleKey: String, descriptionKey: String, imageName: String? = nil, searchKeywords: [String] = [], anchor: HelpDestination? = nil, action: StepAction? = nil) {
         self.titleKey = titleKey
         self.descriptionKey = descriptionKey
         self.imageName = imageName
         self.searchKeywords = searchKeywords
-        self.actionLabel = actionLabel
-        self.actionDestination = actionDestination
+        self.anchor = anchor
+        self.action = action
     }
 
     var localizedTitle: String {
@@ -83,7 +86,7 @@ struct FAQItem: Identifiable {
 
 // MARK: - 内容
 
-struct TutorialContent {
+enum TutorialContent {
 
     static let sections: [TutorialSection] = [
         quickStart,
@@ -100,7 +103,6 @@ struct TutorialContent {
         icon: "rocket.fill",
         titleKey: "help.quickstart.title",
         subtitleKey: "help.quickstart.subtitle",
-        destination: .quickStart,
         searchKeywords: ["快速开始", "新手", "入门", "quick start", "getting started", "beginner"],
         steps: [
             TutorialStep(
@@ -117,8 +119,7 @@ struct TutorialContent {
                 titleKey: "help.quickstart.step3.title",
                 descriptionKey: "help.quickstart.step3.description",
                 searchKeywords: ["扫描", "图纸", "scan", "image", "recognize"],
-                actionLabel: "help.quickstart.step3.action",
-                actionDestination: .scanAPISetup
+                action: StepAction(labelKey: "help.quickstart.step3.action", destination: .scan)
             ),
             TutorialStep(
                 titleKey: "help.quickstart.step4.title",
@@ -134,7 +135,6 @@ struct TutorialContent {
         icon: "square.grid.3x3.fill",
         titleKey: "help.inventory.title",
         subtitleKey: "help.inventory.subtitle",
-        destination: .inventory,
         searchKeywords: ["库存", "管理", "色号", "inventory", "stock", "manage"],
         steps: [
             TutorialStep(
@@ -171,7 +171,6 @@ struct TutorialContent {
         icon: "doc.text.viewfinder",
         titleKey: "help.scan.title",
         subtitleKey: "help.scan.subtitle",
-        destination: .scan,
         searchKeywords: ["扫描", "识别", "AI", "图纸", "scan", "recognize", "image"],
         steps: [
             TutorialStep(
@@ -183,8 +182,7 @@ struct TutorialContent {
                 titleKey: "help.scan.apisetup.title",
                 descriptionKey: "help.scan.apisetup.description",
                 searchKeywords: ["API", "配置", "设置", "本地模型", "云端", "configure", "setup", "local model", "cloud", "key", "Kimi", "OpenAI", "Anthropic"],
-                actionLabel: "help.scan.apisetup.action",
-                actionDestination: .scanAPISetup
+                anchor: .scanAPISetup
             ),
             TutorialStep(
                 titleKey: "help.scan.localmodel.title",
@@ -221,7 +219,6 @@ struct TutorialContent {
         icon: "calendar.badge.clock",
         titleKey: "help.plans.title",
         subtitleKey: "help.plans.subtitle",
-        destination: .plans,
         searchKeywords: ["计划", "项目", "plan", "project"],
         steps: [
             TutorialStep(
@@ -258,7 +255,6 @@ struct TutorialContent {
         icon: "paintpalette.fill",
         titleKey: "help.colortools.title",
         subtitleKey: "help.colortools.subtitle",
-        destination: .colorConverter,
         searchKeywords: ["色号", "转换", "工具", "color", "convert", "tool"],
         steps: [
             TutorialStep(
@@ -285,7 +281,6 @@ struct TutorialContent {
         icon: "externaldrive.badge.icloud",
         titleKey: "help.data.title",
         subtitleKey: "help.data.subtitle",
-        destination: .data,
         searchKeywords: ["数据", "同步", "备份", "iCloud", "data", "sync", "backup"],
         steps: [
             TutorialStep(
@@ -314,56 +309,27 @@ struct TutorialContent {
     // MARK: FAQ
 
     static let faqItems: [FAQItem] = [
-        FAQItem(
-            questionKey: "help.faq.scanaccuracy.question",
-            answerKey: "help.faq.scanaccuracy.answer",
-            searchKeywords: ["扫描", "识别", "不准", "scan", "accuracy", "inaccurate"]
-        ),
-        FAQItem(
-            questionKey: "help.faq.dataloss.question",
-            answerKey: "help.faq.dataloss.answer",
-            searchKeywords: ["数据", "丢失", "安全", "data", "loss", "safe"]
-        ),
-        FAQItem(
-            questionKey: "help.faq.multisync.question",
-            answerKey: "help.faq.multisync.answer",
-            searchKeywords: ["多设备", "同步", "multi-device", "sync"]
-        ),
-        FAQItem(
-            questionKey: "help.faq.whatisapi.question",
-            answerKey: "help.faq.whatisapi.answer",
-            searchKeywords: ["API", "什么", "为什么", "配置", "what", "why", "configure"]
-        ),
-        FAQItem(
-            questionKey: "help.faq.localvscloud.question",
-            answerKey: "help.faq.localvscloud.answer",
-            searchKeywords: ["本地", "云端", "区别", "local", "cloud", "difference"]
-        ),
-        FAQItem(
-            questionKey: "help.faq.brands.question",
-            answerKey: "help.faq.brands.answer",
-            searchKeywords: ["品牌", "支持", "MARD", "vivid", "brand", "support"]
-        ),
-        FAQItem(
-            questionKey: "help.faq.contact.question",
-            answerKey: "help.faq.contact.answer",
-            searchKeywords: ["联系", "反馈", "开发者", "contact", "feedback", "developer"]
-        )
+        FAQItem(questionKey: "help.faq.scanaccuracy.question", answerKey: "help.faq.scanaccuracy.answer", searchKeywords: ["扫描", "识别", "不准", "scan", "accuracy", "inaccurate"]),
+        FAQItem(questionKey: "help.faq.dataloss.question", answerKey: "help.faq.dataloss.answer", searchKeywords: ["数据", "丢失", "安全", "data", "loss", "safe"]),
+        FAQItem(questionKey: "help.faq.multisync.question", answerKey: "help.faq.multisync.answer", searchKeywords: ["多设备", "同步", "multi-device", "sync"]),
+        FAQItem(questionKey: "help.faq.whatisapi.question", answerKey: "help.faq.whatisapi.answer", searchKeywords: ["API", "什么", "为什么", "配置", "what", "why", "configure"]),
+        FAQItem(questionKey: "help.faq.localvscloud.question", answerKey: "help.faq.localvscloud.answer", searchKeywords: ["本地", "云端", "区别", "local", "cloud", "difference"]),
+        FAQItem(questionKey: "help.faq.brands.question", answerKey: "help.faq.brands.answer", searchKeywords: ["品牌", "支持", "MARD", "vivid", "brand", "support"]),
+        FAQItem(questionKey: "help.faq.contact.question", answerKey: "help.faq.contact.answer", searchKeywords: ["联系", "反馈", "开发者", "contact", "feedback", "developer"])
     ]
 
     // MARK: - 搜索
 
     static func search(query: String) -> [TutorialStep] {
         guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
-        let q = query.lowercased()
 
         var results: [TutorialStep] = []
         for section in sections {
             for step in section.steps {
-                let matchesTitle = step.localizedTitle.localizedCaseInsensitiveContains(q)
-                let matchesDescription = step.localizedDescription.localizedCaseInsensitiveContains(q)
-                let matchesKeywords = step.searchKeywords.contains { $0.localizedCaseInsensitiveContains(q) }
-                let matchesSectionKeywords = section.searchKeywords.contains { $0.localizedCaseInsensitiveContains(q) }
+                let matchesTitle = step.localizedTitle.localizedCaseInsensitiveContains(query)
+                let matchesDescription = step.localizedDescription.localizedCaseInsensitiveContains(query)
+                let matchesKeywords = step.searchKeywords.contains { $0.localizedCaseInsensitiveContains(query) }
+                let matchesSectionKeywords = section.searchKeywords.contains { $0.localizedCaseInsensitiveContains(query) }
 
                 if matchesTitle || matchesDescription || matchesKeywords || matchesSectionKeywords {
                     results.append(step)
@@ -375,12 +341,11 @@ struct TutorialContent {
 
     static func searchFAQ(query: String) -> [FAQItem] {
         guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return faqItems }
-        let q = query.lowercased()
 
         return faqItems.filter { item in
-            item.localizedQuestion.localizedCaseInsensitiveContains(q) ||
-            item.localizedAnswer.localizedCaseInsensitiveContains(q) ||
-            item.searchKeywords.contains { $0.localizedCaseInsensitiveContains(q) }
+            item.localizedQuestion.localizedCaseInsensitiveContains(query) ||
+            item.localizedAnswer.localizedCaseInsensitiveContains(query) ||
+            item.searchKeywords.contains { $0.localizedCaseInsensitiveContains(query) }
         }
     }
 }

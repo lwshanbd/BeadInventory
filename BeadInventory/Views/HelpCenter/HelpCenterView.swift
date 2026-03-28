@@ -11,6 +11,7 @@ struct HelpCenterView: View {
     var initialDestination: HelpDestination? = nil
 
     @State private var searchText = ""
+    @State private var didNavigateInitial = false
 
     private var searchResults: [TutorialStep] {
         TutorialContent.search(query: searchText)
@@ -28,8 +29,20 @@ struct HelpCenterView: View {
                 searchResultsList
             }
         }
-        .navigationTitle("帮助与教程")
-        .searchable(text: $searchText, prompt: "搜索帮助内容")
+        .navigationTitle("help.center.title")
+        .searchable(text: $searchText, prompt: Text("help.center.search.prompt"))
+        .navigationDestination(isPresented: $didNavigateInitial) {
+            if let dest = initialDestination {
+                destinationView(for: dest)
+            }
+        }
+        .onAppear {
+            if initialDestination != nil && !didNavigateInitial {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    didNavigateInitial = true
+                }
+            }
+        }
     }
 
     // MARK: - Section 列表
@@ -60,8 +73,8 @@ struct HelpCenterView: View {
             } label: {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("常见问题")
-                        Text("解答你的疑惑")
+                        Text("help.center.faq.title")
+                        Text("help.center.faq.subtitle")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -78,7 +91,7 @@ struct HelpCenterView: View {
     @ViewBuilder
     private var searchResultsList: some View {
         if !searchResults.isEmpty {
-            Section("教程") {
+            Section("help.center.section.tutorials") {
                 ForEach(searchResults) { step in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(step.localizedTitle)
@@ -95,7 +108,7 @@ struct HelpCenterView: View {
         }
 
         if !faqResults.isEmpty {
-            Section("常见问题") {
+            Section("help.center.faq.title") {
                 ForEach(faqResults) { item in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(item.localizedQuestion)
@@ -115,16 +128,48 @@ struct HelpCenterView: View {
             ContentUnavailableView.search(text: searchText)
         }
     }
+
+    // MARK: - Deep-link 目标视图
+
+    @ViewBuilder
+    private func destinationView(for destination: HelpDestination) -> some View {
+        switch destination {
+        case .quickStart:
+            TutorialDetailView(section: TutorialContent.quickStart)
+        case .inventory:
+            TutorialDetailView(section: TutorialContent.inventory)
+        case .scan:
+            TutorialDetailView(section: TutorialContent.scan)
+        case .scanAPISetup:
+            TutorialDetailView(section: TutorialContent.scan, highlightStep: .scanAPISetup)
+        case .plans:
+            TutorialDetailView(section: TutorialContent.plans)
+        case .colorConverter:
+            TutorialDetailView(section: TutorialContent.colorTools)
+        case .data:
+            TutorialDetailView(section: TutorialContent.dataAndSync)
+        case .faq:
+            FAQView()
+        }
+    }
 }
 
 // MARK: - 帮助中心导航容器（用于 sheet 弹出场景）
 
 struct HelpCenterNavigationView: View {
     var initialDestination: HelpDestination? = nil
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             HelpCenterView(initialDestination: initialDestination)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("help.center.done") {
+                            dismiss()
+                        }
+                    }
+                }
         }
     }
 }

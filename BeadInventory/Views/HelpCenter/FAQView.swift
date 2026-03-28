@@ -24,7 +24,7 @@ struct FAQView: View {
                 }
             }
         }
-        .navigationTitle("常见问题")
+        .navigationTitle("help.center.faq.title")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

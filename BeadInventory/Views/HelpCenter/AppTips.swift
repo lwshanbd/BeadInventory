@@ -11,10 +11,10 @@ import TipKit
 
 struct ScanTip: Tip {
     var title: Text {
-        Text("AI 智能识别")
+        Text("tip.scan.title")
     }
     var message: Text? {
-        Text("拍照或选择色号统计图片，AI 自动识别色号和数量")
+        Text("tip.scan.message")
     }
     var image: Image? {
         Image(systemName: "doc.text.viewfinder")
@@ -26,10 +26,10 @@ struct APISetupTip: Tip {
     static var hasConfiguredAPI: Bool = false
 
     var title: Text {
-        Text("先设置 AI 识别方式")
+        Text("tip.apisetup.title")
     }
     var message: Text? {
-        Text("需要先配置本地模型或云端 API 才能使用扫描功能")
+        Text("tip.apisetup.message")
     }
     var image: Image? {
         Image(systemName: "gearshape.fill")
@@ -44,10 +44,10 @@ struct APISetupTip: Tip {
 
 struct PlanMergeTip: Tip {
     var title: Text {
-        Text("合并计划更方便")
+        Text("tip.planmerge.title")
     }
     var message: Text? {
-        Text("选中多个计划可以合并，一次性补豆更省心")
+        Text("tip.planmerge.message")
     }
     var image: Image? {
         Image(systemName: "arrow.triangle.merge")
@@ -59,10 +59,10 @@ struct ReplenishTip: Tip {
     static var hasUsedReplenish: Bool = false
 
     var title: Text {
-        Text("试试补豆建议")
+        Text("tip.replenish.title")
     }
     var message: Text? {
-        Text("选中计划后点击「补豆建议」，自动计算每种颜色需要补多少")
+        Text("tip.replenish.message")
     }
     var image: Image? {
         Image(systemName: "cart.fill")
@@ -77,10 +77,10 @@ struct ReplenishTip: Tip {
 
 struct ColorConverterTip: Tip {
     var title: Text {
-        Text("不确定色号对应关系？")
+        Text("tip.colorconverter.title")
     }
     var message: Text? {
-        Text("去「更多」→「色号转换」查看不同品牌的色号对照")
+        Text("tip.colorconverter.message")
     }
     var image: Image? {
         Image(systemName: "paintpalette.fill")
@@ -91,10 +91,10 @@ struct ColorConverterTip: Tip {
 
 struct BackupTip: Tip {
     var title: Text {
-        Text("记得备份数据")
+        Text("tip.backup.title")
     }
     var message: Text? {
-        Text("定期备份可以防止数据意外丢失，去「数据与备份」导出")
+        Text("tip.backup.message")
     }
     var image: Image? {
         Image(systemName: "externaldrive.fill")
@@ -103,10 +103,10 @@ struct BackupTip: Tip {
 
 struct ICloudSyncTip: Tip {
     var title: Text {
-        Text("开启 iCloud 同步")
+        Text("tip.icloudsync.title")
     }
     var message: Text? {
-        Text("开启后数据自动在多设备之间同步备份")
+        Text("tip.icloudsync.message")
     }
     var image: Image? {
         Image(systemName: "icloud.fill")

@@ -21,8 +21,8 @@ struct MoreView: View {
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("帮助与教程")
-                                Text("功能指南、使用技巧与常见问题")
+                                Text("help.center.entry.title")
+                                Text("help.center.entry.subtitle")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -31,6 +31,9 @@ struct MoreView: View {
                                 .foregroundColor(.accentColor)
                         }
                     }
+
+                    TipView(BackupTip())
+                    TipView(ICloudSyncTip())
                 }
 
                 Section("工作台") {
