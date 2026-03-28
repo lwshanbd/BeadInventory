@@ -10,6 +10,7 @@ import SwiftData
 import CloudKit
 import CoreData
 import Combine
+import TipKit
 
 @main
 struct BeadInventoryApp: App {
@@ -97,6 +98,12 @@ struct BeadInventoryApp: App {
         // 初始化 HistoryManager
         HistoryManager.shared.setModelContext(container.mainContext)
         HistoryManager.shared.inventoryManager = manager
+
+        // 初始化 TipKit
+        try? Tips.configure([
+            .displayFrequency(.daily),
+            .datastoreLocation(.applicationDefault)
+        ])
     }
 
     var body: some Scene {
