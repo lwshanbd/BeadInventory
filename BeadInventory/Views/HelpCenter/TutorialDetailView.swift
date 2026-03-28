@@ -119,11 +119,17 @@ struct StepCardView: View {
 
             // 操作按钮
             if let actionLabel = step.actionLabel, let dest = step.actionDestination {
-                NavigationLink(value: dest) {
-                    Text(String(localized: String.LocalizationValue(actionLabel)))
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.accentColor)
+                NavigationLink {
+                    actionDestinationView(for: dest)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(String(localized: String.LocalizationValue(actionLabel)))
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.accentColor)
                 }
                 .padding(.leading, 36)
             }
@@ -138,5 +144,27 @@ struct StepCardView: View {
                 .stroke(isHighlighted ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 1.5)
         )
         .padding(.horizontal)
+    }
+
+    @ViewBuilder
+    private func actionDestinationView(for destination: HelpDestination) -> some View {
+        switch destination {
+        case .scanAPISetup, .scan:
+            TutorialDetailView(section: TutorialContent.scan, highlightStep: .scanAPISetup)
+        case .scanCrop:
+            TutorialDetailView(section: TutorialContent.scan, highlightStep: .scanCrop)
+        case .quickStart:
+            TutorialDetailView(section: TutorialContent.quickStart)
+        case .inventory:
+            TutorialDetailView(section: TutorialContent.inventory)
+        case .plans:
+            TutorialDetailView(section: TutorialContent.plans)
+        case .colorConverter:
+            TutorialDetailView(section: TutorialContent.colorTools)
+        case .data:
+            TutorialDetailView(section: TutorialContent.dataAndSync)
+        case .faq:
+            FAQView()
+        }
     }
 }
