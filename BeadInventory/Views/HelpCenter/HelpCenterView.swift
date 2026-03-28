@@ -37,7 +37,9 @@ struct HelpCenterView: View {
     @ViewBuilder
     private var sectionList: some View {
         ForEach(TutorialContent.sections) { section in
-            NavigationLink(value: section.destination) {
+            NavigationLink {
+                TutorialDetailView(section: section)
+            } label: {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(section.localizedTitle)
@@ -53,7 +55,9 @@ struct HelpCenterView: View {
         }
 
         Section {
-            NavigationLink(value: HelpDestination.faq) {
+            NavigationLink {
+                FAQView()
+            } label: {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("常见问题")
@@ -113,7 +117,7 @@ struct HelpCenterView: View {
     }
 }
 
-// MARK: - 帮助中心导航容器
+// MARK: - 帮助中心导航容器（用于 sheet 弹出场景）
 
 struct HelpCenterNavigationView: View {
     var initialDestination: HelpDestination? = nil
@@ -121,29 +125,6 @@ struct HelpCenterNavigationView: View {
     var body: some View {
         NavigationStack {
             HelpCenterView(initialDestination: initialDestination)
-                .navigationDestination(for: HelpDestination.self) { destination in
-                    destinationView(for: destination)
-                }
-        }
-    }
-
-    @ViewBuilder
-    private func destinationView(for destination: HelpDestination) -> some View {
-        switch destination {
-        case .quickStart:
-            TutorialDetailView(section: TutorialContent.quickStart)
-        case .inventory:
-            TutorialDetailView(section: TutorialContent.inventory)
-        case .scan, .scanAPISetup, .scanCrop:
-            TutorialDetailView(section: TutorialContent.scan, highlightStep: destination)
-        case .plans:
-            TutorialDetailView(section: TutorialContent.plans)
-        case .colorConverter:
-            TutorialDetailView(section: TutorialContent.colorTools)
-        case .data:
-            TutorialDetailView(section: TutorialContent.dataAndSync)
-        case .faq:
-            FAQView()
         }
     }
 }

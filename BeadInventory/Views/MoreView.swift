@@ -18,9 +18,6 @@ struct MoreView: View {
                 Section {
                     NavigationLink {
                         HelpCenterView()
-                            .navigationDestination(for: HelpDestination.self) { destination in
-                                helpDestinationView(for: destination)
-                            }
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
@@ -267,25 +264,6 @@ struct MoreView: View {
         }
     }
 
-    @ViewBuilder
-    private func helpDestinationView(for destination: HelpDestination) -> some View {
-        switch destination {
-        case .quickStart:
-            TutorialDetailView(section: TutorialContent.quickStart)
-        case .inventory:
-            TutorialDetailView(section: TutorialContent.inventory)
-        case .scan, .scanAPISetup, .scanCrop:
-            TutorialDetailView(section: TutorialContent.scan, highlightStep: destination)
-        case .plans:
-            TutorialDetailView(section: TutorialContent.plans)
-        case .colorConverter:
-            TutorialDetailView(section: TutorialContent.colorTools)
-        case .data:
-            TutorialDetailView(section: TutorialContent.dataAndSync)
-        case .faq:
-            FAQView()
-        }
-    }
 }
 
 struct DataToolsView: View {
