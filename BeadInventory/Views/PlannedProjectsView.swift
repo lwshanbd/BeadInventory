@@ -2695,11 +2695,11 @@ struct ReplenishSuggestionSheet: View {
         }
     }
 
-    // 用户拥有的所有色系（根据已创建的品牌）
+    // 选中项目涉及的色系（且有对应品牌的）
     var availableColorSystems: [ColorSystem] {
-        let systems = Set(inventoryManager.brands.map { $0.colorSystem })
-        // 按固定顺序返回
-        return ColorSystem.allCases.filter { systems.contains($0) }
+        let projectSystems = Set(selectedProjects.map { $0.colorSystem })
+        let brandSystems = Set(inventoryManager.brands.map { $0.colorSystem })
+        return ColorSystem.allCases.filter { projectSystems.contains($0) && brandSystems.contains($0) }
     }
 
     // 根据选中的色系筛选品牌
@@ -3204,10 +3204,11 @@ struct DirectPurchaseSheet: View {
         }
     }
 
-    // 用户拥有的所有色系（根据已创建的品牌）
+    // 选中项目涉及的色系（且有对应品牌的）
     var availableColorSystems: [ColorSystem] {
-        let systems = Set(inventoryManager.brands.map { $0.colorSystem })
-        return ColorSystem.allCases.filter { systems.contains($0) }
+        let projectSystems = Set(selectedProjects.map { $0.colorSystem })
+        let brandSystems = Set(inventoryManager.brands.map { $0.colorSystem })
+        return ColorSystem.allCases.filter { projectSystems.contains($0) && brandSystems.contains($0) }
     }
 
     // 根据选中的色系筛选品牌
