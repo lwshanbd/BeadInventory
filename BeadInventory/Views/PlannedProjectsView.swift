@@ -2679,7 +2679,6 @@ struct ReplenishSuggestionSheet: View {
     @State private var selectedBrandId: UUID?
     @State private var showCopySuccess = false
     @State private var showExportSuccess = false
-    @State private var showEmptyExportWarning = false
     @State private var freeShippingThreshold: Int = 50  // 包邮额度（以基准单位计）
     @State private var replenishQuantities: [String: Int] = [:]  // 每个色号的补豆数量（以基准单位计）
     @State private var selectedColorSystemFilter: ColorSystem = .mard  // 色系筛选
@@ -2910,13 +2909,7 @@ struct ReplenishSuggestionSheet: View {
             }
         }
 
-        guard !items.isEmpty else {
-            showEmptyExportWarning = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                showEmptyExportWarning = false
-            }
-            return
-        }
+        guard !items.isEmpty else { return }
 
         // 添加到运输中
         inventoryManager.addPurchaseRecord(
@@ -3015,11 +3008,13 @@ struct ReplenishSuggestionSheet: View {
                                     // 按比例换算已有数量，保留用户手动调整
                                     var rescaled: [String: Int] = [:]
                                     for (code, qty) in replenishQuantities {
-                                        rescaled[code] = qty > 0 ? max(1, (qty * oldValue + newValue - 1) / newValue) : 0
+                                        rescaled[code] = qty > 0 ? (qty * oldValue + newValue - 1) / newValue : 0
                                     }
                                     replenishQuantities = rescaled
                                     // 同步换算包邮额度
-                                    freeShippingThreshold = max(1, (freeShippingThreshold * oldValue + newValue - 1) / newValue)
+                                    freeShippingThreshold = freeShippingThreshold > 0
+                                        ? (freeShippingThreshold * oldValue + newValue - 1) / newValue
+                                        : 0
                                 }
                             }
 
@@ -3148,21 +3143,6 @@ struct ReplenishSuggestionSheet: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 40)
-                        }
-
-                        // 空导出提示
-                        if showEmptyExportWarning {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
-                                Text("所有色号补豆数量为 0，无法导出")
-                                    .font(.subheadline)
-                                    .foregroundColor(.orange)
-                            }
-                            .padding()
-                            .background(Color.orange.opacity(0.1))
-                            .cornerRadius(10)
-                            .padding(.horizontal)
                         }
 
                         // 操作按钮
@@ -3507,11 +3487,13 @@ struct DirectPurchaseSheet: View {
                                     // 按比例换算已有数量，保留用户手动调整
                                     var rescaled: [String: Int] = [:]
                                     for (code, qty) in purchaseQuantities {
-                                        rescaled[code] = qty > 0 ? max(1, (qty * oldValue + newValue - 1) / newValue) : 0
+                                        rescaled[code] = qty > 0 ? (qty * oldValue + newValue - 1) / newValue : 0
                                     }
                                     purchaseQuantities = rescaled
                                     // 同步换算包邮额度
-                                    freeShippingThreshold = max(1, (freeShippingThreshold * oldValue + newValue - 1) / newValue)
+                                    freeShippingThreshold = freeShippingThreshold > 0
+                                        ? (freeShippingThreshold * oldValue + newValue - 1) / newValue
+                                        : 0
                                 }
                             }
 
