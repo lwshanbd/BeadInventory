@@ -2679,6 +2679,7 @@ struct ReplenishSuggestionSheet: View {
     @State private var selectedBrandId: UUID?
     @State private var showCopySuccess = false
     @State private var showExportSuccess = false
+    @State private var showEmptyExportWarning = false
     @State private var freeShippingThreshold: Int = 50  // 包邮额度（以基准单位计）
     @State private var replenishQuantities: [String: Int] = [:]  // 每个色号的补豆数量（以基准单位计）
     @State private var selectedColorSystemFilter: ColorSystem = .mard  // 色系筛选
@@ -2851,12 +2852,12 @@ struct ReplenishSuggestionSheet: View {
         return sortedUsage.prefix(20).map { HighUsageColorInfo(colorCode: $0.key, totalUsage: $0.value) }
     }
 
-    // 已选补豆总量（以10g为单位）
+    // 已选补豆总量（以基准单位计）
     var totalSelectedQuantity: Int {
         replenishQuantities.values.reduce(0, +)
     }
 
-    // 还差多少包邮（以10g为单位）
+    // 还差多少包邮（以基准单位计）
     var remainingForFreeShipping: Int {
         max(0, freeShippingThreshold - totalSelectedQuantity)
     }
@@ -2904,12 +2905,18 @@ struct ReplenishSuggestionSheet: View {
         var items: [PurchaseItem] = []
         for (colorCode, quantity) in replenishQuantities.sorted(by: { $0.key < $1.key }) {
             if quantity > 0 {
-                // quantity 是以 unitGrams 为单位，1g = 100颗
+                // 颗数 = quantity * unitGrams * 100 = quantity * beadsPerUnit
                 items.append(PurchaseItem(colorCode: colorCode, quantity: quantity * beadsPerUnit))
             }
         }
 
-        guard !items.isEmpty else { return }
+        guard !items.isEmpty else {
+            showEmptyExportWarning = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                showEmptyExportWarning = false
+            }
+            return
+        }
 
         // 添加到运输中
         inventoryManager.addPurchaseRecord(
@@ -3003,8 +3010,16 @@ struct ReplenishSuggestionSheet: View {
                                 }
                                 .pickerStyle(.segmented)
                                 .frame(width: 200)
-                                .onChange(of: unitGrams) { _, _ in
-                                    initializeDefaultQuantities()
+                                .onChange(of: unitGrams) { oldValue, newValue in
+                                    guard oldValue != newValue, oldValue > 0, newValue > 0 else { return }
+                                    // 按比例换算已有数量，保留用户手动调整
+                                    var rescaled: [String: Int] = [:]
+                                    for (code, qty) in replenishQuantities {
+                                        rescaled[code] = qty > 0 ? max(1, (qty * oldValue + newValue - 1) / newValue) : 0
+                                    }
+                                    replenishQuantities = rescaled
+                                    // 同步换算包邮额度
+                                    freeShippingThreshold = max(1, (freeShippingThreshold * oldValue + newValue - 1) / newValue)
                                 }
                             }
 
@@ -3021,6 +3036,9 @@ struct ReplenishSuggestionSheet: View {
                                         .textFieldStyle(.roundedBorder)
                                         .frame(width: 60)
                                         .multilineTextAlignment(.center)
+                                        .onChange(of: freeShippingThreshold) { _, newValue in
+                                            if newValue < 0 { freeShippingThreshold = 0 }
+                                        }
                                     Text("×\(unitGrams)g")
                                         .font(.subheadline)
                                         .foregroundColor(.secondary)
@@ -3130,6 +3148,21 @@ struct ReplenishSuggestionSheet: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 40)
+                        }
+
+                        // 空导出提示
+                        if showEmptyExportWarning {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                Text("所有色号补豆数量为 0，无法导出")
+                                    .font(.subheadline)
+                                    .foregroundColor(.orange)
+                            }
+                            .padding()
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(10)
+                            .padding(.horizontal)
                         }
 
                         // 操作按钮
@@ -3307,17 +3340,17 @@ struct DirectPurchaseSheet: View {
         filteredUsage.reduce(0) { $0 + $1.quantity }
     }
 
-    // 已选补豆总量（以10g为单位）
+    // 已选补豆总量（以基准单位计）
     var totalSelectedQuantity: Int {
         purchaseQuantities.values.reduce(0, +)
     }
 
-    // 还差多少包邮（以10g为单位）
+    // 还差多少包邮（以基准单位计）
     var remainingForFreeShipping: Int {
         max(0, freeShippingThreshold - totalSelectedQuantity)
     }
 
-    // 初始化默认补豆数量（每个色号按用量换算为基准单位，1g≈100颗）
+    // 初始化默认补豆数量（每个色号按用量换算为基准单位，1g = 100颗）
     func initializeDefaultQuantities() {
         var quantities: [String: Int] = [:]
         let bpu = beadsPerUnit
@@ -3357,7 +3390,7 @@ struct DirectPurchaseSheet: View {
 
         // 仅导出当前品牌色系有效的色号，按 UI 排序
         let items: [PurchaseItem] = orderedPurchaseItems.map { item in
-            // quantity 是以 unitGrams 为单位，1g = 100颗
+            // 颗数 = quantity * unitGrams * 100 = quantity * beadsPerUnit
             PurchaseItem(colorCode: item.mardCode, quantity: item.quantity * beadsPerUnit)
         }
 
@@ -3469,8 +3502,16 @@ struct DirectPurchaseSheet: View {
                                 }
                                 .pickerStyle(.segmented)
                                 .frame(width: 200)
-                                .onChange(of: unitGrams) { _, _ in
-                                    initializeDefaultQuantities()
+                                .onChange(of: unitGrams) { oldValue, newValue in
+                                    guard oldValue != newValue, oldValue > 0, newValue > 0 else { return }
+                                    // 按比例换算已有数量，保留用户手动调整
+                                    var rescaled: [String: Int] = [:]
+                                    for (code, qty) in purchaseQuantities {
+                                        rescaled[code] = qty > 0 ? max(1, (qty * oldValue + newValue - 1) / newValue) : 0
+                                    }
+                                    purchaseQuantities = rescaled
+                                    // 同步换算包邮额度
+                                    freeShippingThreshold = max(1, (freeShippingThreshold * oldValue + newValue - 1) / newValue)
                                 }
                             }
 
@@ -3763,7 +3804,7 @@ struct ReplenishColorInfo {
     let inTransit: Int
     let usage: Int
     let afterDeduct: Int
-    let defaultAmount: Int  // 以10g为单位
+    let defaultAmount: Int  // 以基准单位计
 }
 
 struct HighUsageColorInfo {
@@ -3974,6 +4015,9 @@ struct ReplenishColorRow: View {
                     .frame(width: 40)
                     .multilineTextAlignment(.center)
                     .font(.subheadline.monospacedDigit())
+                    .onChange(of: quantity) { _, newValue in
+                        if newValue < 0 { quantity = 0 }
+                    }
 
                 Text("×\(unitGrams)g")
                     .font(.caption)
