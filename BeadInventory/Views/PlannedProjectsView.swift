@@ -2679,15 +2679,12 @@ struct ReplenishSuggestionSheet: View {
     @State private var selectedBrandId: UUID?
     @State private var showCopySuccess = false
     @State private var showExportSuccess = false
-    @State private var freeShippingThreshold: Int = 50  // 包邮额度（以基准单位计）
-    @State private var replenishQuantities: [String: Int] = [:]  // 每个色号的补豆数量（以基准单位计）
+    @State private var freeShippingThreshold: Int = 500  // 包邮额度（克）
+    @State private var replenishQuantities: [String: Int] = [:]  // 每个色号的补豆克数
     @State private var selectedColorSystemFilter: ColorSystem = .mard  // 色系筛选
-    @State private var unitGrams: Int = 10  // 基准单位克数（默认10g）
+    @State private var unitGrams: Int = 10  // 步进单位克数（+/- 按钮步长，默认10g）
 
     static let unitOptions = [5, 10, 20, 50]
-
-    // 每个基准单位对应的颗数（1g = 100颗）
-    var beadsPerUnit: Int { unitGrams * 100 }
 
     // 获取选中的项目列表
     var selectedProjects: [ProjectRecord] {
@@ -2788,8 +2785,8 @@ struct ReplenishSuggestionSheet: View {
 
             if afterDeduct < 0 {
                 let deficit = lowStockThreshold - afterDeduct
-                let bpu = beadsPerUnit
-                let defaultAmount = (deficit + bpu - 1) / bpu
+                let deficitGrams = (deficit + 99) / 100  // 颗转克，向上取整
+                let defaultAmount = ((deficitGrams + unitGrams - 1) / unitGrams) * unitGrams  // 对齐到步进单位
                 negativeStock.append(ReplenishColorInfo(
                     colorCode: mardCode,
                     currentStock: currentStock,
@@ -2801,8 +2798,8 @@ struct ReplenishSuggestionSheet: View {
                 processedCodes.insert(mardCode)
             } else if afterDeduct < lowStockThreshold {
                 let deficit = lowStockThreshold - afterDeduct
-                let bpu = beadsPerUnit
-                let defaultAmount = (deficit + bpu - 1) / bpu
+                let deficitGrams = (deficit + 99) / 100  // 颗转克，向上取整
+                let defaultAmount = ((deficitGrams + unitGrams - 1) / unitGrams) * unitGrams  // 对齐到步进单位
                 lowStock.append(ReplenishColorInfo(
                     colorCode: mardCode,
                     currentStock: currentStock,
@@ -2851,23 +2848,23 @@ struct ReplenishSuggestionSheet: View {
         return sortedUsage.prefix(20).map { HighUsageColorInfo(colorCode: $0.key, totalUsage: $0.value) }
     }
 
-    // 已选补豆总量（以基准单位计）
+    // 已选补豆总量（以克计）
     var totalSelectedQuantity: Int {
         replenishQuantities.values.reduce(0, +)
     }
 
-    // 还差多少包邮（以基准单位计）
+    // 还差多少包邮（以克计）
     var remainingForFreeShipping: Int {
         max(0, freeShippingThreshold - totalSelectedQuantity)
     }
 
-    // 生成 CSV 文本（克数 = quantity * unitGrams），使用品牌色号体系的显示色号
+    // 生成 CSV 文本（quantity 已为克数），使用品牌色号体系的显示色号
     var csvText: String {
         var lines: [String] = ["色号,克数"]
         for (mardCode, quantity) in replenishQuantities.sorted(by: { $0.key < $1.key }) {
             if quantity > 0 {
                 let code = displayCode(for: mardCode)
-                lines.append("\(code),\(quantity * unitGrams)")
+                lines.append("\(code),\(quantity)")
             }
         }
         return lines.joined(separator: "\n")
@@ -2900,12 +2897,11 @@ struct ReplenishSuggestionSheet: View {
         formatter.dateFormat = "M月d日补豆"
         let recordName = formatter.string(from: Date())
 
-        // 构建购买项列表
+        // 构建购买项列表（quantity 已为克数，1g = 100 颗）
         var items: [PurchaseItem] = []
         for (colorCode, quantity) in replenishQuantities.sorted(by: { $0.key < $1.key }) {
             if quantity > 0 {
-                // 颗数 = quantity * unitGrams * 100 = quantity * beadsPerUnit
-                items.append(PurchaseItem(colorCode: colorCode, quantity: quantity * beadsPerUnit))
+                items.append(PurchaseItem(colorCode: colorCode, quantity: quantity * 100))
             }
         }
 
@@ -2989,38 +2985,30 @@ struct ReplenishSuggestionSheet: View {
                     .padding(.horizontal)
 
                     if selectedBrand != nil {
-                        // 基准单位 & 包邮额度
+                        // 步进单位 & 包邮额度
                         VStack(spacing: 12) {
-                            // 基准单位选择
+                            // 步进单位选择（控制 +/- 按钮步长）
                             HStack {
-                                Text("基准单位")
-                                    .font(.subheadline)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("步进单位")
+                                        .font(.subheadline)
+                                    Text("+/- 按钮每次增减的克数")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
                                 Spacer()
-                                Picker("基准单位", selection: $unitGrams) {
+                                Picker("步进单位", selection: $unitGrams) {
                                     ForEach(Self.unitOptions, id: \.self) { g in
                                         Text("\(g)g").tag(g)
                                     }
                                 }
                                 .pickerStyle(.segmented)
                                 .frame(width: 200)
-                                .onChange(of: unitGrams) { oldValue, newValue in
-                                    guard oldValue != newValue, oldValue > 0, newValue > 0 else { return }
-                                    // 按比例换算已有数量，保留用户手动调整
-                                    var rescaled: [String: Int] = [:]
-                                    for (code, qty) in replenishQuantities {
-                                        rescaled[code] = qty > 0 ? (qty * oldValue + newValue - 1) / newValue : 0
-                                    }
-                                    replenishQuantities = rescaled
-                                    // 同步换算包邮额度
-                                    freeShippingThreshold = freeShippingThreshold > 0
-                                        ? (freeShippingThreshold * oldValue + newValue - 1) / newValue
-                                        : 0
-                                }
                             }
 
                             Divider()
 
-                            // 包邮额度输入
+                            // 包邮额度输入（克）
                             HStack {
                                 Text("包邮额度")
                                     .font(.subheadline)
@@ -3029,12 +3017,12 @@ struct ReplenishSuggestionSheet: View {
                                     TextField("", value: $freeShippingThreshold, format: .number)
                                         .keyboardType(.asciiCapableNumberPad)
                                         .textFieldStyle(.roundedBorder)
-                                        .frame(width: 60)
+                                        .frame(width: 70)
                                         .multilineTextAlignment(.center)
                                         .onChange(of: freeShippingThreshold) { _, newValue in
                                             if newValue < 0 { freeShippingThreshold = 0 }
                                         }
-                                    Text("×\(unitGrams)g")
+                                    Text("g")
                                         .font(.subheadline)
                                         .foregroundColor(.secondary)
                                 }
@@ -3051,7 +3039,7 @@ struct ReplenishSuggestionSheet: View {
                                 Text("已选补豆")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
-                                Text("\(totalSelectedQuantity)×\(unitGrams)g")
+                                Text("\(totalSelectedQuantity)g")
                                     .font(.headline)
                                     .foregroundColor(.accentColor)
                             }
@@ -3060,7 +3048,7 @@ struct ReplenishSuggestionSheet: View {
                                 Text("还差包邮")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
-                                Text(remainingForFreeShipping > 0 ? "\(remainingForFreeShipping)×\(unitGrams)g" : "已达标 ✓")
+                                Text(remainingForFreeShipping > 0 ? "\(remainingForFreeShipping)g" : "已达标 ✓")
                                     .font(.headline)
                                     .foregroundColor(remainingForFreeShipping > 0 ? .orange : .green)
                             }
@@ -3154,7 +3142,7 @@ struct ReplenishSuggestionSheet: View {
                                 } label: {
                                     HStack {
                                         Image(systemName: showExportSuccess ? "checkmark" : "shippingbox.fill")
-                                        Text(showExportSuccess ? "已添加到运输中" : "导出到运输中（\(totalSelectedQuantity)×\(unitGrams)g）")
+                                        Text(showExportSuccess ? "已添加到运输中" : "导出到运输中（\(totalSelectedQuantity)g）")
                                     }
                                     .font(.headline)
                                     .foregroundColor(.white)
@@ -3235,14 +3223,11 @@ struct DirectPurchaseSheet: View {
     @State private var showEmptyExportWarning = false  // 空导出提示
     @State private var selectedBrandId: UUID?
     @State private var selectedColorSystemFilter: ColorSystem = .mard
-    @State private var purchaseQuantities: [String: Int] = [:]  // mardCode -> 数量（以基准单位计）
-    @State private var freeShippingThreshold: Int = 50  // 包邮额度（以基准单位计）
-    @State private var unitGrams: Int = 10  // 基准单位克数（默认10g）
+    @State private var purchaseQuantities: [String: Int] = [:]  // mardCode -> 补豆克数
+    @State private var freeShippingThreshold: Int = 500  // 包邮额度（克）
+    @State private var unitGrams: Int = 10  // 步进单位克数（+/- 按钮步长，默认10g）
 
     static let unitOptions = [5, 10, 20, 50]
-
-    // 每个基准单位对应的颗数（1g = 100颗）
-    var beadsPerUnit: Int { unitGrams * 100 }
 
     // 获取选中的项目列表
     var selectedProjects: [ProjectRecord] {
@@ -3320,23 +3305,23 @@ struct DirectPurchaseSheet: View {
         filteredUsage.reduce(0) { $0 + $1.quantity }
     }
 
-    // 已选补豆总量（以基准单位计）
+    // 已选补豆总量（以克计）
     var totalSelectedQuantity: Int {
         purchaseQuantities.values.reduce(0, +)
     }
 
-    // 还差多少包邮（以基准单位计）
+    // 还差多少包邮（以克计）
     var remainingForFreeShipping: Int {
         max(0, freeShippingThreshold - totalSelectedQuantity)
     }
 
-    // 初始化默认补豆数量（每个色号按用量换算为基准单位，1g = 100颗）
+    // 初始化默认补豆克数（每个色号按用量换算为克，对齐到步进单位）
     func initializeDefaultQuantities() {
         var quantities: [String: Int] = [:]
-        let bpu = beadsPerUnit
         for item in filteredUsage {
-            let amount = max(1, (item.quantity + bpu - 1) / bpu)
-            quantities[item.mardCode] = amount
+            let rawGrams = (item.quantity + 99) / 100  // 颗转克，向上取整
+            let roundedGrams = ((rawGrams + unitGrams - 1) / unitGrams) * unitGrams
+            quantities[item.mardCode] = max(unitGrams, roundedGrams)
         }
         purchaseQuantities = quantities
     }
@@ -3349,12 +3334,12 @@ struct DirectPurchaseSheet: View {
         }
     }
 
-    // 生成 CSV 文本（克数 = quantity * unitGrams），按 UI 排序，使用品牌色号体系的显示色号
+    // 生成 CSV 文本（quantity 已为克数），按 UI 排序，使用品牌色号体系的显示色号
     var csvText: String {
         var lines: [String] = ["色号,克数"]
         for item in orderedPurchaseItems {
             let code = displayCode(for: item.mardCode)
-            lines.append("\(code),\(item.quantity * unitGrams)")
+            lines.append("\(code),\(item.quantity)")
         }
         return lines.joined(separator: "\n")
     }
@@ -3368,10 +3353,9 @@ struct DirectPurchaseSheet: View {
         formatter.dateFormat = "M月d日补豆"
         let recordName = formatter.string(from: Date())
 
-        // 仅导出当前品牌色系有效的色号，按 UI 排序
+        // 仅导出当前品牌色系有效的色号，按 UI 排序（quantity 已为克数，1g = 100 颗）
         let items: [PurchaseItem] = orderedPurchaseItems.map { item in
-            // 颗数 = quantity * unitGrams * 100 = quantity * beadsPerUnit
-            PurchaseItem(colorCode: item.mardCode, quantity: item.quantity * beadsPerUnit)
+            PurchaseItem(colorCode: item.mardCode, quantity: item.quantity * 100)
         }
 
         guard !items.isEmpty else {
@@ -3468,38 +3452,30 @@ struct DirectPurchaseSheet: View {
                     .padding(.horizontal)
 
                     if selectedBrand != nil {
-                        // 基准单位 & 包邮额度
+                        // 步进单位 & 包邮额度
                         VStack(spacing: 12) {
-                            // 基准单位选择
+                            // 步进单位选择（控制 +/- 按钮步长）
                             HStack {
-                                Text("基准单位")
-                                    .font(.subheadline)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("步进单位")
+                                        .font(.subheadline)
+                                    Text("+/- 按钮每次增减的克数")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
                                 Spacer()
-                                Picker("基准单位", selection: $unitGrams) {
+                                Picker("步进单位", selection: $unitGrams) {
                                     ForEach(Self.unitOptions, id: \.self) { g in
                                         Text("\(g)g").tag(g)
                                     }
                                 }
                                 .pickerStyle(.segmented)
                                 .frame(width: 200)
-                                .onChange(of: unitGrams) { oldValue, newValue in
-                                    guard oldValue != newValue, oldValue > 0, newValue > 0 else { return }
-                                    // 按比例换算已有数量，保留用户手动调整
-                                    var rescaled: [String: Int] = [:]
-                                    for (code, qty) in purchaseQuantities {
-                                        rescaled[code] = qty > 0 ? (qty * oldValue + newValue - 1) / newValue : 0
-                                    }
-                                    purchaseQuantities = rescaled
-                                    // 同步换算包邮额度
-                                    freeShippingThreshold = freeShippingThreshold > 0
-                                        ? (freeShippingThreshold * oldValue + newValue - 1) / newValue
-                                        : 0
-                                }
                             }
 
                             Divider()
 
-                            // 包邮额度
+                            // 包邮额度（克）
                             HStack {
                                 Text("包邮额度")
                                     .font(.subheadline)
@@ -3508,12 +3484,12 @@ struct DirectPurchaseSheet: View {
                                     TextField("", value: $freeShippingThreshold, format: .number)
                                         .keyboardType(.asciiCapableNumberPad)
                                         .textFieldStyle(.roundedBorder)
-                                        .frame(width: 60)
+                                        .frame(width: 70)
                                         .multilineTextAlignment(.center)
                                         .onChange(of: freeShippingThreshold) { _, newValue in
                                             if newValue < 0 { freeShippingThreshold = 0 }
                                         }
-                                    Text("×\(unitGrams)g")
+                                    Text("g")
                                         .font(.subheadline)
                                         .foregroundColor(.secondary)
                                 }
@@ -3530,7 +3506,7 @@ struct DirectPurchaseSheet: View {
                                 Text("已选补豆")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
-                                Text("\(totalSelectedQuantity)×\(unitGrams)g")
+                                Text("\(totalSelectedQuantity)g")
                                     .font(.headline)
                                     .foregroundColor(.green)
                             }
@@ -3539,7 +3515,7 @@ struct DirectPurchaseSheet: View {
                                 Text("还差包邮")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
-                                Text(remainingForFreeShipping > 0 ? "\(remainingForFreeShipping)×\(unitGrams)g" : "已达标 ✓")
+                                Text(remainingForFreeShipping > 0 ? "\(remainingForFreeShipping)g" : "已达标 ✓")
                                     .font(.headline)
                                     .foregroundColor(remainingForFreeShipping > 0 ? .orange : .green)
                             }
@@ -3621,7 +3597,7 @@ struct DirectPurchaseSheet: View {
                             } label: {
                                 HStack {
                                     Image(systemName: hasExported ? "checkmark" : "shippingbox.fill")
-                                    Text(hasExported ? "已添加到运输中" : "导出到运输中（\(totalSelectedQuantity)×\(unitGrams)g）")
+                                    Text(hasExported ? "已添加到运输中" : "导出到运输中（\(totalSelectedQuantity)g）")
                                 }
                                 .font(.headline)
                                 .foregroundColor(.white)
@@ -3693,7 +3669,7 @@ struct DirectPurchaseSheet: View {
 struct DirectPurchaseColorRow: View {
     let colorCode: String  // 内部 mardCode
     let neededQuantity: Int  // 计划需要的颗数
-    @Binding var quantity: Int  // 补豆数量（以基准单位计）
+    @Binding var quantity: Int  // 补豆数量（以克计）
     var colorSystem: ColorSystem = .mard
     var unitGrams: Int = 10
     @EnvironmentObject var inventoryManager: InventoryManager
@@ -3731,10 +3707,10 @@ struct DirectPurchaseColorRow: View {
 
             Spacer()
 
-            // 数量调节器
+            // 数量调节器（quantity 为克数，+/- 按步进单位增减）
             HStack(spacing: 4) {
                 Button {
-                    if quantity > 0 { quantity -= 1 }
+                    quantity = max(0, quantity - unitGrams)
                 } label: {
                     Image(systemName: "minus.circle.fill")
                         .font(.title3)
@@ -3745,19 +3721,19 @@ struct DirectPurchaseColorRow: View {
                 TextField("", value: $quantity, format: .number)
                     .keyboardType(.asciiCapableNumberPad)
                     .textFieldStyle(.roundedBorder)
-                    .frame(width: 40)
+                    .frame(width: 50)
                     .multilineTextAlignment(.center)
                     .font(.subheadline.monospacedDigit())
                     .onChange(of: quantity) { _, newValue in
                         if newValue < 0 { quantity = 0 }
                     }
 
-                Text("×\(unitGrams)g")
+                Text("g")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
                 Button {
-                    quantity += 1
+                    quantity += unitGrams
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
@@ -3786,7 +3762,7 @@ struct ReplenishColorInfo {
     let inTransit: Int
     let usage: Int
     let afterDeduct: Int
-    let defaultAmount: Int  // 以基准单位计
+    let defaultAmount: Int  // 以克计
 }
 
 struct HighUsageColorInfo {
@@ -3980,10 +3956,10 @@ struct ReplenishColorRow: View {
 
             Spacer()
 
-            // 数量调节器
+            // 数量调节器（quantity 为克数，+/- 按步进单位增减）
             HStack(spacing: 4) {
                 Button {
-                    if quantity > 0 { quantity -= 1 }
+                    quantity = max(0, quantity - unitGrams)
                 } label: {
                     Image(systemName: "minus.circle.fill")
                         .font(.title3)
@@ -3994,19 +3970,19 @@ struct ReplenishColorRow: View {
                 TextField("", value: $quantity, format: .number)
                     .keyboardType(.asciiCapableNumberPad)
                     .textFieldStyle(.roundedBorder)
-                    .frame(width: 40)
+                    .frame(width: 50)
                     .multilineTextAlignment(.center)
                     .font(.subheadline.monospacedDigit())
                     .onChange(of: quantity) { _, newValue in
                         if newValue < 0 { quantity = 0 }
                     }
 
-                Text("×\(unitGrams)g")
+                Text("g")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
                 Button {
-                    quantity += 1
+                    quantity += unitGrams
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
