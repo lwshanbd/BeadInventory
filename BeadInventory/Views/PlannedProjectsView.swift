@@ -2687,8 +2687,6 @@ struct ReplenishSuggestionSheet: View {
     @State private var selectedColorSystemFilter: ColorSystem = .mard  // 色系筛选
     @State private var unitGrams: Int = 10  // 步进单位克数（+/- 按钮步长，默认10g）
 
-
-
     // 获取选中的项目列表
     var selectedProjects: [ProjectRecord] {
         projectIds.compactMap { id in
@@ -2788,8 +2786,8 @@ struct ReplenishSuggestionSheet: View {
 
             if afterDeduct < 0 {
                 let deficit = lowStockThreshold - afterDeduct
-                let deficitGrams = (deficit + 99) / 100  // 颗转克，向上取整
-                let defaultAmount = ((deficitGrams + unitGrams - 1) / unitGrams) * unitGrams  // 对齐到步进单位
+                let deficitGrams = (deficit + 99) / 100
+                let defaultAmount = ((deficitGrams + unitGrams - 1) / unitGrams) * unitGrams
                 negativeStock.append(ReplenishColorInfo(
                     colorCode: mardCode,
                     currentStock: currentStock,
@@ -2801,8 +2799,8 @@ struct ReplenishSuggestionSheet: View {
                 processedCodes.insert(mardCode)
             } else if afterDeduct < lowStockThreshold {
                 let deficit = lowStockThreshold - afterDeduct
-                let deficitGrams = (deficit + 99) / 100  // 颗转克，向上取整
-                let defaultAmount = ((deficitGrams + unitGrams - 1) / unitGrams) * unitGrams  // 对齐到步进单位
+                let deficitGrams = (deficit + 99) / 100
+                let defaultAmount = ((deficitGrams + unitGrams - 1) / unitGrams) * unitGrams
                 lowStock.append(ReplenishColorInfo(
                     colorCode: mardCode,
                     currentStock: currentStock,
@@ -3233,8 +3231,6 @@ struct DirectPurchaseSheet: View {
     @State private var freeShippingThreshold: Int = 500  // 包邮额度（克）
     @State private var unitGrams: Int = 10  // 步进单位克数（+/- 按钮步长，默认10g）
 
-
-
     // 获取选中的项目列表
     var selectedProjects: [ProjectRecord] {
         projectIds.compactMap { id in
@@ -3326,7 +3322,7 @@ struct DirectPurchaseSheet: View {
         guard unitGrams > 0 else { return }
         var quantities: [String: Int] = [:]
         for item in filteredUsage {
-            let rawGrams = (item.quantity + 99) / 100  // 颗转克，向上取整
+            let rawGrams = (item.quantity + 99) / 100
             let roundedGrams = ((rawGrams + unitGrams - 1) / unitGrams) * unitGrams
             quantities[item.mardCode] = max(unitGrams, roundedGrams)
         }
@@ -3717,7 +3713,7 @@ struct DirectPurchaseColorRow: View {
 
             Spacer()
 
-            // 数量调节器（quantity 为克数，+/- 按步进单位增减）
+            // 数量调节器
             HStack(spacing: 4) {
                 Button {
                     quantity = max(0, quantity - unitGrams)
@@ -3966,7 +3962,7 @@ struct ReplenishColorRow: View {
 
             Spacer()
 
-            // 数量调节器（quantity 为克数，+/- 按步进单位增减）
+            // 数量调节器
             HStack(spacing: 4) {
                 Button {
                     quantity = max(0, quantity - unitGrams)
