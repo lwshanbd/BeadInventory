@@ -2671,6 +2671,9 @@ struct MultiProjectStockCheckSheet: View {
     }
 }
 
+// MARK: - 补豆步进单位选项（克）
+private let replenishUnitOptions = [5, 10, 20, 50]
+
 // MARK: - 补豆建议弹窗
 struct ReplenishSuggestionSheet: View {
     let projectIds: [UUID]
@@ -2684,7 +2687,7 @@ struct ReplenishSuggestionSheet: View {
     @State private var selectedColorSystemFilter: ColorSystem = .mard  // 色系筛选
     @State private var unitGrams: Int = 10  // 步进单位克数（+/- 按钮步长，默认10g）
 
-    static let unitOptions = [5, 10, 20, 50]
+
 
     // 获取选中的项目列表
     var selectedProjects: [ProjectRecord] {
@@ -2760,7 +2763,7 @@ struct ReplenishSuggestionSheet: View {
 
     // 计算补豆建议数据
     var replenishData: ReplenishData {
-        guard let brand = selectedBrand else {
+        guard let brand = selectedBrand, unitGrams > 0 else {
             return ReplenishData(negativeStock: [], lowStock: [], highUsage: [], processedCodes: [])
         }
 
@@ -2998,12 +3001,15 @@ struct ReplenishSuggestionSheet: View {
                                 }
                                 Spacer()
                                 Picker("步进单位", selection: $unitGrams) {
-                                    ForEach(Self.unitOptions, id: \.self) { g in
+                                    ForEach(replenishUnitOptions, id: \.self) { g in
                                         Text("\(g)g").tag(g)
                                     }
                                 }
                                 .pickerStyle(.segmented)
                                 .frame(width: 200)
+                                .onChange(of: unitGrams) { _, _ in
+                                    initializeDefaultQuantities()
+                                }
                             }
 
                             Divider()
@@ -3227,7 +3233,7 @@ struct DirectPurchaseSheet: View {
     @State private var freeShippingThreshold: Int = 500  // 包邮额度（克）
     @State private var unitGrams: Int = 10  // 步进单位克数（+/- 按钮步长，默认10g）
 
-    static let unitOptions = [5, 10, 20, 50]
+
 
     // 获取选中的项目列表
     var selectedProjects: [ProjectRecord] {
@@ -3317,6 +3323,7 @@ struct DirectPurchaseSheet: View {
 
     // 初始化默认补豆克数（每个色号按用量换算为克，对齐到步进单位）
     func initializeDefaultQuantities() {
+        guard unitGrams > 0 else { return }
         var quantities: [String: Int] = [:]
         for item in filteredUsage {
             let rawGrams = (item.quantity + 99) / 100  // 颗转克，向上取整
@@ -3465,12 +3472,15 @@ struct DirectPurchaseSheet: View {
                                 }
                                 Spacer()
                                 Picker("步进单位", selection: $unitGrams) {
-                                    ForEach(Self.unitOptions, id: \.self) { g in
+                                    ForEach(replenishUnitOptions, id: \.self) { g in
                                         Text("\(g)g").tag(g)
                                     }
                                 }
                                 .pickerStyle(.segmented)
                                 .frame(width: 200)
+                                .onChange(of: unitGrams) { _, _ in
+                                    initializeDefaultQuantities()
+                                }
                             }
 
                             Divider()
