@@ -351,7 +351,7 @@ final class LocalModelManager: ObservableObject {
 
     func downloadModel(_ model: LocalRecognitionModel) async throws {
         guard Self.isDeviceSupported else {
-            throw AIError.parseError(String(localized: "当前设备不支持本地模型（需要 iPhone 12 及以上机型）"))
+            throw AIError.deviceNotSupported
         }
 
         if let existingDirectory = installedDirectory(for: model) {
@@ -441,7 +441,7 @@ final class LocalModelManager: ObservableObject {
 
     func ensureLoaded(_ model: LocalRecognitionModel) async throws -> ModelContainer {
         guard Self.isDeviceSupported else {
-            throw AIError.parseError(String(localized: "当前设备不支持本地模型（需要 iPhone 12 及以上机型）"))
+            throw AIError.deviceNotSupported
         }
 
         if loadedModel == model, let container {
@@ -650,8 +650,13 @@ final class LocalModelManager: ObservableObject {
         searchDirectory: FileManager.SearchPathDirectory
     ) -> URL {
         guard let baseDirectory = FileManager.default.urls(for: searchDirectory, in: .userDomainMask).first else {
-            // 极端情况兜底：使用 tmp 目录，确保不会 crash
-            return URL(fileURLWithPath: NSTemporaryDirectory())
+            AppLogger.shared.error("LocalModel", "user_domain_directory_unavailable", metadata: [
+                "searchDirectory": "\(searchDirectory.rawValue)"
+            ])
+            // 兜底：使用 Application Support 目录，避免 tmp 被系统清理导致模型丢失
+            let fallback = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+            return fallback
                 .appendingPathComponent("huggingface", isDirectory: true)
                 .appendingPathComponent("models", isDirectory: true)
         }
@@ -1634,6 +1639,7 @@ class AIServiceManager: ObservableObject {
 enum AIError: LocalizedError {
     case notConfigured
     case localModelNotDownloaded(String)
+    case deviceNotSupported
     case imageProcessingFailed
     case networkError(String)
     case apiError(String)
@@ -1646,6 +1652,8 @@ enum AIError: LocalizedError {
             return String(localized: "请先配置云端 API，或下载本地模型")
         case .localModelNotDownloaded(let modelName):
             return String(localized: "请先下载本地模型：\(modelName)")
+        case .deviceNotSupported:
+            return String(localized: "当前设备不支持本地模型，需要搭载 A14 及以上芯片的设备")
         case .imageProcessingFailed:
             return String(localized: "图片处理失败")
         case .networkError(let msg):

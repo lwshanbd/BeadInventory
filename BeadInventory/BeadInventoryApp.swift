@@ -86,15 +86,25 @@ struct BeadInventoryApp: App {
                 AppLogger.shared.info("App", "model_container_local_mode_enabled")
             } catch {
                 // 最后兜底：尝试删除损坏的数据库文件并重新创建空容器
-                AppLogger.shared.error("App", "model_container_creation_failed_trying_reset", metadata: ["error": "\(error)"])
-                print("[App] ❌ 本地容器也失败，尝试重建数据库: \(error)")
+                let localFallbackError = error
+                AppLogger.shared.error("App", "model_container_creation_failed_trying_reset", metadata: ["error": "\(localFallbackError)"])
+                print("[App] ❌ 本地容器也失败，尝试重建数据库: \(localFallbackError)")
                 do {
                     // 删除可能损坏的 SwiftData 存储文件
                     if let storeURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
                         let defaultStoreURL = storeURL.appendingPathComponent("default.store")
                         for suffix in ["", "-wal", "-shm"] {
                             let fileURL = URL(fileURLWithPath: defaultStoreURL.path + suffix)
-                            try? FileManager.default.removeItem(at: fileURL)
+                            do {
+                                try FileManager.default.removeItem(at: fileURL)
+                            } catch let removeError as NSError where removeError.domain == NSCocoaErrorDomain && removeError.code == NSFileNoSuchFileError {
+                                // 文件不存在，无需处理
+                            } catch {
+                                AppLogger.shared.warning("App", "db_file_removal_failed", metadata: [
+                                    "file": fileURL.lastPathComponent,
+                                    "error": "\(error)"
+                                ])
+                            }
                         }
                     }
                     container = try ModelContainer(
@@ -103,21 +113,25 @@ struct BeadInventoryApp: App {
                         configurations: [localFallbackConfiguration]
                     )
                     isCloudSyncEnabled = false
-                    fatalErrorMessage = String(localized: "数据库已损坏并被重置，历史数据可能丢失。iCloud 同步的数据会在联网后自动恢复。")
+                    fatalErrorMessage = String(localized: "数据库已损坏并被重置，历史数据可能丢失。")
                     AppLogger.shared.warning("App", "model_container_reset_succeeded")
                 } catch {
                     // 最终兜底：使用内存存储，确保 app 至少能打开
                     AppLogger.shared.error("App", "fatal_model_container_using_memory", metadata: ["error": "\(error)"])
                     print("[App] ❌ 重建数据库也失败，使用内存模式: \(error)")
-                    let memoryConfig = ModelConfiguration(
-                        schema: schema,
-                        isStoredInMemoryOnly: true,
-                        cloudKitDatabase: .none
-                    )
-                    // swiftlint:disable:next force_try
-                    container = try! ModelContainer(for: schema, configurations: [memoryConfig])
+                    do {
+                        let memoryConfig = ModelConfiguration(
+                            schema: schema,
+                            isStoredInMemoryOnly: true,
+                            cloudKitDatabase: .none
+                        )
+                        container = try ModelContainer(for: schema, configurations: [memoryConfig])
+                    } catch {
+                        AppLogger.shared.error("App", "fatal_memory_container_also_failed", metadata: ["error": "\(error)"])
+                        fatalError("无法创建任何 ModelContainer（含内存模式）: \(error)")
+                    }
                     isCloudSyncEnabled = false
-                    fatalErrorMessage = String(localized: "数据库初始化失败，当前为临时模式，数据不会被保存。请尝试重启应用或重新安装。错误信息：\(error.localizedDescription)")
+                    fatalErrorMessage = String(localized: "数据库初始化失败，当前为临时模式，数据不会被保存。请尝试重启应用或重新安装。")
                 }
             }
         }
