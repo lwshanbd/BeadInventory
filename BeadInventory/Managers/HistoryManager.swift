@@ -913,7 +913,7 @@ class HistoryManager: ObservableObject {
     var groupedRecords: [(String, [HistoryRecord])] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
 
         var groups: [String: [HistoryRecord]] = [:]
 

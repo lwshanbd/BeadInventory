@@ -10,6 +10,7 @@ import UIKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import Combine
+import Metal
 import Hub
 import MLX
 import MLXLMCommon
@@ -275,6 +276,15 @@ struct AIConfig: Codable, Equatable {
 final class LocalModelManager: ObservableObject {
     static let shared = LocalModelManager()
 
+    /// 检查当前设备是否支持 MLX 本地模型（需要 Apple GPU Family 7+，即 A14 及以上芯片）
+    static let isDeviceSupported: Bool = {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            return false
+        }
+        // Apple GPU Family 7 对应 A14+ 芯片，是 MLX 运行的最低要求
+        return device.supportsFamily(.apple7)
+    }()
+
     @Published private(set) var downloadProgress: [LocalRecognitionModel: Double] = [:]
     @Published private(set) var isDownloading: Set<LocalRecognitionModel> = []
     @Published private(set) var isDeleting: Set<LocalRecognitionModel> = []
@@ -287,6 +297,11 @@ final class LocalModelManager: ObservableObject {
     private var container: ModelContainer?
 
     private init() {
+        guard Self.isDeviceSupported else {
+            AppLogger.shared.warning("LocalModel", "device_not_supported_for_mlx")
+            return
+        }
+
         if let data = UserDefaults.standard.data(forKey: downloadedPathsKey),
            let saved = try? JSONDecoder().decode([LocalRecognitionModel: String].self, from: data) {
             self.downloadedPaths = saved
@@ -335,6 +350,10 @@ final class LocalModelManager: ObservableObject {
     }
 
     func downloadModel(_ model: LocalRecognitionModel) async throws {
+        guard Self.isDeviceSupported else {
+            throw AIError.deviceNotSupported
+        }
+
         if let existingDirectory = installedDirectory(for: model) {
             downloadedPaths[model] = existingDirectory.path
             downloadProgress[model] = 1
@@ -421,6 +440,10 @@ final class LocalModelManager: ObservableObject {
     }
 
     func ensureLoaded(_ model: LocalRecognitionModel) async throws -> ModelContainer {
+        guard Self.isDeviceSupported else {
+            throw AIError.deviceNotSupported
+        }
+
         if loadedModel == model, let container {
             return container
         }
@@ -626,7 +649,17 @@ final class LocalModelManager: ObservableObject {
         for model: LocalRecognitionModel,
         searchDirectory: FileManager.SearchPathDirectory
     ) -> URL {
-        let baseDirectory = FileManager.default.urls(for: searchDirectory, in: .userDomainMask).first!
+        guard let baseDirectory = FileManager.default.urls(for: searchDirectory, in: .userDomainMask).first else {
+            AppLogger.shared.error("LocalModel", "user_domain_directory_unavailable", metadata: [
+                "searchDirectory": "\(searchDirectory.rawValue)"
+            ])
+            // 兜底：使用 Application Support 目录，避免 tmp 被系统清理导致模型丢失
+            let fallback = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+            return fallback
+                .appendingPathComponent("huggingface", isDirectory: true)
+                .appendingPathComponent("models", isDirectory: true)
+        }
         return model.repositoryID
             .split(separator: "/")
             .reduce(
@@ -1259,7 +1292,9 @@ class AIServiceManager: ObservableObject {
     // MARK: - OpenAI 实现
 
     private func recognizeWithOpenAI(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard) async throws -> [AIRecognizedItem] {
-        let url = URL(string: "\(config.effectiveBaseURL)/chat/completions")!
+        guard let url = URL(string: "\(config.effectiveBaseURL)/chat/completions") else {
+            throw AIError.networkError("Invalid API URL: \(config.effectiveBaseURL)/chat/completions")
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -1347,7 +1382,9 @@ class AIServiceManager: ObservableObject {
     // MARK: - Anthropic 实现
 
     private func recognizeWithAnthropic(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard) async throws -> [AIRecognizedItem] {
-        let url = URL(string: "\(config.effectiveBaseURL)/v1/messages")!
+        guard let url = URL(string: "\(config.effectiveBaseURL)/v1/messages") else {
+            throw AIError.networkError("Invalid API URL: \(config.effectiveBaseURL)/v1/messages")
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -1427,7 +1464,9 @@ class AIServiceManager: ObservableObject {
     // MARK: - Gemini 实现
 
     private func recognizeWithGemini(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard) async throws -> [AIRecognizedItem] {
-        let url = URL(string: "\(config.effectiveBaseURL)/models/\(config.effectiveModel):generateContent?key=\(config.effectiveAPIKey)")!
+        guard let url = URL(string: "\(config.effectiveBaseURL)/models/\(config.effectiveModel):generateContent?key=\(config.effectiveAPIKey)") else {
+            throw AIError.networkError("Invalid API URL for Gemini")
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -1600,6 +1639,7 @@ class AIServiceManager: ObservableObject {
 enum AIError: LocalizedError {
     case notConfigured
     case localModelNotDownloaded(String)
+    case deviceNotSupported
     case imageProcessingFailed
     case networkError(String)
     case apiError(String)
@@ -1612,6 +1652,8 @@ enum AIError: LocalizedError {
             return String(localized: "请先配置云端 API，或下载本地模型")
         case .localModelNotDownloaded(let modelName):
             return String(localized: "请先下载本地模型：\(modelName)")
+        case .deviceNotSupported:
+            return String(localized: "当前设备不支持本地模型，需要搭载 A14 及以上芯片的设备")
         case .imageProcessingFailed:
             return String(localized: "图片处理失败")
         case .networkError(let msg):

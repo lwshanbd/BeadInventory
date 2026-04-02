@@ -88,7 +88,7 @@ final class SDProjectRecord {
     var colorSystemRaw: String?   // 色号体系，可选以兼容旧数据，默认为 MARD
 
     @Relationship(deleteRule: .cascade, inverse: \SDBeadUsage.project)
-    var beadUsages: [SDBeadUsage]?
+    var beadUsages: [SDBeadUsage] = []
 
     // 计算属性：安全获取 isPlanned 值
     var isPlannedValue: Bool {
@@ -118,7 +118,7 @@ final class SDProjectRecord {
     }
 
     func toStruct() -> ProjectRecord {
-        let usages = (beadUsages ?? []).map { $0.toStruct() }
+        let usages = beadUsages.map { $0.toStruct() }
         return ProjectRecord(id: id, name: name, date: date, beadUsage: usages, brandId: brandId, isArchived: isArchived, parentId: parentId, isPlanned: isPlannedValue, executedDate: executedDate, thumbnail: thumbnail, finishedImage: finishedImage, completedDate: completedDate, colorSystem: ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard)
     }
 }
