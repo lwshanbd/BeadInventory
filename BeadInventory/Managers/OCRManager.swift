@@ -31,7 +31,7 @@ class OCRManager: ObservableObject {
         let context = CIContext()
 
         // 1. 增强对比度
-        let contrastFilter = CIFilter(name: "CIColorControls")!
+        guard let contrastFilter = CIFilter(name: "CIColorControls") else { return nil }
         contrastFilter.setValue(ciImage, forKey: kCIInputImageKey)
         contrastFilter.setValue(1.2, forKey: kCIInputContrastKey)
         contrastFilter.setValue(0.0, forKey: kCIInputSaturationKey) // 转灰度有助于OCR
@@ -40,14 +40,14 @@ class OCRManager: ObservableObject {
         guard let contrastOutput = contrastFilter.outputImage else { return nil }
 
         // 2. 锐化
-        let sharpenFilter = CIFilter(name: "CISharpenLuminance")!
+        guard let sharpenFilter = CIFilter(name: "CISharpenLuminance") else { return nil }
         sharpenFilter.setValue(contrastOutput, forKey: kCIInputImageKey)
         sharpenFilter.setValue(0.5, forKey: kCIInputSharpnessKey)
 
         guard let sharpenOutput = sharpenFilter.outputImage else { return nil }
 
         // 3. 降噪
-        let noiseFilter = CIFilter(name: "CINoiseReduction")!
+        guard let noiseFilter = CIFilter(name: "CINoiseReduction") else { return nil }
         noiseFilter.setValue(sharpenOutput, forKey: kCIInputImageKey)
         noiseFilter.setValue(0.02, forKey: "inputNoiseLevel")
         noiseFilter.setValue(0.4, forKey: "inputSharpness")
