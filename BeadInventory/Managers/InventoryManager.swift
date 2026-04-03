@@ -1136,11 +1136,13 @@ class InventoryManager: ObservableObject {
                 logError("load_stocks_failed", metadata: ["error": "\(error)"])
             }
 
-            // 从 SwiftData 加载项目记录
+            // 从 SwiftData 加载项目记录（beadUsages 通过 projectId 手动关联）
             do {
                 let projectDescriptor = FetchDescriptor<SDProjectRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
                 let sdProjects = try context.fetch(projectDescriptor)
-                loadedProjects = sdProjects.map { $0.toStruct() }
+                let allUsages = try context.fetch(FetchDescriptor<SDBeadUsage>())
+                let usagesByProjectId = Dictionary(grouping: allUsages, by: { $0.projectId })
+                loadedProjects = sdProjects.map { $0.toStruct(beadUsages: usagesByProjectId[$0.id] ?? []) }
                 projectsLoadedSuccessfully = true
                 print("[InventoryManager] 成功加载 \(loadedProjects.count) 个项目记录")
                 logInfo("load_projects_success", metadata: ["count": loadedProjects.count])
@@ -1484,18 +1486,27 @@ class InventoryManager: ObservableObject {
                     brandStocks.removeAll { staleLocalStockIDs.contains($0.id) }
                 }
 
-                // 3. 项目
+                // 3. 项目（beadUsages 通过 projectId 手动关联，不使用 @Relationship）
                 let existingProjects = try context.fetch(FetchDescriptor<SDProjectRecord>())
                 let existingProjectByID = Dictionary(existingProjects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                 let localProjectByID = makeMapByID(projects)
+
+                // 预加载所有 SDBeadUsage，按 projectId 分组
+                let allExistingUsages = try context.fetch(FetchDescriptor<SDBeadUsage>())
+                var existingUsagesByProjectId = Dictionary(grouping: allExistingUsages, by: { $0.projectId })
 
                 if projectsLoadedSuccessfully {
                     var remoteProjectsToAppend: [ProjectRecord] = []
                     for sdProject in existingProjects where localProjectByID[sdProject.id] == nil {
                         if baselineProjectsByID[sdProject.id] != nil {
+                            // 手动级联删除关联的 beadUsages
+                            for usage in existingUsagesByProjectId[sdProject.id] ?? [] {
+                                context.delete(usage)
+                            }
+                            existingUsagesByProjectId.removeValue(forKey: sdProject.id)
                             context.delete(sdProject)
                         } else {
-                            remoteProjectsToAppend.append(sdProject.toStruct())
+                            remoteProjectsToAppend.append(sdProject.toStruct(beadUsages: existingUsagesByProjectId[sdProject.id] ?? []))
                         }
                     }
                     if !remoteProjectsToAppend.isEmpty {
@@ -1529,12 +1540,9 @@ class InventoryManager: ObservableObject {
 
                         // 仅在本地项目有改动时同步 beadUsages，避免误删远端新变更
                         let newUsageIDs = Set(project.beadUsage.map { $0.id })
-                        var existingUsages = existing.beadUsages
+                        var existingUsages = existingUsagesByProjectId[project.id] ?? []
 
                         // 清理可能存在的重复 beadUsage（防止历史数据损坏导致后续崩溃）
-                        // 区分"同一对象重复引用"与"不同对象但 id 相同"两种情况：
-                        //   - 同一对象重复引用：仅移除多余引用，不 delete（保留该对象）
-                        //   - 不同对象相同 id：保留首个，delete 其余实例
                         var keeperByID: [UUID: SDBeadUsage] = [:]
                         var indicesToRemove: [Int] = []
                         var objectsToDelete: [SDBeadUsage] = []
@@ -1558,11 +1566,10 @@ class InventoryManager: ObservableObject {
                         let existingUsageByID = Dictionary(existingUsages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                         let existingUsageIDs = Set(existingUsageByID.keys)
 
-                        // 1. 删除不再存在的 beadUsage（先收集再删除，避免遍历时修改数组）
+                        // 1. 删除不再存在的 beadUsage
                         let usageIDsToDelete = existingUsageIDs.subtracting(newUsageIDs)
                         for usageID in usageIDsToDelete {
                             if let oldUsage = existingUsageByID[usageID] {
-                                existingUsages.removeAll { $0.id == oldUsage.id }
                                 context.delete(oldUsage)
                             }
                         }
@@ -1580,11 +1587,18 @@ class InventoryManager: ObservableObject {
                         // 3. 添加新的 beadUsage
                         let usageIDsToAdd = newUsageIDs.subtracting(existingUsageIDs)
                         for newUsage in project.beadUsage where usageIDsToAdd.contains(newUsage.id) {
-                            existingUsages.append(SDBeadUsage(from: newUsage))
+                            let sdUsage = SDBeadUsage(from: newUsage, projectId: project.id)
+                            context.insert(sdUsage)
                         }
-                        existing.beadUsages = existingUsages
                     } else if changedLocally {
-                        context.insert(SDProjectRecord(from: project))
+                        // 插入新项目
+                        let sdProject = SDProjectRecord(from: project)
+                        context.insert(sdProject)
+                        // 插入关联的 beadUsages
+                        for usage in project.beadUsage {
+                            let sdUsage = SDBeadUsage(from: usage, projectId: project.id)
+                            context.insert(sdUsage)
+                        }
                     } else {
                         staleLocalProjectIDs.insert(project.id)
                     }

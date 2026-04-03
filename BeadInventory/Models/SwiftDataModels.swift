@@ -87,15 +87,17 @@ final class SDProjectRecord {
     var completedDate: Date?      // 完成日期（用于日历展示）
     var colorSystemRaw: String?   // 色号体系，可选以兼容旧数据，默认为 MARD
 
-    @Relationship(deleteRule: .cascade, inverse: \SDBeadUsage.project)
-    var beadUsages: [SDBeadUsage] = []
+    // NOTE: beadUsages 不再使用 @Relationship，改用 SDBeadUsage.projectId 手动关联。
+    // 原因：CloudKit 要求 relationship 必须 optional，但 SwiftData iOS 17 的 optional 数组
+    // relationship 在 fetch 时触发 Fatal error (Unknown related type)。
+    // 去掉 @Relationship 同时解决两个问题。
 
     // 计算属性：安全获取 isPlanned 值
     var isPlannedValue: Bool {
         isPlanned ?? false
     }
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), totalBeads: Int = 0, brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, finishedImage: Data? = nil, completedDate: Date? = nil, colorSystemRaw: String? = nil, beadUsages: [SDBeadUsage] = []) {
+    init(id: UUID = UUID(), name: String, date: Date = Date(), totalBeads: Int = 0, brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, finishedImage: Data? = nil, completedDate: Date? = nil, colorSystemRaw: String? = nil) {
         self.id = id
         self.name = name
         self.date = date
@@ -109,15 +111,13 @@ final class SDProjectRecord {
         self.finishedImage = finishedImage
         self.completedDate = completedDate
         self.colorSystemRaw = colorSystemRaw
-        self.beadUsages = beadUsages
     }
 
     convenience init(from record: ProjectRecord) {
-        let usages = record.beadUsage.map { SDBeadUsage(from: $0) }
-        self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, parentId: record.parentId, isPlanned: record.isPlanned, executedDate: record.executedDate, thumbnail: record.thumbnail, finishedImage: record.finishedImage, completedDate: record.completedDate, colorSystemRaw: record.colorSystem.rawValue, beadUsages: usages)
+        self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, parentId: record.parentId, isPlanned: record.isPlanned, executedDate: record.executedDate, thumbnail: record.thumbnail, finishedImage: record.finishedImage, completedDate: record.completedDate, colorSystemRaw: record.colorSystem.rawValue)
     }
 
-    func toStruct() -> ProjectRecord {
+    func toStruct(beadUsages: [SDBeadUsage] = []) -> ProjectRecord {
         let usages = beadUsages.map { $0.toStruct() }
         return ProjectRecord(id: id, name: name, date: date, beadUsage: usages, brandId: brandId, isArchived: isArchived, parentId: parentId, isPlanned: isPlannedValue, executedDate: executedDate, thumbnail: thumbnail, finishedImage: finishedImage, completedDate: completedDate, colorSystem: ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard)
     }
@@ -131,18 +131,19 @@ final class SDBeadUsage {
     var brandId: UUID?
     var quantity: Int = 0
     var isDeducted: Bool = false
-    var project: SDProjectRecord?
+    var projectId: UUID?          // 手动外键，关联到 SDProjectRecord.id
 
-    init(id: UUID = UUID(), colorCode: String, brandId: UUID? = nil, quantity: Int, isDeducted: Bool = false) {
+    init(id: UUID = UUID(), colorCode: String, brandId: UUID? = nil, quantity: Int, isDeducted: Bool = false, projectId: UUID? = nil) {
         self.id = id
         self.colorCode = colorCode
         self.brandId = brandId
         self.quantity = quantity
         self.isDeducted = isDeducted
+        self.projectId = projectId
     }
 
-    convenience init(from usage: BeadUsage) {
-        self.init(id: usage.id, colorCode: usage.colorCode, brandId: usage.brandId, quantity: usage.quantity, isDeducted: usage.isDeducted)
+    convenience init(from usage: BeadUsage, projectId: UUID? = nil) {
+        self.init(id: usage.id, colorCode: usage.colorCode, brandId: usage.brandId, quantity: usage.quantity, isDeducted: usage.isDeducted, projectId: projectId)
     }
 
     func toStruct() -> BeadUsage {
