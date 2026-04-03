@@ -1529,7 +1529,7 @@ class InventoryManager: ObservableObject {
 
                         // 仅在本地项目有改动时同步 beadUsages，避免误删远端新变更
                         let newUsageIDs = Set(project.beadUsage.map { $0.id })
-                        var existingUsages = existing.beadUsages
+                        var existingUsages = existing.beadUsages ?? []
 
                         // 清理可能存在的重复 beadUsage（防止历史数据损坏导致后续崩溃）
                         // 区分"同一对象重复引用"与"不同对象但 id 相同"两种情况：
