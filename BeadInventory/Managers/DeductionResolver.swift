@@ -10,10 +10,11 @@ import SwiftUI
 
 @MainActor
 class DeductionResolver: ObservableObject {
-    @Published var items: [DeductionItem] = []
+    @Published private(set) var items: [DeductionItem] = []
     @Published var primaryBrandId: UUID?
 
-    private var inventoryManager: InventoryManager?
+    private let inventoryManager: InventoryManager
+    private var hasExecuted = false
 
     init(inventoryManager: InventoryManager) {
         self.inventoryManager = inventoryManager
@@ -25,10 +26,9 @@ class DeductionResolver: ObservableObject {
         primaryBrandId: UUID,
         colorSystem: ColorSystem
     ) {
-        guard let manager = inventoryManager else { return }
         self.primaryBrandId = primaryBrandId
         self.items = recognizedItems.map { item in
-            let color = manager.findColor(byCode: item.colorCode)
+            let color = inventoryManager.findColor(byCode: item.colorCode)
             let mardCode = color?.mardCode ?? item.colorCode
             let displayCode = color?.displayCode(for: colorSystem) ?? item.colorCode
             return DeductionItem(
@@ -47,10 +47,9 @@ class DeductionResolver: ObservableObject {
         primaryBrandId: UUID,
         colorSystem: ColorSystem
     ) {
-        guard let manager = inventoryManager else { return }
         self.primaryBrandId = primaryBrandId
         self.items = usages.map { usage in
-            let color = manager.findColor(byCode: usage.colorCode)
+            let color = inventoryManager.findColor(byCode: usage.colorCode)
             let displayCode = color?.displayCode(for: colorSystem) ?? usage.colorCode
             return DeductionItem(
                 mardCode: usage.colorCode,
@@ -102,11 +101,9 @@ class DeductionResolver: ObservableObject {
 
     /// 刷新所有 item 的库存状态
     func refreshStockStatus() {
-        guard let manager = inventoryManager else { return }
         for i in items.indices {
-            let stock = manager.getStock(brandId: items[i].brandId, mardCode: items[i].mardCode)
+            let stock = inventoryManager.getStock(brandId: items[i].brandId, mardCode: items[i].mardCode)
             items[i].availableStock = stock?.available ?? 0
-            items[i].isInsufficient = items[i].availableStock < items[i].quantity
         }
     }
 
@@ -126,19 +123,27 @@ class DeductionResolver: ObservableObject {
         items.contains { $0.originalMardCode != nil }
     }
 
-    /// 执行扣减：逐条调用 InventoryManager.deductFromStock
-    func executeDeductions() -> Bool {
-        guard let manager = inventoryManager else { return false }
+    /// 执行扣减：逐条调用 InventoryManager.deductFromStock，返回失败项
+    func executeDeductions(shouldSave: Bool = true) -> [DeductionItem] {
+        guard !hasExecuted else { return items }
+        hasExecuted = true
+
+        var failedItems: [DeductionItem] = []
         for item in items {
-            _ = manager.deductFromStock(
+            let success = inventoryManager.deductFromStock(
                 brandId: item.brandId,
                 colorCode: item.mardCode,
                 amount: item.quantity,
                 shouldSave: false
             )
+            if !success {
+                failedItems.append(item)
+            }
         }
-        manager.saveData()
-        return true
+        if shouldSave {
+            inventoryManager.saveData()
+        }
+        return failedItems
     }
 
     /// 生成 BeadUsage 数组（用于创建 ProjectRecord）

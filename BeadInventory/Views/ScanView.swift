@@ -581,9 +581,19 @@ struct ScanView: View {
     }
 
     func applyToInventoryWithResolver(_ resolver: DeductionResolver) {
-        let thumbnailData = generateThumbnailData()
+        // 先执行扣减（不保存），确认结果后再创建项目记录
+        let failedItems = resolver.executeDeductions(shouldSave: false)
 
-        let beadUsages = resolver.buildBeadUsages(isDeducted: true)
+        let thumbnailData = generateThumbnailData()
+        // 标记失败项为未扣减
+        let beadUsages = resolver.items.map { item in
+            BeadUsage(
+                colorCode: item.mardCode,
+                brandId: item.brandId,
+                quantity: item.quantity,
+                isDeducted: !failedItems.contains(where: { $0.id == item.id })
+            )
+        }
         let project = ProjectRecord(
             name: projectName.isEmpty ? "图纸\(Date().formatted(date: .numeric, time: .omitted))" : projectName,
             beadUsage: beadUsages,
@@ -592,8 +602,7 @@ struct ScanView: View {
             colorSystem: scanColorSystem
         )
         inventoryManager.addProject(project)
-
-        _ = resolver.executeDeductions()
+        inventoryManager.saveData()
 
         clearState()
         deductionResolver = nil

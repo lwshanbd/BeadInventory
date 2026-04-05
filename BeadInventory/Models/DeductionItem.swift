@@ -16,7 +16,7 @@ struct DeductionItem: Identifiable {
     var isManualOverride: Bool
 
     var availableStock: Int
-    var isInsufficient: Bool
+    var isInsufficient: Bool { availableStock < quantity }
 
     var originalMardCode: String?
     var originalColorCode: String?
@@ -29,6 +29,5 @@ struct DeductionItem: Identifiable {
         self.brandId = brandId
         self.isManualOverride = false
         self.availableStock = 0
-        self.isInsufficient = false
     }
 }

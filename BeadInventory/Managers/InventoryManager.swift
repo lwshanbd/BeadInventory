@@ -2555,6 +2555,13 @@ class InventoryManager: ObservableObject {
         let project = projects[index]
         guard project.isPlanned else { return false }
 
+        // 校验 primaryBrand 的色系与项目一致
+        if let brandId = resolver.primaryBrandId,
+           let brand = brands.first(where: { $0.id == brandId }),
+           brand.colorSystem != project.colorSystem {
+            return false
+        }
+
         // 父项目暂不支持 resolver 模式，回退到单品牌
         if isParentProject(projectId), let brandId = resolver.primaryBrandId {
             return executePlannedProject(projectId, withBrand: brandId)
@@ -2562,12 +2569,21 @@ class InventoryManager: ObservableObject {
 
         let beforeProject = project
 
-        _ = resolver.executeDeductions()
+        // 执行扣减，不在 resolver 内保存（统一在下面保存）
+        let failedItems = resolver.executeDeductions(shouldSave: false)
 
+        // 更新项目状态，标记失败项为未扣减
         projects[index].isPlanned = false
         projects[index].brandId = resolver.primaryBrandId
         projects[index].executedDate = Date()
-        projects[index].beadUsage = resolver.buildBeadUsages(isDeducted: true)
+        projects[index].beadUsage = resolver.items.map { item in
+            BeadUsage(
+                colorCode: item.mardCode,
+                brandId: item.brandId,
+                quantity: item.quantity,
+                isDeducted: !failedItems.contains(where: { $0.id == item.id })
+            )
+        }
 
         if let parentId = project.parentId {
             let remainingPlannedChildren = projects.filter {

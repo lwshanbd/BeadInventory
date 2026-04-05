@@ -735,42 +735,6 @@ struct ExecutePlannedProjectSheet: View {
         return msg
     }
 
-    @ViewBuilder
-    private func deductionItemRowView(item: DeductionItem, resolver: DeductionResolver) -> some View {
-        let beadColor = inventoryManager.findColor(byCode: item.mardCode)
-        let brandName = matchingBrands.first(where: { $0.id == item.brandId })?.name ?? "未知"
-        let threshold = matchingBrands.first(where: { $0.id == item.brandId })?.lowStockThreshold ?? 100
-        let similarColors = similarityService.findSimilarColors(
-            for: item.mardCode,
-            brandId: item.brandId,
-            allColors: inventoryManager.allBeadColors,
-            brandStocks: inventoryManager.brandStocks
-        )
-
-        DeductionItemRow(
-            item: item,
-            beadColor: beadColor,
-            matchingBrands: matchingBrands,
-            similarColors: similarColors,
-            colorSystem: project.colorSystem,
-            lowStockThreshold: threshold,
-            brandName: brandName,
-            onBrandChanged: { newBrandId in
-                resolver.overrideBrand(for: item.id, to: newBrandId)
-            },
-            onResetBrand: {
-                resolver.resetToPrimary(for: item.id)
-            },
-            onSubstitute: { newMardCode, newColorCode in
-                resolver.substituteColor(
-                    itemId: item.id,
-                    newMardCode: newMardCode,
-                    newColorCode: newColorCode
-                )
-            }
-        )
-    }
-
     var body: some View {
         NavigationStack {
             Form {
@@ -835,12 +799,13 @@ struct ExecutePlannedProjectSheet: View {
                 }
 
                 if let resolver = resolver, selectedBrandId != nil, !isParent {
-                    Section("扣减详情") {
-                        ForEach(resolver.items) { item in
-                            deductionItemRowView(item: item, resolver: resolver)
-                                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
-                        }
-                    }
+                    ResolverDeductionSection(
+                        resolver: resolver,
+                        matchingBrands: matchingBrands,
+                        colorSystem: project.colorSystem,
+                        inventoryManager: inventoryManager,
+                        similarityService: similarityService
+                    )
                 }
 
                 Section {
@@ -905,6 +870,55 @@ struct ExecutePlannedProjectSheet: View {
                 colorSystem: project.colorSystem
             )
             resolver = newResolver
+        }
+    }
+}
+
+// MARK: - Resolver 扣减详情 Section（使用 @ObservedObject 正确订阅变更）
+private struct ResolverDeductionSection: View {
+    @ObservedObject var resolver: DeductionResolver
+    let matchingBrands: [Brand]
+    let colorSystem: ColorSystem
+    let inventoryManager: InventoryManager
+    let similarityService: ColorSimilarityService
+
+    var body: some View {
+        Section("扣减详情") {
+            ForEach(resolver.items) { item in
+                let beadColor = inventoryManager.findColor(byCode: item.mardCode)
+                let brandName = matchingBrands.first(where: { $0.id == item.brandId })?.name ?? "未知"
+                let threshold = matchingBrands.first(where: { $0.id == item.brandId })?.lowStockThreshold ?? 100
+                let similarColors = similarityService.findSimilarColors(
+                    for: item.mardCode,
+                    brandId: item.brandId,
+                    allColors: inventoryManager.allBeadColors,
+                    brandStocks: inventoryManager.brandStocks
+                )
+
+                DeductionItemRow(
+                    item: item,
+                    beadColor: beadColor,
+                    matchingBrands: matchingBrands,
+                    similarColors: similarColors,
+                    colorSystem: colorSystem,
+                    lowStockThreshold: threshold,
+                    brandName: brandName,
+                    onBrandChanged: { newBrandId in
+                        resolver.overrideBrand(for: item.id, to: newBrandId)
+                    },
+                    onResetBrand: {
+                        resolver.resetToPrimary(for: item.id)
+                    },
+                    onSubstitute: { newMardCode, newColorCode in
+                        resolver.substituteColor(
+                            itemId: item.id,
+                            newMardCode: newMardCode,
+                            newColorCode: newColorCode
+                        )
+                    }
+                )
+                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+            }
         }
     }
 }
