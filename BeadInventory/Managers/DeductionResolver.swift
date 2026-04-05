@@ -9,7 +9,8 @@ import Foundation
 import SwiftUI
 
 @MainActor
-class DeductionResolver: ObservableObject {
+class DeductionResolver: ObservableObject, Identifiable {
+    let id = UUID()
     @Published private(set) var items: [DeductionItem] = []
     @Published var primaryBrandId: UUID?
 

@@ -38,7 +38,7 @@ struct ScanView: View {
     @State private var showingCreatePlan = false
 
     @State private var deductionResolver: DeductionResolver?
-    @State private var showingDeductionReview = false
+
     private let similarityService = ColorSimilarityService()
 
     // 缩略图相关
@@ -453,25 +453,23 @@ struct ScanView: View {
                     Text("将从库存中扣减 \(totalBeads) 颗豆子，共 \(recognizedItems.count) 种颜色。\n\n⚠️ 以下 \(insufficientStockItems.count) 种颜色扣除后库存将为负数：\n\(insufficientStockItems.map { "\($0.colorCode): \($0.currentStock) - \($0.deductAmount) = \($0.currentStock - $0.deductAmount)" }.joined(separator: "\n"))")
                 }
             }
-            .sheet(isPresented: $showingDeductionReview) {
-                if let resolver = deductionResolver {
-                    DeductionReviewSheet(
-                        resolver: resolver,
-                        colorSystem: scanColorSystem,
-                        matchingBrands: inventoryManager.brands
-                            .filter { $0.colorSystem == scanColorSystem }
-                            .sorted { $0.sortOrder < $1.sortOrder },
-                        inventoryManager: inventoryManager,
-                        similarityService: similarityService,
-                        onConfirm: {
-                            applyToInventoryWithResolver(resolver)
-                            showingDeductionReview = false
-                        },
-                        onCancel: {
-                            showingDeductionReview = false
-                        }
-                    )
-                }
+            .sheet(item: $deductionResolver) { resolver in
+                DeductionReviewSheet(
+                    resolver: resolver,
+                    colorSystem: scanColorSystem,
+                    matchingBrands: inventoryManager.brands
+                        .filter { $0.colorSystem == scanColorSystem }
+                        .sorted { $0.sortOrder < $1.sortOrder },
+                    inventoryManager: inventoryManager,
+                    similarityService: similarityService,
+                    onConfirm: {
+                        applyToInventoryWithResolver(resolver)
+                        deductionResolver = nil
+                    },
+                    onCancel: {
+                        deductionResolver = nil
+                    }
+                )
             }
             .alert("创建计划", isPresented: $showingCreatePlan) {
                 Button("取消", role: .cancel) { }
@@ -546,7 +544,6 @@ struct ScanView: View {
             colorSystem: scanColorSystem
         )
         self.deductionResolver = resolver
-        showingDeductionReview = true
     }
 
     func applyToInventory() {
