@@ -33,7 +33,6 @@ struct MoreView: View {
                     }
 
                     TipView(BackupTip())
-                    TipView(ICloudSyncTip())
                 }
 
                 Section("工作台") {

@@ -73,20 +73,6 @@ struct ReplenishTip: Tip {
     }
 }
 
-// MARK: - 库存相关
-
-struct ColorConverterTip: Tip {
-    var title: Text {
-        Text("tip.colorconverter.title")
-    }
-    var message: Text? {
-        Text("tip.colorconverter.message")
-    }
-    var image: Image? {
-        Image(systemName: "paintpalette.fill")
-    }
-}
-
 // MARK: - 更多页相关
 
 struct BackupTip: Tip {
@@ -101,14 +87,3 @@ struct BackupTip: Tip {
     }
 }
 
-struct ICloudSyncTip: Tip {
-    var title: Text {
-        Text("tip.icloudsync.title")
-    }
-    var message: Text? {
-        Text("tip.icloudsync.message")
-    }
-    var image: Image? {
-        Image(systemName: "icloud.fill")
-    }
-}
