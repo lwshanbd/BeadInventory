@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		CC510001A0050001DEADBEEF /* ColorSimilarityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC510001A0050002DEADBEEF /* ColorSimilarityService.swift */; };
 		DE0D1C01A0050001DEADBEEF /* DeductionItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0D1C01A0050002DEADBEEF /* DeductionItem.swift */; };
+		DE0D1C03A0050001DEADBEEF /* DeductionResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0D1C03A0050002DEADBEEF /* DeductionResolver.swift */; };
 		A1BA6000BAA242C797A1967F /* HelpCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5573A291D954C97BD8955A5 /* HelpCenterView.swift */; };
 		4E228907D2F847A9AC5C12D1 /* TutorialDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC5DB3B1DAD44CD8E0D1717 /* TutorialDetailView.swift */; };
 		BACDA9EDBD274C6A9923F797 /* FAQView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 101C8A44E38F4E17BB2A00F3 /* FAQView.swift */; };
@@ -100,6 +101,7 @@
 
 /* Begin PBXFileReference section */
 		DE0D1C01A0050002DEADBEEF /* DeductionItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionItem.swift; sourceTree = "<group>"; };
+		DE0D1C03A0050002DEADBEEF /* DeductionResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionResolver.swift; sourceTree = "<group>"; };
 		C5573A291D954C97BD8955A5 /* HelpCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpCenterView.swift; sourceTree = "<group>"; };
 		4CC5DB3B1DAD44CD8E0D1717 /* TutorialDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialDetailView.swift; sourceTree = "<group>"; };
 		101C8A44E38F4E17BB2A00F3 /* FAQView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FAQView.swift; sourceTree = "<group>"; };
@@ -285,6 +287,7 @@
 				386ECBFB2F332DB600BD92E8 /* BackupManager.swift */,
 				386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */,
 				CC510001A0050002DEADBEEF /* ColorSimilarityService.swift */,
+				DE0D1C03A0050002DEADBEEF /* DeductionResolver.swift */,
 				38FA2CF62F274C4000912E02 /* SharedImageManager.swift */,
 				A01234560015 /* InventoryManager.swift */,
 				A01234560016 /* OCRManager.swift */,
@@ -560,6 +563,7 @@
 				38B1A0012F01000100000048 /* CSVImporter.swift in Sources */,
 				38FA2CF72F274C4000912E02 /* SharedImageManager.swift in Sources */,
 				CC510001A0050001DEADBEEF /* ColorSimilarityService.swift in Sources */,
+				DE0D1C03A0050001DEADBEEF /* DeductionResolver.swift in Sources */,
 				38B1A0012F0100010000004A /* ImportStockView.swift in Sources */,
 				38FA2CE32F26A00000912E02 /* ShippingView.swift in Sources */,
 			);
