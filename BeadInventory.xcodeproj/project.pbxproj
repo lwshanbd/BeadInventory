@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CC510001A0050001DEADBEEF /* ColorSimilarityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC510001A0050002DEADBEEF /* ColorSimilarityService.swift */; };
+		DE0D1C01A0050001DEADBEEF /* DeductionItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0D1C01A0050002DEADBEEF /* DeductionItem.swift */; };
 		A1BA6000BAA242C797A1967F /* HelpCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5573A291D954C97BD8955A5 /* HelpCenterView.swift */; };
 		4E228907D2F847A9AC5C12D1 /* TutorialDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC5DB3B1DAD44CD8E0D1717 /* TutorialDetailView.swift */; };
 		BACDA9EDBD274C6A9923F797 /* FAQView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 101C8A44E38F4E17BB2A00F3 /* FAQView.swift */; };
@@ -97,6 +99,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		DE0D1C01A0050002DEADBEEF /* DeductionItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionItem.swift; sourceTree = "<group>"; };
 		C5573A291D954C97BD8955A5 /* HelpCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpCenterView.swift; sourceTree = "<group>"; };
 		4CC5DB3B1DAD44CD8E0D1717 /* TutorialDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialDetailView.swift; sourceTree = "<group>"; };
 		101C8A44E38F4E17BB2A00F3 /* FAQView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FAQView.swift; sourceTree = "<group>"; };
@@ -141,6 +144,7 @@
 		38FA2CE22F25B67400912E02 /* CalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarView.swift; sourceTree = "<group>"; };
 		38FA2CE32F274B2900912E02 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		38FA2CE42F26A00000912E02 /* ShippingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShippingView.swift; sourceTree = "<group>"; };
+		CC510001A0050002DEADBEEF /* ColorSimilarityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorSimilarityService.swift; sourceTree = "<group>"; };
 		38FA2CF62F274C4000912E02 /* SharedImageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedImageManager.swift; sourceTree = "<group>"; };
 		38FA2CF82F274D5200912E02 /* BeadInventory.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BeadInventory.entitlements; sourceTree = "<group>"; };
 		A01234560010 /* BeadInventory.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BeadInventory.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -262,6 +266,7 @@
 			isa = PBXGroup;
 			children = (
 				A01234560014 /* BeadColor.swift */,
+				DE0D1C01A0050002DEADBEEF /* DeductionItem.swift */,
 				38B1A0012F01000100000011 /* Brand.swift */,
 				38B1A0012F01000100000012 /* BrandStock.swift */,
 				38B1A0012F01000100000041 /* ColorPresets.swift */,
@@ -279,6 +284,7 @@
 			children = (
 				386ECBFB2F332DB600BD92E8 /* BackupManager.swift */,
 				386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */,
+				CC510001A0050002DEADBEEF /* ColorSimilarityService.swift */,
 				38FA2CF62F274C4000912E02 /* SharedImageManager.swift */,
 				A01234560015 /* InventoryManager.swift */,
 				A01234560016 /* OCRManager.swift */,
@@ -510,6 +516,7 @@
 				A01234560001 /* BeadInventoryApp.swift in Sources */,
 				A01234560002 /* ContentView.swift in Sources */,
 				A01234560004 /* BeadColor.swift in Sources */,
+				DE0D1C01A0050001DEADBEEF /* DeductionItem.swift in Sources */,
 				38B1A0012F01000100000001 /* Brand.swift in Sources */,
 				38B1A0012F01000100000002 /* BrandStock.swift in Sources */,
 				3806E5062F00F94200187AA7 /* AddInventoryView.swift in Sources */,
@@ -552,6 +559,7 @@
 				386ECBFA2F332DB600BD92E8 /* AnnouncementManager.swift in Sources */,
 				38B1A0012F01000100000048 /* CSVImporter.swift in Sources */,
 				38FA2CF72F274C4000912E02 /* SharedImageManager.swift in Sources */,
+				CC510001A0050001DEADBEEF /* ColorSimilarityService.swift in Sources */,
 				38B1A0012F0100010000004A /* ImportStockView.swift in Sources */,
 				38FA2CE32F26A00000912E02 /* ShippingView.swift in Sources */,
 			);
