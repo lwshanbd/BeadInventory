@@ -2543,6 +2543,48 @@ class InventoryManager: ObservableObject {
         return true
     }
 
+    /// 通过 DeductionResolver 执行计划项目（支持跨品牌扣减）
+    @discardableResult
+    func executePlannedProjectWithResolver(_ projectId: UUID, resolver: DeductionResolver) -> Bool {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else {
+            return false
+        }
+
+        let project = projects[index]
+        guard project.isPlanned else { return false }
+
+        // 父项目暂不支持 resolver 模式，回退到单品牌
+        if isParentProject(projectId), let brandId = resolver.primaryBrandId {
+            return executePlannedProject(projectId, withBrand: brandId)
+        }
+
+        let beforeProject = project
+
+        _ = resolver.executeDeductions()
+
+        projects[index].isPlanned = false
+        projects[index].brandId = resolver.primaryBrandId
+        projects[index].executedDate = Date()
+        projects[index].beadUsage = resolver.buildBeadUsages(isDeducted: true)
+
+        if let parentId = project.parentId {
+            let remainingPlannedChildren = projects.filter {
+                $0.parentId == parentId && $0.isPlanned && $0.id != projectId
+            }
+            if remainingPlannedChildren.isEmpty {
+                if let parentIndex = projects.firstIndex(where: { $0.id == parentId }) {
+                    projects[parentIndex].isPlanned = false
+                    projects[parentIndex].executedDate = Date()
+                    projects[parentIndex].brandId = resolver.primaryBrandId
+                }
+            }
+        }
+
+        saveData()
+        historyManager.recordPlanExecute(beforeProject: beforeProject, afterProject: projects[index])
+        return true
+    }
+
     /// 删除计划项目（不回退库存，因为还未扣减）
     func deletePlannedProject(_ projectId: UUID) {
         guard let project = projects.first(where: { $0.id == projectId }) else {
