@@ -72,25 +72,25 @@ class DeductionResolver: ObservableObject {
     }
 
     /// 为单个颜色切换品牌（标记为手动覆盖）
-    func overrideBrand(for mardCode: String, to brandId: UUID) {
-        guard let i = items.firstIndex(where: { $0.mardCode == mardCode }) else { return }
+    func overrideBrand(for itemId: UUID, to brandId: UUID) {
+        guard let i = items.firstIndex(where: { $0.id == itemId }) else { return }
         items[i].brandId = brandId
         items[i].isManualOverride = true
         refreshStockStatus()
     }
 
     /// 重置某颜色回主品牌
-    func resetToPrimary(for mardCode: String) {
+    func resetToPrimary(for itemId: UUID) {
         guard let primaryBrandId,
-              let i = items.firstIndex(where: { $0.mardCode == mardCode }) else { return }
+              let i = items.firstIndex(where: { $0.id == itemId }) else { return }
         items[i].brandId = primaryBrandId
         items[i].isManualOverride = false
         refreshStockStatus()
     }
 
     /// 替换颜色（相似色代替）
-    func substituteColor(originalMardCode: String, newMardCode: String, newColorCode: String) {
-        guard let i = items.firstIndex(where: { $0.mardCode == originalMardCode }) else { return }
+    func substituteColor(itemId: UUID, newMardCode: String, newColorCode: String) {
+        guard let i = items.firstIndex(where: { $0.id == itemId }) else { return }
         if items[i].originalMardCode == nil {
             items[i].originalMardCode = items[i].mardCode
             items[i].originalColorCode = items[i].colorCode

@@ -506,15 +506,17 @@ class InventoryManager: ObservableObject {
         return false
     }
 
-    /// 撤回计划执行：恢复项目状态和库存
+    /// 撤回计划执行：恢复项目状态和库存（按每条 usage 的 brandId 恢复，支持跨品牌扣减的撤回）
     func revertPlanExecute(projectId: UUID, brandId: UUID, beadUsages: [(colorCode: String, quantity: Int)]) -> Bool {
         guard let index = projects.firstIndex(where: { $0.id == projectId }) else {
             return false
         }
 
-        // 恢复库存（批量操作，不逐个保存）
+        // 优先按每条 beadUsage 自带的 brandId 恢复库存；若无则回退到传入的 brandId
+        let projectUsages = projects[index].beadUsage
         for usage in beadUsages {
-            _ = revertFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity, shouldSave: false)
+            let usageBrandId = projectUsages.first(where: { $0.colorCode == usage.colorCode })?.brandId ?? brandId
+            _ = revertFromStock(brandId: usageBrandId, colorCode: usage.colorCode, amount: usage.quantity, shouldSave: false)
         }
 
         // 恢复项目状态

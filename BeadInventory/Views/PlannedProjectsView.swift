@@ -756,14 +756,14 @@ struct ExecutePlannedProjectSheet: View {
             lowStockThreshold: threshold,
             brandName: brandName,
             onBrandChanged: { newBrandId in
-                resolver.overrideBrand(for: item.mardCode, to: newBrandId)
+                resolver.overrideBrand(for: item.id, to: newBrandId)
             },
             onResetBrand: {
-                resolver.resetToPrimary(for: item.mardCode)
+                resolver.resetToPrimary(for: item.id)
             },
             onSubstitute: { newMardCode, newColorCode in
                 resolver.substituteColor(
-                    originalMardCode: item.mardCode,
+                    itemId: item.id,
                     newMardCode: newMardCode,
                     newColorCode: newColorCode
                 )
@@ -834,7 +834,7 @@ struct ExecutePlannedProjectSheet: View {
                     }
                 }
 
-                if let resolver = resolver, selectedBrandId != nil {
+                if let resolver = resolver, selectedBrandId != nil, !isParent {
                     Section("扣减详情") {
                         ForEach(resolver.items) { item in
                             deductionItemRowView(item: item, resolver: resolver)

@@ -1263,14 +1263,14 @@ struct DeductionReviewSheet: View {
             lowStockThreshold: threshold,
             brandName: brandName,
             onBrandChanged: { newBrandId in
-                resolver.overrideBrand(for: item.mardCode, to: newBrandId)
+                resolver.overrideBrand(for: item.id, to: newBrandId)
             },
             onResetBrand: {
-                resolver.resetToPrimary(for: item.mardCode)
+                resolver.resetToPrimary(for: item.id)
             },
             onSubstitute: { newMardCode, newColorCode in
                 resolver.substituteColor(
-                    originalMardCode: item.mardCode,
+                    itemId: item.id,
                     newMardCode: newMardCode,
                     newColorCode: newColorCode
                 )
