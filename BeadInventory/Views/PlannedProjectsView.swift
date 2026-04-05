@@ -715,6 +715,62 @@ struct ExecutePlannedProjectSheet: View {
         return project.beadUsage
     }
 
+    private var executeConfirmMessage: String {
+        guard let brand = selectedBrand else { return "" }
+        var msg = "将从「\(brand.name)」品牌库存中扣减 \(totalBeads) 颗豆子（\(colorCount) 种颜色）。"
+        if let resolver = resolver {
+            if resolver.hasManualOverrides {
+                let overrides = resolver.manualOverrideItems.compactMap { item in
+                    if let b = matchingBrands.first(where: { $0.id == item.brandId }) {
+                        return "\(item.colorCode) → \(b.name)"
+                    }
+                    return nil
+                }
+                msg += "\n\n跨品牌扣减：\n" + overrides.joined(separator: "\n")
+            }
+            if !resolver.insufficientItems.isEmpty {
+                msg += "\n\n⚠️ \(resolver.insufficientItems.count) 种颜色扣除后库存将为负数"
+            }
+        }
+        return msg
+    }
+
+    @ViewBuilder
+    private func deductionItemRowView(item: DeductionItem, resolver: DeductionResolver) -> some View {
+        let beadColor = inventoryManager.findColor(byCode: item.mardCode)
+        let brandName = matchingBrands.first(where: { $0.id == item.brandId })?.name ?? "未知"
+        let threshold = matchingBrands.first(where: { $0.id == item.brandId })?.lowStockThreshold ?? 100
+        let similarColors = similarityService.findSimilarColors(
+            for: item.mardCode,
+            brandId: item.brandId,
+            allColors: inventoryManager.allBeadColors,
+            brandStocks: inventoryManager.brandStocks
+        )
+
+        DeductionItemRow(
+            item: item,
+            beadColor: beadColor,
+            matchingBrands: matchingBrands,
+            similarColors: similarColors,
+            colorSystem: project.colorSystem,
+            lowStockThreshold: threshold,
+            brandName: brandName,
+            onBrandChanged: { newBrandId in
+                resolver.overrideBrand(for: item.mardCode, to: newBrandId)
+            },
+            onResetBrand: {
+                resolver.resetToPrimary(for: item.mardCode)
+            },
+            onSubstitute: { newMardCode, newColorCode in
+                resolver.substituteColor(
+                    originalMardCode: item.mardCode,
+                    newMardCode: newMardCode,
+                    newColorCode: newColorCode
+                )
+            }
+        )
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -781,39 +837,8 @@ struct ExecutePlannedProjectSheet: View {
                 if let resolver = resolver, selectedBrandId != nil {
                     Section("扣减详情") {
                         ForEach(resolver.items) { item in
-                            let beadColor = inventoryManager.findColor(byCode: item.mardCode)
-                            let brandName = matchingBrands.first(where: { $0.id == item.brandId })?.name ?? "未知"
-                            let threshold = matchingBrands.first(where: { $0.id == item.brandId })?.lowStockThreshold ?? 100
-                            let similarColors = similarityService.findSimilarColors(
-                                for: item.mardCode,
-                                brandId: item.brandId,
-                                allColors: inventoryManager.allBeadColors,
-                                brandStocks: inventoryManager.brandStocks
-                            )
-
-                            DeductionItemRow(
-                                item: item,
-                                beadColor: beadColor,
-                                matchingBrands: matchingBrands,
-                                similarColors: similarColors,
-                                colorSystem: project.colorSystem,
-                                lowStockThreshold: threshold,
-                                brandName: brandName,
-                                onBrandChanged: { newBrandId in
-                                    resolver.overrideBrand(for: item.mardCode, to: newBrandId)
-                                },
-                                onResetBrand: {
-                                    resolver.resetToPrimary(for: item.mardCode)
-                                },
-                                onSubstitute: { newMardCode, newColorCode in
-                                    resolver.substituteColor(
-                                        originalMardCode: item.mardCode,
-                                        newMardCode: newMardCode,
-                                        newColorCode: newColorCode
-                                    )
-                                }
-                            )
-                            .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+                            deductionItemRowView(item: item, resolver: resolver)
+                                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
                         }
                     }
                 }
@@ -852,24 +877,7 @@ struct ExecutePlannedProjectSheet: View {
                     }
                 }
             } message: {
-                if let brand = selectedBrand {
-                    var msg = "将从「\(brand.name)」品牌库存中扣减 \(totalBeads) 颗豆子（\(colorCount) 种颜色）。"
-                    if let resolver = resolver {
-                        if resolver.hasManualOverrides {
-                            let overrides = resolver.manualOverrideItems.compactMap { item in
-                                if let b = matchingBrands.first(where: { $0.id == item.brandId }) {
-                                    return "\(item.colorCode) → \(b.name)"
-                                }
-                                return nil
-                            }
-                            msg += "\n\n跨品牌扣减：\n" + overrides.joined(separator: "\n")
-                        }
-                        if !resolver.insufficientItems.isEmpty {
-                            msg += "\n\n⚠️ \(resolver.insufficientItems.count) 种颜色扣除后库存将为负数"
-                        }
-                    }
-                    Text(msg)
-                }
+                Text(executeConfirmMessage)
             }
         }
         .presentationDetents([.medium, .large])
