@@ -506,15 +506,17 @@ class InventoryManager: ObservableObject {
         return false
     }
 
-    /// 撤回计划执行：恢复项目状态和库存
+    /// 撤回计划执行：恢复项目状态和库存（按每条 usage 的 brandId 恢复，支持跨品牌扣减的撤回）
     func revertPlanExecute(projectId: UUID, brandId: UUID, beadUsages: [(colorCode: String, quantity: Int)]) -> Bool {
         guard let index = projects.firstIndex(where: { $0.id == projectId }) else {
             return false
         }
 
-        // 恢复库存（批量操作，不逐个保存）
+        // 优先按每条 beadUsage 自带的 brandId 恢复库存；若无则回退到传入的 brandId
+        let projectUsages = projects[index].beadUsage
         for usage in beadUsages {
-            _ = revertFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity, shouldSave: false)
+            let usageBrandId = projectUsages.first(where: { $0.colorCode == usage.colorCode })?.brandId ?? brandId
+            _ = revertFromStock(brandId: usageBrandId, colorCode: usage.colorCode, amount: usage.quantity, shouldSave: false)
         }
 
         // 恢复项目状态
@@ -2540,6 +2542,64 @@ class InventoryManager: ObservableObject {
         projects[parentIndex].executedDate = Date()
 
         saveData()
+        return true
+    }
+
+    /// 通过 DeductionResolver 执行计划项目（支持跨品牌扣减）
+    @discardableResult
+    func executePlannedProjectWithResolver(_ projectId: UUID, resolver: DeductionResolver) -> Bool {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else {
+            return false
+        }
+
+        let project = projects[index]
+        guard project.isPlanned else { return false }
+
+        // 校验 primaryBrand 的色系与项目一致
+        if let brandId = resolver.primaryBrandId,
+           let brand = brands.first(where: { $0.id == brandId }),
+           brand.colorSystem != project.colorSystem {
+            return false
+        }
+
+        // 父项目暂不支持 resolver 模式，回退到单品牌
+        if isParentProject(projectId), let brandId = resolver.primaryBrandId {
+            return executePlannedProject(projectId, withBrand: brandId)
+        }
+
+        let beforeProject = project
+
+        // 执行扣减，不在 resolver 内保存（统一在下面保存）
+        let failedItems = resolver.executeDeductions(shouldSave: false)
+
+        // 更新项目状态，标记失败项为未扣减
+        projects[index].isPlanned = false
+        projects[index].brandId = resolver.primaryBrandId
+        projects[index].executedDate = Date()
+        projects[index].beadUsage = resolver.items.map { item in
+            BeadUsage(
+                colorCode: item.mardCode,
+                brandId: item.brandId,
+                quantity: item.quantity,
+                isDeducted: !failedItems.contains(where: { $0.id == item.id })
+            )
+        }
+
+        if let parentId = project.parentId {
+            let remainingPlannedChildren = projects.filter {
+                $0.parentId == parentId && $0.isPlanned && $0.id != projectId
+            }
+            if remainingPlannedChildren.isEmpty {
+                if let parentIndex = projects.firstIndex(where: { $0.id == parentId }) {
+                    projects[parentIndex].isPlanned = false
+                    projects[parentIndex].executedDate = Date()
+                    projects[parentIndex].brandId = resolver.primaryBrandId
+                }
+            }
+        }
+
+        saveData()
+        historyManager.recordPlanExecute(beforeProject: beforeProject, afterProject: projects[index])
         return true
     }
 

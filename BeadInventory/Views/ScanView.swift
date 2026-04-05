@@ -37,6 +37,10 @@ struct ScanView: View {
     @State private var errorMessage: String?
     @State private var showingCreatePlan = false
 
+    @State private var deductionResolver: DeductionResolver?
+    @State private var showingDeductionReview = false
+    private let similarityService = ColorSimilarityService()
+
     // 缩略图相关
     @State private var originalImage: UIImage?       // 原始图片（裁剪前）
     @State private var thumbnailImage: UIImage?      // 缩略图（可裁切）
@@ -327,7 +331,7 @@ struct ScanView: View {
 
                                         // 扣减库存按钮（需要选择匹配色系的品牌）
                                         Button {
-                                            showingConfirmation = true
+                                            prepareDeduction()
                                         } label: {
                                             HStack {
                                                 Image(systemName: insufficientStockItems.isEmpty ? "minus.circle.fill" : "exclamationmark.triangle.fill")
@@ -449,6 +453,26 @@ struct ScanView: View {
                     Text("将从库存中扣减 \(totalBeads) 颗豆子，共 \(recognizedItems.count) 种颜色。\n\n⚠️ 以下 \(insufficientStockItems.count) 种颜色扣除后库存将为负数：\n\(insufficientStockItems.map { "\($0.colorCode): \($0.currentStock) - \($0.deductAmount) = \($0.currentStock - $0.deductAmount)" }.joined(separator: "\n"))")
                 }
             }
+            .sheet(isPresented: $showingDeductionReview) {
+                if let resolver = deductionResolver {
+                    DeductionReviewSheet(
+                        resolver: resolver,
+                        colorSystem: scanColorSystem,
+                        matchingBrands: inventoryManager.brands
+                            .filter { $0.colorSystem == scanColorSystem }
+                            .sorted { $0.sortOrder < $1.sortOrder },
+                        inventoryManager: inventoryManager,
+                        similarityService: similarityService,
+                        onConfirm: {
+                            applyToInventoryWithResolver(resolver)
+                            showingDeductionReview = false
+                        },
+                        onCancel: {
+                            showingDeductionReview = false
+                        }
+                    )
+                }
+            }
             .alert("创建计划", isPresented: $showingCreatePlan) {
                 Button("取消", role: .cancel) { }
                 Button("确认") {
@@ -511,6 +535,20 @@ struct ScanView: View {
         }
     }
 
+    func prepareDeduction() {
+        guard let brandId = inventoryManager.currentBrandId,
+              brandMatchesScanSystem else { return }
+
+        let resolver = DeductionResolver(inventoryManager: inventoryManager)
+        resolver.initializeFromRecognizedItems(
+            recognizedItems.map { (colorCode: $0.colorCode, quantity: $0.quantity) },
+            primaryBrandId: brandId,
+            colorSystem: scanColorSystem
+        )
+        self.deductionResolver = resolver
+        showingDeductionReview = true
+    }
+
     func applyToInventory() {
         guard let brandId = inventoryManager.currentBrandId,
               brandMatchesScanSystem else { return }
@@ -540,6 +578,34 @@ struct ScanView: View {
 
         // 清除结果
         clearState()
+    }
+
+    func applyToInventoryWithResolver(_ resolver: DeductionResolver) {
+        // 先执行扣减（不保存），确认结果后再创建项目记录
+        let failedItems = resolver.executeDeductions(shouldSave: false)
+
+        let thumbnailData = generateThumbnailData()
+        // 标记失败项为未扣减
+        let beadUsages = resolver.items.map { item in
+            BeadUsage(
+                colorCode: item.mardCode,
+                brandId: item.brandId,
+                quantity: item.quantity,
+                isDeducted: !failedItems.contains(where: { $0.id == item.id })
+            )
+        }
+        let project = ProjectRecord(
+            name: projectName.isEmpty ? "图纸\(Date().formatted(date: .numeric, time: .omitted))" : projectName,
+            beadUsage: beadUsages,
+            brandId: resolver.primaryBrandId,
+            thumbnail: thumbnailData,
+            colorSystem: scanColorSystem
+        )
+        inventoryManager.addProject(project)
+        inventoryManager.saveData()
+
+        clearState()
+        deductionResolver = nil
     }
 
     func createPlannedProject() {
@@ -1148,6 +1214,186 @@ struct RecognizedItemRowNew: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(stockInfo?.isInsufficient == true ? Color.red.opacity(0.3) : Color.clear, lineWidth: 1)
         )
+    }
+}
+
+// MARK: - 扣减审核弹窗
+struct DeductionReviewSheet: View {
+    @ObservedObject var resolver: DeductionResolver
+    let colorSystem: ColorSystem
+    let matchingBrands: [Brand]
+    let inventoryManager: InventoryManager
+    let similarityService: ColorSimilarityService
+    var onConfirm: () -> Void
+    var onCancel: () -> Void
+
+    @State private var showConfirmAlert = false
+
+    private var confirmAlertMessage: String {
+        let total = resolver.items.reduce(0) { $0 + $1.quantity }
+        let count = resolver.items.count
+        if resolver.insufficientItems.isEmpty && !resolver.hasManualOverrides {
+            return "将扣减 \(total) 颗豆子，共 \(count) 种颜色。"
+        }
+        var msg = "将扣减 \(total) 颗豆子，共 \(count) 种颜色。"
+        if resolver.hasManualOverrides {
+            let overrides = resolver.manualOverrideItems.compactMap { item in
+                if let brand = matchingBrands.first(where: { $0.id == item.brandId }) {
+                    return "\(item.colorCode) → \(brand.name)"
+                }
+                return nil
+            }
+            msg += "\n\n跨品牌扣减：\n" + overrides.joined(separator: "\n")
+        }
+        if !resolver.insufficientItems.isEmpty {
+            msg += "\n\n⚠️ \(resolver.insufficientItems.count) 种颜色库存不足"
+        }
+        return msg
+    }
+
+    @ViewBuilder
+    private func deductionItemRowView(item: DeductionItem, resolver: DeductionResolver) -> some View {
+        let beadColor = inventoryManager.findColor(byCode: item.mardCode)
+        let brandName = matchingBrands.first(where: { $0.id == item.brandId })?.name ?? "未知"
+        let threshold = matchingBrands.first(where: { $0.id == item.brandId })?.lowStockThreshold ?? 100
+        let similarColors = similarityService.findSimilarColors(
+            for: item.mardCode,
+            brandId: item.brandId,
+            allColors: inventoryManager.allBeadColors,
+            brandStocks: inventoryManager.brandStocks
+        )
+
+        DeductionItemRow(
+            item: item,
+            beadColor: beadColor,
+            matchingBrands: matchingBrands,
+            similarColors: similarColors,
+            colorSystem: colorSystem,
+            lowStockThreshold: threshold,
+            brandName: brandName,
+            onBrandChanged: { newBrandId in
+                resolver.overrideBrand(for: item.id, to: newBrandId)
+            },
+            onResetBrand: {
+                resolver.resetToPrimary(for: item.id)
+            },
+            onSubstitute: { newMardCode, newColorCode in
+                resolver.substituteColor(
+                    itemId: item.id,
+                    newMardCode: newMardCode,
+                    newColorCode: newColorCode
+                )
+            }
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("主品牌:")
+                        .foregroundColor(.secondary)
+                    if let brand = matchingBrands.first(where: { $0.id == resolver.primaryBrandId }) {
+                        Text(brand.name)
+                            .fontWeight(.medium)
+                    }
+                    Spacer()
+                    Menu {
+                        ForEach(matchingBrands) { brand in
+                            Button {
+                                resolver.setPrimaryBrand(brand.id)
+                            } label: {
+                                HStack {
+                                    Text(brand.name)
+                                    if brand.id == resolver.primaryBrandId {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("切换")
+                                .font(.caption)
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.accentColor.opacity(0.1))
+                        .foregroundColor(.accentColor)
+                        .cornerRadius(12)
+                    }
+                }
+                .padding()
+
+                Divider()
+
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(resolver.items) { item in
+                            deductionItemRowView(item: item, resolver: resolver)
+                        }
+                    }
+                    .padding()
+                }
+
+                Divider()
+
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("\(resolver.items.count) 种颜色")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("·")
+                            .foregroundColor(.secondary)
+                        Text("\(resolver.items.reduce(0) { $0 + $1.quantity }) 颗")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        if !resolver.insufficientItems.isEmpty {
+                            Text("·")
+                                .foregroundColor(.secondary)
+                            Text("\(resolver.insufficientItems.count) 种不足")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                        Spacer()
+                    }
+
+                    Button {
+                        showConfirmAlert = true
+                    } label: {
+                        HStack {
+                            Image(systemName: resolver.insufficientItems.isEmpty ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            Text("确认扣减")
+                        }
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(resolver.insufficientItems.isEmpty ? Color.green : Color.red)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("扣减审核")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消", action: onCancel)
+                }
+            }
+            .alert("确认扣减", isPresented: $showConfirmAlert) {
+                Button("取消", role: .cancel) { }
+                Button("确认", role: resolver.insufficientItems.isEmpty ? .none : .destructive) {
+                    onConfirm()
+                }
+            } message: {
+                Text(confirmAlertMessage)
+            }
+        }
+        .presentationDetents([.large])
     }
 }
 
