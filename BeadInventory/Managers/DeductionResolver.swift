@@ -147,16 +147,4 @@ class DeductionResolver: ObservableObject, Identifiable {
         cachedFailedItems = failedItems
         return failedItems
     }
-
-    /// 生成 BeadUsage 数组（用于创建 ProjectRecord）
-    func buildBeadUsages(isDeducted: Bool) -> [BeadUsage] {
-        items.map { item in
-            BeadUsage(
-                colorCode: item.mardCode,
-                brandId: item.brandId,
-                quantity: item.quantity,
-                isDeducted: isDeducted
-            )
-        }
-    }
 }
