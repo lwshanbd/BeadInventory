@@ -15,7 +15,7 @@ class DeductionResolver: ObservableObject, Identifiable {
     @Published var primaryBrandId: UUID?
 
     private let inventoryManager: InventoryManager
-    private var hasExecuted = false
+    private var cachedFailedItems: [DeductionItem]?
 
     init(inventoryManager: InventoryManager) {
         self.inventoryManager = inventoryManager
@@ -125,9 +125,9 @@ class DeductionResolver: ObservableObject, Identifiable {
     }
 
     /// 执行扣减：逐条调用 InventoryManager.deductFromStock，返回失败项
+    /// 重复调用时返回首次执行的缓存结果
     func executeDeductions(shouldSave: Bool = true) -> [DeductionItem] {
-        guard !hasExecuted else { return [] }
-        hasExecuted = true
+        if let cached = cachedFailedItems { return cached }
 
         var failedItems: [DeductionItem] = []
         for item in items {
@@ -144,6 +144,7 @@ class DeductionResolver: ObservableObject, Identifiable {
         if shouldSave {
             inventoryManager.saveData()
         }
+        cachedFailedItems = failedItems
         return failedItems
     }
 
