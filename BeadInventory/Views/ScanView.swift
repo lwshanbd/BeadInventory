@@ -38,6 +38,8 @@ struct ScanView: View {
     @State private var showingCreatePlan = false
 
     @State private var deductionResolver: DeductionResolver?
+    @State private var showingDeductionFailure = false
+    @State private var deductionFailureMessage = ""
 
     private let similarityService = ColorSimilarityService()
 
@@ -464,12 +466,16 @@ struct ScanView: View {
                     similarityService: similarityService,
                     onConfirm: {
                         applyToInventoryWithResolver(resolver)
-                        deductionResolver = nil
                     },
                     onCancel: {
                         deductionResolver = nil
                     }
                 )
+            }
+            .alert("部分颜色扣减失败", isPresented: $showingDeductionFailure) {
+                Button("知道了") { }
+            } message: {
+                Text(deductionFailureMessage)
             }
             .alert("创建计划", isPresented: $showingCreatePlan) {
                 Button("取消", role: .cancel) { }
@@ -553,9 +559,18 @@ struct ScanView: View {
         // 生成压缩的缩略图数据
         let thumbnailData = generateThumbnailData()
 
-        // 创建项目记录
+        // 先执行扣减，记录失败项
+        var failedColorCodes: Set<String> = []
+        for item in recognizedItems {
+            let success = inventoryManager.deductFromStock(brandId: brandId, colorCode: item.colorCode, amount: item.quantity, shouldSave: false)
+            if !success {
+                failedColorCodes.insert(item.colorCode)
+            }
+        }
+
+        // 根据扣减结果正确标记 isDeducted
         let beadUsages = recognizedItems.map { item in
-            BeadUsage(colorCode: item.colorCode, brandId: brandId, quantity: item.quantity, isDeducted: true)
+            BeadUsage(colorCode: item.colorCode, brandId: brandId, quantity: item.quantity, isDeducted: !failedColorCodes.contains(item.colorCode))
         }
         let project = ProjectRecord(
             name: projectName.isEmpty ? "图纸\(Date().formatted(date: .numeric, time: .omitted))" : projectName,
@@ -565,15 +580,14 @@ struct ScanView: View {
             colorSystem: scanColorSystem
         )
         inventoryManager.addProject(project)
-
-        // 从当前品牌库存扣减（批量操作，不逐个保存）
-        for item in recognizedItems {
-            _ = inventoryManager.deductFromStock(brandId: brandId, colorCode: item.colorCode, amount: item.quantity, shouldSave: false)
-        }
-        // 统一保存
         inventoryManager.saveData()
 
-        // 清除结果
+        // 如果有失败项，显示提示
+        if !failedColorCodes.isEmpty {
+            deductionFailureMessage = "以下 \(failedColorCodes.count) 种颜色扣减失败：\n\(failedColorCodes.sorted().joined(separator: "、"))"
+            showingDeductionFailure = true
+        }
+
         clearState()
     }
 
@@ -600,6 +614,13 @@ struct ScanView: View {
         )
         inventoryManager.addProject(project)
         inventoryManager.saveData()
+
+        // 如果有失败项，显示提示
+        if !failedItems.isEmpty {
+            let failedCodes = failedItems.map { $0.colorCode }.joined(separator: "、")
+            deductionFailureMessage = "以下 \(failedItems.count) 种颜色扣减失败：\n\(failedCodes)"
+            showingDeductionFailure = true
+        }
 
         clearState()
         deductionResolver = nil

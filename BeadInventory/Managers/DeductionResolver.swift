@@ -126,7 +126,7 @@ class DeductionResolver: ObservableObject, Identifiable {
 
     /// 执行扣减：逐条调用 InventoryManager.deductFromStock，返回失败项
     func executeDeductions(shouldSave: Bool = true) -> [DeductionItem] {
-        guard !hasExecuted else { return items }
+        guard !hasExecuted else { return [] }
         hasExecuted = true
 
         var failedItems: [DeductionItem] = []
