@@ -8324,12 +8324,12 @@
         }
       }
     },
-    "请求过于频繁或服务繁忙，请稍等片刻再试" : {
+    "Kimi 服务器当前算力紧张，暂时无法响应，请稍后再试（非本应用问题）" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Too many requests or service is busy, please wait and retry"
+            "value" : "Kimi's servers are overloaded and can't respond right now. Please try again later (this is not an app issue)."
           }
         }
       }
