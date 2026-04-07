@@ -1661,7 +1661,7 @@ enum AIError: LocalizedError {
         case .apiError(let msg):
             return String(localized: "API 错误: \(msg)")
         case .serverOverloaded:
-            return String(localized: "请求过于频繁或服务繁忙，请稍等片刻再试")
+            return String(localized: "AI 服务算力不足，暂时无法处理请求，请稍后再试")
         case .parseError(let msg):
             return String(localized: "解析错误: \(msg)")
         }
