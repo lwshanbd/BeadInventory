@@ -8,12 +8,22 @@
 import SwiftUI
 import TipKit
 
+struct LowStockSheetItem: Identifiable {
+    let id: UUID
+    let brandId: UUID
+
+    init(brandId: UUID) {
+        self.id = brandId
+        self.brandId = brandId
+    }
+}
+
 struct InventoryView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var searchText = ""
     @State private var selectedColor: BeadColor?
     @State private var showingBrandSettings = false
-    @State private var showingLowStockDetail = false
+    @State private var lowStockDetailItem: LowStockSheetItem?
     @State private var sortOption: SortOption = .code
     @State private var sortAscending: Bool = true
     @AppStorage("inventoryViewMode") private var viewMode: ViewMode = .list
@@ -146,7 +156,9 @@ struct InventoryView: View {
                 // 顶部统计卡片
                 if inventoryManager.currentBrandId != nil {
                     StatsHeaderView(onLowStockTap: {
-                        showingLowStockDetail = true
+                        if let brandId = inventoryManager.currentBrandId {
+                            lowStockDetailItem = LowStockSheetItem(brandId: brandId)
+                        }
                     })
                     .padding(.horizontal)
                     .padding(.top, 8)
@@ -388,11 +400,9 @@ struct InventoryView: View {
             .sheet(isPresented: $showingBrandSettings) {
                 BrandSettingsView()
             }
-            .sheet(isPresented: $showingLowStockDetail) {
-                if let brandId = inventoryManager.currentBrandId {
-                    LowStockDetailView(brandId: brandId)
-                        .environmentObject(inventoryManager)
-                }
+            .sheet(item: $lowStockDetailItem) { item in
+                LowStockDetailView(brandId: item.brandId)
+                    .environmentObject(inventoryManager)
             }
         }
     }
@@ -472,7 +482,7 @@ struct GridGroupHeaderView: View {
 // MARK: - 统计头部
 struct StatsHeaderView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
-    var onLowStockTap: (() -> Void)? = nil
+    var onLowStockTap: () -> Void
 
     var body: some View {
         if let brandId = inventoryManager.currentBrandId {
@@ -496,7 +506,7 @@ struct StatsHeaderView: View {
                     color: .orange
                 )
                 .onTapGesture {
-                    onLowStockTap?()
+                    onLowStockTap()
                 }
             }
         }

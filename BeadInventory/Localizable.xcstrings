@@ -2098,6 +2098,16 @@
         }
       }
     },
+    "Kimi 服务器当前算力紧张，暂时无法响应，请稍后再试（非本应用问题）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kimi's servers are overloaded and can't respond right now. Please try again later (this is not an app issue)."
+          }
+        }
+      }
+    },
     "Made with" : {
 
     },
@@ -2753,6 +2763,12 @@
           }
         }
       }
+    },
+    "低库存色号数" : {
+
+    },
+    "低库存详情" : {
+
     },
     "低库存阈值" : {
       "localizations" : {
@@ -5770,6 +5786,9 @@
         }
       }
     },
+    "按可用库存从少到多排序" : {
+
+    },
     "按日期查看完成的作品" : {
       "localizations" : {
         "en" : {
@@ -7672,6 +7691,9 @@
         }
       }
     },
+    "缺 %lld" : {
+
+    },
     "缺 %lld 颗" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8324,16 +8346,6 @@
         }
       }
     },
-    "Kimi 服务器当前算力紧张，暂时无法响应，请稍后再试（非本应用问题）" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kimi's servers are overloaded and can't respond right now. Please try again later (this is not an app issue)."
-          }
-        }
-      }
-    },
     "请稍后重试" : {
       "localizations" : {
         "en" : {
@@ -8720,22 +8732,22 @@
         }
       }
     },
-    "部分颜色扣减失败" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Some Colors Failed to Deduct"
-          }
-        }
-      }
-    },
     "部分数据加载失败，请点击重试。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Some data failed to load. Tap to retry."
+          }
+        }
+      }
+    },
+    "部分颜色扣减失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some Colors Failed to Deduct"
           }
         }
       }
