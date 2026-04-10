@@ -75,6 +75,7 @@
 		38B1A0012F01000100000053 /* colorwithkaka.csv in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000052 /* colorwithkaka.csv */; };
 		38B1A0012F01000100000055 /* allcolors.json in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000054 /* allcolors.json */; };
 		38B1A0012F01000100000061 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000060 /* Localizable.xcstrings */; };
+		6EC4A1187CBB489B83C6E6559E6BABBA /* LowStockDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EC4A1187CBB489B83C6E6559E6BABBB /* LowStockDetailView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -169,6 +170,7 @@
 		38B1A0012F01000100000052 /* colorwithkaka.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = colorwithkaka.csv; sourceTree = "<group>"; };
 		38B1A0012F01000100000054 /* allcolors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = allcolors.json; sourceTree = "<group>"; };
 		38B1A0012F01000100000060 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		6EC4A1187CBB489B83C6E6559E6BABBB /* LowStockDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LowStockDetailView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -336,6 +338,7 @@
 				A0123456001A /* StatisticsView.swift */,
 				A0123456001B /* SettingsView.swift */,
 				38FA2CE42F26A00000912E02 /* ShippingView.swift */,
+				6EC4A1187CBB489B83C6E6559E6BABBB /* LowStockDetailView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -574,6 +577,7 @@
 				EE0B2C01A0070001DEADBEEF /* SimilarColorSheet.swift in Sources */,
 				38B1A0012F0100010000004A /* ImportStockView.swift in Sources */,
 				38FA2CE32F26A00000912E02 /* ShippingView.swift in Sources */,
+				6EC4A1187CBB489B83C6E6559E6BABBA /* LowStockDetailView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

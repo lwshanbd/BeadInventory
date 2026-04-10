@@ -13,6 +13,7 @@ struct InventoryView: View {
     @State private var searchText = ""
     @State private var selectedColor: BeadColor?
     @State private var showingBrandSettings = false
+    @State private var showingLowStockDetail = false
     @State private var sortOption: SortOption = .code
     @State private var sortAscending: Bool = true
     @AppStorage("inventoryViewMode") private var viewMode: ViewMode = .list
@@ -144,9 +145,11 @@ struct InventoryView: View {
 
                 // 顶部统计卡片
                 if inventoryManager.currentBrandId != nil {
-                    StatsHeaderView()
-                        .padding(.horizontal)
-                        .padding(.top, 8)
+                    StatsHeaderView(onLowStockTap: {
+                        showingLowStockDetail = true
+                    })
+                    .padding(.horizontal)
+                    .padding(.top, 8)
 
                     // 排序选项
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -385,6 +388,12 @@ struct InventoryView: View {
             .sheet(isPresented: $showingBrandSettings) {
                 BrandSettingsView()
             }
+            .sheet(isPresented: $showingLowStockDetail) {
+                if let brandId = inventoryManager.currentBrandId {
+                    LowStockDetailView(brandId: brandId)
+                        .environmentObject(inventoryManager)
+                }
+            }
         }
     }
 }
@@ -463,6 +472,7 @@ struct GridGroupHeaderView: View {
 // MARK: - 统计头部
 struct StatsHeaderView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
+    var onLowStockTap: (() -> Void)? = nil
 
     var body: some View {
         if let brandId = inventoryManager.currentBrandId {
@@ -485,6 +495,9 @@ struct StatsHeaderView: View {
                     icon: "exclamationmark.triangle.fill",
                     color: .orange
                 )
+                .onTapGesture {
+                    onLowStockTap?()
+                }
             }
         }
     }
