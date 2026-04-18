@@ -2430,7 +2430,7 @@ struct ScanHelpSheet: View {
                             .padding(.top, 24)
 
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("1. 先选择识别方式：可下载本地模型，也可配置云端 API")
+                            Text("1. 先选择识别方式：推荐配置云端 API（更准更快），也可下载本地模型离线使用")
                             Text("2. 裁切图纸，请只保留图纸下方豆量汇总")
                             Text("3. 扫描")
                         }

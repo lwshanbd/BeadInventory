@@ -257,7 +257,7 @@ struct RecognitionSettingsSections: View {
 
     private var sectionFooterText: String {
         if aiService.config.backend == .local {
-            return "模型参数会从 Hugging Face 下载。下载前请确认机型和存储空间，本地识别虽免 API 配置，但识别速度更慢，也可能造成手机发热。"
+            return "推荐优先使用云端在线模型：识别更准、速度更快、无需占用本机存储。本地模型仅建议在无网络环境使用——下载体积较大，识别速度较慢，也可能造成手机发热。"
         }
 
         return cloudProviderFooterText(for: aiService.config.provider)

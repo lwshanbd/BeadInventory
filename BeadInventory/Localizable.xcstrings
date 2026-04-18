@@ -1021,13 +1021,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Local model: works offline after download, no setup needed, but slightly less accurate. Cloud API: needs internet and API key, but more accurate and supports more formats."
+            "value" : "Cloud API (recommended): needs internet and an API key, but is more accurate, faster, and supports more formats. Local model: works offline after download, but accuracy and speed are lower and it takes up device storage."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本地模型：下载后离线使用，无需配置，但识别准确率稍低。云端 API：需要网络和 API Key，但识别更准确，支持更多格式。"
+            "value" : "推荐使用云端 API：识别更准确、速度更快，支持更多格式，需要网络和 API Key。本地模型仅建议离线场景使用：下载后可脱网使用，但识别准确率和速度较低，且占用本机存储。"
           }
         }
       }

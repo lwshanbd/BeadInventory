@@ -377,7 +377,8 @@ final class LocalModelManager: ObservableObject {
 
         do {
             let repo = Hub.Repo(id: model.repositoryID)
-            let directory = try await Hub.snapshot(from: repo) { progress in
+            let hubApi = HubApi(endpoint: "https://hf-mirror.com")
+            let directory = try await hubApi.snapshot(from: repo) { progress in
                 let total = progress.totalUnitCount
                 let fraction = total > 0
                     ? Double(progress.completedUnitCount) / Double(total)
