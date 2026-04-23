@@ -25,13 +25,14 @@ class AnnouncementManager: ObservableObject {
 
     // MARK: - 配置
 
-    /// 公告数据 URL（修改为你的实际地址）
-    /// 推荐用 GitHub Gist raw URL、GitHub Pages 或任何静态 JSON 托管
-    private let announcementURL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/announcement.json"
+    /// 公告数据 URL
+    /// 托管于 GitHub Pages（源: main 分支 /docs 目录）
+    private let announcementURL = "https://lwshanbd.github.io/BeadInventory/announcement.json"
 
-    /// HMAC 签名密钥（务必替换为你自己的密钥，保持保密）
-    /// 用于验证公告确实由你发布，防止 URL 被劫持后伪造公告
-    private let hmacKey = "REPLACE_WITH_YOUR_SECRET_KEY_HERE"
+    /// HMAC 签名密钥
+    /// 用于验证公告确实由仓库所有者发布，防止 URL 被劫持后伪造公告
+    /// 发布新公告时用同一密钥运行 tools/generate_announcement.py
+    private let hmacKey = "0bda0361962bf6f212ec879ab53e7d87fe4406b89bdb7717fa0068f1d852101b"
 
     /// 已展示公告 ID 的 UserDefaults key
     private let shownIDsKey = "AnnouncementManager.shownIDs"
