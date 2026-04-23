@@ -188,8 +188,8 @@ struct BeadInventoryApp: App {
                     // 启动时检查 iCloud 状态
                     cloudSyncStatusManager.refreshAccountStatus()
 
-                    // 静默检查远程公告（配置好 URL 和密钥后取消注释即可启用）
-                    // AnnouncementManager.shared.checkForAnnouncement()
+                    // 静默检查远程公告
+                    AnnouncementManager.shared.checkForAnnouncement()
                 }
                 .alert(
                     String(localized: "数据库异常"),
