@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import CryptoKit
 
 /// 公告数据模型
 struct Announcement: Codable {
@@ -14,12 +13,11 @@ struct Announcement: Codable {
     let id: String      // 公告唯一标识
     let title: String   // 公告标题
     let message: String // 公告内容
-    let ts: Int         // 时间戳（Unix）
-    let sig: String     // HMAC-SHA256 签名（hex）
+    let ts: Int         // 时间戳（Unix），用于过滤过期/未来公告
 }
 
 /// 远程公告管理器
-/// 在 App 启动时静默访问指定 URL，若内容通过格式和签名校验则弹出公告
+/// 在 App 启动时静默访问指定 URL，若内容通过格式校验则弹出公告
 class AnnouncementManager: ObservableObject {
     static let shared = AnnouncementManager()
 
@@ -28,11 +26,6 @@ class AnnouncementManager: ObservableObject {
     /// 公告数据 URL
     /// 托管于 GitHub Pages（源: main 分支 /docs 目录）
     private let announcementURL = "https://lwshanbd.github.io/BeadInventory/announcement.json"
-
-    /// HMAC 签名密钥
-    /// 用于验证公告确实由仓库所有者发布，防止 URL 被劫持后伪造公告
-    /// 发布新公告时用同一密钥运行 tools/generate_announcement.py
-    private let hmacKey = "0bda0361962bf6f212ec879ab53e7d87fe4406b89bdb7717fa0068f1d852101b"
 
     /// 已展示公告 ID 的 UserDefaults key
     private let shownIDsKey = "AnnouncementManager.shownIDs"
@@ -117,30 +110,26 @@ class AnnouncementManager: ObservableObject {
 
     // MARK: - 内部方法
 
-    /// 解析 JSON 并进行完整校验
+    /// 解析 JSON 并进行格式校验
     private func parseAndValidate(data: Data) -> Announcement? {
-        // 1. JSON 解析
         guard let announcement = try? JSONDecoder().decode(Announcement.self, from: data) else {
             AppLogger.shared.warning("Announcement", "json_decode_failed")
             return nil
         }
 
-        // 2. 格式版本校验
         guard announcement.v == 1 else {
             AppLogger.shared.warning("Announcement", "version_unsupported", metadata: ["v": "\(announcement.v)"])
             return nil
         }
 
-        // 3. 字段非空校验
         guard !announcement.id.isEmpty,
               !announcement.title.isEmpty,
-              !announcement.message.isEmpty,
-              !announcement.sig.isEmpty else {
+              !announcement.message.isEmpty else {
             AppLogger.shared.warning("Announcement", "empty_fields")
             return nil
         }
 
-        // 4. 时间戳合理性校验（过旧或过新都拒绝）
+        // 时间戳合理性校验：过滤过旧或未来公告，防止忘记撤下的旧公告被重新展示
         let now = Int(Date().timeIntervalSince1970)
         let maxAge = 90 * 24 * 3600 // 90 天
         guard announcement.ts > (now - maxAge), announcement.ts <= (now + 3600) else {
@@ -148,37 +137,7 @@ class AnnouncementManager: ObservableObject {
             return nil
         }
 
-        // 5. HMAC-SHA256 签名校验——不匹配可能意味着劫持或密钥不同步
-        guard verifySignature(announcement) else {
-            AppLogger.shared.error("Announcement", "signature_invalid", metadata: ["id": announcement.id])
-            return nil
-        }
-
         return announcement
-    }
-
-    /// 验证 HMAC-SHA256 签名
-    /// 签名内容 = "v|id|title|message|ts"
-    private func verifySignature(_ announcement: Announcement) -> Bool {
-        let payload = "\(announcement.v)|\(announcement.id)|\(announcement.title)|\(announcement.message)|\(announcement.ts)"
-        guard let payloadData = payload.data(using: .utf8),
-              let keyData = hmacKey.data(using: .utf8) else {
-            return false
-        }
-
-        let key = SymmetricKey(data: keyData)
-        let mac = HMAC<SHA256>.authenticationCode(for: payloadData, using: key)
-        let computedSig = mac.map { String(format: "%02x", $0) }.joined()
-
-        // 使用常量时间比较，防止时序攻击
-        guard computedSig.count == announcement.sig.lowercased().count else {
-            return false
-        }
-        var result: UInt8 = 0
-        for (a, b) in zip(computedSig.utf8, announcement.sig.lowercased().utf8) {
-            result |= a ^ b
-        }
-        return result == 0
     }
 
     /// 获取已展示过的公告 ID 集合
