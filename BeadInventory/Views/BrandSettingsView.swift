@@ -235,7 +235,7 @@ struct BrandSettingsView: View {
                     Text("确定要删除「\(brand.name)」吗？该品牌下的所有库存数据将被永久删除。")
                 }
                 .sheet(isPresented: $showingImportStock) {
-                    ImportStockView(mode: .forExistingBrand(brand.id))
+                    ImportStockView(mode: .forExistingBrand(brand.id), colorSystem: brand.colorSystem)
                 }
                 .onAppear {
                     lowStockThreshold = "\(brand.lowStockThreshold)"

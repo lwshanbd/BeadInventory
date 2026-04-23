@@ -245,7 +245,7 @@ struct AddBrandView: View {
                 ColorSelectionView(selectedColors: $customSelectedColors, colorSystem: selectedColorSystem)
             }
             .sheet(isPresented: $showingImportStock) {
-                ImportStockView(mode: .forNewBrand) { items in
+                ImportStockView(mode: .forNewBrand, colorSystem: selectedColorSystem) { items in
                     importedStockItems = items
                 }
             }
@@ -262,7 +262,17 @@ struct AddBrandView: View {
 
         if useImportedStock && !importedStockItems.isEmpty {
             // CSV 导入模式：只有导入的颜色可见，其他颜色隐藏且库存为 0
-            selectedColors = Set(importedStockItems.map { $0.colorCode })
+            // initializeStockForBrand 以 mardCode 作为选中判定，需要把用户输入的色号
+            // （可能是卡卡等非 MARD 体系码）翻译为 mardCode 再传入
+            let translatedCodes = importedStockItems.compactMap { item -> String? in
+                if selectedColorSystem == .mard {
+                    return item.colorCode
+                }
+                return inventoryManager
+                    .findColor(byCode: item.colorCode, preferSystem: selectedColorSystem)?
+                    .mardCode
+            }
+            selectedColors = Set(translatedCodes)
             initialStock = 0  // 初始化为 0，之后通过 importStock 设置实际数量
         } else {
             // 统一数量模式：按颜色预设选择

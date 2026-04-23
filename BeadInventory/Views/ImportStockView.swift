@@ -19,6 +19,7 @@ struct ImportStockView: View {
     }
 
     let mode: ImportMode
+    let colorSystem: ColorSystem
 
     // 回调：创建品牌模式时返回导入数据
     var onImport: (([StockImportItem]) -> Void)?
@@ -30,14 +31,20 @@ struct ImportStockView: View {
     @State private var showingSuccessAlert = false
     @State private var importedCount = 0
 
-    // 有效色号集合
+    // 有效色号集合（按品牌使用的色号体系过滤）
     private var validColorCodes: Set<String> {
-        Set(inventoryManager.beadColors.map { $0.mardCode })
+        Set(inventoryManager.beadColors
+            .filter { $0.hasCode(for: colorSystem) }
+            .map { $0.displayCode(for: colorSystem).uppercased() })
     }
 
-    // 色号到名称映射
+    // 色号到名称映射（按品牌使用的色号体系）
     private var colorNameMap: [String: String] {
-        Dictionary(uniqueKeysWithValues: inventoryManager.beadColors.map { ($0.mardCode, $0.colorName) })
+        var map: [String: String] = [:]
+        for color in inventoryManager.beadColors where color.hasCode(for: colorSystem) {
+            map[color.displayCode(for: colorSystem).uppercased()] = color.colorName
+        }
+        return map
     }
 
     var body: some View {
@@ -416,6 +423,6 @@ struct ImportItemRow: View {
 }
 
 #Preview {
-    ImportStockView(mode: .forNewBrand)
+    ImportStockView(mode: .forNewBrand, colorSystem: .mard)
         .environmentObject(InventoryManager())
 }

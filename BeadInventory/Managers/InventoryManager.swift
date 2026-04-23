@@ -436,9 +436,22 @@ class InventoryManager: ObservableObject {
         var successCount = 0
         var totalAdded = 0
 
+        // 品牌使用的色号体系（决定如何把用户输入码翻译为 mardCode）
+        let colorSystem = brands.first(where: { $0.id == brandId })?.colorSystem ?? .mard
+
         for item in items {
+            // 把用户输入的色号（可能是 kakaCode/cocoCode 等）翻译为内部存储的 mardCode
+            let mardCode: String
+            if colorSystem == .mard {
+                mardCode = item.colorCode
+            } else if let match = findColor(byCode: item.colorCode, preferSystem: colorSystem) {
+                mardCode = match.mardCode
+            } else {
+                continue
+            }
+
             if let index = brandStocks.firstIndex(where: {
-                $0.brandId == brandId && $0.mardCode == item.colorCode
+                $0.brandId == brandId && $0.mardCode == mardCode
             }) {
                 let oldStock = brandStocks[index].stock
                 brandStocks[index].stock += item.quantity
@@ -455,7 +468,7 @@ class InventoryManager: ObservableObject {
                 historyManager.recordStockChange(
                     type: .stockAdd,
                     brandId: brandId,
-                    mardCode: item.colorCode,
+                    mardCode: mardCode,
                     oldValue: oldStock,
                     newValue: brandStocks[index].stock,
                     changeAmount: item.quantity

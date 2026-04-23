@@ -184,8 +184,9 @@ struct AddInventoryView: View {
                 }
             }
             .sheet(isPresented: $showingImportStock) {
-                if let brandId = inventoryManager.currentBrandId {
-                    ImportStockView(mode: .forExistingBrand(brandId))
+                if let brandId = inventoryManager.currentBrandId,
+                   let brand = inventoryManager.brands.first(where: { $0.id == brandId }) {
+                    ImportStockView(mode: .forExistingBrand(brandId), colorSystem: brand.colorSystem)
                 }
             }
             .onAppear {
