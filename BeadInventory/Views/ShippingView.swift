@@ -133,6 +133,11 @@ struct PasteReplenishSheet: View {
         selectedBrandId != nil && !parsedItems.isEmpty
     }
 
+    var selectedBrand: Brand? {
+        guard let id = selectedBrandId else { return nil }
+        return inventoryManager.brands.first { $0.id == id }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -253,7 +258,11 @@ struct PasteReplenishSheet: View {
                                     .padding(.horizontal)
 
                                 ForEach(parsedItems, id: \.colorCode) { item in
-                                    PasteItemRow(colorCode: item.colorCode, grams: item.grams)
+                                    PasteItemRow(
+                                        colorCode: item.colorCode,
+                                        grams: item.grams,
+                                        colorSystem: selectedBrand?.colorSystem ?? .mard
+                                    )
                                 }
                                 .padding(.horizontal)
                             }
@@ -334,8 +343,20 @@ struct PasteReplenishSheet: View {
     func saveRecord() {
         guard let brandId = selectedBrandId else { return }
 
-        let items = parsedItems.map { item in
-            PurchaseItem(colorCode: item.colorCode, quantity: item.grams * 100)  // 克数转颗数
+        // PurchaseItem.colorCode 约定为 mardCode（confirmPurchaseRecord / inTransitQuantity 都按此匹配）。
+        // 用户粘贴的可能是非 MARD 体系的色号，这里按品牌色号体系翻译为 mardCode 后再保存。
+        let colorSystem = selectedBrand?.colorSystem ?? .mard
+        let items = parsedItems.map { item -> PurchaseItem in
+            let resolvedMardCode: String
+            if colorSystem == .mard {
+                resolvedMardCode = item.colorCode
+            } else if let match = inventoryManager.findColor(byCode: item.colorCode, preferSystem: colorSystem) {
+                resolvedMardCode = match.mardCode
+            } else {
+                // 无法在品牌色号体系中识别，保留原始输入（落入库存匹配失败的一致兜底）
+                resolvedMardCode = item.colorCode
+            }
+            return PurchaseItem(colorCode: resolvedMardCode, quantity: item.grams * 100)  // 克数转颗数
         }
 
         let finalName = recordName.trimmingCharacters(in: .whitespaces).isEmpty ? defaultName : recordName
@@ -355,14 +376,20 @@ struct PasteReplenishSheet: View {
 struct PasteItemRow: View {
     let colorCode: String
     let grams: Int
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var beadColor: BeadColor? {
-        inventoryManager.findColor(byCode: colorCode)
+        inventoryManager.findColor(byCode: colorCode, preferSystem: colorSystem)
+            ?? inventoryManager.findColor(byCode: colorCode)
     }
 
     var displayColor: Color {
         beadColor?.color ?? .gray
+    }
+
+    var displayCodeText: String {
+        beadColor?.displayCode(for: colorSystem) ?? colorCode
     }
 
     var body: some View {
@@ -375,7 +402,7 @@ struct PasteItemRow: View {
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
-            Text(colorCode)
+            Text(displayCodeText)
                 .font(.system(.body, design: .monospaced))
                 .fontWeight(.medium)
 
@@ -471,8 +498,16 @@ struct PurchaseRecordDetailView: View {
         inventoryManager.purchaseRecords.first(where: { $0.id == record.id }) ?? record
     }
 
+    var brand: Brand? {
+        inventoryManager.brands.first(where: { $0.id == currentRecord.brandId })
+    }
+
     var brandName: String {
-        inventoryManager.brands.first(where: { $0.id == currentRecord.brandId })?.name ?? String(localized: "未知品牌")
+        brand?.name ?? String(localized: "未知品牌")
+    }
+
+    var brandColorSystem: ColorSystem {
+        brand?.colorSystem ?? .mard
     }
 
     var body: some View {
@@ -544,7 +579,7 @@ struct PurchaseRecordDetailView: View {
 
                     VStack(spacing: 8) {
                         ForEach(currentRecord.items) { item in
-                            PurchaseItemRow(item: item)
+                            PurchaseItemRow(item: item, colorSystem: brandColorSystem)
                         }
                     }
                     .padding(.horizontal)
@@ -627,6 +662,7 @@ struct PurchaseRecordDetailView: View {
 // MARK: - 购买项行
 struct PurchaseItemRow: View {
     let item: PurchaseItem
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var beadColor: BeadColor? {
@@ -635,6 +671,10 @@ struct PurchaseItemRow: View {
 
     var displayColor: Color {
         beadColor?.color ?? .gray
+    }
+
+    var displayCodeText: String {
+        beadColor?.displayCode(for: colorSystem) ?? item.colorCode
     }
 
     var body: some View {
@@ -648,8 +688,8 @@ struct PurchaseItemRow: View {
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
-            // 色号
-            Text(item.colorCode)
+            // 色号（按品牌色号体系显示）
+            Text(displayCodeText)
                 .font(.system(.body, design: .monospaced))
                 .fontWeight(.medium)
 
@@ -1035,12 +1075,15 @@ struct EditPurchaseRecordSheet: View {
                                     .frame(maxWidth: .infinity)
                                     .padding()
                             } else {
+                                let editingColorSystem = selectedBrandId
+                                    .flatMap { id in inventoryManager.brands.first { $0.id == id } }?.colorSystem ?? .mard
                                 ForEach($items) { $item in
                                     EditableItemRow(
                                         item: $item,
                                         onDelete: {
                                             items.removeAll { $0.id == item.id }
-                                        }
+                                        },
+                                        colorSystem: editingColorSystem
                                     )
                                 }
                                 .padding(.horizontal)
@@ -1114,6 +1157,7 @@ struct EditPurchaseRecordSheet: View {
 struct EditableItemRow: View {
     @Binding var item: EditPurchaseRecordSheet.EditableItem
     let onDelete: () -> Void
+    var colorSystem: ColorSystem = .mard
     @EnvironmentObject var inventoryManager: InventoryManager
 
     var beadColor: BeadColor? {
@@ -1122,6 +1166,10 @@ struct EditableItemRow: View {
 
     var displayColor: Color {
         beadColor?.color ?? .gray
+    }
+
+    var displayCodeText: String {
+        beadColor?.displayCode(for: colorSystem) ?? item.colorCode
     }
 
     var grams: Int {
@@ -1139,8 +1187,8 @@ struct EditableItemRow: View {
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
-            // 色号
-            Text(item.colorCode)
+            // 色号（按品牌色号体系显示）
+            Text(displayCodeText)
                 .font(.system(.body, design: .monospaced))
                 .fontWeight(.medium)
 
