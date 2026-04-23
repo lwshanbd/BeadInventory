@@ -48,7 +48,12 @@ class AnnouncementManager: ObservableObject {
 
     /// 静默检查远程公告（App 启动时调用）
     func checkForAnnouncement() {
-        guard let url = URL(string: announcementURL) else { return }
+        AppLogger.shared.info("Announcement", "check_started")
+
+        guard let url = URL(string: announcementURL) else {
+            AppLogger.shared.error("Announcement", "url_invalid", metadata: ["url": announcementURL])
+            return
+        }
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
@@ -57,25 +62,33 @@ class AnnouncementManager: ObservableObject {
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
 
-            // 网络错误或非 200 状态码，静默忽略
-            guard error == nil,
-                  let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200,
-                  let data = data else {
+            if let error = error {
+                AppLogger.shared.info("Announcement", "fetch_failed", metadata: ["error": "\(error.localizedDescription)"])
+                return
+            }
+            guard let httpResponse = response as? HTTPURLResponse else {
+                AppLogger.shared.warning("Announcement", "fetch_no_http_response")
+                return
+            }
+            guard httpResponse.statusCode == 200 else {
+                AppLogger.shared.warning("Announcement", "fetch_non_200", metadata: ["status": "\(httpResponse.statusCode)"])
+                return
+            }
+            guard let data = data else {
+                AppLogger.shared.warning("Announcement", "fetch_empty_body")
                 return
             }
 
-            // 解析并校验
             guard let announcement = self.parseAndValidate(data: data) else {
                 return
             }
 
-            // 检查是否已经展示过
             if self.hasShown(id: announcement.id) {
+                AppLogger.shared.info("Announcement", "already_shown", metadata: ["id": announcement.id])
                 return
             }
 
-            // 在主线程发布公告
+            AppLogger.shared.info("Announcement", "validated", metadata: ["id": announcement.id])
             DispatchQueue.main.async {
                 self.currentAnnouncement = announcement
             }
@@ -108,11 +121,13 @@ class AnnouncementManager: ObservableObject {
     private func parseAndValidate(data: Data) -> Announcement? {
         // 1. JSON 解析
         guard let announcement = try? JSONDecoder().decode(Announcement.self, from: data) else {
+            AppLogger.shared.warning("Announcement", "json_decode_failed")
             return nil
         }
 
         // 2. 格式版本校验
         guard announcement.v == 1 else {
+            AppLogger.shared.warning("Announcement", "version_unsupported", metadata: ["v": "\(announcement.v)"])
             return nil
         }
 
@@ -121,18 +136,21 @@ class AnnouncementManager: ObservableObject {
               !announcement.title.isEmpty,
               !announcement.message.isEmpty,
               !announcement.sig.isEmpty else {
+            AppLogger.shared.warning("Announcement", "empty_fields")
             return nil
         }
 
-        // 4. 时间戳合理性校验（不接受超过 90 天前或未来的公告）
+        // 4. 时间戳合理性校验（过旧或过新都拒绝）
         let now = Int(Date().timeIntervalSince1970)
         let maxAge = 90 * 24 * 3600 // 90 天
         guard announcement.ts > (now - maxAge), announcement.ts <= (now + 3600) else {
+            AppLogger.shared.warning("Announcement", "timestamp_out_of_range", metadata: ["ts": "\(announcement.ts)", "now": "\(now)"])
             return nil
         }
 
-        // 5. HMAC-SHA256 签名校验
+        // 5. HMAC-SHA256 签名校验——不匹配可能意味着劫持或密钥不同步
         guard verifySignature(announcement) else {
+            AppLogger.shared.error("Announcement", "signature_invalid", metadata: ["id": announcement.id])
             return nil
         }
 
