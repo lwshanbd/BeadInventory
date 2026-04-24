@@ -343,18 +343,23 @@ struct ProjectHistoryView: View {
     @State private var restoreStock = true  // 是否恢复库存
     @State private var singleRevertProject: ProjectRecord?  // 单项退回的项目
 
+    private var selectedBrandId: UUID? {
+        inventoryManager.currentBrandId
+    }
+
     // 只显示顶级项目（排除计划项目，只显示已执行的）
     var displayedProjects: [ProjectRecord] {
+        guard let selectedBrandId else { return [] }
         let topLevel = inventoryManager.topLevelProjects()
 
         // 筛选出已执行的项目或有已执行子项目的父项目
         let executed = topLevel.filter { project in
             if inventoryManager.isParentProject(project.id) {
-                // 父项目：只有当它有已执行的子项目时才显示
-                return inventoryManager.hasExecutedChildren(project.id)
+                // 父项目：只有当它有当前品牌的已执行子项目时才显示
+                return hasMatchingExecutedChildren(of: project.id, brandId: selectedBrandId)
             } else {
-                // 独立项目：根据自身的 isPlanned 状态
-                return !project.isPlanned
+                // 独立项目：必须是已执行且关联当前品牌
+                return !project.isPlanned && projectMatchesBrand(project, brandId: selectedBrandId)
             }
         }
 
@@ -367,12 +372,36 @@ struct ProjectHistoryView: View {
 
     var archivedCount: Int {
         // 只统计已执行项目中的归档数量
-        inventoryManager.projects.filter { $0.isArchived && !$0.isPlanned && $0.parentId == nil }.count
+        guard let selectedBrandId else { return 0 }
+        return inventoryManager.topLevelProjects().filter { project in
+            guard project.isArchived else { return false }
+            if inventoryManager.isParentProject(project.id) {
+                return hasMatchingExecutedChildren(of: project.id, brandId: selectedBrandId)
+            }
+            return !project.isPlanned && projectMatchesBrand(project, brandId: selectedBrandId)
+        }.count
     }
 
     // 已执行的项目（非计划项目，包括子项目）
     var executedProjects: [ProjectRecord] {
-        inventoryManager.projects.filter { !$0.isPlanned }
+        guard let selectedBrandId else { return [] }
+        return inventoryManager.projects.filter {
+            !$0.isPlanned && projectMatchesBrand($0, brandId: selectedBrandId)
+        }
+    }
+
+    private func projectMatchesBrand(_ project: ProjectRecord, brandId: UUID) -> Bool {
+        project.brandId == brandId || project.beadUsage.contains { $0.brandId == brandId }
+    }
+
+    private func matchingExecutedChildren(of parentId: UUID, brandId: UUID) -> [ProjectRecord] {
+        inventoryManager.executedChildProjects(of: parentId).filter {
+            projectMatchesBrand($0, brandId: brandId)
+        }
+    }
+
+    private func hasMatchingExecutedChildren(of parentId: UUID, brandId: UUID) -> Bool {
+        !matchingExecutedChildren(of: parentId, brandId: brandId).isEmpty
     }
 
     var body: some View {
@@ -528,6 +557,7 @@ struct ProjectHistoryView: View {
                             isSelectMode: isSelectMode,
                             isSelected: selectedProjects.contains(project.id),
                             isChild: false,
+                            brandFilterId: selectedBrandId,
                             onToggleExpand: {
                                 withAnimation {
                                     if isExpanded {
@@ -654,7 +684,10 @@ struct ProjectHistoryView: View {
 
                         // 子项目
                         if isParent && isExpanded {
-                            let children = inventoryManager.executedChildProjects(of: project.id)
+                            let children: [ProjectRecord] = {
+                                guard let selectedBrandId else { return [] }
+                                return matchingExecutedChildren(of: project.id, brandId: selectedBrandId)
+                            }()
                             ForEach(children) { child in
                                 ProjectRowWithHierarchy(
                                     project: child,
@@ -663,6 +696,7 @@ struct ProjectHistoryView: View {
                                     isSelectMode: false,
                                     isSelected: false,
                                     isChild: true,
+                                    brandFilterId: selectedBrandId,
                                     onToggleExpand: {},
                                     onToggleSelect: {}
                                 )
@@ -971,6 +1005,7 @@ struct ProjectRowWithHierarchy: View {
     let isSelectMode: Bool
     let isSelected: Bool
     let isChild: Bool
+    let brandFilterId: UUID?
     let onToggleExpand: () -> Void
     let onToggleSelect: () -> Void
 
@@ -983,20 +1018,53 @@ struct ProjectRowWithHierarchy: View {
 
     var colorCount: Int {
         if isParent {
-            return inventoryManager.executedAggregatedColorCount(for: project.id)
+            return filteredExecutedChildProjects
+                .flatMap { filteredBeadUsage(for: $0) }
+                .map(\.colorCode)
+                .reduce(into: Set<String>()) { $0.insert($1) }
+                .count
         }
-        return project.beadUsage.count
+        return filteredBeadUsage(for: project).count
     }
 
     var totalBeads: Int {
         if isParent {
-            return inventoryManager.executedAggregatedTotalBeads(for: project.id)
+            return filteredExecutedChildProjects
+                .reduce(0) { total, child in
+                    total + filteredBeadUsage(for: child).reduce(0) { $0 + $1.quantity }
+                }
         }
-        return project.totalBeads
+        return filteredBeadUsage(for: project).reduce(0) { $0 + $1.quantity }
     }
 
     var childCount: Int {
-        inventoryManager.executedChildProjects(of: project.id).count
+        filteredExecutedChildProjects.count
+    }
+
+    private var filteredExecutedChildProjects: [ProjectRecord] {
+        let children = inventoryManager.executedChildProjects(of: project.id)
+        guard let brandFilterId else { return children }
+        return children.filter { projectMatchesBrand($0, brandId: brandFilterId) }
+    }
+
+    private func projectMatchesBrand(_ project: ProjectRecord, brandId: UUID) -> Bool {
+        project.brandId == brandId || project.beadUsage.contains { $0.brandId == brandId }
+    }
+
+    private func filteredBeadUsage(for project: ProjectRecord) -> [BeadUsage] {
+        guard let brandFilterId else { return project.beadUsage }
+
+        // Newer records store brandId per usage; older same-brand records only have project.brandId.
+        return project.beadUsage.filter { usageMatchesBrand($0, projectBrandId: project.brandId, brandId: brandFilterId) }
+    }
+
+    private func usageMatchesBrand(_ usage: BeadUsage, projectBrandId: UUID?) -> Bool {
+        guard let brandFilterId else { return true }
+        return usageMatchesBrand(usage, projectBrandId: projectBrandId, brandId: brandFilterId)
+    }
+
+    private func usageMatchesBrand(_ usage: BeadUsage, projectBrandId: UUID?, brandId: UUID) -> Bool {
+        usage.brandId == brandId || (usage.brandId == nil && projectBrandId == brandId)
     }
 
     // 从 finishedImage 或 thumbnail Data 创建 UIImage（优先使用成品图）
@@ -1118,7 +1186,8 @@ struct ProjectRowWithHierarchy: View {
                     if !isParent {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 4) {
-                                ForEach(project.beadUsage.prefix(10)) { usage in
+                                let visibleUsage = filteredBeadUsage(for: project)
+                                ForEach(visibleUsage.prefix(10)) { usage in
                                     let displayCode = inventoryManager.findColor(byCode: usage.colorCode)?
                                         .displayCode(for: project.colorSystem) ?? usage.colorCode
                                     Text(displayCode)
@@ -1129,8 +1198,8 @@ struct ProjectRowWithHierarchy: View {
                                         .cornerRadius(4)
                                 }
 
-                                if project.beadUsage.count > 10 {
-                                    Text("+\(project.beadUsage.count - 10)")
+                                if visibleUsage.count > 10 {
+                                    Text("+\(visibleUsage.count - 10)")
                                         .font(.caption2)
                                         .foregroundColor(.secondary)
                                 }
