@@ -1049,6 +1049,18 @@ class AIServiceManager: ObservableObject {
             let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
             print("[AI Debug] API错误: \(errorText)")
             if response.statusCode == 429 {
+                let lower = errorText.lowercased()
+                let isInsufficientBalance = lower.contains("insufficient")
+                    || lower.contains("balance")
+                    || lower.contains("quota")
+                    || lower.contains("billing")
+                    || lower.contains("payment")
+                    || errorText.contains("余额")
+                    || errorText.contains("欠费")
+                    || errorText.contains("额度")
+                if isInsufficientBalance {
+                    throw AIError.insufficientBalance(errorText)
+                }
                 throw AIError.serverOverloaded(errorText)
             }
             throw AIError.apiError("HTTP \(response.statusCode): \(errorText)")
@@ -1645,6 +1657,7 @@ enum AIError: LocalizedError {
     case networkError(String)
     case apiError(String)
     case serverOverloaded(String)
+    case insufficientBalance(String)
     case parseError(String)
 
     var errorDescription: String? {
@@ -1663,6 +1676,8 @@ enum AIError: LocalizedError {
             return String(localized: "API 错误: \(msg)")
         case .serverOverloaded:
             return String(localized: "Kimi 服务器当前算力紧张，暂时无法响应，请稍后再试（非本应用问题）")
+        case .insufficientBalance:
+            return String(localized: "Kimi 账户可能已欠费或额度已用尽，请前往 Moonshot 官网确认（非本应用问题）")
         case .parseError(let msg):
             return String(localized: "解析错误: \(msg)")
         }
