@@ -103,7 +103,7 @@ struct ContentView: View {
                                 .font(.system(size: 32))
                                 .foregroundColor(.orange)
 
-                            Text("数据加载失败")
+                            Text(String(localized: "数据加载失败"))
                                 .font(.headline)
 
                             Text(errorMessage)
@@ -111,21 +111,19 @@ struct ContentView: View {
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
 
-                            if let hint = iCloudHintForLoadingError() {
-                                Text(hint)
-                                    .font(.footnote)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal, 8)
-                            }
+                            Text(iCloudHintForLoadingError())
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 8)
 
                             VStack(spacing: 10) {
-                                Button("重试") {
+                                Button(String(localized: "重试")) {
                                     inventoryManager.retryInitialLoad(reason: "contentView.retryButton")
                                 }
                                 .buttonStyle(.borderedProminent)
 
-                                Button("以本地模式继续") {
+                                Button(String(localized: "以本地模式继续")) {
                                     showingLocalFallbackConfirmation = true
                                 }
                                 .buttonStyle(.bordered)
@@ -134,10 +132,10 @@ struct ContentView: View {
                             ProgressView()
                                 .progressViewStyle(.circular)
 
-                            Text("正在加载数据...")
+                            Text(String(localized: "正在加载数据..."))
                                 .font(.headline)
 
-                            Text("首次启动或 iCloud 同步中可能需要几秒钟。")
+                            Text(String(localized: "首次启动或 iCloud 同步中可能需要几秒钟。"))
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
@@ -150,12 +148,12 @@ struct ContentView: View {
                     String(localized: "以本地模式继续？"),
                     isPresented: $showingLocalFallbackConfirmation
                 ) {
-                    Button(String(localized: "以本地模式继续"), role: .destructive) {
+                    Button(String(localized: "继续浏览（不保存修改）")) {
                         inventoryManager.continueInLocalFallbackMode(reason: "contentView.localFallbackButton")
                     }
                     Button(String(localized: "取消"), role: .cancel) {}
                 } message: {
-                    Text("将跳过本次 iCloud 同步并以当前内存中的数据继续使用。下次启动或 iCloud 恢复后，云端数据会自动合并回来。")
+                    Text(String(localized: "将解除等待屏蔽，可浏览当前可见的数据。为避免覆盖 iCloud 上未读取到的数据，本次会话不会保存任何修改；下次启动或 iCloud 恢复后会自动重试加载。"))
                 }
             }
         }
@@ -219,7 +217,8 @@ struct ContentView: View {
     /// 在持久层加载失败时，根据 iCloud 账号状态给出更具体的提示。
     /// 注意：iCloud 配额已满通常不会让 ModelContainer 初始化失败，
     /// 因此这里只能提示常见的账号/服务问题，配额的最终判断仍需用户查看 iCloud 设置。
-    private func iCloudHintForLoadingError() -> String? {
+    private func iCloudHintForLoadingError() -> String {
+        let generalHint = String(localized: "若 iCloud 空间已满或同步异常，可前往「设置 → Apple ID → iCloud」检查空间，或选择以本地模式继续。")
         switch cloudSyncStatusManager.mode {
         case .localFallback:
             return String(localized: "已自动回退为本地存储，云端数据将无法读取，本地数据可继续使用。")
@@ -231,12 +230,10 @@ struct ContentView: View {
                 return String(localized: "iCloud 权限受限，无法完成同步。")
             case .temporarilyUnavailable:
                 return String(localized: "iCloud 暂时不可用，请稍后重试。")
-            case .available:
-                return String(localized: "若 iCloud 空间已满或同步异常，可前往「设置 → Apple ID → iCloud」检查空间，或选择以本地模式继续。")
-            case .couldNotDetermine, .none:
-                return nil
+            case .available, .couldNotDetermine, .none:
+                return generalHint
             @unknown default:
-                return nil
+                return generalHint
             }
         }
     }
