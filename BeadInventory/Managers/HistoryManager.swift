@@ -848,6 +848,14 @@ class HistoryManager: ObservableObject {
             return
         }
 
+        // 与 InventoryManager.saveData 同样的 fallback 守卫：用户主动放弃等待
+        // iCloud 同步时（或 opt-out 重启前），baseline-diff 仍可能用过期内存覆盖
+        // SwiftData/CloudKit 上更新的数据，因此整体跳过历史记录的持久化。
+        if inventoryManager?.isUsingLocalFallbackMode == true {
+            AppLogger.shared.warning("History", "save_skipped_local_fallback_mode")
+            return
+        }
+
         AppBackgroundTaskManager.shared.perform(named: "HistorySave") {
             do {
                 let existing = try context.fetch(FetchDescriptor<SDHistoryRecord>())

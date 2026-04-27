@@ -797,6 +797,12 @@ class InventoryManager: ObservableObject {
     /// 迁移旧 SDProjectRecord：补充 colorSystemRaw 字段（nil → "MARD"）
     func migrateProjectColorSystem() {
         guard let context = modelContext else { return }
+        // fallback 模式下也要避免 context.save()：迁移会写持久层并触发 CloudKit 同步，
+        // 同样有覆盖云端真实数据的风险。等用户重启切回普通模式或 opt-out 后再走这条路径。
+        if isUsingLocalFallbackMode {
+            logWarning("migrate_project_color_system_skipped_local_fallback")
+            return
+        }
         do {
             let descriptor = FetchDescriptor<SDProjectRecord>()
             let records = try context.fetch(descriptor)
@@ -1036,7 +1042,9 @@ class InventoryManager: ObservableObject {
 
         if initialLoadAttemptCount < maxAutomaticInitialLoadAttempts {
             // 自动重试，避免 UI 永久卡在转圈：在 maxAutomaticInitialLoadAttempts=3 时
-            // 实际产生约 1.5s / 3.0s 两次延迟。改这个上限时下面的退避自然跟随。
+            // 实际产生约 1.5s / 3.0s 两次延迟（attempt=1 → 1.5s，attempt=2 → 3.0s）。
+            // 注意延迟随 attemptCount 指数增长，调高上限会让总等待显著变长，
+            // 如需调整请改下方 1.5 系数或基数 2，而不是 maxAutomaticInitialLoadAttempts。
             let delay = pow(2.0, Double(initialLoadAttemptCount - 1)) * 1.5
             // 中间失败也按 error 级别上报，避免 Sentry 看不到卡住前两轮发生了什么
             logError("initial_load_attempt_failed_will_retry", metadata: metadata.merging([
@@ -1321,10 +1329,12 @@ class InventoryManager: ObservableObject {
                     loadedCurrentBrandId = loadedBrands.first?.id
                 }
 
-                // 主线程上 loadData 与 continueInLocalFallbackMode 不会并行，但若未来有
-                // 异步路径，需要保证用户在加载中途切到 fallback 后，本次结果仍能让 UI 解锁；
-                // 因此原子提交时一并清掉 fallback 标志。
+                // 用户主动选了 fallback 后又收到了一次成功的加载结果（例如 CloudKit
+                // 远程通知触发了 refreshFromPersistentStore）。用真实数据接管 UI 是
+                // 严格更优的状态，但用户并不知道——明确记一条日志，便于排查
+                // "fallback 期间的写入丢失" 类问题。
                 if isUsingLocalFallbackMode {
+                    logInfo("local_fallback_exited_on_successful_load")
                     isUsingLocalFallbackMode = false
                 }
 
@@ -1431,7 +1441,8 @@ class InventoryManager: ObservableObject {
         // 因此在 fallback 模式下完全跳过持久化，等到下一次 refresh 成功
         // （finishInitialLoadSuccess 会清掉 isUsingLocalFallbackMode）后再放行。
         guard !isUsingLocalFallbackMode else {
-            print("[InventoryManager] 本地浏览模式：跳过保存以避免覆盖未加载的云端数据")
+            // logWarning 让 Sentry/AppLogger 能监测到有多少用户卡在 fallback。
+            logWarning("save_skipped_local_fallback_mode")
             return
         }
 
@@ -1772,6 +1783,12 @@ class InventoryManager: ObservableObject {
 
     private func migrateFromUserDefaults() {
         guard let context = modelContext else { return }
+        // 与其它持久化路径同样的 fallback 守卫：fallback 期间不写库，
+        // 等用户重启或 iCloud 恢复后再让迁移完成。
+        if isUsingLocalFallbackMode {
+            logWarning("migrate_from_user_defaults_skipped_local_fallback")
+            return
+        }
 
         print("开始从 UserDefaults 迁移数据到 SwiftData...")
 

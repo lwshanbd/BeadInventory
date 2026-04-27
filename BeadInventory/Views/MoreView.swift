@@ -162,17 +162,17 @@ struct MoreView: View {
                         }
                     )) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Label("启用 iCloud 同步", systemImage: "icloud")
+                            Label(String(localized: "启用 iCloud 同步"), systemImage: "icloud")
                             if hasPendingCloudSyncChange {
-                                Text("已修改，关闭并重新打开 App 后生效。")
+                                Text(String(localized: "已修改，关闭并重新打开 App 后生效。"))
                                     .font(.caption)
                                     .foregroundColor(.orange)
                             } else if cloudSyncDisabled {
-                                Text("当前仅使用本地存储，iCloud 上原有的数据未删除。")
+                                Text(String(localized: "当前仅使用本地存储，iCloud 上原有的数据未删除。"))
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             } else {
-                                Text("关闭后 App 将不再读写 iCloud，仅使用本地存储。")
+                                Text(String(localized: "关闭后 App 将不再读写 iCloud，仅使用本地存储。"))
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -265,6 +265,12 @@ struct MoreView: View {
             .navigationTitle("更多")
             .onAppear {
                 cloudSyncStatusManager.refreshAccountStatus()
+                // 用户可能在 ContentView 错误界面通过"关闭 iCloud 同步"按钮翻动了
+                // CloudSyncPreferences.userOptedOut，TabView 中常驻的本视图需要重新拉取最新值。
+                let latest = CloudSyncPreferences.userOptedOut
+                if cloudSyncDisabled != latest {
+                    cloudSyncDisabled = latest
+                }
             }
         }
     }
