@@ -44,6 +44,9 @@ class InventoryManager: ObservableObject {
     private var hasCompletedInitialPersistentLoad = false
     private var initialLoadAttemptCount = 0
     private let maxAutomaticInitialLoadAttempts = 3
+    private var pendingAutomaticRetryWorkItem: DispatchWorkItem?
+    // 用户已主动选择以本地模式继续使用（绕过持久层加载，避免 UI 永久卡死）
+    @Published private(set) var isUsingLocalFallbackMode: Bool = false
 
     private struct DeferredRefreshRequest {
         let reason: String
@@ -151,9 +154,40 @@ class InventoryManager: ObservableObject {
     }
 
     func retryInitialLoad(reason: String = "manualRetry") {
+        pendingAutomaticRetryWorkItem?.cancel()
+        pendingAutomaticRetryWorkItem = nil
         initialLoadAttemptCount = 0
         initialLoadErrorMessage = nil
         performInitialLoadIfNeeded(reason: reason, force: true)
+    }
+
+    /// 用户主动放弃等待 iCloud 同步，以本地模式继续使用 App。
+    ///
+    /// 此模式下：
+    /// - 解除加载屏蔽，允许用户照常增删改查；
+    /// - 把基线视为空（与当前内存一致），避免 saveData() 的“整体清空保险丝”误拦正常写入；
+    /// - 仍保留 baseline-diff 的写入逻辑，因此后续 CloudKit 把真实数据同步下来时，
+    ///   下一次 refreshFromPersistentStore 会把它们合并回内存，不会被本地误删。
+    func continueInLocalFallbackMode(reason: String = "userOptedOutOfWaiting") {
+        pendingAutomaticRetryWorkItem?.cancel()
+        pendingAutomaticRetryWorkItem = nil
+        isInitialLoadInProgress = false
+        initialLoadErrorMessage = nil
+        isUsingLocalFallbackMode = true
+
+        // 颜色数据来源于本地 JSON，不依赖持久层
+        if beadColors.isEmpty {
+            beadColors = loadAllColorsFromJSON()
+        }
+
+        brandsLoadedSuccessfully = true
+        stocksLoadedSuccessfully = true
+        projectsLoadedSuccessfully = true
+        customColorsLoadedSuccessfully = true
+        isDataLoaded = true
+        hasCompletedInitialPersistentLoad = true
+        refreshBaselines()
+        logWarning("initial_load_user_opted_local_fallback", metadata: ["reason": reason])
     }
 
     // MARK: - 品牌管理
@@ -979,16 +1013,37 @@ class InventoryManager: ObservableObject {
     }
 
     private func finishInitialLoadSuccess() {
+        pendingAutomaticRetryWorkItem?.cancel()
+        pendingAutomaticRetryWorkItem = nil
         isInitialLoadInProgress = false
         initialLoadErrorMessage = nil
         initialLoadAttemptCount = 0
+        isUsingLocalFallbackMode = false
     }
 
     private func finishInitialLoadFailure(userMessage: String, metadata: [String: Any] = [:]) {
         guard !hasCompletedInitialPersistentLoad else { return }
         isInitialLoadInProgress = false
 
-        guard initialLoadAttemptCount >= maxAutomaticInitialLoadAttempts else { return }
+        if initialLoadAttemptCount < maxAutomaticInitialLoadAttempts {
+            // 自动重试，避免 UI 永久卡在转圈：使用指数退避（约 1.5s / 3s）
+            let delay = pow(2.0, Double(initialLoadAttemptCount - 1)) * 1.5
+            logWarning("initial_load_scheduling_auto_retry", metadata: metadata.merging([
+                "attempt": initialLoadAttemptCount,
+                "delaySeconds": delay
+            ]) { _, new in new })
+
+            pendingAutomaticRetryWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.pendingAutomaticRetryWorkItem = nil
+                guard !self.hasCompletedInitialPersistentLoad else { return }
+                self.performInitialLoadIfNeeded(reason: "automaticRetry", force: true)
+            }
+            pendingAutomaticRetryWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+            return
+        }
 
         initialLoadErrorMessage = userMessage
         logError("initial_load_retry_limit_reached", metadata: metadata.merging([
