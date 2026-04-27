@@ -36,10 +36,15 @@ struct BeadInventoryApp: App {
 
         // 设置 SwiftData ModelContainer（使用版本化 Schema 支持数据迁移）
         let schema = Schema(versionedSchema: CurrentSchema.self)
+        // 主动触发 bootValue 求值，确保设置页能用它判断"是否需要重启"。
+        let userOptedOutOfCloudKit = CloudSyncPreferences.bootValue
+        if userOptedOutOfCloudKit {
+            AppLogger.shared.info("App", "cloud_sync_user_opted_out")
+        }
         let cloudConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
-            cloudKitDatabase: .automatic
+            cloudKitDatabase: userOptedOutOfCloudKit ? .none : .automatic
         )
 
         let localFallbackConfiguration = ModelConfiguration(
@@ -57,19 +62,41 @@ struct BeadInventoryApp: App {
                 migrationPlan: BeadInventoryMigrationPlan.self,
                 configurations: [cloudConfiguration]
             )
-            isCloudSyncEnabled = true
-            print("[App] ✅ iCloud 同步容器初始化成功")
-            AppLogger.shared.info("App", "model_container_initialized", metadata: ["cloudKit": "automatic"])
+            isCloudSyncEnabled = !userOptedOutOfCloudKit
+            if userOptedOutOfCloudKit {
+                print("[App] ✅ 用户已选择关闭 iCloud 同步，使用本地存储")
+                AppLogger.shared.info(
+                    "App",
+                    "model_container_initialized",
+                    metadata: [
+                        "cloudKit": "user_opted_out",
+                        "userOptedOut": true
+                    ]
+                )
+            } else {
+                print("[App] ✅ iCloud 同步容器初始化成功")
+                AppLogger.shared.info(
+                    "App",
+                    "model_container_initialized",
+                    metadata: [
+                        "cloudKit": "automatic",
+                        "userOptedOut": false
+                    ]
+                )
+            }
         } catch {
             let nsError = error as NSError
             print("[App] ⚠️ iCloud 同步容器初始化失败，回退本地存储: \(error)")
             print("[App]   - domain: \(nsError.domain), code: \(nsError.code)")
+            // userOptedOut=false 时这里才是"被动 fallback"；userOptedOut=true 路径
+            // 上面已成功，不会进到这里。带上 metadata 让监控能区分两种本地模式来源。
             AppLogger.shared.warning(
                 "App",
                 "model_container_fallback_to_local",
                 metadata: [
                     "domain": nsError.domain,
-                    "code": nsError.code
+                    "code": nsError.code,
+                    "userOptedOut": userOptedOutOfCloudKit
                 ]
             )
             if !nsError.userInfo.isEmpty {
@@ -277,6 +304,31 @@ struct BeadInventoryApp: App {
             // 触发跳转到扫描页
             shouldOpenScan = true
         }
+    }
+}
+
+/// 用户级 iCloud 同步偏好。
+///
+/// `userOptedOut == true` 时，`BeadInventoryApp.init()` 会用 `cloudKitDatabase: .none`
+/// 创建 ModelContainer，App 仅使用本地 SQLite。CloudKit 上原有的数据**不会被删除**，
+/// 用户后续在「更多 → 数据与同步」里关闭此开关并重启 App，会重新走 .automatic 路径，
+/// SwiftData/CoreData 会按记录 ID 把云端数据拉下来与本地合并。
+///
+/// 注意：本地模式期间产生的本地写入与同期其它设备产生的云端写入若命中同一记录 ID，
+/// 重新启用同步后由 CloudKit 按 last-writer-wins 解决，不存在自动三方合并。
+///
+/// 主要用于解决：iCloud 空间满 / 同步异常导致 App 长期卡在加载界面时，
+/// 给用户一个明确的"只用本地"的逃生通道。
+enum CloudSyncPreferences {
+    private static let userOptedOutKey = "userOptedOutOfICloudSync"
+
+    /// App 启动时读取的快照，用于设置页判断当前修改是否需要重启 App 才能生效。
+    /// `BeadInventoryApp.init()` 会主动访问一次以确保它真的反映启动时刻的值。
+    static let bootValue: Bool = UserDefaults.standard.bool(forKey: userOptedOutKey)
+
+    static var userOptedOut: Bool {
+        get { UserDefaults.standard.bool(forKey: userOptedOutKey) }
+        set { UserDefaults.standard.set(newValue, forKey: userOptedOutKey) }
     }
 }
 

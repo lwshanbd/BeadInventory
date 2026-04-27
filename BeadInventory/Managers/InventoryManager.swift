@@ -44,6 +44,9 @@ class InventoryManager: ObservableObject {
     private var hasCompletedInitialPersistentLoad = false
     private var initialLoadAttemptCount = 0
     private let maxAutomaticInitialLoadAttempts = 3
+    private var pendingAutomaticRetryWorkItem: DispatchWorkItem?
+    // 用户已主动选择以本地模式继续使用（绕过持久层加载，避免 UI 永久卡死）
+    @Published private(set) var isUsingLocalFallbackMode: Bool = false
 
     private struct DeferredRefreshRequest {
         let reason: String
@@ -151,9 +154,43 @@ class InventoryManager: ObservableObject {
     }
 
     func retryInitialLoad(reason: String = "manualRetry") {
+        pendingAutomaticRetryWorkItem?.cancel()
+        pendingAutomaticRetryWorkItem = nil
         initialLoadAttemptCount = 0
         initialLoadErrorMessage = nil
         performInitialLoadIfNeeded(reason: reason, force: true)
+    }
+
+    /// 用户主动放弃等待 iCloud 同步，进入"只读浏览"模式。
+    ///
+    /// 此模式下：
+    /// - 解除加载屏蔽，允许用户浏览当前内存中的数据（可能为空，也可能是 partial-load 后保留的 snapshot）；
+    /// - `saveData()` 会被 `isUsingLocalFallbackMode` 守卫整体跳过，
+    ///   避免把内存中可能过期的版本覆盖 CloudKit 上更新的数据；
+    /// - 下一次 refresh 成功（来自 CloudKit 通知或 scenePhase.active）会调用
+    ///   `finishInitialLoadSuccess()`，自动清掉 fallback 标志并恢复正常写入。
+    ///
+    /// 调用方需要保证不在 `isLoadingPersistentStore` 期间触发，否则正在进行的
+    /// `loadData` 仍会在收尾阶段把内存覆盖；下方实现里也加了二次保护。
+    func continueInLocalFallbackMode(reason: String = "userOptedOutOfWaiting") {
+        pendingAutomaticRetryWorkItem?.cancel()
+        pendingAutomaticRetryWorkItem = nil
+        isInitialLoadInProgress = false
+        initialLoadErrorMessage = nil
+        isUsingLocalFallbackMode = true
+
+        // 颜色数据来源于本地 JSON，不依赖持久层。空状态下补一份让基础界面可用。
+        if beadColors.isEmpty {
+            beadColors = loadAllColorsFromJSON()
+        }
+
+        // 仅解除 UI 屏蔽，不更新 isDataLoaded / loaded* 标志，
+        // 由 saveData() 上方的 fallback 守卫直接拦截写入。
+        hasCompletedInitialPersistentLoad = true
+        logWarning("initial_load_user_opted_local_fallback", metadata: [
+            "reason": reason,
+            "isLoadingInFlight": isLoadingPersistentStore
+        ])
     }
 
     // MARK: - 品牌管理
@@ -760,6 +797,12 @@ class InventoryManager: ObservableObject {
     /// 迁移旧 SDProjectRecord：补充 colorSystemRaw 字段（nil → "MARD"）
     func migrateProjectColorSystem() {
         guard let context = modelContext else { return }
+        // fallback 模式下也要避免 context.save()：迁移会写持久层并触发 CloudKit 同步，
+        // 同样有覆盖云端真实数据的风险。等用户重启切回普通模式或 opt-out 后再走这条路径。
+        if isUsingLocalFallbackMode {
+            logWarning("migrate_project_color_system_skipped_local_fallback")
+            return
+        }
         do {
             let descriptor = FetchDescriptor<SDProjectRecord>()
             let records = try context.fetch(descriptor)
@@ -813,7 +856,13 @@ class InventoryManager: ObservableObject {
 
     func performInitialLoadIfNeeded(reason: String, force: Bool = false) {
         guard modelContext != nil else {
-            logWarning("initial_load_skipped_no_model_context", metadata: ["reason": reason])
+            // 自动重试如果撞到这里会陷入死循环（attemptCount 不递增、不再调度），
+            // UI 永远卡转圈。立即把错误透出给用户，让重试/本地模式按钮可见。
+            logError("initial_load_skipped_no_model_context", metadata: ["reason": reason])
+            pendingAutomaticRetryWorkItem?.cancel()
+            pendingAutomaticRetryWorkItem = nil
+            isInitialLoadInProgress = false
+            initialLoadErrorMessage = String(localized: "数据库未就绪，请重启应用后再试。")
             return
         }
         guard !hasCompletedInitialPersistentLoad else { return }
@@ -979,16 +1028,43 @@ class InventoryManager: ObservableObject {
     }
 
     private func finishInitialLoadSuccess() {
+        pendingAutomaticRetryWorkItem?.cancel()
+        pendingAutomaticRetryWorkItem = nil
         isInitialLoadInProgress = false
         initialLoadErrorMessage = nil
         initialLoadAttemptCount = 0
+        isUsingLocalFallbackMode = false
     }
 
     private func finishInitialLoadFailure(userMessage: String, metadata: [String: Any] = [:]) {
         guard !hasCompletedInitialPersistentLoad else { return }
         isInitialLoadInProgress = false
 
-        guard initialLoadAttemptCount >= maxAutomaticInitialLoadAttempts else { return }
+        if initialLoadAttemptCount < maxAutomaticInitialLoadAttempts {
+            // 自动重试，避免 UI 永久卡在转圈：在 maxAutomaticInitialLoadAttempts=3 时
+            // 实际产生约 1.5s / 3.0s 两次延迟（attempt=1 → 1.5s，attempt=2 → 3.0s）。
+            // 注意延迟随 attemptCount 指数增长，调高上限会让总等待显著变长，
+            // 如需调整请改下方 1.5 系数或基数 2，而不是 maxAutomaticInitialLoadAttempts。
+            let delay = pow(2.0, Double(initialLoadAttemptCount - 1)) * 1.5
+            // 中间失败也按 error 级别上报，避免 Sentry 看不到卡住前两轮发生了什么
+            logError("initial_load_attempt_failed_will_retry", metadata: metadata.merging([
+                "attempt": initialLoadAttemptCount,
+                "maxAttempts": maxAutomaticInitialLoadAttempts,
+                "delaySeconds": delay,
+                "willRetry": true
+            ]) { _, new in new })
+
+            pendingAutomaticRetryWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.pendingAutomaticRetryWorkItem = nil
+                guard !self.hasCompletedInitialPersistentLoad else { return }
+                self.performInitialLoadIfNeeded(reason: "automaticRetry", force: true)
+            }
+            pendingAutomaticRetryWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+            return
+        }
 
         initialLoadErrorMessage = userMessage
         logError("initial_load_retry_limit_reached", metadata: metadata.merging([
@@ -1253,6 +1329,15 @@ class InventoryManager: ObservableObject {
                     loadedCurrentBrandId = loadedBrands.first?.id
                 }
 
+                // 用户主动选了 fallback 后又收到了一次成功的加载结果（例如 CloudKit
+                // 远程通知触发了 refreshFromPersistentStore）。用真实数据接管 UI 是
+                // 严格更优的状态，但用户并不知道——明确记一条日志，便于排查
+                // "fallback 期间的写入丢失" 类问题。
+                if isUsingLocalFallbackMode {
+                    logInfo("local_fallback_exited_on_successful_load")
+                    isUsingLocalFallbackMode = false
+                }
+
                 // 原子提交：避免中途状态导致 UI 看到“品牌突然消失”
                 brands = loadedBrands
                 brandStocks = loadedBrandStocks
@@ -1347,6 +1432,17 @@ class InventoryManager: ObservableObject {
         // 防止在数据未加载完成时保存空数据，导致覆盖原有数据
         guard isDataLoaded else {
             print("[InventoryManager] 警告：数据尚未加载完成，跳过保存")
+            return
+        }
+
+        // 本地浏览模式：用户主动放弃等待 iCloud 同步，此时云端可能存在
+        // 我们尚未读到的真实数据。saveData() 的 baseline-diff 会以当前内存版本
+        // 覆盖 SwiftData/CloudKit 中可能更新的数据，造成静默数据丢失。
+        // 因此在 fallback 模式下完全跳过持久化，等到下一次 refresh 成功
+        // （finishInitialLoadSuccess 会清掉 isUsingLocalFallbackMode）后再放行。
+        guard !isUsingLocalFallbackMode else {
+            // logWarning 让 Sentry/AppLogger 能监测到有多少用户卡在 fallback。
+            logWarning("save_skipped_local_fallback_mode")
             return
         }
 
@@ -1687,6 +1783,12 @@ class InventoryManager: ObservableObject {
 
     private func migrateFromUserDefaults() {
         guard let context = modelContext else { return }
+        // 与其它持久化路径同样的 fallback 守卫：fallback 期间不写库，
+        // 等用户重启或 iCloud 恢复后再让迁移完成。
+        if isUsingLocalFallbackMode {
+            logWarning("migrate_from_user_defaults_skipped_local_fallback")
+            return
+        }
 
         print("开始从 UserDefaults 迁移数据到 SwiftData...")
 
