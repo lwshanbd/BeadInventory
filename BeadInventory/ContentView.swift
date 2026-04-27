@@ -17,6 +17,8 @@ struct ContentView: View {
     @State private var selectedTab = 0
     @State private var showingAddInventory = false
     @State private var showingLocalFallbackConfirmation = false
+    @State private var showingDisableCloudSyncConfirmation = false
+    @State private var showingDisableCloudSyncDoneAlert = false
 
     /// 从 Share Extension 传入的图片
     @State private var externalImage: UIImage?
@@ -127,6 +129,12 @@ struct ContentView: View {
                                     showingLocalFallbackConfirmation = true
                                 }
                                 .buttonStyle(.bordered)
+
+                                Button(String(localized: "关闭 iCloud 同步（需重启）")) {
+                                    showingDisableCloudSyncConfirmation = true
+                                }
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
                             }
                         } else {
                             ProgressView()
@@ -154,6 +162,26 @@ struct ContentView: View {
                     Button(String(localized: "取消"), role: .cancel) {}
                 } message: {
                     Text(String(localized: "将解除等待屏蔽，可浏览当前可见的数据。为避免覆盖 iCloud 上未读取到的数据，本次会话不会保存任何修改；下次启动或 iCloud 恢复后会自动重试加载。"))
+                }
+                .alert(
+                    String(localized: "关闭 iCloud 同步？"),
+                    isPresented: $showingDisableCloudSyncConfirmation
+                ) {
+                    Button(String(localized: "关闭并重启 App"), role: .destructive) {
+                        CloudSyncPreferences.userOptedOut = true
+                        showingDisableCloudSyncDoneAlert = true
+                    }
+                    Button(String(localized: "取消"), role: .cancel) {}
+                } message: {
+                    Text(String(localized: "App 将仅使用本地存储，所有修改不会再同步到 iCloud。iCloud 上原有的数据不会被删除，可在「更多 → 数据与同步」中重新启用同步。需要关闭并重新打开 App 生效。"))
+                }
+                .alert(
+                    String(localized: "已关闭 iCloud 同步"),
+                    isPresented: $showingDisableCloudSyncDoneAlert
+                ) {
+                    Button(String(localized: "我知道了"), role: .cancel) {}
+                } message: {
+                    Text(String(localized: "请上滑关闭 App 并重新打开，本地模式即可生效。"))
                 }
             }
         }

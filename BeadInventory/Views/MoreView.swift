@@ -11,6 +11,12 @@ import TipKit
 struct MoreView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @EnvironmentObject var cloudSyncStatusManager: CloudSyncStatusManager
+    /// 镜像 CloudSyncPreferences.userOptedOut，用于驱动 Toggle 显示。
+    @State private var cloudSyncDisabled: Bool = CloudSyncPreferences.userOptedOut
+    /// 当前偏好与 App 启动时的值不一致，说明需要重启 App 才能让 ModelContainer 切换。
+    private var hasPendingCloudSyncChange: Bool {
+        cloudSyncDisabled != CloudSyncPreferences.bootValue
+    }
 
     var body: some View {
         NavigationStack {
@@ -139,6 +145,38 @@ struct MoreView: View {
                             Label("刷新 iCloud 状态", systemImage: "arrow.clockwise")
                         }
                         .disabled(cloudSyncStatusManager.isCheckingAccount)
+                    }
+
+                    Toggle(isOn: Binding(
+                        get: { !cloudSyncDisabled },
+                        set: { newValue in
+                            let newOptedOut = !newValue
+                            guard newOptedOut != CloudSyncPreferences.userOptedOut else { return }
+                            CloudSyncPreferences.userOptedOut = newOptedOut
+                            cloudSyncDisabled = newOptedOut
+                            AppLogger.shared.info(
+                                "App",
+                                "cloud_sync_preference_toggled",
+                                metadata: ["userOptedOut": newOptedOut]
+                            )
+                        }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label("启用 iCloud 同步", systemImage: "icloud")
+                            if hasPendingCloudSyncChange {
+                                Text("已修改，关闭并重新打开 App 后生效。")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            } else if cloudSyncDisabled {
+                                Text("当前仅使用本地存储，iCloud 上原有的数据未删除。")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("关闭后 App 将不再读写 iCloud，仅使用本地存储。")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
 
                     NavigationLink {
