@@ -814,7 +814,9 @@ class HistoryManager: ObservableObject {
 
         // 创建新的延迟保存任务
         let workItem = DispatchWorkItem { [weak self] in
-            self?.performSave()
+            MainActor.assumeIsolated {
+                self?.performSave()
+            }
         }
         saveWorkItem = workItem
 
@@ -823,6 +825,7 @@ class HistoryManager: ObservableObject {
     }
 
     /// 立即保存数据（用于应用进入后台等紧急情况）
+    @MainActor
     func saveDataImmediately() {
         // 取消待处理的延迟保存
         saveWorkItem?.cancel()
@@ -834,6 +837,7 @@ class HistoryManager: ObservableObject {
         }
     }
 
+    @MainActor
     private func performSave() {
         pendingSave = false
 
