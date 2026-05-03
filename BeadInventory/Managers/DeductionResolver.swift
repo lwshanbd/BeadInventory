@@ -51,9 +51,10 @@ class DeductionResolver: ObservableObject, Identifiable {
         self.primaryBrandId = primaryBrandId
         self.items = usages.map { usage in
             let color = inventoryManager.findColor(byCode: usage.colorCode)
+            let mardCode = color?.mardCode ?? usage.colorCode
             let displayCode = color?.displayCode(for: colorSystem) ?? usage.colorCode
             return DeductionItem(
-                mardCode: usage.colorCode,
+                mardCode: mardCode,
                 colorCode: displayCode,
                 quantity: usage.quantity,
                 brandId: primaryBrandId
