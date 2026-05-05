@@ -184,23 +184,23 @@ struct AIConfig: Codable, Equatable {
     static let defaultGeminiURL = "https://generativelanguage.googleapis.com/v1beta"
 
     static let kimiModels = ["kimi-k2.5", "kimi-k2.6"]
-    static let openAIModels = ["gpt-5-mini", "gpt-5-nano", "gpt-5.2"]
-    static let anthropicModels = ["claude-sonnet-4-5-20250929", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"]
-    static let qwenModels = ["qwen3-vl-flash", "qwen-vl-max", "qwen3-vl-plus"]
-    static let geminiModels = ["gemini-3-flash-preview", "gemini-3-pro-preview"]
+    static let openAIModels = ["gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.4", "gpt-5.5"]
+    static let anthropicModels = ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"]
+    static let qwenModels = ["qwen3-vl-flash", "qwen3-vl-plus", "qwen3.5-plus"]
+    static let geminiModels = ["gemini-3-flash", "gemini-3.1-pro", "gemini-3.1-flash-lite"]
 
     static func defaultModel(for provider: AIProvider) -> String {
         switch provider {
         case .kimi:
             return "kimi-k2.5"
         case .openai:
-            return "gpt-5-mini"
+            return "gpt-5.4-mini"
         case .anthropic:
-            return "claude-sonnet-4-5-20250929"
+            return "claude-sonnet-4-6"
         case .qwen:
             return "qwen3-vl-flash"
         case .gemini:
-            return "gemini-3-flash-preview"
+            return "gemini-3-flash"
         }
     }
 
