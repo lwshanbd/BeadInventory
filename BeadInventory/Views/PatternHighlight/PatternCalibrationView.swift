@@ -417,19 +417,17 @@ struct PatternCalibrationView: View {
                     }
                 }
             }
-            // 后处理：候选池里加过的兜底色号（如 MARD 的 H2），
-            // 如果不在原图例里，降级为 nil（视为空白格）。
-            // 这样空白格不会出现在 validator 差异里，也不会被错配到其它色。
-            var blankedCount = 0
+            // 注意：候选池里加过的兜底色号（如 MARD 的 H2）保留在 cells 里，
+            // 即使它不在原图例。调色板会用 "(空白格)" 标注让用户能区分。
+            var extraCount = 0
             for r in 0..<rowsCopy {
                 for c in 0..<colsCopy {
                     if let code = cells[r][c], !legendCodes.contains(code) {
-                        cells[r][c] = nil
-                        blankedCount += 1
+                        extraCount += 1
                     }
                 }
             }
-            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s blanked \(blankedCount) cells (matched H2 etc., not in legend)")
+            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s extra-code cells (e.g. H2 blank): \(extraCount)")
             let grid = BeadPatternGrid(
                 corners: cornersCopy, rows: rowsCopy, cols: colsCopy,
                 cellColorCodes: cells,

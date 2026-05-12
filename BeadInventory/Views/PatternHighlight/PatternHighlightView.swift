@@ -27,6 +27,23 @@ struct PatternHighlightView: View {
         inventoryManager.projects.first { $0.id == project.id } ?? project
     }
 
+    /// 在 cellColorCodes 出现但不在 beadUsage 的色号 + 出现次数。
+    /// 典型场景：MARD 的 H2 用作空白格识别，但用户没把 H2 写进图例。
+    private var extraCodes: [(code: String, count: Int)] {
+        guard let grid = currentProject.patternGrid else { return [] }
+        let legend = Set(currentProject.beadUsage.map { $0.colorCode })
+        var counts: [String: Int] = [:]
+        for row in grid.cellColorCodes {
+            for cell in row {
+                if let c = cell, !legend.contains(c) {
+                    counts[c, default: 0] += 1
+                }
+            }
+        }
+        return counts.map { (code: $0.key, count: $0.value) }
+            .sorted { $0.count > $1.count }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -81,6 +98,7 @@ struct PatternHighlightView: View {
 
                 ColorPaletteBar(
                     beadUsage: currentProject.beadUsage,
+                    extraCodes: extraCodes,
                     colorSystem: currentProject.colorSystem,
                     highlightedCodes: $highlightedCodes,
                     availableColors: inventoryManager.beadColors
