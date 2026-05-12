@@ -333,7 +333,7 @@ struct PatternCalibrationView: View {
     private func saveAndContinue() {
         guard let img = image else { return }
         saving = true
-        savingPhase = "颜色采样中..."
+        savingPhase = "准备图像..."
         let cornersCopy = rectMode ? rectangleCorners(from: corners) : corners
         let rowsCopy = rows
         let colsCopy = cols
@@ -341,6 +341,12 @@ struct PatternCalibrationView: View {
         let colorSystem = project.colorSystem
         let allowedCodes = Set(project.beadUsage.map { $0.colorCode })
         Task.detached(priority: .userInitiated) {
+            // 一次性缩到 2048 长边以下。原图（PNG 未压缩）可能是 4032×3024，
+            // 直接拿去跑颜色重绘 + OCR 会非常慢。格子最小也有 2048/300 ≈ 7 像素，
+            // 足够采样和文字识别。
+            let processingImage = GridOCRSampler.downsampledForOCR(img)
+
+            await MainActor.run { savingPhase = "颜色采样中..." }
             let availableColors = await MainActor.run { inventoryManager.beadColors }
             let placeholder = BeadPatternGrid(
                 corners: cornersCopy, rows: rowsCopy, cols: colsCopy,
@@ -350,9 +356,9 @@ struct PatternCalibrationView: View {
                 colorSystem: colorSystem
             )
 
-            // 第 1 步：颜色采样（fallback baseline）
+            // 第 1 步：颜色采样
             let colorCells = GridCellSampler.shared.sample(
-                image: img, grid: placeholder,
+                image: processingImage, grid: placeholder,
                 availableColors: availableColors,
                 allowedCodes: allowedCodes.isEmpty ? nil : allowedCodes
             )
@@ -362,7 +368,7 @@ struct PatternCalibrationView: View {
             if !allowedCodes.isEmpty {
                 await MainActor.run { savingPhase = "整图 OCR..." }
                 let ocrCells = await GridOCRSampler.shared.sampleWithFallback(
-                    image: img, grid: placeholder, allowedCodes: allowedCodes,
+                    image: processingImage, grid: placeholder, allowedCodes: allowedCodes,
                     progress: { done, total in
                         Task { @MainActor in
                             savingPhase = "细化识别 \(done)/\(total)"

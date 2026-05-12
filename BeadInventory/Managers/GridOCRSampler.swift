@@ -126,6 +126,7 @@ final class GridOCRSampler {
 
     /// 对整图跑 OCR，返回稀疏 [row][col] String?——只有 OCR 识别到且命中
     /// allowedCodes 的格子才有值。其余为 nil（调用方应 fall back 到颜色采样）。
+    /// 调用方应已经传入 downsampled 图，函数本身不再缩。
     func sample(image: UIImage,
                 grid: BeadPatternGrid,
                 allowedCodes: Set<String>) -> [[String?]] {
@@ -136,9 +137,8 @@ final class GridOCRSampler {
 
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = false     // 色号不是自然语言，关掉自动纠正
-        request.minimumTextHeight = 0.005          // 格子里文字很小
-        request.customWords = Array(allowedCodes)  // 告诉 Vision 期望的词
+        request.minimumTextHeight = 0.01           // 格子里文字相对图大约 1~3%
+        request.customWords = Array(allowedCodes)
 
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
         do {
@@ -209,5 +209,20 @@ final class GridOCRSampler {
         if cleaned.isEmpty { return nil }
         if allowed.contains(cleaned) { return cleaned }
         return nil
+    }
+
+    /// 把图缩到长边 maxDim 以下（默认 2048）。Vision OCR 对超大图非常慢。
+    static func downsampledForOCR(_ image: UIImage, maxDim: CGFloat = 2048) -> UIImage {
+        let longest = max(image.size.width, image.size.height)
+        if longest <= maxDim { return image }
+        let scale = maxDim / longest
+        let newSize = CGSize(
+            width: image.size.width * scale,
+            height: image.size.height * scale
+        )
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
     }
 }
