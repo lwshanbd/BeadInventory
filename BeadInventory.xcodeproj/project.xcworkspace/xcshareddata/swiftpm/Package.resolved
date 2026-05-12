@@ -1,5 +1,5 @@
 {
-  "originHash" : "25b79fe1519ab22012f856dfb28894432afabfe294b36fb20baa753c2d24ad31",
+  "originHash" : "6fcbca5808216200d985139ab60752fb2c1dd185e4704b5cb9fc7aa2d6241d8b",
   "pins" : [
     {
       "identity" : "mlx-swift",
@@ -16,6 +16,15 @@
       "location" : "https://github.com/ml-explore/mlx-swift-lm",
       "state" : {
         "revision" : "6bb84aac13f76ca5e2c3ff312bc072977e684ff4"
+      }
+    },
+    {
+      "identity" : "opencv-spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/yeatse/opencv-spm",
+      "state" : {
+        "revision" : "151a5374946aa867ff3892e0d69fd85e1ecdaf2e",
+        "version" : "4.13.0"
       }
     },
     {
