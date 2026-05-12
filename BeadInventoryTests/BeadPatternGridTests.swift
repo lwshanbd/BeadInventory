@@ -47,4 +47,40 @@ final class BeadPatternGridTests: XCTestCase {
         XCTAssertEqual(decoded.corners.topLeft, CGPoint(x: 0.1, y: 0.1))
         XCTAssertEqual(decoded.corners.bottomRight, CGPoint(x: 0.9, y: 0.9))
     }
+
+    // MARK: - ProjectRecord 集成测试
+
+    func testProjectRecordEncodesPatternGrid() throws {
+        let grid = makeSampleGrid()
+        let project = ProjectRecord(
+            name: "测试项目",
+            beadUsage: [],
+            colorSystem: .mard,
+            patternGrid: grid
+        )
+
+        let data = try JSONEncoder().encode(project)
+        let decoded = try JSONDecoder().decode(ProjectRecord.self, from: data)
+
+        XCTAssertEqual(decoded.patternGrid, grid)
+    }
+
+    func testProjectRecordDecodesOldDataWithoutPatternGrid() throws {
+        // 模拟旧数据：不含 patternGrid 字段的 JSON
+        let json = """
+        {
+            "id": "\(UUID().uuidString)",
+            "name": "旧项目",
+            "date": 700000000,
+            "beadUsage": [],
+            "totalBeads": 0,
+            "isArchived": false,
+            "isPlanned": false,
+            "colorSystem": "MARD"
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(ProjectRecord.self, from: json)
+        XCTAssertNil(decoded.patternGrid)
+    }
 }
