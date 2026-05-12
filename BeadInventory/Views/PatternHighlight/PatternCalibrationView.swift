@@ -387,21 +387,22 @@ struct PatternCalibrationView: View {
 
             var cells = colorCells
             if !allowedCodes.isEmpty {
-                await MainActor.run { savingPhase = "整图 OCR..." }
-                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s full-image OCR start")
-                let ocrCells = await GridOCRSampler.shared.sampleWithFallback(
+                await MainActor.run { savingPhase = "OCR 识别中" }
+                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s per-cell OCR start (all cells)")
+                let ocrCells = await GridOCRSampler.shared.sampleAllCellsPerCell(
                     image: processingImage, grid: placeholder, allowedCodes: allowedCodes,
                     progress: { done, total in
-                        if done == 1 || done % 30 == 0 || done == total {
+                        if done == 1 || done % 50 == 0 || done == total {
                             print("[PatternCal] per-cell OCR \(done)/\(total)")
                         }
                         Task { @MainActor in
-                            savingPhase = "细化识别 \(done)/\(total)"
+                            savingPhase = "OCR \(done)/\(total)"
                         }
                     }
                 )
                 let ocrMatchedCount = ocrCells.flatMap { $0 }.compactMap { $0 }.count
-                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s OCR done, matched \(ocrMatchedCount)")
+                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s per-cell OCR done, matched \(ocrMatchedCount)")
+                // OCR 有结果时覆盖颜色采样
                 for r in 0..<rowsCopy {
                     for c in 0..<colsCopy {
                         if let ocrCode = ocrCells[r][c] {

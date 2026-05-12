@@ -13,35 +13,35 @@ final class GridOCRSampler {
     static let shared = GridOCRSampler()
     private init() {}
 
-    /// 两段 OCR：先整图一次，没识别到的格子再 per-cell 裁出来单独 OCR。
-    /// - progress: (已完成 per-cell 数, per-cell 总数) — 仅 per-cell 阶段触发
-    func sampleWithFallback(image: UIImage,
-                            grid: BeadPatternGrid,
-                            allowedCodes: Set<String>,
-                            progress: ((Int, Int) -> Void)? = nil) async -> [[String?]] {
-        // 第一遍：整图 OCR
-        var result = sample(image: image, grid: grid, allowedCodes: allowedCodes)
-
-        // 找出没识别到的格子
-        var unmatched: [(row: Int, col: Int)] = []
-        for r in 0..<grid.rows {
-            for c in 0..<grid.cols {
-                if result[r][c] == nil {
-                    unmatched.append((r, c))
-                }
-            }
-        }
-        guard !unmatched.isEmpty, let cgImage = image.cgImage else { return result }
+    /// 对所有格子做 per-cell OCR。
+    /// 跳过整图 OCR——满是小字的图整图 OCR 慢得离谱，每格裁出来跑反而快。
+    /// - progress: (已完成数, 总数)
+    func sampleAllCellsPerCell(image: UIImage,
+                                grid: BeadPatternGrid,
+                                allowedCodes: Set<String>,
+                                progress: ((Int, Int) -> Void)? = nil) async -> [[String?]] {
+        let empty: [[String?]] = Array(
+            repeating: Array(repeating: nil, count: grid.cols), count: grid.rows
+        )
+        guard let cgImage = image.cgImage, !allowedCodes.isEmpty else { return empty }
 
         let imageWidth = CGFloat(cgImage.width)
         let imageHeight = CGFloat(cgImage.height)
 
-        // 第二遍：并行 per-cell OCR，限流到 8 个并发避免 OOM
+        var allCells: [(row: Int, col: Int)] = []
+        for r in 0..<grid.rows {
+            for c in 0..<grid.cols {
+                allCells.append((r, c))
+            }
+        }
+
+        var result = empty
         var completed = 0
-        let total = unmatched.count
+        let total = allCells.count
+
         await withTaskGroup(of: (Int, Int, String?).self) { group in
             var inFlight = 0
-            for pos in unmatched {
+            for pos in allCells {
                 if inFlight >= 8 {
                     if let done = await group.next() {
                         result[done.0][done.1] = done.2
