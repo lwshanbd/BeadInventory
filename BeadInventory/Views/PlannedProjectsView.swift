@@ -1024,6 +1024,7 @@ struct PlannedProjectDetailView: View {
     @State private var showThumbnailEditor = false
     @State private var sortByQuantity = true
     @State private var showChildrenSection = true
+    @State private var showPatternHighlight = false
 
     // 获取当前项目的最新状态
     var currentProject: ProjectRecord? {
@@ -1087,6 +1088,16 @@ struct PlannedProjectDetailView: View {
         .sheet(isPresented: $showStockCheckSheet) { stockCheckSheet }
         .sheet(isPresented: $showEditSheet) { editSheet }
         .sheet(isPresented: $showThumbnailEditor) { thumbnailEditorSheet }
+        .sheet(isPresented: $showPatternHighlight) {
+            let p = currentProject ?? project
+            if p.patternGrid != nil {
+                PatternHighlightView(project: p)
+                    .environmentObject(inventoryManager)
+            } else {
+                PatternCalibrationView(project: p)
+                    .environmentObject(inventoryManager)
+            }
+        }
         .onChange(of: currentProject?.isPlanned) { _, isPlanned in
             if isPlanned == false { dismiss() }
         }
@@ -1124,11 +1135,32 @@ struct PlannedProjectDetailView: View {
     }
 
     private var actionButtonsView: some View {
-        HStack(spacing: 12) {
-            stockCheckButton
-            executeButton
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                stockCheckButton
+                executeButton
+            }
+            patternHighlightButton
         }
         .padding(.horizontal)
+    }
+
+    private var patternHighlightButton: some View {
+        Button {
+            showPatternHighlight = true
+        } label: {
+            HStack {
+                Image(systemName: "square.grid.3x3.square")
+                Text("拼图模式")
+            }
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background((currentProject ?? project).thumbnail == nil ? Color.gray : Color.purple)
+            .cornerRadius(12)
+        }
+        .disabled((currentProject ?? project).thumbnail == nil)
     }
 
     private var stockCheckButton: some View {
