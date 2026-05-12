@@ -39,10 +39,12 @@ final class GridOCRSampler {
         var completed = 0
         let total = allCells.count
 
+        print("[OCRGroup] dispatching \(total) cells with concurrency 4")
         await withTaskGroup(of: (Int, Int, String?).self) { group in
             var inFlight = 0
+            let maxConcurrent = 4   // Vision 内部可能有锁，4 比 8 稳
             for pos in allCells {
-                if inFlight >= 8 {
+                if inFlight >= maxConcurrent {
                     if let done = await group.next() {
                         result[done.0][done.1] = done.2
                         completed += 1
@@ -63,12 +65,14 @@ final class GridOCRSampler {
                 }
                 inFlight += 1
             }
+            print("[OCRGroup] all dispatched; awaiting remaining \(inFlight)")
             for await done in group {
                 result[done.0][done.1] = done.2
                 completed += 1
                 progress?(completed, total)
             }
         }
+        print("[OCRGroup] all done; total=\(total) matched=\(result.flatMap { $0 }.compactMap { $0 }.count)")
 
         return result
     }
@@ -80,13 +84,13 @@ final class GridOCRSampler {
                               imageWidth: CGFloat,
                               imageHeight: CGFloat,
                               allowedCodes: Set<String>) -> String? {
+        let cellStart = Date()
         let tlx = grid.corners.topLeft.x * imageWidth
         let tly = grid.corners.topLeft.y * imageHeight
         let brx = grid.corners.bottomRight.x * imageWidth
         let bry = grid.corners.bottomRight.y * imageHeight
         let cellW = (brx - tlx) / CGFloat(grid.cols)
         let cellH = (bry - tly) / CGFloat(grid.rows)
-        // 加 10% 边距方便 Vision 读全字
         let margin: CGFloat = 0.1
         let x = tlx + CGFloat(col) * cellW - cellW * margin
         let y = tly + CGFloat(row) * cellH - cellH * margin
@@ -98,30 +102,44 @@ final class GridOCRSampler {
             height: min(imageHeight - max(0, y), h)
         )
         guard rect.width > 4, rect.height > 4,
-              let cropped = cgImage.cropping(to: rect) else { return nil }
+              let cropped = cgImage.cropping(to: rect) else {
+            print("[OCR] cell(\(row),\(col)) SKIP rect=\(rect)")
+            return nil
+        }
+
+        print("[OCR] cell(\(row),\(col)) START crop=\(Int(rect.width))x\(Int(rect.height))")
 
         let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
+        request.recognitionLevel = .fast      // 单字符 OCR：fast 够用且快很多
         request.usesLanguageCorrection = false
         request.customWords = Array(allowedCodes)
-        request.minimumTextHeight = 0.05
 
         let handler = VNImageRequestHandler(cgImage: cropped, options: [:])
         do {
             try handler.perform([request])
         } catch {
+            let ms = Int(Date().timeIntervalSince(cellStart) * 1000)
+            print("[OCR] cell(\(row),\(col)) ERROR \(ms)ms: \(error.localizedDescription)")
             return nil
         }
 
-        guard let observations = request.results else { return nil }
-        for obs in observations {
-            for candidate in obs.topCandidates(3) {
-                if let code = matchLegendCode(text: candidate.string, allowed: allowedCodes) {
-                    return code
+        var matched: String? = nil
+        var rawText: String = ""
+        if let observations = request.results {
+            for obs in observations {
+                for candidate in obs.topCandidates(3) {
+                    if rawText.isEmpty { rawText = candidate.string }
+                    if let code = matchLegendCode(text: candidate.string, allowed: allowedCodes) {
+                        matched = code
+                        break
+                    }
                 }
+                if matched != nil { break }
             }
         }
-        return nil
+        let ms = Int(Date().timeIntervalSince(cellStart) * 1000)
+        print("[OCR] cell(\(row),\(col)) DONE \(ms)ms raw=\"\(rawText)\" -> \(matched ?? "nil")")
+        return matched
     }
 
     /// 对整图跑 OCR，返回稀疏 [row][col] String?——只有 OCR 识别到且命中
