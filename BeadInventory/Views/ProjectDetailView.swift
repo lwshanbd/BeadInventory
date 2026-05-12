@@ -170,13 +170,15 @@ struct ProjectDetailView: View {
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showingPatternCalibration = true
-                } label: {
-                    Label("拼图模式", systemImage: "square.grid.3x3.square")
+            if (currentProject ?? project).isPlanned {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingPatternCalibration = true
+                    } label: {
+                        Label("拼图模式", systemImage: "square.grid.3x3.square")
+                    }
+                    .disabled((currentProject ?? project).thumbnail == nil)
                 }
-                .disabled((currentProject ?? project).thumbnail == nil)
             }
         }
         .sheet(isPresented: $showingPatternCalibration) {
