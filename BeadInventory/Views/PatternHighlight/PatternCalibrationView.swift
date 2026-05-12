@@ -357,7 +357,13 @@ struct PatternCalibrationView: View {
         let colsCopy = cols
         let projectId = project.id
         let colorSystem = project.colorSystem
-        let allowedCodes = Set(project.beadUsage.map { $0.colorCode })
+        let legendCodes = Set(project.beadUsage.map { $0.colorCode })
+        // 采样用的候选池：MARD 下永远加 H2 兜底空白格识别。
+        // 采样后会把匹到 H2 但 H2 不在 legendCodes 的格子降级为 nil（空白）。
+        var allowedCodes = legendCodes
+        if project.colorSystem == .mard {
+            allowedCodes.insert("H2")
+        }
         print("[PatternCal] start; image.size=\(img.size), rows=\(rowsCopy), cols=\(colsCopy), allowed=\(allowedCodes.count)")
         Task.detached(priority: .userInitiated) {
             let t0 = Date()
@@ -411,6 +417,19 @@ struct PatternCalibrationView: View {
                     }
                 }
             }
+            // 后处理：候选池里加过的兜底色号（如 MARD 的 H2），
+            // 如果不在原图例里，降级为 nil（视为空白格）。
+            // 这样空白格不会出现在 validator 差异里，也不会被错配到其它色。
+            var blankedCount = 0
+            for r in 0..<rowsCopy {
+                for c in 0..<colsCopy {
+                    if let code = cells[r][c], !legendCodes.contains(code) {
+                        cells[r][c] = nil
+                        blankedCount += 1
+                    }
+                }
+            }
+            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s blanked \(blankedCount) cells (matched H2 etc., not in legend)")
             let grid = BeadPatternGrid(
                 corners: cornersCopy, rows: rowsCopy, cols: colsCopy,
                 cellColorCodes: cells,
