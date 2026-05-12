@@ -99,6 +99,12 @@ struct PatternCalibrationView: View {
                         displayRect: displayRect
                     )
 
+                    // 整体移动手势：拖网格内部（不包括 4 个角的热区）平移所有 corners
+                    GridBodyDragHandle(
+                        corners: $corners,
+                        displayRect: displayRect
+                    )
+
                     ForEach(visibleHandles(), id: \.self) { label in
                         CornerHandle(
                             label: label,
@@ -610,6 +616,61 @@ private struct CalibrationGridOverlay: View {
                 context.stroke(path, with: .color(.cyan.opacity(0.7)), lineWidth: 0.7)
             }
         }
+    }
+}
+
+/// 整体移动手势：在网格内部（角点热区外）单指拖，平移所有 4 个 corners。
+/// 不改变形状/大小，只是整体挪位置。用于把识别到的矩形挪到不含 index 标号的区域。
+private struct GridBodyDragHandle: View {
+    @Binding var corners: GridCorners
+    let displayRect: CGRect
+
+    @State private var dragStart: GridCorners? = nil
+
+    var body: some View {
+        let bb = boundingBox(of: corners, in: displayRect)
+        Rectangle()
+            .fill(Color.white.opacity(0.001))   // 几乎透明但接收触摸
+            .frame(width: bb.width, height: bb.height)
+            .position(x: bb.midX, y: bb.midY)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 5)   // 5pt 移动后才触发，避免误吞 tap
+                    .onChanged { value in
+                        if dragStart == nil { dragStart = corners }
+                        guard let start = dragStart else { return }
+                        let dx = value.translation.width / displayRect.width
+                        let dy = value.translation.height / displayRect.height
+                        corners = translate(start, dx: dx, dy: dy)
+                    }
+                    .onEnded { _ in
+                        dragStart = nil
+                    }
+            )
+    }
+
+    /// 整体平移 4 个角，并 clamp 整体到 [0,1] 范围内（不变形）
+    private func translate(_ c: GridCorners, dx: CGFloat, dy: CGFloat) -> GridCorners {
+        let xs = [c.topLeft.x, c.topRight.x, c.bottomLeft.x, c.bottomRight.x]
+        let ys = [c.topLeft.y, c.topRight.y, c.bottomLeft.y, c.bottomRight.y]
+        let actualDx = max(-(xs.min() ?? 0), min(1 - (xs.max() ?? 1), dx))
+        let actualDy = max(-(ys.min() ?? 0), min(1 - (ys.max() ?? 1), dy))
+        return GridCorners(
+            topLeft: CGPoint(x: c.topLeft.x + actualDx, y: c.topLeft.y + actualDy),
+            topRight: CGPoint(x: c.topRight.x + actualDx, y: c.topRight.y + actualDy),
+            bottomLeft: CGPoint(x: c.bottomLeft.x + actualDx, y: c.bottomLeft.y + actualDy),
+            bottomRight: CGPoint(x: c.bottomRight.x + actualDx, y: c.bottomRight.y + actualDy)
+        )
+    }
+
+    private func boundingBox(of c: GridCorners, in rect: CGRect) -> CGRect {
+        let xs = [c.topLeft.x, c.topRight.x, c.bottomLeft.x, c.bottomRight.x]
+        let ys = [c.topLeft.y, c.topRight.y, c.bottomLeft.y, c.bottomRight.y]
+        let minX = (xs.min() ?? 0) * rect.width + rect.minX
+        let maxX = (xs.max() ?? 1) * rect.width + rect.minX
+        let minY = (ys.min() ?? 0) * rect.height + rect.minY
+        let maxY = (ys.max() ?? 1) * rect.height + rect.minY
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 }
 
