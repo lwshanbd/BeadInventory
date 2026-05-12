@@ -38,6 +38,9 @@ BeadInventory 目前支持 AI 识别图例后扣库存、建计划项目。但�
 | 渲染方式 | SwiftUI `Canvas` 绘制叠层 | 单图 50×50 = 2500 格，View 数量太大 |
 | 4 角形状 | 支持四边形（轻微透视），非强制矩形 | 用户拍照常有倾斜 |
 | 色匹配 | 复用 `ColorSimilarityService`，转 Lab 空间用 ΔE | 已有基础设施 |
+| CV 库选型 | 引入 OpenCV，通过 SwiftPM 集成 `yeatse/opencv-spm` | 算法鲁棒性远超手写；体积代价（+50MB）可接受 |
+| 桥接方式 | Objective-C++（`.mm`）薄封装层，Swift 侧只调 `GridDetectionBridge` | OpenCV 是 C++，Swift 不能直接调 |
+| 测试 target | 现在新建 `BeadInventoryTests` target（空壳），测试用例待用户提供 fixtures 后补 | 算法实现先行，回归测试随后跟上 |
 
 ---
 
@@ -240,68 +243,67 @@ Button {
 
 这是整个功能的技术核心。`GridDetectionService.detect` 内部按顺序尝试三种算法，取置信度最高者。
 
-### 5.1 算法 A：投影直方图法（首选，带网格线图纸）
+### 5.1 算法 A：Hough 直线检测（首选，带网格线图纸）
 
 **适用**：图纸上有清晰的网格线（拼豆图纸 70%+ 都是这种）。
+**核心 OpenCV 调用**：`cv::Canny` → `cv::HoughLinesP`
 
 ```
-输入：UIImage
-1. resize 到长边 1024，转 CGImage
-2. 转灰度（CIColorMonochrome 或自己实现）
-3. 自适应阈值二值化（取 OTSU 阈值），保留深色像素 = 1
-4. 计算 colSum[x] = 第 x 列的暗像素数
-5. 检测 colSum 上的尖峰（峰高 > 全图均值 * 1.5）
-6. 峰间距统计：取众数 T_x ≈ 一格像素宽
-7. 用 T_x 做 NMS，得到所有竖线 X 坐标 vlines
-8. Y 轴同理 → hlines
-9. corners = (vlines.first, hlines.first), (vlines.last, hlines.first), ...
-10. cols = vlines.count - 1, rows = hlines.count - 1
-11. confidence = min(峰间距方差倒数, 峰强度规则化) → 0~1
+输入：UIImage (经 bridge 转 cv::Mat)
+1. resize 到长边 1024
+2. cvtColor → 灰度
+3. GaussianBlur(3×3) 去噪
+4. Canny(low=50, high=150) 边缘检测
+5. HoughLinesP(rho=1, theta=π/180, threshold=80,
+              minLineLength=imageDim*0.3, maxLineGap=10)
+6. 用线段角度过滤：|θ| < 5° 归为水平线，|θ-90°| < 5° 归为垂直线
+7. 同朝向线按位置(y for horizontal, x for vertical) 聚类(DBSCAN ε=5px)
+8. 每个聚类取中位线 → 干净的 hlines/vlines
+9. 间距统计：相邻 line 间距取众数 T
+10. 用 T 反推出"缺失"的中间线（HoughLinesP 偶尔会漏检），补齐网格
+11. corners = (vlines.first, hlines.first), ..., (vlines.last, hlines.last)
+12. rows = hlines.count - 1, cols = vlines.count - 1
+13. confidence = (检测到的线数 / 期望线数) × (间距方差倒数归一化)
 ```
 
-伪代码：
-
-```swift
-let gray = image.toGrayscale1024()
-let bin = gray.binarizeOTSU()
-let colSum = (0..<bin.width).map { x in bin.darkCount(at: .col(x)) }
-let peaks = colSum.findPeaks(minHeight: colSum.mean * 1.5)
-let period = peaks.diffs().mode()      // 最常见的相邻差
-let vlines = peaks.suppressed(minDist: period * 0.7)
-// ...
-```
+为什么 OpenCV 比手写好：`HoughLinesP` 内部处理了线段断裂、噪声、抗锯齿等所有细节，
+对带轻微倾斜或浅色网格线的图纸鲁棒性极强。
 
 期望准确度：带网格线图纸 > 90%；无网格线图纸 < 30%（会触发算法 B）。
 
 ### 5.2 算法 B：色块周期法（无网格线图纸）
 
 **适用**：纯色块直接相邻、看不到分割线。
+**核心调用**：Accelerate.framework vDSP 做 1D 自相关（OpenCV 在这一步反而绕）
 
 ```
-1. resize 到 512，转 RGB
-2. OTSU 分割背景（白色）→ 找到内容 bbox
-3. 在 bbox 中心采样一条横线，记下每像素的 RGB
-4. 对横线 RGB 序列做"颜色变化点检测"：相邻像素 ΔE > 8 标为切换点
-5. 切换点间距统计 → 众数 T_x
+1. resize 到 512，转 cv::Mat (RGB)
+2. cv::threshold OTSU 分背景白色 → 内容 bbox
+3. 在 bbox 中心取一行 RGB pixel 数组
+4. 对 RGB 序列做"颜色变化点检测"：相邻像素 ΔE > 8 标为切换点
+5. 切换点间距用 vDSP_normalize 后做 vDSP_conv 自相关，找主频率 T_x
 6. 同样处理纵向中心线 → T_y
 7. cols = round(bbox.width / T_x), rows = round(bbox.height / T_y)
 8. corners = bbox 4 角
-9. confidence = 切换点间距方差的倒数（方差越小越像周期性结构）
+9. confidence = 自相关主峰高度 / 次峰高度
 ```
 
 误差通常 ±1 行/列，靠用户 stepper 微调。
 
-### 5.3 算法 C：Vision 兜底
+### 5.3 算法 C：OpenCV findContours 兜底
 
 **适用**：前两种都置信度 < 0.4 时。
+**核心 OpenCV 调用**：`cv::findContours` + `cv::minAreaRect`
 
 ```
-1. VNDetectContoursRequest 取所有 contour
-2. 过滤面积在合理范围（图面积 / 1000 ~ / 100）的小四边形
-3. 对中心点做 X、Y 一维聚类
-4. 聚类数 ≈ rows / cols；聚类中心点距 ≈ cell size
-5. 4 角取所有 contour 的整体 bbox
-6. confidence 固定 0.45（始终低于阈值，仅用作"自动预填"提示用户务必检查）
+1. resize 到 1024，灰度 + Canny
+2. cv::findContours(RETR_LIST, CHAIN_APPROX_SIMPLE)
+3. 过滤面积在合理范围（图面积 / 5000 ~ / 100）的 contour
+4. 每个 contour 调 cv::minAreaRect 取最小外接矩形中心点
+5. 对中心点做 X、Y 一维聚类（DBSCAN ε = imageDim / 200）
+6. 聚类数 ≈ rows / cols；聚类中心点距 ≈ cell size
+7. 4 角取所有 contour 的整体 bbox
+8. confidence 固定 0.45（始终低于阈值，仅用作"自动预填"提示用户务必检查）
 ```
 
 ### 5.4 透视处理
@@ -337,7 +339,80 @@ func cellQuad(row: Int, col: Int, corners: GridCorners, rows: Int, cols: Int)
 
 ---
 
-## 6. 色匹配细节
+## 6. OpenCV 集成方案
+
+### 6.1 依赖
+
+通过 SwiftPM 引入 `yeatse/opencv-spm`（社区维护，与 OpenCV 官方 xcframework release 同步）：
+
+```
+File → Add Packages → https://github.com/yeatse/opencv-spm
+版本：>= 4.10.0
+```
+
+体积代价：链接后 App 增加约 +50~70MB（dead code stripping 之后）。
+
+### 6.2 桥接层
+
+OpenCV 是 C++，Swift 不能直接调，需 Objective-C++ 中间层。
+
+新增文件：
+
+```
+BeadInventory/Managers/CV/
+  ├── GridDetectionBridge.h        // Obj-C 公开接口
+  ├── GridDetectionBridge.mm       // Obj-C++ 实现，#import opencv2/opencv.hpp
+  └── BeadInventory-Bridging-Header.h  // Swift 引用 GridDetectionBridge.h
+```
+
+Bridge 公开接口（精简）：
+
+```objc
+// GridDetectionBridge.h
+@interface GridDetectionResultObjC : NSObject
+@property (nonatomic, assign) CGPoint topLeft;
+@property (nonatomic, assign) CGPoint topRight;
+@property (nonatomic, assign) CGPoint bottomLeft;
+@property (nonatomic, assign) CGPoint bottomRight;
+@property (nonatomic, assign) NSInteger rows;
+@property (nonatomic, assign) NSInteger cols;
+@property (nonatomic, assign) double confidence;
+@end
+
+@interface GridDetectionBridge : NSObject
++ (nullable GridDetectionResultObjC*)detectWithHoughLines:(UIImage*)image;
++ (nullable GridDetectionResultObjC*)detectWithContours:(UIImage*)image;
+@end
+```
+
+Swift 侧：
+
+```swift
+// GridDetectionService.swift
+func detect(image: UIImage) async -> GridDetectionResult? {
+    // 1. 算法 A
+    if let r = GridDetectionBridge.detect(withHoughLines: image), r.confidence > 0.5 {
+        return r.toSwift()
+    }
+    // 2. 算法 B（纯 Swift + Accelerate，不走 bridge）
+    if let r = self.detectByColorPeriod(image: image), r.confidence > 0.4 {
+        return r
+    }
+    // 3. 算法 C
+    return GridDetectionBridge.detect(withContours: image)?.toSwift()
+}
+```
+
+### 6.3 工程配置注意点
+
+- 主 target 的 Build Settings 启用 **C++ and Objective-C Interoperability**（Swift 5.9+）
+- bridging header 路径在 Build Settings → "Objective-C Bridging Header"
+- xcframework 体积大，把 `Strip Style` 设为 `Non-Global Symbols` 进一步瘦身
+- Mac Catalyst / visionOS 暂不构建，避免依赖跨平台问题（项目当前只支持 iOS）
+
+---
+
+## 7. 色匹配细节
 
 `GridCellSampler.sample` 内部：
 
@@ -353,7 +428,7 @@ func cellQuad(row: Int, col: Int, corners: GridCorners, rows: Int, cols: Int)
 
 ---
 
-## 7. 校验提示 UI
+## 8. 校验提示 UI
 
 `PatternHighlightView` 顶部 banner（可关闭）：
 
@@ -373,7 +448,7 @@ H06 蓝色   网格 5 格    图例 8 格    [以网格为准] [以图例为准]
 
 ---
 
-## 8. 性能考量
+## 9. 性能考量
 
 - 一张 50×50 图纸 = 2500 格。Canvas 单次绘制 2500 个四边形在 iPhone 12 以上 60fps 无压力，已实测同量级 SwiftUI Canvas。
 - 缩放时叠层重绘：Canvas 内部用 `drawingGroup()` 或 `Path.contains` 不必要时跳过，但首版不优化
@@ -382,31 +457,33 @@ H06 蓝色   网格 5 格    图例 8 格    [以网格为准] [以图例为准]
 
 ---
 
-## 9. 落地节奏（建议 PR 切分）
+## 10. 落地节奏（建议 PR 切分）
 
 虽然功能一次性交付，但开发与 review 按四个 PR 推进，每个独立可跑：
 
-1. **PR1 基础设施**：模型 + 持久化字段 + 入口按钮（点击进空白 calibration 页）
+1. **PR1 基础设施**：OpenCV SwiftPM 引入 + bridging header + 模型 + 持久化字段 + 入口按钮（点击进空白 calibration 页）+ 建空 `BeadInventoryTests` target
 2. **PR2 手动标定 + 高亮**：完成 `PatternCalibrationView`（无自动检测）+ `PatternHighlightView` + `GridCellSampler`
-3. **PR3 自动检测**：算法 A + B + C + 置信度 banner
+3. **PR3 自动检测**：算法 A（OpenCV HoughLinesP）+ B（Accelerate）+ C（OpenCV findContours）+ 置信度 banner
 4. **PR4 校验**：`GridValidator` + diff sheet + 应用按钮
 
 每个 PR 完成后用户都能用到一部分能力。
 
 ---
 
-## 10. 测试策略
+## 11. 测试策略
 
-- **GridDetectionService**：放 5 张代表性图纸（带线 / 无线 / 倾斜 / 长矩形 / 圆角）到 fixtures，跑自动检测，断言 confidence 与 rows/cols
-- **GridCellSampler**：手工标定一张已知答案图，断言 100% 单元匹配
-- **GridValidator**：构造已知差异，断言 diff 列表正确
+PR1 即新建 `BeadInventoryTests` target（空壳），保证后续 PR 能立即添加断言。具体测试用例在用户提供 fixture 图片（已手动数好答案）后补充：
+
+- **GridDetectionService**：用户提供 5 张代表性图纸（带线 / 无线 / 倾斜 / 长矩形 / 圆角）+ 期望 rows/cols，断言 confidence ≥ 0.5 且 rows/cols 准确
+- **GridCellSampler**：用户提供 1 张已手工标定 + 数好每格色号的图，断言匹配率 100%
+- **GridValidator**：构造已知差异（不依赖图片），断言 diff 列表正确
 - **UI**：手动测试，因为目前项目无 UI 测试基础设施
 
-iOS 项目目前没有单元测试 target，本设计**包含新建一个 `BeadInventoryTests` target** 用来跑前 3 项。如果用户希望先不引入测试基础设施，PR1 可以省略。
+测试用例补充时机：用户准备好 fixture 后单独提交 PR，不阻塞 PR1~4 主体实现。
 
 ---
 
-## 11. 风险与未决
+## 12. 风险与未决
 
 | 风险 | 缓解 |
 |---|---|
@@ -415,10 +492,12 @@ iOS 项目目前没有单元测试 target，本设计**包含新建一个 `BeadI
 | 色匹配 ΔE 阈值 12 是否合适 | 可在设置里加调试开关；首版用 12 |
 | `Canvas` 在老设备性能 | 优先用 `drawingGroup()`；如不够再降级到只画高亮格 |
 | `BeadPatternGrid` JSON 体积（2500 格 × 5 字符 ≈ 15KB） | 可接受，不压缩 |
+| OpenCV 增加 App 体积 ~50MB | 用户已确认接受；后续可切 minimal build 进一步降到 ~20MB |
+| Obj-C++ bridge 跨语言调试复杂 | bridge 只暴露简单值类型，所有复杂逻辑封装在 `.mm` 内 |
 
 ---
 
-## 12. 验收标准
+## 13. 验收标准
 
 - [ ] 用户能从 ProjectDetail 进入拼图模式
 - [ ] 首次进入显示标定页，自动检测带网格线的图纸成功率 > 80%（用 fixtures 验证）
@@ -441,13 +520,18 @@ iOS 项目目前没有单元测试 target，本设计**包含新建一个 `BeadI
 - `BeadInventory/Managers/GridDetectionService.swift`
 - `BeadInventory/Managers/GridCellSampler.swift`
 - `BeadInventory/Managers/GridValidator.swift`
+- `BeadInventory/Managers/CV/GridDetectionBridge.h`
+- `BeadInventory/Managers/CV/GridDetectionBridge.mm`
+- `BeadInventory/BeadInventory-Bridging-Header.h`
 - `BeadInventory/Views/PatternHighlight/PatternCalibrationView.swift`
 - `BeadInventory/Views/PatternHighlight/PatternHighlightView.swift`
 - `BeadInventory/Views/PatternHighlight/PatternHighlightOverlay.swift`
 - `BeadInventory/Views/PatternHighlight/ColorPaletteBar.swift`
 - `BeadInventory/Views/PatternHighlight/ZoomablePatternCanvas.swift`
+- `BeadInventoryTests/`（新 target 空壳）
 
 **修改**：
+- `BeadInventory.xcodeproj`：加 SwiftPM 依赖 `yeatse/opencv-spm`、配置 bridging header、加 tests target
 - `BeadInventory/Models/BeadColor.swift`（`ProjectRecord` 加字段 + 编解码）
 - `BeadInventory/Models/SwiftDataModels.swift`（`SDProjectRecord` 加 `Data?` 字段 + 转换）
 - `BeadInventory/Views/ProjectDetailView.swift`（入口按钮）
