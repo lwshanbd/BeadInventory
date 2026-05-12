@@ -22,6 +22,9 @@ struct PatternCalibrationView: View {
     @State private var detectionConfidence: Double? = nil
     @State private var saving = false
     @State private var savingPhase: String? = nil
+    @State private var savingStartTime: Date? = nil
+    @State private var savingDisplayElapsed: Int = 0
+    private let savingTimer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     /// 当前正在拖动的角点（用于显示放大镜）。nil = 没在拖。
     @State private var draggingCorner: CornerLabel? = nil
@@ -30,6 +33,14 @@ struct PatternCalibrationView: View {
 
     private var image: UIImage? {
         project.thumbnail.flatMap { UIImage(data: $0) }
+    }
+
+    private var savingLabelText: String {
+        guard let phase = savingPhase else { return "完成" }
+        if savingDisplayElapsed > 0 {
+            return "\(phase) (\(savingDisplayElapsed)s)"
+        }
+        return phase
     }
 
     var body: some View {
@@ -182,12 +193,17 @@ struct PatternCalibrationView: View {
             Button {
                 saveAndContinue()
             } label: {
-                Label(savingPhase ?? "完成",
+                Label(savingLabelText,
                       systemImage: saving ? "hourglass" : "checkmark")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .disabled(saving || image == nil)
+            .onReceive(savingTimer) { _ in
+                if let start = savingStartTime {
+                    savingDisplayElapsed = Int(Date().timeIntervalSince(start))
+                }
+            }
         }
         .padding()
         .background(.regularMaterial)
@@ -334,20 +350,24 @@ struct PatternCalibrationView: View {
         guard let img = image else { return }
         saving = true
         savingPhase = "准备图像..."
+        savingStartTime = Date()
+        savingDisplayElapsed = 0
         let cornersCopy = rectMode ? rectangleCorners(from: corners) : corners
         let rowsCopy = rows
         let colsCopy = cols
         let projectId = project.id
         let colorSystem = project.colorSystem
         let allowedCodes = Set(project.beadUsage.map { $0.colorCode })
+        print("[PatternCal] start; image.size=\(img.size), rows=\(rowsCopy), cols=\(colsCopy), allowed=\(allowedCodes.count)")
         Task.detached(priority: .userInitiated) {
-            // 一次性缩到 2048 长边以下。原图（PNG 未压缩）可能是 4032×3024，
-            // 直接拿去跑颜色重绘 + OCR 会非常慢。格子最小也有 2048/300 ≈ 7 像素，
-            // 足够采样和文字识别。
+            let t0 = Date()
+            print("[PatternCal] T+0.0s downsampling")
             let processingImage = GridOCRSampler.downsampledForOCR(img)
+            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s downsampled to \(processingImage.size)")
 
             await MainActor.run { savingPhase = "颜色采样中..." }
             let availableColors = await MainActor.run { inventoryManager.beadColors }
+            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s got \(availableColors.count) bead colors")
             let placeholder = BeadPatternGrid(
                 corners: cornersCopy, rows: rowsCopy, cols: colsCopy,
                 cellColorCodes: Array(repeating: Array(repeating: nil, count: colsCopy), count: rowsCopy),
@@ -356,25 +376,32 @@ struct PatternCalibrationView: View {
                 colorSystem: colorSystem
             )
 
-            // 第 1 步：颜色采样
+            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s color sampling start")
             let colorCells = GridCellSampler.shared.sample(
                 image: processingImage, grid: placeholder,
                 availableColors: availableColors,
                 allowedCodes: allowedCodes.isEmpty ? nil : allowedCodes
             )
+            let colorMatchedCount = colorCells.flatMap { $0 }.compactMap { $0 }.count
+            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s color sampling done, matched \(colorMatchedCount)")
 
-            // 第 2 步：OCR 整图 + per-cell 回填
             var cells = colorCells
             if !allowedCodes.isEmpty {
                 await MainActor.run { savingPhase = "整图 OCR..." }
+                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s full-image OCR start")
                 let ocrCells = await GridOCRSampler.shared.sampleWithFallback(
                     image: processingImage, grid: placeholder, allowedCodes: allowedCodes,
                     progress: { done, total in
+                        if done == 1 || done % 30 == 0 || done == total {
+                            print("[PatternCal] per-cell OCR \(done)/\(total)")
+                        }
                         Task { @MainActor in
                             savingPhase = "细化识别 \(done)/\(total)"
                         }
                     }
                 )
+                let ocrMatchedCount = ocrCells.flatMap { $0 }.compactMap { $0 }.count
+                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s OCR done, matched \(ocrMatchedCount)")
                 for r in 0..<rowsCopy {
                     for c in 0..<colsCopy {
                         if let ocrCode = ocrCells[r][c] {
@@ -391,11 +418,12 @@ struct PatternCalibrationView: View {
                 colorSystem: colorSystem
             )
             await MainActor.run {
+                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s all done; saving + dismissing")
                 inventoryManager.updateProjectPatternGrid(projectId, grid: grid)
                 saving = false
                 savingPhase = nil
+                savingStartTime = nil
                 dismiss()
-                // 给 dismiss 留点时间，再让 parent 触发 highlight
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
                     onComplete?()
                 }
