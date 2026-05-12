@@ -2982,6 +2982,15 @@ class InventoryManager: ObservableObject {
         }
     }
 
+    /// 更新项目的拼图模式网格数据（包括四角、行列、色号矩阵）
+    func updateProjectPatternGrid(_ projectId: UUID, grid: BeadPatternGrid?) {
+        if let index = projects.firstIndex(where: { $0.id == projectId }) {
+            historyManager.recordProject(type: projects[index].isPlanned ? .planUpdate : .projectUpdate, project: projects[index])
+            projects[index].patternGrid = grid
+            saveData()
+        }
+    }
+
     /// 更新项目成品图（仅已执行项目）
     /// 如果是新增成品图且之前没有完成日期，自动设置为当天
     func updateProjectFinishedImage(_ projectId: UUID, finishedImage: Data?) {
