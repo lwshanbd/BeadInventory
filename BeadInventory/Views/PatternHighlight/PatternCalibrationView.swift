@@ -21,6 +21,7 @@ struct PatternCalibrationView: View {
     @State private var detectionRunning = false
     @State private var detectionConfidence: Double? = nil
     @State private var saving = false
+    @State private var savingPhase: String? = nil
 
     /// 当前正在拖动的角点（用于显示放大镜）。nil = 没在拖。
     @State private var draggingCorner: CornerLabel? = nil
@@ -181,7 +182,8 @@ struct PatternCalibrationView: View {
             Button {
                 saveAndContinue()
             } label: {
-                Label(saving ? "保存中..." : "完成", systemImage: "checkmark")
+                Label(savingPhase ?? "完成",
+                      systemImage: saving ? "hourglass" : "checkmark")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -331,6 +333,7 @@ struct PatternCalibrationView: View {
     private func saveAndContinue() {
         guard let img = image else { return }
         saving = true
+        savingPhase = "颜色采样中..."
         let cornersCopy = rectMode ? rectangleCorners(from: corners) : corners
         let rowsCopy = rows
         let colsCopy = cols
@@ -354,11 +357,17 @@ struct PatternCalibrationView: View {
                 allowedCodes: allowedCodes.isEmpty ? nil : allowedCodes
             )
 
-            // 第 2 步：OCR 校验。OCR 能识别且命中图例的格子 → 用 OCR 结果覆盖颜色采样。
+            // 第 2 步：OCR 整图 + per-cell 回填
             var cells = colorCells
             if !allowedCodes.isEmpty {
-                let ocrCells = GridOCRSampler.shared.sample(
-                    image: img, grid: placeholder, allowedCodes: allowedCodes
+                await MainActor.run { savingPhase = "整图 OCR..." }
+                let ocrCells = await GridOCRSampler.shared.sampleWithFallback(
+                    image: img, grid: placeholder, allowedCodes: allowedCodes,
+                    progress: { done, total in
+                        Task { @MainActor in
+                            savingPhase = "细化识别 \(done)/\(total)"
+                        }
+                    }
                 )
                 for r in 0..<rowsCopy {
                     for c in 0..<colsCopy {
@@ -378,6 +387,7 @@ struct PatternCalibrationView: View {
             await MainActor.run {
                 inventoryManager.updateProjectPatternGrid(projectId, grid: grid)
                 saving = false
+                savingPhase = nil
                 dismiss()
                 // 给 dismiss 留点时间，再让 parent 触发 highlight
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
@@ -453,26 +463,33 @@ private struct CornerHandle: View {
 
     var body: some View {
         let p = currentPoint
-        Circle()
-            .fill(Color.red.opacity(0.85))
-            .frame(width: 28, height: 28)
-            .overlay(Circle().stroke(Color.white, lineWidth: 2))
-            .position(x: p.x, y: p.y)
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        let clamped = CGPoint(
-                            x: max(displayRect.minX, min(displayRect.maxX, value.location.x)),
-                            y: max(displayRect.minY, min(displayRect.maxY, value.location.y))
-                        )
-                        update(to: GridGeometry.normalize(clamped, in: displayRect))
-                        draggingCorner = label
-                        draggingScreenPoint = clamped
-                    }
-                    .onEnded { _ in
-                        draggingCorner = nil
-                    }
-            )
+        // 60pt 透明热区 + 28pt 可见红点
+        ZStack {
+            Circle()
+                .fill(Color.white.opacity(0.001))   // 几乎透明但接收触摸
+                .frame(width: 64, height: 64)
+            Circle()
+                .fill(Color.red.opacity(0.85))
+                .frame(width: 28, height: 28)
+                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+        }
+        .contentShape(Circle().scale(2))            // 显式扩大命中区
+        .position(x: p.x, y: p.y)
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    let clamped = CGPoint(
+                        x: max(displayRect.minX, min(displayRect.maxX, value.location.x)),
+                        y: max(displayRect.minY, min(displayRect.maxY, value.location.y))
+                    )
+                    update(to: GridGeometry.normalize(clamped, in: displayRect))
+                    draggingCorner = label
+                    draggingScreenPoint = clamped
+                }
+                .onEnded { _ in
+                    draggingCorner = nil
+                }
+        )
     }
 
     private var currentPoint: CGPoint {
