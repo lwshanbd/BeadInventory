@@ -15,6 +15,10 @@
 		381060CD2FB3A70D00F5DDE2 /* GridDetectionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 381060CC2FB3A70D00F5DDE2 /* GridDetectionBridge.m */; };
 		383001022FB3A70D00F5DDE2 /* BeadPatternGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383001012FB3A70D00F5DDE2 /* BeadPatternGrid.swift */; };
 		384001022FB3A70D00F5DDE2 /* PatternCalibrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 384001012FB3A70D00F5DDE2 /* PatternCalibrationView.swift */; };
+		385001082FB3A70D00F5DDE2 /* PatternHighlightView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001072FB3A70D00F5DDE2 /* PatternHighlightView.swift */; };
+		3850010A2FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */; };
+		3850010C2FB3A70D00F5DDE2 /* ColorPaletteBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */; };
+		3850010E2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3850010D2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift */; };
 		385001022FB3A70D00F5DDE2 /* GridGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001012FB3A70D00F5DDE2 /* GridGeometry.swift */; };
 		386ECBFA2F332DB600BD92E8 /* AnnouncementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */; };
 		386ECBFC2F332DB600BD92E8 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFB2F332DB600BD92E8 /* BackupManager.swift */; };
@@ -126,6 +130,10 @@
 		382001092FB3A70D00F5DDE2 /* BeadInventoryTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BeadInventoryTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		383001012FB3A70D00F5DDE2 /* BeadPatternGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeadPatternGrid.swift; sourceTree = "<group>"; };
 		384001012FB3A70D00F5DDE2 /* PatternCalibrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternCalibrationView.swift; path = BeadInventory/Views/PatternHighlight/PatternCalibrationView.swift; sourceTree = SOURCE_ROOT; };
+		385001072FB3A70D00F5DDE2 /* PatternHighlightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternHighlightView.swift; path = BeadInventory/Views/PatternHighlight/PatternHighlightView.swift; sourceTree = SOURCE_ROOT; };
+		385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternHighlightOverlay.swift; path = BeadInventory/Views/PatternHighlight/PatternHighlightOverlay.swift; sourceTree = SOURCE_ROOT; };
+		3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorPaletteBar.swift; path = BeadInventory/Views/PatternHighlight/ColorPaletteBar.swift; sourceTree = SOURCE_ROOT; };
+		3850010D2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ZoomablePatternCanvas.swift; path = BeadInventory/Views/PatternHighlight/ZoomablePatternCanvas.swift; sourceTree = SOURCE_ROOT; };
 		385001012FB3A70D00F5DDE2 /* GridGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridGeometry.swift; sourceTree = "<group>"; };
 		386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnouncementManager.swift; sourceTree = "<group>"; };
 		386ECBFB2F332DB600BD92E8 /* BackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
@@ -266,6 +274,10 @@
 			isa = PBXGroup;
 			children = (
 				384001012FB3A70D00F5DDE2 /* PatternCalibrationView.swift */,
+				385001072FB3A70D00F5DDE2 /* PatternHighlightView.swift */,
+				385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */,
+				3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */,
+				3850010D2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift */,
 			);
 			path = PatternHighlight;
 			sourceTree = "<group>";
@@ -640,6 +652,10 @@
 				6EC4A1187CBB489B83C6E6559E6BABBA /* LowStockDetailView.swift in Sources */,
 				381060CD2FB3A70D00F5DDE2 /* GridDetectionBridge.m in Sources */,
 				384001022FB3A70D00F5DDE2 /* PatternCalibrationView.swift in Sources */,
+				385001082FB3A70D00F5DDE2 /* PatternHighlightView.swift in Sources */,
+				3850010A2FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift in Sources */,
+				3850010C2FB3A70D00F5DDE2 /* ColorPaletteBar.swift in Sources */,
+				3850010E2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

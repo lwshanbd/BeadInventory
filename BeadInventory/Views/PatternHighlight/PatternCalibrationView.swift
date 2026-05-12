@@ -130,8 +130,11 @@ struct PatternCalibrationView: View {
                     runAutoDetect()
                 }
             }
-            .onChange(of: presentHighlight) { _, newValue in
-                if newValue { dismiss() }
+            .fullScreenCover(isPresented: $presentHighlight) {
+                if let updated = inventoryManager.projects.first(where: { $0.id == project.id }) {
+                    PatternHighlightView(project: updated)
+                        .environmentObject(inventoryManager)
+                }
             }
         }
     }

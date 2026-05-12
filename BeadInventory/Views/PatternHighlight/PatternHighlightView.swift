@@ -1,0 +1,107 @@
+//
+//  PatternHighlightView.swift
+//  BeadInventory
+//
+//  拼图模式主视图 - 图 + 高亮叠层 + 调色板 + 辅助线
+//
+
+import SwiftUI
+
+struct PatternHighlightView: View {
+    let project: ProjectRecord
+
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var highlightedCodes: Set<String> = []
+    @State private var guideMode: GuideMode = .off
+    @State private var showingRecalibrate = false
+
+    private var image: UIImage? {
+        project.thumbnail.flatMap { UIImage(data: $0) }
+    }
+
+    private var currentProject: ProjectRecord {
+        inventoryManager.projects.first { $0.id == project.id } ?? project
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                if let img = image, let grid = currentProject.patternGrid {
+                    ZoomablePatternCanvas(image: img) { rect in
+                        PatternHighlightOverlay(
+                            grid: grid,
+                            highlightedCodes: highlightedCodes,
+                            guideMode: guideMode,
+                            displayRect: rect
+                        )
+                    }
+                } else {
+                    VStack(spacing: 12) {
+                        Image(systemName: "questionmark.square.dashed")
+                            .font(.system(size: 60))
+                            .foregroundStyle(.secondary)
+                        Text(image == nil ? "项目无图片" : "未标定网格")
+                            .foregroundStyle(.secondary)
+                        if image != nil && currentProject.patternGrid == nil {
+                            Button("开始标定") {
+                                showingRecalibrate = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+
+                ColorPaletteBar(
+                    beadUsage: currentProject.beadUsage,
+                    colorSystem: currentProject.colorSystem,
+                    highlightedCodes: $highlightedCodes,
+                    availableColors: inventoryManager.beadColors
+                )
+            }
+            .navigationTitle(project.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("完成") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Section("辅助线") {
+                            ForEach(GuideMode.allCases, id: \.self) { m in
+                                Button {
+                                    guideMode = m
+                                } label: {
+                                    if guideMode == m {
+                                        Label(m.label, systemImage: "checkmark")
+                                    } else {
+                                        Text(m.label)
+                                    }
+                                }
+                            }
+                        }
+                        Divider()
+                        Button {
+                            highlightedCodes.removeAll()
+                        } label: {
+                            Label("清除高亮", systemImage: "eye.slash")
+                        }
+                        Button {
+                            showingRecalibrate = true
+                        } label: {
+                            Label("重新标定", systemImage: "square.grid.3x3.square")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingRecalibrate) {
+                PatternCalibrationView(project: currentProject)
+                    .environmentObject(inventoryManager)
+            }
+        }
+    }
+}

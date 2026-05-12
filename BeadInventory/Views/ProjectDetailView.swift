@@ -182,7 +182,14 @@ struct ProjectDetailView: View {
             }
         }
         .sheet(isPresented: $showingPatternCalibration) {
-            PatternCalibrationView(project: currentProject ?? project)
+            let p = currentProject ?? project
+            if p.patternGrid != nil {
+                PatternHighlightView(project: p)
+                    .environmentObject(inventoryManager)
+            } else {
+                PatternCalibrationView(project: p)
+                    .environmentObject(inventoryManager)
+            }
         }
         .sheet(isPresented: $showingThumbnailEditor) {
             ProjectImageEditorSheet(
