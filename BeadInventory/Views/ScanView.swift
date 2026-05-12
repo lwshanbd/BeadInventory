@@ -652,23 +652,10 @@ struct ScanView: View {
         clearState()
     }
 
-    /// 生成压缩的缩略图数据（最大200x200像素，JPEG压缩）
+    /// 生成原分辨率缩略图数据（PNG 无损）。
+    /// 拼图模式依赖原图做网格识别，所以这里不再压缩。
     func generateThumbnailData() -> Data? {
-        guard let image = thumbnailImage else { return nil }
-
-        // 计算缩放后的尺寸（最大200x200）
-        let maxSize: CGFloat = 200
-        let scale = min(maxSize / image.size.width, maxSize / image.size.height, 1.0)
-        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-
-        // 绘制缩略图
-        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
-        image.draw(in: CGRect(origin: .zero, size: newSize))
-        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-
-        // 压缩为JPEG（质量0.6）
-        return resizedImage?.jpegData(compressionQuality: 0.6)
+        return thumbnailImage?.pngData()
     }
 
     /// 清除所有状态
