@@ -39,6 +39,15 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable GridDetectionResultBridge *)detectGridWithContours:(UIImage *)image
                                                             roi:(nullable NSValue *)roi;
 
+/// 算法 D（约束拟合）：用户已经提供行/列数，反推 4 角。
+/// 思路：把 rows/cols 当作硬约束，在 Canny 边缘投影上搜索最佳
+/// (offset, period) 使得 rows+1 / cols+1 条等距线落在投影高峰上。
+/// 比 Hough 鲁棒得多，因为边缘标号、水印的散乱边都不在等距网格上。
++ (nullable GridDetectionResultBridge *)fitGridWithRows:(NSInteger)rows
+                                                    cols:(NSInteger)cols
+                                                   image:(UIImage *)image
+                                                     roi:(nullable NSValue *)roi;
+
 @end
 
 NS_ASSUME_NONNULL_END

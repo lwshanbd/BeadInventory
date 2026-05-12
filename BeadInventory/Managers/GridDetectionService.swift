@@ -41,6 +41,21 @@ final class GridDetectionService {
         }
     }
 
+    /// 约束拟合：用户已知行列数，反推 4 角。
+    /// 比通用 Hough 鲁棒得多——边缘标号/水印等噪声不会被选中，
+    /// 因为它们的边不在等距 rows×cols 网格上。
+    func fitWithUserRowsCols(image: UIImage, rows: Int, cols: Int, roi: CGRect?) async -> GridDetectionResult? {
+        await withCheckedContinuation { cont in
+            Task.detached(priority: .userInitiated) {
+                let nsRoi = roi.map { NSValue(cgRect: $0) }
+                let result = GridDetectionBridge.fitGrid(
+                    withRows: rows, cols: cols, image: image, roi: nsRoi
+                )?.toSwiftResult()
+                cont.resume(returning: result)
+            }
+        }
+    }
+
     private func detectSync(image: UIImage, roi: CGRect?) -> GridDetectionResult? {
         let nsRoi = roi.map { NSValue(cgRect: $0) }
 

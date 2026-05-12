@@ -166,28 +166,19 @@ struct PatternCalibrationView: View {
 
             // 检测按钮 + 提示
             VStack(spacing: 6) {
-                HStack(spacing: 12) {
-                    Button {
-                        runAutoDetect(restrictToCurrentROI: false)
-                    } label: {
-                        Label("全自动检测", systemImage: "wand.and.rays")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .disabled(detectionRunning || image == nil)
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        runSnapToROI()
-                    } label: {
-                        Label("对齐网格", systemImage: "viewfinder")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .disabled(detectionRunning || image == nil)
-                    .buttonStyle(.bordered)
+                Button {
+                    runSnapToROI()
+                } label: {
+                    Label("按行列定位网格", systemImage: "viewfinder")
+                        .frame(maxWidth: .infinity)
                 }
-                Text("不准时：调好行列数 → 拖矩形覆盖网格 → 点「对齐网格」")
+                .disabled(detectionRunning || image == nil)
+                .buttonStyle(.bordered)
+
+                Text("先把矩形大致框住网格区域，输好行列数，点这个按钮算法会精确对齐 4 个角")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
 
             Button {
@@ -275,20 +266,26 @@ struct PatternCalibrationView: View {
         .cornerRadius(8)
     }
 
-    /// 按用户的 ROI + 当前 rows/cols 校准 corners（保留用户的 stepper 值不变）
+    /// 按用户输入的 rows/cols + 当前矩形（ROI）反推最佳 corners。
+    /// 这是新的约束拟合算法：在 Canny 边缘投影上搜索使 rows+1 / cols+1
+    /// 条等距线得分最高的 (offset, period) 组合。
     private func runSnapToROI() {
         guard let img = image else { return }
         detectionRunning = true
         let currentCorners = corners
+        let rowsCopy = rows
+        let colsCopy = cols
         Task {
-            let result = await GridDetectionService.shared.detect(
+            let result = await GridDetectionService.shared.fitWithUserRowsCols(
                 image: img,
+                rows: rowsCopy,
+                cols: colsCopy,
                 roi: roiRect(from: currentCorners, imageSize: img.size)
             )
             await MainActor.run {
                 detectionRunning = false
                 if let r = result {
-                    // 只更新 corners，rows/cols 保留用户输入
+                    // 约束拟合返回的 rows/cols 跟用户输入一致，只更新 corners
                     corners = r.corners
                     if rectMode { snapCornersToRect() }
                     detectionConfidence = r.confidence

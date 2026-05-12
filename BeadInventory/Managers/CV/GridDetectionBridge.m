@@ -252,6 +252,163 @@
     return result;
 }
 
+#pragma mark - Algorithm D: Constrained grid fit (用 rows/cols 反推角点)
+
++ (nullable GridDetectionResultBridge *)fitGridWithRows:(NSInteger)rows
+                                                    cols:(NSInteger)cols
+                                                   image:(UIImage *)image
+                                                     roi:(nullable NSValue *)roiValue {
+    if (image == nil || rows < 2 || cols < 2) return nil;
+
+    Mat *src = [[Mat alloc] initWithUIImage:image];
+    if ([src empty]) return nil;
+
+    int origCols = [src cols];
+    int origRows = [src rows];
+
+    Mat *working = src;
+    int roiOffsetX = 0;
+    int roiOffsetY = 0;
+    if (roiValue != nil) {
+        CGRect roi = [roiValue CGRectValue];
+        int rx = MAX(0, (int)roi.origin.x);
+        int ry = MAX(0, (int)roi.origin.y);
+        int rw = MIN(origCols - rx, (int)roi.size.width);
+        int rh = MIN(origRows - ry, (int)roi.size.height);
+        if (rw <= 10 || rh <= 10) return nil;
+        Rect2i *rect = [[Rect2i alloc] initWithX:rx y:ry width:rw height:rh];
+        working = [src submatRoi:rect];
+        roiOffsetX = rx;
+        roiOffsetY = ry;
+    }
+
+    // 缩到长边 1024
+    int wCols = [working cols];
+    int wRows = [working rows];
+    CGFloat scale = 1024.0 / MAX(wCols, wRows);
+    int newW = (int)(wCols * scale);
+    int newH = (int)(wRows * scale);
+    Mat *resized = [Mat new];
+    Size2i *targetSize = [[Size2i alloc] initWithWidth:newW height:newH];
+    [Imgproc resize:working dst:resized dsize:targetSize fx:0 fy:0 interpolation:INTER_AREA];
+
+    Mat *gray = [Mat new];
+    [Imgproc cvtColor:resized dst:gray code:COLOR_BGR2GRAY];
+    Mat *edges = [Mat new];
+    [Imgproc Canny:gray edges:edges threshold1:30 threshold2:90];
+
+    // 投影：每行 / 每列 的边缘像素总和
+    // CV_32S = 4，避免溢出（uint8 sum 会爆）
+    Mat *rowProjMat = [Mat new];
+    [Core reduce:edges dst:rowProjMat dim:1 rtype:Core.REDUCE_SUM dtype:4];
+    Mat *colProjMat = [Mat new];
+    [Core reduce:edges dst:colProjMat dim:0 rtype:Core.REDUCE_SUM dtype:4];
+
+    // 读到 C 数组里快速访问（小数组，几 K）
+    int *rowProj = (int *)calloc(newH, sizeof(int));
+    int *colProj = (int *)calloc(newW, sizeof(int));
+    for (int y = 0; y < newH; y++) {
+        NSArray<NSNumber *> *v = [rowProjMat get:y col:0];
+        rowProj[y] = v.firstObject.intValue;
+    }
+    for (int x = 0; x < newW; x++) {
+        NSArray<NSNumber *> *v = [colProjMat get:0 col:x];
+        colProj[x] = v.firstObject.intValue;
+    }
+
+    // 行：搜索最佳 (topY, cellH) 使 rows+1 条等距线得分最高
+    int minCellH = MAX(8, newH / (int)(rows * 4));    // 至少 8 px / 格
+    int maxCellH = (int)(newH / rows);                // 不能超过 H / rows
+    if (maxCellH <= minCellH) {
+        free(rowProj); free(colProj);
+        return nil;
+    }
+    double bestRowsScore = -1;
+    int bestTopY = 0, bestCellH = 0;
+    for (int cellH = minCellH; cellH <= maxCellH; cellH++) {
+        int totalSpan = cellH * (int)rows;
+        for (int topY = 0; topY + totalSpan < newH; topY++) {
+            double score = 0;
+            for (int i = 0; i <= (int)rows; i++) {
+                int pos = topY + i * cellH;
+                // 3 像素窗口取最大，容忍 1 px 抖动
+                int p1 = (pos > 0) ? rowProj[pos - 1] : 0;
+                int p2 = rowProj[pos];
+                int p3 = (pos + 1 < newH) ? rowProj[pos + 1] : 0;
+                score += MAX(p1, MAX(p2, p3));
+            }
+            if (score > bestRowsScore) {
+                bestRowsScore = score;
+                bestTopY = topY;
+                bestCellH = cellH;
+            }
+        }
+    }
+
+    // 列：同样逻辑
+    int minCellW = MAX(8, newW / (int)(cols * 4));
+    int maxCellW = (int)(newW / cols);
+    if (maxCellW <= minCellW) {
+        free(rowProj); free(colProj);
+        return nil;
+    }
+    double bestColsScore = -1;
+    int bestLeftX = 0, bestCellW = 0;
+    for (int cellW = minCellW; cellW <= maxCellW; cellW++) {
+        int totalSpan = cellW * (int)cols;
+        for (int leftX = 0; leftX + totalSpan < newW; leftX++) {
+            double score = 0;
+            for (int i = 0; i <= (int)cols; i++) {
+                int pos = leftX + i * cellW;
+                int p1 = (pos > 0) ? colProj[pos - 1] : 0;
+                int p2 = colProj[pos];
+                int p3 = (pos + 1 < newW) ? colProj[pos + 1] : 0;
+                score += MAX(p1, MAX(p2, p3));
+            }
+            if (score > bestColsScore) {
+                bestColsScore = score;
+                bestLeftX = leftX;
+                bestCellW = cellW;
+            }
+        }
+    }
+
+    if (bestCellH == 0 || bestCellW == 0) {
+        free(rowProj); free(colProj);
+        return nil;
+    }
+
+    // 置信度：投影峰均值 vs 整体均值（信噪比）
+    double meanRowProj = 0, meanColProj = 0;
+    for (int y = 0; y < newH; y++) meanRowProj += rowProj[y];
+    meanRowProj /= newH;
+    for (int x = 0; x < newW; x++) meanColProj += colProj[x];
+    meanColProj /= newW;
+    double avgPeakRow = bestRowsScore / (double)(rows + 1);
+    double avgPeakCol = bestColsScore / (double)(cols + 1);
+    double rowConf = meanRowProj > 0 ? MIN(1.0, avgPeakRow / (meanRowProj * 3.0)) : 0;
+    double colConf = meanColProj > 0 ? MIN(1.0, avgPeakCol / (meanColProj * 3.0)) : 0;
+
+    free(rowProj); free(colProj);
+
+    // 反映射回原图归一化坐标
+    double leftX_orig = (bestLeftX / scale + roiOffsetX) / (double)origCols;
+    double rightX_orig = ((bestLeftX + bestCellW * (int)cols) / scale + roiOffsetX) / (double)origCols;
+    double topY_orig = (bestTopY / scale + roiOffsetY) / (double)origRows;
+    double bottomY_orig = ((bestTopY + bestCellH * (int)rows) / scale + roiOffsetY) / (double)origRows;
+
+    GridDetectionResultBridge *result = [GridDetectionResultBridge new];
+    result.topLeft = CGPointMake(leftX_orig, topY_orig);
+    result.topRight = CGPointMake(rightX_orig, topY_orig);
+    result.bottomLeft = CGPointMake(leftX_orig, bottomY_orig);
+    result.bottomRight = CGPointMake(rightX_orig, bottomY_orig);
+    result.rows = rows;
+    result.cols = cols;
+    result.confidence = (rowConf + colConf) / 2.0;
+
+    return result;
+}
+
 #pragma mark - Helpers
 
 /// 简单 1D 聚类：sort + 把相邻 < epsilon 的合并取均值
