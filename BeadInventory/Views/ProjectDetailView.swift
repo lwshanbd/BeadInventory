@@ -17,6 +17,7 @@ struct ProjectDetailView: View {
     // 图片编辑相关状态
     @State private var showingThumbnailEditor = false
     @State private var showingFinishedImageEditor = false
+    @State private var showingPatternCalibration = false
 
     var isParentProject: Bool {
         inventoryManager.isParentProject(project.id)
@@ -168,6 +169,19 @@ struct ProjectDetailView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingPatternCalibration = true
+                } label: {
+                    Label("拼图模式", systemImage: "square.grid.3x3.square")
+                }
+                .disabled((currentProject ?? project).thumbnail == nil)
+            }
+        }
+        .sheet(isPresented: $showingPatternCalibration) {
+            PatternCalibrationView(project: currentProject ?? project)
+        }
         .sheet(isPresented: $showingThumbnailEditor) {
             ProjectImageEditorSheet(
                 projectId: project.id,

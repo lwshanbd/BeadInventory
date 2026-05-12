@@ -13,6 +13,7 @@
 		3806E50E2F00FB4300187AA7 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3806E50C2F00FB4300187AA7 /* InfoPlist.strings */; };
 		381060CA2FB3A70D00F5DDE2 /* OpenCV in Frameworks */ = {isa = PBXBuildFile; productRef = 381060CB2FB3A70D00F5DDE2 /* OpenCV */; };
 		381060CD2FB3A70D00F5DDE2 /* GridDetectionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 381060CC2FB3A70D00F5DDE2 /* GridDetectionBridge.m */; };
+		384001022FB3A70D00F5DDE2 /* PatternCalibrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 384001012FB3A70D00F5DDE2 /* PatternCalibrationView.swift */; };
 		386ECBFA2F332DB600BD92E8 /* AnnouncementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */; };
 		386ECBFC2F332DB600BD92E8 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFB2F332DB600BD92E8 /* BackupManager.swift */; };
 		386ECBFE2F332E1500BD92E8 /* BackupRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */; };
@@ -119,6 +120,7 @@
 		3806E5072F00FB3900187AA7 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = InfoPlist.strings; sourceTree = "<group>"; };
 		3806E50B2F00FB4300187AA7 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = InfoPlist.strings; sourceTree = "<group>"; };
 		381060CC2FB3A70D00F5DDE2 /* GridDetectionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = GridDetectionBridge.m; path = BeadInventory/Managers/CV/GridDetectionBridge.m; sourceTree = SOURCE_ROOT; };
+		384001012FB3A70D00F5DDE2 /* PatternCalibrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternCalibrationView.swift; path = BeadInventory/Views/PatternHighlight/PatternCalibrationView.swift; sourceTree = SOURCE_ROOT; };
 		382001092FB3A70D00F5DDE2 /* BeadInventoryTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BeadInventoryTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnouncementManager.swift; sourceTree = "<group>"; };
 		386ECBFB2F332DB600BD92E8 /* BackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
@@ -358,6 +360,7 @@
 		A01234560035 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				384001032FB3A70D00F5DDE2 /* PatternHighlight */,
 				6B1D5F8205D74655AB3DB19B /* HelpCenter */,
 				386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */,
 				38B1A0012F01000100000020 /* Components */,
@@ -387,6 +390,14 @@
 				6EC4A1187CBB489B83C6E6559E6BABBB /* LowStockDetailView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		384001032FB3A70D00F5DDE2 /* PatternHighlight */ = {
+			isa = PBXGroup;
+			children = (
+				384001012FB3A70D00F5DDE2 /* PatternCalibrationView.swift */,
+			);
+			path = PatternHighlight;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -616,6 +627,7 @@
 				38FA2CE32F26A00000912E02 /* ShippingView.swift in Sources */,
 				6EC4A1187CBB489B83C6E6559E6BABBA /* LowStockDetailView.swift in Sources */,
 				381060CD2FB3A70D00F5DDE2 /* GridDetectionBridge.m in Sources */,
+				384001022FB3A70D00F5DDE2 /* PatternCalibrationView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
