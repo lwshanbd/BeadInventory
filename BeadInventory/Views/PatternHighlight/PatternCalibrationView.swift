@@ -146,25 +146,38 @@ struct PatternCalibrationView: View {
 
     private var toolbar: some View {
         VStack(spacing: 12) {
-            HStack {
-                Stepper("行 \(rows)", value: $rows, in: 2...300)
-                Stepper("列 \(cols)", value: $cols, in: 2...300)
+            // 行列数（用户可直接修改；后续 "对齐网格" 会用这两个值）
+            HStack(spacing: 16) {
+                stepperCell(title: "行", value: $rows)
+                stepperCell(title: "列", value: $cols)
             }
-            HStack(spacing: 12) {
-                Button {
-                    runAutoDetect(restrictToCurrentROI: false)
-                } label: {
-                    Label("整图检测", systemImage: "wand.and.rays")
-                }
-                .disabled(detectionRunning || image == nil)
 
-                Button {
-                    runAutoDetect(restrictToCurrentROI: true)
-                } label: {
-                    Label("区域内检测", systemImage: "viewfinder")
+            // 检测按钮 + 提示
+            VStack(spacing: 6) {
+                HStack(spacing: 12) {
+                    Button {
+                        runAutoDetect(restrictToCurrentROI: false)
+                    } label: {
+                        Label("全自动检测", systemImage: "wand.and.rays")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .disabled(detectionRunning || image == nil)
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        runSnapToROI()
+                    } label: {
+                        Label("对齐网格", systemImage: "viewfinder")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .disabled(detectionRunning || image == nil)
+                    .buttonStyle(.bordered)
                 }
-                .disabled(detectionRunning || image == nil)
+                Text("不准时：调好行列数 → 拖矩形覆盖网格 → 点「对齐网格」")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
+
             Button {
                 saveAndContinue()
             } label: {
@@ -196,6 +209,61 @@ struct PatternCalibrationView: View {
             bottomLeft: CGPoint(x: tlx, y: bry),
             bottomRight: CGPoint(x: brx, y: bry)
         )
+    }
+
+    /// 显眼的行/列输入单元（点击按钮 + 数字 + +/-）
+    @ViewBuilder
+    private func stepperCell(title: String, value: Binding<Int>) -> some View {
+        HStack(spacing: 8) {
+            Text("\(title)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button {
+                if value.wrappedValue > 2 { value.wrappedValue -= 1 }
+            } label: {
+                Image(systemName: "minus.circle.fill")
+                    .font(.title3)
+            }
+            .buttonStyle(.plain)
+            Text("\(value.wrappedValue)")
+                .font(.title3.monospacedDigit().bold())
+                .frame(minWidth: 36)
+            Button {
+                if value.wrappedValue < 300 { value.wrappedValue += 1 }
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title3)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.secondary.opacity(0.1))
+        .cornerRadius(8)
+    }
+
+    /// 按用户的 ROI + 当前 rows/cols 校准 corners（保留用户的 stepper 值不变）
+    private func runSnapToROI() {
+        guard let img = image else { return }
+        detectionRunning = true
+        let currentCorners = corners
+        Task {
+            let result = await GridDetectionService.shared.detect(
+                image: img,
+                roi: roiRect(from: currentCorners, imageSize: img.size)
+            )
+            await MainActor.run {
+                detectionRunning = false
+                if let r = result {
+                    // 只更新 corners，rows/cols 保留用户输入
+                    corners = r.corners
+                    if rectMode { snapCornersToRect() }
+                    detectionConfidence = r.confidence
+                } else {
+                    detectionConfidence = 0
+                }
+            }
+        }
     }
 
     private func runAutoDetect(restrictToCurrentROI: Bool) {
@@ -449,8 +517,8 @@ private struct LoupeView: View {
     let image: UIImage
     let imageCenter: CGPoint    // 原图像素坐标系
 
-    private let loupeSize: CGFloat = 110
-    private let zoom: CGFloat = 3.0
+    private let loupeSize: CGFloat = 120
+    private let zoom: CGFloat = 1.6
 
     var body: some View {
         Image(uiImage: image)
