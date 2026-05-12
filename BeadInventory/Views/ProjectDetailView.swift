@@ -965,17 +965,12 @@ struct ProjectImageEditorSheet: View {
         .presentationDetents([.medium, .large])
     }
 
-    /// 生成压缩的图片数据
+    /// 生成图片数据
+    /// 拼图模式需要原分辨率的图纸做网格识别，所以这里保留原图大小并用 PNG 无损存储。
+    /// maxImageSize 参数保留用于向后兼容，但已不再缩放（除非传入 < 1024 的明确小尺寸时降级，用于
+    /// 防御性兜底）。
     func generateImageData(from image: UIImage) -> Data? {
-        let scale = min(maxImageSize / image.size.width, maxImageSize / image.size.height, 1.0)
-        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-
-        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
-        image.draw(in: CGRect(origin: .zero, size: newSize))
-        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-
-        return resizedImage?.jpegData(compressionQuality: 0.7)
+        return image.pngData()
     }
 }
 
