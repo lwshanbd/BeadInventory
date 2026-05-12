@@ -28,12 +28,16 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)opencvVersion;
 
 /// 算法 A：HoughLinesP 检测带网格线图纸。
+/// roi: 可选，传 NSValue(cgRect:) 把检测限制在该像素矩形内（用于用户用 2 角圈定区域后再检测）。
+///      传 nil 则全图检测。
 /// 失败/无法识别时返回 nil。
-+ (nullable GridDetectionResultBridge *)detectGridWithHoughLines:(UIImage *)image;
++ (nullable GridDetectionResultBridge *)detectGridWithHoughLines:(UIImage *)image
+                                                              roi:(nullable NSValue *)roi;
 
 /// 算法 C：findContours 检测无网格线图纸（兜底）。
 /// confidence 固定较低（≤0.45），仅作预填。
-+ (nullable GridDetectionResultBridge *)detectGridWithContours:(UIImage *)image;
++ (nullable GridDetectionResultBridge *)detectGridWithContours:(UIImage *)image
+                                                            roi:(nullable NSValue *)roi;
 
 @end
 

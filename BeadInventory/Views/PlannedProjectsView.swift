@@ -1024,6 +1024,7 @@ struct PlannedProjectDetailView: View {
     @State private var showThumbnailEditor = false
     @State private var sortByQuantity = true
     @State private var showChildrenSection = true
+    @State private var showPatternCalibration = false
     @State private var showPatternHighlight = false
 
     // 获取当前项目的最新状态
@@ -1088,13 +1089,18 @@ struct PlannedProjectDetailView: View {
         .sheet(isPresented: $showStockCheckSheet) { stockCheckSheet }
         .sheet(isPresented: $showEditSheet) { editSheet }
         .sheet(isPresented: $showThumbnailEditor) { thumbnailEditorSheet }
-        .sheet(isPresented: $showPatternHighlight) {
-            let p = currentProject ?? project
-            if p.patternGrid != nil {
+        .sheet(isPresented: $showPatternCalibration) {
+            PatternCalibrationView(
+                project: currentProject ?? project,
+                onComplete: {
+                    showPatternHighlight = true
+                }
+            )
+            .environmentObject(inventoryManager)
+        }
+        .fullScreenCover(isPresented: $showPatternHighlight) {
+            if let p = inventoryManager.projects.first(where: { $0.id == project.id }) {
                 PatternHighlightView(project: p)
-                    .environmentObject(inventoryManager)
-            } else {
-                PatternCalibrationView(project: p)
                     .environmentObject(inventoryManager)
             }
         }
@@ -1147,7 +1153,12 @@ struct PlannedProjectDetailView: View {
 
     private var patternHighlightButton: some View {
         Button {
-            showPatternHighlight = true
+            let p = currentProject ?? project
+            if p.patternGrid != nil {
+                showPatternHighlight = true
+            } else {
+                showPatternCalibration = true
+            }
         } label: {
             HStack {
                 Image(systemName: "square.grid.3x3.square")

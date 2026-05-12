@@ -18,6 +18,7 @@ struct ProjectDetailView: View {
     @State private var showingThumbnailEditor = false
     @State private var showingFinishedImageEditor = false
     @State private var showingPatternCalibration = false
+    @State private var showingPatternHighlight = false
 
     var isParentProject: Bool {
         inventoryManager.isParentProject(project.id)
@@ -173,7 +174,12 @@ struct ProjectDetailView: View {
             if (currentProject ?? project).isPlanned {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        showingPatternCalibration = true
+                        let p = currentProject ?? project
+                        if p.patternGrid != nil {
+                            showingPatternHighlight = true
+                        } else {
+                            showingPatternCalibration = true
+                        }
                     } label: {
                         Label("拼图模式", systemImage: "square.grid.3x3.square")
                     }
@@ -182,12 +188,15 @@ struct ProjectDetailView: View {
             }
         }
         .sheet(isPresented: $showingPatternCalibration) {
-            let p = currentProject ?? project
-            if p.patternGrid != nil {
+            PatternCalibrationView(
+                project: currentProject ?? project,
+                onComplete: { showingPatternHighlight = true }
+            )
+            .environmentObject(inventoryManager)
+        }
+        .fullScreenCover(isPresented: $showingPatternHighlight) {
+            if let p = inventoryManager.projects.first(where: { $0.id == project.id }) {
                 PatternHighlightView(project: p)
-                    .environmentObject(inventoryManager)
-            } else {
-                PatternCalibrationView(project: p)
                     .environmentObject(inventoryManager)
             }
         }
