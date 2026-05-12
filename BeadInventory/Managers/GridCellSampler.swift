@@ -2,7 +2,15 @@
 //  GridCellSampler.swift
 //  BeadInventory
 //
-//  拼图模式 - 给定 grid + UIImage，采样每格中心区域 → 匹配最近 BeadColor。
+//  拼图模式 - 给定 grid + UIImage，采样每格 → 投票匹配到 BeadColor。
+//
+//  策略：
+//  - 采样位置：避开格子中心（图纸文字在中心），采 8 个位于格内 [15%, 85%] 但
+//    避开中央 [35%, 65%] 区域的点。
+//  - 每个像素独立分类到最近 BeadColor（Lab ΔE），低于阈值的票数 +1。
+//  - 取格内投票最多的色号；若没有任何像素超过阈值，返回 nil（未匹配）。
+//  - 候选集：优先用 allowedCodes 限定到图例里出现过的色号——
+//    既加速也避免误匹配到八竿子打不着的色号。
 //
 
 import UIKit
@@ -12,29 +20,43 @@ final class GridCellSampler {
     static let shared = GridCellSampler()
     private init() {}
 
-    /// 色匹配 ΔE 阈值。> 阈值视为未匹配（返回 nil）。
-    private let deltaEThreshold: Double = 18.0
+    /// 单像素匹配 ΔE 阈值。超过此值视为该像素不可信。
+    private let perPixelDeltaE: Double = 30.0
 
-    /// 每格采样每边 N，总 N×N 像素。
-    private let samplesPerCellSide: Int = 5
+    /// 采样位置（8 个点，避开中心文字区域，避开格边网格线）
+    private let sampleUVs: [(CGFloat, CGFloat)] = [
+        (0.20, 0.20), (0.50, 0.20), (0.80, 0.20),
+        (0.20, 0.50),               (0.80, 0.50),
+        (0.20, 0.80), (0.50, 0.80), (0.80, 0.80),
+    ]
 
-    /// 采样所有格子。返回 [row][col] 色号矩阵（nil = 未匹配）。
+    /// 采样所有格子。
+    /// - allowedCodes: 若非 nil，匹配候选集只在该集合内（推荐：项目 beadUsage 出现的色号）
     func sample(image: UIImage,
                 grid: BeadPatternGrid,
-                availableColors: [BeadColor]) -> [[String?]] {
+                availableColors: [BeadColor],
+                allowedCodes: Set<String>? = nil) -> [[String?]] {
         let emptyResult: [[String?]] = Array(
             repeating: Array(repeating: nil, count: grid.cols), count: grid.rows
         )
         guard let cgImage = image.cgImage else { return emptyResult }
 
-        // 标准化为 RGBA8 位图，避免不同 colorSpace 像素布局差异
         guard let normalized = normalizeToRGBA8(cgImage: cgImage) else { return emptyResult }
         let width = normalized.width
         let height = normalized.height
         let imageRect = CGRect(x: 0, y: 0, width: width, height: height)
 
-        // 提前算可匹配色的 Lab
-        let labCache: [(code: String, lab: (l: Double, a: Double, b: Double))] = availableColors.compactMap { color in
+        // 候选色号 + Lab。优先用 allowedCodes 限定。
+        let candidateColors: [BeadColor]
+        if let allowed = allowedCodes, !allowed.isEmpty {
+            candidateColors = availableColors.filter {
+                allowed.contains($0.displayCode(for: grid.colorSystem))
+            }
+        } else {
+            candidateColors = availableColors
+        }
+
+        let labCache: [(code: String, lab: (l: Double, a: Double, b: Double))] = candidateColors.compactMap { color in
             guard color.hasCode(for: grid.colorSystem),
                   let rgb = rgbFromHex(color.colorHex) else { return nil }
             return (color.displayCode(for: grid.colorSystem), rgbToLab(rgb))
@@ -42,13 +64,12 @@ final class GridCellSampler {
 
         guard !labCache.isEmpty else { return emptyResult }
 
-        // 取像素数据
         guard let provider = normalized.dataProvider,
               let data = provider.data,
               let bytes = CFDataGetBytePtr(data) else {
             return emptyResult
         }
-        let bytesPerPixel = 4  // RGBA8
+        let bytesPerPixel = 4
         let bytesPerRow = normalized.bytesPerRow
 
         var result: [[String?]] = emptyResult
@@ -60,44 +81,39 @@ final class GridCellSampler {
                     corners: grid.corners, in: imageRect
                 )
 
-                // 取中心 60% 区域：(u, v) ∈ [0.2, 0.8] 范围均匀采样
-                var rSum = 0.0, gSum = 0.0, bSum = 0.0
-                var samples = 0
-                let n = samplesPerCellSide
-                for i in 0..<n {
-                    for j in 0..<n {
-                        let u = 0.2 + 0.6 * (CGFloat(i) + 0.5) / CGFloat(n)
-                        let v = 0.2 + 0.6 * (CGFloat(j) + 0.5) / CGFloat(n)
-                        let p = interpolateQuad(tl: tl, tr: tr, br: br, bl: bl, u: u, v: v)
-                        let px = Int(p.x.rounded())
-                        let py = Int(p.y.rounded())
-                        guard px >= 0, px < width, py >= 0, py < height else { continue }
-                        let offset = py * bytesPerRow + px * bytesPerPixel
-                        rSum += Double(bytes[offset])
-                        gSum += Double(bytes[offset + 1])
-                        bSum += Double(bytes[offset + 2])
-                        samples += 1
-                    }
-                }
-                guard samples > 0 else { continue }
-                let avgRGB = (
-                    r: rSum / Double(samples),
-                    g: gSum / Double(samples),
-                    b: bSum / Double(samples)
-                )
-                let avgLab = rgbToLab(avgRGB)
+                // 8 个采样点 → 各分类 → 投票
+                var votes: [String: Int] = [:]
+                for (u, v) in sampleUVs {
+                    let p = interpolateQuad(tl: tl, tr: tr, br: br, bl: bl, u: u, v: v)
+                    let px = Int(p.x.rounded())
+                    let py = Int(p.y.rounded())
+                    guard px >= 0, px < width, py >= 0, py < height else { continue }
+                    let offset = py * bytesPerRow + px * bytesPerPixel
+                    let rgb = (
+                        r: Double(bytes[offset]),
+                        g: Double(bytes[offset + 1]),
+                        b: Double(bytes[offset + 2])
+                    )
+                    let lab = rgbToLab(rgb)
 
-                var bestCode: String? = nil
-                var bestDeltaE = Double.infinity
-                for (code, lab) in labCache {
-                    let de = deltaE(a: avgLab, b: lab)
-                    if de < bestDeltaE {
-                        bestDeltaE = de
-                        bestCode = code
+                    var bestCode: String? = nil
+                    var bestDE = Double.infinity
+                    for (code, refLab) in labCache {
+                        let de = deltaE(a: lab, b: refLab)
+                        if de < bestDE {
+                            bestDE = de
+                            bestCode = code
+                        }
+                    }
+                    if let code = bestCode, bestDE <= perPixelDeltaE {
+                        votes[code, default: 0] += 1
                     }
                 }
-                if bestDeltaE <= deltaEThreshold {
-                    result[row][col] = bestCode
+
+                // 取得票最多的，至少需要 2 票（>= 25% of 8 samples）才算可信
+                if let winner = votes.max(by: { $0.value < $1.value }),
+                   winner.value >= 2 {
+                    result[row][col] = winner.key
                 }
             }
         }

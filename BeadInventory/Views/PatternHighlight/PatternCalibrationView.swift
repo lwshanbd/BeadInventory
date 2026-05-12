@@ -211,11 +211,11 @@ struct PatternCalibrationView: View {
         )
     }
 
-    /// 显眼的行/列输入单元（点击按钮 + 数字 + +/-）
+    /// 行/列输入单元：TextField 可直接打字 + 旁边 +/- 微调
     @ViewBuilder
     private func stepperCell(title: String, value: Binding<Int>) -> some View {
-        HStack(spacing: 8) {
-            Text("\(title)")
+        HStack(spacing: 6) {
+            Text(title)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Button {
@@ -225,9 +225,24 @@ struct PatternCalibrationView: View {
                     .font(.title3)
             }
             .buttonStyle(.plain)
-            Text("\(value.wrappedValue)")
+
+            TextField("", value: value, format: .number)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.center)
                 .font(.title3.monospacedDigit().bold())
-                .frame(minWidth: 36)
+                .frame(minWidth: 50, maxWidth: 70)
+                .padding(.vertical, 4)
+                .background(Color(.systemBackground))
+                .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+                .onChange(of: value.wrappedValue) { _, newValue in
+                    if newValue < 2 { value.wrappedValue = 2 }
+                    else if newValue > 300 { value.wrappedValue = 300 }
+                }
+
             Button {
                 if value.wrappedValue < 300 { value.wrappedValue += 1 }
             } label: {
@@ -321,6 +336,7 @@ struct PatternCalibrationView: View {
         let colsCopy = cols
         let projectId = project.id
         let colorSystem = project.colorSystem
+        let allowedCodes = Set(project.beadUsage.map { $0.colorCode })
         Task.detached(priority: .userInitiated) {
             let availableColors = await MainActor.run { inventoryManager.beadColors }
             let placeholder = BeadPatternGrid(
@@ -331,7 +347,9 @@ struct PatternCalibrationView: View {
                 colorSystem: colorSystem
             )
             let cells = GridCellSampler.shared.sample(
-                image: img, grid: placeholder, availableColors: availableColors
+                image: img, grid: placeholder,
+                availableColors: availableColors,
+                allowedCodes: allowedCodes.isEmpty ? nil : allowedCodes
             )
             let grid = BeadPatternGrid(
                 corners: cornersCopy, rows: rowsCopy, cols: colsCopy,
