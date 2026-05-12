@@ -16,6 +16,8 @@ struct PatternHighlightView: View {
     @State private var highlightedCodes: Set<String> = []
     @State private var guideMode: GuideMode = .off
     @State private var showingRecalibrate = false
+    @State private var showingDiffSheet = false
+    @State private var dismissedBanner = false
 
     private var image: UIImage? {
         project.thumbnail.flatMap { UIImage(data: $0) }
@@ -28,6 +30,29 @@ struct PatternHighlightView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                if let grid = currentProject.patternGrid {
+                    let mismatches = GridValidator.mismatches(grid: grid, beadUsage: currentProject.beadUsage)
+                    if !mismatches.isEmpty && !dismissedBanner {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                            Text("网格与图例有 \(mismatches.count) 处差异")
+                                .font(.footnote)
+                            Spacer()
+                            Button("详情") { showingDiffSheet = true }
+                                .font(.footnote)
+                            Button { dismissedBanner = true } label: {
+                                Image(systemName: "xmark")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                        }
+                        .padding(8)
+                        .background(Color.orange.opacity(0.15))
+                    }
+                }
+
                 if let img = image, let grid = currentProject.patternGrid {
                     ZoomablePatternCanvas(image: img) { rect in
                         PatternHighlightOverlay(
@@ -101,6 +126,16 @@ struct PatternHighlightView: View {
             .sheet(isPresented: $showingRecalibrate) {
                 PatternCalibrationView(project: currentProject)
                     .environmentObject(inventoryManager)
+            }
+            .sheet(isPresented: $showingDiffSheet) {
+                if let grid = currentProject.patternGrid {
+                    ValidationDiffSheet(
+                        diffs: GridValidator.mismatches(grid: grid, beadUsage: currentProject.beadUsage),
+                        onAdoptGridForCode: { code, gridCount in
+                            inventoryManager.updatePlannedProjectUsage(currentProject.id, colorCode: code, newQuantity: gridCount)
+                        }
+                    )
+                }
             }
         }
     }
