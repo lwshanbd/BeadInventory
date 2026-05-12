@@ -1637,6 +1637,7 @@ class InventoryManager: ObservableObject {
                         existing.finishedImage = project.finishedImage
                         existing.completedDate = project.completedDate
                         existing.colorSystemRaw = project.colorSystem.rawValue
+                        existing.patternGridData = project.patternGrid.flatMap { try? JSONEncoder().encode($0) }
 
                         // 仅在本地项目有改动时同步 beadUsages，避免误删远端新变更
                         let newUsageIDs = Set(project.beadUsage.map { $0.id })
