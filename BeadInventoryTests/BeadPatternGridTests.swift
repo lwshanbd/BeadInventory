@@ -83,4 +83,29 @@ final class BeadPatternGridTests: XCTestCase {
         let decoded = try JSONDecoder().decode(ProjectRecord.self, from: json)
         XCTAssertNil(decoded.patternGrid)
     }
+
+    // MARK: - SwiftData 转换测试
+
+    func testSDProjectRecordRoundTrip() throws {
+        let grid = makeSampleGrid()
+        let project = ProjectRecord(
+            name: "SD 测试",
+            beadUsage: [],
+            colorSystem: .mard,
+            patternGrid: grid
+        )
+
+        let sd = SDProjectRecord(from: project)
+        XCTAssertNotNil(sd.patternGridData, "patternGridData 应被编码")
+
+        let restored = sd.toStruct()
+        XCTAssertEqual(restored.patternGrid, grid, "round-trip 应保持网格不变")
+    }
+
+    func testSDProjectRecordWithNilPatternGrid() {
+        let project = ProjectRecord(name: "无网格项目")
+        let sd = SDProjectRecord(from: project)
+        XCTAssertNil(sd.patternGridData)
+        XCTAssertNil(sd.toStruct().patternGrid)
+    }
 }
