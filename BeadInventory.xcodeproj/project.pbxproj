@@ -7,12 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		381060CA2FB3A70D00F5DDE2 /* OpenCV in Frameworks */ = {isa = PBXBuildFile; productRef = 381060CB2FB3A70D00F5DDE2 /* OpenCV */; };
-		381060CD2FB3A70D00F5DDE2 /* GridDetectionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 381060CC2FB3A70D00F5DDE2 /* GridDetectionBridge.m */; };
 		3392EC89359E462CBEC9ED32 /* TutorialContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF254CDDEE254F02A6DD1202 /* TutorialContent.swift */; };
 		3806E5062F00F94200187AA7 /* AddInventoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3806E5052F00F94200187AA7 /* AddInventoryView.swift */; };
 		3806E50A2F00FB3900187AA7 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3806E5082F00FB3900187AA7 /* InfoPlist.strings */; };
 		3806E50E2F00FB4300187AA7 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3806E50C2F00FB4300187AA7 /* InfoPlist.strings */; };
+		381060CA2FB3A70D00F5DDE2 /* OpenCV in Frameworks */ = {isa = PBXBuildFile; productRef = 381060CB2FB3A70D00F5DDE2 /* OpenCV */; };
+		381060CD2FB3A70D00F5DDE2 /* GridDetectionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 381060CC2FB3A70D00F5DDE2 /* GridDetectionBridge.m */; };
 		386ECBFA2F332DB600BD92E8 /* AnnouncementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */; };
 		386ECBFC2F332DB600BD92E8 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFB2F332DB600BD92E8 /* BackupManager.swift */; };
 		386ECBFE2F332E1500BD92E8 /* BackupRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */; };
@@ -59,6 +59,7 @@
 		A01234560002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560012 /* ContentView.swift */; };
 		A01234560003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A01234560013 /* Assets.xcassets */; };
 		A01234560004 /* BeadColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560014 /* BeadColor.swift */; };
+		383001022FB3A70D00F5DDE2 /* BeadPatternGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383001012FB3A70D00F5DDE2 /* BeadPatternGrid.swift */; };
 		A01234560005 /* InventoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560015 /* InventoryManager.swift */; };
 		A01234560006 /* OCRManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560016 /* OCRManager.swift */; };
 		A01234560007 /* InventoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560017 /* InventoryView.swift */; };
@@ -112,14 +113,13 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		381060CC2FB3A70D00F5DDE2 /* GridDetectionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = GridDetectionBridge.m; path = BeadInventory/Managers/CV/GridDetectionBridge.m; sourceTree = SOURCE_ROOT; };
-		381060CE2FB3A70D00F5DDE2 /* GridDetectionBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = GridDetectionBridge.h; path = BeadInventory/Managers/CV/GridDetectionBridge.h; sourceTree = SOURCE_ROOT; };
-		381060CF2FB3A70D00F5DDE2 /* BeadInventory-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "BeadInventory-Bridging-Header.h"; path = "BeadInventory/BeadInventory-Bridging-Header.h"; sourceTree = SOURCE_ROOT; };
 		101C8A44E38F4E17BB2A00F3 /* FAQView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FAQView.swift; sourceTree = "<group>"; };
 		244719AA237A40FF87FA38A4 /* AppTips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTips.swift; sourceTree = "<group>"; };
 		3806E5052F00F94200187AA7 /* AddInventoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddInventoryView.swift; sourceTree = "<group>"; };
 		3806E5072F00FB3900187AA7 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = InfoPlist.strings; sourceTree = "<group>"; };
 		3806E50B2F00FB4300187AA7 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = InfoPlist.strings; sourceTree = "<group>"; };
+		381060CC2FB3A70D00F5DDE2 /* GridDetectionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = GridDetectionBridge.m; path = BeadInventory/Managers/CV/GridDetectionBridge.m; sourceTree = SOURCE_ROOT; };
+		382001092FB3A70D00F5DDE2 /* BeadInventoryTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BeadInventoryTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnouncementManager.swift; sourceTree = "<group>"; };
 		386ECBFB2F332DB600BD92E8 /* BackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
 		386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreView.swift; sourceTree = "<group>"; };
@@ -155,7 +155,6 @@
 		38FA2CE02F25B67300912E02 /* CustomColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomColor.swift; sourceTree = "<group>"; };
 		38FA2CE22F25B67400912E02 /* CalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarView.swift; sourceTree = "<group>"; };
 		38FA2CE32F274B2900912E02 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		382001092FB3A70D00F5DDE2 /* BeadInventoryTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BeadInventoryTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		38FA2CE42F26A00000912E02 /* ShippingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShippingView.swift; sourceTree = "<group>"; };
 		38FA2CF62F274C4000912E02 /* SharedImageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedImageManager.swift; sourceTree = "<group>"; };
 		38FA2CF82F274D5200912E02 /* BeadInventory.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BeadInventory.entitlements; sourceTree = "<group>"; };
@@ -169,6 +168,7 @@
 		A01234560012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A01234560013 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A01234560014 /* BeadColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeadColor.swift; sourceTree = "<group>"; };
+		383001012FB3A70D00F5DDE2 /* BeadPatternGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeadPatternGrid.swift; sourceTree = "<group>"; };
 		A01234560015 /* InventoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventoryManager.swift; sourceTree = "<group>"; };
 		A01234560016 /* OCRManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCRManager.swift; sourceTree = "<group>"; };
 		A01234560017 /* InventoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventoryView.swift; sourceTree = "<group>"; };
@@ -246,6 +246,14 @@
 			path = en.lproj;
 			sourceTree = "<group>";
 		};
+		381061912FB3AD0900F5DDE2 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				381060CC2FB3A70D00F5DDE2 /* GridDetectionBridge.m */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		38B1A0012F01000100000020 /* Components */ = {
 			isa = PBXGroup;
 			children = (
@@ -276,6 +284,7 @@
 				38FA2CE42F274B2900912E02 /* ShareExtension */,
 				382001082FB3A70D00F5DDE2 /* BeadInventoryTests */,
 				A01234560032 /* Products */,
+				381061912FB3AD0900F5DDE2 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -312,6 +321,7 @@
 			isa = PBXGroup;
 			children = (
 				A01234560014 /* BeadColor.swift */,
+				383001012FB3A70D00F5DDE2 /* BeadPatternGrid.swift */,
 				DE0D1C01A0050002DEADBEEF /* DeductionItem.swift */,
 				38B1A0012F01000100000011 /* Brand.swift */,
 				38B1A0012F01000100000012 /* BrandStock.swift */,
@@ -554,6 +564,7 @@
 				A01234560001 /* BeadInventoryApp.swift in Sources */,
 				A01234560002 /* ContentView.swift in Sources */,
 				A01234560004 /* BeadColor.swift in Sources */,
+				383001022FB3A70D00F5DDE2 /* BeadPatternGrid.swift in Sources */,
 				DE0D1C01A0050001DEADBEEF /* DeductionItem.swift in Sources */,
 				38B1A0012F01000100000001 /* Brand.swift in Sources */,
 				38B1A0012F01000100000002 /* BrandStock.swift in Sources */,
@@ -643,6 +654,44 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		382001032FB3A70D00F5DDE2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S4BS47942Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.beadinventory.app.BeadInventoryTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BeadInventory.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BeadInventory";
+			};
+			name = Debug;
+		};
+		382001042FB3A70D00F5DDE2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S4BS47942Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.beadinventory.app.BeadInventoryTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BeadInventory.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BeadInventory";
+			};
+			name = Release;
+		};
 		38FA2CEF2F274B2900912E02 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -889,44 +938,6 @@
 				SWIFT_OBJC_BRIDGING_HEADER = "BeadInventory/BeadInventory-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		382001032FB3A70D00F5DDE2 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = S4BS47942Q;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.beadinventory.app.BeadInventoryTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BeadInventory.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BeadInventory";
-			};
-			name = Debug;
-		};
-		382001042FB3A70D00F5DDE2 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = S4BS47942Q;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.beadinventory.app.BeadInventoryTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BeadInventory.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BeadInventory";
 			};
 			name = Release;
 		};
