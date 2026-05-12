@@ -346,11 +346,28 @@ struct PatternCalibrationView: View {
                 sourceImageSize: img.size,
                 colorSystem: colorSystem
             )
-            let cells = GridCellSampler.shared.sample(
+
+            // 第 1 步：颜色采样（fallback baseline）
+            let colorCells = GridCellSampler.shared.sample(
                 image: img, grid: placeholder,
                 availableColors: availableColors,
                 allowedCodes: allowedCodes.isEmpty ? nil : allowedCodes
             )
+
+            // 第 2 步：OCR 校验。OCR 能识别且命中图例的格子 → 用 OCR 结果覆盖颜色采样。
+            var cells = colorCells
+            if !allowedCodes.isEmpty {
+                let ocrCells = GridOCRSampler.shared.sample(
+                    image: img, grid: placeholder, allowedCodes: allowedCodes
+                )
+                for r in 0..<rowsCopy {
+                    for c in 0..<colsCopy {
+                        if let ocrCode = ocrCells[r][c] {
+                            cells[r][c] = ocrCode
+                        }
+                    }
+                }
+            }
             let grid = BeadPatternGrid(
                 corners: cornersCopy, rows: rowsCopy, cols: colsCopy,
                 cellColorCodes: cells,
