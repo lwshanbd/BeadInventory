@@ -385,21 +385,26 @@ struct PatternCalibrationView: View {
                 colorSystem: colorSystem
             )
 
-            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s color sampling start")
-            let colorCells = GridCellSampler.shared.sample(
+            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s color sampling start (downsampled)")
+            // 颜色采样在降采样图上跑（normalizeToRGBA8 易爆内存，需要小图）。
+            // 返回每格的 avg Lab + 匹配的色号，下游用 avg Lab 做 OCR 校验。
+            let detailedCells = GridCellSampler.shared.sampleDetailed(
                 image: processingImage, grid: placeholder,
                 availableColors: availableColors,
                 allowedCodes: allowedCodes.isEmpty ? nil : allowedCodes
             )
-            let colorMatchedCount = colorCells.flatMap { $0 }.compactMap { $0 }.count
+            let colorMatchedCount = detailedCells.flatMap { $0 }.compactMap { $0.matchedCode }.count
             print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s color sampling done, matched \(colorMatchedCount)")
 
-            var cells = colorCells
+            var cells: [[String?]] = detailedCells.map { row in row.map { $0.matchedCode } }
+
             if !allowedCodes.isEmpty {
                 await MainActor.run { savingPhase = "OCR 识别中" }
-                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s per-cell OCR start (all cells)")
+                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s per-cell OCR start (using ORIGINAL image)")
+                // OCR 用原图！per-cell 裁剪小图不会爆内存，但分辨率高对识别准确度
+                // 至关重要（原图每格 ~140x175 vs 降采样后 ~33x73）。
                 let ocrCells = await GridOCRSampler.shared.sampleAllCellsPerCell(
-                    image: processingImage, grid: placeholder, allowedCodes: allowedCodes,
+                    image: img, grid: placeholder, allowedCodes: allowedCodes,
                     progress: { done, total in
                         if done == 1 || done % 50 == 0 || done == total {
                             print("[PatternCal] per-cell OCR \(done)/\(total)")
@@ -411,14 +416,44 @@ struct PatternCalibrationView: View {
                 )
                 let ocrMatchedCount = ocrCells.flatMap { $0 }.compactMap { $0 }.count
                 print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s per-cell OCR done, matched \(ocrMatchedCount)")
-                // OCR 有结果时覆盖颜色采样
+
+                // 构建 code → Lab 的查询表（用所有可用 BeadColor，
+                // 包含图例外的色号如 H2，因为 OCR 也可能识别出来）
+                var codeToLab: [String: LabColor] = [:]
+                for color in availableColors {
+                    let code = color.displayCode(for: colorSystem)
+                    if color.hasCode(for: colorSystem),
+                       let lab = GridCellSampler.lab(forHex: color.colorHex) {
+                        codeToLab[code] = lab
+                    }
+                }
+
+                // 交叉校验：OCR 结果只在颜色一致时才采纳。
+                // 阈值：ΔE 25 — 同色族浅深变化算可信，跨色族（黄变白）算 OCR 误读。
+                let ocrVerifyThreshold: Double = 25.0
+                var ocrAccepted = 0
+                var ocrRejected = 0
                 for r in 0..<rowsCopy {
                     for c in 0..<colsCopy {
-                        if let ocrCode = ocrCells[r][c] {
+                        guard let ocrCode = ocrCells[r][c] else { continue }
+                        let sample = detailedCells[r][c]
+                        if let avgLab = sample.avgLab, let ocrLab = codeToLab[ocrCode] {
+                            let de = GridCellSampler.deltaE(avgLab, ocrLab)
+                            if de < ocrVerifyThreshold {
+                                cells[r][c] = ocrCode
+                                ocrAccepted += 1
+                            } else {
+                                // OCR 离谱，留颜色采样结果
+                                ocrRejected += 1
+                            }
+                        } else {
+                            // 无法校验（无 avgLab 或 OCR code 不在 BeadColor 库）→ 信 OCR
                             cells[r][c] = ocrCode
+                            ocrAccepted += 1
                         }
                     }
                 }
+                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s OCR cross-check: \(ocrAccepted) accepted, \(ocrRejected) rejected (color inconsistent)")
             }
             // 注意：候选池里加过的兜底色号（如 MARD 的 H2）保留在 cells 里，
             // 即使它不在原图例。调色板会用 "(空白格)" 标注让用户能区分。

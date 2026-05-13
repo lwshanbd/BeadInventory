@@ -110,7 +110,7 @@ final class GridOCRSampler {
         print("[OCR] cell(\(row),\(col)) START crop=\(Int(rect.width))x\(Int(rect.height))")
 
         let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .fast      // 单字符 OCR：fast 够用且快很多
+        request.recognitionLevel = .accurate   // per-cell 小裁剪用 accurate，更准且不会卡
         request.usesLanguageCorrection = false
         request.customWords = Array(allowedCodes)
 

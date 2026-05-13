@@ -4,49 +4,66 @@
 //
 //  拼图模式 - 给定 grid + UIImage，采样每格 → 投票匹配到 BeadColor。
 //
-//  策略：
-//  - 采样位置：避开格子中心（图纸文字在中心），采 8 个位于格内 [15%, 85%] 但
-//    避开中央 [35%, 65%] 区域的点。
-//  - 每个像素独立分类到最近 BeadColor（Lab ΔE），低于阈值的票数 +1。
-//  - 取格内投票最多的色号；若没有任何像素超过阈值，返回 nil（未匹配）。
-//  - 候选集：优先用 allowedCodes 限定到图例里出现过的色号——
-//    既加速也避免误匹配到八竿子打不着的色号。
-//
 
 import UIKit
 import CoreGraphics
+
+/// CIE Lab 颜色（D65）
+struct LabColor: Equatable {
+    let l: Double
+    let a: Double
+    let b: Double
+}
+
+/// 一个格子的采样结果
+struct CellSampleResult {
+    let avgLab: LabColor?       // 8 个采样点的平均颜色（采样失败时 nil）
+    let matchedCode: String?    // ΔE 匹配到的色号；超过阈值返回 nil
+}
 
 final class GridCellSampler {
     static let shared = GridCellSampler()
     private init() {}
 
-    /// 单像素匹配 ΔE 阈值。超过此值视为该像素不可信。
+    /// 单像素匹配 ΔE 阈值。
     private let perPixelDeltaE: Double = 30.0
 
-    /// 采样位置（8 个点，避开中心文字区域，避开格边网格线）
+    /// 采样位置（8 点，避开中心文字 + 格边网格线）
     private let sampleUVs: [(CGFloat, CGFloat)] = [
         (0.20, 0.20), (0.50, 0.20), (0.80, 0.20),
         (0.20, 0.50),               (0.80, 0.50),
         (0.20, 0.80), (0.50, 0.80), (0.80, 0.80),
     ]
 
-    /// 采样所有格子。
-    /// - allowedCodes: 若非 nil，匹配候选集只在该集合内（推荐：项目 beadUsage 出现的色号）
+    /// 简单版：只返回色号矩阵（保留旧调用方）
     func sample(image: UIImage,
                 grid: BeadPatternGrid,
                 availableColors: [BeadColor],
                 allowedCodes: Set<String>? = nil) -> [[String?]] {
-        let emptyResult: [[String?]] = Array(
-            repeating: Array(repeating: nil, count: grid.cols), count: grid.rows
-        )
-        guard let cgImage = image.cgImage else { return emptyResult }
+        sampleDetailed(image: image, grid: grid,
+                       availableColors: availableColors,
+                       allowedCodes: allowedCodes)
+            .map { row in row.map { $0.matchedCode } }
+    }
 
-        guard let normalized = normalizeToRGBA8(cgImage: cgImage) else { return emptyResult }
+    /// 详细版：每格返回 avg Lab + matched code，供下游做交叉校验
+    func sampleDetailed(image: UIImage,
+                        grid: BeadPatternGrid,
+                        availableColors: [BeadColor],
+                        allowedCodes: Set<String>? = nil) -> [[CellSampleResult]] {
+        let empty: [[CellSampleResult]] = Array(
+            repeating: Array(repeating: CellSampleResult(avgLab: nil, matchedCode: nil),
+                             count: grid.cols),
+            count: grid.rows
+        )
+        guard let cgImage = image.cgImage else { return empty }
+        guard let normalized = normalizeToRGBA8(cgImage: cgImage) else { return empty }
+
         let width = normalized.width
         let height = normalized.height
         let imageRect = CGRect(x: 0, y: 0, width: width, height: height)
 
-        // 候选色号 + Lab。优先用 allowedCodes 限定。
+        // 候选色号 + Lab
         let candidateColors: [BeadColor]
         if let allowed = allowedCodes, !allowed.isEmpty {
             candidateColors = availableColors.filter {
@@ -56,23 +73,23 @@ final class GridCellSampler {
             candidateColors = availableColors
         }
 
-        let labCache: [(code: String, lab: (l: Double, a: Double, b: Double))] = candidateColors.compactMap { color in
+        let labCache: [(code: String, lab: LabColor)] = candidateColors.compactMap { color in
             guard color.hasCode(for: grid.colorSystem),
-                  let rgb = rgbFromHex(color.colorHex) else { return nil }
-            return (color.displayCode(for: grid.colorSystem), rgbToLab(rgb))
+                  let lab = GridCellSampler.lab(forHex: color.colorHex) else { return nil }
+            return (color.displayCode(for: grid.colorSystem), lab)
         }
 
-        guard !labCache.isEmpty else { return emptyResult }
+        guard !labCache.isEmpty else { return empty }
 
         guard let provider = normalized.dataProvider,
               let data = provider.data,
               let bytes = CFDataGetBytePtr(data) else {
-            return emptyResult
+            return empty
         }
         let bytesPerPixel = 4
         let bytesPerRow = normalized.bytesPerRow
 
-        var result: [[String?]] = emptyResult
+        var result = empty
 
         for row in 0..<grid.rows {
             for col in 0..<grid.cols {
@@ -81,7 +98,9 @@ final class GridCellSampler {
                     corners: grid.corners, in: imageRect
                 )
 
-                // 8 个采样点 → 各分类 → 投票
+                // 收集采样点的 RGB 平均 + 每点投票
+                var rSum = 0.0, gSum = 0.0, bSum = 0.0
+                var validSamples = 0
                 var votes: [String: Int] = [:]
                 for (u, v) in sampleUVs {
                     let p = interpolateQuad(tl: tl, tr: tr, br: br, bl: bl, u: u, v: v)
@@ -89,66 +108,56 @@ final class GridCellSampler {
                     let py = Int(p.y.rounded())
                     guard px >= 0, px < width, py >= 0, py < height else { continue }
                     let offset = py * bytesPerRow + px * bytesPerPixel
-                    let rgb = (
-                        r: Double(bytes[offset]),
-                        g: Double(bytes[offset + 1]),
-                        b: Double(bytes[offset + 2])
-                    )
-                    let lab = rgbToLab(rgb)
+                    let r = Double(bytes[offset])
+                    let g = Double(bytes[offset + 1])
+                    let b = Double(bytes[offset + 2])
+                    rSum += r; gSum += g; bSum += b
+                    validSamples += 1
 
+                    let lab = GridCellSampler.rgbToLab((r: r, g: g, b: b))
                     var bestCode: String? = nil
                     var bestDE = Double.infinity
                     for (code, refLab) in labCache {
-                        let de = deltaE(a: lab, b: refLab)
-                        if de < bestDE {
-                            bestDE = de
-                            bestCode = code
-                        }
+                        let de = GridCellSampler.deltaE(lab, refLab)
+                        if de < bestDE { bestDE = de; bestCode = code }
                     }
                     if let code = bestCode, bestDE <= perPixelDeltaE {
                         votes[code, default: 0] += 1
                     }
                 }
 
-                // 取得票最多的，至少需要 2 票（>= 25% of 8 samples）才算可信
-                if let winner = votes.max(by: { $0.value < $1.value }),
-                   winner.value >= 2 {
-                    result[row][col] = winner.key
-                }
+                guard validSamples > 0 else { continue }
+                let avgRGB = (
+                    r: rSum / Double(validSamples),
+                    g: gSum / Double(validSamples),
+                    b: bSum / Double(validSamples)
+                )
+                let avgLab = GridCellSampler.rgbToLab(avgRGB)
+
+                let winner = votes.max(by: { $0.value < $1.value })
+                let matchedCode = (winner?.value ?? 0) >= 2 ? winner?.key : nil
+
+                result[row][col] = CellSampleResult(avgLab: avgLab, matchedCode: matchedCode)
             }
         }
         return result
     }
 
-    // MARK: - 工具
+    // MARK: - 静态辅助（saveAndContinue 跨模块用 OCR 校验时调用）
 
-    private func normalizeToRGBA8(cgImage: CGImage) -> CGImage? {
-        let width = cgImage.width
-        let height = cgImage.height
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo: UInt32 = CGImageAlphaInfo.premultipliedLast.rawValue |
-            CGBitmapInfo.byteOrder32Big.rawValue
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width * 4,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo
-        ) else { return nil }
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-        return context.makeImage()
+    /// 从 hex 字符串（带或不带 #）算 Lab
+    static func lab(forHex hex: String) -> LabColor? {
+        guard let rgb = rgbFromHex(hex) else { return nil }
+        return rgbToLab(rgb)
     }
 
-    private func interpolateQuad(tl: CGPoint, tr: CGPoint, br: CGPoint, bl: CGPoint,
-                                  u: CGFloat, v: CGFloat) -> CGPoint {
-        let top = CGPoint(x: tl.x + (tr.x - tl.x) * u, y: tl.y + (tr.y - tl.y) * u)
-        let bot = CGPoint(x: bl.x + (br.x - bl.x) * u, y: bl.y + (br.y - bl.y) * u)
-        return CGPoint(x: top.x + (bot.x - top.x) * v, y: top.y + (bot.y - top.y) * v)
+    /// Lab ΔE 欧氏距离
+    static func deltaE(_ a: LabColor, _ b: LabColor) -> Double {
+        let dl = a.l - b.l, da = a.a - b.a, db = a.b - b.b
+        return sqrt(dl * dl + da * da + db * db)
     }
 
-    private func rgbFromHex(_ hex: String) -> (r: Double, g: Double, b: Double)? {
+    static func rgbFromHex(_ hex: String) -> (r: Double, g: Double, b: Double)? {
         var s = hex.uppercased()
         if s.hasPrefix("#") { s.removeFirst() }
         guard s.count == 6, let v = UInt32(s, radix: 16) else { return nil }
@@ -156,7 +165,7 @@ final class GridCellSampler {
     }
 
     /// sRGB (0~255) → CIE Lab (D65)
-    private func rgbToLab(_ rgb: (r: Double, g: Double, b: Double)) -> (l: Double, a: Double, b: Double) {
+    static func rgbToLab(_ rgb: (r: Double, g: Double, b: Double)) -> LabColor {
         func srgb(_ c: Double) -> Double {
             let cc = c / 255.0
             return cc <= 0.04045 ? cc / 12.92 : pow((cc + 0.055) / 1.055, 2.4)
@@ -170,12 +179,30 @@ final class GridCellSampler {
             t > 216.0 / 24389.0 ? pow(t, 1.0/3.0) : (24389.0/27.0 * t + 16.0) / 116.0
         }
         let fx = f(x / xn), fy = f(y / yn), fz = f(z / zn)
-        return (l: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz))
+        return LabColor(l: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz))
     }
 
-    private func deltaE(a: (l: Double, a: Double, b: Double),
-                        b: (l: Double, a: Double, b: Double)) -> Double {
-        let dl = a.l - b.l, da = a.a - b.a, db = a.b - b.b
-        return sqrt(dl * dl + da * da + db * db)
+    // MARK: - 内部
+
+    private func normalizeToRGBA8(cgImage: CGImage) -> CGImage? {
+        let width = cgImage.width
+        let height = cgImage.height
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo: UInt32 = CGImageAlphaInfo.premultipliedLast.rawValue |
+            CGBitmapInfo.byteOrder32Big.rawValue
+        guard let context = CGContext(
+            data: nil, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: colorSpace, bitmapInfo: bitmapInfo
+        ) else { return nil }
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
+    }
+
+    private func interpolateQuad(tl: CGPoint, tr: CGPoint, br: CGPoint, bl: CGPoint,
+                                  u: CGFloat, v: CGFloat) -> CGPoint {
+        let top = CGPoint(x: tl.x + (tr.x - tl.x) * u, y: tl.y + (tr.y - tl.y) * u)
+        let bot = CGPoint(x: bl.x + (br.x - bl.x) * u, y: bl.y + (br.y - bl.y) * u)
+        return CGPoint(x: top.x + (bot.x - top.x) * v, y: top.y + (bot.y - top.y) * v)
     }
 }
