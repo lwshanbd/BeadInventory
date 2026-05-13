@@ -406,13 +406,29 @@ struct PatternCalibrationView: View {
 
             var cells: [[String?]] = detailedCells.map { row in row.map { $0.matchedCode } }
 
+            // 构建 code → Lab 的查询表（用所有可用 BeadColor，含图例外色号如 H2）。
+            // OCR 多候选 disambig + 交叉校验都要用。
+            var codeToLab: [String: LabColor] = [:]
+            for color in availableColors {
+                let code = color.displayCode(for: colorSystem)
+                if color.hasCode(for: colorSystem),
+                   let lab = GridCellSampler.lab(forHex: color.colorHex) {
+                    codeToLab[code] = lab
+                }
+            }
+
             if !allowedCodes.isEmpty {
                 await MainActor.run { savingPhase = "OCR 识别中" }
                 debugLog("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s per-cell OCR start (using ORIGINAL image)")
                 // OCR 用原图！per-cell 裁剪小图不会爆内存，但分辨率高对识别准确度
                 // 至关重要（原图每格 ~140x175 vs 降采样后 ~33x73）。
+                // 同时把 cellLabs + codeToLab 传给 OCR，让它对 E2/E3 这种近邻色
+                // 用颜色 disambig（避免靠 OCR 置信度选错）。
+                let cellLabs: [[LabColor?]] = detailedCells.map { row in row.map { $0.avgLab } }
                 let ocrCells = await GridOCRSampler.shared.sampleAllCellsPerCell(
                     image: img, grid: placeholder, allowedCodes: allowedCodes,
+                    cellLabs: cellLabs,
+                    codeToLab: codeToLab,
                     progress: { done, total in
                         if done == 1 || done % 50 == 0 || done == total {
                             debugLog("[PatternCal] per-cell OCR \(done)/\(total)")
@@ -424,17 +440,6 @@ struct PatternCalibrationView: View {
                 )
                 let ocrMatchedCount = ocrCells.flatMap { $0 }.compactMap { $0 }.count
                 debugLog("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s per-cell OCR done, matched \(ocrMatchedCount)")
-
-                // 构建 code → Lab 的查询表（用所有可用 BeadColor，
-                // 包含图例外的色号如 H2，因为 OCR 也可能识别出来）
-                var codeToLab: [String: LabColor] = [:]
-                for color in availableColors {
-                    let code = color.displayCode(for: colorSystem)
-                    if color.hasCode(for: colorSystem),
-                       let lab = GridCellSampler.lab(forHex: color.colorHex) {
-                        codeToLab[code] = lab
-                    }
-                }
 
                 // 交叉校验：OCR 结果只在颜色一致时才采纳。
                 // 阈值：ΔE 25 — 同色族浅深变化算可信，跨色族（黄变白）算 OCR 误读。

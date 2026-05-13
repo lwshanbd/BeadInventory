@@ -23,10 +23,14 @@ final class GridOCRSampler {
 
     /// 对所有格子做 per-cell OCR。
     /// 跳过整图 OCR——满是小字的图整图 OCR 慢得离谱，每格裁出来跑反而快。
+    /// - cellLabs: 每格的 avg Lab（来自颜色采样），用于 OCR 多候选时按颜色 disambig
+    /// - codeToLab: 色号 → Lab 查询表
     /// - progress: (已完成数, 总数)
     func sampleAllCellsPerCell(image: UIImage,
                                 grid: BeadPatternGrid,
                                 allowedCodes: Set<String>,
+                                cellLabs: [[LabColor?]]? = nil,
+                                codeToLab: [String: LabColor]? = nil,
                                 progress: ((Int, Int) -> Void)? = nil) async -> [[String?]] {
         let empty: [[String?]] = Array(
             repeating: Array(repeating: nil, count: grid.cols), count: grid.rows
@@ -60,6 +64,7 @@ final class GridOCRSampler {
                         inFlight -= 1
                     }
                 }
+                let cellLab = cellLabs?[pos.row][pos.col]
                 group.addTask {
                     let code = Self.ocrSingleCell(
                         cgImage: cgImage,
@@ -67,7 +72,9 @@ final class GridOCRSampler {
                         grid: grid,
                         imageWidth: imageWidth,
                         imageHeight: imageHeight,
-                        allowedCodes: allowedCodes
+                        allowedCodes: allowedCodes,
+                        cellAvgLab: cellLab,
+                        codeToLab: codeToLab
                     )
                     return (pos.row, pos.col, code)
                 }
@@ -85,13 +92,17 @@ final class GridOCRSampler {
         return result
     }
 
-    /// 对单个格子做 OCR：裁剪图像 + 跑 VNRecognizeTextRequest + 文字匹配
+    /// 对单个格子做 OCR：裁剪图像 + 跑 VNRecognizeTextRequest + 文字匹配。
+    /// 如果 OCR top 候选中有多个命中图例的色号（典型 E2/E3 这种 1 字符差），
+    /// 用 cellAvgLab + codeToLab 按颜色距离选最近的。
     static func ocrSingleCell(cgImage: CGImage,
                               row: Int, col: Int,
                               grid: BeadPatternGrid,
                               imageWidth: CGFloat,
                               imageHeight: CGFloat,
-                              allowedCodes: Set<String>) -> String? {
+                              allowedCodes: Set<String>,
+                              cellAvgLab: LabColor? = nil,
+                              codeToLab: [String: LabColor]? = nil) -> String? {
         let cellStart = Date()
         let tlx = grid.corners.topLeft.x * imageWidth
         let tly = grid.corners.topLeft.y * imageHeight
@@ -131,22 +142,46 @@ final class GridOCRSampler {
             return nil
         }
 
-        var matched: String? = nil
+        // 收集所有命中图例的候选，按色号去重（保留各色号最高置信度）
+        var bestConfByCode: [String: Float] = [:]
         var rawText: String = ""
         if let observations = request.results {
             for obs in observations {
-                for candidate in obs.topCandidates(3) {
+                for candidate in obs.topCandidates(5) {
                     if rawText.isEmpty { rawText = candidate.string }
                     if let code = matchLegendCode(text: candidate.string, allowed: allowedCodes) {
-                        matched = code
-                        break
+                        let prev = bestConfByCode[code] ?? 0
+                        if candidate.confidence > prev {
+                            bestConfByCode[code] = candidate.confidence
+                        }
                     }
                 }
-                if matched != nil { break }
             }
         }
+
+        let matched: String?
+        if bestConfByCode.isEmpty {
+            matched = nil
+        } else if bestConfByCode.count == 1 {
+            matched = bestConfByCode.keys.first
+        } else if let avgLab = cellAvgLab, let lookup = codeToLab {
+            // 多候选 + 颜色信息：选 Lab 距离最近的（处理 E2/E3 这种 OCR 难分辨的近邻色）
+            var bestCode: String? = nil
+            var bestDE = Double.infinity
+            for code in bestConfByCode.keys {
+                guard let codeLab = lookup[code] else { continue }
+                let de = GridCellSampler.deltaE(avgLab, codeLab)
+                if de < bestDE { bestDE = de; bestCode = code }
+            }
+            matched = bestCode ?? bestConfByCode.max(by: { $0.value < $1.value })?.key
+        } else {
+            // 多候选但无颜色信息：取置信度最高
+            matched = bestConfByCode.max(by: { $0.value < $1.value })?.key
+        }
+
         let ms = Int(Date().timeIntervalSince(cellStart) * 1000)
-        debugLog("[OCR] cell(\(row),\(col)) DONE \(ms)ms raw=\"\(rawText)\" -> \(matched ?? "nil")")
+        let candidatesStr = bestConfByCode.keys.sorted().joined(separator: ",")
+        debugLog("[OCR] cell(\(row),\(col)) DONE \(ms)ms raw=\"\(rawText)\" candidates=[\(candidatesStr)] -> \(matched ?? "nil")")
         return matched
     }
 

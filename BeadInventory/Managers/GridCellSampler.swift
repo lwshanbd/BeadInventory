@@ -134,8 +134,21 @@ final class GridCellSampler {
                 )
                 let avgLab = GridCellSampler.rgbToLab(avgRGB)
 
-                let winner = votes.max(by: { $0.value < $1.value })
-                let matchedCode = (winner?.value ?? 0) >= 2 ? winner?.key : nil
+                // Near-white 预过滤：MARD 体系下，"看起来空白"的格子强制归 H2。
+                // 否则 H9/H10/H12 这些极浅色（如果在图例里）会比 H2 更接近因为
+                // 图纸背景常带轻微色偏（JPEG 压缩、屏幕色温等），把空白格意外
+                // 吸收过去。判定：L > 90 且 chroma < 5（用户实测的暖偏白可触发）。
+                let chroma = sqrt(avgLab.a * avgLab.a + avgLab.b * avgLab.b)
+                let isNearWhite = avgLab.l > 90 && chroma < 5
+                let h2InCandidates = labCache.contains(where: { $0.code == "H2" })
+
+                let matchedCode: String?
+                if isNearWhite && h2InCandidates && grid.colorSystem == .mard {
+                    matchedCode = "H2"
+                } else {
+                    let winner = votes.max(by: { $0.value < $1.value })
+                    matchedCode = (winner?.value ?? 0) >= 2 ? winner?.key : nil
+                }
 
                 result[row][col] = CellSampleResult(avgLab: avgLab, matchedCode: matchedCode)
             }
