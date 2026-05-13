@@ -9,6 +9,14 @@
 import UIKit
 import Vision
 
+/// 拼图模式诊断日志，仅 DEBUG 编译输出。Release 包里 644 格 OCR 不再打满 console。
+@inline(__always)
+private func debugLog(_ message: @autoclosure () -> String) {
+    #if DEBUG
+    print(message())
+    #endif
+}
+
 final class GridOCRSampler {
     static let shared = GridOCRSampler()
     private init() {}
@@ -39,7 +47,7 @@ final class GridOCRSampler {
         var completed = 0
         let total = allCells.count
 
-        print("[OCRGroup] dispatching \(total) cells with concurrency 4")
+        debugLog("[OCRGroup] dispatching \(total) cells with concurrency 4")
         await withTaskGroup(of: (Int, Int, String?).self) { group in
             var inFlight = 0
             let maxConcurrent = 4   // Vision 内部可能有锁，4 比 8 稳
@@ -65,14 +73,14 @@ final class GridOCRSampler {
                 }
                 inFlight += 1
             }
-            print("[OCRGroup] all dispatched; awaiting remaining \(inFlight)")
+            debugLog("[OCRGroup] all dispatched; awaiting remaining \(inFlight)")
             for await done in group {
                 result[done.0][done.1] = done.2
                 completed += 1
                 progress?(completed, total)
             }
         }
-        print("[OCRGroup] all done; total=\(total) matched=\(result.flatMap { $0 }.compactMap { $0 }.count)")
+        debugLog("[OCRGroup] all done; total=\(total) matched=\(result.flatMap { $0 }.compactMap { $0 }.count)")
 
         return result
     }
@@ -103,11 +111,11 @@ final class GridOCRSampler {
         )
         guard rect.width > 4, rect.height > 4,
               let cropped = cgImage.cropping(to: rect) else {
-            print("[OCR] cell(\(row),\(col)) SKIP rect=\(rect)")
+            debugLog("[OCR] cell(\(row),\(col)) SKIP rect=\(rect)")
             return nil
         }
 
-        print("[OCR] cell(\(row),\(col)) START crop=\(Int(rect.width))x\(Int(rect.height))")
+        debugLog("[OCR] cell(\(row),\(col)) START crop=\(Int(rect.width))x\(Int(rect.height))")
 
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate   // per-cell 小裁剪用 accurate，更准且不会卡
@@ -119,7 +127,7 @@ final class GridOCRSampler {
             try handler.perform([request])
         } catch {
             let ms = Int(Date().timeIntervalSince(cellStart) * 1000)
-            print("[OCR] cell(\(row),\(col)) ERROR \(ms)ms: \(error.localizedDescription)")
+            debugLog("[OCR] cell(\(row),\(col)) ERROR \(ms)ms: \(error.localizedDescription)")
             return nil
         }
 
@@ -138,13 +146,13 @@ final class GridOCRSampler {
             }
         }
         let ms = Int(Date().timeIntervalSince(cellStart) * 1000)
-        print("[OCR] cell(\(row),\(col)) DONE \(ms)ms raw=\"\(rawText)\" -> \(matched ?? "nil")")
+        debugLog("[OCR] cell(\(row),\(col)) DONE \(ms)ms raw=\"\(rawText)\" -> \(matched ?? "nil")")
         return matched
     }
 
     /// 对整图跑 OCR，返回稀疏 [row][col] String?——只有 OCR 识别到且命中
     /// allowedCodes 的格子才有值。其余为 nil（调用方应 fall back 到颜色采样）。
-    /// 调用方应已经传入 downsampled 图，函数本身不再缩。
+    /// 调用方负责缩图（函数本身不做缩放）。
     func sample(image: UIImage,
                 grid: BeadPatternGrid,
                 allowedCodes: Set<String>) -> [[String?]] {

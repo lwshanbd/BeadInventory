@@ -7,6 +7,14 @@
 
 import SwiftUI
 
+/// 拼图模式诊断日志，仅 DEBUG 编译输出。
+@inline(__always)
+private func debugLog(_ message: @autoclosure () -> String) {
+    #if DEBUG
+    print(message())
+    #endif
+}
+
 struct PatternCalibrationView: View {
     let project: ProjectRecord
     var onComplete: (() -> Void)? = nil   // 由 parent 控制导航到高亮页
@@ -367,16 +375,16 @@ struct PatternCalibrationView: View {
         if project.colorSystem == .mard {
             allowedCodes.insert("H2")
         }
-        print("[PatternCal] start; image.size=\(img.size), rows=\(rowsCopy), cols=\(colsCopy), allowed=\(allowedCodes.count)")
+        debugLog("[PatternCal] start; image.size=\(img.size), rows=\(rowsCopy), cols=\(colsCopy), allowed=\(allowedCodes.count)")
         Task.detached(priority: .userInitiated) {
             let t0 = Date()
-            print("[PatternCal] T+0.0s downsampling")
+            debugLog("[PatternCal] T+0.0s downsampling")
             let processingImage = GridOCRSampler.downsampledForOCR(img)
-            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s downsampled to \(processingImage.size)")
+            debugLog("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s downsampled to \(processingImage.size)")
 
             await MainActor.run { savingPhase = "颜色采样中..." }
             let availableColors = await MainActor.run { inventoryManager.beadColors }
-            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s got \(availableColors.count) bead colors")
+            debugLog("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s got \(availableColors.count) bead colors")
             let placeholder = BeadPatternGrid(
                 corners: cornersCopy, rows: rowsCopy, cols: colsCopy,
                 cellColorCodes: Array(repeating: Array(repeating: nil, count: colsCopy), count: rowsCopy),
@@ -385,7 +393,7 @@ struct PatternCalibrationView: View {
                 colorSystem: colorSystem
             )
 
-            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s color sampling start (downsampled)")
+            debugLog("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s color sampling start (downsampled)")
             // 颜色采样在降采样图上跑（normalizeToRGBA8 易爆内存，需要小图）。
             // 返回每格的 avg Lab + 匹配的色号，下游用 avg Lab 做 OCR 校验。
             let detailedCells = GridCellSampler.shared.sampleDetailed(
@@ -394,20 +402,20 @@ struct PatternCalibrationView: View {
                 allowedCodes: allowedCodes.isEmpty ? nil : allowedCodes
             )
             let colorMatchedCount = detailedCells.flatMap { $0 }.compactMap { $0.matchedCode }.count
-            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s color sampling done, matched \(colorMatchedCount)")
+            debugLog("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s color sampling done, matched \(colorMatchedCount)")
 
             var cells: [[String?]] = detailedCells.map { row in row.map { $0.matchedCode } }
 
             if !allowedCodes.isEmpty {
                 await MainActor.run { savingPhase = "OCR 识别中" }
-                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s per-cell OCR start (using ORIGINAL image)")
+                debugLog("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s per-cell OCR start (using ORIGINAL image)")
                 // OCR 用原图！per-cell 裁剪小图不会爆内存，但分辨率高对识别准确度
                 // 至关重要（原图每格 ~140x175 vs 降采样后 ~33x73）。
                 let ocrCells = await GridOCRSampler.shared.sampleAllCellsPerCell(
                     image: img, grid: placeholder, allowedCodes: allowedCodes,
                     progress: { done, total in
                         if done == 1 || done % 50 == 0 || done == total {
-                            print("[PatternCal] per-cell OCR \(done)/\(total)")
+                            debugLog("[PatternCal] per-cell OCR \(done)/\(total)")
                         }
                         Task { @MainActor in
                             savingPhase = "OCR \(done)/\(total)"
@@ -415,7 +423,7 @@ struct PatternCalibrationView: View {
                     }
                 )
                 let ocrMatchedCount = ocrCells.flatMap { $0 }.compactMap { $0 }.count
-                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s per-cell OCR done, matched \(ocrMatchedCount)")
+                debugLog("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s per-cell OCR done, matched \(ocrMatchedCount)")
 
                 // 构建 code → Lab 的查询表（用所有可用 BeadColor，
                 // 包含图例外的色号如 H2，因为 OCR 也可能识别出来）
@@ -453,7 +461,7 @@ struct PatternCalibrationView: View {
                         }
                     }
                 }
-                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s OCR cross-check: \(ocrAccepted) accepted, \(ocrRejected) rejected (color inconsistent)")
+                debugLog("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s OCR cross-check: \(ocrAccepted) accepted, \(ocrRejected) rejected (color inconsistent)")
             }
             // 注意：候选池里加过的兜底色号（如 MARD 的 H2）保留在 cells 里，
             // 即使它不在原图例。调色板会用 "(空白格)" 标注让用户能区分。
@@ -465,7 +473,7 @@ struct PatternCalibrationView: View {
                     }
                 }
             }
-            print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s extra-code cells (e.g. H2 blank): \(extraCount)")
+            debugLog("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s extra-code cells (e.g. H2 blank): \(extraCount)")
             let grid = BeadPatternGrid(
                 corners: cornersCopy, rows: rowsCopy, cols: colsCopy,
                 cellColorCodes: cells,
@@ -474,7 +482,7 @@ struct PatternCalibrationView: View {
                 colorSystem: colorSystem
             )
             await MainActor.run {
-                print("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s all done; saving + dismissing")
+                debugLog("[PatternCal] T+\(String(format: "%.2f", Date().timeIntervalSince(t0)))s all done; saving + dismissing")
                 inventoryManager.updateProjectPatternGrid(projectId, grid: grid)
                 saving = false
                 savingPhase = nil

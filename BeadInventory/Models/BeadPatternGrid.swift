@@ -23,8 +23,9 @@ struct BeadPatternGrid: Codable, Equatable {
     /// 4 个归一化角点
     var corners: GridCorners
 
-    /// 行数（横向格子数 = cols；纵向格子数 = rows）
+    /// 行数（纵向方向的格子数）
     var rows: Int
+    /// 列数（横向方向的格子数）
     var cols: Int
 
     /// [row][col] 二维色号矩阵，nil 表示空白格或未匹配

@@ -35,7 +35,7 @@ NS_ASSUME_NONNULL_BEGIN
                                                               roi:(nullable NSValue *)roi;
 
 /// 算法 C：findContours 检测无网格线图纸（兜底）。
-/// confidence 固定较低（≤0.45），仅作预填。
+/// confidence 固定为 0.45，仅作预填提示用户务必检查。
 + (nullable GridDetectionResultBridge *)detectGridWithContours:(UIImage *)image
                                                             roi:(nullable NSValue *)roi;
 

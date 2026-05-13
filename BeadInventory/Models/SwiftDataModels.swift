@@ -116,14 +116,53 @@ final class SDProjectRecord {
 
     convenience init(from record: ProjectRecord) {
         let usages = record.beadUsage.map { SDBeadUsage(from: $0) }
-        let gridData = record.patternGrid.flatMap { try? JSONEncoder().encode($0) }
+        let gridData = SDProjectRecord.encodePatternGrid(record.patternGrid, projectId: record.id)
         self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, parentId: record.parentId, isPlanned: record.isPlanned, executedDate: record.executedDate, thumbnail: record.thumbnail, finishedImage: record.finishedImage, completedDate: record.completedDate, colorSystemRaw: record.colorSystem.rawValue, patternGridData: gridData, beadUsages: usages)
     }
 
     func toStruct() -> ProjectRecord {
         let usages = (beadUsages ?? []).map { $0.toStruct() }
-        let grid = patternGridData.flatMap { try? JSONDecoder().decode(BeadPatternGrid.self, from: $0) }
+        let grid = SDProjectRecord.decodePatternGrid(patternGridData, projectId: id)
         return ProjectRecord(id: id, name: name, date: date, beadUsage: usages, brandId: brandId, isArchived: isArchived, parentId: parentId, isPlanned: isPlannedValue, executedDate: executedDate, thumbnail: thumbnail, finishedImage: finishedImage, completedDate: completedDate, colorSystem: ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard, patternGrid: grid)
+    }
+
+    /// 把 BeadPatternGrid 编码成持久化用的 JSON Data。失败时返回 nil 并记日志，
+    /// 调用方应自行判断是否覆盖已有数据（iCloud 同步路径应保留 last-known-good）。
+    static func encodePatternGrid(_ grid: BeadPatternGrid?, projectId: UUID) -> Data? {
+        guard let grid else { return nil }
+        do {
+            return try JSONEncoder().encode(grid)
+        } catch {
+            AppLogger.shared.error(
+                "SDProjectRecord",
+                "patternGrid_encode_failed",
+                metadata: [
+                    "projectId": projectId.uuidString,
+                    "error": "\(error)"
+                ]
+            )
+            return nil
+        }
+    }
+
+    /// 从持久化 JSON Data 解码 BeadPatternGrid。失败时返回 nil 并记日志，
+    /// 调用方收到 nil 时不应改写 SwiftData 的 patternGridData（防止覆盖损坏后再丢数据）。
+    static func decodePatternGrid(_ data: Data?, projectId: UUID) -> BeadPatternGrid? {
+        guard let data else { return nil }
+        do {
+            return try JSONDecoder().decode(BeadPatternGrid.self, from: data)
+        } catch {
+            AppLogger.shared.error(
+                "SDProjectRecord",
+                "patternGrid_decode_failed",
+                metadata: [
+                    "projectId": projectId.uuidString,
+                    "bytes": data.count,
+                    "error": "\(error)"
+                ]
+            )
+            return nil
+        }
     }
 }
 

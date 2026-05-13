@@ -3,7 +3,7 @@
 //  BeadInventory
 //
 //  拼图模式 - 网格自动检测入口。
-//  顺序尝试两种算法（PR3 算法 B 留接口待后续补），返回最高置信度结果。
+//  顺序尝试两种算法，返回第一个超过阈值的结果（不是"最高置信度"）。
 //
 
 import Foundation
@@ -20,7 +20,8 @@ final class GridDetectionService {
     static let shared = GridDetectionService()
     private init() {}
 
-    /// 异步检测整图网格。失败或置信度极低（< 0.2）时返回 nil。
+    /// 异步检测整图网格。若算法 A (HoughLines, 阈值 0.4) 与算法 C (Contours, 阈值 0.2)
+    /// 都未通过则返回 nil。
     func detect(image: UIImage) async -> GridDetectionResult? {
         await withCheckedContinuation { cont in
             Task.detached(priority: .userInitiated) {
@@ -59,9 +60,10 @@ final class GridDetectionService {
     private func detectSync(image: UIImage, roi: CGRect?) -> GridDetectionResult? {
         let nsRoi = roi.map { NSValue(cgRect: $0) }
 
-        // 算法 A：HoughLines（带网格线的图纸首选）
+        // 算法 A：HoughLines（带网格线的图纸首选）。阈值 0.4 — 经验值，
+        // 低于这个数的 Hough 结果通常网格线丢失太多不可靠。
         if let r = GridDetectionBridge.detectGrid(withHoughLines: image, roi: nsRoi),
-           r.confidence >= 0.4 {  // 阈值从 0.5 放宽到 0.4
+           r.confidence >= 0.4 {
             return r.toSwiftResult()
         }
 
