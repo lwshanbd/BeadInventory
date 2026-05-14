@@ -26,9 +26,20 @@ struct PatternCalibrationView: View {
     @State private var rows: Int = 29
     @State private var cols: Int = 29
     @State private var rectMode: Bool = true             // 默认矩形（2 角）模式
+    /// 锁定网格：所有红角/网格整体拖手势被禁用，1 指拖一律走"平移图片"。
+    /// 默认 false（可以正常调网格）。放大查看图片细节时点锁切到 true。
+    @State private var gridLocked: Bool = false
     @State private var detectionRunning = false
     @State private var detectionConfidence: Double? = nil
     @State private var saving = false
+
+    // 图片缩放/平移状态。pinch 改 scale，缩放后单指空白处拖可平移。
+    // 红角点 + 网格内拖（GridBodyDragHandle）的 1 指手势优先级更高，
+    // 在它们的热区里 1 指 drag 不会平移视图。
+    @State private var viewScale: CGFloat = 1.0
+    @State private var lastViewScale: CGFloat = 1.0
+    @State private var viewOffset: CGSize = .zero
+    @State private var lastViewOffset: CGSize = .zero
     @State private var savingPhase: String? = nil
     @State private var savingStartTime: Date? = nil
     @State private var savingDisplayElapsed: Int = 0
@@ -71,6 +82,26 @@ struct PatternCalibrationView: View {
                     }
                     .toggleStyle(.button)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        gridLocked.toggle()
+                    } label: {
+                        Image(systemName: gridLocked ? "lock.fill" : "lock.open")
+                            .foregroundStyle(gridLocked ? Color.orange : Color.secondary)
+                    }
+                    .accessibilityLabel(gridLocked ? "解锁网格" : "锁定网格（仅平移图片）")
+                }
+                // 行/列 TextField 用数字键盘，没有自带的"完成"按钮。
+                // 加一条 keyboard placement 的 toolbar，键盘弹起时显示"完成"按钮收键盘。
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完成") {
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil, from: nil, for: nil
+                        )
+                    }
+                }
             }
             .task {
                 if let existing = project.patternGrid {
@@ -95,42 +126,85 @@ struct PatternCalibrationView: View {
             GeometryReader { geo in
                 let displayRect = aspectFitRect(imageSize: img.size, in: geo.size)
                 ZStack(alignment: .topLeading) {
-                    Color.black.opacity(0.05)
-                    Image(uiImage: img)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: geo.size.width, height: geo.size.height)
+                    // 图 + 网格线 + 整体拖手势 + 4 角点合并成一个 ZStack，整体 scale/offset。
+                    // 这样所有元素一起放大；放大时 corners 的坐标继续在原 displayRect 系内
+                    // 计算，DragGesture.value.location 来自子视图本地坐标，仍然是 displayRect 系，
+                    // 所以现有 corner / body 拖动逻辑不需要改。
+                    ZStack(alignment: .topLeading) {
+                        Color.black.opacity(0.05)
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: geo.size.width, height: geo.size.height)
 
-                    CalibrationGridOverlay(
-                        corners: corners,
-                        rows: rows, cols: cols,
-                        displayRect: displayRect
-                    )
-
-                    // 整体移动手势：拖网格内部（不包括 4 个角的热区）平移所有 corners
-                    GridBodyDragHandle(
-                        corners: $corners,
-                        displayRect: displayRect
-                    )
-
-                    ForEach(visibleHandles(), id: \.self) { label in
-                        CornerHandle(
-                            label: label,
-                            corners: $corners,
-                            displayRect: displayRect,
-                            rectMode: rectMode,
-                            draggingCorner: $draggingCorner,
-                            draggingScreenPoint: $draggingScreenPoint
+                        CalibrationGridOverlay(
+                            corners: corners,
+                            rows: rows, cols: cols,
+                            displayRect: displayRect
                         )
+
+                        GridBodyDragHandle(
+                            corners: $corners,
+                            displayRect: displayRect
+                        )
+                        .allowsHitTesting(!gridLocked)
+
+                        ForEach(visibleHandles(), id: \.self) { label in
+                            CornerHandle(
+                                label: label,
+                                corners: $corners,
+                                displayRect: displayRect,
+                                rectMode: rectMode,
+                                draggingCorner: $draggingCorner,
+                                draggingScreenPoint: $draggingScreenPoint
+                            )
+                            .allowsHitTesting(!gridLocked)
+                            .opacity(gridLocked ? 0.4 : 1.0)   // 锁定时角点变淡作为视觉提示
+                        }
+                    }
+                    .scaleEffect(viewScale, anchor: .center)
+                    .offset(viewOffset)
+                    .gesture(
+                        SimultaneousGesture(
+                            MagnificationGesture()
+                                .onChanged { value in
+                                    viewScale = max(1.0, min(5.0, lastViewScale * value))
+                                }
+                                .onEnded { _ in lastViewScale = viewScale },
+                            DragGesture(minimumDistance: 10)
+                                .onChanged { value in
+                                    // 只在已放大时才允许平移；否则忽略（让 GridBodyDragHandle
+                                    // 在 1x 时仍然能用整体拖网格的手势）
+                                    guard viewScale > 1.05 else { return }
+                                    viewOffset = CGSize(
+                                        width: lastViewOffset.width + value.translation.width,
+                                        height: lastViewOffset.height + value.translation.height
+                                    )
+                                }
+                                .onEnded { _ in lastViewOffset = viewOffset }
+                        )
+                    )
+                    .onTapGesture(count: 2) {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            if viewScale > 1.05 {
+                                viewScale = 1.0; lastViewScale = 1.0
+                                viewOffset = .zero; lastViewOffset = .zero
+                            } else {
+                                viewScale = 2.5; lastViewScale = 2.5
+                            }
+                        }
                     }
 
+                    // 进度提示 + 放大镜不参与缩放（保持屏幕固定大小 & 位置）
                     if detectionRunning {
                         Color.black.opacity(0.3)
+                            .allowsHitTesting(false)
                         ProgressView("自动检测中...")
                             .padding()
                             .background(.regularMaterial)
                             .cornerRadius(8)
                             .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                            .allowsHitTesting(false)
                     }
 
                     if let label = draggingCorner {
