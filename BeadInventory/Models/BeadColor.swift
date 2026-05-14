@@ -119,8 +119,9 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
     var finishedImage: Data?      // 成品图数据（可选，压缩后的JPEG，仅已执行项目使用）
     var completedDate: Date?      // 完成日期（用于日历展示，用户可自定义选择）
     var colorSystem: ColorSystem  // 色号体系（MARD/卡卡等）
+    var patternGrid: BeadPatternGrid?  // 拼图模式网格数据（nil = 未标定）
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, finishedImage: Data? = nil, completedDate: Date? = nil, colorSystem: ColorSystem = .mard) {
+    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, finishedImage: Data? = nil, completedDate: Date? = nil, colorSystem: ColorSystem = .mard, patternGrid: BeadPatternGrid? = nil) {
         self.id = id
         self.name = name
         self.date = date
@@ -135,6 +136,7 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
         self.finishedImage = finishedImage
         self.completedDate = completedDate
         self.colorSystem = colorSystem
+        self.patternGrid = patternGrid
     }
 
     // 自定义解码器，兼容旧数据
@@ -159,6 +161,8 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
         completedDate = try container.decodeIfPresent(Date.self, forKey: .completedDate)
         // 向后兼容：旧数据没有 colorSystem 字段，默认为 MARD
         colorSystem = try container.decodeIfPresent(ColorSystem.self, forKey: .colorSystem) ?? .mard
+        // 向后兼容：旧数据没有 patternGrid 字段
+        patternGrid = try container.decodeIfPresent(BeadPatternGrid.self, forKey: .patternGrid)
     }
 }
 

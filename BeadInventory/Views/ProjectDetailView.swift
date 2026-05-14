@@ -17,6 +17,8 @@ struct ProjectDetailView: View {
     // 图片编辑相关状态
     @State private var showingThumbnailEditor = false
     @State private var showingFinishedImageEditor = false
+    @State private var showingPatternCalibration = false
+    @State private var showingPatternHighlight = false
 
     var isParentProject: Bool {
         inventoryManager.isParentProject(project.id)
@@ -168,6 +170,36 @@ struct ProjectDetailView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if (currentProject ?? project).isPlanned {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        let p = currentProject ?? project
+                        if p.patternGrid != nil {
+                            showingPatternHighlight = true
+                        } else {
+                            showingPatternCalibration = true
+                        }
+                    } label: {
+                        Label("拼图模式", systemImage: "square.grid.3x3.square")
+                    }
+                    .disabled((currentProject ?? project).thumbnail == nil)
+                }
+            }
+        }
+        .sheet(isPresented: $showingPatternCalibration) {
+            PatternCalibrationView(
+                project: currentProject ?? project,
+                onComplete: { showingPatternHighlight = true }
+            )
+            .environmentObject(inventoryManager)
+        }
+        .fullScreenCover(isPresented: $showingPatternHighlight) {
+            if let p = inventoryManager.projects.first(where: { $0.id == project.id }) {
+                PatternHighlightView(project: p)
+                    .environmentObject(inventoryManager)
+            }
+        }
         .sheet(isPresented: $showingThumbnailEditor) {
             ProjectImageEditorSheet(
                 projectId: project.id,
@@ -942,17 +974,12 @@ struct ProjectImageEditorSheet: View {
         .presentationDetents([.medium, .large])
     }
 
-    /// 生成压缩的图片数据
+    /// 生成图片数据
+    /// 拼图模式需要原分辨率的图纸做网格识别，所以这里保留原图大小并用 PNG 无损存储。
+    /// maxImageSize 参数保留用于向后兼容，但已不再缩放（除非传入 < 1024 的明确小尺寸时降级，用于
+    /// 防御性兜底）。
     func generateImageData(from image: UIImage) -> Data? {
-        let scale = min(maxImageSize / image.size.width, maxImageSize / image.size.height, 1.0)
-        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-
-        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
-        image.draw(in: CGRect(origin: .zero, size: newSize))
-        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-
-        return resizedImage?.jpegData(compressionQuality: 0.7)
+        return image.pngData()
     }
 }
 

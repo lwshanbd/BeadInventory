@@ -11,6 +11,20 @@
 		3806E5062F00F94200187AA7 /* AddInventoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3806E5052F00F94200187AA7 /* AddInventoryView.swift */; };
 		3806E50A2F00FB3900187AA7 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3806E5082F00FB3900187AA7 /* InfoPlist.strings */; };
 		3806E50E2F00FB4300187AA7 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3806E50C2F00FB4300187AA7 /* InfoPlist.strings */; };
+		381060CA2FB3A70D00F5DDE2 /* OpenCV in Frameworks */ = {isa = PBXBuildFile; productRef = 381060CB2FB3A70D00F5DDE2 /* OpenCV */; };
+		381060CD2FB3A70D00F5DDE2 /* GridDetectionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 381060CC2FB3A70D00F5DDE2 /* GridDetectionBridge.m */; };
+		383001022FB3A70D00F5DDE2 /* BeadPatternGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383001012FB3A70D00F5DDE2 /* BeadPatternGrid.swift */; };
+		384001022FB3A70D00F5DDE2 /* PatternCalibrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 384001012FB3A70D00F5DDE2 /* PatternCalibrationView.swift */; };
+		385001022FB3A70D00F5DDE2 /* GridGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001012FB3A70D00F5DDE2 /* GridGeometry.swift */; };
+		385001042FB3A70D00F5DDE2 /* GridDetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001032FB3A70D00F5DDE2 /* GridDetectionService.swift */; };
+		385001062FB3A70D00F5DDE2 /* GridCellSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001052FB3A70D00F5DDE2 /* GridCellSampler.swift */; };
+		386001022FB3A70D00F5DDE2 /* GridOCRSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386001012FB3A70D00F5DDE2 /* GridOCRSampler.swift */; };
+		385001082FB3A70D00F5DDE2 /* PatternHighlightView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001072FB3A70D00F5DDE2 /* PatternHighlightView.swift */; };
+		3850010A2FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */; };
+		3850010C2FB3A70D00F5DDE2 /* ColorPaletteBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */; };
+		3850010E2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3850010D2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift */; };
+		385001102FB3A70D00F5DDE2 /* GridValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3850010F2FB3A70D00F5DDE2 /* GridValidator.swift */; };
+		385001122FB3A70D00F5DDE2 /* ValidationDiffSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001112FB3A70D00F5DDE2 /* ValidationDiffSheet.swift */; };
 		386ECBFA2F332DB600BD92E8 /* AnnouncementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */; };
 		386ECBFC2F332DB600BD92E8 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFB2F332DB600BD92E8 /* BackupManager.swift */; };
 		386ECBFE2F332E1500BD92E8 /* BackupRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */; };
@@ -79,6 +93,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		3820010B2FB3A70D00F5DDE2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A01234560060 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A01234560040;
+			remoteInfo = BeadInventory;
+		};
 		38FA2CEB2F274B2900912E02 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A01234560060 /* Project object */;
@@ -108,6 +129,20 @@
 		3806E5052F00F94200187AA7 /* AddInventoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddInventoryView.swift; sourceTree = "<group>"; };
 		3806E5072F00FB3900187AA7 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = InfoPlist.strings; sourceTree = "<group>"; };
 		3806E50B2F00FB4300187AA7 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = InfoPlist.strings; sourceTree = "<group>"; };
+		381060CC2FB3A70D00F5DDE2 /* GridDetectionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = GridDetectionBridge.m; path = BeadInventory/Managers/CV/GridDetectionBridge.m; sourceTree = SOURCE_ROOT; };
+		382001092FB3A70D00F5DDE2 /* BeadInventoryTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BeadInventoryTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		383001012FB3A70D00F5DDE2 /* BeadPatternGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeadPatternGrid.swift; sourceTree = "<group>"; };
+		384001012FB3A70D00F5DDE2 /* PatternCalibrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternCalibrationView.swift; path = BeadInventory/Views/PatternHighlight/PatternCalibrationView.swift; sourceTree = SOURCE_ROOT; };
+		385001012FB3A70D00F5DDE2 /* GridGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridGeometry.swift; sourceTree = "<group>"; };
+		385001032FB3A70D00F5DDE2 /* GridDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridDetectionService.swift; sourceTree = "<group>"; };
+		385001052FB3A70D00F5DDE2 /* GridCellSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridCellSampler.swift; sourceTree = "<group>"; };
+		386001012FB3A70D00F5DDE2 /* GridOCRSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridOCRSampler.swift; sourceTree = "<group>"; };
+		385001072FB3A70D00F5DDE2 /* PatternHighlightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternHighlightView.swift; path = BeadInventory/Views/PatternHighlight/PatternHighlightView.swift; sourceTree = SOURCE_ROOT; };
+		385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternHighlightOverlay.swift; path = BeadInventory/Views/PatternHighlight/PatternHighlightOverlay.swift; sourceTree = SOURCE_ROOT; };
+		3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorPaletteBar.swift; path = BeadInventory/Views/PatternHighlight/ColorPaletteBar.swift; sourceTree = SOURCE_ROOT; };
+		3850010D2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ZoomablePatternCanvas.swift; path = BeadInventory/Views/PatternHighlight/ZoomablePatternCanvas.swift; sourceTree = SOURCE_ROOT; };
+		3850010F2FB3A70D00F5DDE2 /* GridValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridValidator.swift; sourceTree = "<group>"; };
+		385001112FB3A70D00F5DDE2 /* ValidationDiffSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ValidationDiffSheet.swift; path = BeadInventory/Views/PatternHighlight/ValidationDiffSheet.swift; sourceTree = SOURCE_ROOT; };
 		386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnouncementManager.swift; sourceTree = "<group>"; };
 		386ECBFB2F332DB600BD92E8 /* BackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
 		386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreView.swift; sourceTree = "<group>"; };
@@ -184,10 +219,18 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		382001082FB3A70D00F5DDE2 /* BeadInventoryTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = BeadInventoryTests; sourceTree = "<group>"; };
 		38FA2CE42F274B2900912E02 /* ShareExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (38FA2CF12F274B2900912E02 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ShareExtension; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		382001062FB3A70D00F5DDE2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		38FA2CE02F274B2900912E02 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -202,6 +245,7 @@
 				D10000000000000000000003 /* Hub in Frameworks */,
 				D10000000000000000000001 /* MLXLMCommon in Frameworks */,
 				D10000000000000000000002 /* MLXVLM in Frameworks */,
+				381060CA2FB3A70D00F5DDE2 /* OpenCV in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -222,6 +266,27 @@
 				3806E50C2F00FB4300187AA7 /* InfoPlist.strings */,
 			);
 			path = en.lproj;
+			sourceTree = "<group>";
+		};
+		381061912FB3AD0900F5DDE2 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				381060CC2FB3A70D00F5DDE2 /* GridDetectionBridge.m */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+		384001032FB3A70D00F5DDE2 /* PatternHighlight */ = {
+			isa = PBXGroup;
+			children = (
+				384001012FB3A70D00F5DDE2 /* PatternCalibrationView.swift */,
+				385001072FB3A70D00F5DDE2 /* PatternHighlightView.swift */,
+				385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */,
+				3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */,
+				3850010D2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift */,
+				385001112FB3A70D00F5DDE2 /* ValidationDiffSheet.swift */,
+			);
+			path = PatternHighlight;
 			sourceTree = "<group>";
 		};
 		38B1A0012F01000100000020 /* Components */ = {
@@ -252,7 +317,9 @@
 			children = (
 				A01234560031 /* BeadInventory */,
 				38FA2CE42F274B2900912E02 /* ShareExtension */,
+				382001082FB3A70D00F5DDE2 /* BeadInventoryTests */,
 				A01234560032 /* Products */,
+				381061912FB3AD0900F5DDE2 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -280,6 +347,7 @@
 			children = (
 				A01234560010 /* BeadInventory.app */,
 				38FA2CE32F274B2900912E02 /* ShareExtension.appex */,
+				382001092FB3A70D00F5DDE2 /* BeadInventoryTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -288,6 +356,8 @@
 			isa = PBXGroup;
 			children = (
 				A01234560014 /* BeadColor.swift */,
+				383001012FB3A70D00F5DDE2 /* BeadPatternGrid.swift */,
+				385001012FB3A70D00F5DDE2 /* GridGeometry.swift */,
 				DE0D1C01A0050002DEADBEEF /* DeductionItem.swift */,
 				38B1A0012F01000100000011 /* Brand.swift */,
 				38B1A0012F01000100000012 /* BrandStock.swift */,
@@ -311,6 +381,10 @@
 				38FA2CF62F274C4000912E02 /* SharedImageManager.swift */,
 				A01234560015 /* InventoryManager.swift */,
 				A01234560016 /* OCRManager.swift */,
+				385001032FB3A70D00F5DDE2 /* GridDetectionService.swift */,
+				385001052FB3A70D00F5DDE2 /* GridCellSampler.swift */,
+				386001012FB3A70D00F5DDE2 /* GridOCRSampler.swift */,
+				3850010F2FB3A70D00F5DDE2 /* GridValidator.swift */,
 				A0123456001C /* AIService.swift */,
 				39AA00022F5000010099AA01 /* AppLogger.swift */,
 				39AA00042F5000010099AA01 /* AppBackgroundTaskManager.swift */,
@@ -324,6 +398,7 @@
 		A01234560035 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				384001032FB3A70D00F5DDE2 /* PatternHighlight */,
 				6B1D5F8205D74655AB3DB19B /* HelpCenter */,
 				386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */,
 				38B1A0012F01000100000020 /* Components */,
@@ -358,6 +433,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		382001012FB3A70D00F5DDE2 /* BeadInventoryTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 382001022FB3A70D00F5DDE2 /* Build configuration list for PBXNativeTarget "BeadInventoryTests" */;
+			buildPhases = (
+				382001052FB3A70D00F5DDE2 /* Sources */,
+				382001062FB3A70D00F5DDE2 /* Frameworks */,
+				382001072FB3A70D00F5DDE2 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				3820010A2FB3A70D00F5DDE2 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				382001082FB3A70D00F5DDE2 /* BeadInventoryTests */,
+			);
+			name = BeadInventoryTests;
+			packageProductDependencies = (
+			);
+			productName = BeadInventoryTests;
+			productReference = 382001092FB3A70D00F5DDE2 /* BeadInventoryTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		38FA2CE22F274B2900912E02 /* ShareExtension */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 38FA2CF22F274B2900912E02 /* Build configuration list for PBXNativeTarget "ShareExtension" */;
@@ -399,6 +497,7 @@
 				D10000000000000000000021 /* MLXLMCommon */,
 				D10000000000000000000022 /* MLXVLM */,
 				D10000000000000000000023 /* Hub */,
+				381060CB2FB3A70D00F5DDE2 /* OpenCV */,
 			);
 			productName = BeadInventory;
 			productReference = A01234560010 /* BeadInventory.app */;
@@ -435,7 +534,7 @@
 			packageReferences = (
 				D10000000000000000000011 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
 				D10000000000000000000012 /* XCRemoteSwiftPackageReference "swift-transformers" */,
-				381060BF2FB3A6E400F5DDE2 /* XCRemoteSwiftPackageReference "opencv-spm" */,
+				381060C52FB3A70D00F5DDE2 /* XCRemoteSwiftPackageReference "opencv-spm" */,
 			);
 			productRefGroup = A01234560032 /* Products */;
 			projectDirPath = "";
@@ -443,11 +542,19 @@
 			targets = (
 				A01234560040 /* BeadInventory */,
 				38FA2CE22F274B2900912E02 /* ShareExtension */,
+				382001012FB3A70D00F5DDE2 /* BeadInventoryTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		382001072FB3A70D00F5DDE2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		38FA2CE12F274B2900912E02 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -471,6 +578,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		382001052FB3A70D00F5DDE2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		38FA2CDF2F274B2900912E02 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -491,6 +605,8 @@
 				A01234560001 /* BeadInventoryApp.swift in Sources */,
 				A01234560002 /* ContentView.swift in Sources */,
 				A01234560004 /* BeadColor.swift in Sources */,
+				383001022FB3A70D00F5DDE2 /* BeadPatternGrid.swift in Sources */,
+				385001022FB3A70D00F5DDE2 /* GridGeometry.swift in Sources */,
 				DE0D1C01A0050001DEADBEEF /* DeductionItem.swift in Sources */,
 				38B1A0012F01000100000001 /* Brand.swift in Sources */,
 				38B1A0012F01000100000002 /* BrandStock.swift in Sources */,
@@ -499,6 +615,9 @@
 				39AA00012F5000010099AA01 /* AppLogger.swift in Sources */,
 				39AA00032F5000010099AA01 /* AppBackgroundTaskManager.swift in Sources */,
 				A01234560006 /* OCRManager.swift in Sources */,
+				385001042FB3A70D00F5DDE2 /* GridDetectionService.swift in Sources */,
+				385001062FB3A70D00F5DDE2 /* GridCellSampler.swift in Sources */,
+				386001022FB3A70D00F5DDE2 /* GridOCRSampler.swift in Sources */,
 				A0123456000C /* AIService.swift in Sources */,
 				38B1A0012F01000100000003 /* DataMigration.swift in Sources */,
 				386ECBFE2F332E1500BD92E8 /* BackupRestoreView.swift in Sources */,
@@ -541,12 +660,25 @@
 				38B1A0012F0100010000004A /* ImportStockView.swift in Sources */,
 				38FA2CE32F26A00000912E02 /* ShippingView.swift in Sources */,
 				6EC4A1187CBB489B83C6E6559E6BABBA /* LowStockDetailView.swift in Sources */,
+				381060CD2FB3A70D00F5DDE2 /* GridDetectionBridge.m in Sources */,
+				384001022FB3A70D00F5DDE2 /* PatternCalibrationView.swift in Sources */,
+				385001082FB3A70D00F5DDE2 /* PatternHighlightView.swift in Sources */,
+				3850010A2FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift in Sources */,
+				3850010C2FB3A70D00F5DDE2 /* ColorPaletteBar.swift in Sources */,
+				3850010E2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift in Sources */,
+				385001102FB3A70D00F5DDE2 /* GridValidator.swift in Sources */,
+				385001122FB3A70D00F5DDE2 /* ValidationDiffSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		3820010A2FB3A70D00F5DDE2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A01234560040 /* BeadInventory */;
+			targetProxy = 3820010B2FB3A70D00F5DDE2 /* PBXContainerItemProxy */;
+		};
 		38FA2CEC2F274B2900912E02 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 38FA2CE22F274B2900912E02 /* ShareExtension */;
@@ -574,6 +706,44 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		382001032FB3A70D00F5DDE2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S4BS47942Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.beadinventory.app.BeadInventoryTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BeadInventory.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BeadInventory";
+			};
+			name = Debug;
+		};
+		382001042FB3A70D00F5DDE2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S4BS47942Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.beadinventory.app.BeadInventoryTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BeadInventory.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BeadInventory";
+			};
+			name = Release;
+		};
 		38FA2CEF2F274B2900912E02 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -782,6 +952,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.beadinventory.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "BeadInventory/BeadInventory-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -816,6 +987,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.beadinventory.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "BeadInventory/BeadInventory-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -824,6 +996,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		382001022FB3A70D00F5DDE2 /* Build configuration list for PBXNativeTarget "BeadInventoryTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				382001032FB3A70D00F5DDE2 /* Debug */,
+				382001042FB3A70D00F5DDE2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		38FA2CF22F274B2900912E02 /* Build configuration list for PBXNativeTarget "ShareExtension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -854,7 +1035,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		381060BF2FB3A6E400F5DDE2 /* XCRemoteSwiftPackageReference "opencv-spm" */ = {
+		381060C52FB3A70D00F5DDE2 /* XCRemoteSwiftPackageReference "opencv-spm" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/yeatse/opencv-spm";
 			requirement = {
@@ -881,6 +1062,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		381060CB2FB3A70D00F5DDE2 /* OpenCV */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 381060C52FB3A70D00F5DDE2 /* XCRemoteSwiftPackageReference "opencv-spm" */;
+			productName = OpenCV;
+		};
 		D10000000000000000000021 /* MLXLMCommon */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D10000000000000000000011 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;

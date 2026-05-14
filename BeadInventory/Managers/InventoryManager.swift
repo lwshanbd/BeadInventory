@@ -1637,6 +1637,17 @@ class InventoryManager: ObservableObject {
                         existing.finishedImage = project.finishedImage
                         existing.completedDate = project.completedDate
                         existing.colorSystemRaw = project.colorSystem.rawValue
+                        // patternGrid 是同步关键数据。编码失败时**保留** existing.patternGridData
+                        // 不覆盖（防止把云端最新值用 nil 覆盖造成全设备数据丢失）。
+                        if let grid = project.patternGrid {
+                            if let data = SDProjectRecord.encodePatternGrid(grid, projectId: project.id) {
+                                existing.patternGridData = data
+                            }
+                            // else: 编码失败，logger 已记录，existing.patternGridData 保持不变
+                        } else {
+                            // 用户明确清空（patternGrid 为 nil），允许覆盖
+                            existing.patternGridData = nil
+                        }
 
                         // 仅在本地项目有改动时同步 beadUsages，避免误删远端新变更
                         let newUsageIDs = Set(project.beadUsage.map { $0.id })
@@ -2978,6 +2989,15 @@ class InventoryManager: ObservableObject {
             historyManager.recordProject(type: projects[index].isPlanned ? .planUpdate : .projectUpdate, project: projects[index])
 
             projects[index].thumbnail = thumbnail
+            saveData()
+        }
+    }
+
+    /// 更新项目的拼图模式网格数据（包括四角、行列、色号矩阵）
+    func updateProjectPatternGrid(_ projectId: UUID, grid: BeadPatternGrid?) {
+        if let index = projects.firstIndex(where: { $0.id == projectId }) {
+            historyManager.recordProject(type: projects[index].isPlanned ? .planUpdate : .projectUpdate, project: projects[index])
+            projects[index].patternGrid = grid
             saveData()
         }
     }

@@ -55,9 +55,9 @@ class SharedImageManager: ObservableObject {
             return false
         }
 
-        // 压缩并保存图片
-        guard let imageData = image.jpegData(compressionQuality: 0.9) else {
-            print("SharedImageManager: 图片压缩失败")
+        // PNG 无损保存（拼图模式需要原图做网格识别）
+        guard let imageData = image.pngData() else {
+            print("SharedImageManager: PNG 编码失败")
             return false
         }
 

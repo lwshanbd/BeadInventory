@@ -1024,6 +1024,8 @@ struct PlannedProjectDetailView: View {
     @State private var showThumbnailEditor = false
     @State private var sortByQuantity = true
     @State private var showChildrenSection = true
+    @State private var showPatternCalibration = false
+    @State private var showPatternHighlight = false
 
     // 获取当前项目的最新状态
     var currentProject: ProjectRecord? {
@@ -1087,6 +1089,21 @@ struct PlannedProjectDetailView: View {
         .sheet(isPresented: $showStockCheckSheet) { stockCheckSheet }
         .sheet(isPresented: $showEditSheet) { editSheet }
         .sheet(isPresented: $showThumbnailEditor) { thumbnailEditorSheet }
+        .sheet(isPresented: $showPatternCalibration) {
+            PatternCalibrationView(
+                project: currentProject ?? project,
+                onComplete: {
+                    showPatternHighlight = true
+                }
+            )
+            .environmentObject(inventoryManager)
+        }
+        .fullScreenCover(isPresented: $showPatternHighlight) {
+            if let p = inventoryManager.projects.first(where: { $0.id == project.id }) {
+                PatternHighlightView(project: p)
+                    .environmentObject(inventoryManager)
+            }
+        }
         .onChange(of: currentProject?.isPlanned) { _, isPlanned in
             if isPlanned == false { dismiss() }
         }
@@ -1124,11 +1141,37 @@ struct PlannedProjectDetailView: View {
     }
 
     private var actionButtonsView: some View {
-        HStack(spacing: 12) {
-            stockCheckButton
-            executeButton
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                stockCheckButton
+                executeButton
+            }
+            patternHighlightButton
         }
         .padding(.horizontal)
+    }
+
+    private var patternHighlightButton: some View {
+        Button {
+            let p = currentProject ?? project
+            if p.patternGrid != nil {
+                showPatternHighlight = true
+            } else {
+                showPatternCalibration = true
+            }
+        } label: {
+            HStack {
+                Image(systemName: "square.grid.3x3.square")
+                Text("拼图模式")
+            }
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background((currentProject ?? project).thumbnail == nil ? Color.gray : Color.purple)
+            .cornerRadius(12)
+        }
+        .disabled((currentProject ?? project).thumbnail == nil)
     }
 
     private var stockCheckButton: some View {
