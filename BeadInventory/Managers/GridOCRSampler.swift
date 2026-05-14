@@ -126,14 +126,19 @@ final class GridOCRSampler {
             return nil
         }
 
-        debugLog("[OCR] cell(\(row),\(col)) START crop=\(Int(rect.width))x\(Int(rect.height))")
+        // 2× 上采样后再送 OCR：Vision 在更大文字上识别准确率显著更高。
+        // 原图每格约 140×175，上采样到 280×350，文字从 ~30px 变 ~60px，
+        // "2" 和 "3" 的曲线/拐角差异更清晰。
+        let ocrInput = Self.upscale(cropped, factor: 2.0) ?? cropped
+
+        debugLog("[OCR] cell(\(row),\(col)) START crop=\(Int(rect.width))x\(Int(rect.height)) → \(ocrInput.width)x\(ocrInput.height)")
 
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate   // per-cell 小裁剪用 accurate，更准且不会卡
         request.usesLanguageCorrection = false
         request.customWords = Array(allowedCodes)
 
-        let handler = VNImageRequestHandler(cgImage: cropped, options: [:])
+        let handler = VNImageRequestHandler(cgImage: ocrInput, options: [:])
         do {
             try handler.perform([request])
         } catch {
@@ -285,5 +290,29 @@ final class GridOCRSampler {
         return renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: newSize))
         }
+    }
+
+    /// CGImage 按 factor 倍数上采样，用 .high (Lanczos) 插值。失败返回 nil。
+    /// 用途：per-cell 裁剪 → 上采样 → Vision OCR，文字更大识别率更高。
+    static func upscale(_ cgImage: CGImage, factor: CGFloat) -> CGImage? {
+        let scaledWidth = Int(CGFloat(cgImage.width) * factor)
+        let scaledHeight = Int(CGFloat(cgImage.height) * factor)
+        guard scaledWidth > 0, scaledHeight > 0 else { return nil }
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo: UInt32 = CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(
+            data: nil,
+            width: scaledWidth,
+            height: scaledHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else { return nil }
+
+        context.interpolationQuality = .high
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: scaledWidth, height: scaledHeight))
+        return context.makeImage()
     }
 }
