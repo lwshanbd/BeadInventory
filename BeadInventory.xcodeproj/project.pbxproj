@@ -12,7 +12,7 @@
 		3806E50A2F00FB3900187AA7 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3806E5082F00FB3900187AA7 /* InfoPlist.strings */; };
 		3806E50E2F00FB4300187AA7 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3806E50C2F00FB4300187AA7 /* InfoPlist.strings */; };
 		381060CA2FB3A70D00F5DDE2 /* OpenCV in Frameworks */ = {isa = PBXBuildFile; productRef = 381060CB2FB3A70D00F5DDE2 /* OpenCV */; };
-		381060CD2FB3A70D00F5DDE2 /* GridDetectionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 381060CC2FB3A70D00F5DDE2 /* GridDetectionBridge.m */; };
+		381060CD2FB3A70D00F5DDE2 /* GridDetectionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 381060CC2FB3A70D00F5DDE2 /* GridDetectionBridge.m */; settings = {COMPILER_FLAGS = "-Wno-quoted-include-in-framework-header -Wno-incomplete-umbrella -Wno-documentation -Wno-deprecated-declarations"; }; };
 		383001022FB3A70D00F5DDE2 /* BeadPatternGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383001012FB3A70D00F5DDE2 /* BeadPatternGrid.swift */; };
 		384001022FB3A70D00F5DDE2 /* PatternCalibrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 384001012FB3A70D00F5DDE2 /* PatternCalibrationView.swift */; };
 		385001022FB3A70D00F5DDE2 /* GridGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001012FB3A70D00F5DDE2 /* GridGeometry.swift */; };
