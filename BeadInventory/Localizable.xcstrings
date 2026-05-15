@@ -4,17 +4,6 @@
     "" : {
 
     },
-    " (副本)" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " (Copy)"
-          }
-        }
-      }
-    },
     "-" : {
 
     },
@@ -31,13 +20,34 @@
 
     },
     "(原 %@)" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(was %@)"
+          }
+        }
+      }
     },
     "(库存%lld)" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(stock %lld)"
+          }
+        }
+      }
     },
     "/ %lld 色" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "/ %lld colors"
+          }
+        }
+      }
     },
     "&" : {
 
@@ -69,7 +79,14 @@
       }
     },
     "%@ 的 API Key 通常以 \"sk-\" 开头，你当前填写的 Key 格式可能不正确，请确认。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ API keys usually start with \"sk-\". The key you entered may be in an incorrect format — please verify."
+          }
+        }
+      }
     },
     "%@ 设置" : {
       "localizations" : {
@@ -88,7 +105,7 @@
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "%1$lld / %2$lld"
           }
         }
@@ -115,10 +132,24 @@
       }
     },
     "%lld 品牌" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld brands"
+          }
+        }
+      }
     },
     "%lld 条" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld items"
+          }
+        }
+      }
     },
     "%lld 种" : {
       "localizations" : {
@@ -131,17 +162,37 @@
       }
     },
     "%lld 种不足" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld short"
+          }
+        }
+      }
     },
     "%lld 种颜色" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld colors"
+          }
+        }
+      }
     },
     "%lld 种颜色扣减后低于 %lld" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "%1$lld 种颜色扣减后低于 %2$lld"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld colors will drop below %2$lld after deduction"
           }
         }
       }
@@ -167,7 +218,14 @@
       }
     },
     "%lld 项目" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld projects"
+          }
+        }
+      }
     },
     "%lld 颗" : {
       "localizations" : {
@@ -186,14 +244,27 @@
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "%1$lldg（%2$lld 颗）"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lldg (%2$lld pcs)"
           }
         }
       }
     },
     "→" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "→"
+          }
+        }
+      }
     },
     "→%lld" : {
 
@@ -209,39 +280,63 @@
       }
     },
     "+%@ 颗" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+%@ pcs"
+          }
+        }
+      }
     },
     "+%lld" : {
 
     },
     "+%lld 颗" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+%lld pcs"
+          }
+        }
+      }
     },
     "×%lld" : {
 
     },
     "×1000" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "×1000"
+          }
+        }
+      }
     },
     "<%lld" : {
 
     },
     "💡 如果这些项目是从旧版备份导入的计划，建议关闭「恢复库存」" : {
-
-    },
-    "1. 先选择识别方式：可下载本地模型，也可配置云端 API" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1. Choose recognition method: download a local model or configure a cloud API"
+            "value" : "💡 If these projects were imported from an older backup, we recommend turning off \"Restore Stock\"."
           }
         }
       }
     },
     "1. 先选择识别方式：推荐配置云端 API（更准更快），也可下载本地模型离线使用" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. Choose a recognition method: cloud API is recommended (more accurate and faster), or download a local model for offline use."
+          }
+        }
+      }
     },
     "2. 裁切图纸，请只保留图纸下方豆量汇总" : {
       "localizations" : {
@@ -357,17 +452,6 @@
         }
       }
     },
-    "AI扫描帮助" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI Scan Help"
-          }
-        }
-      }
-    },
     "AI识别、库存等配置" : {
       "localizations" : {
         "en" : {
@@ -382,7 +466,14 @@
 
     },
     "API 地址" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Endpoint"
+          }
+        }
+      }
     },
     "API 配置" : {
       "localizations" : {
@@ -428,7 +519,14 @@
       }
     },
     "App 将仅使用本地存储，所有修改不会再同步到 iCloud。iCloud 上原有的数据不会被删除，可在「更多 → 数据与同步」中重新启用同步。需要关闭并重新打开 App 生效。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The app will use local storage only and changes will no longer sync to iCloud. Existing iCloud data will not be deleted, and sync can be re-enabled from More → Data & Sync. The app must be closed and reopened for this to take effect."
+          }
+        }
+      }
     },
     "B1,800" : {
 
@@ -447,7 +545,14 @@
       }
     },
     "CSV 格式：色号,克数" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CSV format: code,grams"
+          }
+        }
+      }
     },
     "CSV 格式示例" : {
       "localizations" : {
@@ -2076,7 +2181,14 @@
       }
     },
     "iCloud 暂时不可用，请稍后重试。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud is temporarily unavailable. Please try again later."
+          }
+        }
+      }
     },
     "iCloud 服务暂时不可用，请稍后再试。" : {
       "localizations" : {
@@ -2099,7 +2211,14 @@
       }
     },
     "iCloud 权限受限，无法完成同步。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud access is restricted; sync cannot complete."
+          }
+        }
+      }
     },
     "iCloud 状态暂时未知" : {
       "localizations" : {
@@ -2122,7 +2241,14 @@
       }
     },
     "Kimi 账户可能已欠费或额度已用尽，请前往 Moonshot 官网确认（非本应用问题）" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Kimi account may be past due or out of quota. Please check the Moonshot website (this is not an app issue)."
+          }
+        }
+      }
     },
     "Made with" : {
 
@@ -2132,39 +2258,6 @@
     },
     "MARD: %@" : {
 
-    },
-    "M月d日" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@"
-          }
-        }
-      }
-    },
-    "M月d日补豆" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Restock %@"
-          }
-        }
-      }
-    },
-    "M月d日订单" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Order %@"
-          }
-        }
-      }
     },
     "Timea" : {
 
@@ -2410,28 +2503,6 @@
     "YJ" : {
 
     },
-    "yyyy年M月" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@"
-          }
-        }
-      }
-    },
-    "yyyy年M月d日" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@"
-          }
-        }
-      }
-    },
     "上传封面" : {
       "localizations" : {
         "en" : {
@@ -2443,10 +2514,24 @@
       }
     },
     "上传成品图" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upload Finished Photo"
+          }
+        }
+      }
     },
     "上传成品图展示你的作品" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upload a finished photo to showcase your work"
+          }
+        }
+      }
     },
     "上次检查：%@" : {
       "localizations" : {
@@ -2488,17 +2573,6 @@
         }
       }
     },
-    "下载并使用" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Download & Use"
-          }
-        }
-      }
-    },
     "不再显示" : {
       "localizations" : {
         "en" : {
@@ -2529,17 +2603,6 @@
         }
       }
     },
-    "个" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "items"
-          }
-        }
-      }
-    },
     "为品牌" : {
       "localizations" : {
         "en" : {
@@ -2551,7 +2614,14 @@
       }
     },
     "主品牌:" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Primary Brand:"
+          }
+        }
+      }
     },
     "云端：品牌 %@ · 库存 %@ · 项目 %@ · 计划 %@ · 自定义 %@" : {
       "localizations" : {
@@ -2634,7 +2704,14 @@
       }
     },
     "仅会删除当前设备上的诊断日志文件，不会影响库存、项目或云同步数据。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This only deletes diagnostic logs on the current device. Stock, projects, and cloud-synced data are not affected."
+          }
+        }
+      }
     },
     "仅删除父项目" : {
       "localizations" : {
@@ -2716,17 +2793,6 @@
         }
       }
     },
-    "从直接补豆导出" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Exported from Direct Restock"
-          }
-        }
-      }
-    },
     "从自动备份恢复数据" : {
       "localizations" : {
         "en" : {
@@ -2737,44 +2803,32 @@
         }
       }
     },
-    "从补豆建议导出" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Exported from Restock Suggestions"
-          }
-        }
-      }
-    },
-    "从补豆建议粘贴" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Paste from Restock Suggestions"
-          }
-        }
-      }
-    },
     "以本地模式继续" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue in Local Mode"
+          }
+        }
+      }
     },
     "以本地模式继续？" : {
-
-    },
-    "以网格为准" : {
-
-    },
-    "低库存" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Low Stock"
+            "value" : "Continue in local mode?"
+          }
+        }
+      }
+    },
+    "以网格为准" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use Grid Value"
           }
         }
       }
@@ -2790,10 +2844,24 @@
       }
     },
     "低库存色号数" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Low-Stock Color Count"
+          }
+        }
+      }
     },
     "低库存详情" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Low-Stock Details"
+          }
+        }
+      }
     },
     "低库存阈值" : {
       "localizations" : {
@@ -2801,17 +2869,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Low Stock Threshold"
-          }
-        }
-      }
-    },
-    "低库存预警（建议补豆）" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Low Stock Warning (restock suggested)"
           }
         }
       }
@@ -2826,38 +2883,12 @@
         }
       }
     },
-    "余 %lld 颗" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld pcs remaining"
-          }
-        }
-      }
-    },
     "使用" : {
-
-    },
-    "使用帮助" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Help"
-          }
-        }
-      }
-    },
-    "使用技巧" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tips"
+            "value" : "Use"
           }
         }
       }
@@ -2878,17 +2909,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Use This Image"
-          }
-        }
-      }
-    },
-    "使用此模型" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Use This Model"
           }
         }
       }
@@ -2974,10 +2994,24 @@
       }
     },
     "保存记录" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save Record"
+          }
+        }
+      }
     },
     "修改" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit"
+          }
+        }
+      }
     },
     "修改品牌" : {
       "localizations" : {
@@ -3030,7 +3064,14 @@
       }
     },
     "先把矩形大致框住网格区域，输好行列数，点这个按钮算法会精确对齐 4 个角" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "First roughly enclose the grid area with the rectangle and enter the row/column counts; tap this button and the algorithm will precisely align the 4 corners."
+          }
+        }
+      }
     },
     "入库品牌:" : {
       "localizations" : {
@@ -3063,7 +3104,14 @@
       }
     },
     "全选所有 (%lld色)" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select All (%lld colors)"
+          }
+        }
+      }
     },
     "全选本系" : {
       "localizations" : {
@@ -3206,16 +3254,44 @@
       }
     },
     "关闭 iCloud 同步？" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disable iCloud sync?"
+          }
+        }
+      }
     },
     "关闭 iCloud 同步（需重启）" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disable iCloud Sync (Requires Restart)"
+          }
+        }
+      }
     },
     "关闭后 App 将不再读写 iCloud，仅使用本地存储。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once disabled, the app will stop reading from and writing to iCloud and use local storage only."
+          }
+        }
+      }
     },
     "关闭并重启 App" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disable and Restart App"
+          }
+        }
+      }
     },
     "关闭时会累加库存数量、跳过同名项目" : {
       "localizations" : {
@@ -3288,7 +3364,14 @@
       }
     },
     "切换" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch"
+          }
+        }
+      }
     },
     "创建" : {
       "localizations" : {
@@ -3311,7 +3394,14 @@
       }
     },
     "创建品牌" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create Brand"
+          }
+        }
+      }
     },
     "创建品牌时每种颜色的初始库存数量" : {
       "localizations" : {
@@ -3394,7 +3484,14 @@
       }
     },
     "删除后会释放本地存储空间；如果之后还要使用，需要重新下载。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deletion frees local storage; you will need to download again to use this model later."
+          }
+        }
+      }
     },
     "删除品牌" : {
       "localizations" : {
@@ -3417,7 +3514,14 @@
       }
     },
     "删除品牌将同时删除该品牌下的所有库存记录，此操作不可撤销。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleting the brand will also delete all stock records under it. This action cannot be undone."
+          }
+        }
+      }
     },
     "删除子项目" : {
       "localizations" : {
@@ -3499,45 +3603,12 @@
         }
       }
     },
-    "剪贴板为空" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clipboard is empty"
-          }
-        }
-      }
-    },
-    "剩余" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remaining"
-          }
-        }
-      }
-    },
     "剩余 %lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remaining %lld"
-          }
-        }
-      }
-    },
-    "功能介绍与使用技巧" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Features & Tips"
           }
         }
       }
@@ -3560,7 +3631,14 @@
       }
     },
     "加载中..." : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading..."
+          }
+        }
+      }
     },
     "加载图片中..." : {
       "localizations" : {
@@ -3568,17 +3646,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loading image..."
-          }
-        }
-      }
-    },
-    "包含所有%lld种颜色" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Includes all %lld colors"
           }
         }
       }
@@ -3643,17 +3710,6 @@
         }
       }
     },
-    "历史用量+选中计划，排名前20" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Historical usage + selected plans, top 20"
-          }
-        }
-      }
-    },
     "历史记录" : {
       "localizations" : {
         "en" : {
@@ -3665,7 +3721,14 @@
       }
     },
     "原色" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Original Color"
+          }
+        }
+      }
     },
     "去下载" : {
       "localizations" : {
@@ -3688,7 +3751,14 @@
       }
     },
     "发现 %lld 个重复色号，已自动合并数量" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Found %lld duplicate color codes; quantities have been merged automatically."
+          }
+        }
+      }
     },
     "取消" : {
       "localizations" : {
@@ -3751,7 +3821,14 @@
       }
     },
     "取消隐藏 %lld 个色号" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unhide %lld colors"
+          }
+        }
+      }
     },
     "取消隐藏时，色号将恢复为此库存数量" : {
       "localizations" : {
@@ -3794,7 +3871,14 @@
       }
     },
     "可用相似色" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Available Similar Colors"
+          }
+        }
+      }
     },
     "各品牌单独库存" : {
       "localizations" : {
@@ -3877,7 +3961,14 @@
       }
     },
     "合并预览" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge Preview"
+          }
+        }
+      }
     },
     "名称" : {
       "localizations" : {
@@ -3900,92 +3991,11 @@
       }
     },
     "启用 iCloud 同步" : {
-
-    },
-    "周一" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mon"
-          }
-        }
-      }
-    },
-    "周三" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wed"
-          }
-        }
-      }
-    },
-    "周二" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tue"
-          }
-        }
-      }
-    },
-    "周五" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fri"
-          }
-        }
-      }
-    },
-    "周六" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sat"
-          }
-        }
-      }
-    },
-    "周四" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Thu"
-          }
-        }
-      }
-    },
-    "周日" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sun"
-          }
-        }
-      }
-    },
-    "咪小窝" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mixiaowo"
+            "value" : "Enable iCloud Sync"
           }
         }
       }
@@ -4001,10 +4011,24 @@
       }
     },
     "品牌: %@" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brand: %@"
+          }
+        }
+      }
     },
     "品牌不存在" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brand does not exist"
+          }
+        }
+      }
     },
     "品牌信息" : {
       "localizations" : {
@@ -4117,7 +4141,14 @@
       }
     },
     "四边形" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quadrilateral"
+          }
+        }
+      }
     },
     "固定" : {
       "localizations" : {
@@ -4329,28 +4360,6 @@
         }
       }
     },
-    "如果你想知道如何配置 API，可以参考小红书教程。" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "If you want to know how to configure the API, check the Xiaohongshu tutorial."
-          }
-        }
-      }
-    },
-    "如果这些项目是从旧版备份导入的计划，建议关闭「恢复库存」" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "If these projects were imported from old backups, consider disabling 'Restore Stock'"
-          }
-        }
-      }
-    },
     "子项目" : {
       "localizations" : {
         "en" : {
@@ -4382,26 +4391,11 @@
       }
     },
     "完成日期" : {
-
-    },
-    "导入 %lld 个项目" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld projects imported"
-          }
-        }
-      }
-    },
-    "导入 %lld 条库存记录" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld stock records imported"
+            "value" : "Completion Date"
           }
         }
       }
@@ -4537,26 +4531,11 @@
       }
     },
     "导出到运输中（%lldg）" : {
-
-    },
-    "导出失败: %@" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Export failed: %@"
-          }
-        }
-      }
-    },
-    "导出失败：%@" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Export failed: %@"
+            "value" : "Export to Shipments (%lldg)"
           }
         }
       }
@@ -4625,8 +4604,14 @@
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "将「%1$@」合并到「%2$@」，源品牌的库存、项目和购买记录将全部转移到目标品牌，此操作不可撤销。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge \"%1$@\" into \"%2$@\". All stock, projects, and purchase records from the source brand will be transferred to the target brand. This action cannot be undone."
           }
         }
       }
@@ -4635,8 +4620,14 @@
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "将「%1$@」所有颜色的库存重置为 %2$@ 颗，使用记录也将清零。此操作不可撤销。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset stock for all colors of \"%1$@\" to %2$@ pcs and clear usage records. This action cannot be undone."
           }
         }
       }
@@ -4645,8 +4636,14 @@
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "将从库存中扣减 %1$lld 颗豆子，共 %2$lld 种颜色。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld beads across %2$lld colors will be deducted from stock."
           }
         }
       }
@@ -4655,8 +4652,14 @@
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "将从库存中扣减 %1$lld 颗豆子，共 %2$lld 种颜色。\n\n⚠️ 以下 %3$lld 种颜色扣除后库存将为负数：\n%4$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld beads across %2$lld colors will be deducted from stock.\n\n⚠️ The following %3$lld colors will have negative stock after deduction:\n%4$@"
           }
         }
       }
@@ -4675,8 +4678,14 @@
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "将创建包含 %1$lld 颗豆子（%2$lld 种颜色）的计划项目。执行时需要选择品牌。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A planned project containing %1$lld beads (%2$lld colors) will be created. You will need to choose a brand when executing it."
           }
         }
       }
@@ -4685,8 +4694,14 @@
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "将取消隐藏 %1$lld 个色号，库存将恢复为 %2$@ 颗"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld colors will be unhidden, with stock restored to %2$@ pcs."
           }
         }
       }
@@ -4712,14 +4727,27 @@
       }
     },
     "将所有颜色的库存重置为 %@ 颗，使用记录也将清零。此操作不可撤销。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset stock for all colors to %@ pcs and clear usage records. This action cannot be undone."
+          }
+        }
+      }
     },
     "将把 %lld 种颜色共 %lld 颗豆子添加到「%@」的库存中。" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "将把 %1$lld 种颜色共 %2$lld 颗豆子添加到「%3$@」的库存中。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld colors totaling %2$lld beads will be added to the stock of \"%3$@\"."
           }
         }
       }
@@ -4745,16 +4773,44 @@
       }
     },
     "将添加到「%@」" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Will be added to \"%@\""
+          }
+        }
+      }
     },
     "将清除「%@」所有颜色的使用记录，库存数量不变。此操作不可撤销。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usage records for all colors of \"%@\" will be cleared; stock quantities are unchanged. This action cannot be undone."
+          }
+        }
+      }
     },
     "将清除所有颜色的使用记录，库存数量不变。此操作不可撤销。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usage records for all colors will be cleared; stock quantities are unchanged. This action cannot be undone."
+          }
+        }
+      }
     },
     "将解除等待屏蔽，可浏览当前可见的数据。为避免覆盖 iCloud 上未读取到的数据，本次会话不会保存任何修改；下次启动或 iCloud 恢复后会自动重试加载。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The wait block will be lifted so you can browse currently visible data. To avoid overwriting unread iCloud data, no changes will be saved this session; the app will retry loading on next launch or when iCloud recovers."
+          }
+        }
+      }
     },
     "尺寸: %lld × %lld" : {
       "localizations" : {
@@ -4817,10 +4873,24 @@
       }
     },
     "已修改，关闭并重新打开 App 后生效。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changed — takes effect after closing and reopening the app."
+          }
+        }
+      }
     },
     "已关闭 iCloud 同步" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud sync disabled"
+          }
+        }
+      }
     },
     "已复制" : {
       "localizations" : {
@@ -4903,10 +4973,24 @@
       }
     },
     "已自动回退为本地存储，云端数据将无法读取，本地数据可继续使用。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatically fell back to local storage. Cloud data is unavailable, but local data remains usable."
+          }
+        }
+      }
     },
     "已覆盖" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overwritten"
+          }
+        }
+      }
     },
     "已达标 ✓" : {
       "localizations" : {
@@ -4932,8 +5016,14 @@
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "已选 %1$lld 个计划，低库存阈值: %2$lld"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld plans selected, low-stock threshold: %2$lld"
           }
         }
       }
@@ -4988,34 +5078,12 @@
         }
       }
     },
-    "已隐藏的色号" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hidden Colors"
-          }
-        }
-      }
-    },
     "已隐藏的色号 (%lld)" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hidden Colors (%lld)"
-          }
-        }
-      }
-    },
-    "帮助" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Help"
           }
         }
       }
@@ -5084,17 +5152,6 @@
         }
       }
     },
-    "库存不足（需补豆）" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insufficient Stock (restock needed)"
-          }
-        }
-      }
-    },
     "库存保持不变" : {
       "localizations" : {
         "en" : {
@@ -5145,17 +5202,6 @@
         }
       }
     },
-    "库存数据（色号、数量、已用）" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stock data (code, quantity, used)"
-          }
-        }
-      }
-    },
     "库存来源" : {
       "localizations" : {
         "en" : {
@@ -5172,17 +5218,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stock Check"
-          }
-        }
-      }
-    },
-    "库存管理" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inventory Management"
           }
         }
       }
@@ -5257,17 +5292,6 @@
         }
       }
     },
-    "建议初始库存设为1000颗/色\n识别有水印图片时，可手动调整结果\n定期导出数据做备份\n低库存颜色会红色标识" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recommended initial stock: 1000 pcs/color\nFor watermarked images, manually adjust results\nRegularly export data for backup\nLow stock colors are highlighted in red"
-          }
-        }
-      }
-    },
     "建议按机型选择：iPhone 14 及以上优先尝试 0.8B，iPhone 15 及以上再考虑 2B。" : {
       "localizations" : {
         "en" : {
@@ -5289,7 +5313,14 @@
       }
     },
     "开始标定" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Calibration"
+          }
+        }
+      }
     },
     "归档" : {
       "localizations" : {
@@ -5322,10 +5353,24 @@
       }
     },
     "当前仅使用本地存储，iCloud 上原有的数据未删除。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Currently using local storage only; existing iCloud data has not been deleted."
+          }
+        }
+      }
     },
     "当前使用 %@ 本地识别。无需 API，但速度相对更慢，也可能引起发热。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Currently using %@ on-device recognition. No API needed, but it is slower and may cause the device to heat up."
+          }
+        }
+      }
     },
     "当前品牌" : {
       "localizations" : {
@@ -5347,17 +5392,6 @@
         }
       }
     },
-    "当前已选" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Currently Selected"
-          }
-        }
-      }
-    },
     "当前状态" : {
       "localizations" : {
         "en" : {
@@ -5369,7 +5403,14 @@
       }
     },
     "当前设备不支持本地模型，需要搭载 A14 及以上芯片的设备" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On-device models are not supported on this device. An A14 or newer chip is required."
+          }
+        }
+      }
     },
     "当前设备或账号限制了 iCloud 使用。" : {
       "localizations" : {
@@ -5472,7 +5513,14 @@
       }
     },
     "待导入 (%lld 种颜色)" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pending Import (%lld colors)"
+          }
+        }
+      }
     },
     "待扣减" : {
       "localizations" : {
@@ -5520,17 +5568,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Total Quantity"
-          }
-        }
-      }
-    },
-    "总用量 %lld" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Total usage %lld"
           }
         }
       }
@@ -5636,10 +5673,24 @@
       }
     },
     "成功导入 %lld 种颜色的库存" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stock for %lld colors imported successfully"
+          }
+        }
+      }
     },
     "成品展示" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finished Work"
+          }
+        }
+      }
     },
     "成品日历" : {
       "localizations" : {
@@ -5721,30 +5772,15 @@
         }
       }
     },
-    "打开小红书教程" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open Xiaohongshu Tutorial"
-          }
-        }
-      }
-    },
-    "扣减后库存为负" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Negative stock after deduction"
-          }
-        }
-      }
-    },
     "扣减审核" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deduction Review"
+          }
+        }
+      }
     },
     "扣减库存" : {
       "localizations" : {
@@ -5757,7 +5793,14 @@
       }
     },
     "扣减详情" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deduction Details"
+          }
+        }
+      }
     },
     "执行" : {
       "localizations" : {
@@ -5770,7 +5813,14 @@
       }
     },
     "执行合并" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Execute Merge"
+          }
+        }
+      }
     },
     "执行扣减" : {
       "localizations" : {
@@ -5842,22 +5892,25 @@
         }
       }
     },
-    "拍照或选择色号表格图片\n自动识别色号和数量\n可手动编辑识别结果\n确认后自动从库存扣减" : {
-      "extractionState" : "stale",
+    "拼图模式" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Take a photo or select a color chart image\nAutomatically recognize codes and quantities\nManually edit recognition results\nConfirm to automatically deduct from stock"
+            "value" : "Pattern Mode"
           }
         }
       }
     },
-    "拼图模式" : {
-
-    },
     "按可用库存从少到多排序" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sort by available stock, low to high"
+          }
+        }
+      }
     },
     "按日期查看完成的作品" : {
       "localizations" : {
@@ -5910,7 +5963,14 @@
       }
     },
     "按行列定位网格" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Locate Grid by Rows/Columns"
+          }
+        }
+      }
     },
     "推荐 iPhone 14 及以上机型优先选择，门槛更低，下载更小。" : {
       "localizations" : {
@@ -6053,7 +6113,14 @@
       }
     },
     "支持的列名：色号/颜色/color/code，数量/库存/quantity/stock 等" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supported column names: code/color, quantity/stock, etc."
+          }
+        }
+      }
     },
     "支持的数据" : {
       "localizations" : {
@@ -6143,24 +6210,41 @@
       }
     },
     "数据库初始化失败，当前为临时模式，数据不会被保存。请尝试重启应用或重新安装。" : {
-
-    },
-    "数据库已损坏并被重置，历史数据可能丢失。" : {
-
-    },
-    "数据库异常" : {
-
-    },
-    "数据库未就绪，请重启应用后再试。" : {
-
-    },
-    "数据格式错误：至少需要标题行和一行数据" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Data format error: at least a header row and one data row are required"
+            "value" : "Database failed to initialize; the app is running in temporary mode and data will not be saved. Try restarting or reinstalling the app."
+          }
+        }
+      }
+    },
+    "数据库已损坏并被重置，历史数据可能丢失。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The database was corrupted and has been reset; historical data may be lost."
+          }
+        }
+      }
+    },
+    "数据库异常" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database Error"
+          }
+        }
+      }
+    },
+    "数据库未就绪，请重启应用后再试。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database is not ready. Please restart the app and try again."
           }
         }
       }
@@ -6185,34 +6269,12 @@
         }
       }
     },
-    "文件中没有找到可导入的数据" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No importable data found in file"
-          }
-        }
-      }
-    },
     "文件需包含「色号」和「数量」两列" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "File must contain 'Code' and 'Quantity' columns"
-          }
-        }
-      }
-    },
-    "新增 %lld 个品牌" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld new brands imported"
           }
         }
       }
@@ -6238,7 +6300,14 @@
       }
     },
     "新计划名称" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Plan Name"
+          }
+        }
+      }
     },
     "无可用色号" : {
       "localizations" : {
@@ -6310,45 +6379,12 @@
         }
       }
     },
-    "无法解析 JSON 格式" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cannot parse JSON format"
-          }
-        }
-      }
-    },
-    "无法访问文件" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cannot access file"
-          }
-        }
-      }
-    },
     "无法识别 CSV 列：需要包含「色号」和「数量」列" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cannot identify CSV columns: must include 'Code' and 'Quantity' columns"
-          }
-        }
-      }
-    },
-    "无法读取文件：%@" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cannot read file: %@"
           }
         }
       }
@@ -6373,34 +6409,12 @@
         }
       }
     },
-    "无法选择文件：%@" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cannot select file: %@"
-          }
-        }
-      }
-    },
     "无需补豆" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "No Restock Needed"
-          }
-        }
-      }
-    },
-    "日志导出、扫描帮助与使用说明" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Log export, scan help & instructions"
           }
         }
       }
@@ -6443,10 +6457,24 @@
       }
     },
     "暂无%@体系的品牌" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No brands in the %@ color system"
+          }
+        }
+      }
     },
     "暂无%@体系的品牌，请先创建" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No brands in the %@ color system — please create one first"
+          }
+        }
+      }
     },
     "暂无使用记录" : {
       "localizations" : {
@@ -6509,7 +6537,14 @@
       }
     },
     "暂无该色系的品牌，请先创建品牌" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No brands in this color system — please create a brand first"
+          }
+        }
+      }
     },
     "暂无运输中的订单" : {
       "localizations" : {
@@ -6581,19 +6616,15 @@
         }
       }
     },
-    "更新失败，请重试" : {
-      "extractionState" : "stale",
+    "有 %lld 个色号无法匹配颜色数据，已显示原始色号" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Update failed, please retry"
+            "value" : "%lld color codes could not be matched to color data; original codes are shown."
           }
         }
       }
-    },
-    "有 %lld 个色号无法匹配颜色数据，已显示原始色号" : {
-
     },
     "未匹配" : {
       "localizations" : {
@@ -6615,22 +6646,25 @@
         }
       }
     },
-    "未找到有效数据" : {
-      "extractionState" : "stale",
+    "未找到相似色" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No valid data found"
+            "value" : "No similar colors found"
           }
         }
       }
     },
-    "未找到相似色" : {
-
-    },
     "未标定网格" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grid Not Calibrated"
+          }
+        }
+      }
     },
     "未登录 iCloud" : {
       "localizations" : {
@@ -6653,7 +6687,14 @@
       }
     },
     "未登录 iCloud，可能无法读取此前同步到云端的数据。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not signed in to iCloud; data previously synced to the cloud may be unreadable."
+          }
+        }
+      }
     },
     "未知" : {
       "localizations" : {
@@ -6675,19 +6716,15 @@
         }
       }
     },
-    "未知错误" : {
-      "extractionState" : "stale",
+    "未能可靠识别。先把矩形对到图纸边缘，再点「区域内检测」" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unknown Error"
+            "value" : "Unable to detect reliably. Align the rectangle with the pattern edges first, then tap \"Detect in Region\"."
           }
         }
       }
-    },
-    "未能可靠识别。先把矩形对到图纸边缘，再点「区域内检测」" : {
-
     },
     "未选中的颜色将被隐藏，可在品牌设置中恢复" : {
       "localizations" : {
@@ -6720,26 +6757,11 @@
       }
     },
     "查找相似色" : {
-
-    },
-    "查看所有颜色的库存状态\n点击颜色卡片可编辑库存\n支持按品牌色号显示\n可搜索任意品牌的色号" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "View stock status for all colors\nTap color cards to edit stock\nDisplay by brand color codes\nSearch any brand's color codes"
-          }
-        }
-      }
-    },
-    "查看扫描识别使用说明" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "View scan recognition instructions"
+            "value" : "Find Similar Colors"
           }
         }
       }
@@ -6754,25 +6776,35 @@
         }
       }
     },
-    "查看整体库存使用情况\n使用量排行榜\n低库存预警\n项目历史记录" : {
-      "extractionState" : "stale",
+    "查看无效色号 (%lld 个)" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "View overall inventory usage\nUsage rankings\nLow stock warnings\nProject history"
+            "value" : "View Invalid Codes (%lld)"
           }
         }
       }
     },
-    "查看无效色号 (%lld 个)" : {
-
-    },
     "查看更多..." : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View More..."
+          }
+        }
+      }
     },
     "标定网格" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calibrate Grid"
+          }
+        }
+      }
     },
     "检查各品牌库存是否满足此计划需求" : {
       "localizations" : {
@@ -6815,7 +6847,14 @@
       }
     },
     "正在下载 %@" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading %@"
+          }
+        }
+      }
     },
     "正在加载数据..." : {
       "localizations" : {
@@ -6853,17 +6892,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Parsing..."
-          }
-        }
-      }
-    },
-    "此操作不支持撤回" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This operation does not support undo"
           }
         }
       }
@@ -6914,17 +6942,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No Low Stock Colors"
-          }
-        }
-      }
-    },
-    "没有新数据需要导入" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No new data to import"
           }
         }
       }
@@ -7150,21 +7167,31 @@
       }
     },
     "清除高亮" : {
-
-    },
-    "源品牌（将被合并删除）" : {
-
-    },
-    "源品牌的所有数据将转移到目标品牌，源品牌随后被删除。" : {
-
-    },
-    "漫漫" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Manman"
+            "value" : "Clear Highlights"
+          }
+        }
+      }
+    },
+    "源品牌（将被合并删除）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Source Brand (will be merged and deleted)"
+          }
+        }
+      }
+    },
+    "源品牌的所有数据将转移到目标品牌，源品牌随后被删除。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All data from the source brand will be transferred to the target brand, and the source brand will then be deleted."
           }
         }
       }
@@ -7180,7 +7207,14 @@
       }
     },
     "点击「以网格为准」将该色号的图例用量更新为网格识别的数量。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap \"Use Grid Value\" to update this code's legend quantity to the value detected from the grid."
+          }
+        }
+      }
     },
     "点击上方按钮创建您的第一个品牌" : {
       "localizations" : {
@@ -7253,15 +7287,11 @@
       }
     },
     "父项目" : {
-
-    },
-    "版本 %@" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Version %@"
+            "value" : "Parent Project"
           }
         }
       }
@@ -7346,17 +7376,6 @@
         }
       }
     },
-    "用量较大（供参考）" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "High Usage (for reference)"
-          }
-        }
-      }
-    },
     "目前啃豆小仓无法直接识别你的「图纸」" : {
       "localizations" : {
         "en" : {
@@ -7368,7 +7387,14 @@
       }
     },
     "目标品牌（保留）" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Target Brand (kept)"
+          }
+        }
+      }
     },
     "直接补豆" : {
       "localizations" : {
@@ -7391,7 +7417,14 @@
       }
     },
     "相似色可用：" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Similar colors available:"
+          }
+        }
+      }
     },
     "相册" : {
       "localizations" : {
@@ -7399,17 +7432,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Photo Library"
-          }
-        }
-      }
-    },
-    "盼盼" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Panpan"
           }
         }
       }
@@ -7425,7 +7447,14 @@
       }
     },
     "矩形" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rectangle"
+          }
+        }
+      }
     },
     "确定" : {
       "localizations" : {
@@ -7438,13 +7467,34 @@
       }
     },
     "确定要删除「%@」吗？该品牌下的所有库存数据将被永久删除。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete \"%@\"? All stock data under this brand will be permanently deleted."
+          }
+        }
+      }
     },
     "确定要删除自定义色号「%@」吗？\n删除后将无法恢复，且该颜色在所有品牌中的库存记录也将被删除。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete the custom color \"%@\"?\nThis cannot be undone, and stock records for this color across all brands will also be deleted."
+          }
+        }
+      }
     },
     "确定要删除这个备份吗？" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this backup?"
+          }
+        }
+      }
     },
     "确定要删除这条购买记录吗？此操作不可撤销。" : {
       "localizations" : {
@@ -7487,7 +7537,14 @@
       }
     },
     "确定要隐藏 %@ 吗？\n\n库存将被清零，该色号不会出现在库存列表和低库存提醒中。可在品牌设置 > 隐藏色号管理中恢复。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide %@?\n\nStock will be set to zero, and this code will no longer appear in the stock list or low-stock alerts. You can restore it from Brand Settings > Hidden Colors."
+          }
+        }
+      }
     },
     "确认" : {
       "localizations" : {
@@ -7520,7 +7577,14 @@
       }
     },
     "确认合并" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm Merge"
+          }
+        }
+      }
     },
     "确认导入" : {
       "localizations" : {
@@ -7543,7 +7607,14 @@
       }
     },
     "确认执行" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm Execution"
+          }
+        }
+      }
     },
     "确认撤回" : {
       "localizations" : {
@@ -7596,7 +7667,14 @@
       }
     },
     "移除图片" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Image"
+          }
+        }
+      }
     },
     "第 %lld 行列数不足" : {
       "localizations" : {
@@ -7629,7 +7707,14 @@
       }
     },
     "管理品牌" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage Brands"
+          }
+        }
+      }
     },
     "粘贴失败" : {
       "localizations" : {
@@ -7722,7 +7807,14 @@
       }
     },
     "继续浏览（不保存修改）" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue Browsing (Without Saving)"
+          }
+        }
+      }
     },
     "综合所有品牌库存后的检查结果" : {
       "localizations" : {
@@ -7795,15 +7887,11 @@
       }
     },
     "缺 %lld" : {
-
-    },
-    "缺 %lld 颗" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Short %lld pcs"
+            "value" : "Short %lld"
           }
         }
       }
@@ -7839,10 +7927,24 @@
       }
     },
     "网格与图例有 %lld 处差异" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld discrepancies between grid and legend"
+          }
+        }
+      }
     },
     "网格识别成功，请检查是否对齐" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grid detected successfully — please verify alignment"
+          }
+        }
+      }
     },
     "网络不可用" : {
       "localizations" : {
@@ -7875,7 +7977,14 @@
       }
     },
     "自动检测中..." : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-detecting..."
+          }
+        }
+      }
     },
     "自定义" : {
       "localizations" : {
@@ -7947,17 +8056,6 @@
         }
       }
     },
-    "色" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "colors"
-          }
-        }
-      }
-    },
     "色号" : {
       "localizations" : {
         "en" : {
@@ -8008,17 +8106,6 @@
         }
       }
     },
-    "色号已存在或与现有颜色冲突" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Color code already exists or conflicts with existing colors"
-          }
-        }
-      }
-    },
     "色号管理" : {
       "localizations" : {
         "en" : {
@@ -8050,7 +8137,14 @@
       }
     },
     "若 iCloud 空间已满或同步异常，可前往「设置 → Apple ID → iCloud」检查空间，或选择以本地模式继续。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If iCloud is out of space or sync is broken, go to Settings → Apple ID → iCloud to check, or choose to continue in local mode."
+          }
+        }
+      }
     },
     "补豆建议" : {
       "localizations" : {
@@ -8150,7 +8244,14 @@
       }
     },
     "解锁网格" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock Grid"
+          }
+        }
+      }
     },
     "计划" : {
       "localizations" : {
@@ -8273,7 +8374,14 @@
       }
     },
     "识别差异 (%lld)" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recognition Differences (%lld)"
+          }
+        }
+      }
     },
     "识别方式" : {
       "localizations" : {
@@ -8305,17 +8413,6 @@
         }
       }
     },
-    "诊断与帮助" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diagnostics & Help"
-          }
-        }
-      }
-    },
     "诊断工具" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8343,28 +8440,45 @@
         }
       }
     },
-    "诊断日志已清空。" : {
-      "extractionState" : "stale",
+    "该品牌可能已被删除或同步丢失" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Diagnostic logs cleared."
+            "value" : "This brand may have been deleted or lost during sync"
           }
         }
       }
     },
-    "该品牌可能已被删除或同步丢失" : {
-
-    },
     "该项目包含子项目，请选择处理方式：\n• 删除全部：同时删除所有子项目\n• 仅删除父项目：子项目变为独立项目" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This project contains sub-projects. Choose how to handle them:\n• Delete All: delete all sub-projects as well\n• Delete Parent Only: sub-projects become standalone projects"
+          }
+        }
+      }
     },
     "详情" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        }
+      }
     },
     "请上滑关闭 App 并重新打开，本地模式即可生效。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe up to close the app, then reopen it for local mode to take effect."
+          }
+        }
+      }
     },
     "请先下载本地模型" : {
       "localizations" : {
@@ -8477,7 +8591,14 @@
       }
     },
     "请确认网格对齐，必要时手动微调" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm grid alignment and fine-tune manually if needed"
+          }
+        }
+      }
     },
     "请稍后重试" : {
       "localizations" : {
@@ -8485,28 +8606,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Please retry later"
-          }
-        }
-      }
-    },
-    "请输入有效的颜色值" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Please enter a valid color value"
-          }
-        }
-      }
-    },
-    "请输入色号" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Please enter a color code"
           }
         }
       }
@@ -8582,15 +8681,11 @@
       }
     },
     "辅助线" : {
-
-    },
-    "输入任意品牌色号查询\n自动显示对应的其他品牌色号\n支持 MARD、vivid、漫漫、卡卡\n点击可复制色号" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enter any brand code to search\nAutomatically show corresponding codes from other brands\nSupports MARD, vivid, Manman, KaKa\nTap to copy code"
+            "value" : "Guides"
           }
         }
       }
@@ -8706,7 +8801,14 @@
       }
     },
     "这将用 %@ 的备份替换当前所有数据。此操作不可撤销。" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This will replace all current data with the backup from %@. This action cannot be undone."
+          }
+        }
+      }
     },
     "退回为计划" : {
       "localizations" : {
@@ -8714,17 +8816,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Return to Plan"
-          }
-        }
-      }
-    },
-    "退回失败，请重试" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Return failed, please retry"
           }
         }
       }
@@ -8790,10 +8881,24 @@
       }
     },
     "选择图片或拍照" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Photo or Take One"
+          }
+        }
+      }
     },
     "选择完成日期" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick Completion Date"
+          }
+        }
+      }
     },
     "选择导入内容" : {
       "localizations" : {
@@ -8836,7 +8941,14 @@
       }
     },
     "选择日期" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick Date"
+          }
+        }
+      }
     },
     "选择由「导出库存数据」功能导出的 CSV 或 JSON 文件" : {
       "localizations" : {
@@ -8899,10 +9011,24 @@
       }
     },
     "重新标定" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recalibrate"
+          }
+        }
+      }
     },
     "重新粘贴" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste Again"
+          }
+        }
+      }
     },
     "重新裁切" : {
       "localizations" : {
@@ -8975,7 +9101,14 @@
       }
     },
     "锁定网格（仅平移图片）" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lock Grid (Pan Image Only)"
+          }
+        }
+      }
     },
     "错误" : {
       "localizations" : {
@@ -9127,17 +9260,6 @@
         }
       }
     },
-    "项目封面" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Project Cover"
-          }
-        }
-      }
-    },
     "项目已被删除，无法撤回" : {
       "localizations" : {
         "en" : {
@@ -9159,7 +9281,14 @@
       }
     },
     "项目无图片" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No project image"
+          }
+        }
+      }
     },
     "项目缩略图" : {
       "localizations" : {
@@ -9177,17 +9306,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Project Records"
-          }
-        }
-      }
-    },
-    "项目记录（包含详细用量）" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Project records (with detailed usage)"
           }
         }
       }
@@ -9228,17 +9346,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "pcs"
-          }
-        }
-      }
-    },
-    "颜色" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Colors"
           }
         }
       }
