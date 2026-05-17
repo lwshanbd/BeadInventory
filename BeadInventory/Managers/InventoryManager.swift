@@ -1991,6 +1991,31 @@ class InventoryManager: ObservableObject {
         return nil
     }
 
+    /// 严格按 mardCode 匹配，不回退到其他品牌字段。
+    /// 用于已经被 recognizeImage 等流程归一化为 mardCode 的存储值，避免无品牌偏好查询
+    /// 时跨品牌乱碰（如 Kaka 模式下原始字符串 "B02" 撞到 COCO 的 cocoCode "B02"）。
+    func findColor(byMardCode code: String) -> BeadColor? {
+        let code = code.uppercased().trimmingCharacters(in: .whitespaces)
+
+        if let match = beadColors.first(where: { $0.mardCode.uppercased() == code }) {
+            return match
+        }
+
+        // 自定义色号沿用 findColor(byCode:) 的兼容键（# 前缀 / 裸色号 / 旧 C_ 前缀）
+        if let custom = customColors.first(where: { custom in
+            let customMardCode = custom.mardCode.uppercased()
+            let customColorCode = custom.colorCode.uppercased()
+            let oldMardCode = "C_\(customColorCode)"
+            return customMardCode == code ||
+                   customColorCode == code ||
+                   oldMardCode == code
+        }) {
+            return custom.toBeadColor()
+        }
+
+        return nil
+    }
+
     func findColorIndex(byCode code: String) -> Int? {
         let code = code.uppercased().trimmingCharacters(in: .whitespaces)
 
