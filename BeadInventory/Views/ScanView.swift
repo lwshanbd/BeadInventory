@@ -88,7 +88,8 @@ struct ScanView: View {
             let currentStock = stock?.available ?? 0
             if currentStock < item.quantity {
                 // 显示当前扫描色号体系的色号（而非内部 mardCode）
-                let displayCode = inventoryManager.findColor(byCode: item.colorCode)?.displayCode(for: scanColorSystem) ?? item.colorCode
+                // 严格按 mardCode 查，避免未匹配的原始色号跨品牌乱碰（如 Kaka "B02" 撞到 COCO B02 显示成 H14）
+                let displayCode = inventoryManager.findColor(byMardCode: item.colorCode)?.displayCode(for: scanColorSystem) ?? item.colorCode
                 result.append((colorCode: displayCode, currentStock: currentStock, deductAmount: item.quantity))
             }
         }
@@ -522,9 +523,17 @@ struct ScanView: View {
                 await MainActor.run {
                     recognizedItems = items.map { item in
                         // 非 MARD 体系时，AI 返回的是该品牌的色号（如卡卡的 B3），需转为内部 mardCode
-                        if colorSystem != .mard,
-                           let color = inventoryManager.findColor(byCode: item.colorCode, preferSystem: colorSystem) {
-                            return RecognizedItem(colorCode: color.mardCode, quantity: item.quantity)
+                        if colorSystem != .mard {
+                            if let color = inventoryManager.findColor(byCode: item.colorCode, preferSystem: colorSystem) {
+                                return RecognizedItem(colorCode: color.mardCode, quantity: item.quantity)
+                            }
+                            // 兜底：LLM 可能给出带前导零的格式（如 "B02"），而数据里实际存的是 "B2"。
+                            // 去掉字母前缀后的前导零再查一次。
+                            let normalized = Self.stripLeadingZerosFromBrandCode(item.colorCode)
+                            if normalized != item.colorCode,
+                               let color = inventoryManager.findColor(byCode: normalized, preferSystem: colorSystem) {
+                                return RecognizedItem(colorCode: color.mardCode, quantity: item.quantity)
+                            }
                         }
                         return RecognizedItem(colorCode: item.colorCode, quantity: item.quantity)
                     }
@@ -628,6 +637,17 @@ struct ScanView: View {
         guard !failedCodes.isEmpty else { return }
         deductionFailureMessage = "以下 \(failedCodes.count) 种颜色扣减失败：\n\(failedCodes.joined(separator: "、"))"
         showingDeductionFailure = true
+    }
+
+    /// 去掉"字母前缀 + 前导零 + 数字"形式中的前导零（如 "B02" → "B2"、"P05" → "P5"）。
+    /// 仅在严格匹配此形态时生效；纯数字、含特殊字符或 "B0" 这种归零后没有数字的情况保持原样。
+    private static func stripLeadingZerosFromBrandCode(_ code: String) -> String {
+        let trimmed = code.uppercased().trimmingCharacters(in: .whitespaces)
+        guard let regex = try? NSRegularExpression(pattern: "^([A-Z]+)0+([1-9][0-9]*)$") else {
+            return trimmed
+        }
+        let range = NSRange(trimmed.startIndex..., in: trimmed)
+        return regex.stringByReplacingMatches(in: trimmed, options: [], range: range, withTemplate: "$1$2")
     }
 
     func createPlannedProject() {
@@ -940,8 +960,9 @@ struct RecognizedResultsSectionNew: View {
             return items
         case .code:
             sorted = items.sorted {
-                let code0 = inventoryManager.findColor(byCode: $0.colorCode)?.displayCode(for: colorSystem) ?? $0.colorCode
-                let code1 = inventoryManager.findColor(byCode: $1.colorCode)?.displayCode(for: colorSystem) ?? $1.colorCode
+                // 严格按 mardCode 查，避免未匹配的原始色号跨品牌乱碰
+                let code0 = inventoryManager.findColor(byMardCode: $0.colorCode)?.displayCode(for: colorSystem) ?? $0.colorCode
+                let code1 = inventoryManager.findColor(byMardCode: $1.colorCode)?.displayCode(for: colorSystem) ?? $1.colorCode
                 return code0.localizedStandardCompare(code1) == .orderedAscending
             }
         case .quantity:
@@ -1078,7 +1099,10 @@ struct RecognizedItemRowNew: View {
     @State private var showQuantityError = false
 
     var matchedColor: BeadColor? {
-        inventoryManager.findColor(byCode: item.colorCode)
+        // item.colorCode 在 recognizeImage 中已规范化为 mardCode（匹配成功时）或保留为原始品牌色号（未匹配时）。
+        // 严格按 mardCode 查，避免未匹配的原始色号被无品牌偏好查找跨品牌错配
+        // （如 Kaka 模式下 "B02" 撞到 COCO 的 cocoCode "B02" 显示成 H14）。
+        inventoryManager.findColor(byMardCode: item.colorCode)
     }
 
     // 获取低库存阈值
@@ -1531,8 +1555,9 @@ struct ManualEntrySheetNew: View {
         isInitialized = true
 
         for item in recognizedItems {
-            // 根据色号找到对应的颜色（包括自定义色号，兼容旧 C_ 前缀）
-            if let color = inventoryManager.findColor(byCode: item.colorCode) {
+            // 根据 mardCode 找到对应的颜色（包括自定义色号，兼容旧 C_ 前缀）
+            // 严格按 mardCode 查，避免未匹配的原始色号跨品牌乱碰
+            if let color = inventoryManager.findColor(byMardCode: item.colorCode) {
                 selectedColors.insert(color.id)
                 quantities[color.id] = item.quantity
             }
