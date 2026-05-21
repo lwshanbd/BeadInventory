@@ -171,6 +171,7 @@ struct HistoryView: View {
                                 revertRecord(record)
                             }
                         }
+                        .opacity(sel.isActive && !historyManager.canRevert(record) ? 0.4 : 1.0)
                     }
                 }
             }

@@ -73,7 +73,7 @@ struct PlannedProjectsView: View {
                                         project: project,
                                         isParent: isParent,
                                         isExpanded: isExpanded,
-                                        isSelectMode: sel.isActive,
+                                        isSelectMode: false,
                                         isSelected: sel.contains(project.id),
                                         showSearchCheckbox: !searchText.isEmpty && !sel.isActive,
                                         onToggleExpand: {
@@ -175,7 +175,7 @@ struct PlannedProjectsView: View {
                         Button {
                             withAnimation { sel.enter() }
                         } label: {
-                            Text("多选")
+                            Text("选择")
                         }
                     }
                 }
