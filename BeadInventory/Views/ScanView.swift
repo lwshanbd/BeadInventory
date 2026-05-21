@@ -79,6 +79,28 @@ struct ScanView: View {
         return brand.colorSystem == scanColorSystem
     }
 
+    /// 扣减确认 alert 的消息文本
+    private var confirmDeductMessage: String {
+        let base = "将从库存中扣减 \(totalBeads) 颗豆子，共 \(recognizedItems.count) 种颜色。"
+        if insufficientStockItems.isEmpty {
+            return base
+        }
+        let lines = insufficientStockItems.map { item in
+            "\(item.colorCode): \(item.currentStock) - \(item.deductAmount) = \(item.currentStock - item.deductAmount)"
+        }
+        return base + "\n\n⚠️ 以下 \(insufficientStockItems.count) 种颜色扣除后库存将为负数：\n" + lines.joined(separator: "\n")
+    }
+
+    /// 三段进度指示器的当前 step：0 识别，1 调整，2 确认
+    /// 0：尚未识别（无识别结果）
+    /// 1：已识别、正在调整（有识别结果但还没进入扣减审核）
+    /// 2：进入扣减审核（已 push DeductionReviewView）
+    private var stepperIndex: Int {
+        if recognizedItems.isEmpty { return 0 }
+        if deductionResolver != nil { return 2 }
+        return 1
+    }
+
     /// 检查扣除后库存会变为负数的颜色
     var insufficientStockItems: [(colorCode: String, currentStock: Int, deductAmount: Int)] {
         guard let brandId = inventoryManager.currentBrandId else { return [] }
@@ -113,6 +135,10 @@ struct ScanView: View {
                     )
                 }
 
+                // 三段进度指示器：识别 → 调整 → 确认
+                BIStepper(steps: ["识别", "调整", "确认"], currentIndex: stepperIndex)
+                    .padding(.vertical, Theme.Spacing.sm)
+
                 GeometryReader { geometry in
                     ScrollView {
                         VStack(spacing: 20) {
@@ -136,142 +162,22 @@ struct ScanView: View {
                             }
 
                             // AI 配置状态提示
-                            if !aiService.isConfigured {
-                                HStack {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundColor(.orange)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(aiService.statusMessage)
-                                            .font(.caption)
-                                        Text(aiService.setupBannerText)
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-
-                                        if aiService.config.backend == .local,
-                                           localModelManager.isDownloading.contains(aiService.config.localModel) {
-                                            ProgressView(value: localModelManager.progress(for: aiService.config.localModel))
-                                                .progressViewStyle(.linear)
-                                        }
-                                    }
-                                    .font(.caption)
-                                    Spacer()
-                                    NavigationLink(aiService.setupActionTitle) {
-                                        RecognitionSettingsScreen()
-                                    }
-                                    .font(.caption)
-                                }
-                                .padding()
-                                .background(Color.orange.opacity(0.1))
-                                .cornerRadius(8)
-                                .padding(.horizontal)
-                            } else if aiService.config.backend == .local {
-                                HStack(alignment: .top) {
-                                    Image(systemName: "iphone.gen3")
-                                        .foregroundColor(.blue)
-                                    Text("当前使用 \(aiService.config.localModel.displayName) 本地识别。无需 API，但速度相对更慢，也可能引起发热。")
-                                        .font(.caption)
-                                    Spacer()
-                                }
-                                .padding()
-                                .background(Color.blue.opacity(0.08))
-                                .cornerRadius(8)
-                                .padding(.horizontal)
-                            }
+                            aiStatusBanner
 
                             // 色号体系选择（独立于品牌，影响 AI 提示词和计划绑定）
-                            HStack {
-                                Text("色号体系:")
-                                    .foregroundColor(.secondary)
-                                    .font(.subheadline)
-                                Picker("色号体系", selection: $scanColorSystem) {
-                                    Text("MARD").tag(ColorSystem.mard)
-                                    Text("卡卡").tag(ColorSystem.kaka)
-                                }
-                                .pickerStyle(.segmented)
-                            }
-                            .padding(.horizontal)
+                            colorSystemPicker
 
                             // 识别按钮
                             if selectedImage != nil {
-                                HStack(spacing: 12) {
-                                    // 表格识别按钮
-                                    Button {
-                                        recognizeImage(mode: .table)
-                                    } label: {
-                                        HStack {
-                                            if isRecognizing {
-                                                ProgressView()
-                                                    .tint(.white)
-                                            } else {
-                                                Image(systemName: "tablecells")
-                                            }
-                                            Text(isRecognizing ? "识别中..." : "表格识别")
-                                        }
-                                        .font(.headline)
-                                        .frame(maxWidth: .infinity)
-                                        .padding()
-                                        .background(aiService.isConfigured ? Color.accentColor : Color.gray)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(12)
-                                    }
-                                    .disabled(isRecognizing || !aiService.isConfigured)
-
-                                    // 色号统计识别按钮
-                                    Button {
-                                        recognizeImage(mode: .blueprint)
-                                    } label: {
-                                        HStack {
-                                            if isRecognizing {
-                                                ProgressView()
-                                                    .tint(.white)
-                                            } else {
-                                                Image(systemName: "doc.richtext")
-                                            }
-                                            Text(isRecognizing ? "识别中..." : "色号统计识别")
-                                        }
-                                        .font(.headline)
-                                        .frame(maxWidth: .infinity)
-                                        .padding()
-                                        .background(aiService.isConfigured ? Color.orange : Color.gray)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(12)
-                                    }
-                                    .disabled(isRecognizing || !aiService.isConfigured)
-                                }
-                                .padding(.horizontal)
+                                recognitionButtons
                             }
 
                             // 错误提示
-                            if let error = errorMessage {
-                                Text(error)
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                                    .padding()
-                                    .background(Color.red.opacity(0.1))
-                                    .cornerRadius(8)
-                                    .padding(.horizontal)
-                            }
+                            errorBanner
 
                             // 备扣品牌显示（仅显示与当前色号体系匹配的品牌）
                             if !recognizedItems.isEmpty {
-                                HStack {
-                                    Text("备扣品牌:")
-                                        .foregroundColor(.secondary)
-                                    if inventoryManager.currentBrandId != nil,
-                                       let brand = inventoryManager.currentBrand,
-                                       brand.colorSystem == scanColorSystem {
-                                        Text(brand.name)
-                                            .fontWeight(.medium)
-                                            .foregroundColor(.accentColor)
-                                    } else {
-                                        Text("请选择")
-                                            .foregroundColor(.orange)
-                                    }
-                                    Spacer()
-                                    BrandPicker(colorSystemFilter: scanColorSystem)
-                                }
-                                .font(.subheadline)
-                                .padding(.horizontal)
+                                brandPickerRow
                             }
 
                             // 识别结果
@@ -286,63 +192,11 @@ struct ScanView: View {
                             }
 
                             // 手动添加/编辑按钮
-                            Button {
-                                showingManualEntry = true
-                            } label: {
-                                HStack {
-                                    Image(systemName: recognizedItems.isEmpty ? "plus.circle" : "pencil.circle")
-                                    Text(recognizedItems.isEmpty ? "手动添加" : "编辑颜色")
-                                }
-                                .font(.subheadline)
-                                .foregroundColor(.accentColor)
-                            }
-                            .padding(.top, 8)
+                            manualEntryButton
 
-                            // 确认操作按钮区域
+                            // 项目名称 + 缩略图预览（按钮已移至底部 safeAreaInset / toolbar Menu）
                             if !recognizedItems.isEmpty {
-                                VStack(spacing: 16) {
-                                    // 项目名称输入
-                                    TextField("项目名称（可选）", text: $projectName)
-                                        .textFieldStyle(.roundedBorder)
-                                        .padding(.horizontal)
-
-                                    // 缩略图预览和裁切
-                                    ThumbnailPreviewSection(
-                                        thumbnailImage: $thumbnailImage,
-                                        originalImage: originalImage,
-                                        showingThumbnailCrop: $showingThumbnailCrop
-                                    )
-                                    .padding(.horizontal)
-
-                                    // 两个操作按钮
-                                    HStack(spacing: 12) {
-                                        // 创建计划按钮（不需要选择品牌）
-                                        BISecondaryButton("创建计划", systemImage: "calendar.badge.plus") {
-                                            showingCreatePlan = true
-                                        }
-
-                                        // 扣减库存按钮（需要选择匹配色系的品牌）
-                                        BIPrimaryButton("扣减库存", systemImage: "minus.circle.fill") {
-                                            prepareDeduction()
-                                        }
-                                        .disabled(!brandMatchesScanSystem)
-                                    }
-                                    .padding(.horizontal)
-
-                                    // 提示信息
-                                    if !brandMatchesScanSystem {
-                                        HStack {
-                                            Image(systemName: inventoryManager.currentBrandId == nil ? "info.circle" : "exclamationmark.triangle")
-                                                .foregroundColor(inventoryManager.currentBrandId == nil ? .blue : .orange)
-                                            Text(inventoryManager.currentBrandId == nil
-                                                 ? "创建计划无需选择品牌，执行时再选择"
-                                                 : "当前品牌色系与扫描色系不匹配，请切换品牌")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
-                                        .padding(.horizontal)
-                                    }
-                                }
+                                projectInfoSection
                             }
 
                             Spacer(minLength: 50)
@@ -356,48 +210,20 @@ struct ScanView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(.systemGroupedBackground))
             .navigationTitle("图纸扫描")
+            .safeAreaInset(edge: .bottom) { bottomCTAInset }
+            .toolbar { scanToolbarContent }
+            .pipe { applySheets($0) }
+            .pipe { applyAlerts($0) }
+            .pipe { applyChangeHandlers($0) }
+            .pipe { applyHelpAndOnAppear($0) }
+        }
+    }
+
+    /// Helper to chain View transforms without exploding type-checker complexity.
+    private func applySheets<V: View>(_ view: V) -> some View {
+        view
             .sheet(isPresented: $showingCamera) {
                 CameraPicker(image: $selectedImage)
-            }
-            .onChange(of: selectedPhotoItem) { _, newItem in
-                guard let newItem = newItem else { return }
-                isLoadingImage = true
-                Task {
-                    if let data = try? await newItem.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        await MainActor.run {
-                            selectedImage = image
-                            // 保存原图作为缩略图来源
-                            originalImage = image
-                            thumbnailImage = image
-                            isLoadingImage = false
-                        }
-                    } else {
-                        await MainActor.run {
-                            isLoadingImage = false
-                        }
-                    }
-                }
-            }
-            .onChange(of: selectedImage) { _, newImage in
-                // 当从相机获取图片时，也设置原图和缩略图
-                if let image = newImage, originalImage == nil {
-                    originalImage = image
-                    thumbnailImage = image
-                }
-            }
-            // 监听从 Share Extension 传入的外部图片
-            .onChange(of: externalImage) { _, newImage in
-                if let image = newImage {
-                    // 清除之前的状态
-                    clearState()
-                    // 设置新图片
-                    selectedImage = image
-                    originalImage = image
-                    thumbnailImage = image
-                    // 清除外部图片引用
-                    externalImage = nil
-                }
             }
             .sheet(isPresented: $showingManualEntry) {
                 ManualEntrySheetNew(recognizedItems: $recognizedItems, colorSystem: scanColorSystem)
@@ -413,7 +239,6 @@ struct ScanView: View {
                 }
             }
             .fullScreenCover(isPresented: $showingThumbnailCrop) {
-                // 优先使用当前缩略图（可能是用户上传的新图片），否则使用原始图
                 if let image = thumbnailImage ?? originalImage {
                     ImageCropView(image: image) { croppedImage in
                         thumbnailImage = croppedImage
@@ -422,20 +247,8 @@ struct ScanView: View {
                     Color.black.onAppear { showingThumbnailCrop = false }
                 }
             }
-            .alert("确认扣减", isPresented: $showingConfirmation) {
-                Button("取消", role: .cancel) { }
-                Button("确认扣减", role: insufficientStockItems.isEmpty ? .none : .destructive) {
-                    applyToInventory()
-                }
-            } message: {
-                if insufficientStockItems.isEmpty {
-                    Text("将从库存中扣减 \(totalBeads) 颗豆子，共 \(recognizedItems.count) 种颜色。")
-                } else {
-                    Text("将从库存中扣减 \(totalBeads) 颗豆子，共 \(recognizedItems.count) 种颜色。\n\n⚠️ 以下 \(insufficientStockItems.count) 种颜色扣除后库存将为负数：\n\(insufficientStockItems.map { "\($0.colorCode): \($0.currentStock) - \($0.deductAmount) = \($0.currentStock - $0.deductAmount)" }.joined(separator: "\n"))")
-                }
-            }
-            .sheet(item: $deductionResolver) { resolver in
-                DeductionReviewSheet(
+            .navigationDestination(item: $deductionResolver) { resolver in
+                DeductionReviewView(
                     resolver: resolver,
                     colorSystem: scanColorSystem,
                     matchingBrands: inventoryManager.brands
@@ -445,11 +258,20 @@ struct ScanView: View {
                     similarityService: similarityService,
                     onConfirm: {
                         applyToInventoryWithResolver(resolver)
-                    },
-                    onCancel: {
-                        deductionResolver = nil
                     }
                 )
+            }
+    }
+
+    private func applyAlerts<V: View>(_ view: V) -> some View {
+        view
+            .alert("确认扣减", isPresented: $showingConfirmation) {
+                Button("取消", role: .cancel) { }
+                Button("确认扣减", role: insufficientStockItems.isEmpty ? .none : .destructive) {
+                    applyToInventory()
+                }
+            } message: {
+                Text(confirmDeductMessage)
             }
             .alert("部分颜色扣减失败", isPresented: $showingDeductionFailure) {
                 Button("知道了") { }
@@ -464,7 +286,27 @@ struct ScanView: View {
             } message: {
                 Text("将创建包含 \(totalBeads) 颗豆子（\(recognizedItems.count) 种颜色）的计划项目。执行时需要选择品牌。")
             }
-            // 首次使用引导弹窗
+    }
+
+    private func applyChangeHandlers<V: View>(_ view: V) -> some View {
+        view
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                handlePhotoItemChange(newItem)
+            }
+            .onChange(of: selectedImage) { _, newImage in
+                // 当从相机获取图片时，也设置原图和缩略图
+                if let image = newImage, originalImage == nil {
+                    originalImage = image
+                    thumbnailImage = image
+                }
+            }
+            .onChange(of: externalImage) { _, newImage in
+                handleExternalImageChange(newImage)
+            }
+    }
+
+    private func applyHelpAndOnAppear<V: View>(_ view: V) -> some View {
+        view
             .sheet(isPresented: $showingHelpSheet) {
                 ScanHelpSheet(
                     onDismiss: {
@@ -477,12 +319,280 @@ struct ScanView: View {
                 )
             }
             .onAppear {
-                // 从设置中读取默认色号体系
                 scanColorSystem = ColorSystem(rawValue: defaultColorSystemRaw) ?? .mard
-                // 首次打开时显示引导弹窗
                 if !helpHasBeenDismissed {
                     showingHelpSheet = true
                 }
+            }
+    }
+
+    private func handlePhotoItemChange(_ newItem: PhotosPickerItem?) {
+        guard let newItem = newItem else { return }
+        isLoadingImage = true
+        Task {
+            if let data = try? await newItem.loadTransferable(type: Data.self),
+               let image = UIImage(data: data) {
+                await MainActor.run {
+                    selectedImage = image
+                    originalImage = image
+                    thumbnailImage = image
+                    isLoadingImage = false
+                }
+            } else {
+                await MainActor.run {
+                    isLoadingImage = false
+                }
+            }
+        }
+    }
+
+    private func handleExternalImageChange(_ newImage: UIImage?) {
+        if let image = newImage {
+            clearState()
+            selectedImage = image
+            originalImage = image
+            thumbnailImage = image
+            externalImage = nil
+        }
+    }
+
+    // MARK: - 主 body 的子片段（拆分以减轻类型检查复杂度）
+
+    @ViewBuilder
+    private var aiStatusBanner: some View {
+        if !aiService.isConfigured {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(aiService.statusMessage)
+                        .font(.caption)
+                    Text(aiService.setupBannerText)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
+                    if aiService.config.backend == .local,
+                       localModelManager.isDownloading.contains(aiService.config.localModel) {
+                        ProgressView(value: localModelManager.progress(for: aiService.config.localModel))
+                            .progressViewStyle(.linear)
+                    }
+                }
+                .font(.caption)
+                Spacer()
+                NavigationLink(aiService.setupActionTitle) {
+                    RecognitionSettingsScreen()
+                }
+                .font(.caption)
+            }
+            .padding()
+            .background(Color.orange.opacity(0.1))
+            .cornerRadius(8)
+            .padding(.horizontal)
+        } else if aiService.config.backend == .local {
+            HStack(alignment: .top) {
+                Image(systemName: "iphone.gen3")
+                    .foregroundColor(.blue)
+                Text("当前使用 \(aiService.config.localModel.displayName) 本地识别。无需 API，但速度相对更慢，也可能引起发热。")
+                    .font(.caption)
+                Spacer()
+            }
+            .padding()
+            .background(Color.blue.opacity(0.08))
+            .cornerRadius(8)
+            .padding(.horizontal)
+        }
+    }
+
+    private var colorSystemPicker: some View {
+        HStack {
+            Text("色号体系:")
+                .foregroundColor(.secondary)
+                .font(.subheadline)
+            Picker("色号体系", selection: $scanColorSystem) {
+                Text("MARD").tag(ColorSystem.mard)
+                Text("卡卡").tag(ColorSystem.kaka)
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(.horizontal)
+    }
+
+    private var recognitionButtons: some View {
+        HStack(spacing: 12) {
+            // 表格识别按钮
+            Button {
+                recognizeImage(mode: .table)
+            } label: {
+                HStack {
+                    if isRecognizing {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "tablecells")
+                    }
+                    Text(isRecognizing ? "识别中..." : "表格识别")
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(aiService.isConfigured ? Color.accentColor : Color.gray)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+            .disabled(isRecognizing || !aiService.isConfigured)
+
+            // 色号统计识别按钮
+            Button {
+                recognizeImage(mode: .blueprint)
+            } label: {
+                HStack {
+                    if isRecognizing {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "doc.richtext")
+                    }
+                    Text(isRecognizing ? "识别中..." : "色号统计识别")
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(aiService.isConfigured ? Color.orange : Color.gray)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+            .disabled(isRecognizing || !aiService.isConfigured)
+        }
+        .padding(.horizontal)
+    }
+
+    @ViewBuilder
+    private var errorBanner: some View {
+        if let error = errorMessage {
+            Text(error)
+                .font(.caption)
+                .foregroundColor(.red)
+                .padding()
+                .background(Color.red.opacity(0.1))
+                .cornerRadius(8)
+                .padding(.horizontal)
+        }
+    }
+
+    private var brandPickerRow: some View {
+        HStack {
+            Text("备扣品牌:")
+                .foregroundColor(.secondary)
+            if inventoryManager.currentBrandId != nil,
+               let brand = inventoryManager.currentBrand,
+               brand.colorSystem == scanColorSystem {
+                Text(brand.name)
+                    .fontWeight(.medium)
+                    .foregroundColor(.accentColor)
+            } else {
+                Text("请选择")
+                    .foregroundColor(.orange)
+            }
+            Spacer()
+            BrandPicker(colorSystemFilter: scanColorSystem)
+        }
+        .font(.subheadline)
+        .padding(.horizontal)
+    }
+
+    private var manualEntryButton: some View {
+        Button {
+            showingManualEntry = true
+        } label: {
+            HStack {
+                Image(systemName: recognizedItems.isEmpty ? "plus.circle" : "pencil.circle")
+                Text(recognizedItems.isEmpty ? "手动添加" : "编辑颜色")
+            }
+            .font(.subheadline)
+            .foregroundColor(.accentColor)
+        }
+        .padding(.top, 8)
+    }
+
+    private var projectInfoSection: some View {
+        VStack(spacing: 16) {
+            // 项目名称输入
+            TextField("项目名称（可选）", text: $projectName)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal)
+
+            // 缩略图预览和裁切
+            ThumbnailPreviewSection(
+                thumbnailImage: $thumbnailImage,
+                originalImage: originalImage,
+                showingThumbnailCrop: $showingThumbnailCrop
+            )
+            .padding(.horizontal)
+
+            // 提示信息
+            if !brandMatchesScanSystem {
+                HStack {
+                    Image(systemName: inventoryManager.currentBrandId == nil ? "info.circle" : "exclamationmark.triangle")
+                        .foregroundColor(inventoryManager.currentBrandId == nil ? .blue : .orange)
+                    Text(inventoryManager.currentBrandId == nil
+                         ? "创建计划无需选择品牌，执行时再选择"
+                         : "当前品牌色系与扫描色系不匹配，请切换品牌")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    // MARK: - 底部 sticky 单主 CTA
+
+    @ViewBuilder
+    private var bottomCTAInset: some View {
+        if !recognizedItems.isEmpty {
+            BIPrimaryButton("扣减库存", systemImage: "minus.circle.fill") {
+                prepareDeduction()
+            }
+            .disabled(!brandMatchesScanSystem)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.bottom, Theme.Spacing.sm)
+            .background(.bar)
+        }
+    }
+
+    // MARK: - 顶部 toolbar Menu（次级操作溢出）
+
+    @ToolbarContentBuilder
+    private var scanToolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                Button {
+                    showingCreatePlan = true
+                } label: {
+                    Label("仅创建计划，不扣减", systemImage: "calendar.badge.plus")
+                }
+                .disabled(recognizedItems.isEmpty)
+
+                Divider()
+
+                Button {
+                    // 重新选择图片：清除当前图片但保留识别结果
+                    selectedImage = nil
+                    selectedPhotoItem = nil
+                    isImagePinned = false
+                } label: {
+                    Label("重新选择图片", systemImage: "arrow.counterclockwise")
+                }
+                .disabled(selectedImage == nil)
+
+                Button(role: .destructive) {
+                    clearState()
+                } label: {
+                    Label("清空当前识别", systemImage: "trash")
+                }
+                .disabled(recognizedItems.isEmpty && selectedImage == nil)
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
         }
     }
@@ -667,6 +777,14 @@ struct ScanView: View {
         isImagePinned = false
     }
 
+}
+
+// MARK: - View 扩展：用 .pipe 把 modifier 链拆段（绕开 Swift 类型检查复杂度）
+
+private extension View {
+    func pipe<V: View>(_ transform: (Self) -> V) -> V {
+        transform(self)
+    }
 }
 
 // MARK: - 固定在顶部的图片视图
@@ -1228,35 +1346,9 @@ struct RecognizedItemRowNew: View {
     }
 }
 
-// MARK: - 扣减审核弹窗（薄壳：保留 sheet 入口，内容委托给 DeductionReviewView）
-struct DeductionReviewSheet: View {
-    @ObservedObject var resolver: DeductionResolver
-    let colorSystem: ColorSystem
-    let matchingBrands: [Brand]
-    let inventoryManager: InventoryManager
-    let similarityService: ColorSimilarityService
-    var onConfirm: () -> Void
-    var onCancel: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            DeductionReviewView(
-                resolver: resolver,
-                colorSystem: colorSystem,
-                matchingBrands: matchingBrands,
-                inventoryManager: inventoryManager,
-                similarityService: similarityService,
-                onConfirm: onConfirm
-            )
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("取消", action: onCancel)
-                }
-            }
-        }
-        .presentationDetents([.large])
-    }
-}
+// MARK: - 扣减审核弹窗已删除
+// 原 DeductionReviewSheet 已由 navigationDestination push 的 DeductionReviewView 替代，
+// 消除 sheet-in-sheet 嵌套。系统返回箭头处理"取消"，无需自定义 leading toolbar item。
 
 // MARK: - 新版手动添加弹窗（类似添加库存的UI，支持多选，与已有结果同步）
 struct ManualEntrySheetNew: View {

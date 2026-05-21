@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 
 @MainActor
-class DeductionResolver: ObservableObject, Identifiable {
+class DeductionResolver: ObservableObject, Identifiable, Hashable {
     let id = UUID()
     @Published private(set) var items: [DeductionItem] = []
     @Published var primaryBrandId: UUID?
@@ -19,6 +19,14 @@ class DeductionResolver: ObservableObject, Identifiable {
 
     init(inventoryManager: InventoryManager) {
         self.inventoryManager = inventoryManager
+    }
+
+    nonisolated static func == (lhs: DeductionResolver, rhs: DeductionResolver) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    nonisolated func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
 
     /// 从扫描识别结果初始化
