@@ -111,15 +111,11 @@ struct UsageStatisticsView: View {
                             }
                         }
                     } else {
-                        VStack(spacing: 16) {
-                            Image(systemName: showLowStockOnly ? "checkmark.circle" : "chart.bar.xaxis")
-                                .font(.system(size: 40))
-                                .foregroundColor(.secondary.opacity(0.5))
-
-                            Text(showLowStockOnly ? "没有低库存颜色" : "暂无使用记录")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                        }
+                        EmptyStateView(
+                            icon: "chart.bar",
+                            title: "尚无使用数据",
+                            description: "开始扣减或拼图后，统计就会出现在这里"
+                        )
                         .frame(height: 200)
                     }
                 }

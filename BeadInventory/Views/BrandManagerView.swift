@@ -21,18 +21,12 @@ struct BrandManagerView: View {
             List {
                 if inventoryManager.brands.isEmpty {
                     Section {
-                        VStack(spacing: 16) {
-                            Image(systemName: "building.2")
-                                .font(.system(size: 48))
-                                .foregroundColor(.secondary)
-                            Text("还没有品牌")
-                                .font(.headline)
-                            Text("点击下方按钮创建第一个品牌")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 32)
+                        EmptyStateView(
+                            icon: "tag.slash",
+                            title: "还没有品牌",
+                            description: "点击右上角添加你的第一个品牌"
+                        )
+                        .padding(.vertical, 16)
                     }
                 }
 

@@ -210,7 +210,7 @@ struct InventoryView: View {
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: groupByPrefix ? "folder.fill" : "folder")
-                                    Text("分组")
+                                    Text(LocalizedStringKey("分组"))
                                 }
                                 .font(.caption)
                                 .padding(.horizontal, 12)
@@ -365,19 +365,11 @@ struct InventoryView: View {
                     }
                 } else {
                     // 没有品牌时的提示
-                    Spacer()
-                    VStack(spacing: 16) {
-                        Image(systemName: "building.2")
-                            .font(.system(size: 64))
-                            .foregroundColor(.secondary)
-                        Text("请先创建品牌")
-                            .font(.title2)
-                            .fontWeight(.medium)
-                        Text("点击上方按钮创建您的第一个品牌")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
+                    EmptyStateView(
+                        icon: "square.grid.3x3",
+                        title: "请先创建品牌",
+                        description: "到「品牌管理」中添加品牌后再开始记录库存"
+                    )
                 }
             }
             .background(Color(.systemGroupedBackground))
