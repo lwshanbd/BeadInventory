@@ -1416,7 +1416,7 @@ struct ManualEntrySheetNew: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var selectedSeries = "A"
-    @State private var selectedColors: Set<UUID> = []
+    @StateObject private var sel = SelectionContext<UUID>()
     @State private var quantities: [UUID: Int] = [:]  // 每个颜色的数量（以颜色ID为key）
     @State private var isInitialized = false
 
@@ -1453,7 +1453,7 @@ struct ManualEntrySheetNew: View {
 
     var totalToAdd: Int {
         var total = 0
-        for colorId in selectedColors {
+        for colorId in sel.selected {
             let qty = quantities[colorId] ?? 1
             total += qty
         }
@@ -1476,7 +1476,7 @@ struct ManualEntrySheetNew: View {
                         ForEach(colorsInSeries) { color in
                             ManualEntryColorRow(
                                 color: color,
-                                isSelected: selectedColors.contains(color.id),
+                                isSelected: sel.contains(color.id),
                                 quantity: bindingForColor(color.id),
                                 onToggle: {
                                     toggleSelection(color.id)
@@ -1494,27 +1494,42 @@ struct ManualEntrySheetNew: View {
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
 
-                // 底部确认栏
-                if !selectedColors.isEmpty {
-                    ManualEntryConfirmBar(
-                        selectedCount: selectedColors.count,
-                        totalQuantity: totalToAdd,
-                        onConfirm: confirmAdd
-                    )
-                }
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("编辑颜色")
             .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                // Sheet 内"始终处于选择态"：选中任何颜色就显示统一动作条
+                if sel.count > 0 {
+                    MultiSelectActionBar(count: sel.count) {
+                        HStack(spacing: Theme.Spacing.md) {
+                            Text("共 \(totalToAdd) 颗")
+                                .font(Theme.Typography.metadata)
+                                .foregroundStyle(Theme.ColorToken.Text.secondary)
+                            Button(action: confirmAdd) {
+                                Text("添加")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 24)
+                                    .padding(.vertical, 10)
+                                    .background(Color.accentColor, in: Capsule())
+                            }
+                        }
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if !selectedColors.isEmpty {
+                    if sel.count > 0 {
                         Button("清空") {
-                            selectedColors.removeAll()
-                            quantities.removeAll()
+                            withAnimation {
+                                sel.clear()
+                                quantities.removeAll()
+                            }
                         }
                         .foregroundColor(.red)
                     }
@@ -1522,6 +1537,8 @@ struct ManualEntrySheetNew: View {
             }
             .onAppear {
                 selectedSeries = colorSystem.defaultSeries
+                // Sheet 始终处于选择态：进入时即激活多选容器
+                if !sel.isActive { sel.enter() }
                 initializeFromRecognizedItems()
             }
         }
@@ -1536,7 +1553,7 @@ struct ManualEntrySheetNew: View {
             // 根据 mardCode 找到对应的颜色（包括自定义色号，兼容旧 C_ 前缀）
             // 严格按 mardCode 查，避免未匹配的原始色号跨品牌乱碰
             if let color = inventoryManager.findColor(byMardCode: item.colorCode) {
-                selectedColors.insert(color.id)
+                sel.toggle(color.id)  // 进入时未选中 → toggle 等价于 insert
                 quantities[color.id] = item.quantity
             }
         }
@@ -1544,14 +1561,12 @@ struct ManualEntrySheetNew: View {
 
     func toggleSelection(_ colorId: UUID) {
         withAnimation(.easeInOut(duration: 0.2)) {
-            if selectedColors.contains(colorId) {
-                selectedColors.remove(colorId)
+            let wasSelected = sel.contains(colorId)
+            sel.toggle(colorId)
+            if wasSelected {
                 quantities.removeValue(forKey: colorId)
-            } else {
-                selectedColors.insert(colorId)
-                if quantities[colorId] == nil {
-                    quantities[colorId] = 1
-                }
+            } else if quantities[colorId] == nil {
+                quantities[colorId] = 1
             }
         }
     }
@@ -1559,7 +1574,7 @@ struct ManualEntrySheetNew: View {
     func confirmAdd() {
         // 用新的选择替换原来的 recognizedItems
         var newItems: [ScanView.RecognizedItem] = []
-        for colorId in selectedColors {
+        for colorId in sel.selected {
             guard let color = inventoryManager.allBeadColors.first(where: { $0.id == colorId }) else { continue }
             let qty = quantities[colorId] ?? 1
             newItems.append(ScanView.RecognizedItem(colorCode: color.mardCode, quantity: qty))
