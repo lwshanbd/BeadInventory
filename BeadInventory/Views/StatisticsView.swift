@@ -266,13 +266,7 @@ struct UsageRankRow: View {
                 .cornerRadius(12)
 
             // 颜色块
-            RoundedRectangle(cornerRadius: 6)
-                .fill(color.color)
-                .frame(width: 32, height: 32)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                )
+            BIColorSwatch(hex: color.colorHex, size: 32)
 
             // 色号和进度条
             VStack(alignment: .leading, spacing: 4) {

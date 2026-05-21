@@ -538,13 +538,13 @@ struct PlannedProjectRow: View {
                     .foregroundColor(.primary)
 
                 // 色号体系徽章
-                Text(project.colorSystem.displayName)
-                    .font(.caption2)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Color.blue.opacity(0.15))
-                    .foregroundColor(project.colorSystem == .kaka ? .purple : .blue)
-                    .cornerRadius(4)
+                BIBadge(
+                    project.colorSystem.displayName,
+                    style: .custom(
+                        background: project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Color.blue.opacity(0.15),
+                        foreground: project.colorSystem == .kaka ? .purple : .blue
+                    )
+                )
 
                 Spacer()
 
@@ -555,13 +555,7 @@ struct PlannedProjectRow: View {
 
             HStack {
                 if isParent {
-                    Text("\(childCount) 个子项目")
-                        .font(.caption)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.1))
-                        .foregroundColor(.blue)
-                        .cornerRadius(4)
+                    BIBadge("\(childCount) 个子项目", style: .info)
                 }
 
                 Label("\(colorCount) 色", systemImage: "paintpalette")
@@ -582,12 +576,7 @@ struct PlannedProjectRow: View {
                         ForEach(project.beadUsage.prefix(8)) { usage in
                             let displayCode = inventoryManager.findColor(byCode: usage.colorCode)?
                                 .displayCode(for: project.colorSystem) ?? usage.colorCode
-                            Text(displayCode)
-                                .font(.caption2)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.1))
-                                .cornerRadius(4)
+                            BIBadge(displayCode, style: .warning)
                         }
                         if project.beadUsage.count > 8 {
                             Text("+\(project.beadUsage.count - 8)")
@@ -638,13 +627,13 @@ struct PlannedChildProjectRow: View {
                             .font(.subheadline)
 
                         // 色号体系徽章
-                        Text(project.colorSystem.displayName)
-                            .font(.caption2)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Color.blue.opacity(0.15))
-                            .foregroundColor(project.colorSystem == .kaka ? .purple : .blue)
-                            .cornerRadius(4)
+                        BIBadge(
+                            project.colorSystem.displayName,
+                            style: .custom(
+                                background: project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Color.blue.opacity(0.15),
+                                foreground: project.colorSystem == .kaka ? .purple : .blue
+                            )
+                        )
 
                         Spacer()
                         Text(project.date.formatted(date: .abbreviated, time: .omitted))

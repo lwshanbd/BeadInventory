@@ -673,13 +673,7 @@ struct ColorRowView: View {
     var body: some View {
         HStack(spacing: 12) {
             // 颜色块
-            RoundedRectangle(cornerRadius: 8)
-                .fill(color.color)
-                .frame(width: 44, height: 44)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                )
+            BIColorSwatch(hex: color.colorHex, size: 44)
                 .overlay(alignment: .topTrailing) {
                     if isCustomColor {
                         Image(systemName: "star.fill")
@@ -695,13 +689,10 @@ struct ColorRowView: View {
                     Text(displayCode)
                         .font(.system(.headline, design: .monospaced))
                     if isCustomColor {
-                        Text("自定义")
-                            .font(.caption2)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.2))
-                            .foregroundColor(.orange)
-                            .cornerRadius(4)
+                        BIBadge("自定义", style: .custom(
+                            background: Color.orange.opacity(0.2),
+                            foreground: .orange
+                        ))
                     }
                 }
 
