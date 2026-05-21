@@ -39,6 +39,7 @@ struct ScanView: View {
     @State private var deductionResolver: DeductionResolver?
     @State private var showingDeductionFailure = false
     @State private var deductionFailureMessage = ""
+    @State private var deductSuccessAt: Date = .distantPast
 
     private let similarityService = ColorSimilarityService()
 
@@ -235,6 +236,8 @@ struct ScanView: View {
 
     private func applyAlerts<V: View>(_ view: V) -> some View {
         view
+            .haptic(.success, trigger: deductSuccessAt)
+            .haptic(.error, trigger: showingDeductionFailure)
             .alert("部分颜色扣减失败", isPresented: $showingDeductionFailure) {
                 Button("知道了") { }
             } message: {
@@ -637,6 +640,7 @@ struct ScanView: View {
         clearState()
 
         if failedItems.isEmpty {
+            deductSuccessAt = Date()
             deductionResolver = nil
         } else {
             // 先关闭 sheet，等动画结束后再弹出失败提示，避免 SwiftUI 同时 dismiss sheet + present alert 的竞争

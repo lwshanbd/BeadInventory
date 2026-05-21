@@ -12,6 +12,7 @@ struct HistoryView: View {
     @State private var showingClearAlert = false
     @StateObject private var sel = SelectionContext<UUID>()
     @State private var showBatchRevertAlert = false
+    @State private var revertSuccessAt: Date = .distantPast
 
     /// 所有可撤回的记录 id，用于「全选」时跳过不可撤回项。
     private var revertableRecordIds: [UUID] {
@@ -108,6 +109,7 @@ struct HistoryView: View {
         } message: {
             Text("将按时间倒序逐条撤回。不可撤回的记录会被跳过。")
         }
+        .haptic(.success, trigger: revertSuccessAt)
     }
 
     /// 批量撤回：按记录时间倒序逐条撤回。
@@ -117,6 +119,9 @@ struct HistoryView: View {
             .sorted { $0.timestamp > $1.timestamp }
         for record in toRevert {
             _ = historyManager.revert(record.id)
+        }
+        if !toRevert.isEmpty {
+            revertSuccessAt = Date()
         }
         withAnimation { sel.exit() }
     }
@@ -183,9 +188,8 @@ struct HistoryView: View {
 
     private func revertRecord(_ record: HistoryRecord) {
         let success = historyManager.revert(record.id)
-        if !success {
-            // 可以显示一个错误提示
-            print("撤回失败")
+        if success {
+            revertSuccessAt = Date()
         }
     }
 }

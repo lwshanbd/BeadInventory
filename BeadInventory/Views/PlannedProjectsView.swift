@@ -34,6 +34,7 @@ struct PlannedProjectsView: View {
     @State private var activeSheet: ActiveSheet?
     @State private var searchText = ""
     @State private var showBatchDeleteAlert = false
+    @State private var lastSuccessAt: Date = .distantPast
 
     var plannedProjects: [ProjectRecord] {
         inventoryManager.plannedProjects()
@@ -244,11 +245,13 @@ struct PlannedProjectsView: View {
                     for id in sel.selected {
                         inventoryManager.deletePlannedProject(id)
                     }
+                    lastSuccessAt = Date()
                     withAnimation { sel.exit() }
                 }
             } message: {
                 Text("此操作无法撤销")
             }
+            .haptic(.success, trigger: lastSuccessAt)
             // 使用与统计页面相同的方式：传递 projectIds
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
@@ -554,6 +557,7 @@ struct ExecutePlannedProjectSheet: View {
     @State private var selectedBrandId: UUID?
     @State private var showConfirmation = false
     @State private var resolver: DeductionResolver?
+    @State private var executeSuccessAt: Date = .distantPast
     private let similarityService = ColorSimilarityService()
 
     var matchingBrands: [Brand] {
@@ -714,6 +718,7 @@ struct ExecutePlannedProjectSheet: View {
                 Button("确认", role: (resolver?.insufficientItems.isEmpty ?? true) ? .none : .destructive) {
                     if let resolver = resolver {
                         inventoryManager.executePlannedProjectWithResolver(project.id, resolver: resolver)
+                        executeSuccessAt = Date()
                         dismiss()
                         onExecuted?()
                     }
@@ -722,6 +727,7 @@ struct ExecutePlannedProjectSheet: View {
                 Text(executeConfirmMessage)
             }
         }
+        .haptic(.success, trigger: executeSuccessAt)
         .presentationDetents([.medium, .large])
         .onAppear {
             if let currentId = inventoryManager.currentBrandId,
@@ -809,6 +815,7 @@ struct MergePlannedProjectsSheet: View {
     @Environment(\.dismiss) var dismiss
     @State private var newName = ""
     @State private var showMergeError = false
+    @State private var mergeSuccessAt: Date = .distantPast
 
     // 从 inventoryManager 查找项目（与统计页面相同的方式）
     var projects: [ProjectRecord] {
@@ -872,6 +879,7 @@ struct MergePlannedProjectsSheet: View {
                     Button("确认") {
                         let name = newName.isEmpty ? "合并计划 \(Date().formatted(date: .numeric, time: .omitted))" : newName
                         if inventoryManager.mergeProjects(projectIds, newName: name) != nil {
+                            mergeSuccessAt = Date()
                             dismiss()
                             onComplete()
                         } else {
@@ -885,6 +893,8 @@ struct MergePlannedProjectsSheet: View {
             } message: {
                 Text("计划项目与已执行项目不能混合合并。请确保选择的项目都是计划中或都是已执行的。")
             }
+            .haptic(.success, trigger: mergeSuccessAt)
+            .haptic(.error, trigger: showMergeError)
         }
         .presentationDetents([.medium])
     }

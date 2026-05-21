@@ -755,6 +755,7 @@ struct ProjectImageEditorSheet: View {
     @State private var imageToCrop: UIImage?
     @State private var showingCamera = false
     @State private var pendingCropAfterCamera = false  // 相机关闭后需要打开裁切
+    @State private var saveSuccessAt: Date = .distantPast
 
     var displayImage: UIImage? {
         editedImage ?? currentImage
@@ -900,6 +901,7 @@ struct ProjectImageEditorSheet: View {
                         if let image = displayImage {
                             let imageData = generateImageData(from: image)
                             onSave(imageData)
+                            saveSuccessAt = Date()
                         }
                         dismiss()
                     }
@@ -971,6 +973,7 @@ struct ProjectImageEditorSheet: View {
                 }
             }
         }
+        .haptic(.success, trigger: saveSuccessAt)
         .presentationDetents([.medium, .large])
     }
 

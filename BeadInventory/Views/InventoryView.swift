@@ -31,6 +31,7 @@ struct InventoryView: View {
     @State private var collapsedGroups: Set<String> = []
     @StateObject private var sel = SelectionContext<UUID>()
     @State private var showBatchHideAlert = false
+    @State private var lastSuccessAt: Date = .distantPast
 
     enum ViewMode: String {
         case list = "list"
@@ -478,6 +479,7 @@ struct InventoryView: View {
                 LowStockDetailView(brandId: item.brandId)
                     .environmentObject(inventoryManager)
             }
+            .haptic(.success, trigger: lastSuccessAt)
         }
     }
 
@@ -493,6 +495,7 @@ struct InventoryView: View {
                 inventoryManager.hideColor(brandId: brandId, mardCode: mardCode)
             }
         }
+        lastSuccessAt = Date()
         withAnimation { sel.exit() }
     }
 }
@@ -821,6 +824,7 @@ struct EditStockSheet: View {
     @State private var adjustAmount: String = ""
     @State private var isAdding = true
     @State private var showingHideAlert = false
+    @State private var lastSuccessAt: Date = .distantPast
     @FocusState private var isInputFocused: Bool
 
     var currentStock: Int { stock?.stock ?? 0 }
@@ -1010,6 +1014,7 @@ struct EditStockSheet: View {
             }
         }
         .presentationDetents([.large])
+        .haptic(.success, trigger: lastSuccessAt)
         .onAppear {
             stockAmount = "\(currentStock)"
             usedAmount = "\(currentUsed)"
@@ -1048,6 +1053,7 @@ struct EditStockSheet: View {
             }
         }
         adjustAmount = ""
+        lastSuccessAt = Date()
         dismissAfterDataChange()
     }
 
@@ -1055,6 +1061,7 @@ struct EditStockSheet: View {
         guard let newStock = Int(stockAmount), newStock >= 0,
               let brandId = inventoryManager.currentBrandId else { return }
         inventoryManager.updateStock(brandId: brandId, mardCode: color.mardCode, newStock: newStock)
+        lastSuccessAt = Date()
         dismissAfterDataChange()
     }
 
@@ -1067,6 +1074,7 @@ struct EditStockSheet: View {
             inventoryManager.brandStocks[index].used = newUsed
             inventoryManager.saveData()
         }
+        lastSuccessAt = Date()
         dismissAfterDataChange()
     }
 

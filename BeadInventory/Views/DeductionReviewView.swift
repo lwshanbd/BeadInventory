@@ -17,6 +17,7 @@ struct DeductionReviewView: View {
     var onConfirm: () -> Void
 
     @State private var showConfirmAlert = false
+    @State private var confirmSuccessAt: Date = .distantPast
 
     private var confirmAlertMessage: String {
         let total = resolver.items.reduce(0) { $0 + $1.quantity }
@@ -170,10 +171,12 @@ struct DeductionReviewView: View {
         .alert("确认扣减", isPresented: $showConfirmAlert) {
             Button("取消", role: .cancel) { }
             Button("确认", role: resolver.insufficientItems.isEmpty ? .none : .destructive) {
+                confirmSuccessAt = Date()
                 onConfirm()
             }
         } message: {
             Text(confirmAlertMessage)
         }
+        .haptic(.success, trigger: confirmSuccessAt)
     }
 }
