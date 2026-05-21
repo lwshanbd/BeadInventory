@@ -1,3 +1,10 @@
+//
+//  Theme.swift
+//  BeadInventory
+//
+//  设计系统基础 token —— Spacing / Radius / Typography / 三层颜色
+//
+
 import SwiftUI
 
 enum Theme {
@@ -17,7 +24,7 @@ enum Theme {
         static let sm:   CGFloat = 8
         static let md:   CGFloat = 12
         static let lg:   CGFloat = 16
-        static let pill: CGFloat = 999
+        static let pill: CGFloat = 999  // arbitrarily large — renders as full pill on any realistic component height
     }
 
     // MARK: - Typography
