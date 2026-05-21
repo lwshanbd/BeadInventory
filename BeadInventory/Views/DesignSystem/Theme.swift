@@ -82,11 +82,11 @@ enum Theme {
         enum Border {
             static let `default` = Palette.n200
             static let divider   = Palette.n100
-            // emphasis 依赖 TabFlavor，留到 Task 2 再补
+            // emphasis 见文件底部 Theme.ColorToken.Border.emphasisFallback（深层 View 丢失环境时用）；环境感知版请用 @Environment(\.tabFlavor).color。
         }
 
         enum Interactive {
-            // primary / secondary 依赖 TabFlavor 环境，留到 Task 2
+            // primary 走 @Environment(\.tabFlavor).color；secondary 与 primaryFallback 见文件底部扩展。
             static let destructive = Status.error
         }
     }

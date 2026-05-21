@@ -24,20 +24,25 @@ final class TabFlavorTests: XCTestCase {
     }
 
     func test_each_flavor_references_existing_palette_asset() {
-        // 复用 Task 1 的 Bundle pattern: 通过主 App 模块中的类拿到资源 bundle
         let appBundle = Bundle(for: InventoryManager.self)
-        let expectedAssets: [(TabFlavor, String)] = [
-            (.inventory, "Palette/Peach"),
-            (.scan, "Palette/Coral"),
-            (.plan, "Palette/Lavender"),
-            (.statistics, "Palette/Mint"),
-            (.more, "Palette/Sky"),
-        ]
-        for (_, name) in expectedAssets {
+        for flavor in TabFlavor.allCases {
+            let expectedAssetName: String
+            switch flavor {
+            case .inventory:  expectedAssetName = "Palette/Peach"
+            case .scan:       expectedAssetName = "Palette/Coral"
+            case .plan:       expectedAssetName = "Palette/Lavender"
+            case .statistics: expectedAssetName = "Palette/Mint"
+            case .more:       expectedAssetName = "Palette/Sky"
+            }
             XCTAssertNotNil(
-                UIColor(named: name, in: appBundle, compatibleWith: nil),
-                "TabFlavor expects palette asset: \(name)"
+                UIColor(named: expectedAssetName, in: appBundle, compatibleWith: nil),
+                "TabFlavor.\(flavor) expects asset: \(expectedAssetName)"
             )
         }
+    }
+
+    func test_environment_default_is_inventory() {
+        let values = EnvironmentValues()
+        XCTAssertEqual(values.tabFlavor, .inventory)
     }
 }
