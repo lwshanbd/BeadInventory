@@ -28,10 +28,12 @@ struct ContentView: View {
     }
 
     var body: some View {
+        let currentFlavor = TabFlavor(rawValue: selectedTab) ?? .inventory
         ZStack(alignment: .bottom) {
             TabView(selection: $selectedTab) {
                 // 库存管理
                 InventoryView()
+                    .environment(\.tabFlavor, .inventory)
                     .tabItem {
                         Label("库存", systemImage: "square.grid.3x3.fill")
                     }
@@ -39,6 +41,7 @@ struct ContentView: View {
 
                 // 图纸导入
                 ScanView(externalImage: $externalImage)
+                    .environment(\.tabFlavor, .scan)
                     .tabItem {
                         Label("扫描", systemImage: "doc.text.viewfinder")
                     }
@@ -46,6 +49,7 @@ struct ContentView: View {
 
                 // 计划项目
                 PlannedProjectsView()
+                    .environment(\.tabFlavor, .plan)
                     .tabItem {
                         Label("计划", systemImage: "calendar.badge.clock")
                     }
@@ -53,6 +57,7 @@ struct ContentView: View {
 
                 // 统计
                 StatisticsView()
+                    .environment(\.tabFlavor, .statistics)
                     .tabItem {
                         Label("统计", systemImage: "chart.bar.fill")
                     }
@@ -60,12 +65,13 @@ struct ContentView: View {
 
                 // 更多（包含色号转换和设置）
                 MoreView()
+                    .environment(\.tabFlavor, .more)
                     .tabItem {
                         Label("更多", systemImage: "ellipsis.circle.fill")
                     }
                     .tag(4)
             }
-            .tint(Color("AccentColor"))
+            .tint(currentFlavor.color)
 
             // 右侧浮动加号按钮（仅在库存页显示）
             if selectedTab == 0 {

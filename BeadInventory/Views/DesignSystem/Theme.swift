@@ -91,3 +91,18 @@ enum Theme {
         }
     }
 }
+
+// MARK: - 环境感知颜色访问
+//
+// SwiftUI 的 ShapeStyle 扩展不能直接读环境；业务代码请用
+// `@Environment(\.tabFlavor) var flavor` 自行读取后再 `.color`。
+// 这里只暴露非环境感知的 fallback 色，深层 push 视图意外丢失环境时用。
+
+extension Theme.ColorToken.Interactive {
+    static var primaryFallback: Color { Color("Palette/Peach") }
+    static var secondary:       Color { Color("Palette/Neutral200") }
+}
+
+extension Theme.ColorToken.Border {
+    static var emphasisFallback: Color { Color("Palette/Peach") }
+}
