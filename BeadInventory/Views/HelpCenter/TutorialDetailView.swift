@@ -23,7 +23,7 @@ struct TutorialDetailView: View {
                             .foregroundColor(.accentColor)
                             .frame(width: 44, height: 44)
                             .background(Color.accentColor.opacity(0.1))
-                            .cornerRadius(10)
+                            .cornerRadius(Theme.Radius.md)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(section.localizedTitle)
@@ -84,7 +84,7 @@ struct StepCardView: View {
                     .foregroundColor(.white)
                     .frame(width: 24, height: 24)
                     .background(Color.accentColor)
-                    .cornerRadius(12)
+                    .cornerRadius(Theme.Radius.md)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(step.localizedTitle)
@@ -101,7 +101,7 @@ struct StepCardView: View {
                 Image(imageName)
                     .resizable()
                     .scaledToFit()
-                    .cornerRadius(12)
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.leading, 36)
             }
 
@@ -123,11 +123,11 @@ struct StepCardView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .fill(isHighlighted ? Color.accentColor.opacity(0.08) : Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(isHighlighted ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 1.5)
         )
         .padding(.horizontal)

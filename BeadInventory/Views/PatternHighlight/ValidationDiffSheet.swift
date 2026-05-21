@@ -69,6 +69,6 @@ struct ValidationDiffSheet: View {
             .padding(.vertical, 2)
             .background(d.delta > 0 ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
             .foregroundStyle(d.delta > 0 ? Color.green : Color.red)
-            .cornerRadius(4)
+            .cornerRadius(Theme.Radius.sm)
     }
 }

@@ -75,7 +75,7 @@ struct ColorPaletteBar: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
             .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-            .cornerRadius(8)
+            .cornerRadius(Theme.Radius.sm)
         }
         .buttonStyle(.plain)
     }

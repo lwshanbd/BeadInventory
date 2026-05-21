@@ -276,7 +276,7 @@ struct SeriesSelector: View {
                             .padding(.vertical, 8)
                             .background(selectedSeries == s ? Color.accentColor : Color(.systemGray5))
                             .foregroundColor(selectedSeries == s ? .white : .primary)
-                            .cornerRadius(20)
+                            .cornerRadius(Theme.Radius.lg)
                     }
                 }
             }
@@ -321,11 +321,11 @@ struct ColorAddRow: View {
             }
 
             // 颜色预览
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(color.color)
                 .frame(width: 40, height: 40)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
@@ -343,7 +343,7 @@ struct ColorAddRow: View {
         }
         .padding(12)
         .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -377,7 +377,7 @@ struct QuantityControl: View {
                     .foregroundColor(.white)
                     .frame(width: 28, height: 28)
                     .background(quantity > 0.5 ? Color.gray.opacity(0.6) : Color.gray.opacity(0.3))
-                    .cornerRadius(14)
+                    .cornerRadius(Theme.Radius.md)
             }
             .buttonStyle(PlainButtonStyle())
             .disabled(quantity <= 0.5)
@@ -389,7 +389,7 @@ struct QuantityControl: View {
                 .font(.system(size: 16, weight: .regular, design: .monospaced))
                 .frame(width: 60, height: 32)
                 .background(Color(.systemGray6))
-                .cornerRadius(8)
+                .cornerRadius(Theme.Radius.sm)
                 .focused($isFocused)
                 .onChange(of: editText) { _, newValue in
                     // 过滤只允许数字和小数点
@@ -417,7 +417,7 @@ struct QuantityControl: View {
                     .foregroundColor(.white)
                     .frame(width: 28, height: 28)
                     .background(Color.accentColor)
-                    .cornerRadius(14)
+                    .cornerRadius(Theme.Radius.md)
             }
             .buttonStyle(PlainButtonStyle())
 
@@ -476,7 +476,7 @@ struct ConfirmBar: View {
                         .padding(.horizontal, 24)
                         .padding(.vertical, 12)
                         .background(Color.accentColor)
-                        .cornerRadius(24)
+                        .cornerRadius(Theme.Radius.lg)
                 }
             }
             .padding()

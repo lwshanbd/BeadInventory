@@ -421,7 +421,7 @@ struct LocalModelOptionCard: View {
         }
         .padding(12)
         .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .alert("删除 \(model.displayName)？", isPresented: $showingDeleteConfirmation) {
             Button("取消", role: .cancel) {}
             Button("删除模型", role: .destructive) {

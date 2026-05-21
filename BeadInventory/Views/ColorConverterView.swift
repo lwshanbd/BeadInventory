@@ -43,7 +43,7 @@ struct ColorConverterView: View {
                 }
                 .padding()
                 .background(Color(.systemBackground))
-                .cornerRadius(12)
+                .cornerRadius(Theme.Radius.md)
                 .padding()
 
                 // 搜索结果
@@ -107,11 +107,11 @@ struct ColorConversionCard: View {
     var body: some View {
         HStack(spacing: 16) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .fill(color.color)
                 .frame(width: 60, height: 60)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
@@ -146,7 +146,7 @@ struct ColorConversionCard: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(16)
+        .cornerRadius(Theme.Radius.lg)
     }
 }
 
@@ -168,7 +168,7 @@ struct BrandCodeLabel: View {
                 .padding(.vertical, 2)
                 .background(color.opacity(0.15))
                 .foregroundColor(color)
-                .cornerRadius(4)
+                .cornerRadius(Theme.Radius.sm)
         }
     }
 }
@@ -186,11 +186,11 @@ struct ColorDetailSheet: View {
             ScrollView {
                 VStack(spacing: 24) {
                     // 大颜色预览
-                    RoundedRectangle(cornerRadius: 20)
+                    RoundedRectangle(cornerRadius: Theme.Radius.lg)
                         .fill(color.color)
                         .frame(height: 150)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 20)
+                            RoundedRectangle(cornerRadius: Theme.Radius.lg)
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 2)
                         )
                         .shadow(color: color.color.opacity(0.3), radius: 10, x: 0, y: 5)
@@ -214,7 +214,7 @@ struct ColorDetailSheet: View {
                         ConversionRow(brand: "卡卡", code: color.kakaCode, brandColor: .cyan)
                     }
                     .background(Color(.systemBackground))
-                    .cornerRadius(16)
+                    .cornerRadius(Theme.Radius.lg)
 
                     // 库存信息
                     VStack(spacing: 0) {
@@ -249,7 +249,7 @@ struct ColorDetailSheet: View {
                         .padding()
                     }
                     .background(Color(.systemBackground))
-                    .cornerRadius(16)
+                    .cornerRadius(Theme.Radius.lg)
 
                     // 颜色代码
                     VStack(spacing: 0) {
@@ -270,7 +270,7 @@ struct ColorDetailSheet: View {
                         .padding()
                     }
                     .background(Color(.systemBackground))
-                    .cornerRadius(16)
+                    .cornerRadius(Theme.Radius.lg)
                 }
                 .padding()
             }
@@ -309,7 +309,7 @@ struct ConversionRow: View {
                     .padding(.vertical, 6)
                     .background(brandColor.opacity(0.15))
                     .foregroundColor(brandColor)
-                    .cornerRadius(8)
+                    .cornerRadius(Theme.Radius.sm)
             }
 
             Button {

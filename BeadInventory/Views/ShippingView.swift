@@ -43,7 +43,7 @@ struct ShippingView: View {
                         .padding(.horizontal, 24)
                         .padding(.vertical, 12)
                         .background(Color.accentColor)
-                        .cornerRadius(24)
+                        .cornerRadius(Theme.Radius.lg)
                     }
                     .padding(.top, 8)
                 }
@@ -163,7 +163,7 @@ struct PasteReplenishSheet: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
                             .background(Color.gray.opacity(0.1))
-                            .cornerRadius(8)
+                            .cornerRadius(Theme.Radius.sm)
 
                         Button {
                             parseClipboard()
@@ -177,7 +177,7 @@ struct PasteReplenishSheet: View {
                             .padding(.horizontal, 32)
                             .padding(.vertical, 14)
                             .background(Color.accentColor)
-                            .cornerRadius(25)
+                            .cornerRadius(Theme.Radius.lg)
                         }
 
                         if let error = parseError {
@@ -209,7 +209,7 @@ struct PasteReplenishSheet: View {
                                                     .padding(.vertical, 10)
                                                     .background(selectedBrandId == brand.id ? Color.accentColor : Color.gray.opacity(0.2))
                                                     .foregroundColor(selectedBrandId == brand.id ? .white : .primary)
-                                                    .cornerRadius(20)
+                                                    .cornerRadius(Theme.Radius.lg)
                                             }
                                         }
                                     }
@@ -217,7 +217,7 @@ struct PasteReplenishSheet: View {
                             }
                             .padding()
                             .background(Color(.systemBackground))
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal)
 
                             // 记录名称
@@ -248,7 +248,7 @@ struct PasteReplenishSheet: View {
                             }
                             .padding()
                             .background(Color.green.opacity(0.1))
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal)
 
                             // 颜色列表预览
@@ -282,7 +282,7 @@ struct PasteReplenishSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .padding()
                                 .background(canSave ? Color.accentColor : Color.gray)
-                                .cornerRadius(12)
+                                .cornerRadius(Theme.Radius.md)
                         }
                         .disabled(!canSave)
                         .padding()
@@ -394,11 +394,11 @@ struct PasteItemRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 36, height: 36)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
@@ -419,7 +419,7 @@ struct PasteItemRow: View {
         }
         .padding(10)
         .background(Color(.systemBackground))
-        .cornerRadius(10)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -568,7 +568,7 @@ struct PurchaseRecordDetailView: View {
                 }
                 .padding()
                 .background(Color(.systemBackground))
-                .cornerRadius(12)
+                .cornerRadius(Theme.Radius.md)
                 .padding(.horizontal)
 
                 // 颜色列表
@@ -599,7 +599,7 @@ struct PurchaseRecordDetailView: View {
                         .padding()
                         .background(Color.green)
                         .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                     }
 
                     HStack(spacing: 24) {
@@ -680,11 +680,11 @@ struct PurchaseItemRow: View {
     var body: some View {
         HStack(spacing: 12) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 36, height: 36)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
@@ -703,7 +703,7 @@ struct PurchaseItemRow: View {
         }
         .padding(10)
         .background(Color(.systemBackground))
-        .cornerRadius(10)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -872,7 +872,7 @@ struct AddPurchaseRecordView: View {
                                     .padding(.horizontal, 24)
                                     .padding(.vertical, 12)
                                     .background(canSave ? Color.accentColor : Color.gray)
-                                    .cornerRadius(24)
+                                    .cornerRadius(Theme.Radius.lg)
                             }
                             .disabled(!canSave)
                         }
@@ -1035,7 +1035,7 @@ struct EditPurchaseRecordSheet: View {
                         }
                         .padding()
                         .background(Color(.systemBackground))
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 汇总信息
@@ -1060,7 +1060,7 @@ struct EditPurchaseRecordSheet: View {
                         }
                         .padding()
                         .background(Color(.systemBackground))
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 颜色列表
@@ -1105,7 +1105,7 @@ struct EditPurchaseRecordSheet: View {
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(hasChanges && !items.isEmpty ? Color.accentColor : Color.gray)
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                     }
                     .disabled(!hasChanges || items.isEmpty)
                     .padding()
@@ -1179,11 +1179,11 @@ struct EditableItemRow: View {
     var body: some View {
         HStack(spacing: 12) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 36, height: 36)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
@@ -1239,7 +1239,7 @@ struct EditableItemRow: View {
         }
         .padding(10)
         .background(Color(.systemBackground))
-        .cornerRadius(10)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -1316,11 +1316,11 @@ struct AddColorToRecordSheet: View {
                                 selectedColorId = color.id
                             } label: {
                                 HStack(spacing: 12) {
-                                    RoundedRectangle(cornerRadius: 6)
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                         .fill(color.color)
                                         .frame(width: 36, height: 36)
                                         .overlay(
-                                            RoundedRectangle(cornerRadius: 6)
+                                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                                         )
 
@@ -1338,7 +1338,7 @@ struct AddColorToRecordSheet: View {
                                 }
                                 .padding(10)
                                 .background(selectedColorId == color.id ? Color.accentColor.opacity(0.1) : Color(.systemBackground))
-                                .cornerRadius(10)
+                                .cornerRadius(Theme.Radius.md)
                             }
                         }
                     }
@@ -1355,7 +1355,7 @@ struct AddColorToRecordSheet: View {
                             // 已选颜色
                             HStack {
                                 if let color = selectedColor {
-                                    RoundedRectangle(cornerRadius: 4)
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                         .fill(color.color)
                                         .frame(width: 24, height: 24)
                                     Text(color.displayCode(for: brandColorSystem))
@@ -1409,7 +1409,7 @@ struct AddColorToRecordSheet: View {
                                     .frame(maxWidth: .infinity)
                                     .padding()
                                     .background(Color.accentColor)
-                                    .cornerRadius(12)
+                                    .cornerRadius(Theme.Radius.md)
                             }
                         }
                         .padding()

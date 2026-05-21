@@ -139,11 +139,11 @@ struct LowStockRowView: View {
     var body: some View {
         HStack(spacing: 12) {
             // 颜色块
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(color?.color ?? Color.gray.opacity(0.3))
                 .frame(width: 40, height: 40)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
                 .overlay(alignment: .topTrailing) {
@@ -167,7 +167,7 @@ struct LowStockRowView: View {
                             .padding(.vertical, 2)
                             .background(Color.orange.opacity(0.2))
                             .foregroundColor(.orange)
-                            .cornerRadius(4)
+                            .cornerRadius(Theme.Radius.sm)
                     }
                 }
 

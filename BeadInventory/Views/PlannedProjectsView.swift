@@ -338,9 +338,9 @@ struct PlannedProjectRow: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: 50, height: 50)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
                 }
@@ -383,9 +383,9 @@ struct PlannedProjectRow: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: 50, height: 50)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
                 }
@@ -501,9 +501,9 @@ struct PlannedChildProjectRow: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
             }
@@ -1002,7 +1002,7 @@ struct PlannedProjectDetailView: View {
         }
         .padding()
         .background(Color.orange.opacity(0.1))
-        .cornerRadius(10)
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 
@@ -1046,7 +1046,7 @@ struct PlannedProjectDetailView: View {
             .frame(maxWidth: .infinity)
             .padding()
             .background((currentProject ?? project).thumbnail == nil ? Color.gray : Color.purple)
-            .cornerRadius(12)
+            .cornerRadius(Theme.Radius.md)
         }
         .disabled((currentProject ?? project).thumbnail == nil)
     }
@@ -1064,7 +1064,7 @@ struct PlannedProjectDetailView: View {
             .frame(maxWidth: .infinity)
             .padding()
             .background(Color.blue)
-            .cornerRadius(12)
+            .cornerRadius(Theme.Radius.md)
         }
     }
 
@@ -1081,7 +1081,7 @@ struct PlannedProjectDetailView: View {
             .frame(maxWidth: .infinity)
             .padding()
             .background(Color.green)
-            .cornerRadius(12)
+            .cornerRadius(Theme.Radius.md)
         }
     }
 
@@ -1114,7 +1114,7 @@ struct PlannedProjectDetailView: View {
             }
             .padding()
             .background(Color(.systemBackground))
-            .cornerRadius(12)
+            .cornerRadius(Theme.Radius.md)
             .padding(.horizontal)
         }
     }
@@ -1247,14 +1247,14 @@ struct PlannedProjectInfoCard: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 150)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: Theme.Radius.md)
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
                 } else if onEditThumbnail != nil {
                     // 无图片时的占位符
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
                         .fill(Color.gray.opacity(0.1))
                         .frame(height: 100)
                         .overlay(
@@ -1301,7 +1301,7 @@ struct PlannedProjectInfoCard: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(project.colorSystem == .kaka ? Color.purple.opacity(0.1) : Color.blue.opacity(0.1))
-                        .cornerRadius(6)
+                        .cornerRadius(Theme.Radius.sm)
 
                     Label("计划中", systemImage: "clock.fill")
                         .font(.caption)
@@ -1309,7 +1309,7 @@ struct PlannedProjectInfoCard: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Color.orange.opacity(0.1))
-                        .cornerRadius(6)
+                        .cornerRadius(Theme.Radius.sm)
                 }
             }
 
@@ -1351,7 +1351,7 @@ struct PlannedProjectInfoCard: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 }
@@ -1372,11 +1372,11 @@ struct PlannedBeadUsageRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 44, height: 44)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
@@ -1406,7 +1406,7 @@ struct PlannedBeadUsageRow: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(10)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -1499,7 +1499,7 @@ struct StockCheckSheet: View {
                     }
                     .padding()
                     .background(Color.blue.opacity(0.1))
-                    .cornerRadius(10)
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
                     // 各品牌库存检查结果
@@ -1680,10 +1680,10 @@ struct AllBrandsStockCheckCard: View {
         .padding()
         .background(isSufficient ? Color.green.opacity(0.08) : Color.red.opacity(0.08))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(isSufficient ? Color.green.opacity(0.4) : Color.red.opacity(0.4), lineWidth: 2)
         )
-        .cornerRadius(12)
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 }
@@ -1708,11 +1708,11 @@ struct AllBrandsInsufficientColorRow: View {
     var body: some View {
         HStack(spacing: 10) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 28, height: 28)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
@@ -1754,7 +1754,7 @@ struct AllBrandsInsufficientColorRow: View {
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(Color(.systemBackground))
-        .cornerRadius(6)
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 
@@ -1955,10 +1955,10 @@ struct BrandStockCheckCard: View {
         .padding()
         .background(statusColor.opacity(0.05))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(statusColor.opacity(0.3), lineWidth: 1)
         )
-        .cornerRadius(12)
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 }
@@ -1983,11 +1983,11 @@ struct InsufficientColorRow: View {
     var body: some View {
         HStack(spacing: 10) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 28, height: 28)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
@@ -2029,7 +2029,7 @@ struct InsufficientColorRow: View {
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(Color.red.opacity(0.05))
-        .cornerRadius(6)
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 
@@ -2054,11 +2054,11 @@ struct LowStockColorRow: View {
     var body: some View {
         HStack(spacing: 10) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 28, height: 28)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
@@ -2105,7 +2105,7 @@ struct LowStockColorRow: View {
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(Color.orange.opacity(0.05))
-        .cornerRadius(6)
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 
@@ -2262,11 +2262,11 @@ struct EditableUsageRow: View {
     var body: some View {
         HStack(spacing: 12) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 36, height: 36)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
@@ -2298,7 +2298,7 @@ struct EditableUsageRow: View {
                     .frame(width: 60)
                     .padding(.vertical, 6)
                     .background(Color(.systemGray6))
-                    .cornerRadius(8)
+                    .cornerRadius(Theme.Radius.sm)
                     .focused($isQuantityFocused)
                     .onChange(of: quantityText) { _, newValue in
                         if let value = Int(newValue), value > 0 {
@@ -2393,7 +2393,7 @@ struct AddColorToProjectSheet: View {
                 }
                 .padding(10)
                 .background(Color(.systemGray6))
-                .cornerRadius(10)
+                .cornerRadius(Theme.Radius.md)
                 .padding()
 
                 // 已选择的颜色和数量
@@ -2401,11 +2401,11 @@ struct AddColorToProjectSheet: View {
                    let color = inventoryManager.findColor(byCode: colorCode) {
                     VStack(spacing: 12) {
                         HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                 .fill(color.color)
                                 .frame(width: 50, height: 50)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                                 )
 
@@ -2439,7 +2439,7 @@ struct AddColorToProjectSheet: View {
                                     .frame(width: 60)
                                     .padding(.vertical, 6)
                                     .background(Color(.systemGray6))
-                                    .cornerRadius(8)
+                                    .cornerRadius(Theme.Radius.sm)
                                     .onChange(of: quantityText) { _, newValue in
                                         if let value = Int(newValue), value > 0 {
                                             quantity = value
@@ -2458,7 +2458,7 @@ struct AddColorToProjectSheet: View {
                         }
                         .padding()
                         .background(Color(.systemBackground))
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                         .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
                     }
                     .padding(.horizontal)
@@ -2471,11 +2471,11 @@ struct AddColorToProjectSheet: View {
                             selectedColorCode = color.mardCode
                         } label: {
                             HStack(spacing: 12) {
-                                RoundedRectangle(cornerRadius: 6)
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                     .fill(color.color)
                                     .frame(width: 32, height: 32)
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 6)
+                                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                                     )
 
@@ -2604,14 +2604,14 @@ struct MultiProjectStockCheckSheet: View {
                                         .padding(.vertical, 6)
                                         .background(Color.accentColor.opacity(0.1))
                                         .foregroundColor(.accentColor)
-                                        .cornerRadius(12)
+                                        .cornerRadius(Theme.Radius.md)
                                 }
                             }
                         }
                     }
                     .padding()
                     .background(Color.blue.opacity(0.1))
-                    .cornerRadius(10)
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
                     // 各品牌库存检查结果
@@ -2972,7 +2972,7 @@ struct ReplenishSuggestionSheet: View {
                                                 .padding(.vertical, 10)
                                                 .background(selectedBrandId == brand.id ? Color.accentColor : Color.gray.opacity(0.2))
                                                 .foregroundColor(selectedBrandId == brand.id ? .white : .primary)
-                                                .cornerRadius(20)
+                                                .cornerRadius(Theme.Radius.lg)
                                         }
                                     }
                                 }
@@ -2981,7 +2981,7 @@ struct ReplenishSuggestionSheet: View {
                     }
                     .padding()
                     .background(Color(.systemBackground))
-                    .cornerRadius(12)
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
                     if selectedBrand != nil {
@@ -3033,7 +3033,7 @@ struct ReplenishSuggestionSheet: View {
                         }
                         .padding()
                         .background(Color(.systemBackground))
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 状态栏
@@ -3058,7 +3058,7 @@ struct ReplenishSuggestionSheet: View {
                         }
                         .padding()
                         .background(remainingForFreeShipping > 0 ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 选中项目信息
@@ -3072,7 +3072,7 @@ struct ReplenishSuggestionSheet: View {
                         }
                         .padding()
                         .background(Color.blue.opacity(0.1))
-                        .cornerRadius(10)
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 负库存区域
@@ -3152,7 +3152,7 @@ struct ReplenishSuggestionSheet: View {
                                     .padding()
                                     .frame(maxWidth: .infinity)
                                     .background(showExportSuccess ? Color.green : Color.orange)
-                                    .cornerRadius(12)
+                                    .cornerRadius(Theme.Radius.md)
                                 }
 
                                 // 复制补豆计划
@@ -3393,7 +3393,7 @@ struct DirectPurchaseSheet: View {
                     }
                     .padding()
                     .background(Color.green.opacity(0.1))
-                    .cornerRadius(10)
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
                     // 色系 & 品牌选择
@@ -3441,7 +3441,7 @@ struct DirectPurchaseSheet: View {
                                                 .padding(.vertical, 10)
                                                 .background(selectedBrandId == brand.id ? Color.green : Color.gray.opacity(0.2))
                                                 .foregroundColor(selectedBrandId == brand.id ? .white : .primary)
-                                                .cornerRadius(20)
+                                                .cornerRadius(Theme.Radius.lg)
                                         }
                                     }
                                 }
@@ -3450,7 +3450,7 @@ struct DirectPurchaseSheet: View {
                     }
                     .padding()
                     .background(Color(.systemBackground))
-                    .cornerRadius(12)
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
                     if selectedBrand != nil {
@@ -3502,7 +3502,7 @@ struct DirectPurchaseSheet: View {
                         }
                         .padding()
                         .background(Color(.systemBackground))
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 状态栏
@@ -3527,7 +3527,7 @@ struct DirectPurchaseSheet: View {
                         }
                         .padding()
                         .background(remainingForFreeShipping > 0 ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 用量列表
@@ -3575,8 +3575,8 @@ struct DirectPurchaseSheet: View {
                             }
                             .padding()
                             .background(Color.green.opacity(0.05))
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.3), lineWidth: 1))
-                            .cornerRadius(12)
+                            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Color.green.opacity(0.3), lineWidth: 1))
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal)
                         }
 
@@ -3591,7 +3591,7 @@ struct DirectPurchaseSheet: View {
                             }
                             .padding()
                             .background(Color.orange.opacity(0.1))
-                            .cornerRadius(10)
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal)
                         }
 
@@ -3609,7 +3609,7 @@ struct DirectPurchaseSheet: View {
                                 .padding()
                                 .frame(maxWidth: .infinity)
                                 .background(hasExported ? Color.green : Color.green.opacity(0.8))
-                                .cornerRadius(12)
+                                .cornerRadius(Theme.Radius.md)
                             }
                             .disabled(hasExported)
 
@@ -3694,10 +3694,10 @@ struct DirectPurchaseColorRow: View {
     var body: some View {
         HStack(spacing: 8) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 28, height: 28)
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.gray.opacity(0.3), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sm).stroke(Color.gray.opacity(0.3), lineWidth: 1))
 
             // 色号 + 需要颗数
             VStack(alignment: .leading, spacing: 2) {
@@ -3749,7 +3749,7 @@ struct DirectPurchaseColorRow: View {
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
         .background(Color(.systemBackground))
-        .cornerRadius(8)
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 
@@ -3830,8 +3830,8 @@ struct ReplenishSectionView: View {
         }
         .padding()
         .background(color.opacity(0.05))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.3), lineWidth: 1))
-        .cornerRadius(12)
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(color.opacity(0.3), lineWidth: 1))
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 }
@@ -3890,8 +3890,8 @@ struct HighUsageSectionView: View {
         }
         .padding()
         .background(Color.green.opacity(0.05))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.3), lineWidth: 1))
-        .cornerRadius(12)
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Color.green.opacity(0.3), lineWidth: 1))
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 }
@@ -3924,10 +3924,10 @@ struct ReplenishColorRow: View {
     var body: some View {
         HStack(spacing: 8) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 28, height: 28)
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.gray.opacity(0.3), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sm).stroke(Color.gray.opacity(0.3), lineWidth: 1))
 
             // 色号
             VStack(alignment: .leading, spacing: 2) {
@@ -3998,7 +3998,7 @@ struct ReplenishColorRow: View {
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
         .background(Color(.systemBackground))
-        .cornerRadius(8)
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 

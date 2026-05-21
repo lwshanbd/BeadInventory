@@ -110,7 +110,7 @@ struct DeductionReviewView: View {
                     .padding(.vertical, 5)
                     .background(Color.accentColor.opacity(0.1))
                     .foregroundColor(.accentColor)
-                    .cornerRadius(12)
+                    .cornerRadius(Theme.Radius.md)
                 }
             }
             .padding()
@@ -160,7 +160,7 @@ struct DeductionReviewView: View {
                     .padding()
                     .background(resolver.insufficientItems.isEmpty ? Color.green : Color.red)
                     .foregroundColor(.white)
-                    .cornerRadius(12)
+                    .cornerRadius(Theme.Radius.md)
                 }
             }
             .padding()

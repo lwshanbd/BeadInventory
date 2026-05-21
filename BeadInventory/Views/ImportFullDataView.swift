@@ -506,7 +506,7 @@ struct ImportFullDataView: View {
                 .padding()
                 .background(Color.accentColor)
                 .foregroundColor(.white)
-                .cornerRadius(12)
+                .cornerRadius(Theme.Radius.md)
             }
             .padding(.horizontal, 40)
 
@@ -536,7 +536,7 @@ struct ImportFullDataView: View {
             }
             .padding()
             .background(Color(.systemGray6))
-            .cornerRadius(8)
+            .cornerRadius(Theme.Radius.sm)
 
             Text("支持 JSON 和 CSV 格式，会自动识别")
                 .font(.caption)
@@ -544,7 +544,7 @@ struct ImportFullDataView: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .cornerRadius(Theme.Radius.md)
     }
 
     // MARK: - 文件处理
@@ -965,7 +965,7 @@ struct ImportFullDataPreviewView: View {
                         .padding()
                         .background(Color(.systemGray5))
                         .foregroundColor(.primary)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
 
                 Button {
@@ -976,7 +976,7 @@ struct ImportFullDataPreviewView: View {
                         .padding()
                         .background(canImport ? Color.accentColor : Color.gray)
                         .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
                 .disabled(!canImport)
             }

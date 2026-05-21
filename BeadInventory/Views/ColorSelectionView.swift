@@ -243,11 +243,11 @@ struct ColorSelectRow: View {
                 }
 
                 // 颜色预览
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
                     .fill(color.color)
                     .frame(width: 40, height: 40)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
 
@@ -275,7 +275,7 @@ struct ColorSelectRow: View {
             }
             .padding(12)
             .background(isSelected ? Color.accentColor.opacity(0.08) : Color(.systemBackground))
-            .cornerRadius(12)
+            .cornerRadius(Theme.Radius.md)
         }
         .buttonStyle(PlainButtonStyle())
     }

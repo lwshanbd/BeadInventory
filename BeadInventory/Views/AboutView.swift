@@ -24,7 +24,7 @@ struct AboutView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 120, height: 120)
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous))
                         .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
 
                     Text("啃豆小仓")
@@ -57,7 +57,7 @@ struct AboutView: View {
                 .padding()
                 .frame(maxWidth: .infinity)
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: Theme.Radius.lg)
                         .fill(Color.pink.opacity(0.1))
                 )
                 .padding(.horizontal)
@@ -91,7 +91,7 @@ struct AboutView: View {
                 }
                 .padding()
                 .background(Color(.systemGray6))
-                .cornerRadius(16)
+                .cornerRadius(Theme.Radius.lg)
                 .padding(.horizontal)
 
                 // 开发者信息
@@ -111,7 +111,7 @@ struct AboutView: View {
                 }
                 .padding()
                 .background(Color(.systemGray6))
-                .cornerRadius(16)
+                .cornerRadius(Theme.Radius.lg)
                 .padding(.horizontal)
 
                 // 特别感谢
@@ -140,7 +140,7 @@ struct AboutView: View {
                 }
                 .padding()
                 .background(Color(.systemGray6))
-                .cornerRadius(16)
+                .cornerRadius(Theme.Radius.lg)
                 .padding(.horizontal)
 
                 // 原创声明
@@ -159,7 +159,7 @@ struct AboutView: View {
                 .padding()
                 .frame(maxWidth: .infinity)
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: Theme.Radius.lg)
                         .fill(Color.blue.opacity(0.1))
                 )
                 .padding(.horizontal)

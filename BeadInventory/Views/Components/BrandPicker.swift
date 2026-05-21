@@ -37,7 +37,7 @@ struct BrandPicker: View {
                 .padding(.vertical, 8)
                 .background(Color.accentColor)
                 .foregroundColor(.white)
-                .cornerRadius(20)
+                .cornerRadius(Theme.Radius.lg)
             }
             .sheet(isPresented: $showingBrandManager) {
                 BrandManagerView()
@@ -76,7 +76,7 @@ struct BrandPicker: View {
                 .padding(.vertical, 8)
                 .background(Color.accentColor.opacity(0.1))
                 .foregroundColor(.accentColor)
-                .cornerRadius(20)
+                .cornerRadius(Theme.Radius.lg)
             }
             .sheet(isPresented: $showingBrandManager) {
                 BrandManagerView()

@@ -146,7 +146,7 @@ struct InventoryView: View {
                                 .foregroundColor(.accentColor)
                                 .padding(8)
                                 .background(Color.accentColor.opacity(0.1))
-                                .cornerRadius(8)
+                                .cornerRadius(Theme.Radius.sm)
                         }
                     }
 
@@ -198,7 +198,7 @@ struct InventoryView: View {
                                 .padding(.vertical, 6)
                                 .background(Color.accentColor.opacity(0.2))
                                 .foregroundColor(.accentColor)
-                                .cornerRadius(16)
+                                .cornerRadius(Theme.Radius.lg)
                             }
 
                             // 分组按钮
@@ -219,7 +219,7 @@ struct InventoryView: View {
                                 .padding(.vertical, 6)
                                 .background(groupByPrefix ? Color.orange : Color.gray.opacity(0.2))
                                 .foregroundColor(groupByPrefix ? .white : .primary)
-                                .cornerRadius(16)
+                                .cornerRadius(Theme.Radius.lg)
                             }
                         }
                         .padding(.horizontal)
@@ -625,7 +625,7 @@ struct SortChip: View {
                 .padding(.vertical, 6)
                 .background(isSelected ? Color.accentColor.opacity(0.2) : Color(.systemGray6))
                 .foregroundColor(isSelected ? .accentColor : .secondary)
-                .cornerRadius(16)
+                .cornerRadius(Theme.Radius.lg)
         }
     }
 }
@@ -654,11 +654,11 @@ struct ColorCardView: View {
     var body: some View {
         VStack(spacing: 8) {
             // 颜色块
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(color.color)
                 .frame(height: 50)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
                 .overlay(alignment: .topTrailing) {
@@ -704,7 +704,7 @@ struct ColorCardView: View {
         }
         .padding(8)
         .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .cornerRadius(Theme.Radius.md)
         .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
     }
 }
@@ -805,7 +805,7 @@ struct ColorRowView: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(Color(.systemBackground))
-        .cornerRadius(10)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -844,11 +844,11 @@ struct EditStockSheet: View {
 
                 // 颜色预览
                 VStack(spacing: 12) {
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: Theme.Radius.lg)
                         .fill(color.color)
                         .frame(height: 100)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: Theme.Radius.lg)
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
 
@@ -866,7 +866,7 @@ struct EditStockSheet: View {
                 }
                 .padding()
                 .background(Color(.systemGray6))
-                .cornerRadius(16)
+                .cornerRadius(Theme.Radius.lg)
 
                 // 当前库存信息
                 HStack(spacing: 20) {
@@ -902,13 +902,13 @@ struct EditStockSheet: View {
                                 .padding(.vertical, 8)
                                 .background(Color.accentColor)
                                 .foregroundColor(.white)
-                                .cornerRadius(8)
+                                .cornerRadius(Theme.Radius.sm)
                         }
                     }
                 }
                 .padding()
                 .background(Color(.systemGray6))
-                .cornerRadius(16)
+                .cornerRadius(Theme.Radius.lg)
 
                 // 直接设置库存
                 VStack(alignment: .leading, spacing: 12) {
@@ -933,7 +933,7 @@ struct EditStockSheet: View {
                                 .padding(.vertical, 8)
                                 .background(Color.orange)
                                 .foregroundColor(.white)
-                                .cornerRadius(8)
+                                .cornerRadius(Theme.Radius.sm)
                         }
                     }
 
@@ -955,13 +955,13 @@ struct EditStockSheet: View {
                                 .padding(.vertical, 8)
                                 .background(Color.green)
                                 .foregroundColor(.white)
-                                .cornerRadius(8)
+                                .cornerRadius(Theme.Radius.sm)
                         }
                     }
                 }
                 .padding()
                 .background(Color(.systemGray6))
-                .cornerRadius(16)
+                .cornerRadius(Theme.Radius.lg)
 
                 // 隐藏色号
                 VStack(alignment: .leading, spacing: 12) {
@@ -988,7 +988,7 @@ struct EditStockSheet: View {
                 }
                 .padding()
                 .background(Color(.systemGray6))
-                .cornerRadius(16)
+                .cornerRadius(Theme.Radius.lg)
             }
             .padding()
             }

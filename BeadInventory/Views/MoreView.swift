@@ -62,7 +62,7 @@ struct MoreView: View {
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 2)
                                         .background(Color.orange)
-                                        .cornerRadius(10)
+                                        .cornerRadius(Theme.Radius.md)
                                 }
                             }
                         } icon: {

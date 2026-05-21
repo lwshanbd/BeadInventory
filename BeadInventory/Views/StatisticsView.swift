@@ -96,7 +96,7 @@ struct UsageStatisticsView: View {
                     Toggle("仅显示低库存", isOn: $showLowStockOnly)
                         .padding()
                         .background(Color(.systemBackground))
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                     // 使用排行
@@ -263,7 +263,7 @@ struct UsageRankRow: View {
                     .foregroundColor(.white)
                     .frame(width: 24, height: 24)
                     .background(rankColor)
-                    .cornerRadius(12)
+                    .cornerRadius(Theme.Radius.md)
 
                 BIRow(
                     title: color.displayCode(for: inventoryManager.currentColorSystem),
@@ -290,11 +290,11 @@ struct UsageRankRow: View {
 
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 3)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
                             .fill(Color.gray.opacity(0.2))
                             .frame(height: 6)
 
-                        RoundedRectangle(cornerRadius: 3)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
                             .fill(
                                 LinearGradient(
                                     colors: [color.color, color.color.opacity(0.6)],
@@ -488,7 +488,7 @@ struct ProjectHistoryView: View {
                             .padding(.vertical, 12)
                             .background(selectedProjects.count >= 2 ? Color.accentColor : Color.gray.opacity(0.3))
                             .foregroundColor(selectedProjects.count >= 2 ? .white : .secondary)
-                            .cornerRadius(10)
+                            .cornerRadius(Theme.Radius.md)
                         }
                         .disabled(selectedProjects.count < 2)
 
@@ -510,7 +510,7 @@ struct ProjectHistoryView: View {
                             .padding(.vertical, 12)
                             .background(Color.blue)
                             .foregroundColor(.white)
-                            .cornerRadius(10)
+                            .cornerRadius(Theme.Radius.md)
                         }
 
                         // 退回按钮
@@ -527,7 +527,7 @@ struct ProjectHistoryView: View {
                             .padding(.vertical, 12)
                             .background(Color.orange)
                             .foregroundColor(.white)
-                            .cornerRadius(10)
+                            .cornerRadius(Theme.Radius.md)
                         }
                     }
                     .padding(.horizontal)
@@ -947,7 +947,7 @@ struct RevertToPlanSheet: View {
                     }
                     .padding()
                     .background(Color(.systemGray6))
-                    .cornerRadius(10)
+                    .cornerRadius(Theme.Radius.md)
                 }
                 .padding(.horizontal)
 
@@ -970,7 +970,7 @@ struct RevertToPlanSheet: View {
                             .padding()
                             .background(Color(.systemGray5))
                             .foregroundColor(.primary)
-                            .cornerRadius(10)
+                            .cornerRadius(Theme.Radius.md)
                     }
 
                     Button {
@@ -981,7 +981,7 @@ struct RevertToPlanSheet: View {
                             .padding()
                             .background(Color.orange)
                             .foregroundColor(.white)
-                            .cornerRadius(10)
+                            .cornerRadius(Theme.Radius.md)
                     }
                 }
                 .padding(.horizontal)
@@ -1154,7 +1154,7 @@ struct ProjectRowWithHierarchy: View {
                                 .padding(.vertical, 2)
                                 .background(Color.purple.opacity(0.1))
                                 .foregroundColor(.purple)
-                                .cornerRadius(4)
+                                .cornerRadius(Theme.Radius.sm)
                         }
 
                         if isParent {
@@ -1164,7 +1164,7 @@ struct ProjectRowWithHierarchy: View {
                                 .padding(.vertical, 2)
                                 .background(Color.blue.opacity(0.1))
                                 .foregroundColor(.blue)
-                                .cornerRadius(4)
+                                .cornerRadius(Theme.Radius.sm)
                         }
 
                         Label("\(colorCount) 色", systemImage: "paintpalette")
@@ -1191,7 +1191,7 @@ struct ProjectRowWithHierarchy: View {
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
                                         .background(Color.accentColor.opacity(0.1))
-                                        .cornerRadius(4)
+                                        .cornerRadius(Theme.Radius.sm)
                                 }
 
                                 if visibleUsage.count > 10 {

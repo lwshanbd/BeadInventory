@@ -202,7 +202,7 @@ struct PatternCalibrationView: View {
                         ProgressView("自动检测中...")
                             .padding()
                             .background(.regularMaterial)
-                            .cornerRadius(8)
+                            .cornerRadius(Theme.Radius.sm)
                             .position(x: geo.size.width / 2, y: geo.size.height / 2)
                             .allowsHitTesting(false)
                     }
@@ -330,9 +330,9 @@ struct PatternCalibrationView: View {
                 .frame(minWidth: 50, maxWidth: 70)
                 .padding(.vertical, 4)
                 .background(Color(.systemBackground))
-                .cornerRadius(6)
+                .cornerRadius(Theme.Radius.sm)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
                 .onChange(of: value.wrappedValue) { _, newValue in
@@ -351,7 +351,7 @@ struct PatternCalibrationView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(Color.secondary.opacity(0.1))
-        .cornerRadius(8)
+        .cornerRadius(Theme.Radius.sm)
     }
 
     /// 按用户输入的 rows/cols + 当前矩形（ROI）反推最佳 corners。

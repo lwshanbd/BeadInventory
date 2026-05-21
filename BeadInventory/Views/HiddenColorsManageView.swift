@@ -126,7 +126,7 @@ struct HiddenColorsManageView: View {
                     .padding()
                     .frame(maxWidth: .infinity)
                     .background(Color.green)
-                    .cornerRadius(12)
+                    .cornerRadius(Theme.Radius.md)
                 }
                 .padding()
             }
@@ -184,15 +184,15 @@ struct HiddenColorRow: View {
 
             // 颜色块
             if let color = color {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
                     .fill(color.color)
                     .frame(width: 40, height: 40)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
             } else {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
                     .fill(Color.gray.opacity(0.3))
                     .frame(width: 40, height: 40)
             }

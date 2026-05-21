@@ -122,7 +122,7 @@ struct ProjectDetailView: View {
                     }
                     .padding()
                     .background(Color(.systemBackground))
-                    .cornerRadius(12)
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
                 }
 
@@ -244,9 +244,9 @@ struct ChildProjectRow: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
             }
@@ -280,7 +280,7 @@ struct ChildProjectRow: View {
         }
         .padding()
         .background(Color(.systemGray6))
-        .cornerRadius(8)
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 
@@ -304,9 +304,9 @@ struct ChildProjectRowWithActions: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
             }
@@ -357,7 +357,7 @@ struct ChildProjectRowWithActions: View {
         }
         .padding()
         .background(Color(.systemGray6))
-        .cornerRadius(8)
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 
@@ -386,14 +386,14 @@ struct ProjectInfoCardEnhanced: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 150)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: Theme.Radius.md)
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
                 } else if onEditThumbnail != nil {
                     // 无图片时的占位符
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
                         .fill(Color.gray.opacity(0.1))
                         .frame(height: 100)
                         .overlay(
@@ -434,7 +434,7 @@ struct ProjectInfoCardEnhanced: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Color.accentColor.opacity(0.1))
-                        .cornerRadius(6)
+                        .cornerRadius(Theme.Radius.sm)
                 }
 
                 Label(project.date.formatted(date: .long, time: .omitted), systemImage: "calendar")
@@ -450,7 +450,7 @@ struct ProjectInfoCardEnhanced: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Color.orange.opacity(0.1))
-                        .cornerRadius(6)
+                        .cornerRadius(Theme.Radius.sm)
                 }
             }
 
@@ -505,7 +505,7 @@ struct ProjectInfoCardEnhanced: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 }
@@ -536,11 +536,11 @@ struct BeadUsageRow: View {
     var body: some View {
         HStack(spacing: 12) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 44, height: 44)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
@@ -579,7 +579,7 @@ struct BeadUsageRow: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(10)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -620,9 +620,9 @@ struct FinishedImageSection: View {
                     .resizable()
                     .scaledToFit()
                     .frame(maxHeight: 300)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: Theme.Radius.md)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
 
@@ -659,7 +659,7 @@ struct FinishedImageSection: View {
                 .padding(.top, 8)
             } else {
                 // 空状态占位符
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
                     .fill(Color.gray.opacity(0.1))
                     .frame(height: 150)
                     .overlay(
@@ -679,7 +679,7 @@ struct FinishedImageSection: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
         .sheet(isPresented: $showingDatePicker) {
             CompletedDatePickerSheet(
@@ -772,15 +772,15 @@ struct ProjectImageEditorSheet: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 250)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: Theme.Radius.md)
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
                         .padding(.horizontal)
                 } else {
                     // 空状态
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
                         .fill(Color.gray.opacity(0.1))
                         .frame(height: 200)
                         .overlay(
@@ -811,7 +811,7 @@ struct ProjectImageEditorSheet: View {
                             .padding()
                             .background(Color.accentColor)
                             .foregroundColor(.white)
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                         }
 
                         // 拍照按钮
@@ -827,7 +827,7 @@ struct ProjectImageEditorSheet: View {
                             .padding()
                             .background(Color.green)
                             .foregroundColor(.white)
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                         }
                     }
                     .padding(.horizontal)
@@ -847,7 +847,7 @@ struct ProjectImageEditorSheet: View {
                                 .padding()
                                 .background(Color.blue.opacity(0.1))
                                 .foregroundColor(.blue)
-                                .cornerRadius(12)
+                                .cornerRadius(Theme.Radius.md)
                             }
 
                             Button {
@@ -862,7 +862,7 @@ struct ProjectImageEditorSheet: View {
                                 .padding()
                                 .background(Color.orange.opacity(0.1))
                                 .foregroundColor(.orange)
-                                .cornerRadius(12)
+                                .cornerRadius(Theme.Radius.md)
                             }
                             .disabled(editedImage == nil)
                         }

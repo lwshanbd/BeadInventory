@@ -153,7 +153,7 @@ struct BackupRestoreView: View {
             }
             .padding(30)
             .background(Color(.systemGray5))
-            .cornerRadius(16)
+            .cornerRadius(Theme.Radius.lg)
         }
     }
 

@@ -135,7 +135,7 @@ struct ImportStockView: View {
                 .padding()
                 .background(Color.accentColor)
                 .foregroundColor(.white)
-                .cornerRadius(12)
+                .cornerRadius(Theme.Radius.md)
             }
             .padding(.horizontal, 40)
 
@@ -165,7 +165,7 @@ struct ImportStockView: View {
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(.systemGray6))
-            .cornerRadius(8)
+            .cornerRadius(Theme.Radius.sm)
 
             Text("支持的列名：色号/颜色/color/code，数量/库存/quantity/stock 等")
                 .font(.caption)
@@ -173,7 +173,7 @@ struct ImportStockView: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .cornerRadius(Theme.Radius.md)
     }
 
     // MARK: - 文件处理
@@ -329,7 +329,7 @@ struct ImportPreviewView: View {
                         .padding()
                         .background(Color(.systemGray5))
                         .foregroundColor(.primary)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
 
                 Button {
@@ -340,7 +340,7 @@ struct ImportPreviewView: View {
                         .padding()
                         .background(result.validItems.isEmpty ? Color.gray : Color.accentColor)
                         .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
                 .disabled(result.validItems.isEmpty)
             }

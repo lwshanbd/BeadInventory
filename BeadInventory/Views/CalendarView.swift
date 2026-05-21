@@ -219,7 +219,7 @@ struct DayCell: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(cellBackground)
         .overlay(cellBorder)
-        .cornerRadius(8)
+        .cornerRadius(Theme.Radius.sm)
     }
 
     // MARK: - 子视图
@@ -251,7 +251,7 @@ struct DayCell: View {
                 .foregroundColor(.white)
                 .padding(3)
                 .background(Color.red)
-                .cornerRadius(4)
+                .cornerRadius(Theme.Radius.sm)
                 .padding(2)
         }
     }
@@ -308,12 +308,12 @@ struct DayCell: View {
             return isToday ? Color.green.opacity(0.1) : .clear
         }()
 
-        return RoundedRectangle(cornerRadius: 8)
+        return RoundedRectangle(cornerRadius: Theme.Radius.sm)
             .fill(fillColor)
     }
 
     private var cellBorder: some View {
-        RoundedRectangle(cornerRadius: 8)
+        RoundedRectangle(cornerRadius: Theme.Radius.sm)
             .stroke(isToday ? Color.green : Color.clear, lineWidth: 2)
     }
 }
@@ -380,7 +380,7 @@ struct ProjectImageCard: View {
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFit()
-                    .cornerRadius(12)
+                    .cornerRadius(Theme.Radius.md)
                     .onTapGesture {
                         showingFullImage = true
                     }
@@ -400,7 +400,7 @@ struct ProjectImageCard: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(16)
+        .cornerRadius(Theme.Radius.lg)
         .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
         .fullScreenCover(isPresented: $showingFullImage) {
             FullImageView(imageData: project.finishedImage)

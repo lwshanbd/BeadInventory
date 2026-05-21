@@ -348,7 +348,7 @@ struct ScanView: View {
             }
             .padding()
             .background(Color.orange.opacity(0.1))
-            .cornerRadius(8)
+            .cornerRadius(Theme.Radius.sm)
             .padding(.horizontal)
         } else if aiService.config.backend == .local {
             HStack(alignment: .top) {
@@ -360,7 +360,7 @@ struct ScanView: View {
             }
             .padding()
             .background(Color.blue.opacity(0.08))
-            .cornerRadius(8)
+            .cornerRadius(Theme.Radius.sm)
             .padding(.horizontal)
         }
     }
@@ -399,7 +399,7 @@ struct ScanView: View {
                 .padding()
                 .background(aiService.isConfigured ? Color.accentColor : Color.gray)
                 .foregroundColor(.white)
-                .cornerRadius(12)
+                .cornerRadius(Theme.Radius.md)
             }
             .disabled(isRecognizing || !aiService.isConfigured)
 
@@ -421,7 +421,7 @@ struct ScanView: View {
                 .padding()
                 .background(aiService.isConfigured ? Color.orange : Color.gray)
                 .foregroundColor(.white)
-                .cornerRadius(12)
+                .cornerRadius(Theme.Radius.md)
             }
             .disabled(isRecognizing || !aiService.isConfigured)
         }
@@ -436,7 +436,7 @@ struct ScanView: View {
                 .foregroundColor(.red)
                 .padding()
                 .background(Color.red.opacity(0.1))
-                .cornerRadius(8)
+                .cornerRadius(Theme.Radius.sm)
                 .padding(.horizontal)
         }
     }
@@ -808,7 +808,7 @@ struct ImageSelectionSection: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 200)
                 .background(Color(.systemBackground))
-                .cornerRadius(16)
+                .cornerRadius(Theme.Radius.lg)
             } else if let image = selectedImage {
                 ScanPreviewImageView(
                     image: image,
@@ -866,7 +866,7 @@ struct ImageSelectionSection: View {
                                 .padding(.vertical, 12)
                                 .background(Color.accentColor)
                                 .foregroundColor(.white)
-                                .cornerRadius(10)
+                                .cornerRadius(Theme.Radius.md)
                         }
 
                         Button {
@@ -878,14 +878,14 @@ struct ImageSelectionSection: View {
                                 .padding(.vertical, 12)
                                 .background(Color.orange)
                                 .foregroundColor(.white)
-                                .cornerRadius(10)
+                                .cornerRadius(Theme.Radius.md)
                         }
                     }
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 200)
                 .background(Color(.systemBackground))
-                .cornerRadius(16)
+                .cornerRadius(Theme.Radius.lg)
             }
         }
         .padding(.horizontal)
@@ -1058,7 +1058,7 @@ struct RecognizedResultsSectionNew: View {
                             .padding(.vertical, 5)
                             .background(sortOption == option ? Color.accentColor : Color(.systemGray5))
                             .foregroundColor(sortOption == option ? .white : .primary)
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                         }
                     }
                 }
@@ -1096,7 +1096,7 @@ struct RecognizedResultsSectionNew: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(16)
+        .cornerRadius(Theme.Radius.lg)
         .padding(.horizontal)
         .alert("清空确认", isPresented: $showingClearAlert) {
             Button("取消", role: .cancel) { }
@@ -1153,15 +1153,15 @@ struct RecognizedItemRowNew: View {
         HStack(spacing: 12) {
             // 颜色预览
             if let color = matchedColor {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
                     .fill(color.color)
                     .frame(width: 36, height: 36)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
             } else {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
                     .fill(Color.gray.opacity(0.3))
                     .frame(width: 36, height: 36)
                     .overlay(
@@ -1181,7 +1181,7 @@ struct RecognizedItemRowNew: View {
                     .keyboardType(.asciiCapableNumberPad)
                     .frame(width: 60)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
                             .stroke(showQuantityError ? Color.red : Color.clear, lineWidth: 1)
                     )
                     .onChange(of: editQuantity) { _, _ in
@@ -1265,9 +1265,9 @@ struct RecognizedItemRowNew: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(stockInfo?.isInsufficient == true ? Color.red.opacity(0.1) : Color(.systemGray6))
-        .cornerRadius(10)
+        .cornerRadius(Theme.Radius.md)
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(stockInfo?.isInsufficient == true ? Color.red.opacity(0.3) : Color.clear, lineWidth: 1)
         )
     }
@@ -1476,7 +1476,7 @@ struct ManualEntrySeriesSelector: View {
                             .padding(.vertical, 8)
                             .background(selectedSeries == s ? Color.accentColor : Color(.systemGray5))
                             .foregroundColor(selectedSeries == s ? .white : .primary)
-                            .cornerRadius(20)
+                            .cornerRadius(Theme.Radius.lg)
                     }
                 }
             }
@@ -1517,11 +1517,11 @@ struct ManualEntryColorRow: View {
             }
 
             // 颜色预览
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(color.color)
                 .frame(width: 40, height: 40)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
@@ -1539,7 +1539,7 @@ struct ManualEntryColorRow: View {
         }
         .padding(12)
         .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -1564,7 +1564,7 @@ struct ManualEntryQuantityControl: View {
                     .foregroundColor(.white)
                     .frame(width: 28, height: 28)
                     .background(quantity > 1 ? Color.gray.opacity(0.6) : Color.gray.opacity(0.3))
-                    .cornerRadius(14)
+                    .cornerRadius(Theme.Radius.md)
             }
             .buttonStyle(PlainButtonStyle())
             .disabled(quantity <= 1)
@@ -1576,7 +1576,7 @@ struct ManualEntryQuantityControl: View {
                 .font(.system(size: 16, weight: .regular, design: .monospaced))
                 .frame(width: 60, height: 32)
                 .background(Color(.systemGray6))
-                .cornerRadius(8)
+                .cornerRadius(Theme.Radius.sm)
                 .focused($isFocused)
                 .onChange(of: editText) { _, newValue in
                     let filtered = newValue.filter { $0.isNumber }
@@ -1599,7 +1599,7 @@ struct ManualEntryQuantityControl: View {
                     .foregroundColor(.white)
                     .frame(width: 28, height: 28)
                     .background(Color.accentColor)
-                    .cornerRadius(14)
+                    .cornerRadius(Theme.Radius.md)
             }
             .buttonStyle(PlainButtonStyle())
 
@@ -1723,9 +1723,9 @@ struct ThumbnailPreviewSection: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: 80, height: 80)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
 
@@ -1742,7 +1742,7 @@ struct ThumbnailPreviewSection: View {
                 }
             } else {
                 HStack {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .fill(Color.gray.opacity(0.2))
                         .frame(width: 80, height: 80)
                         .overlay(
@@ -1766,7 +1766,7 @@ struct ThumbnailPreviewSection: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .cornerRadius(Theme.Radius.md)
         // 上传图片的裁切视图
         .fullScreenCover(isPresented: $showingUploadedImageCrop) {
             if let image = uploadedImage {
@@ -2019,7 +2019,7 @@ struct CropPreviewView: View {
             Image(uiImage: croppedImage)
                 .resizable()
                 .scaledToFit()
-                .cornerRadius(12)
+                .cornerRadius(Theme.Radius.md)
                 .padding(.horizontal, 20)
 
             // 尺寸信息
@@ -2040,7 +2040,7 @@ struct CropPreviewView: View {
                         .padding()
                         .background(Color.gray.opacity(0.3))
                         .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
 
                 Button {
@@ -2052,7 +2052,7 @@ struct CropPreviewView: View {
                         .padding()
                         .background(Color.accentColor)
                         .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
             }
             .padding(.horizontal, 20)
@@ -2272,7 +2272,7 @@ struct ScanHelpSheet: View {
                         Image("HelpNew1")
                             .resizable()
                             .scaledToFit()
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal, 20)
 
                         Spacer(minLength: 100)
@@ -2300,13 +2300,13 @@ struct ScanHelpSheet: View {
                         Image("HelpNew2")
                             .resizable()
                             .scaledToFit()
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal, 20)
 
                         Image("HelpNew3")
                             .resizable()
                             .scaledToFit()
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal, 20)
 
                         Spacer(minLength: 100)
@@ -2327,7 +2327,7 @@ struct ScanHelpSheet: View {
                         .padding()
                         .background(Color.accentColor)
                         .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
 
                 if let onNeverShowAgain = onNeverShowAgain {

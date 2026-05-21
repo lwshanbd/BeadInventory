@@ -100,9 +100,9 @@ struct DeductionItemRow: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(item.isInsufficient ? Color.red.opacity(0.1) : Color(.systemGray6))
-        .cornerRadius(10)
+        .cornerRadius(Theme.Radius.md)
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(item.isInsufficient ? Color.red.opacity(0.3) : Color.clear, lineWidth: 1)
         )
         .contextMenu {
@@ -131,15 +131,15 @@ struct DeductionItemRow: View {
     @ViewBuilder
     private var colorPreview: some View {
         if let beadColor {
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(beadColor.color)
                 .frame(width: 36, height: 36)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
         } else {
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(Color.gray.opacity(0.3))
                 .frame(width: 36, height: 36)
                 .overlay(
@@ -174,7 +174,7 @@ struct DeductionItemRow: View {
             .padding(.vertical, 4)
             .background(item.isManualOverride ? Color.orange.opacity(0.15) : Color.accentColor.opacity(0.1))
             .foregroundColor(item.isManualOverride ? .orange : .accentColor)
-            .cornerRadius(12)
+            .cornerRadius(Theme.Radius.md)
         }
     }
 
@@ -197,11 +197,11 @@ struct DeductionItemRow: View {
                     )
                 } label: {
                     HStack(spacing: 6) {
-                        RoundedRectangle(cornerRadius: 3)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
                             .fill(similar.beadColor.color)
                             .frame(width: 16, height: 16)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 3)
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                     .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
                             )
                         Text(similar.beadColor.displayCode(for: colorSystem))
@@ -231,6 +231,6 @@ struct DeductionItemRow: View {
         }
         .padding(8)
         .background(Color.yellow.opacity(0.08))
-        .cornerRadius(8)
+        .cornerRadius(Theme.Radius.sm)
     }
 }

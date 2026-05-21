@@ -22,11 +22,11 @@ struct SimilarColorSheet: View {
                 if let color = originalColor {
                     Section("原色") {
                         HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                 .fill(color.color)
                                 .frame(width: 48, height: 48)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                                 )
                             VStack(alignment: .leading) {
@@ -61,11 +61,11 @@ struct SimilarColorSheet: View {
                                 dismiss()
                             } label: {
                                 HStack(spacing: 12) {
-                                    RoundedRectangle(cornerRadius: 8)
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                         .fill(similar.beadColor.color)
                                         .frame(width: 48, height: 48)
                                         .overlay(
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                                         )
 
