@@ -89,6 +89,16 @@ enum Theme {
             // primary 走 @Environment(\.tabFlavor).color；secondary 与 primaryFallback 见文件底部扩展。
             static let destructive = Status.error
         }
+
+        /// 装饰色：用于统计卡片、分组徽章等"需要视觉变化但语义中性"的场景。
+        /// 不要把它们当成语义色——绿不代表成功，红不代表错误，仅作风格变化。
+        enum Decorative {
+            static var mint:     Color { Palette.mint }
+            static var sky:      Color { Palette.sky }
+            static var lavender: Color { Palette.lavender }
+            static var rose:     Color { Palette.rose }
+            static var lemon:    Color { Palette.lemon }
+        }
     }
 }
 

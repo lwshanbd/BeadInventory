@@ -514,7 +514,7 @@ struct ProjectHistoryView: View {
                             .cornerRadius(Theme.Radius.md)
                         }
 
-                        // 退回按钮
+                        // 退回按钮（中性可逆动作，使用 info 蓝而非 warning 黄）
                         Button {
                             showRevertConfirmSheet = true
                         } label: {
@@ -526,7 +526,7 @@ struct ProjectHistoryView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Theme.ColorToken.Status.warning)
+                            .background(Theme.ColorToken.Status.info)
                             .foregroundColor(.white)
                             .cornerRadius(Theme.Radius.md)
                         }
@@ -1168,6 +1168,7 @@ struct ProjectRowWithHierarchy: View {
                                 .font(.caption)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
+                                // 装饰：品牌徽章使用紫色作为视觉标识，不是语义状态
                                 .background(Color.purple.opacity(0.1))
                                 .foregroundColor(.purple)
                                 .cornerRadius(Theme.Radius.sm)
