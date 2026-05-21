@@ -50,3 +50,18 @@ struct BIStepper: View {
         }
     }
 }
+
+#Preview("3 steps – 0") {
+    BIStepper(steps: ["识别", "调整", "确认"], currentIndex: 0)
+        .padding()
+}
+
+#Preview("3 steps – 1") {
+    BIStepper(steps: ["识别", "调整", "确认"], currentIndex: 1)
+        .padding()
+}
+
+#Preview("3 steps – 2") {
+    BIStepper(steps: ["识别", "调整", "确认"], currentIndex: 2)
+        .padding()
+}

@@ -28,7 +28,6 @@ struct ScanView: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var showingCamera = false
     @State private var showingManualEntry = false
-    @State private var showingConfirmation = false
     @State private var showingCropView = false
     @State private var projectName = ""
     @State private var isLoadingImage = false
@@ -79,18 +78,6 @@ struct ScanView: View {
         return brand.colorSystem == scanColorSystem
     }
 
-    /// 扣减确认 alert 的消息文本
-    private var confirmDeductMessage: String {
-        let base = "将从库存中扣减 \(totalBeads) 颗豆子，共 \(recognizedItems.count) 种颜色。"
-        if insufficientStockItems.isEmpty {
-            return base
-        }
-        let lines = insufficientStockItems.map { item in
-            "\(item.colorCode): \(item.currentStock) - \(item.deductAmount) = \(item.currentStock - item.deductAmount)"
-        }
-        return base + "\n\n⚠️ 以下 \(insufficientStockItems.count) 种颜色扣除后库存将为负数：\n" + lines.joined(separator: "\n")
-    }
-
     /// 三段进度指示器的当前 step：0 识别，1 调整，2 确认
     /// 0：尚未识别（无识别结果）
     /// 1：已识别、正在调整（有识别结果但还没进入扣减审核）
@@ -99,23 +86,6 @@ struct ScanView: View {
         if recognizedItems.isEmpty { return 0 }
         if deductionResolver != nil { return 2 }
         return 1
-    }
-
-    /// 检查扣除后库存会变为负数的颜色
-    var insufficientStockItems: [(colorCode: String, currentStock: Int, deductAmount: Int)] {
-        guard let brandId = inventoryManager.currentBrandId else { return [] }
-        var result: [(colorCode: String, currentStock: Int, deductAmount: Int)] = []
-        for item in recognizedItems {
-            let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode)
-            let currentStock = stock?.available ?? 0
-            if currentStock < item.quantity {
-                // 显示当前扫描色号体系的色号（而非内部 mardCode）
-                // 严格按 mardCode 查，避免未匹配的原始色号跨品牌乱碰（如 Kaka "B02" 撞到 COCO B02 显示成 H14）
-                let displayCode = inventoryManager.findColor(byMardCode: item.colorCode)?.displayCode(for: scanColorSystem) ?? item.colorCode
-                result.append((colorCode: displayCode, currentStock: currentStock, deductAmount: item.quantity))
-            }
-        }
-        return result
     }
 
     var body: some View {
@@ -265,14 +235,6 @@ struct ScanView: View {
 
     private func applyAlerts<V: View>(_ view: V) -> some View {
         view
-            .alert("确认扣减", isPresented: $showingConfirmation) {
-                Button("取消", role: .cancel) { }
-                Button("确认扣减", role: insufficientStockItems.isEmpty ? .none : .destructive) {
-                    applyToInventory()
-                }
-            } message: {
-                Text(confirmDeductMessage)
-            }
             .alert("部分颜色扣减失败", isPresented: $showingDeductionFailure) {
                 Button("知道了") { }
             } message: {
@@ -647,41 +609,6 @@ struct ScanView: View {
             colorSystem: scanColorSystem
         )
         self.deductionResolver = resolver
-    }
-
-    func applyToInventory() {
-        guard let brandId = inventoryManager.currentBrandId,
-              brandMatchesScanSystem else { return }
-
-        // 生成压缩的缩略图数据
-        let thumbnailData = generateThumbnailData()
-
-        // 先执行扣减，记录失败项
-        var failedIndices: Set<Int> = []
-        for (index, item) in recognizedItems.enumerated() {
-            let success = inventoryManager.deductFromStock(brandId: brandId, colorCode: item.colorCode, amount: item.quantity, shouldSave: false)
-            if !success {
-                failedIndices.insert(index)
-            }
-        }
-
-        // 根据扣减结果正确标记 isDeducted
-        let beadUsages = recognizedItems.enumerated().map { index, item in
-            BeadUsage(colorCode: item.colorCode, brandId: brandId, quantity: item.quantity, isDeducted: !failedIndices.contains(index))
-        }
-        let project = ProjectRecord(
-            name: projectName.isEmpty ? "图纸\(Date().formatted(date: .numeric, time: .omitted))" : projectName,
-            beadUsage: beadUsages,
-            brandId: brandId,
-            thumbnail: thumbnailData,
-            colorSystem: scanColorSystem
-        )
-        inventoryManager.addProject(project) // addProject 内部已调用 saveData()
-
-        let failedCodes = failedIndices.sorted().map { recognizedItems[$0].colorCode }
-        showDeductionFailureIfNeeded(failedCodes: failedCodes)
-
-        clearState()
     }
 
     func applyToInventoryWithResolver(_ resolver: DeductionResolver) {
@@ -1346,10 +1273,6 @@ struct RecognizedItemRowNew: View {
     }
 }
 
-// MARK: - 扣减审核弹窗已删除
-// 原 DeductionReviewSheet 已由 navigationDestination push 的 DeductionReviewView 替代，
-// 消除 sheet-in-sheet 嵌套。系统返回箭头处理"取消"，无需自定义 leading toolbar item。
-
 // MARK: - 新版手动添加弹窗（类似添加库存的UI，支持多选，与已有结果同步）
 struct ManualEntrySheetNew: View {
     @Binding var recognizedItems: [ScanView.RecognizedItem]
@@ -1863,44 +1786,6 @@ struct ThumbnailPreviewSection: View {
             if !isShowing && uploadedImage != nil {
                 uploadedImage = nil
             }
-        }
-    }
-}
-
-// MARK: - 手动添加确认栏（多选模式）
-struct ManualEntryConfirmBar: View {
-    let selectedCount: Int
-    let totalQuantity: Int
-    let onConfirm: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("已选择 \(selectedCount) 色")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Text("共 \(totalQuantity) 颗")
-                        .font(.headline)
-                        .foregroundColor(.accentColor)
-                }
-
-                Spacer()
-
-                Button(action: onConfirm) {
-                    Text("添加")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 32)
-                        .padding(.vertical, 12)
-                        .background(Color.accentColor)
-                        .cornerRadius(24)
-                }
-            }
-            .padding()
-            .background(Color(.systemBackground))
         }
     }
 }
