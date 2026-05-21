@@ -21,6 +21,7 @@
 - "运行验证" 必要时启动模拟器人工对照截图；本计划中明确指出验证点。
 - 视觉回归 baseline：在执行 Task 1 前，先在 main 分支跑一遍模拟器截图存档（5 Tab + 主要 Sheet）。
 - **统一模拟器**：所有 `xcodebuild` 和模拟器人工对照都用 **iPhone 17 Pro Max (iOS 26.5)**，UDID `462E87D7-DA67-4E17-BF20-DB997EFC4670`（如果按名字 + OS 匹配出现歧义可改用 `id=462E87D7-...`）。
+- **Xcode 工程文件**：`BeadInventory/Views/DesignSystem/` 已通过 `PBXFileSystemSynchronizedRootGroup` 接入 BeadInventory 主 target —— **新增到该目录下的 `.swift` 文件会被自动包含进 build**，不需要手动编辑 `project.pbxproj`，也不需要 Xcode GUI 拖入。`BeadInventoryTests/` 同样是 synced group，新增测试文件也自动包含。其它路径（如 `BeadInventory/Views/*.swift` 的修改）无 pbxproj 影响。
 - **禁止跳过任何"验证步骤"**。如果编译失败先停下来修，不要进下一步。
 
 ---
@@ -308,9 +309,14 @@
    }
    ```
 
-- [ ] **Step 7：把 `Theme.swift` 和 `ThemeTests.swift` 加入 Xcode 工程的对应 target**
+- [ ] **Step 7：确认两个文件被工程纳入**
 
-   用 Xcode 打开 `BeadInventory.xcodeproj`，把 `Theme.swift` 拖入 `BeadInventory` target（Group 路径 `Views/DesignSystem`），把 `ThemeTests.swift` 拖入 `BeadInventoryTests` target。Xcode 不会自动识别新 colorset，但 `xcassets` 文件夹整体已经在 target 里，新增的 colorset 子目录会被自动包含。
+   两个文件应该已经被自动包含：
+   - `Theme.swift` 落在 `BeadInventory/Views/DesignSystem/` → synced root group 自动接管
+   - `ThemeTests.swift` 落在 `BeadInventoryTests/` → 该 target 是 synced group，自动接管
+   - 新增的 colorset 子目录在 `Assets.xcassets/` 里，作为 catalog 内部子目录被自动识别
+
+   无需手动编辑 `project.pbxproj`；如果担心，可执行 `git diff BeadInventory.xcodeproj/project.pbxproj` 验证没有冗余 build file 条目被加进去。
 
 - [ ] **Step 8：编译并跑测试**
 
@@ -521,9 +527,9 @@
    }
    ```
 
-- [ ] **Step 5：把新文件加入工程**
+- [ ] **Step 5：确认新文件已被工程纳入**
 
-   Xcode 把 `TabFlavor.swift` 加入 BeadInventory target，`TabFlavorTests.swift` 加入 BeadInventoryTests target。
+   `TabFlavor.swift` 在 synced 的 DesignSystem 目录、`TabFlavorTests.swift` 在 synced 的 BeadInventoryTests 目录 —— 都会自动包含，无需手动编辑工程文件。
 
 - [ ] **Step 6：编译 + 测试**
 
@@ -785,7 +791,7 @@
 
 - [ ] **Step 4：编译验证组件本身**
 
-   把三个新文件加入 Xcode target，跑 `BUILD_CMD`。期望 BUILD SUCCEEDED。
+   三个新文件均在 `BeadInventory/Views/DesignSystem/Components/`（synced group），自动包含。跑 `BUILD_CMD`，期望 BUILD SUCCEEDED。
 
 - [ ] **Step 5：写组件单元测试**
 
@@ -1083,7 +1089,7 @@
    }
    ```
 
-- [ ] **Step 5：把 4 个新文件加入 target，编译**
+- [ ] **Step 5：编译 — 4 个新文件由 synced group 自动接管**
 
    `BUILD_CMD`，期望 BUILD SUCCEEDED。
 
@@ -1271,7 +1277,7 @@
 
 - [ ] **Step 5：在 Localizable.xcstrings 中补对应英文翻译**
 
-   用 Xcode 打开 `Localizable.xcstrings`，找到新增的 4 个 key，填英文：
+   `Localizable.xcstrings` 是 JSON 格式；可以直接用文本编辑器找到新增 key 的 entry 并把 `"en"` 下的 `value` 填好（或先编译，xcstrings 会从源代码 NSLocalizedString 调用里自动抽取出 key，再补英文翻译）。补英文：
    - 尚无使用数据 → No usage data yet
    - 开始扣减或拼图后，统计就会出现在这里 → Stats appear here once you scan or build something
    - 还没有品牌 → No brands yet
@@ -1464,7 +1470,7 @@
    }
    ```
 
-- [ ] **Step 5：把新文件加入 target + 编译 + 跑测试**
+- [ ] **Step 5：编译 + 跑测试 — 新文件由 synced group 自动接管**
 
    `BUILD_CMD` 与 `xcodebuild ... test`，期望全 PASS。
 
@@ -1981,6 +1987,6 @@
 |---|---|
 | Task 6 / 7 单 commit 过大 | 允许拆 6a/6b、7a/7b，总 ≤ 10 (+1 调色) |
 | Asset Catalog 新色与原 AccentColor 视觉差异过大 | Task 2 完成后立即模拟器对比；不满意先调 colorset 数值再继续 |
-| `xcodebuild` 新增 colorset 不被识别 | Xcode 直接打开工程拖入；不要手编 pbxproj |
+| `xcodebuild` 新增 colorset 不被识别 | colorset 在 `Assets.xcassets/` 内部，由 catalog 自动接管；如有意外，重启 Xcode 或 `xcodebuild clean` 重建 |
 | Sheet 改 push 引发返回行为异常 | Task 7 完成后单独走一遍扫描全流程 |
 | 触觉真机与模拟器表现差异 | Task 9 真机验证为强制门槛 |
