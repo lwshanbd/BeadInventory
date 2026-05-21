@@ -30,10 +30,10 @@ struct PlannedProjectsView: View {
 
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var expandedProjects: Set<UUID> = []
-    @State private var isSelectMode = false
-    @State private var selectedProjects: Set<UUID> = []
+    @StateObject private var sel = SelectionContext<UUID>()
     @State private var activeSheet: ActiveSheet?
     @State private var searchText = ""
+    @State private var showBatchDeleteAlert = false
 
     var plannedProjects: [ProjectRecord] {
         inventoryManager.plannedProjects()
@@ -58,143 +58,71 @@ struct PlannedProjectsView: View {
                                 TipView(PlanMergeTip())
                             }
                             TipView(ReplenishTip())
-                            // 多选操作按钮区域（放在 List 内部，随列表滚动）
-                            if isSelectMode && !selectedProjects.isEmpty {
-                                Section {
-                                    VStack(spacing: 8) {
-                                        HStack(spacing: 8) {
-                                            // 库存确认按钮
-                                            Button {
-                                                activeSheet = .multiStockCheck
-                                            } label: {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "checklist")
-                                                    Text("库存确认")
-                                                }
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundColor(.white)
-                                                .padding(.vertical, 12)
-                                                .frame(maxWidth: .infinity)
-                                                .background(Color.blue)
-                                                .cornerRadius(10)
-                                            }
-                                            .buttonStyle(.borderless)
-
-                                            // 补豆建议按钮
-                                            Button {
-                                                activeSheet = .replenishSuggestion
-                                            } label: {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "cart.badge.plus")
-                                                    Text("补豆建议")
-                                                }
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundColor(.white)
-                                                .padding(.vertical, 12)
-                                                .frame(maxWidth: .infinity)
-                                                .background(Color.orange)
-                                                .cornerRadius(10)
-                                            }
-                                            .buttonStyle(.borderless)
-                                        }
-
-                                        HStack(spacing: 8) {
-                                            // 直接补豆按钮
-                                            Button {
-                                                activeSheet = .directPurchase
-                                            } label: {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "bag.badge.plus")
-                                                    Text("直接补豆")
-                                                }
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundColor(.white)
-                                                .padding(.vertical, 12)
-                                                .frame(maxWidth: .infinity)
-                                                .background(Color.green)
-                                                .cornerRadius(10)
-                                            }
-                                            .buttonStyle(.borderless)
-
-                                            // 合并按钮（需要选中 2 个及以上）
-                                            Button {
-                                                activeSheet = .merge
-                                            } label: {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "arrow.triangle.merge")
-                                                    Text("合并")
-                                                }
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundColor(.white)
-                                                .padding(.vertical, 12)
-                                                .frame(maxWidth: .infinity)
-                                                .background(selectedProjects.count >= 2 ? Color.accentColor : Color.gray)
-                                                .cornerRadius(10)
-                                            }
-                                            .buttonStyle(.borderless)
-                                            .disabled(selectedProjects.count < 2)
-                                        }
-                                    }
-                                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                                }
-                            }
 
                             ForEach(filteredProjects) { project in
                                 let isParent = inventoryManager.isParentProject(project.id)
                                 let isExpanded = expandedProjects.contains(project.id)
 
-                                PlannedProjectRow(
-                                    project: project,
-                                    isParent: isParent,
-                                    isExpanded: isExpanded,
-                                    isSelectMode: isSelectMode,
-                                    isSelected: selectedProjects.contains(project.id),
-                                    showSearchCheckbox: !searchText.isEmpty && !isSelectMode,
-                                    onToggleExpand: {
-                                        withAnimation {
-                                            if isExpanded {
-                                                expandedProjects.remove(project.id)
-                                            } else {
-                                                expandedProjects.insert(project.id)
+                                BISelectableCell(
+                                    isActive: sel.isActive,
+                                    isSelected: sel.contains(project.id),
+                                    onLongPress: { withAnimation { sel.enter(initial: project.id) } },
+                                    onTapInSelectMode: { sel.toggle(project.id) }
+                                ) {
+                                    PlannedProjectRow(
+                                        project: project,
+                                        isParent: isParent,
+                                        isExpanded: isExpanded,
+                                        isSelectMode: sel.isActive,
+                                        isSelected: sel.contains(project.id),
+                                        showSearchCheckbox: !searchText.isEmpty && !sel.isActive,
+                                        onToggleExpand: {
+                                            withAnimation {
+                                                if isExpanded {
+                                                    expandedProjects.remove(project.id)
+                                                } else {
+                                                    expandedProjects.insert(project.id)
+                                                }
                                             }
+                                        },
+                                        onToggleSelect: {
+                                            // 搜索时点击复选框自动进入多选模式
+                                            if !sel.isActive && !searchText.isEmpty {
+                                                withAnimation { sel.enter(initial: project.id) }
+                                            } else {
+                                                sel.toggle(project.id)
+                                            }
+                                        },
+                                        onExecute: {
+                                            activeSheet = .execute(project)
                                         }
-                                    },
-                                    onToggleSelect: {
-                                        // 搜索时点击复选框自动进入多选模式
-                                        if !isSelectMode && !searchText.isEmpty {
-                                            withAnimation { isSelectMode = true }
-                                        }
-                                        if selectedProjects.contains(project.id) {
-                                            selectedProjects.remove(project.id)
-                                        } else {
-                                            selectedProjects.insert(project.id)
-                                        }
-                                    },
-                                    onExecute: {
-                                        activeSheet = .execute(project)
-                                    }
-                                )
+                                    )
+                                }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button(role: .destructive) {
-                                        inventoryManager.deletePlannedProject(project.id)
-                                    } label: {
-                                        Label("删除", systemImage: "trash")
-                                    }
+                                    if !sel.isActive {
+                                        Button(role: .destructive) {
+                                            inventoryManager.deletePlannedProject(project.id)
+                                        } label: {
+                                            Label("删除", systemImage: "trash")
+                                        }
 
-                                    Button {
-                                        _ = inventoryManager.duplicatePlannedProject(project.id)
-                                    } label: {
-                                        Label("复制", systemImage: "doc.on.doc")
+                                        Button {
+                                            _ = inventoryManager.duplicatePlannedProject(project.id)
+                                        } label: {
+                                            Label("复制", systemImage: "doc.on.doc")
+                                        }
+                                        .tint(.blue)
                                     }
-                                    .tint(.blue)
                                 }
                                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                    Button {
-                                        activeSheet = .execute(project)
-                                    } label: {
-                                        Label("执行", systemImage: "play.fill")
+                                    if !sel.isActive {
+                                        Button {
+                                            activeSheet = .execute(project)
+                                        } label: {
+                                            Label("执行", systemImage: "play.fill")
+                                        }
+                                        .tint(.green)
                                     }
-                                    .tint(.green)
                                 }
 
                                 // 展开的子项目
@@ -216,50 +144,127 @@ struct PlannedProjectsView: View {
             .searchable(text: $searchText, prompt: "搜索计划名称")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    if isSelectMode {
+                    if sel.isActive {
                         Button {
-                            if selectedProjects.count == filteredProjects.count {
-                                selectedProjects.removeAll()
-                            } else {
-                                selectedProjects = Set(filteredProjects.map { $0.id })
-                            }
+                            withAnimation { sel.exit() }
                         } label: {
-                            Text(selectedProjects.count == filteredProjects.count ? "取消全选" : "全选")
+                            Text("取消")
                         }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if !plannedProjects.isEmpty {
-                        Button {
-                            withAnimation {
-                                isSelectMode.toggle()
-                                if !isSelectMode {
-                                    selectedProjects.removeAll()
+                    if sel.isActive {
+                        // 多选模式：全选 / 取消全选 + 完成
+                        HStack(spacing: 12) {
+                            Button {
+                                if sel.count == filteredProjects.count {
+                                    sel.clear()
+                                } else {
+                                    sel.selectAll(filteredProjects.map { $0.id })
                                 }
+                            } label: {
+                                Text(sel.count == filteredProjects.count ? "取消全选" : "全选")
                             }
+                            Button {
+                                withAnimation { sel.exit() }
+                            } label: {
+                                Text("完成").fontWeight(.semibold)
+                            }
+                        }
+                    } else if !plannedProjects.isEmpty {
+                        Button {
+                            withAnimation { sel.enter() }
                         } label: {
-                            Text(isSelectMode ? "取消" : "多选")
+                            Text("多选")
                         }
                     }
                 }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if sel.isActive {
+                    MultiSelectActionBar(count: sel.count) {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Button {
+                                activeSheet = .multiStockCheck
+                            } label: {
+                                Label("库存确认", systemImage: "checklist")
+                                    .labelStyle(.iconOnly)
+                                    .font(.title3)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .disabled(sel.count == 0)
+
+                            Button {
+                                activeSheet = .replenishSuggestion
+                            } label: {
+                                Label("补豆建议", systemImage: "cart.badge.plus")
+                                    .labelStyle(.iconOnly)
+                                    .font(.title3)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .disabled(sel.count == 0)
+
+                            Button {
+                                activeSheet = .directPurchase
+                            } label: {
+                                Label("直接补豆", systemImage: "bag.badge.plus")
+                                    .labelStyle(.iconOnly)
+                                    .font(.title3)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .disabled(sel.count == 0)
+
+                            Button {
+                                activeSheet = .merge
+                            } label: {
+                                Label("合并", systemImage: "arrow.triangle.merge")
+                                    .labelStyle(.iconOnly)
+                                    .font(.title3)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .disabled(sel.count < 2)
+
+                            Button(role: .destructive) {
+                                showBatchDeleteAlert = true
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                                    .labelStyle(.iconOnly)
+                                    .font(.title3)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .disabled(sel.count == 0)
+                        }
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .alert("删除选中的计划？", isPresented: $showBatchDeleteAlert) {
+                Button("取消", role: .cancel) {}
+                Button("删除 \(sel.count) 个", role: .destructive) {
+                    for id in sel.selected {
+                        inventoryManager.deletePlannedProject(id)
+                    }
+                    withAnimation { sel.exit() }
+                }
+            } message: {
+                Text("此操作无法撤销")
             }
             // 使用与统计页面相同的方式：传递 projectIds
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .merge:
-                    MergePlannedProjectsSheet(projectIds: Array(selectedProjects)) {
-                        isSelectMode = false
-                        selectedProjects.removeAll()
+                    MergePlannedProjectsSheet(projectIds: Array(sel.selected)) {
+                        sel.exit()
                     }
                     .environmentObject(inventoryManager)
                 case .multiStockCheck:
-                    MultiProjectStockCheckSheet(projectIds: Array(selectedProjects))
+                    MultiProjectStockCheckSheet(projectIds: Array(sel.selected))
                         .environmentObject(inventoryManager)
                 case .replenishSuggestion:
-                    ReplenishSuggestionSheet(projectIds: Array(selectedProjects))
+                    ReplenishSuggestionSheet(projectIds: Array(sel.selected))
                         .environmentObject(inventoryManager)
                 case .directPurchase:
-                    DirectPurchaseSheet(projectIds: Array(selectedProjects))
+                    DirectPurchaseSheet(projectIds: Array(sel.selected))
                         .environmentObject(inventoryManager)
                 case .execute(let project):
                     ExecutePlannedProjectSheet(project: project)
