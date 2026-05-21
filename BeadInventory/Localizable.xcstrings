@@ -6869,7 +6869,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No Low Stock Colors"
+            "value": "No low-stock colors"
           }
         }
       }
@@ -8703,7 +8703,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No brands yet"
+            "value": "No Brands Yet"
           }
         }
       }
@@ -9434,6 +9434,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Add a brand in \"Brand Manager\" before tracking inventory"
+          }
+        }
+      }
+    },
+    "目前没有低库存的颜色，挺好": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All colors are well-stocked — nice!"
           }
         }
       }

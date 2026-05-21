@@ -112,9 +112,9 @@ struct UsageStatisticsView: View {
                         }
                     } else {
                         EmptyStateView(
-                            icon: "chart.bar",
-                            title: "尚无使用数据",
-                            description: "开始扣减或拼图后，统计就会出现在这里"
+                            icon: showLowStockOnly ? "checkmark.circle" : "chart.bar",
+                            title: showLowStockOnly ? "没有低库存颜色" : "尚无使用数据",
+                            description: showLowStockOnly ? "目前没有低库存的颜色，挺好" : "开始扣减或拼图后，统计就会出现在这里"
                         )
                         .frame(height: 200)
                     }
