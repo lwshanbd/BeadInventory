@@ -75,6 +75,7 @@
 		A01234560006 /* OCRManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560016 /* OCRManager.swift */; };
 		A01234560007 /* InventoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560017 /* InventoryView.swift */; };
 		A01234560008 /* ScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560018 /* ScanView.swift */; };
+		A0123456DR01 /* DeductionReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456DR02 /* DeductionReviewView.swift */; };
 		A01234560009 /* ColorConverterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560019 /* ColorConverterView.swift */; };
 		A0123456000A /* StatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001A /* StatisticsView.swift */; };
 		A0123456000B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001B /* SettingsView.swift */; };
@@ -195,6 +196,7 @@
 		A01234560016 /* OCRManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCRManager.swift; sourceTree = "<group>"; };
 		A01234560017 /* InventoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventoryView.swift; sourceTree = "<group>"; };
 		A01234560018 /* ScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanView.swift; sourceTree = "<group>"; };
+		A0123456DR02 /* DeductionReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionReviewView.swift; sourceTree = "<group>"; };
 		A01234560019 /* ColorConverterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorConverterView.swift; sourceTree = "<group>"; };
 		A0123456001A /* StatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsView.swift; sourceTree = "<group>"; };
 		A0123456001B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -423,6 +425,7 @@
 				38B1A0012F0100010000001B /* PlannedProjectsView.swift */,
 				38B1A0012F0100010000001A /* ProjectDetailView.swift */,
 				A01234560018 /* ScanView.swift */,
+				A0123456DR02 /* DeductionReviewView.swift */,
 				A01234560019 /* ColorConverterView.swift */,
 				A0123456001A /* StatisticsView.swift */,
 				A0123456001B /* SettingsView.swift */,
@@ -628,6 +631,7 @@
 				386ECBFE2F332E1500BD92E8 /* BackupRestoreView.swift in Sources */,
 				A01234560007 /* InventoryView.swift in Sources */,
 				A01234560008 /* ScanView.swift in Sources */,
+				A0123456DR01 /* DeductionReviewView.swift in Sources */,
 				A01234560009 /* ColorConverterView.swift in Sources */,
 				A0123456000A /* StatisticsView.swift in Sources */,
 				38FA2CDA2F2482A300912E02 /* ImportFullDataView.swift in Sources */,
