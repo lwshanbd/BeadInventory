@@ -85,10 +85,10 @@ struct ContentView: View {
                                 .foregroundStyle(.white)
                                 .frame(width: 60, height: 60)
                                 .background(TabFlavor.inventory.color, in: Circle())
-                                .shadow(radius: 4, y: 2)
+                                .shadow(color: TabFlavor.inventory.color.opacity(0.4), radius: 8, x: 0, y: 4)
                         }
-                        .padding(.trailing, Theme.Spacing.lg)
-                        .padding(.bottom, Theme.Spacing.xl)
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 80)
                     }
                 }
             }

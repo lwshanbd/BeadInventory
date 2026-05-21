@@ -294,6 +294,11 @@ struct RecognitionSettingsSections: View {
     }
 }
 
+/// 注：本卡片的"选择/下载"和"删除模型"按钮在 BIDS Task 4 中**未**迁移到
+/// BISecondaryButton / BIDestructiveButton。理由：两者的 label 包含动态
+/// `ProgressView`（下载中 / 删除中状态）与 `isSelected` 驱动的 tint，
+/// 当前 BIDS 按钮组件 API 不支持这种动态 label/tint。如未来扩展组件
+/// 支持自定义 label，可一并迁移。
 struct LocalModelOptionCard: View {
     let model: LocalRecognitionModel
     let isSelected: Bool
