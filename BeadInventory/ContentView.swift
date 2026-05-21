@@ -75,28 +75,22 @@ struct ContentView: View {
 
             // 右侧浮动加号按钮（仅在库存页显示）
             if selectedTab == 0 {
-            VStack {
-                Spacer()
-                HStack {
+                VStack {
                     Spacer()
-                    Button {
-                        showingAddInventory = true
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(Color.accentColor)
-                                .frame(width: 60, height: 60)
-                                .shadow(color: Color.accentColor.opacity(0.4), radius: 8, x: 0, y: 4)
-
+                    HStack {
+                        Spacer()
+                        Button { showingAddInventory = true } label: {
                             Image(systemName: "plus")
-                                .font(.system(size: 26, weight: .bold))
-                                .foregroundColor(.white)
+                                .font(.title2.weight(.bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 60, height: 60)
+                                .background(TabFlavor.inventory.color, in: Circle())
+                                .shadow(radius: 4, y: 2)
                         }
+                        .padding(.trailing, Theme.Spacing.lg)
+                        .padding(.bottom, Theme.Spacing.xl)
                     }
-                    .padding(.trailing, 20)
-                    .padding(.bottom, 80)
                 }
-            }
             }
 
             if !inventoryManager.hasCompletedInitialLoad {

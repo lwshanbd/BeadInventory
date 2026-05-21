@@ -317,35 +317,13 @@ struct ScanView: View {
                                     // 两个操作按钮
                                     HStack(spacing: 12) {
                                         // 创建计划按钮（不需要选择品牌）
-                                        Button {
+                                        BISecondaryButton("创建计划", systemImage: "calendar.badge.plus") {
                                             showingCreatePlan = true
-                                        } label: {
-                                            HStack {
-                                                Image(systemName: "calendar.badge.plus")
-                                                Text("创建计划")
-                                            }
-                                            .font(.headline)
-                                            .frame(maxWidth: .infinity)
-                                            .padding()
-                                            .background(Color.orange)
-                                            .foregroundColor(.white)
-                                            .cornerRadius(12)
                                         }
 
                                         // 扣减库存按钮（需要选择匹配色系的品牌）
-                                        Button {
+                                        BIPrimaryButton("扣减库存", systemImage: "minus.circle.fill") {
                                             prepareDeduction()
-                                        } label: {
-                                            HStack {
-                                                Image(systemName: insufficientStockItems.isEmpty ? "minus.circle.fill" : "exclamationmark.triangle.fill")
-                                                Text("扣减库存")
-                                            }
-                                            .font(.headline)
-                                            .frame(maxWidth: .infinity)
-                                            .padding()
-                                            .background(brandMatchesScanSystem ? (insufficientStockItems.isEmpty ? Color.green : Color.red) : Color.gray)
-                                            .foregroundColor(.white)
-                                            .cornerRadius(12)
                                         }
                                         .disabled(!brandMatchesScanSystem)
                                     }

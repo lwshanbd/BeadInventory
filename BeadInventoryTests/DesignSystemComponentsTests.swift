@@ -30,4 +30,14 @@ final class DesignSystemComponentsTests: XCTestCase {
             BIBadge("ok", style: .success)
         }
     }
+
+    func test_buttons_compile() {
+        _ = BIPrimaryButton("a") {}
+        _ = BISecondaryButton("b") {}
+        _ = BIDestructiveButton("c") {}
+    }
+
+    func test_stat_card_compiles() {
+        _ = BIStatCard(icon: "star", title: "T", value: "9")
+    }
 }

@@ -154,11 +154,11 @@ struct OverviewCard: View {
     }
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: Theme.Spacing.lg) {
             // 圆环进度
             ZStack {
                 Circle()
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 12)
+                    .stroke(Theme.ColorToken.Text.tertiary.opacity(0.3), lineWidth: 12)
 
                 Circle()
                     .trim(from: 0, to: min(usagePercentage / 100, 1))
@@ -173,14 +173,14 @@ struct OverviewCard: View {
                     .rotationEffect(.degrees(-90))
                     .animation(.easeInOut, value: usagePercentage)
 
-                VStack(spacing: 4) {
+                VStack(spacing: Theme.Spacing.xs) {
                     Text(String(format: "%.1f%%", usagePercentage))
-                        .font(.title)
-                        .fontWeight(.bold)
+                        .font(Theme.Typography.number)
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
 
                     Text("已使用")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
                 }
             }
             .frame(width: 120, height: 120)
@@ -204,9 +204,11 @@ struct OverviewCard: View {
                 )
             }
         }
-        .padding(24)
-        .background(Color(.systemBackground))
-        .cornerRadius(20)
+        .padding(Theme.Spacing.lg)
+        .background(
+            Theme.ColorToken.Surface.elevated,
+            in: RoundedRectangle(cornerRadius: Theme.Radius.md)
+        )
         .padding(.horizontal)
     }
 }

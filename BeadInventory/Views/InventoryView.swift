@@ -487,23 +487,23 @@ struct StatsHeaderView: View {
     var body: some View {
         if let brandId = inventoryManager.currentBrandId {
             HStack(spacing: 12) {
-                StatCard(
+                BIStatCard(
+                    icon: "cube.fill",
                     title: "总库存",
                     value: formatNumber(inventoryManager.totalAvailable(for: brandId)),
-                    icon: "cube.fill",
-                    color: .blue
+                    accent: .blue
                 )
-                StatCard(
+                BIStatCard(
+                    icon: "checkmark.circle.fill",
                     title: "已使用",
                     value: formatNumber(inventoryManager.totalUsed(for: brandId)),
-                    icon: "checkmark.circle.fill",
-                    color: .green
+                    accent: .green
                 )
-                StatCard(
+                BIStatCard(
+                    icon: "exclamationmark.triangle.fill",
                     title: "低库存",
                     value: "\(inventoryManager.lowStockColors(for: brandId).count)",
-                    icon: "exclamationmark.triangle.fill",
-                    color: .orange
+                    accent: .orange
                 )
                 .onTapGesture {
                     onLowStockTap()
@@ -519,33 +519,6 @@ struct StatsHeaderView: View {
             return String(format: "%.1fK", Double(num) / 1000)
         }
         return "\(num)"
-    }
-}
-
-struct StatCard: View {
-    let title: String
-    let value: String
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Image(systemName: icon)
-                    .foregroundColor(color)
-                    .font(.caption)
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            Text(value)
-                .font(.title3)
-                .fontWeight(.bold)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
     }
 }
 
