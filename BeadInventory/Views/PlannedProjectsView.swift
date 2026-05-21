@@ -576,7 +576,7 @@ struct PlannedProjectRow: View {
                         ForEach(project.beadUsage.prefix(8)) { usage in
                             let displayCode = inventoryManager.findColor(byCode: usage.colorCode)?
                                 .displayCode(for: project.colorSystem) ?? usage.colorCode
-                            BIBadge(displayCode, style: .warning)
+                            BIBadge(displayCode, style: .neutral)
                         }
                         if project.beadUsage.count > 8 {
                             Text("+\(project.beadUsage.count - 8)")

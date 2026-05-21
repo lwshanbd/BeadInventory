@@ -255,35 +255,39 @@ struct UsageRankRow: View {
     var isLowStock: Bool { stock.available < lowStockThreshold }
 
     var body: some View {
-        HStack(spacing: 12) {
-            // 排名
-            Text("\(rank)")
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-                .frame(width: 24, height: 24)
-                .background(rankColor)
-                .cornerRadius(12)
+        VStack(alignment: .leading, spacing: 6) {
+            // 主行：BIRow 承载色块、色号、名称、用量百分比
+            HStack(spacing: 8) {
+                // 排名徽章（BIRow leading 之前）
+                Text("\(rank)")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .frame(width: 24, height: 24)
+                    .background(rankColor)
+                    .cornerRadius(12)
 
-            // 颜色块
-            BIColorSwatch(hex: color.colorHex, size: 32)
+                BIRow(
+                    title: color.displayCode(for: inventoryManager.currentColorSystem),
+                    subtitle: color.colorName.isEmpty ? nil : color.colorName
+                ) {
+                    BIColorSwatch(hex: color.colorHex, size: 32)
+                } trailing: {
+                    BIBadge("\(Int(progress * 100))%", style: .info)
+                }
+            }
+            .padding(.horizontal)
 
-            // 色号和进度条
+            // 辅助行：已用 / 剩余 + 进度条
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(color.displayCode(for: inventoryManager.currentColorSystem))
-                        .font(.system(.subheadline, design: .monospaced))
-                        .fontWeight(.medium)
-
-                    Spacer()
-
                     Text("已用 \(stock.used)")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
 
                     Text("剩余 \(stock.available)")
                         .font(.caption)
-                        .foregroundColor(isLowStock ? .red : .green)
+                        .foregroundStyle(isLowStock ? Theme.ColorToken.Status.error : Theme.ColorToken.Status.success)
                 }
 
                 GeometryReader { geometry in
@@ -305,8 +309,8 @@ struct UsageRankRow: View {
                 }
                 .frame(height: 6)
             }
+            .padding(.horizontal, 60) // indent to roughly align with BIRow content start
         }
-        .padding(.horizontal)
         .padding(.vertical, 8)
         .background(Color(.systemBackground))
     }
