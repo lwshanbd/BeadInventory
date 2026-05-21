@@ -52,7 +52,7 @@ struct CustomColorsView: View {
                             } label: {
                                 Label("编辑", systemImage: "pencil")
                             }
-                            .tint(.orange)
+                            .tint(Theme.ColorToken.Status.warning)
                         }
                 }
             }
@@ -132,7 +132,7 @@ struct CustomColorsView: View {
                 .frame(width: 44, height: 44)
                 .overlay(
                     Circle()
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 颜色信息

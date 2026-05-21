@@ -53,7 +53,7 @@ struct SettingsView: View {
                             Image(systemName: "arrow.counterclockwise")
                             Text("重置所有库存")
                         }
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                     }
                     .disabled(inventoryManager.currentBrandId == nil)
 
@@ -64,7 +64,7 @@ struct SettingsView: View {
                             Image(systemName: "xmark.circle")
                             Text("清除使用记录")
                         }
-                        .foregroundColor(.red)
+                        .foregroundColor(Theme.ColorToken.Status.error)
                     }
                     .disabled(inventoryManager.currentBrandId == nil)
                 } header: {
@@ -230,11 +230,11 @@ struct RecognitionSettingsSections: View {
             if aiService.config.hasKeyFormatWarning {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                         .font(.caption)
                     Text("\(aiService.config.provider.rawValue) 的 API Key 通常以 \"sk-\" 开头，你当前填写的 Key 格式可能不正确，请确认。")
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                 }
             }
 
@@ -326,7 +326,7 @@ struct LocalModelOptionCard: View {
                 if localModelManager.isDownloaded(model) {
                     Label("已下载", systemImage: "checkmark.circle.fill")
                         .font(.caption)
-                        .foregroundColor(.green)
+                        .foregroundColor(Theme.ColorToken.Status.success)
                 }
             }
 
@@ -347,7 +347,7 @@ struct LocalModelOptionCard: View {
             if let errorMessage = localModelManager.errorMessage(for: model) {
                 Text(errorMessage)
                     .font(.caption)
-                    .foregroundColor(.red)
+                    .foregroundColor(Theme.ColorToken.Status.error)
             }
 
             if localModelManager.isDownloaded(model) {
@@ -382,7 +382,7 @@ struct LocalModelOptionCard: View {
                         localModelManager.isDeleting.contains(model) ||
                         localModelManager.isLoadingModel
                     )
-                    .tint(.red)
+                    .tint(Theme.ColorToken.Status.error)
                 }
             } else {
                 Button {
@@ -485,7 +485,7 @@ struct ExportDataSheet: View {
                             }
                         } else {
                             Text("请先选择一个品牌")
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                         }
                     }
                 } header: {

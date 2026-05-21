@@ -133,7 +133,7 @@ struct AddBrandView: View {
                                         .font(.caption)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 6)
-                                        .background(defaultStock == amount ? Color.accentColor : Color(.systemGray5))
+                                        .background(defaultStock == amount ? Color.accentColor : Theme.ColorToken.Surface.subtle)
                                         .foregroundColor(defaultStock == amount ? .white : .primary)
                                         .cornerRadius(Theme.Radius.sm)
                                 }

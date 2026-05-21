@@ -89,7 +89,7 @@ struct HiddenColorsManageView: View {
                             } label: {
                                 Label("取消隐藏", systemImage: "eye")
                             }
-                            .tint(.green)
+                            .tint(Theme.ColorToken.Status.success)
                         }
                     }
                 } header: {
@@ -125,7 +125,7 @@ struct HiddenColorsManageView: View {
                     .foregroundColor(.white)
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color.green)
+                    .background(Theme.ColorToken.Status.success)
                     .cornerRadius(Theme.Radius.md)
                 }
                 .padding()
@@ -189,11 +189,11 @@ struct HiddenColorRow: View {
                     .frame(width: 40, height: 40)
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                     )
             } else {
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .fill(Color.gray.opacity(0.3))
+                    .fill(Theme.ColorToken.Border.default)
                     .frame(width: 40, height: 40)
             }
 

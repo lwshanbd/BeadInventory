@@ -111,7 +111,7 @@ struct PlannedProjectsView: View {
                                         } label: {
                                             Label("复制", systemImage: "doc.on.doc")
                                         }
-                                        .tint(.blue)
+                                        .tint(Theme.ColorToken.Status.info)
                                     }
                                 }
                                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -121,7 +121,7 @@ struct PlannedProjectsView: View {
                                         } label: {
                                             Label("执行", systemImage: "play.fill")
                                         }
-                                        .tint(.green)
+                                        .tint(Theme.ColorToken.Status.success)
                                     }
                                 }
 
@@ -341,7 +341,7 @@ struct PlannedProjectRow: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                         )
                 }
 
@@ -386,7 +386,7 @@ struct PlannedProjectRow: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                         )
                 }
 
@@ -399,7 +399,7 @@ struct PlannedProjectRow: View {
                 } label: {
                     Image(systemName: "play.circle.fill")
                         .font(.title2)
-                        .foregroundColor(.green)
+                        .foregroundColor(Theme.ColorToken.Status.success)
                 }
                 .buttonStyle(.plain)
             }
@@ -413,7 +413,7 @@ struct PlannedProjectRow: View {
                 // 计划标识
                 Image(systemName: "calendar.badge.clock")
                     .font(.caption)
-                    .foregroundColor(.orange)
+                    .foregroundColor(Theme.ColorToken.Status.warning)
 
                 if isParent {
                     Image(systemName: "folder.fill")
@@ -429,7 +429,7 @@ struct PlannedProjectRow: View {
                 BIBadge(
                     project.colorSystem.displayName,
                     style: .custom(
-                        background: project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Color.blue.opacity(0.15),
+                        background: project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Theme.ColorToken.Status.info.opacity(0.15),
                         foreground: project.colorSystem == .kaka ? .purple : .blue
                     )
                 )
@@ -504,7 +504,7 @@ struct PlannedChildProjectRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                     )
             }
 
@@ -518,7 +518,7 @@ struct PlannedChildProjectRow: View {
                         BIBadge(
                             project.colorSystem.displayName,
                             style: .custom(
-                                background: project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Color.blue.opacity(0.15),
+                                background: project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Theme.ColorToken.Status.info.opacity(0.15),
                                 foreground: project.colorSystem == .kaka ? .purple : .blue
                             )
                         )
@@ -651,7 +651,7 @@ struct ExecutePlannedProjectSheet: View {
                     if matchingBrands.isEmpty {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                             Text("暂无\(project.colorSystem.displayName)体系的品牌，请先创建")
                                 .foregroundColor(.secondary)
                         }
@@ -833,7 +833,7 @@ struct MergePlannedProjectsSheet: View {
                     Section {
                         HStack {
                             Image(systemName: "info.circle.fill")
-                                .foregroundColor(.blue)
+                                .foregroundColor(Theme.ColorToken.Status.info)
                             Text("将添加到「\(singleParentMerge.parentName ?? "")」")
                                 .foregroundColor(.secondary)
                         }
@@ -994,14 +994,14 @@ struct PlannedProjectDetailView: View {
     private var statusBannerView: some View {
         HStack {
             Image(systemName: "calendar.badge.clock")
-                .foregroundColor(.orange)
+                .foregroundColor(Theme.ColorToken.Status.warning)
             Text("计划中 - 尚未扣减库存")
                 .font(.subheadline)
-                .foregroundColor(.orange)
+                .foregroundColor(Theme.ColorToken.Status.warning)
             Spacer()
         }
         .padding()
-        .background(Color.orange.opacity(0.1))
+        .background(Theme.ColorToken.Status.warning.opacity(0.1))
         .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
@@ -1045,7 +1045,7 @@ struct PlannedProjectDetailView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding()
-            .background((currentProject ?? project).thumbnail == nil ? Color.gray : Color.purple)
+            .background((currentProject ?? project).thumbnail == nil ? Theme.ColorToken.Border.default : Color.purple)
             .cornerRadius(Theme.Radius.md)
         }
         .disabled((currentProject ?? project).thumbnail == nil)
@@ -1063,7 +1063,7 @@ struct PlannedProjectDetailView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding()
-            .background(Color.blue)
+            .background(Theme.ColorToken.Status.info)
             .cornerRadius(Theme.Radius.md)
         }
     }
@@ -1080,7 +1080,7 @@ struct PlannedProjectDetailView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding()
-            .background(Color.green)
+            .background(Theme.ColorToken.Status.success)
             .cornerRadius(Theme.Radius.md)
         }
     }
@@ -1250,12 +1250,12 @@ struct PlannedProjectInfoCard: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                         )
                 } else if onEditThumbnail != nil {
                     // 无图片时的占位符
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .fill(Color.gray.opacity(0.1))
+                        .fill(Theme.ColorToken.Surface.subtle)
                         .frame(height: 100)
                         .overlay(
                             VStack(spacing: 8) {
@@ -1300,15 +1300,15 @@ struct PlannedProjectInfoCard: View {
                         .foregroundColor(project.colorSystem == .kaka ? .purple : .blue)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(project.colorSystem == .kaka ? Color.purple.opacity(0.1) : Color.blue.opacity(0.1))
+                        .background(project.colorSystem == .kaka ? Color.purple.opacity(0.1) : Theme.ColorToken.Status.info.opacity(0.1))
                         .cornerRadius(Theme.Radius.sm)
 
                     Label("计划中", systemImage: "clock.fill")
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.orange.opacity(0.1))
+                        .background(Theme.ColorToken.Status.warning.opacity(0.1))
                         .cornerRadius(Theme.Radius.sm)
                 }
             }
@@ -1321,7 +1321,7 @@ struct PlannedProjectInfoCard: View {
                         Text("\(childCount)")
                             .font(.title2)
                             .fontWeight(.bold)
-                            .foregroundColor(.blue)
+                            .foregroundColor(Theme.ColorToken.Status.info)
                         Text("子项目")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -1342,7 +1342,7 @@ struct PlannedProjectInfoCard: View {
                     Text("\(totalBeads)")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                     Text("待扣减")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -1377,7 +1377,7 @@ struct PlannedBeadUsageRow: View {
                 .frame(width: 44, height: 44)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             VStack(alignment: .leading, spacing: 4) {
@@ -1401,7 +1401,7 @@ struct PlannedBeadUsageRow: View {
 
             // 待扣减标识
             Image(systemName: "clock.arrow.circlepath")
-                .foregroundColor(.orange)
+                .foregroundColor(Theme.ColorToken.Status.warning)
                 .font(.title3)
         }
         .padding()
@@ -1491,14 +1491,14 @@ struct StockCheckSheet: View {
                     // 说明文字
                     HStack {
                         Image(systemName: "info.circle.fill")
-                            .foregroundColor(.blue)
+                            .foregroundColor(Theme.ColorToken.Status.info)
                         Text("检查各品牌库存是否满足此计划需求")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         Spacer()
                     }
                     .padding()
-                    .background(Color.blue.opacity(0.1))
+                    .background(Theme.ColorToken.Status.info.opacity(0.1))
                     .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
@@ -1507,7 +1507,7 @@ struct StockCheckSheet: View {
                         VStack(spacing: 12) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.largeTitle)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                             Text("暂无\(project.colorSystem.displayName)体系的品牌")
                                 .font(.headline)
                             Text("请先创建品牌以检查库存")
@@ -1621,11 +1621,11 @@ struct AllBrandsStockCheckCard: View {
                     if isSufficient {
                         Label("库存充足", systemImage: "checkmark.circle.fill")
                             .font(.subheadline)
-                            .foregroundColor(.green)
+                            .foregroundColor(Theme.ColorToken.Status.success)
                     } else {
                         Label("缺少 \(insufficientColors.count) 色", systemImage: "exclamationmark.triangle.fill")
                             .font(.subheadline)
-                            .foregroundColor(.red)
+                            .foregroundColor(Theme.ColorToken.Status.error)
                     }
 
                     // 展开指示器（仅当有不足时显示）
@@ -1648,7 +1648,7 @@ struct AllBrandsStockCheckCard: View {
                 HStack {
                     Label("共缺少 \(totalShortage) 颗", systemImage: "minus.circle")
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
 
                     Spacer()
 
@@ -1678,10 +1678,10 @@ struct AllBrandsStockCheckCard: View {
             }
         }
         .padding()
-        .background(isSufficient ? Color.green.opacity(0.08) : Color.red.opacity(0.08))
+        .background(isSufficient ? Theme.ColorToken.Status.success.opacity(0.08) : Theme.ColorToken.Status.error.opacity(0.08))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(isSufficient ? Color.green.opacity(0.4) : Color.red.opacity(0.4), lineWidth: 2)
+                .stroke(isSufficient ? Theme.ColorToken.Status.success.opacity(0.4) : Theme.ColorToken.Status.error.opacity(0.4), lineWidth: 2)
         )
         .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
@@ -1713,7 +1713,7 @@ struct AllBrandsInsufficientColorRow: View {
                 .frame(width: 28, height: 28)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号
@@ -1740,7 +1740,7 @@ struct AllBrandsInsufficientColorRow: View {
                         .foregroundColor(.secondary)
                     Text("\(totalAvailable)")
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                 }
             }
 
@@ -1748,7 +1748,7 @@ struct AllBrandsInsufficientColorRow: View {
             Text("-\(shortage)")
                 .font(.subheadline)
                 .fontWeight(.bold)
-                .foregroundColor(.red)
+                .foregroundColor(Theme.ColorToken.Status.error)
                 .frame(width: 50, alignment: .trailing)
         }
         .padding(.vertical, 4)
@@ -1864,15 +1864,15 @@ struct BrandStockCheckCard: View {
                     if !isSufficient {
                         Label("缺少 \(insufficientColors.count) 色", systemImage: "exclamationmark.triangle.fill")
                             .font(.subheadline)
-                            .foregroundColor(.red)
+                            .foregroundColor(Theme.ColorToken.Status.error)
                     } else if hasLowStock {
                         Label("低库存 \(lowStockColors.count) 色", systemImage: "exclamationmark.circle.fill")
                             .font(.subheadline)
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                     } else {
                         Label("库存充足", systemImage: "checkmark.circle.fill")
                             .font(.subheadline)
-                            .foregroundColor(.green)
+                            .foregroundColor(Theme.ColorToken.Status.success)
                     }
 
                     // 展开指示器（有不足或低库存时显示）
@@ -1890,12 +1890,12 @@ struct BrandStockCheckCard: View {
                 HStack {
                     Label("共缺少 \(totalShortage) 颗", systemImage: "minus.circle")
                         .font(.caption)
-                        .foregroundColor(.red)
+                        .foregroundColor(Theme.ColorToken.Status.error)
 
                     if hasLowStock {
                         Label("低库存 \(lowStockColors.count) 色", systemImage: "exclamationmark.circle")
                             .font(.caption)
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                     }
 
                     Spacer()
@@ -1910,7 +1910,7 @@ struct BrandStockCheckCard: View {
                 HStack {
                     Label("\(lowStockColors.count) 种颜色扣减后低于 \(lowStockThreshold)", systemImage: "exclamationmark.circle")
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
 
                     Spacer()
 
@@ -1988,7 +1988,7 @@ struct InsufficientColorRow: View {
                 .frame(width: 28, height: 28)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号
@@ -2015,7 +2015,7 @@ struct InsufficientColorRow: View {
                         .foregroundColor(.secondary)
                     Text("\(available)")
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                 }
             }
 
@@ -2023,12 +2023,12 @@ struct InsufficientColorRow: View {
             Text("-\(shortage)")
                 .font(.subheadline)
                 .fontWeight(.bold)
-                .foregroundColor(.red)
+                .foregroundColor(Theme.ColorToken.Status.error)
                 .frame(width: 50, alignment: .trailing)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
-        .background(Color.red.opacity(0.05))
+        .background(Theme.ColorToken.Status.error.opacity(0.05))
         .cornerRadius(Theme.Radius.sm)
     }
 }
@@ -2059,7 +2059,7 @@ struct LowStockColorRow: View {
                 .frame(width: 28, height: 28)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号
@@ -2095,7 +2095,7 @@ struct LowStockColorRow: View {
                 Text("→\(afterDeduct)")
                     .font(.subheadline)
                     .fontWeight(.bold)
-                    .foregroundColor(.orange)
+                    .foregroundColor(Theme.ColorToken.Status.warning)
                 Text("<\(threshold)")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -2104,7 +2104,7 @@ struct LowStockColorRow: View {
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
-        .background(Color.orange.opacity(0.05))
+        .background(Theme.ColorToken.Status.warning.opacity(0.05))
         .cornerRadius(Theme.Radius.sm)
     }
 }
@@ -2175,7 +2175,7 @@ struct EditPlannedProjectSheet: View {
                     } label: {
                         HStack {
                             Image(systemName: "plus.circle.fill")
-                                .foregroundColor(.green)
+                                .foregroundColor(Theme.ColorToken.Status.success)
                             Text("添加颜色")
                         }
                     }
@@ -2267,7 +2267,7 @@ struct EditableUsageRow: View {
                 .frame(width: 36, height: 36)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号
@@ -2297,7 +2297,7 @@ struct EditableUsageRow: View {
                     .multilineTextAlignment(.center)
                     .frame(width: 60)
                     .padding(.vertical, 6)
-                    .background(Color(.systemGray6))
+                    .background(Theme.ColorToken.Surface.subtle)
                     .cornerRadius(Theme.Radius.sm)
                     .focused($isQuantityFocused)
                     .onChange(of: quantityText) { _, newValue in
@@ -2321,7 +2321,7 @@ struct EditableUsageRow: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.title2)
-                        .foregroundColor(.green)
+                        .foregroundColor(Theme.ColorToken.Status.success)
                 }
                 .buttonStyle(.plain)
             }
@@ -2392,7 +2392,7 @@ struct AddColorToProjectSheet: View {
                     }
                 }
                 .padding(10)
-                .background(Color(.systemGray6))
+                .background(Theme.ColorToken.Surface.subtle)
                 .cornerRadius(Theme.Radius.md)
                 .padding()
 
@@ -2406,7 +2406,7 @@ struct AddColorToProjectSheet: View {
                                 .frame(width: 50, height: 50)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                                 )
 
                             VStack(alignment: .leading) {
@@ -2438,7 +2438,7 @@ struct AddColorToProjectSheet: View {
                                     .multilineTextAlignment(.center)
                                     .frame(width: 60)
                                     .padding(.vertical, 6)
-                                    .background(Color(.systemGray6))
+                                    .background(Theme.ColorToken.Surface.subtle)
                                     .cornerRadius(Theme.Radius.sm)
                                     .onChange(of: quantityText) { _, newValue in
                                         if let value = Int(newValue), value > 0 {
@@ -2452,7 +2452,7 @@ struct AddColorToProjectSheet: View {
                                 } label: {
                                     Image(systemName: "plus.circle.fill")
                                         .font(.title2)
-                                        .foregroundColor(.green)
+                                        .foregroundColor(Theme.ColorToken.Status.success)
                                 }
                             }
                         }
@@ -2476,7 +2476,7 @@ struct AddColorToProjectSheet: View {
                                     .frame(width: 32, height: 32)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                                     )
 
                                 VStack(alignment: .leading, spacing: 2) {
@@ -2587,7 +2587,7 @@ struct MultiProjectStockCheckSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Image(systemName: "info.circle.fill")
-                                .foregroundColor(.blue)
+                                .foregroundColor(Theme.ColorToken.Status.info)
                             Text("已选 \(selectedProjects.count) 个计划，共 \(totalColors) 色 \(totalBeads) 颗")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
@@ -2610,7 +2610,7 @@ struct MultiProjectStockCheckSheet: View {
                         }
                     }
                     .padding()
-                    .background(Color.blue.opacity(0.1))
+                    .background(Theme.ColorToken.Status.info.opacity(0.1))
                     .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
@@ -2619,7 +2619,7 @@ struct MultiProjectStockCheckSheet: View {
                         VStack(spacing: 12) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.largeTitle)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                             Text("暂无匹配色系的品牌")
                                 .font(.headline)
                             Text("请先创建品牌以检查库存")
@@ -2970,7 +2970,7 @@ struct ReplenishSuggestionSheet: View {
                                                 .font(.subheadline)
                                                 .padding(.horizontal, 16)
                                                 .padding(.vertical, 10)
-                                                .background(selectedBrandId == brand.id ? Color.accentColor : Color.gray.opacity(0.2))
+                                                .background(selectedBrandId == brand.id ? Color.accentColor : Theme.ColorToken.Border.default.opacity(0.5))
                                                 .foregroundColor(selectedBrandId == brand.id ? .white : .primary)
                                                 .cornerRadius(Theme.Radius.lg)
                                         }
@@ -3057,21 +3057,21 @@ struct ReplenishSuggestionSheet: View {
                             }
                         }
                         .padding()
-                        .background(remainingForFreeShipping > 0 ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
+                        .background(remainingForFreeShipping > 0 ? Theme.ColorToken.Status.warning.opacity(0.1) : Theme.ColorToken.Status.success.opacity(0.1))
                         .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 选中项目信息
                         HStack {
                             Image(systemName: "info.circle.fill")
-                                .foregroundColor(.blue)
+                                .foregroundColor(Theme.ColorToken.Status.info)
                             Text("已选 \(selectedProjects.count) 个计划，低库存阈值: \(lowStockThreshold)")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                             Spacer()
                         }
                         .padding()
-                        .background(Color.blue.opacity(0.1))
+                        .background(Theme.ColorToken.Status.info.opacity(0.1))
                         .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
@@ -3125,7 +3125,7 @@ struct ReplenishSuggestionSheet: View {
                             VStack(spacing: 12) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .font(.largeTitle)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(Theme.ColorToken.Status.success)
                                 Text("无需补豆")
                                     .font(.headline)
                                 Text("所选计划未使用任何颜色")
@@ -3151,7 +3151,7 @@ struct ReplenishSuggestionSheet: View {
                                     .foregroundColor(.white)
                                     .padding()
                                     .frame(maxWidth: .infinity)
-                                    .background(showExportSuccess ? Color.green : Color.orange)
+                                    .background(showExportSuccess ? Theme.ColorToken.Status.success : Theme.ColorToken.Status.warning)
                                     .cornerRadius(Theme.Radius.md)
                                 }
 
@@ -3385,14 +3385,14 @@ struct DirectPurchaseSheet: View {
                     // 说明信息
                     HStack {
                         Image(systemName: "info.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundColor(Theme.ColorToken.Status.success)
                         Text("已选 \(selectedProjects.count) 个计划，共 \(totalColors) 色 \(totalBeads) 颗")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         Spacer()
                     }
                     .padding()
-                    .background(Color.green.opacity(0.1))
+                    .background(Theme.ColorToken.Status.success.opacity(0.1))
                     .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
@@ -3439,7 +3439,7 @@ struct DirectPurchaseSheet: View {
                                                 .font(.subheadline)
                                                 .padding(.horizontal, 16)
                                                 .padding(.vertical, 10)
-                                                .background(selectedBrandId == brand.id ? Color.green : Color.gray.opacity(0.2))
+                                                .background(selectedBrandId == brand.id ? Theme.ColorToken.Status.success : Theme.ColorToken.Border.default.opacity(0.5))
                                                 .foregroundColor(selectedBrandId == brand.id ? .white : .primary)
                                                 .cornerRadius(Theme.Radius.lg)
                                         }
@@ -3513,7 +3513,7 @@ struct DirectPurchaseSheet: View {
                                     .foregroundColor(.secondary)
                                 Text("\(totalSelectedQuantity)g")
                                     .font(.headline)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(Theme.ColorToken.Status.success)
                             }
                             Spacer()
                             VStack(alignment: .trailing, spacing: 4) {
@@ -3526,7 +3526,7 @@ struct DirectPurchaseSheet: View {
                             }
                         }
                         .padding()
-                        .background(remainingForFreeShipping > 0 ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
+                        .background(remainingForFreeShipping > 0 ? Theme.ColorToken.Status.warning.opacity(0.1) : Theme.ColorToken.Status.success.opacity(0.1))
                         .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
@@ -3548,7 +3548,7 @@ struct DirectPurchaseSheet: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
                                     HStack {
-                                        Circle().fill(Color.green).frame(width: 10, height: 10)
+                                        Circle().fill(Theme.ColorToken.Status.success).frame(width: 10, height: 10)
                                         Text("计划用量汇总")
                                             .font(.headline)
                                     }
@@ -3574,8 +3574,8 @@ struct DirectPurchaseSheet: View {
                                 }
                             }
                             .padding()
-                            .background(Color.green.opacity(0.05))
-                            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Color.green.opacity(0.3), lineWidth: 1))
+                            .background(Theme.ColorToken.Status.success.opacity(0.05))
+                            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Theme.ColorToken.Status.success.opacity(0.3), lineWidth: 1))
                             .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal)
                         }
@@ -3584,13 +3584,13 @@ struct DirectPurchaseSheet: View {
                         if showEmptyExportWarning {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(Theme.ColorToken.Status.warning)
                                 Text("所有色号补豆数量为 0，无法导出")
                                     .font(.subheadline)
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(Theme.ColorToken.Status.warning)
                             }
                             .padding()
-                            .background(Color.orange.opacity(0.1))
+                            .background(Theme.ColorToken.Status.warning.opacity(0.1))
                             .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal)
                         }
@@ -3608,7 +3608,7 @@ struct DirectPurchaseSheet: View {
                                 .foregroundColor(.white)
                                 .padding()
                                 .frame(maxWidth: .infinity)
-                                .background(hasExported ? Color.green : Color.green.opacity(0.8))
+                                .background(hasExported ? Theme.ColorToken.Status.success : Theme.ColorToken.Status.success.opacity(0.8))
                                 .cornerRadius(Theme.Radius.md)
                             }
                             .disabled(hasExported)
@@ -3625,7 +3625,7 @@ struct DirectPurchaseSheet: View {
                                     Text(showCopySuccess ? "已复制" : "复制补豆计划")
                                 }
                                 .font(.subheadline)
-                                .foregroundColor(.green)
+                                .foregroundColor(Theme.ColorToken.Status.success)
                             }
                         }
                         .padding(.horizontal)
@@ -3697,7 +3697,7 @@ struct DirectPurchaseColorRow: View {
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 28, height: 28)
-                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sm).stroke(Color.gray.opacity(0.3), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sm).stroke(Theme.ColorToken.Border.default, lineWidth: 1))
 
             // 色号 + 需要颗数
             VStack(alignment: .leading, spacing: 2) {
@@ -3742,7 +3742,7 @@ struct DirectPurchaseColorRow: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
-                        .foregroundColor(.green)
+                        .foregroundColor(Theme.ColorToken.Status.success)
                 }
             }
         }
@@ -3856,7 +3856,7 @@ struct HighUsageSectionView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Circle().fill(Color.green).frame(width: 10, height: 10)
+                            Circle().fill(Theme.ColorToken.Status.success).frame(width: 10, height: 10)
                             Text(title).font(.headline).foregroundColor(.primary)
                         }
                         Text(subtitle).font(.caption).foregroundColor(.secondary)
@@ -3889,8 +3889,8 @@ struct HighUsageSectionView: View {
             }
         }
         .padding()
-        .background(Color.green.opacity(0.05))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Color.green.opacity(0.3), lineWidth: 1))
+        .background(Theme.ColorToken.Status.success.opacity(0.05))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Theme.ColorToken.Status.success.opacity(0.3), lineWidth: 1))
         .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
@@ -3927,7 +3927,7 @@ struct ReplenishColorRow: View {
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 28, height: 28)
-                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sm).stroke(Color.gray.opacity(0.3), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sm).stroke(Theme.ColorToken.Border.default, lineWidth: 1))
 
             // 色号
             VStack(alignment: .leading, spacing: 2) {
@@ -3941,7 +3941,7 @@ struct ReplenishColorRow: View {
                         } label: {
                             Image(systemName: "exclamationmark.circle.fill")
                                 .font(.caption)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                         }
                         .popover(isPresented: $showWarningTip) {
                             Text("此色号已在上方「库存不足」或「低库存预警」中列出，已有建议补豆量")

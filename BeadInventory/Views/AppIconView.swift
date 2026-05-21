@@ -178,7 +178,7 @@ struct IconExportButton: View {
 
             if showingSaved {
                 Text("已保存到相册！")
-                    .foregroundColor(.green)
+                    .foregroundColor(Theme.ColorToken.Status.success)
             }
         }
         .padding()

@@ -112,7 +112,7 @@ struct ColorConversionCard: View {
                 .frame(width: 60, height: 60)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 各品牌色号
@@ -191,7 +191,7 @@ struct ColorDetailSheet: View {
                         .frame(height: 150)
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 2)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 2)
                         )
                         .shadow(color: color.color.opacity(0.3), radius: 10, x: 0, y: 5)
 
@@ -233,7 +233,7 @@ struct ColorDetailSheet: View {
                             Spacer()
                             Text("\(color.used)")
                                 .fontWeight(.medium)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                         }
                         .padding()
 

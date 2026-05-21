@@ -27,7 +27,7 @@ struct SimilarColorSheet: View {
                                 .frame(width: 48, height: 48)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                                 )
                             VStack(alignment: .leading) {
                                 Text(originalColorCode)
@@ -40,7 +40,7 @@ struct SimilarColorSheet: View {
                                 }
                             }
                         }
-                        .listRowBackground(Color(.systemGray6))
+                        .listRowBackground(Theme.ColorToken.Surface.subtle)
                     }
                 }
 
@@ -66,7 +66,7 @@ struct SimilarColorSheet: View {
                                         .frame(width: 48, height: 48)
                                         .overlay(
                                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                                         )
 
                                     VStack(alignment: .leading, spacing: 2) {
@@ -86,7 +86,7 @@ struct SimilarColorSheet: View {
                                     VStack(alignment: .trailing) {
                                         Text("库存 \(similar.availableStock)")
                                             .font(.caption)
-                                            .foregroundColor(.green)
+                                            .foregroundColor(Theme.ColorToken.Status.success)
                                     }
 
                                     Image(systemName: "arrow.right.circle.fill")

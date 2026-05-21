@@ -52,7 +52,7 @@ struct BrandManagerView: View {
                             } label: {
                                 Label("编辑", systemImage: "pencil")
                             }
-                            .tint(.orange)
+                            .tint(Theme.ColorToken.Status.warning)
                         }
                     }
 

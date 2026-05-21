@@ -250,7 +250,7 @@ struct DayCell: View {
                 .fontWeight(.bold)
                 .foregroundColor(.white)
                 .padding(3)
-                .background(Color.red)
+                .background(Theme.ColorToken.Status.error)
                 .cornerRadius(Theme.Radius.sm)
                 .padding(2)
         }
@@ -281,7 +281,7 @@ struct DayCell: View {
             .padding(4)
             .background(
                 Circle()
-                    .fill(isToday ? Color.green : Color.black.opacity(0.6))
+                    .fill(isToday ? Theme.ColorToken.Status.success : Color.black.opacity(0.6))
             )
             .padding(2)
     }
@@ -305,7 +305,7 @@ struct DayCell: View {
             if hasFinishedImage {
                 return .clear
             }
-            return isToday ? Color.green.opacity(0.1) : .clear
+            return isToday ? Theme.ColorToken.Status.success.opacity(0.1) : .clear
         }()
 
         return RoundedRectangle(cornerRadius: Theme.Radius.sm)
@@ -314,7 +314,7 @@ struct DayCell: View {
 
     private var cellBorder: some View {
         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-            .stroke(isToday ? Color.green : Color.clear, lineWidth: 2)
+            .stroke(isToday ? Theme.ColorToken.Status.success : Color.clear, lineWidth: 2)
     }
 }
 

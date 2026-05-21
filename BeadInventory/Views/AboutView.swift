@@ -58,7 +58,7 @@ struct AboutView: View {
                 .frame(maxWidth: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                        .fill(Color.pink.opacity(0.1))
+                        .fill(Theme.ColorToken.Status.error.opacity(0.1))
                 )
                 .padding(.horizontal)
 
@@ -90,7 +90,7 @@ struct AboutView: View {
                     }
                 }
                 .padding()
-                .background(Color(.systemGray6))
+                .background(Theme.ColorToken.Surface.subtle)
                 .cornerRadius(Theme.Radius.lg)
                 .padding(.horizontal)
 
@@ -110,7 +110,7 @@ struct AboutView: View {
                     }
                 }
                 .padding()
-                .background(Color(.systemGray6))
+                .background(Theme.ColorToken.Surface.subtle)
                 .cornerRadius(Theme.Radius.lg)
                 .padding(.horizontal)
 
@@ -122,7 +122,7 @@ struct AboutView: View {
 
                     HStack(spacing: 8) {
                         Image(systemName: "pawprint.fill")
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                         Text("啃宝")
                             .fontWeight(.medium)
                         Text("&")
@@ -130,7 +130,7 @@ struct AboutView: View {
                         Text("Timea")
                             .fontWeight(.medium)
                         Image(systemName: "pawprint.fill")
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                     }
                     .font(.subheadline)
 
@@ -139,7 +139,7 @@ struct AboutView: View {
                         .foregroundColor(.secondary)
                 }
                 .padding()
-                .background(Color(.systemGray6))
+                .background(Theme.ColorToken.Surface.subtle)
                 .cornerRadius(Theme.Radius.lg)
                 .padding(.horizontal)
 
@@ -147,7 +147,7 @@ struct AboutView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "sparkles")
                         .font(.title2)
-                        .foregroundColor(.blue)
+                        .foregroundColor(Theme.ColorToken.Status.info)
                     Text("支持原创，拒绝抄袭")
                         .font(.subheadline)
                         .fontWeight(.medium)
@@ -160,7 +160,7 @@ struct AboutView: View {
                 .frame(maxWidth: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                        .fill(Color.blue.opacity(0.1))
+                        .fill(Theme.ColorToken.Status.info.opacity(0.1))
                 )
                 .padding(.horizontal)
 

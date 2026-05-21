@@ -80,7 +80,7 @@ struct HelpCenterView: View {
                     }
                 } icon: {
                     Image(systemName: "questionmark.circle.fill")
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                 }
             }
         }

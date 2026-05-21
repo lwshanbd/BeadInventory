@@ -162,7 +162,7 @@ struct PasteReplenishSheet: View {
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(Color.gray.opacity(0.1))
+                            .background(Theme.ColorToken.Surface.subtle)
                             .cornerRadius(Theme.Radius.sm)
 
                         Button {
@@ -183,7 +183,7 @@ struct PasteReplenishSheet: View {
                         if let error = parseError {
                             Text(error)
                                 .font(.caption)
-                                .foregroundColor(.red)
+                                .foregroundColor(Theme.ColorToken.Status.error)
                                 .padding(.top, 8)
                         }
                     }
@@ -207,7 +207,7 @@ struct PasteReplenishSheet: View {
                                                     .font(.subheadline)
                                                     .padding(.horizontal, 16)
                                                     .padding(.vertical, 10)
-                                                    .background(selectedBrandId == brand.id ? Color.accentColor : Color.gray.opacity(0.2))
+                                                    .background(selectedBrandId == brand.id ? Color.accentColor : Theme.ColorToken.Border.default.opacity(0.5))
                                                     .foregroundColor(selectedBrandId == brand.id ? .white : .primary)
                                                     .cornerRadius(Theme.Radius.lg)
                                             }
@@ -236,7 +236,7 @@ struct PasteReplenishSheet: View {
                                         .font(.headline)
                                     Text("\(totalGrams)g（\(totalBeads) 颗）")
                                         .font(.subheadline)
-                                        .foregroundColor(.green)
+                                        .foregroundColor(Theme.ColorToken.Status.success)
                                 }
                                 Spacer()
                                 Button("重新粘贴") {
@@ -247,7 +247,7 @@ struct PasteReplenishSheet: View {
                                 .font(.subheadline)
                             }
                             .padding()
-                            .background(Color.green.opacity(0.1))
+                            .background(Theme.ColorToken.Status.success.opacity(0.1))
                             .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal)
 
@@ -281,7 +281,7 @@ struct PasteReplenishSheet: View {
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(canSave ? Color.accentColor : Color.gray)
+                                .background(canSave ? Color.accentColor : Theme.ColorToken.Border.default)
                                 .cornerRadius(Theme.Radius.md)
                         }
                         .disabled(!canSave)
@@ -399,7 +399,7 @@ struct PasteItemRow: View {
                 .frame(width: 36, height: 36)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             Text(displayCodeText)
@@ -415,7 +415,7 @@ struct PasteItemRow: View {
             Text("+\(grams * 100)")
                 .font(.subheadline)
                 .fontWeight(.semibold)
-                .foregroundColor(.green)
+                .foregroundColor(Theme.ColorToken.Status.success)
         }
         .padding(10)
         .background(Color(.systemBackground))
@@ -437,7 +437,7 @@ struct PurchaseRecordRow: View {
             // 图标
             Image(systemName: "shippingbox.fill")
                 .font(.title2)
-                .foregroundColor(.orange)
+                .foregroundColor(Theme.ColorToken.Status.warning)
                 .frame(width: 40)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -461,7 +461,7 @@ struct PurchaseRecordRow: View {
 
                     Text("+\(formatNumber(record.totalBeads)) 颗")
                         .font(.caption)
-                        .foregroundColor(.green)
+                        .foregroundColor(Theme.ColorToken.Status.success)
                 }
 
                 Text(record.date.formatted(date: .abbreviated, time: .omitted))
@@ -518,7 +518,7 @@ struct PurchaseRecordDetailView: View {
                     HStack {
                         Image(systemName: "shippingbox.fill")
                             .font(.title)
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                         Text(currentRecord.name)
                             .font(.title2)
                             .fontWeight(.bold)
@@ -549,7 +549,7 @@ struct PurchaseRecordDetailView: View {
                         VStack(spacing: 4) {
                             Text("+\(currentRecord.totalBeads)")
                                 .font(.headline)
-                                .foregroundColor(.green)
+                                .foregroundColor(Theme.ColorToken.Status.success)
                             Text("总颗数")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
@@ -597,7 +597,7 @@ struct PurchaseRecordDetailView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.green)
+                        .background(Theme.ColorToken.Status.success)
                         .foregroundColor(.white)
                         .cornerRadius(Theme.Radius.md)
                     }
@@ -622,7 +622,7 @@ struct PurchaseRecordDetailView: View {
                                 Text("删除记录")
                             }
                             .font(.subheadline)
-                            .foregroundColor(.red)
+                            .foregroundColor(Theme.ColorToken.Status.error)
                         }
                     }
                 }
@@ -685,7 +685,7 @@ struct PurchaseItemRow: View {
                 .frame(width: 36, height: 36)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号（按品牌色号体系显示）
@@ -699,7 +699,7 @@ struct PurchaseItemRow: View {
             Text("+\(item.quantity)")
                 .font(.subheadline)
                 .fontWeight(.semibold)
-                .foregroundColor(.green)
+                .foregroundColor(Theme.ColorToken.Status.success)
         }
         .padding(10)
         .background(Color(.systemBackground))
@@ -860,7 +860,7 @@ struct AddPurchaseRecordView: View {
                                     .foregroundColor(.secondary)
                                 Text("共 +\(formatNumber(totalToAdd)) 颗")
                                     .font(.headline)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(Theme.ColorToken.Status.success)
                             }
 
                             Spacer()
@@ -871,7 +871,7 @@ struct AddPurchaseRecordView: View {
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 24)
                                     .padding(.vertical, 12)
-                                    .background(canSave ? Color.accentColor : Color.gray)
+                                    .background(canSave ? Color.accentColor : Theme.ColorToken.Border.default)
                                     .cornerRadius(Theme.Radius.lg)
                             }
                             .disabled(!canSave)
@@ -1045,7 +1045,7 @@ struct EditPurchaseRecordSheet: View {
                                     .font(.headline)
                                 Text("+\(totalBeads) 颗")
                                     .font(.subheadline)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(Theme.ColorToken.Status.success)
                             }
                             Spacer()
                             Button {
@@ -1104,7 +1104,7 @@ struct EditPurchaseRecordSheet: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(hasChanges && !items.isEmpty ? Color.accentColor : Color.gray)
+                            .background(hasChanges && !items.isEmpty ? Color.accentColor : Theme.ColorToken.Border.default)
                             .cornerRadius(Theme.Radius.md)
                     }
                     .disabled(!hasChanges || items.isEmpty)
@@ -1184,7 +1184,7 @@ struct EditableItemRow: View {
                 .frame(width: 36, height: 36)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号（按品牌色号体系显示）
@@ -1211,7 +1211,7 @@ struct EditableItemRow: View {
                     Text("\(item.quantity)")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.green)
+                        .foregroundColor(Theme.ColorToken.Status.success)
                     Text("\(grams)g")
                         .font(.caption2)
                         .foregroundColor(.secondary)
@@ -1222,7 +1222,7 @@ struct EditableItemRow: View {
                     item.quantity += 1000
                 } label: {
                     Image(systemName: "plus.circle.fill")
-                        .foregroundColor(.blue)
+                        .foregroundColor(Theme.ColorToken.Status.info)
                         .font(.title3)
                 }
             }
@@ -1232,7 +1232,7 @@ struct EditableItemRow: View {
                 onDelete()
             } label: {
                 Image(systemName: "trash")
-                    .foregroundColor(.red)
+                    .foregroundColor(Theme.ColorToken.Status.error)
                     .font(.subheadline)
             }
             .padding(.leading, 8)
@@ -1321,7 +1321,7 @@ struct AddColorToRecordSheet: View {
                                         .frame(width: 36, height: 36)
                                         .overlay(
                                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                                         )
 
                                     Text(color.displayCode(for: brandColorSystem))
@@ -1392,7 +1392,7 @@ struct AddColorToRecordSheet: View {
                                     } label: {
                                         Image(systemName: "plus.circle.fill")
                                             .font(.title2)
-                                            .foregroundColor(.blue)
+                                            .foregroundColor(Theme.ColorToken.Status.info)
                                     }
                                 }
                             }

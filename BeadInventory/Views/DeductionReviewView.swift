@@ -143,7 +143,7 @@ struct DeductionReviewView: View {
                             .foregroundColor(.secondary)
                         Text("\(resolver.insufficientItems.count) 种不足")
                             .font(.caption)
-                            .foregroundColor(.red)
+                            .foregroundColor(Theme.ColorToken.Status.error)
                     }
                     Spacer()
                 }
@@ -158,7 +158,7 @@ struct DeductionReviewView: View {
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(resolver.insufficientItems.isEmpty ? Color.green : Color.red)
+                    .background(resolver.insufficientItems.isEmpty ? Theme.ColorToken.Status.success : Theme.ColorToken.Status.error)
                     .foregroundColor(.white)
                     .cornerRadius(Theme.Radius.md)
                 }

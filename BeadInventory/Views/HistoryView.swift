@@ -84,8 +84,8 @@ struct HistoryView: View {
                             .font(.headline)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(Color.orange.opacity(sel.count == 0 ? 0.3 : 0.15), in: Capsule())
-                            .foregroundColor(.orange)
+                            .background(Theme.ColorToken.Status.warning.opacity(sel.count == 0 ? 0.3 : 0.15), in: Capsule())
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                     }
                     .disabled(sel.count == 0)
                 }
@@ -243,7 +243,7 @@ struct HistoryRowView: View {
                     } label: {
                         Label("撤回", systemImage: "arrow.uturn.backward")
                     }
-                    .tint(.orange)
+                    .tint(Theme.ColorToken.Status.warning)
                 } else if historyManager.revertDisabledReason(record) != nil {
                     // 显示禁用原因的按钮
                     Button {
@@ -251,7 +251,7 @@ struct HistoryRowView: View {
                     } label: {
                         Label("不可撤回", systemImage: "lock.fill")
                     }
-                    .tint(.gray)
+                    .tint(Theme.ColorToken.Text.secondary)
                 }
             }
         }

@@ -87,7 +87,7 @@ struct PatternCalibrationView: View {
                         gridLocked.toggle()
                     } label: {
                         Image(systemName: gridLocked ? "lock.fill" : "lock.open")
-                            .foregroundStyle(gridLocked ? Color.orange : Color.secondary)
+                            .foregroundStyle(gridLocked ? Theme.ColorToken.Status.warning : Color.secondary)
                     }
                     .accessibilityLabel(gridLocked ? "解锁网格" : "锁定网格（仅平移图片）")
                 }
@@ -220,7 +220,7 @@ struct PatternCalibrationView: View {
             .clipped()
         } else {
             Text("项目无图片")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -238,9 +238,9 @@ struct PatternCalibrationView: View {
                 Spacer()
             }
             .padding(8)
-            .background(conf >= 0.7 ? Color.green.opacity(0.15) :
-                        conf >= 0.5 ? Color.blue.opacity(0.15) :
-                        Color.orange.opacity(0.15))
+            .background(conf >= 0.7 ? Theme.ColorToken.Status.success.opacity(0.15) :
+                        conf >= 0.5 ? Theme.ColorToken.Status.info.opacity(0.15) :
+                        Theme.ColorToken.Status.warning.opacity(0.15))
         }
     }
 
@@ -265,7 +265,7 @@ struct PatternCalibrationView: View {
 
                 Text("先把矩形大致框住网格区域，输好行列数，点这个按钮算法会精确对齐 4 个角")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
                     .multilineTextAlignment(.center)
             }
 
@@ -314,7 +314,7 @@ struct PatternCalibrationView: View {
         HStack(spacing: 6) {
             Text(title)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
             Button {
                 if value.wrappedValue > 2 { value.wrappedValue -= 1 }
             } label: {
@@ -333,7 +333,7 @@ struct PatternCalibrationView: View {
                 .cornerRadius(Theme.Radius.sm)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
                 .onChange(of: value.wrappedValue) { _, newValue in
                     if newValue < 2 { value.wrappedValue = 2 }
@@ -646,7 +646,7 @@ private struct CornerHandle: View {
                 .fill(Color.white.opacity(0.001))   // 几乎透明但接收触摸
                 .frame(width: 64, height: 64)
             Circle()
-                .fill(Color.red.opacity(0.85))
+                .fill(Theme.ColorToken.Status.error.opacity(0.85))
                 .frame(width: 28, height: 28)
                 .overlay(Circle().stroke(Color.white, lineWidth: 2))
         }

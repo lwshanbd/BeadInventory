@@ -291,7 +291,7 @@ struct UsageRankRow: View {
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .fill(Color.gray.opacity(0.2))
+                            .fill(Theme.ColorToken.Border.default.opacity(0.5))
                             .frame(height: 6)
 
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
@@ -486,7 +486,7 @@ struct ProjectHistoryView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(selectedProjects.count >= 2 ? Color.accentColor : Color.gray.opacity(0.3))
+                            .background(selectedProjects.count >= 2 ? Color.accentColor : Theme.ColorToken.Border.default)
                             .foregroundColor(selectedProjects.count >= 2 ? .white : .secondary)
                             .cornerRadius(Theme.Radius.md)
                         }
@@ -508,7 +508,7 @@ struct ProjectHistoryView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color.blue)
+                            .background(Theme.ColorToken.Status.info)
                             .foregroundColor(.white)
                             .cornerRadius(Theme.Radius.md)
                         }
@@ -525,7 +525,7 @@ struct ProjectHistoryView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color.orange)
+                            .background(Theme.ColorToken.Status.warning)
                             .foregroundColor(.white)
                             .cornerRadius(Theme.Radius.md)
                         }
@@ -589,7 +589,7 @@ struct ProjectHistoryView: View {
                             } label: {
                                 Label("复制到计划", systemImage: "doc.on.doc")
                             }
-                            .tint(.blue)
+                            .tint(Theme.ColorToken.Status.info)
                         }
                         .swipeActions(edge: .leading, allowsFullSwipe: true) {
                             // 归档/取消归档
@@ -603,7 +603,7 @@ struct ProjectHistoryView: View {
                                 } label: {
                                     Label("取消归档", systemImage: "tray.and.arrow.up")
                                 }
-                                .tint(.green)
+                                .tint(Theme.ColorToken.Status.success)
                             } else {
                                 Button {
                                     if isParent {
@@ -614,7 +614,7 @@ struct ProjectHistoryView: View {
                                 } label: {
                                     Label("归档", systemImage: "archivebox")
                                 }
-                                .tint(.orange)
+                                .tint(Theme.ColorToken.Status.warning)
                             }
                         }
                         // 长按菜单
@@ -709,7 +709,7 @@ struct ProjectHistoryView: View {
                                     } label: {
                                         Label("复制到计划", systemImage: "doc.on.doc")
                                     }
-                                    .tint(.blue)
+                                    .tint(Theme.ColorToken.Status.info)
                                 }
                                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                     Button {
@@ -717,7 +717,7 @@ struct ProjectHistoryView: View {
                                     } label: {
                                         Label("独立", systemImage: "arrow.up.forward.square")
                                     }
-                                    .tint(.green)
+                                    .tint(Theme.ColorToken.Status.success)
                                 }
                                 // 子项目长按菜单
                                 .contextMenu {
@@ -928,7 +928,7 @@ struct RevertToPlanSheet: View {
                 // 图标
                 Image(systemName: "arrow.uturn.backward.circle.fill")
                     .font(.system(size: 50))
-                    .foregroundColor(.orange)
+                    .foregroundColor(Theme.ColorToken.Status.warning)
 
                 // 标题
                 Text(titleText)
@@ -946,7 +946,7 @@ struct RevertToPlanSheet: View {
                         }
                     }
                     .padding()
-                    .background(Color(.systemGray6))
+                    .background(Theme.ColorToken.Surface.subtle)
                     .cornerRadius(Theme.Radius.md)
                 }
                 .padding(.horizontal)
@@ -968,7 +968,7 @@ struct RevertToPlanSheet: View {
                         Text("取消")
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color(.systemGray5))
+                            .background(Theme.ColorToken.Surface.subtle)
                             .foregroundColor(.primary)
                             .cornerRadius(Theme.Radius.md)
                     }
@@ -979,7 +979,7 @@ struct RevertToPlanSheet: View {
                         Text("确认退回")
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color.orange)
+                            .background(Theme.ColorToken.Status.warning)
                             .foregroundColor(.white)
                             .cornerRadius(Theme.Radius.md)
                     }
@@ -1116,7 +1116,7 @@ struct ProjectRowWithHierarchy: View {
                     .clipShape(RoundedRectangle(cornerRadius: isChild ? 6 : 8))
                     .overlay(
                         RoundedRectangle(cornerRadius: isChild ? 6 : 8)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                     )
             }
 
@@ -1136,7 +1136,7 @@ struct ProjectRowWithHierarchy: View {
                         if project.isArchived {
                             Image(systemName: "archivebox.fill")
                                 .font(.caption)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                         }
 
                         Spacer()
@@ -1162,8 +1162,8 @@ struct ProjectRowWithHierarchy: View {
                                 .font(.caption)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Color.blue.opacity(0.1))
-                                .foregroundColor(.blue)
+                                .background(Theme.ColorToken.Status.info.opacity(0.1))
+                                .foregroundColor(Theme.ColorToken.Status.info)
                                 .cornerRadius(Theme.Radius.sm)
                         }
 
@@ -1238,7 +1238,7 @@ struct MergeProjectsSheet: View {
                     Section {
                         HStack {
                             Image(systemName: "info.circle.fill")
-                                .foregroundColor(.blue)
+                                .foregroundColor(Theme.ColorToken.Status.info)
                             Text("将添加到「\(singleParentMerge.parentName ?? "")」")
                                 .foregroundColor(.secondary)
                         }

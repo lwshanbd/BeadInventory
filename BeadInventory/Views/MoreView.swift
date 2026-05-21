@@ -61,13 +61,13 @@ struct MoreView: View {
                                         .foregroundColor(.white)
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 2)
-                                        .background(Color.orange)
+                                        .background(Theme.ColorToken.Status.warning)
                                         .cornerRadius(Theme.Radius.md)
                                 }
                             }
                         } icon: {
                             Image(systemName: "shippingbox.fill")
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                         }
                     }
                     NavigationLink {
@@ -82,7 +82,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "calendar.badge.checkmark")
-                                .foregroundColor(.green)
+                                .foregroundColor(Theme.ColorToken.Status.success)
                         }
                     }
                     NavigationLink {
@@ -97,7 +97,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "clock.arrow.circlepath")
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                         }
                     }
                 }
@@ -166,7 +166,7 @@ struct MoreView: View {
                             if hasPendingCloudSyncChange {
                                 Text(String(localized: "已修改，关闭并重新打开 App 后生效。"))
                                     .font(.caption)
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(Theme.ColorToken.Status.warning)
                             } else if cloudSyncDisabled {
                                 Text(String(localized: "当前仅使用本地存储，iCloud 上原有的数据未删除。"))
                                     .font(.caption)
@@ -225,7 +225,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "tag.fill")
-                                .foregroundColor(.blue)
+                                .foregroundColor(Theme.ColorToken.Status.info)
                         }
                     }
 
@@ -241,7 +241,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "gearshape.fill")
-                                .foregroundColor(.gray)
+                                .foregroundColor(Theme.ColorToken.Text.secondary)
                         }
                     }
 
@@ -333,7 +333,7 @@ struct DataToolsView: View {
                         }
                     } icon: {
                         Image(systemName: "square.and.arrow.up.fill")
-                            .foregroundColor(.blue)
+                            .foregroundColor(Theme.ColorToken.Status.info)
                     }
                 }
                 .foregroundColor(.primary)
@@ -350,7 +350,7 @@ struct DataToolsView: View {
                         }
                     } icon: {
                         Image(systemName: "arrow.down.doc.fill")
-                            .foregroundColor(.green)
+                            .foregroundColor(Theme.ColorToken.Status.success)
                     }
                 }
                 .foregroundColor(.primary)
@@ -441,7 +441,7 @@ struct DiagnosticsToolsView: View {
                             }
                         } icon: {
                             Image(systemName: "trash.circle.fill")
-                                .foregroundColor(.red)
+                                .foregroundColor(Theme.ColorToken.Status.error)
                         }
                         Spacer()
                         if isClearingDiagnostics {

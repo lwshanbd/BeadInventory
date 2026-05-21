@@ -217,7 +217,7 @@ struct InventoryView: View {
                                 .font(.caption)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
-                                .background(groupByPrefix ? Color.orange : Color.gray.opacity(0.2))
+                                .background(groupByPrefix ? Theme.ColorToken.Status.warning : Theme.ColorToken.Border.default.opacity(0.5))
                                 .foregroundColor(groupByPrefix ? .white : .primary)
                                 .cornerRadius(Theme.Radius.lg)
                             }
@@ -453,7 +453,7 @@ struct InventoryView: View {
                                 .font(.headline)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
-                                .background(Color.red.opacity(sel.count == 0 ? 0.3 : 0.15), in: Capsule())
+                                .background(Theme.ColorToken.Status.error.opacity(sel.count == 0 ? 0.3 : 0.15), in: Capsule())
                         }
                         .disabled(sel.count == 0)
                     }
@@ -623,7 +623,7 @@ struct SortChip: View {
                 .font(.caption)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(isSelected ? Color.accentColor.opacity(0.2) : Color(.systemGray6))
+                .background(isSelected ? Color.accentColor.opacity(0.2) : Theme.ColorToken.Surface.subtle)
                 .foregroundColor(isSelected ? .accentColor : .secondary)
                 .cornerRadius(Theme.Radius.lg)
         }
@@ -659,13 +659,13 @@ struct ColorCardView: View {
                 .frame(height: 50)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
                 .overlay(alignment: .topTrailing) {
                     if isCustomColor {
                         Image(systemName: "star.fill")
                             .font(.system(size: 10))
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                             .padding(4)
                     }
                 }
@@ -697,7 +697,7 @@ struct ColorCardView: View {
                     if used > 0 {
                         Text("(-\(used))")
                             .font(.caption2)
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                     }
                 }
             }
@@ -740,7 +740,7 @@ struct ColorRowView: View {
                     if isCustomColor {
                         Image(systemName: "star.fill")
                             .font(.system(size: 8))
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                             .padding(2)
                     }
                 }
@@ -752,7 +752,7 @@ struct ColorRowView: View {
                         .font(.system(.headline, design: .monospaced))
                     if isCustomColor {
                         BIBadge("自定义", style: .custom(
-                            background: Color.orange.opacity(0.2),
+                            background: Theme.ColorToken.Status.warning.opacity(0.2),
                             foreground: .orange
                         ))
                     }
@@ -786,7 +786,7 @@ struct ColorRowView: View {
                     if used > 0 {
                         Text("-\(used)")
                             .font(.caption)
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                     } else {
                         Text("可用")
                             .font(.caption)
@@ -798,7 +798,7 @@ struct ColorRowView: View {
             // 低库存标识
             if isLowStock {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.orange)
+                    .foregroundColor(Theme.ColorToken.Status.warning)
                     .font(.subheadline)
             }
         }
@@ -849,7 +849,7 @@ struct EditStockSheet: View {
                         .frame(height: 100)
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                         )
 
                     // 当前品牌色号
@@ -865,7 +865,7 @@ struct EditStockSheet: View {
                     }
                 }
                 .padding()
-                .background(Color(.systemGray6))
+                .background(Theme.ColorToken.Surface.subtle)
                 .cornerRadius(Theme.Radius.lg)
 
                 // 当前库存信息
@@ -907,7 +907,7 @@ struct EditStockSheet: View {
                     }
                 }
                 .padding()
-                .background(Color(.systemGray6))
+                .background(Theme.ColorToken.Surface.subtle)
                 .cornerRadius(Theme.Radius.lg)
 
                 // 直接设置库存
@@ -931,7 +931,7 @@ struct EditStockSheet: View {
                                 .fontWeight(.medium)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
-                                .background(Color.orange)
+                                .background(Theme.ColorToken.Status.warning)
                                 .foregroundColor(.white)
                                 .cornerRadius(Theme.Radius.sm)
                         }
@@ -953,14 +953,14 @@ struct EditStockSheet: View {
                                 .fontWeight(.medium)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
-                                .background(Color.green)
+                                .background(Theme.ColorToken.Status.success)
                                 .foregroundColor(.white)
                                 .cornerRadius(Theme.Radius.sm)
                         }
                     }
                 }
                 .padding()
-                .background(Color(.systemGray6))
+                .background(Theme.ColorToken.Surface.subtle)
                 .cornerRadius(Theme.Radius.lg)
 
                 // 隐藏色号
@@ -979,7 +979,7 @@ struct EditStockSheet: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                     }
 
                     Text("隐藏后该色号不会出现在库存列表中，库存将被清零。可在品牌设置中恢复。")
@@ -987,7 +987,7 @@ struct EditStockSheet: View {
                         .foregroundColor(.secondary)
                 }
                 .padding()
-                .background(Color(.systemGray6))
+                .background(Theme.ColorToken.Surface.subtle)
                 .cornerRadius(Theme.Radius.lg)
             }
             .padding()

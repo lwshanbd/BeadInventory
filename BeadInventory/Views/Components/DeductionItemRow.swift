@@ -43,7 +43,7 @@ struct DeductionItemRow: View {
                         if item.originalMardCode != nil {
                             Text("(原 \(item.originalColorCode ?? ""))")
                                 .font(.caption2)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                         }
                     }
 
@@ -61,11 +61,11 @@ struct DeductionItemRow: View {
                         if item.isInsufficient {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.caption2)
-                                .foregroundColor(.red)
+                                .foregroundColor(Theme.ColorToken.Status.error)
                         } else if isLowStock {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.caption2)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                         }
                     }
                 }
@@ -99,11 +99,11 @@ struct DeductionItemRow: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
-        .background(item.isInsufficient ? Color.red.opacity(0.1) : Color(.systemGray6))
+        .background(item.isInsufficient ? Theme.ColorToken.Status.error.opacity(0.1) : Theme.ColorToken.Surface.subtle)
         .cornerRadius(Theme.Radius.md)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(item.isInsufficient ? Color.red.opacity(0.3) : Color.clear, lineWidth: 1)
+                .stroke(item.isInsufficient ? Theme.ColorToken.Status.error.opacity(0.3) : Color.clear, lineWidth: 1)
         )
         .contextMenu {
             Button {
@@ -136,15 +136,15 @@ struct DeductionItemRow: View {
                 .frame(width: 36, height: 36)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
         } else {
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .fill(Color.gray.opacity(0.3))
+                .fill(Theme.ColorToken.Border.default)
                 .frame(width: 36, height: 36)
                 .overlay(
                     Image(systemName: "questionmark")
-                        .foregroundColor(.gray)
+                        .foregroundColor(Theme.ColorToken.Text.secondary)
                 )
         }
     }
@@ -172,7 +172,7 @@ struct DeductionItemRow: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(item.isManualOverride ? Color.orange.opacity(0.15) : Color.accentColor.opacity(0.1))
+            .background(item.isManualOverride ? Theme.ColorToken.Status.warning.opacity(0.15) : Color.accentColor.opacity(0.1))
             .foregroundColor(item.isManualOverride ? .orange : .accentColor)
             .cornerRadius(Theme.Radius.md)
         }
@@ -183,7 +183,7 @@ struct DeductionItemRow: View {
             HStack(spacing: 4) {
                 Image(systemName: "lightbulb.fill")
                     .font(.caption2)
-                    .foregroundColor(.yellow)
+                    .foregroundColor(Theme.ColorToken.Status.warning)
                 Text("相似色可用：")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -202,7 +202,7 @@ struct DeductionItemRow: View {
                             .frame(width: 16, height: 16)
                             .overlay(
                                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                    .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
+                                    .stroke(Theme.ColorToken.Border.default, lineWidth: 0.5)
                             )
                         Text(similar.beadColor.displayCode(for: colorSystem))
                             .font(.caption2)
@@ -230,7 +230,7 @@ struct DeductionItemRow: View {
             }
         }
         .padding(8)
-        .background(Color.yellow.opacity(0.08))
+        .background(Theme.ColorToken.Status.warning.opacity(0.08))
         .cornerRadius(Theme.Radius.sm)
     }
 }

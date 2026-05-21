@@ -59,7 +59,7 @@ struct LowStockDetailView: View {
                                 Spacer()
                                 Text("\(lowStockItems.count)")
                                     .fontWeight(.bold)
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(Theme.ColorToken.Status.warning)
                             }
                         }
 
@@ -67,7 +67,7 @@ struct LowStockDetailView: View {
                             Section {
                                 HStack(spacing: 8) {
                                     Image(systemName: "info.circle.fill")
-                                        .foregroundColor(.blue)
+                                        .foregroundColor(Theme.ColorToken.Status.info)
                                     Text("有 \(missingColorCount) 个色号无法匹配颜色数据，已显示原始色号")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
@@ -83,7 +83,7 @@ struct LowStockDetailView: View {
                                     VStack(spacing: 8) {
                                         Image(systemName: "checkmark.circle.fill")
                                             .font(.system(size: 48))
-                                            .foregroundColor(.green)
+                                            .foregroundColor(Theme.ColorToken.Status.success)
                                         Text("没有低库存颜色")
                                             .font(.headline)
                                             .foregroundColor(.secondary)
@@ -140,17 +140,17 @@ struct LowStockRowView: View {
         HStack(spacing: 12) {
             // 颜色块
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .fill(color?.color ?? Color.gray.opacity(0.3))
+                .fill(color?.color ?? Theme.ColorToken.Border.default)
                 .frame(width: 40, height: 40)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
                 .overlay(alignment: .topTrailing) {
                     if isCustomColor {
                         Image(systemName: "star.fill")
                             .font(.system(size: 8))
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                             .padding(2)
                     }
                 }
@@ -165,8 +165,8 @@ struct LowStockRowView: View {
                             .font(.caption2)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.2))
-                            .foregroundColor(.orange)
+                            .background(Theme.ColorToken.Status.warning.opacity(0.2))
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                             .cornerRadius(Theme.Radius.sm)
                     }
                 }
@@ -186,15 +186,15 @@ struct LowStockRowView: View {
                 Text("\(stock.available)")
                     .font(.title3)
                     .fontWeight(.semibold)
-                    .foregroundColor(.red)
+                    .foregroundColor(Theme.ColorToken.Status.error)
 
                 Text("缺 \(max(0, lowStockThreshold - stock.available))")
                     .font(.caption)
-                    .foregroundColor(.orange)
+                    .foregroundColor(Theme.ColorToken.Status.warning)
             }
 
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
+                .foregroundColor(Theme.ColorToken.Status.warning)
                 .font(.subheadline)
         }
         .padding(.vertical, 4)

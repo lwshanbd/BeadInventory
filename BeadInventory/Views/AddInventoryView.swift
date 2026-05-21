@@ -79,7 +79,7 @@ struct AddInventoryView: View {
                     .font(.subheadline)
                     .padding(.horizontal)
                     .padding(.vertical, 8)
-                    .background(Color(.systemGray6))
+                    .background(Theme.ColorToken.Surface.subtle)
                 }
 
                 // 色系选择器
@@ -274,7 +274,7 @@ struct SeriesSelector: View {
                             .fontWeight(.medium)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(selectedSeries == s ? Color.accentColor : Color(.systemGray5))
+                            .background(selectedSeries == s ? Color.accentColor : Theme.ColorToken.Surface.subtle)
                             .foregroundColor(selectedSeries == s ? .white : .primary)
                             .cornerRadius(Theme.Radius.lg)
                     }
@@ -304,7 +304,7 @@ struct ColorAddRow: View {
             Button(action: onToggle) {
                 ZStack {
                     Circle()
-                        .stroke(isSelected ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 2)
+                        .stroke(isSelected ? Color.accentColor : Theme.ColorToken.Border.default, lineWidth: 2)
                         .frame(width: 28, height: 28)
 
                     if isSelected {
@@ -326,7 +326,7 @@ struct ColorAddRow: View {
                 .frame(width: 40, height: 40)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号
@@ -376,7 +376,7 @@ struct QuantityControl: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(width: 28, height: 28)
-                    .background(quantity > 0.5 ? Color.gray.opacity(0.6) : Color.gray.opacity(0.3))
+                    .background(quantity > 0.5 ? Theme.ColorToken.Text.tertiary : Theme.ColorToken.Border.default)
                     .cornerRadius(Theme.Radius.md)
             }
             .buttonStyle(PlainButtonStyle())
@@ -388,7 +388,7 @@ struct QuantityControl: View {
                 .multilineTextAlignment(.center)
                 .font(.system(size: 16, weight: .regular, design: .monospaced))
                 .frame(width: 60, height: 32)
-                .background(Color(.systemGray6))
+                .background(Theme.ColorToken.Surface.subtle)
                 .cornerRadius(Theme.Radius.sm)
                 .focused($isFocused)
                 .onChange(of: editText) { _, newValue in

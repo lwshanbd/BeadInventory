@@ -125,7 +125,7 @@ struct ColorSelectionView: View {
                 .font(.subheadline)
                 .padding(.horizontal)
                 .padding(.vertical, 10)
-                .background(Color(.systemGray6))
+                .background(Theme.ColorToken.Surface.subtle)
 
                 // 色系选择器
                 SeriesSelector(
@@ -227,7 +227,7 @@ struct ColorSelectRow: View {
                 // 选择按钮
                 ZStack {
                     Circle()
-                        .stroke(isSelected ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 2)
+                        .stroke(isSelected ? Color.accentColor : Theme.ColorToken.Border.default, lineWidth: 2)
                         .frame(width: 28, height: 28)
 
                     if isSelected {
@@ -248,7 +248,7 @@ struct ColorSelectRow: View {
                     .frame(width: 40, height: 40)
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                     )
 
                 // 色号和名称

@@ -142,7 +142,7 @@ struct BrandSettingsView: View {
                                 Image(systemName: "arrow.counterclockwise")
                                 Text("重置所有库存")
                             }
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                         }
 
                         Button {
@@ -152,7 +152,7 @@ struct BrandSettingsView: View {
                                 Image(systemName: "xmark.circle")
                                 Text("清除使用记录")
                             }
-                            .foregroundColor(.red)
+                            .foregroundColor(Theme.ColorToken.Status.error)
                         }
                     } header: {
                         Text("库存操作")
@@ -193,7 +193,7 @@ struct BrandSettingsView: View {
                                 Image(systemName: "trash")
                                 Text("删除此品牌")
                             }
-                            .foregroundColor(.red)
+                            .foregroundColor(Theme.ColorToken.Status.error)
                         }
                     } header: {
                         Text("危险操作")

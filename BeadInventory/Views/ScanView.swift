@@ -325,7 +325,7 @@ struct ScanView: View {
         if !aiService.isConfigured {
             HStack {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.orange)
+                    .foregroundColor(Theme.ColorToken.Status.warning)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(aiService.statusMessage)
                         .font(.caption)
@@ -347,19 +347,19 @@ struct ScanView: View {
                 .font(.caption)
             }
             .padding()
-            .background(Color.orange.opacity(0.1))
+            .background(Theme.ColorToken.Status.warning.opacity(0.1))
             .cornerRadius(Theme.Radius.sm)
             .padding(.horizontal)
         } else if aiService.config.backend == .local {
             HStack(alignment: .top) {
                 Image(systemName: "iphone.gen3")
-                    .foregroundColor(.blue)
+                    .foregroundColor(Theme.ColorToken.Status.info)
                 Text("当前使用 \(aiService.config.localModel.displayName) 本地识别。无需 API，但速度相对更慢，也可能引起发热。")
                     .font(.caption)
                 Spacer()
             }
             .padding()
-            .background(Color.blue.opacity(0.08))
+            .background(Theme.ColorToken.Status.info.opacity(0.08))
             .cornerRadius(Theme.Radius.sm)
             .padding(.horizontal)
         }
@@ -397,7 +397,7 @@ struct ScanView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(aiService.isConfigured ? Color.accentColor : Color.gray)
+                .background(aiService.isConfigured ? Color.accentColor : Theme.ColorToken.Border.default)
                 .foregroundColor(.white)
                 .cornerRadius(Theme.Radius.md)
             }
@@ -419,7 +419,7 @@ struct ScanView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(aiService.isConfigured ? Color.orange : Color.gray)
+                .background(aiService.isConfigured ? Color.orange : Theme.ColorToken.Border.default)
                 .foregroundColor(.white)
                 .cornerRadius(Theme.Radius.md)
             }
@@ -433,9 +433,9 @@ struct ScanView: View {
         if let error = errorMessage {
             Text(error)
                 .font(.caption)
-                .foregroundColor(.red)
+                .foregroundColor(Theme.ColorToken.Status.error)
                 .padding()
-                .background(Color.red.opacity(0.1))
+                .background(Theme.ColorToken.Status.error.opacity(0.1))
                 .cornerRadius(Theme.Radius.sm)
                 .padding(.horizontal)
         }
@@ -453,7 +453,7 @@ struct ScanView: View {
                     .foregroundColor(.accentColor)
             } else {
                 Text("请选择")
-                    .foregroundColor(.orange)
+                    .foregroundColor(Theme.ColorToken.Status.warning)
             }
             Spacer()
             BrandPicker(colorSystemFilter: scanColorSystem)
@@ -876,7 +876,7 @@ struct ImageSelectionSection: View {
                                 .font(.subheadline)
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 12)
-                                .background(Color.orange)
+                                .background(Theme.ColorToken.Status.warning)
                                 .foregroundColor(.white)
                                 .cornerRadius(Theme.Radius.md)
                         }
@@ -1026,7 +1026,7 @@ struct RecognizedResultsSectionNew: View {
                     } label: {
                         Image(systemName: "trash")
                             .font(.subheadline)
-                            .foregroundColor(.red)
+                            .foregroundColor(Theme.ColorToken.Status.error)
                     }
                     .padding(.leading, 8)
                 }
@@ -1056,7 +1056,7 @@ struct RecognizedResultsSectionNew: View {
                             .font(.caption)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background(sortOption == option ? Color.accentColor : Color(.systemGray5))
+                            .background(sortOption == option ? Color.accentColor : Theme.ColorToken.Surface.subtle)
                             .foregroundColor(sortOption == option ? .white : .primary)
                             .cornerRadius(Theme.Radius.md)
                         }
@@ -1158,15 +1158,15 @@ struct RecognizedItemRowNew: View {
                     .frame(width: 36, height: 36)
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                     )
             } else {
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .fill(Color.gray.opacity(0.3))
+                    .fill(Theme.ColorToken.Border.default)
                     .frame(width: 36, height: 36)
                     .overlay(
                         Image(systemName: "questionmark")
-                            .foregroundColor(.gray)
+                            .foregroundColor(Theme.ColorToken.Text.secondary)
                     )
             }
 
@@ -1182,7 +1182,7 @@ struct RecognizedItemRowNew: View {
                     .frame(width: 60)
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(showQuantityError ? Color.red : Color.clear, lineWidth: 1)
+                            .stroke(showQuantityError ? Theme.ColorToken.Status.error : Color.clear, lineWidth: 1)
                     )
                     .onChange(of: editQuantity) { _, _ in
                         showQuantityError = false
@@ -1207,7 +1207,7 @@ struct RecognizedItemRowNew: View {
                     if matchedColor == nil {
                         Text("未匹配")
                             .font(.caption2)
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                     } else if let info = stockInfo {
                         // 显示库存状态
                         HStack(spacing: 4) {
@@ -1224,11 +1224,11 @@ struct RecognizedItemRowNew: View {
                             if info.isInsufficient {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .font(.caption2)
-                                    .foregroundColor(.red)
+                                    .foregroundColor(Theme.ColorToken.Status.error)
                             } else if info.isLowStock {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .font(.caption2)
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(Theme.ColorToken.Status.warning)
                             }
                         }
                     }
@@ -1264,11 +1264,11 @@ struct RecognizedItemRowNew: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
-        .background(stockInfo?.isInsufficient == true ? Color.red.opacity(0.1) : Color(.systemGray6))
+        .background(stockInfo?.isInsufficient == true ? Theme.ColorToken.Status.error.opacity(0.1) : Theme.ColorToken.Surface.subtle)
         .cornerRadius(Theme.Radius.md)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(stockInfo?.isInsufficient == true ? Color.red.opacity(0.3) : Color.clear, lineWidth: 1)
+                .stroke(stockInfo?.isInsufficient == true ? Theme.ColorToken.Status.error.opacity(0.3) : Color.clear, lineWidth: 1)
         )
     }
 }
@@ -1396,7 +1396,7 @@ struct ManualEntrySheetNew: View {
                                 quantities.removeAll()
                             }
                         }
-                        .foregroundColor(.red)
+                        .foregroundColor(Theme.ColorToken.Status.error)
                     }
                 }
             }
@@ -1474,7 +1474,7 @@ struct ManualEntrySeriesSelector: View {
                             .fontWeight(.medium)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(selectedSeries == s ? Color.accentColor : Color(.systemGray5))
+                            .background(selectedSeries == s ? Color.accentColor : Theme.ColorToken.Surface.subtle)
                             .foregroundColor(selectedSeries == s ? .white : .primary)
                             .cornerRadius(Theme.Radius.lg)
                     }
@@ -1500,7 +1500,7 @@ struct ManualEntryColorRow: View {
             Button(action: onToggle) {
                 ZStack {
                     Circle()
-                        .stroke(isSelected ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 2)
+                        .stroke(isSelected ? Color.accentColor : Theme.ColorToken.Border.default, lineWidth: 2)
                         .frame(width: 28, height: 28)
 
                     if isSelected {
@@ -1522,7 +1522,7 @@ struct ManualEntryColorRow: View {
                 .frame(width: 40, height: 40)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号
@@ -1563,7 +1563,7 @@ struct ManualEntryQuantityControl: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(width: 28, height: 28)
-                    .background(quantity > 1 ? Color.gray.opacity(0.6) : Color.gray.opacity(0.3))
+                    .background(quantity > 1 ? Theme.ColorToken.Text.tertiary : Theme.ColorToken.Border.default)
                     .cornerRadius(Theme.Radius.md)
             }
             .buttonStyle(PlainButtonStyle())
@@ -1575,7 +1575,7 @@ struct ManualEntryQuantityControl: View {
                 .multilineTextAlignment(.center)
                 .font(.system(size: 16, weight: .regular, design: .monospaced))
                 .frame(width: 60, height: 32)
-                .background(Color(.systemGray6))
+                .background(Theme.ColorToken.Surface.subtle)
                 .cornerRadius(Theme.Radius.sm)
                 .focused($isFocused)
                 .onChange(of: editText) { _, newValue in
@@ -1702,7 +1702,7 @@ struct ThumbnailPreviewSection: View {
                             Text("移除")
                         }
                         .font(.caption)
-                        .foregroundColor(.red)
+                        .foregroundColor(Theme.ColorToken.Status.error)
                     }
                     .padding(.leading, 8)
                 }
@@ -1726,7 +1726,7 @@ struct ThumbnailPreviewSection: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                         )
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -1743,12 +1743,12 @@ struct ThumbnailPreviewSection: View {
             } else {
                 HStack {
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .fill(Color.gray.opacity(0.2))
+                        .fill(Theme.ColorToken.Border.default.opacity(0.5))
                         .frame(width: 80, height: 80)
                         .overlay(
                             Image(systemName: "photo.badge.plus")
                                 .font(.title2)
-                                .foregroundColor(.gray)
+                                .foregroundColor(Theme.ColorToken.Text.secondary)
                         )
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -2025,7 +2025,7 @@ struct CropPreviewView: View {
             // 尺寸信息
             Text("尺寸: \(Int(croppedImage.size.width)) × \(Int(croppedImage.size.height))")
                 .font(.caption)
-                .foregroundColor(.gray)
+                .foregroundColor(Theme.ColorToken.Text.secondary)
 
             Spacer()
 
@@ -2038,7 +2038,7 @@ struct CropPreviewView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.gray.opacity(0.3))
+                        .background(Theme.ColorToken.Border.default)
                         .foregroundColor(.white)
                         .cornerRadius(Theme.Radius.md)
                 }

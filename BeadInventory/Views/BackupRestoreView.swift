@@ -152,7 +152,7 @@ struct BackupRestoreView: View {
                     .foregroundColor(.white)
             }
             .padding(30)
-            .background(Color(.systemGray5))
+            .background(Theme.ColorToken.Surface.subtle)
             .cornerRadius(Theme.Radius.lg)
         }
     }
@@ -198,7 +198,7 @@ struct BackupRow: View {
             // 图标
             Image(systemName: "doc.zipper")
                 .font(.title2)
-                .foregroundColor(.blue)
+                .foregroundColor(Theme.ColorToken.Status.info)
                 .frame(width: 40)
 
             // 信息
