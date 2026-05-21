@@ -17,9 +17,10 @@
 
 **执行约定：**
 - 每个 Task 对应一个 commit。
-- "编译验证" 命令：`xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 16' build`（下文简写为 `BUILD_CMD`）。
+- "编译验证" 命令：`xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max,OS=26.5' build`（下文简写为 `BUILD_CMD`）。
 - "运行验证" 必要时启动模拟器人工对照截图；本计划中明确指出验证点。
 - 视觉回归 baseline：在执行 Task 1 前，先在 main 分支跑一遍模拟器截图存档（5 Tab + 主要 Sheet）。
+- **统一模拟器**：所有 `xcodebuild` 和模拟器人工对照都用 **iPhone 17 Pro Max (iOS 26.5)**，UDID `462E87D7-DA67-4E17-BF20-DB997EFC4670`（如果按名字 + OS 匹配出现歧义可改用 `id=462E87D7-...`）。
 - **禁止跳过任何"验证步骤"**。如果编译失败先停下来修，不要进下一步。
 
 ---
@@ -31,7 +32,7 @@
 
 - [ ] **Step 1：在 main 分支用模拟器对每个 Tab 截一张图**
 
-   操作步骤：在 Xcode 选 iPhone 16 模拟器跑起来 → 依次切到库存 / 扫描 / 计划 / 统计 / 更多 5 个 Tab → 每个截一张图保存到 `~/Desktop/bids-baseline-screenshots/`，文件名 `01-inventory.png` … `05-more.png`。
+   操作步骤：在 Xcode 选 **iPhone 17 Pro Max (iOS 26.5)** 模拟器跑起来 → 依次切到库存 / 扫描 / 计划 / 统计 / 更多 5 个 Tab → 每个截一张图保存到 `~/Desktop/bids-baseline-screenshots/`，文件名 `01-inventory.png` … `05-more.png`。
 
 - [ ] **Step 2：再补 4 张关键 Sheet 截图**
 
@@ -315,13 +316,13 @@
 
    ```bash
    xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory \
-       -destination 'platform=iOS Simulator,name=iPhone 16' build
+       -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max,OS=26.5' build
    ```
    期望：BUILD SUCCEEDED。
 
    ```bash
    xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory \
-       -destination 'platform=iOS Simulator,name=iPhone 16' test
+       -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max,OS=26.5' test
    ```
    期望：`ThemeTests` 3 个用例全部 PASS。
 
@@ -528,13 +529,13 @@
 
    ```bash
    xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory \
-       -destination 'platform=iOS Simulator,name=iPhone 16' build
+       -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max,OS=26.5' build
    ```
    期望：BUILD SUCCEEDED。
 
    ```bash
    xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory \
-       -destination 'platform=iOS Simulator,name=iPhone 16' test
+       -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max,OS=26.5' test
    ```
    期望：TabFlavorTests 2 个用例 + ThemeTests 3 个用例全部 PASS。
 
@@ -883,7 +884,7 @@
 
    ```bash
    xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory \
-       -destination 'platform=iOS Simulator,name=iPhone 16' test
+       -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max,OS=26.5' test
    ```
    期望：本任务的 `DesignSystemComponentsTests` 3 用例 + 上游全部 PASS。
 
@@ -1167,7 +1168,7 @@
 
    ```bash
    xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory \
-       -destination 'platform=iOS Simulator,name=iPhone 16' test
+       -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max,OS=26.5' test
    ```
    期望全 PASS。
 
