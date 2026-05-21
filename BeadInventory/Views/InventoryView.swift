@@ -29,6 +29,8 @@ struct InventoryView: View {
     @AppStorage("inventoryViewMode") private var viewMode: ViewMode = .list
     @AppStorage("inventoryGroupByPrefix") private var groupByPrefix: Bool = false
     @State private var collapsedGroups: Set<String> = []
+    @StateObject private var sel = SelectionContext<UUID>()
+    @State private var showBatchHideAlert = false
 
     enum ViewMode: String {
         case list = "list"
@@ -258,15 +260,20 @@ struct InventoryView: View {
                                                     GridItem(.flexible())
                                                 ], spacing: 12) {
                                                     ForEach(group.colors) { color in
-                                                        ColorCardView(
-                                                            color: color,
-                                                            stock: stockDict[color.mardCode],
-                                                            sortOption: sortOption,
-                                                            lowStockThreshold: lowStockThreshold,
-                                                            colorSystem: inventoryManager.currentColorSystem
-                                                        )
-                                                        .onTapGesture {
-                                                            selectedColor = color
+                                                        BISelectableCell(
+                                                            isActive: sel.isActive,
+                                                            isSelected: sel.contains(color.id),
+                                                            onLongPress: { withAnimation { sel.enter(initial: color.id) } },
+                                                            onTapInSelectMode: { sel.toggle(color.id) },
+                                                            onTapInactive: { selectedColor = color }
+                                                        ) {
+                                                            ColorCardView(
+                                                                color: color,
+                                                                stock: stockDict[color.mardCode],
+                                                                sortOption: sortOption,
+                                                                lowStockThreshold: lowStockThreshold,
+                                                                colorSystem: inventoryManager.currentColorSystem
+                                                            )
                                                         }
                                                     }
                                                 }
@@ -284,15 +291,20 @@ struct InventoryView: View {
                                     GridItem(.flexible())
                                 ], spacing: 12) {
                                     ForEach(filteredColors) { color in
-                                        ColorCardView(
-                                            color: color,
-                                            stock: stockDict[color.mardCode],
-                                            sortOption: sortOption,
-                                            lowStockThreshold: lowStockThreshold,
-                                            colorSystem: inventoryManager.currentColorSystem
-                                        )
-                                        .onTapGesture {
-                                            selectedColor = color
+                                        BISelectableCell(
+                                            isActive: sel.isActive,
+                                            isSelected: sel.contains(color.id),
+                                            onLongPress: { withAnimation { sel.enter(initial: color.id) } },
+                                            onTapInSelectMode: { sel.toggle(color.id) },
+                                            onTapInactive: { selectedColor = color }
+                                        ) {
+                                            ColorCardView(
+                                                color: color,
+                                                stock: stockDict[color.mardCode],
+                                                sortOption: sortOption,
+                                                lowStockThreshold: lowStockThreshold,
+                                                colorSystem: inventoryManager.currentColorSystem
+                                            )
                                         }
                                     }
                                 }
@@ -309,16 +321,20 @@ struct InventoryView: View {
                                     Section {
                                         if !collapsedGroups.contains(group.prefix) {
                                             ForEach(group.colors) { color in
-                                                ColorRowView(
-                                                    color: color,
-                                                    stock: stockDict[color.mardCode],
-                                                    sortOption: sortOption,
-                                                    lowStockThreshold: lowStockThreshold,
-                                                    colorSystem: inventoryManager.currentColorSystem
-                                                )
-                                                .contentShape(Rectangle())
-                                                .onTapGesture {
-                                                    selectedColor = color
+                                                BISelectableCell(
+                                                    isActive: sel.isActive,
+                                                    isSelected: sel.contains(color.id),
+                                                    onLongPress: { withAnimation { sel.enter(initial: color.id) } },
+                                                    onTapInSelectMode: { sel.toggle(color.id) },
+                                                    onTapInactive: { selectedColor = color }
+                                                ) {
+                                                    ColorRowView(
+                                                        color: color,
+                                                        stock: stockDict[color.mardCode],
+                                                        sortOption: sortOption,
+                                                        lowStockThreshold: lowStockThreshold,
+                                                        colorSystem: inventoryManager.currentColorSystem
+                                                    )
                                                 }
                                                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                                             }
@@ -346,16 +362,20 @@ struct InventoryView: View {
                             // 普通列表模式
                             List {
                                 ForEach(filteredColors) { color in
-                                    ColorRowView(
-                                        color: color,
-                                        stock: stockDict[color.mardCode],
-                                        sortOption: sortOption,
-                                        lowStockThreshold: lowStockThreshold,
-                                        colorSystem: inventoryManager.currentColorSystem
-                                    )
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        selectedColor = color
+                                    BISelectableCell(
+                                        isActive: sel.isActive,
+                                        isSelected: sel.contains(color.id),
+                                        onLongPress: { withAnimation { sel.enter(initial: color.id) } },
+                                        onTapInSelectMode: { sel.toggle(color.id) },
+                                        onTapInactive: { selectedColor = color }
+                                    ) {
+                                        ColorRowView(
+                                            color: color,
+                                            stock: stockDict[color.mardCode],
+                                            sortOption: sortOption,
+                                            lowStockThreshold: lowStockThreshold,
+                                            colorSystem: inventoryManager.currentColorSystem
+                                        )
                                     }
                                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                                 }
@@ -376,15 +396,77 @@ struct InventoryView: View {
             .navigationTitle("啃豆小仓")
             .searchable(text: $searchText, prompt: "搜索色号或名称")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        withAnimation {
-                            viewMode = viewMode == .list ? .grid : .list
+                ToolbarItem(placement: .topBarLeading) {
+                    if sel.isActive {
+                        Button {
+                            withAnimation { sel.exit() }
+                        } label: {
+                            Text("取消")
                         }
-                    } label: {
-                        Image(systemName: viewMode == .list ? "square.grid.3x3" : "list.bullet")
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if sel.isActive {
+                        HStack(spacing: 12) {
+                            Button {
+                                if sel.count == filteredColors.count {
+                                    sel.clear()
+                                } else {
+                                    sel.selectAll(filteredColors.map { $0.id })
+                                }
+                            } label: {
+                                Text(sel.count == filteredColors.count ? "取消全选" : "全选")
+                            }
+                            Button {
+                                withAnimation { sel.exit() }
+                            } label: {
+                                Text("完成").fontWeight(.semibold)
+                            }
+                        }
+                    } else {
+                        HStack(spacing: 12) {
+                            if inventoryManager.currentBrandId != nil && !filteredColors.isEmpty {
+                                Button {
+                                    withAnimation { sel.enter() }
+                                } label: {
+                                    Text("选择")
+                                }
+                            }
+                            Button {
+                                withAnimation {
+                                    viewMode = viewMode == .list ? .grid : .list
+                                }
+                            } label: {
+                                Image(systemName: viewMode == .list ? "square.grid.3x3" : "list.bullet")
+                            }
+                        }
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if sel.isActive {
+                    MultiSelectActionBar(count: sel.count) {
+                        Button(role: .destructive) {
+                            showBatchHideAlert = true
+                        } label: {
+                            Label("隐藏", systemImage: "eye.slash")
+                                .font(.headline)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.red.opacity(sel.count == 0 ? 0.3 : 0.15), in: Capsule())
+                        }
+                        .disabled(sel.count == 0)
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .alert("隐藏选中的色号？", isPresented: $showBatchHideAlert) {
+                Button("取消", role: .cancel) {}
+                Button("隐藏 \(sel.count) 个", role: .destructive) {
+                    batchHideSelected()
+                }
+            } message: {
+                Text("隐藏后可在品牌设置中恢复")
             }
             .sheet(item: $selectedColor) { color in
                 EditStockSheet(color: color, stock: stockDict[color.mardCode])
@@ -397,6 +479,21 @@ struct InventoryView: View {
                     .environmentObject(inventoryManager)
             }
         }
+    }
+
+    /// 批量隐藏选中的色号（按当前品牌）
+    private func batchHideSelected() {
+        guard let brandId = inventoryManager.currentBrandId else { return }
+        // 收集对应的 mardCode 列表
+        let idToCode: [UUID: String] = Dictionary(
+            uniqueKeysWithValues: filteredColors.map { ($0.id, $0.mardCode) }
+        )
+        for id in sel.selected {
+            if let mardCode = idToCode[id] {
+                inventoryManager.hideColor(brandId: brandId, mardCode: mardCode)
+            }
+        }
+        withAnimation { sel.exit() }
     }
 }
 

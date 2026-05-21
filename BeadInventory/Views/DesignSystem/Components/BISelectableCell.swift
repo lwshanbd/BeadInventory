@@ -12,6 +12,8 @@ struct BISelectableCell<Content: View>: View {
     let isSelected: Bool
     let onLongPress: () -> Void
     let onTapInSelectMode: () -> Void
+    /// 可选：非多选态下的轻点回调。如果由外层 NavigationLink / 内层 Button 提供点击行为，请保持 nil 让点击穿透。
+    var onTapInactive: (() -> Void)? = nil
     @ViewBuilder let content: () -> Content
 
     @Environment(\.tabFlavor) private var flavor
@@ -39,11 +41,31 @@ struct BISelectableCell<Content: View>: View {
             }
             .opacity(isActive && !isSelected ? 0.85 : 1.0)
             .contentShape(Rectangle())
-            .onTapGesture {
-                if isActive { onTapInSelectMode() }
-            }
+            // 仅在多选态 或 显式提供 inactive 回调时才劫持点击；否则让内部内容（如 NavigationLink）正常响应。
+            .modifier(_OptionalTapHandler(
+                isActive: isActive,
+                onTapInSelectMode: onTapInSelectMode,
+                onTapInactive: onTapInactive
+            ))
             .onLongPressGesture(minimumDuration: 0.4) {
                 if !isActive { onLongPress() }
             }
+    }
+}
+
+/// 内部 helper：只有在需要时才挂 .onTapGesture，避免覆盖内层 NavigationLink / Button 的点击。
+private struct _OptionalTapHandler: ViewModifier {
+    let isActive: Bool
+    let onTapInSelectMode: () -> Void
+    let onTapInactive: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        if isActive {
+            content.onTapGesture { onTapInSelectMode() }
+        } else if let onTapInactive {
+            content.onTapGesture { onTapInactive() }
+        } else {
+            content
+        }
     }
 }

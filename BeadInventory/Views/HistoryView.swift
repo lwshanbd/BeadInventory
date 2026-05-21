@@ -10,6 +10,15 @@ import SwiftUI
 struct HistoryView: View {
     @ObservedObject private var historyManager = HistoryManager.shared
     @State private var showingClearAlert = false
+    @StateObject private var sel = SelectionContext<UUID>()
+    @State private var showBatchRevertAlert = false
+
+    /// 所有可撤回的记录 id，用于「全选」时跳过不可撤回项。
+    private var revertableRecordIds: [UUID] {
+        historyManager.records
+            .filter { historyManager.canRevert($0) }
+            .map { $0.id }
+    }
 
     var body: some View {
         Group {
@@ -22,14 +31,65 @@ struct HistoryView: View {
         .navigationTitle("历史记录")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if !historyManager.records.isEmpty {
-                    Button(role: .destructive) {
-                        showingClearAlert = true
+            ToolbarItem(placement: .topBarLeading) {
+                if sel.isActive {
+                    Button {
+                        withAnimation { sel.exit() }
                     } label: {
-                        Image(systemName: "trash")
+                        Text("取消")
                     }
                 }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if sel.isActive {
+                    HStack(spacing: 12) {
+                        Button {
+                            if sel.count == revertableRecordIds.count {
+                                sel.clear()
+                            } else {
+                                sel.selectAll(revertableRecordIds)
+                            }
+                        } label: {
+                            Text(sel.count == revertableRecordIds.count ? "取消全选" : "全选")
+                        }
+                        Button {
+                            withAnimation { sel.exit() }
+                        } label: {
+                            Text("完成").fontWeight(.semibold)
+                        }
+                    }
+                } else if !historyManager.records.isEmpty {
+                    HStack(spacing: 12) {
+                        Button {
+                            withAnimation { sel.enter() }
+                        } label: {
+                            Text("选择")
+                        }
+                        Button(role: .destructive) {
+                            showingClearAlert = true
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                    }
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if sel.isActive {
+                MultiSelectActionBar(count: sel.count) {
+                    Button(role: .destructive) {
+                        showBatchRevertAlert = true
+                    } label: {
+                        Label("撤回选中", systemImage: "arrow.uturn.backward")
+                            .font(.headline)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.orange.opacity(sel.count == 0 ? 0.3 : 0.15), in: Capsule())
+                            .foregroundColor(.orange)
+                    }
+                    .disabled(sel.count == 0)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .alert("清空历史记录", isPresented: $showingClearAlert) {
@@ -40,6 +100,25 @@ struct HistoryView: View {
         } message: {
             Text("确定要清空所有历史记录吗？此操作不可撤回。")
         }
+        .alert("批量撤回选中的记录？", isPresented: $showBatchRevertAlert) {
+            Button("取消", role: .cancel) {}
+            Button("撤回 \(sel.count) 条", role: .destructive) {
+                batchRevertSelected()
+            }
+        } message: {
+            Text("将按时间倒序逐条撤回。不可撤回的记录会被跳过。")
+        }
+    }
+
+    /// 批量撤回：按记录时间倒序逐条撤回。
+    private func batchRevertSelected() {
+        let toRevert = historyManager.records
+            .filter { sel.contains($0.id) && historyManager.canRevert($0) }
+            .sorted { $0.timestamp > $1.timestamp }
+        for record in toRevert {
+            _ = historyManager.revert(record.id)
+        }
+        withAnimation { sel.exit() }
     }
 
     // MARK: - 空状态视图
@@ -69,8 +148,28 @@ struct HistoryView: View {
             ForEach(historyManager.groupedRecords, id: \.0) { group in
                 Section(header: Text(group.0)) {
                     ForEach(group.1) { record in
-                        HistoryRowView(record: record) {
-                            revertRecord(record)
+                        BISelectableCell(
+                            isActive: sel.isActive,
+                            isSelected: sel.contains(record.id),
+                            onLongPress: {
+                                // 长按只允许选中可撤回的记录
+                                if historyManager.canRevert(record) {
+                                    withAnimation { sel.enter(initial: record.id) }
+                                }
+                            },
+                            onTapInSelectMode: {
+                                // 多选态下：不可撤回的记录禁止勾选
+                                if historyManager.canRevert(record) {
+                                    sel.toggle(record.id)
+                                }
+                            }
+                        ) {
+                            HistoryRowView(
+                                record: record,
+                                swipeDisabled: sel.isActive
+                            ) {
+                                revertRecord(record)
+                            }
                         }
                     }
                 }
@@ -94,6 +193,7 @@ struct HistoryView: View {
 
 struct HistoryRowView: View {
     let record: HistoryRecord
+    var swipeDisabled: Bool = false
     let onRevert: () -> Void
 
     @ObservedObject private var historyManager = HistoryManager.shared
@@ -135,21 +235,23 @@ struct HistoryRowView: View {
         }
         .padding(.vertical, 4)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if historyManager.canRevert(record) {
-                Button {
-                    showingRevertAlert = true
-                } label: {
-                    Label("撤回", systemImage: "arrow.uturn.backward")
+            if !swipeDisabled {
+                if historyManager.canRevert(record) {
+                    Button {
+                        showingRevertAlert = true
+                    } label: {
+                        Label("撤回", systemImage: "arrow.uturn.backward")
+                    }
+                    .tint(.orange)
+                } else if historyManager.revertDisabledReason(record) != nil {
+                    // 显示禁用原因的按钮
+                    Button {
+                        showingDisabledAlert = true
+                    } label: {
+                        Label("不可撤回", systemImage: "lock.fill")
+                    }
+                    .tint(.gray)
                 }
-                .tint(.orange)
-            } else if historyManager.revertDisabledReason(record) != nil {
-                // 显示禁用原因的按钮
-                Button {
-                    showingDisabledAlert = true
-                } label: {
-                    Label("不可撤回", systemImage: "lock.fill")
-                }
-                .tint(.gray)
             }
         }
         .alert("确认撤回", isPresented: $showingRevertAlert) {
