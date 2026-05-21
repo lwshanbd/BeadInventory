@@ -338,6 +338,7 @@ struct ProjectHistoryView: View {
     @State private var showRevertResultAlert = false
     @State private var restoreStock = true  // 是否恢复库存
     @State private var singleRevertProject: ProjectRecord?  // 单项退回的项目
+    @State private var pendingProjectDeletion: ProjectRecord?  // 待二次确认的项目删除（叶子项目 / 子项目）
 
     private var selectedBrandId: UUID? {
         inventoryManager.currentBrandId
@@ -577,7 +578,7 @@ struct ProjectHistoryView: View {
                                     projectToDelete = project
                                     showDeleteParentAlert = true
                                 } else {
-                                    inventoryManager.deleteProject(id: project.id)
+                                    pendingProjectDeletion = project
                                 }
                             } label: {
                                 Label("删除", systemImage: "trash")
@@ -671,7 +672,7 @@ struct ProjectHistoryView: View {
                                     projectToDelete = project
                                     showDeleteParentAlert = true
                                 } else {
-                                    inventoryManager.deleteProject(id: project.id)
+                                    pendingProjectDeletion = project
                                 }
                             } label: {
                                 Label("删除", systemImage: "trash")
@@ -698,7 +699,7 @@ struct ProjectHistoryView: View {
                                 )
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
-                                        inventoryManager.deleteProject(id: child.id)
+                                        pendingProjectDeletion = child
                                     } label: {
                                         Label("删除", systemImage: "trash")
                                     }
@@ -745,7 +746,7 @@ struct ProjectHistoryView: View {
                                     Divider()
 
                                     Button(role: .destructive) {
-                                        inventoryManager.deleteProject(id: child.id)
+                                        pendingProjectDeletion = child
                                     } label: {
                                         Label("删除", systemImage: "trash")
                                     }
@@ -781,6 +782,21 @@ struct ProjectHistoryView: View {
             }
         } message: {
             Text("该项目包含子项目，请选择处理方式：\n• 删除全部：同时删除所有子项目\n• 仅删除父项目：子项目变为独立项目")
+        }
+        // 叶子/子项目删除二次确认
+        .alert("删除项目", isPresented: Binding(
+            get: { pendingProjectDeletion != nil },
+            set: { if !$0 { pendingProjectDeletion = nil } }
+        )) {
+            Button("取消", role: .cancel) { pendingProjectDeletion = nil }
+            Button("删除", role: .destructive) {
+                if let project = pendingProjectDeletion {
+                    inventoryManager.deleteProject(id: project.id)
+                }
+                pendingProjectDeletion = nil
+            }
+        } message: {
+            Text("删除「\(pendingProjectDeletion?.name ?? "")」？该操作不可撤销。")
         }
         // 退回计划确认（使用 sheet 以便添加选项）
         .sheet(isPresented: $showRevertConfirmSheet, onDismiss: {
