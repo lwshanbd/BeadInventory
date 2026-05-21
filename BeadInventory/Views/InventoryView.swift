@@ -20,6 +20,7 @@ struct LowStockSheetItem: Identifiable {
 
 struct InventoryView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
+    @Environment(\.tabFlavor) private var flavor
     @State private var searchText = ""
     @State private var selectedColor: BeadColor?
     @State private var showingBrandSettings = false
@@ -218,7 +219,7 @@ struct InventoryView: View {
                                 .font(.caption)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
-                                .background(groupByPrefix ? Theme.ColorToken.Status.warning : Theme.ColorToken.Border.default.opacity(0.5))
+                                .background(groupByPrefix ? flavor.color : Theme.ColorToken.Border.default.opacity(0.5))
                                 .foregroundColor(groupByPrefix ? .white : .primary)
                                 .cornerRadius(Theme.Radius.lg)
                             }
@@ -266,7 +267,8 @@ struct InventoryView: View {
                                                             isSelected: sel.contains(color.id),
                                                             onLongPress: { withAnimation { sel.enter(initial: color.id) } },
                                                             onTapInSelectMode: { sel.toggle(color.id) },
-                                                            onTapInactive: { selectedColor = color }
+                                                            onTapInactive: { selectedColor = color },
+                                                            checkmarkPlacement: .topLeading
                                                         ) {
                                                             ColorCardView(
                                                                 color: color,
@@ -297,7 +299,8 @@ struct InventoryView: View {
                                             isSelected: sel.contains(color.id),
                                             onLongPress: { withAnimation { sel.enter(initial: color.id) } },
                                             onTapInSelectMode: { sel.toggle(color.id) },
-                                            onTapInactive: { selectedColor = color }
+                                            onTapInactive: { selectedColor = color },
+                                            checkmarkPlacement: .topLeading
                                         ) {
                                             ColorCardView(
                                                 color: color,
@@ -480,6 +483,8 @@ struct InventoryView: View {
                     .environmentObject(inventoryManager)
             }
             .haptic(.success, trigger: lastSuccessAt)
+            // 向上层广播多选态，让 ContentView 可以隐藏 FAB 避免与 MultiSelectActionBar 重叠
+            .preference(key: SelectModeActivePreferenceKey.self, value: sel.isActive)
         }
     }
 
@@ -583,19 +588,19 @@ struct StatsHeaderView: View {
                     icon: "cube.fill",
                     title: "总库存",
                     value: formatNumber(inventoryManager.totalAvailable(for: brandId)),
-                    accent: .blue
+                    accent: nil // 跟随 tab 风味色
                 )
                 BIStatCard(
                     icon: "checkmark.circle.fill",
                     title: "已使用",
                     value: formatNumber(inventoryManager.totalUsed(for: brandId)),
-                    accent: .green
+                    accent: Theme.ColorToken.Decorative.mint
                 )
                 BIStatCard(
                     icon: "exclamationmark.triangle.fill",
                     title: "低库存",
                     value: "\(inventoryManager.lowStockColors(for: brandId).count)",
-                    accent: .orange
+                    accent: Theme.ColorToken.Status.warning
                 )
                 .onTapGesture {
                     onLowStockTap()

@@ -19,6 +19,9 @@ struct ContentView: View {
     @State private var showingLocalFallbackConfirmation = false
     @State private var showingDisableCloudSyncConfirmation = false
     @State private var showingDisableCloudSyncDoneAlert = false
+    /// 库存页是否处于多选态，由 InventoryView 通过 PreferenceKey 上报。
+    /// 多选态下需要隐藏 FAB，避免与底部 MultiSelectActionBar（含"隐藏"按钮）重叠。
+    @State private var inventoryInSelectMode = false
 
     /// 从 Share Extension 传入的图片
     @State private var externalImage: UIImage?
@@ -72,9 +75,14 @@ struct ContentView: View {
                     .tag(4)
             }
             .tint(currentFlavor.color)
+            .onPreferenceChange(SelectModeActivePreferenceKey.self) { active in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    inventoryInSelectMode = active
+                }
+            }
 
-            // 右侧浮动加号按钮（仅在库存页显示）
-            if selectedTab == 0 {
+            // 右侧浮动加号按钮（仅在库存页显示；多选态下隐藏，避免与底部"隐藏"操作条重叠）
+            if selectedTab == 0 && !inventoryInSelectMode {
                 VStack {
                     Spacer()
                     HStack {

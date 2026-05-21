@@ -41,3 +41,20 @@ final class SelectionContext<ID: Hashable>: ObservableObject {
 
     var count: Int { selected.count }
 }
+
+// MARK: - 跨视图通信
+//
+// 子视图（如 InventoryView）的多选态需要告知父容器（ContentView），
+// 让父容器决定是否隐藏浮动按钮等会撞车的 UI。用 PreferenceKey 而不是
+// 新的 EnvironmentObject，避免在已经很拥挤的环境对象树上再插一层。
+
+/// 子视图通过 `.preference(key: SelectModeActivePreferenceKey.self, value: sel.isActive)`
+/// 向上广播自己的多选态；父容器用 `.onPreferenceChange(...)` 监听。
+struct SelectModeActivePreferenceKey: PreferenceKey {
+    static var defaultValue: Bool = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        // 任意子视图为 true 即视为活跃
+        value = value || nextValue()
+    }
+}
+

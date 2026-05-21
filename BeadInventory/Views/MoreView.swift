@@ -34,7 +34,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "book.fill")
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(Theme.ColorToken.Decorative.sky)
                         }
                     }
 
@@ -67,7 +67,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "shippingbox.fill")
-                                .foregroundColor(Theme.ColorToken.Status.warning)
+                                .foregroundColor(Theme.ColorToken.Decorative.lavender)
                         }
                     }
                     NavigationLink {
@@ -82,7 +82,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "calendar.badge.checkmark")
-                                .foregroundColor(Theme.ColorToken.Status.success)
+                                .foregroundColor(Theme.ColorToken.Decorative.lavender)
                         }
                     }
                     NavigationLink {
@@ -97,7 +97,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "clock.arrow.circlepath")
-                                .foregroundColor(Theme.ColorToken.Status.warning)
+                                .foregroundColor(Theme.ColorToken.Decorative.lavender)
                         }
                     }
                 }
@@ -115,7 +115,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "paintpalette.fill")
-                                .foregroundColor(.purple)
+                                .foregroundColor(Theme.ColorToken.Decorative.mint)
                         }
                     }
 
@@ -131,7 +131,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "eyedropper.halffull")
-                                .foregroundColor(.pink)
+                                .foregroundColor(Theme.ColorToken.Decorative.mint)
                         }
                     }
                 }
@@ -142,7 +142,12 @@ struct MoreView: View {
                         Button {
                             cloudSyncStatusManager.refreshAccountStatus(force: true)
                         } label: {
-                            Label("刷新 iCloud 状态", systemImage: "arrow.clockwise")
+                            Label {
+                                Text("刷新 iCloud 状态")
+                            } icon: {
+                                Image(systemName: "arrow.clockwise")
+                                    .foregroundColor(Theme.ColorToken.Decorative.lemon)
+                            }
                         }
                         .disabled(cloudSyncStatusManager.isCheckingAccount)
                     }
@@ -161,21 +166,26 @@ struct MoreView: View {
                             )
                         }
                     )) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Label(String(localized: "启用 iCloud 同步"), systemImage: "icloud")
-                            if hasPendingCloudSyncChange {
-                                Text(String(localized: "已修改，关闭并重新打开 App 后生效。"))
-                                    .font(.caption)
-                                    .foregroundColor(Theme.ColorToken.Status.warning)
-                            } else if cloudSyncDisabled {
-                                Text(String(localized: "当前仅使用本地存储，iCloud 上原有的数据未删除。"))
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            } else {
-                                Text(String(localized: "关闭后 App 将不再读写 iCloud，仅使用本地存储。"))
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(String(localized: "启用 iCloud 同步"))
+                                if hasPendingCloudSyncChange {
+                                    Text(String(localized: "已修改，关闭并重新打开 App 后生效。"))
+                                        .font(.caption)
+                                        .foregroundColor(Theme.ColorToken.Status.warning)
+                                } else if cloudSyncDisabled {
+                                    Text(String(localized: "当前仅使用本地存储，iCloud 上原有的数据未删除。"))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text(String(localized: "关闭后 App 将不再读写 iCloud，仅使用本地存储。"))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
+                        } icon: {
+                            Image(systemName: "icloud")
+                                .foregroundColor(Theme.ColorToken.Decorative.lemon)
                         }
                     }
 
@@ -191,7 +201,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "externaldrive.badge.icloud")
-                                .foregroundColor(.cyan)
+                                .foregroundColor(Theme.ColorToken.Decorative.lemon)
                         }
                     }
 
@@ -207,7 +217,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "stethoscope")
-                                .foregroundColor(.indigo)
+                                .foregroundColor(Theme.ColorToken.Decorative.lemon)
                         }
                     }
                 }
@@ -225,7 +235,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "tag.fill")
-                                .foregroundColor(Theme.ColorToken.Status.info)
+                                .foregroundColor(Theme.ColorToken.Text.secondary)
                         }
                     }
 
@@ -257,7 +267,7 @@ struct MoreView: View {
                             }
                         } icon: {
                             Image(systemName: "info.circle.fill")
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(Theme.ColorToken.Text.secondary)
                         }
                     }
                 }
