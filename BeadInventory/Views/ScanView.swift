@@ -1509,19 +1509,24 @@ struct RecognizedItemRowNew: View {
                         .padding(.vertical, 4)
                 }
             }
-        }
-        .contextMenu {
-            Button {
-                editCode = matchedColor?.displayCode(for: colorSystem) ?? item.colorCode
-                editQuantity = "\(item.quantity)"
-                isEditing = true
-            } label: {
-                Label("编辑", systemImage: "pencil")
-            }
-            Button(role: .destructive) {
-                onRemove()
-            } label: {
-                Label("删除", systemImage: "trash")
+            // contextMenu 必须挂在卡片本体上而不是 SwipeActionRow 外层 ——
+            // 外层的 simultaneousGesture(DragGesture) 会和 contextMenu 的长按
+            // 识别冲突、把长按手势吃掉（实测在 iPhone 17 Pro Max sim 上 2.5s
+            // 长按都不弹），把 contextMenu 移到内层 VStack 上分离两个手势作用
+            // 域之后就正常了。
+            .contextMenu {
+                Button {
+                    editCode = matchedColor?.displayCode(for: colorSystem) ?? item.colorCode
+                    editQuantity = "\(item.quantity)"
+                    isEditing = true
+                } label: {
+                    Label("编辑", systemImage: "pencil")
+                }
+                Button(role: .destructive) {
+                    onRemove()
+                } label: {
+                    Label("删除", systemImage: "trash")
+                }
             }
         }
     }
