@@ -39,6 +39,7 @@
 		38B1A0012F01000100000009 /* SwiftDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000019 /* SwiftDataModels.swift */; };
 		38B1A0012F0100010000000A /* ProjectDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000001A /* ProjectDetailView.swift */; };
 		38B1A0012F0100010000000B /* PlannedProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000001B /* PlannedProjectsView.swift */; };
+		5F0094000000000000005B41 /* WorkshopView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0094000000000000005B40 /* WorkshopView.swift */; };
 		38B1A0012F0100010000000C /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000001C /* MoreView.swift */; };
 		38B1A0012F0100010000000D /* HistoryRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000021 /* HistoryRecord.swift */; };
 		38B1A0012F0100010000000E /* HistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000022 /* HistoryManager.swift */; };
@@ -53,6 +54,7 @@
 		38B1A0012F01000100000050 /* ColorSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000051 /* ColorSystem.swift */; };
 		38B1A0012F01000100000053 /* colorwithkaka.csv in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000052 /* colorwithkaka.csv */; };
 		38B1A0012F01000100000055 /* allcolors.json in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000054 /* allcolors.json */; };
+		5F0094000000000000005A41 /* ZCOOLKuaiLe-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5F0094000000000000005A40 /* ZCOOLKuaiLe-Regular.ttf */; };
 		38B1A0012F01000100000061 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000060 /* Localizable.xcstrings */; };
 		38FA2CDA2F2482A300912E02 /* ImportFullDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38FA2CD92F2482A300912E02 /* ImportFullDataView.swift */; };
 		38FA2CDD2F25B67200912E02 /* CustomColorEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38FA2CDB2F25B67200912E02 /* CustomColorEditView.swift */; };
@@ -158,6 +160,7 @@
 		38B1A0012F01000100000019 /* SwiftDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftDataModels.swift; sourceTree = "<group>"; };
 		38B1A0012F0100010000001A /* ProjectDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDetailView.swift; sourceTree = "<group>"; };
 		38B1A0012F0100010000001B /* PlannedProjectsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannedProjectsView.swift; sourceTree = "<group>"; };
+		5F0094000000000000005B40 /* WorkshopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkshopView.swift; sourceTree = "<group>"; };
 		38B1A0012F0100010000001C /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000021 /* HistoryRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryRecord.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000022 /* HistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryManager.swift; sourceTree = "<group>"; };
@@ -172,6 +175,7 @@
 		38B1A0012F01000100000051 /* ColorSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorSystem.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000052 /* colorwithkaka.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = colorwithkaka.csv; sourceTree = "<group>"; };
 		38B1A0012F01000100000054 /* allcolors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = allcolors.json; sourceTree = "<group>"; };
+		5F0094000000000000005A40 /* ZCOOLKuaiLe-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Resources/Fonts/ZCOOLKuaiLe-Regular.ttf"; sourceTree = "<group>"; };
 		38B1A0012F01000100000060 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		38FA2CD92F2482A300912E02 /* ImportFullDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportFullDataView.swift; sourceTree = "<group>"; };
 		38FA2CDB2F25B67200912E02 /* CustomColorEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomColorEditView.swift; sourceTree = "<group>"; };
@@ -342,6 +346,7 @@
 				38B1A0012F01000100000052 /* colorwithkaka.csv */,
 				38B1A0012F01000100000054 /* allcolors.json */,
 				38B1A0012F01000100000060 /* Localizable.xcstrings */,
+				5F0094000000000000005A40 /* ZCOOLKuaiLe-Regular.ttf */,
 			);
 			path = BeadInventory;
 			sourceTree = "<group>";
@@ -423,6 +428,7 @@
 				38FA2CDC2F25B67200912E02 /* CustomColorsView.swift */,
 				38FA2CD92F2482A300912E02 /* ImportFullDataView.swift */,
 				38B1A0012F0100010000001B /* PlannedProjectsView.swift */,
+				5F0094000000000000005B40 /* WorkshopView.swift */,
 				38B1A0012F0100010000001A /* ProjectDetailView.swift */,
 				A01234560018 /* ScanView.swift */,
 				A0123456DR02 /* DeductionReviewView.swift */,
@@ -577,6 +583,7 @@
 				A01234560003 /* Assets.xcassets in Resources */,
 				38B1A0012F01000100000053 /* colorwithkaka.csv in Resources */,
 				38B1A0012F01000100000055 /* allcolors.json in Resources */,
+				5F0094000000000000005A41 /* ZCOOLKuaiLe-Regular.ttf in Resources */,
 				38B1A0012F01000100000061 /* Localizable.xcstrings in Resources */,
 				3806E50E2F00FB4300187AA7 /* InfoPlist.strings in Resources */,
 				3806E50A2F00FB3900187AA7 /* InfoPlist.strings in Resources */,
@@ -644,6 +651,7 @@
 				38B1A0012F01000100000009 /* SwiftDataModels.swift in Sources */,
 				38B1A0012F0100010000000A /* ProjectDetailView.swift in Sources */,
 				38B1A0012F0100010000000B /* PlannedProjectsView.swift in Sources */,
+				5F0094000000000000005B41 /* WorkshopView.swift in Sources */,
 				38B1A0012F0100010000000C /* MoreView.swift in Sources */,
 				38B1A0012F0100010000000D /* HistoryRecord.swift in Sources */,
 				38B1A0012F0100010000000E /* HistoryManager.swift in Sources */,

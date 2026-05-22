@@ -132,101 +132,272 @@ struct InventoryView: View {
         }.map { ($0.key, $0.value) }
     }
 
+    // MARK: - 新设计：派生数据
+
+    /// 当前品牌已记录（未隐藏）色号数量
+    private var recordedColorCount: Int {
+        stockDict.count
+    }
+
+    /// 当前品牌所有 stock 条目数（含隐藏），作为「M」的近似值
+    private var totalColorCount: Int {
+        guard let brandId = inventoryManager.currentBrandId else { return 0 }
+        return inventoryManager.brandStocks.filter { $0.brandId == brandId }.count
+    }
+
+    private var statBarCells: [BIStatBar.Cell] {
+        guard let brandId = inventoryManager.currentBrandId else { return [] }
+        let total = inventoryManager.totalAvailable(for: brandId)
+        let used = inventoryManager.totalUsed(for: brandId)
+        let denom = max(total + used, 1)
+        let pct = Int(round(Double(used) / Double(denom) * 100))
+        let lowCount = inventoryManager.lowStockColors(for: brandId).count
+        return [
+            .init(label: String(localized: "总库存"), value: formatLocale(total), sub: String(localized: "颗")),
+            .init(label: String(localized: "已使用"), value: formatLocale(used), sub: "\(pct)%"),
+            .init(label: String(localized: "低库存"), value: "\(lowCount)", sub: String(localized: "种"), warn: true)
+        ]
+    }
+
+    private var statBarProgress: Double {
+        guard let brandId = inventoryManager.currentBrandId else { return 0 }
+        let total = inventoryManager.totalAvailable(for: brandId)
+        let used = inventoryManager.totalUsed(for: brandId)
+        let denom = Double(total + used)
+        guard denom > 0 else { return 0 }
+        return Double(used) / denom
+    }
+
+    private func formatLocale(_ n: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.groupingSeparator = ","
+        return f.string(from: NSNumber(value: n)) ?? "\(n)"
+    }
+
+    // MARK: - Hero 区域
+
+    @ViewBuilder
+    private var heroSection: some View {
+        VStack(spacing: 10) {
+            // Top row：品牌 pill + 右侧图标按钮
+            HStack(spacing: 8) {
+                BrandPicker()
+                Spacer()
+                if inventoryManager.currentBrandId != nil && !filteredColors.isEmpty {
+                    Button {
+                        withAnimation { sel.enter() }
+                    } label: {
+                        Image(systemName: "checklist")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.ColorToken.Text.secondary)
+                            .frame(width: 34, height: 34)
+                            .background(
+                                RoundedRectangle(cornerRadius: 11)
+                                    .fill(Theme.ColorToken.Surface.elevated)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 11)
+                                    .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+                            )
+                    }
+                }
+                if inventoryManager.currentBrandId != nil {
+                    Button {
+                        showingBrandSettings = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.ColorToken.Text.secondary)
+                            .frame(width: 34, height: 34)
+                            .background(
+                                RoundedRectangle(cornerRadius: 11)
+                                    .fill(Theme.ColorToken.Surface.elevated)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 11)
+                                    .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+                            )
+                    }
+                }
+            }
+
+            // Hero row：Wordmark + 右侧统计
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Wordmark(size: 32, beadColor: flavor.color)
+                    Text("今天给小豆豆们点个名 ✦")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                }
+                Spacer()
+                if inventoryManager.currentBrandId != nil {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("已记录")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                        Text("\(recordedColorCount)/\(totalColorCount) 色")
+                            .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(Theme.ColorToken.Text.primary)
+                    }
+                }
+            }
+        }
+        .padding(.top, 12)
+        .padding(.bottom, 14)
+        .padding(.horizontal, 18)
+        .background(
+            LinearGradient(
+                colors: [
+                    Theme.ColorToken.Surface.subtle,
+                    Theme.ColorToken.Surface.background
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.ColorToken.Border.divider)
+                .frame(height: 1)
+        }
+    }
+
+    // MARK: - 工具栏（搜索 + 排序 + 分组 + 视图切换）
+
+    @ViewBuilder
+    private var toolbarSection: some View {
+        VStack(spacing: 10) {
+            // 搜索框
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                TextField("搜索色号或名称", text: $searchText)
+                    .font(.subheadline)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Theme.ColorToken.Surface.subtle)
+            )
+
+            // 排序 pill + 分组 chip + spacer + 视图切换
+            HStack(spacing: 10) {
+                Menu {
+                    ForEach(SortOption.allCases, id: \.self) { option in
+                        Button {
+                            if sortOption == option {
+                                sortAscending.toggle()
+                            } else {
+                                sortOption = option
+                                sortAscending = true
+                            }
+                        } label: {
+                            HStack {
+                                Text(option.localizedName)
+                                if sortOption == option {
+                                    Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
+                                }
+                            }
+                        }
+                    }
+                    Divider()
+                    Button {
+                        sortAscending.toggle()
+                    } label: {
+                        Label(sortAscending ? "切换为降序" : "切换为升序",
+                              systemImage: sortAscending ? "arrow.down" : "arrow.up")
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.ColorToken.Text.secondary)
+                        Text(sortOption.localizedName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.ColorToken.Text.primary)
+                        Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.ColorToken.Morandi.latte)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule().fill(Theme.ColorToken.Surface.elevated)
+                    )
+                    .overlay(
+                        Capsule().strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+                    )
+                }
+
+                Button {
+                    withAnimation {
+                        groupByPrefix.toggle()
+                        if !groupByPrefix {
+                            collapsedGroups.removeAll()
+                        }
+                    }
+                } label: {
+                    BIChip("分组", active: groupByPrefix, color: flavor.color)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                BISegmented(
+                    selection: $viewMode,
+                    segments: [
+                        (.list, "☰"),
+                        (.grid, "▦")
+                    ],
+                    fillWidth: false
+                )
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 12)
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // 品牌选择器
-                HStack {
-                    BrandPicker()
-
-                    if inventoryManager.currentBrandId != nil {
-                        Button {
-                            showingBrandSettings = true
-                        } label: {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 18))
-                                .foregroundColor(.accentColor)
-                                .padding(8)
-                                .background(Color.accentColor.opacity(0.1))
-                                .cornerRadius(Theme.Radius.sm)
-                        }
-                    }
-
-                    Spacer()
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
+                // 新设计：自定义 Hero 区域
+                heroSection
 
                 // 顶部统计卡片
                 if inventoryManager.currentBrandId != nil {
-                    StatsHeaderView(onLowStockTap: {
+                    BIStatBar(
+                        cells: statBarCells,
+                        progress: statBarProgress,
+                        progressColor: Theme.ColorToken.Morandi.latte,
+                        progressLabel: nil
+                    )
+                    .padding(.horizontal, 18)
+                    .padding(.top, 12)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         if let brandId = inventoryManager.currentBrandId {
                             lowStockDetailItem = LowStockSheetItem(brandId: brandId)
                         }
-                    })
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-
-                    // 排序选项
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(SortOption.allCases, id: \.self) { option in
-                                SortChip(
-                                    title: option.localizedName,
-                                    isSelected: sortOption == option
-                                ) {
-                                    withAnimation {
-                                        if sortOption == option {
-                                            // 点击已选中的选项时切换排序方向
-                                            sortAscending.toggle()
-                                        } else {
-                                            sortOption = option
-                                            sortAscending = true
-                                        }
-                                    }
-                                }
-                            }
-
-                            // 排序方向按钮
-                            Button {
-                                withAnimation { sortAscending.toggle() }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
-                                    Text(sortAscending ? "升序" : "降序")
-                                }
-                                .font(.caption)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(Color.accentColor.opacity(0.2))
-                                .foregroundColor(.accentColor)
-                                .cornerRadius(Theme.Radius.lg)
-                            }
-
-                            // 分组按钮
-                            Button {
-                                withAnimation {
-                                    groupByPrefix.toggle()
-                                    if !groupByPrefix {
-                                        collapsedGroups.removeAll()
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: groupByPrefix ? "folder.fill" : "folder")
-                                    Text(LocalizedStringKey("分组"))
-                                }
-                                .font(.caption)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(groupByPrefix ? flavor.color : Theme.ColorToken.Border.default.opacity(0.5))
-                                .foregroundColor(groupByPrefix ? .white : .primary)
-                                .cornerRadius(Theme.Radius.lg)
-                            }
-                        }
-                        .padding(.horizontal)
                     }
-                    .padding(.bottom, 8)
+
+                    // 工具栏：搜索 + 排序 + 分组 + 视图切换
+                    toolbarSection
+                        .padding(.top, 12)
 
                     // 颜色列表
                     if viewMode == .grid {
@@ -396,9 +567,10 @@ struct InventoryView: View {
                     )
                 }
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("啃豆小仓")
-            .searchable(text: $searchText, prompt: "搜索色号或名称")
+            .background(Theme.ColorToken.Surface.background)
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if sel.isActive {
@@ -428,22 +600,7 @@ struct InventoryView: View {
                             }
                         }
                     } else {
-                        HStack(spacing: 12) {
-                            if inventoryManager.currentBrandId != nil && !filteredColors.isEmpty {
-                                Button {
-                                    withAnimation { sel.enter() }
-                                } label: {
-                                    Text("选择")
-                                }
-                            }
-                            Button {
-                                withAnimation {
-                                    viewMode = viewMode == .list ? .grid : .list
-                                }
-                            } label: {
-                                Image(systemName: viewMode == .list ? "square.grid.3x3" : "list.bullet")
-                            }
-                        }
+                        EmptyView()
                     }
                 }
             }
@@ -660,60 +817,83 @@ struct ColorCardView: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            // 颜色块
-            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .fill(color.color)
-                .frame(height: 50)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-                )
-                .overlay(alignment: .topTrailing) {
-                    if isCustomColor {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(Theme.ColorToken.Status.warning)
-                            .padding(4)
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            // 颜色块：填色 + 高光 + 内阴影
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(color.color)
+                    .frame(height: 56)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(
+                                RadialGradient(
+                                    colors: [Color.white.opacity(0.55), .clear],
+                                    center: UnitPoint(x: 0.32, y: 0.28),
+                                    startRadius: 0,
+                                    endRadius: 50
+                                )
+                            )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(Color.black.opacity(0.08), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+
+                // 低库存红点（左上）
+                if isLowStock {
+                    Circle()
+                        .fill(Theme.ColorToken.Status.error)
+                        .frame(width: 8, height: 8)
+                        .padding(6)
                 }
+            }
+            .overlay(alignment: .topTrailing) {
+                if isCustomColor {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(Theme.ColorToken.Morandi.honey)
+                        .padding(6)
+                }
+            }
 
             // 色号
             Text(displayCode)
-                .font(.system(.caption, design: .monospaced))
-                .fontWeight(.medium)
+                .font(.system(size: 12.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(Theme.ColorToken.Text.primary)
 
-            // 根据排序方式显示不同数值
+            // 主数值 + 小 delta（无色名）
             if sortOption == .used {
-                // 按用量排序时显示用量
-                HStack(spacing: 4) {
-                    Text("用量:")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(used)")
-                        .font(.caption2)
-                        .fontWeight(.medium)
-                        .foregroundColor(used > 0 ? .orange : .secondary)
+                        .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(used > 0 ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.primary)
+                    Text("已用")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
                 }
             } else {
-                // 其他排序显示剩余量
-                HStack(spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(available)")
-                        .font(.caption2)
-                        .foregroundColor(isLowStock ? .red : .secondary)
-
+                        .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(isLowStock ? Theme.ColorToken.Status.error : Theme.ColorToken.Text.primary)
                     if used > 0 {
-                        Text("(-\(used))")
-                            .font(.caption2)
-                            .foregroundColor(Theme.ColorToken.Status.warning)
+                        Text("-\(used)")
+                            .font(.system(size: 10).monospacedDigit())
+                            .foregroundStyle(Theme.ColorToken.Text.tertiary)
                     }
                 }
             }
         }
-        .padding(8)
-        .background(Color(.systemBackground))
-        .cornerRadius(Theme.Radius.md)
-        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
     }
 }
 
@@ -740,94 +920,125 @@ struct ColorRowView: View {
         color.mardCode.hasPrefix("#")
     }
 
+    /// 库存剩余进度（available / (available+used)），用于细进度条
+    private var remainingRatio: Double {
+        let denom = Double(available + used)
+        guard denom > 0 else { return 0 }
+        return Double(available) / denom
+    }
+
+    private var remainingPct: Int {
+        let denom = available + used
+        guard denom > 0 else { return 0 }
+        return Int(Double(available) / Double(denom) * 100)
+    }
+
     var body: some View {
         HStack(spacing: 12) {
-            // 颜色块
-            BIColorSwatch(hex: color.colorHex, size: 44)
-                .overlay(alignment: .topTrailing) {
-                    if isCustomColor {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 8))
-                            .foregroundColor(Theme.ColorToken.Status.warning)
-                            .padding(2)
-                    }
-                }
+            // 1) 拼豆视图（自定义色用 honey 描边环）
+            BeadView(
+                color: color.color,
+                size: 40,
+                ring: isCustomColor ? Theme.ColorToken.Morandi.honey : nil
+            )
 
-            // 色号和名称
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 4) {
-                    Text(displayCode)
-                        .font(.system(.headline, design: .monospaced))
-                    if isCustomColor {
-                        BIBadge("自定义", style: .custom(
-                            background: Theme.ColorToken.Status.warning.opacity(0.2),
-                            foreground: .orange
-                        ))
-                    }
+            // 2) 色号（+自定义名）
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayCode)
+                    .font(.system(size: 16, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                if isCustomColor {
+                    Text(color.colorName)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                        .lineLimit(1)
                 }
-
-                Text(color.colorName)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
+            // 3) 中段：细进度条 + 剩 N%
+            VStack(spacing: 4) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Theme.ColorToken.Surface.strong)
+                            .frame(height: 4)
+                        Capsule()
+                            .fill(isLowStock ? Theme.ColorToken.Morandi.rose : Theme.ColorToken.Morandi.latte)
+                            .frame(width: geo.size.width * CGFloat(min(max(remainingRatio, 0), 1)), height: 4)
+                    }
+                    .frame(maxHeight: .infinity, alignment: .center)
+                }
+                .frame(height: 4)
+                HStack {
+                    Text("剩")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                    Spacer(minLength: 0)
+                    Text("\(remainingPct)%")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                }
+            }
+            .frame(width: 60)
 
-            // 库存信息
-            VStack(alignment: .trailing, spacing: 4) {
+            // 4) 右侧数值 + delta / 充足
+            VStack(alignment: .trailing, spacing: 2) {
                 if sortOption == .used {
-                    // 按用量排序时显示用量
                     Text("\(used)")
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .foregroundColor(used > 0 ? .orange : .secondary)
+                        .font(.system(size: 19, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(used > 0 ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.primary)
                     Text("已用")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
                 } else {
-                    // 其他排序显示剩余量
                     Text("\(available)")
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .foregroundColor(isLowStock ? .red : .primary)
+                        .font(.system(size: 19, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(isLowStock ? Theme.ColorToken.Status.error : Theme.ColorToken.Text.primary)
                     if used > 0 {
                         Text("-\(used)")
-                            .font(.caption)
-                            .foregroundColor(Theme.ColorToken.Status.warning)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Theme.ColorToken.Status.warning)
                     } else {
-                        Text("可用")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        Text("充足")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.ColorToken.Text.tertiary)
                     }
                 }
             }
-
-            // 低库存标识
-            if isLowStock {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(Theme.ColorToken.Status.warning)
-                    .font(.subheadline)
-            }
+            .frame(minWidth: 60, alignment: .trailing)
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background(Color(.systemBackground))
-        .cornerRadius(Theme.Radius.md)
+        .padding(.vertical, 11)
+        .padding(.horizontal, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
     }
 }
 
 // MARK: - 编辑库存弹窗
+/// 编辑色号 sheet —— 对齐设计稿 EditStockScreen：
+///   半屏 sheet → drag handle → 头部(BeadView + 色号 + 低库存 badge + 副标题 + ✕)
+///   → 3 数字 mini-stat 卡 → 进度条 → 调整/设置 segmented
+///   → 调整模式：[− | 数字 | +] + 快捷 chips + hint；设置模式：总库存 / 已使用 行
+///   → 隐藏此色号 warning row → "保存调整" latte 主 CTA
 struct EditStockSheet: View {
     let color: BeadColor
     let stock: BrandStock?
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
+    enum EditMode: Hashable { case adjust, set }
+
+    @State private var mode: EditMode = .adjust
+    @State private var adjustDelta: Int = 50           // 调整模式的有符号增量
     @State private var stockAmount: String = ""
     @State private var usedAmount: String = ""
-    @State private var adjustAmount: String = ""
-    @State private var isAdding = true
     @State private var showingHideAlert = false
     @State private var lastSuccessAt: Date = .distantPast
     @FocusState private var isInputFocused: Bool
@@ -839,186 +1050,121 @@ struct EditStockSheet: View {
         guard let brandId = inventoryManager.currentBrandId else { return 100 }
         return inventoryManager.getLowStockThreshold(for: brandId)
     }
+    var isLowStock: Bool { currentAvailable < lowStockThreshold }
+    var isCustomColor: Bool { color.mardCode.hasPrefix("#") }
+
+    /// 调整后预览剩余
+    var previewRemaining: Int {
+        max(0, currentAvailable + adjustDelta)
+    }
+
+    /// 用量百分比
+    var usagePct: Double {
+        guard currentStock > 0 else { return 0 }
+        return min(1.0, Double(currentUsed) / Double(currentStock))
+    }
+
+    var subtitle: String {
+        let brand = inventoryManager.currentBrand?.name ?? ""
+        let system = inventoryManager.currentColorSystem == .mard ? "MARD" : "卡卡"
+        if isCustomColor {
+            return "\(color.colorName) · \(brand)"
+        }
+        return "\(brand) · \(system)"
+    }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-            VStack(spacing: 24) {
-                // 品牌名称
-                if let brandName = inventoryManager.currentBrand?.name {
-                    Text("品牌: \(brandName)")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+        VStack(spacing: 14) {
+            // drag handle
+            Capsule()
+                .fill(Theme.ColorToken.Border.default)
+                .frame(width: 40, height: 4)
+                .padding(.top, 6)
+
+            headerRow
+
+            threeStatsCard
+
+            // 进度条（用量）
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Theme.ColorToken.Surface.strong)
+                        .frame(height: 6)
+                    Capsule()
+                        .fill(isLowStock ? Theme.ColorToken.Morandi.rose : Theme.ColorToken.Morandi.latte)
+                        .frame(width: geo.size.width * CGFloat(usagePct), height: 6)
                 }
-
-                // 颜色预览
-                VStack(spacing: 12) {
-                    RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                        .fill(color.color)
-                        .frame(height: 100)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-                        )
-
-                    // 当前品牌色号
-                    Text(color.displayCode(for: inventoryManager.currentColorSystem))
-                        .font(.title2)
-                        .fontWeight(.bold)
-
-                    // 如果非 MARD 体系，显示 MARD 色号作参考
-                    if inventoryManager.currentColorSystem != .mard {
-                        Text("MARD: \(color.mardCode)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .padding()
-                .background(Theme.ColorToken.Surface.subtle)
-                .cornerRadius(Theme.Radius.lg)
-
-                // 当前库存信息
-                HStack(spacing: 20) {
-                    InfoBlock(title: "总库存", value: "\(currentStock)")
-                    InfoBlock(title: "已使用", value: "\(currentUsed)")
-                    InfoBlock(title: "可用", value: "\(currentAvailable)", highlight: currentAvailable < lowStockThreshold)
-                }
-
-                // 调整库存
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("调整库存")
-                        .font(.headline)
-
-                    HStack {
-                        Picker("操作", selection: $isAdding) {
-                            Text("增加").tag(true)
-                            Text("减少").tag(false)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 120)
-
-                        TextField("数量", text: $adjustAmount)
-                            .keyboardType(.asciiCapableNumberPad)
-                            .textFieldStyle(.roundedBorder)
-                            .focused($isInputFocused)
-
-                        Button {
-                            applyAdjustment()
-                        } label: {
-                            Text("确定")
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color.accentColor)
-                                .foregroundColor(.white)
-                                .cornerRadius(Theme.Radius.sm)
-                        }
-                    }
-                }
-                .padding()
-                .background(Theme.ColorToken.Surface.subtle)
-                .cornerRadius(Theme.Radius.lg)
-
-                // 直接设置库存
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("直接设置")
-                        .font(.headline)
-
-                    HStack {
-                        Text("库存")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .frame(width: 50, alignment: .leading)
-                        TextField("数量", text: $stockAmount)
-                            .keyboardType(.asciiCapableNumberPad)
-                            .textFieldStyle(.roundedBorder)
-                            .focused($isInputFocused)
-                        Button {
-                            setStock()
-                        } label: {
-                            Text("设置")
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Theme.ColorToken.Status.warning)
-                                .foregroundColor(.white)
-                                .cornerRadius(Theme.Radius.sm)
-                        }
-                    }
-
-                    HStack {
-                        Text("已用")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .frame(width: 50, alignment: .leading)
-                        TextField("数量", text: $usedAmount)
-                            .keyboardType(.asciiCapableNumberPad)
-                            .textFieldStyle(.roundedBorder)
-                            .focused($isInputFocused)
-                        Button {
-                            setUsed()
-                        } label: {
-                            Text("设置")
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Theme.ColorToken.Status.success)
-                                .foregroundColor(.white)
-                                .cornerRadius(Theme.Radius.sm)
-                        }
-                    }
-                }
-                .padding()
-                .background(Theme.ColorToken.Surface.subtle)
-                .cornerRadius(Theme.Radius.lg)
-
-                // 隐藏色号
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("色号管理")
-                        .font(.headline)
-
-                    Button {
-                        showingHideAlert = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "eye.slash")
-                            Text("隐藏此色号")
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .foregroundColor(Theme.ColorToken.Status.warning)
-                    }
-
-                    Text("隐藏后该色号不会出现在库存列表中，库存将被清零。可在品牌设置中恢复。")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding()
-                .background(Theme.ColorToken.Surface.subtle)
-                .cornerRadius(Theme.Radius.lg)
+                .frame(maxHeight: .infinity, alignment: .center)
             }
-            .padding()
+            .frame(height: 6)
+
+            // 模式切换
+            HStack {
+                BISegmented(
+                    selection: $mode,
+                    segments: [(.adjust, "调整 ±"), (.set, "直接设置")],
+                    fillWidth: false
+                )
+                Spacer()
             }
-            .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("编辑库存")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") { dismiss() }
-                }
-                ToolbarItem(placement: .keyboard) {
-                    HStack {
-                        Spacer()
-                        Button("收起键盘") {
-                            isInputFocused = false
-                        }
-                    }
+
+            // 内容区
+            Group {
+                switch mode {
+                case .adjust: adjustModeBlock
+                case .set:    setModeBlock
                 }
             }
+
+            // 隐藏此色号
+            Button {
+                showingHideAlert = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "eye.slash")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("隐藏此色号")
+                        .font(.subheadline.weight(.medium))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                }
+                .foregroundStyle(Theme.ColorToken.Status.warning)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Theme.ColorToken.Surface.subtle)
+                )
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+
+            // 主 CTA
+            Button {
+                commit()
+            } label: {
+                Text(mode == .adjust ? "保存调整" : "保存设置")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Theme.ColorToken.Morandi.latte)
+                    )
+                    .shadow(color: Theme.ColorToken.Morandi.latte.opacity(0.25), radius: 8, x: 0, y: 4)
+            }
+            .buttonStyle(.plain)
         }
-        .presentationDetents([.large])
+        .padding(.horizontal, 18)
+        .padding(.bottom, 30)
+        .background(Theme.ColorToken.Surface.background)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.hidden)
         .haptic(.success, trigger: lastSuccessAt)
         .onAppear {
             stockAmount = "\(currentStock)"
@@ -1032,10 +1178,229 @@ struct EditStockSheet: View {
         } message: {
             Text("确定要隐藏 \(color.displayCode(for: inventoryManager.currentColorSystem)) 吗？\n\n库存将被清零，该色号不会出现在库存列表和低库存提醒中。可在品牌设置 > 隐藏色号管理中恢复。")
         }
+        .toolbar {
+            ToolbarItem(placement: .keyboard) {
+                HStack {
+                    Spacer()
+                    Button("收起键盘") { isInputFocused = false }
+                }
+            }
+        }
     }
 
-    /// 先收起键盘、再修改数据、最后延迟 dismiss，
-    /// 避免 iPad form sheet 上键盘收起 + @Published 变更 + dismiss 三者竞争导致闪退。
+    // MARK: - Sub views
+
+    private var headerRow: some View {
+        HStack(spacing: 14) {
+            BeadView(
+                color: color.color,
+                size: 56,
+                ring: isCustomColor ? Theme.ColorToken.Morandi.honey : nil
+            )
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(color.displayCode(for: inventoryManager.currentColorSystem))
+                        .font(.system(size: 20, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                    if isLowStock {
+                        BIChip("低库存", active: true, color: Theme.ColorToken.Morandi.rose, size: .sm)
+                    }
+                }
+                Text(subtitle)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+            }
+            Spacer()
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        Circle().fill(Theme.ColorToken.Surface.subtle)
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var threeStatsCard: some View {
+        HStack(spacing: 0) {
+            miniStat(label: "总库存", value: "\(currentStock)", warn: false)
+            miniStatDivider
+            miniStat(label: "已使用", value: "\(currentUsed)", warn: false)
+            miniStatDivider
+            miniStat(label: "剩余", value: "\(currentAvailable)", warn: isLowStock)
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 0)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
+    }
+
+    private func miniStat(label: String, value: String, warn: Bool) -> some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                .foregroundStyle(warn ? Theme.ColorToken.Status.error : Theme.ColorToken.Text.primary)
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var miniStatDivider: some View {
+        Rectangle()
+            .fill(Theme.ColorToken.Border.divider)
+            .frame(width: 1, height: 28)
+    }
+
+    // 调整模式：[− | 大数字 + 颗 | +]   快捷 chips   "调整后剩余将变为 X 颗"
+    private var adjustModeBlock: some View {
+        VStack(spacing: 10) {
+            // ± 大输入条
+            HStack(spacing: 10) {
+                Button { decrementDelta() } label: {
+                    Image(systemName: "minus")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                        .frame(width: 50, height: 50)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Theme.ColorToken.Surface.subtle)
+                        )
+                }
+                .buttonStyle(.plain)
+
+                VStack(spacing: 0) {
+                    Text(formattedDelta)
+                        .font(.system(size: 28, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(deltaColor)
+                    Text("颗")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                }
+                .frame(maxWidth: .infinity)
+
+                Button { incrementDelta() } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Theme.ColorToken.Morandi.latte)
+                        .frame(width: 50, height: 50)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Theme.ColorToken.Morandi.latte.opacity(0.12))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(4)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Theme.ColorToken.Surface.elevated)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+            )
+
+            // 快捷 chips
+            HStack(spacing: 6) {
+                Spacer(minLength: 0)
+                ForEach([10, 50, 100, 500], id: \.self) { n in
+                    Button { setDeltaAbsolute(n) } label: {
+                        Text("\(n)")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(Theme.ColorToken.Text.secondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule().fill(Theme.ColorToken.Surface.subtle)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            // 预览 hint
+            HStack(spacing: 4) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.ColorToken.Morandi.honey)
+                Text("调整后剩余将变为")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+                Text("\(previewRemaining) 颗")
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                Spacer()
+            }
+        }
+    }
+
+    // 直接设置：总库存 / 已使用 两行
+    private var setModeBlock: some View {
+        VStack(spacing: 10) {
+            setRow(label: "总库存", text: $stockAmount)
+            setRow(label: "已使用", text: $usedAmount)
+        }
+    }
+
+    private func setRow(label: String, text: Binding<String>) -> some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
+                .frame(width: 60, alignment: .leading)
+            TextField("", text: text)
+                .keyboardType(.asciiCapableNumberPad)
+                .font(.system(size: 18, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Theme.ColorToken.Text.primary)
+                .focused($isInputFocused)
+            Spacer()
+            Image(systemName: "pencil")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.ColorToken.Text.tertiary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
+    }
+
+    private var formattedDelta: String {
+        adjustDelta > 0 ? "+\(adjustDelta)" : "\(adjustDelta)"
+    }
+
+    private var deltaColor: Color {
+        if adjustDelta > 0 { return Theme.ColorToken.Morandi.latte }
+        if adjustDelta < 0 { return Theme.ColorToken.Status.error }
+        return Theme.ColorToken.Text.primary
+    }
+
+    private func incrementDelta() { adjustDelta += 1 }
+    private func decrementDelta() { adjustDelta -= 1 }
+    private func setDeltaAbsolute(_ n: Int) {
+        // 保持符号；如果当前为 0，默认 +
+        adjustDelta = adjustDelta >= 0 ? n : -n
+    }
+
+    /// 先收起键盘、再修改数据、最后延迟 dismiss
     private func dismissAfterDataChange() {
         isInputFocused = false
         DispatchQueue.main.async {
@@ -1043,13 +1408,20 @@ struct EditStockSheet: View {
         }
     }
 
-    func applyAdjustment() {
-        guard let amount = Int(adjustAmount), amount > 0,
+    private func commit() {
+        switch mode {
+        case .adjust: applyAdjustment()
+        case .set:    applySetBoth()
+        }
+    }
+
+    private func applyAdjustment() {
+        guard adjustDelta != 0,
               let brandId = inventoryManager.currentBrandId else { return }
-        if isAdding {
+        let amount = abs(adjustDelta)
+        if adjustDelta > 0 {
             inventoryManager.addStock(brandId: brandId, mardCode: color.mardCode, amount: amount)
         } else {
-            // 减少库存 = 增加 used
             if let index = inventoryManager.brandStocks.firstIndex(where: {
                 $0.brandId == brandId && $0.mardCode == color.mardCode
             }) {
@@ -1057,8 +1429,27 @@ struct EditStockSheet: View {
                 inventoryManager.saveData()
             }
         }
-        adjustAmount = ""
+        adjustDelta = 0
         lastSuccessAt = Date()
+        dismissAfterDataChange()
+    }
+
+    private func applySetBoth() {
+        guard let brandId = inventoryManager.currentBrandId else { return }
+        var changed = false
+        if let newStock = Int(stockAmount), newStock >= 0, newStock != currentStock {
+            inventoryManager.updateStock(brandId: brandId, mardCode: color.mardCode, newStock: newStock)
+            changed = true
+        }
+        if let newUsed = Int(usedAmount), newUsed >= 0, newUsed != currentUsed,
+           let index = inventoryManager.brandStocks.firstIndex(where: {
+               $0.brandId == brandId && $0.mardCode == color.mardCode
+           }) {
+            inventoryManager.brandStocks[index].used = newUsed
+            inventoryManager.saveData()
+            changed = true
+        }
+        if changed { lastSuccessAt = Date() }
         dismissAfterDataChange()
     }
 

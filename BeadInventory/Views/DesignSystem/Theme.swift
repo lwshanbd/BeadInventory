@@ -35,6 +35,11 @@ enum Theme {
         static let body:          Font = .body
         static let metadata:      Font = .caption
         static let number:        Font = .title2.monospacedDigit().weight(.semibold)
+        /// Wordmark 字体 —— 设计稿 tokens.css 指定 "ZCOOL KuaiLe"（站酷快乐体，圆润可爱）。
+        /// 字体文件 Resources/Fonts/ZCOOLKuaiLe-Regular.ttf，已在 Info.plist UIAppFonts 注册。
+        static func wordmark(size: CGFloat = 32) -> Font {
+            Font.custom("ZCOOLKuaiLe-Regular", size: size)
+        }
     }
 
     // MARK: - Color tokens
@@ -74,9 +79,10 @@ enum Theme {
         }
 
         enum Surface {
-            static let background = Color(.systemGroupedBackground)
-            static let elevated   = Color(.systemBackground)
-            static let subtle     = Palette.n50
+            static let background = Color("Palette/Bg")       // 米奶页面底
+            static let elevated   = Color("Palette/BgElev")   // 卡片底（偏纯白偏暖）
+            static let subtle     = Color("Palette/Neutral50")// chip / 二级 surface
+            static let strong     = Color("Palette/SurfaceStrong") // 略深的中性
         }
 
         enum Border {
@@ -93,11 +99,29 @@ enum Theme {
         /// 装饰色：用于统计卡片、分组徽章等"需要视觉变化但语义中性"的场景。
         /// 不要把它们当成语义色——绿不代表成功，红不代表错误，仅作风格变化。
         enum Decorative {
+            // 原有 5 个保留 (mint/sky/lavender/rose/lemon)
             static var mint:     Color { Palette.mint }
             static var sky:      Color { Palette.sky }
             static var lavender: Color { Palette.lavender }
             static var rose:     Color { Palette.rose }
             static var lemon:    Color { Palette.lemon }
+            // 新增 Morandi 命名（指向同一 colorset）
+            static var latte: Color { Color("Palette/Peach") }
+            static var sage:  Color { Color("Palette/Mint") }
+            static var mauve: Color { Color("Palette/Lavender") }
+            static var mist:  Color { Color("Palette/Sky") }
+            static var honey: Color { Color("Palette/Lemon") }
+        }
+
+        /// 奶油拿铁 / 莫兰迪 6 色 · 与设计稿 tokens.css 对齐
+        /// 通过现有 Palette/*.colorset 别名，dark mode 自动跟随
+        enum Morandi {
+            static let latte = Color("Palette/Peach")      // 库存锚 #C8966E
+            static let rose  = Color("Palette/Coral")      // 警示/编辑 #C9928E
+            static let sage  = Color("Palette/Mint")       // 统计锚 #9FB089
+            static let mist  = Color("Palette/Sky")        // 更多锚 #94A8B6
+            static let mauve = Color("Palette/Lavender")   // 工作台锚 #B196AE
+            static let honey = Color("Palette/Lemon")      // 高亮/计划 #D8B97A
         }
     }
 }

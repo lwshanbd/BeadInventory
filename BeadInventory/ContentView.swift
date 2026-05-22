@@ -42,21 +42,13 @@ struct ContentView: View {
                     }
                     .tag(0)
 
-                // 图纸导入
-                ScanView(externalImage: $externalImage)
-                    .environment(\.tabFlavor, .scan)
+                // 工作台（扫描 + 计划合并到同一个 Tab）
+                WorkshopView(externalImage: $externalImage)
+                    .environment(\.tabFlavor, .workshop)
                     .tabItem {
-                        Label("扫描", systemImage: "doc.text.viewfinder")
+                        Label("工作台", systemImage: "wand.and.stars")
                     }
                     .tag(1)
-
-                // 计划项目
-                PlannedProjectsView()
-                    .environment(\.tabFlavor, .plan)
-                    .tabItem {
-                        Label("计划", systemImage: "calendar.badge.clock")
-                    }
-                    .tag(2)
 
                 // 统计
                 StatisticsView()
@@ -64,7 +56,7 @@ struct ContentView: View {
                     .tabItem {
                         Label("统计", systemImage: "chart.bar.fill")
                     }
-                    .tag(3)
+                    .tag(2)
 
                 // 更多（包含色号转换和设置）
                 MoreView()
@@ -72,7 +64,7 @@ struct ContentView: View {
                     .tabItem {
                         Label("更多", systemImage: "ellipsis.circle.fill")
                     }
-                    .tag(4)
+                    .tag(3)
             }
             .tint(currentFlavor.color)
             .onPreferenceChange(SelectModeActivePreferenceKey.self) { active in

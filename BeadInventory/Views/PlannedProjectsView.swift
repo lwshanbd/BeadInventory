@@ -28,6 +28,12 @@ struct PlannedProjectsView: View {
         }
     }
 
+    enum PlanFilter: Hashable {
+        case all
+        case needsBeads
+        case ready
+    }
+
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var expandedProjects: Set<UUID> = []
     @StateObject private var sel = SelectionContext<UUID>()
@@ -35,16 +41,72 @@ struct PlannedProjectsView: View {
     @State private var searchText = ""
     @State private var showBatchDeleteAlert = false
     @State private var lastSuccessAt: Date = .distantPast
+    @State private var filter: PlanFilter = .all
 
     var plannedProjects: [ProjectRecord] {
         inventoryManager.plannedProjects()
     }
 
-    var filteredProjects: [ProjectRecord] {
-        if searchText.isEmpty {
-            return plannedProjects
+    /// 项目库存是否充足（用于判定 ready/short）
+    /// 跨所有同色系品牌汇总该色号库存，若任意颜色不足即为缺豆
+    private func shortageCount(for project: ProjectRecord) -> Int {
+        let isParent = inventoryManager.isParentProject(project.id)
+        let usages: [BeadUsage] = isParent
+            ? inventoryManager.plannedAggregatedBeadUsage(for: project.id)
+            : project.beadUsage
+        let brandsInSystem = inventoryManager.brands.filter { $0.colorSystem == project.colorSystem }
+        guard !brandsInSystem.isEmpty else { return 0 }
+
+        var shortage = 0
+        for usage in usages {
+            let mardCode = inventoryManager.findColor(byCode: usage.colorCode)?.mardCode ?? usage.colorCode
+            var available = 0
+            for brand in brandsInSystem {
+                if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: mardCode) {
+                    available += stock.available
+                }
+            }
+            if available < usage.quantity { shortage += 1 }
         }
-        return plannedProjects.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        return shortage
+    }
+
+    private func isReady(_ project: ProjectRecord) -> Bool {
+        shortageCount(for: project) == 0
+    }
+
+    var needsBeadsCount: Int { plannedProjects.filter { !isReady($0) }.count }
+    var readyCount: Int { plannedProjects.filter { isReady($0) }.count }
+
+    var totalBeadsAcrossPlans: Int {
+        plannedProjects.reduce(0) { sum, p in
+            let isParent = inventoryManager.isParentProject(p.id)
+            return sum + (isParent ? inventoryManager.plannedAggregatedTotalBeads(for: p.id) : p.totalBeads)
+        }
+    }
+
+    var totalShortageColors: Int {
+        plannedProjects.reduce(0) { $0 + shortageCount(for: $1) }
+    }
+
+    var filteredProjects: [ProjectRecord] {
+        var list = plannedProjects
+        switch filter {
+        case .all: break
+        case .needsBeads: list = list.filter { !isReady($0) }
+        case .ready: list = list.filter { isReady($0) }
+        }
+        if !searchText.isEmpty {
+            list = list.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        }
+        return list
+    }
+
+    private func formattedNumber(_ value: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.groupingSeparator = ","
+        return f.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 
     var body: some View {
@@ -52,97 +114,25 @@ struct PlannedProjectsView: View {
             Group {
                 if plannedProjects.isEmpty {
                     EmptyPlannedProjectsView()
+                        .background(Theme.ColorToken.Surface.background)
                 } else {
-                    VStack(spacing: 0) {
-                        List {
-                            if plannedProjects.count >= 2 {
-                                TipView(PlanMergeTip())
-                            }
-                            TipView(ReplenishTip())
-
-                            ForEach(filteredProjects) { project in
-                                let isParent = inventoryManager.isParentProject(project.id)
-                                let isExpanded = expandedProjects.contains(project.id)
-
-                                BISelectableCell(
-                                    isActive: sel.isActive,
-                                    isSelected: sel.contains(project.id),
-                                    onLongPress: { withAnimation { sel.enter(initial: project.id) } },
-                                    onTapInSelectMode: { sel.toggle(project.id) }
-                                ) {
-                                    PlannedProjectRow(
-                                        project: project,
-                                        isParent: isParent,
-                                        isExpanded: isExpanded,
-                                        isSelectMode: false,
-                                        isSelected: sel.contains(project.id),
-                                        showSearchCheckbox: !searchText.isEmpty && !sel.isActive,
-                                        onToggleExpand: {
-                                            withAnimation {
-                                                if isExpanded {
-                                                    expandedProjects.remove(project.id)
-                                                } else {
-                                                    expandedProjects.insert(project.id)
-                                                }
-                                            }
-                                        },
-                                        onToggleSelect: {
-                                            // 搜索时点击复选框自动进入多选模式
-                                            if !sel.isActive && !searchText.isEmpty {
-                                                withAnimation { sel.enter(initial: project.id) }
-                                            } else {
-                                                sel.toggle(project.id)
-                                            }
-                                        },
-                                        onExecute: {
-                                            activeSheet = .execute(project)
-                                        }
-                                    )
-                                }
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    if !sel.isActive {
-                                        Button(role: .destructive) {
-                                            inventoryManager.deletePlannedProject(project.id)
-                                        } label: {
-                                            Label("删除", systemImage: "trash")
-                                        }
-
-                                        Button {
-                                            _ = inventoryManager.duplicatePlannedProject(project.id)
-                                        } label: {
-                                            Label("复制", systemImage: "doc.on.doc")
-                                        }
-                                        .tint(Theme.ColorToken.Status.info)
-                                    }
-                                }
-                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                    if !sel.isActive {
-                                        Button {
-                                            activeSheet = .execute(project)
-                                        } label: {
-                                            Label("执行", systemImage: "play.fill")
-                                        }
-                                        .tint(Theme.ColorToken.Status.success)
-                                    }
-                                }
-
-                                // 展开的子项目
-                                if isParent && isExpanded {
-                                    ForEach(inventoryManager.plannedChildProjects(of: project.id)) { child in
-                                        PlannedChildProjectRow(project: child)
-                                            .padding(.leading, 20)
-                                    }
-                                }
-                            }
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            overviewCard
+                            searchField
+                            filterChips
+                            tipsBlock
+                            planList
                         }
-                        .listStyle(.insetGrouped)
-                        .scrollDismissesKeyboard(.immediately)
+                        .padding(.bottom, 20)
                     }
+                    .scrollDismissesKeyboard(.immediately)
                 }
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("计划项目")
-            .searchable(text: $searchText, prompt: "搜索计划名称")
+            .background(Theme.ColorToken.Surface.background)
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if sel.isActive {
@@ -275,6 +265,362 @@ struct PlannedProjectsView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Overview Card
+
+    private var overviewCard: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("等待执行的计划")
+                    .font(.caption2)
+                    .foregroundStyle(Color.white.opacity(0.85))
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("\(plannedProjects.count)")
+                        .font(.system(size: 26, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(Color.white)
+                    Text("个 · 共 \(formattedNumber(totalBeadsAcrossPlans)) 颗")
+                        .font(.caption2)
+                        .foregroundStyle(Color.white.opacity(0.85))
+                }
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("缺豆")
+                    .font(.caption2)
+                    .foregroundStyle(Color.white.opacity(0.8))
+                Text("\(totalShortageColors) 种")
+                    .font(.system(size: 18, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Color.white)
+                Button {
+                    if !sel.isActive {
+                        // 选中所有缺豆计划并打开补豆建议
+                        let needsIds = plannedProjects.filter { !isReady($0) }.map { $0.id }
+                        if !needsIds.isEmpty {
+                            withAnimation { sel.enter() }
+                            sel.selectAll(needsIds)
+                            activeSheet = .replenishSuggestion
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 10))
+                        Text("补豆建议 →")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule().fill(Theme.ColorToken.Surface.subtle.opacity(0.18))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            LinearGradient(
+                colors: [Theme.ColorToken.Morandi.mauve, Theme.ColorToken.Morandi.latte],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .shadow(color: Theme.ColorToken.Morandi.mauve.opacity(0.25), radius: 8, x: 0, y: 4)
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
+    }
+
+    // MARK: - Search Field
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.ColorToken.Text.tertiary)
+            TextField("搜索计划名称", text: $searchText)
+                .font(.subheadline)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.ColorToken.Surface.subtle)
+        )
+        .padding(.horizontal, 18)
+        .padding(.top, 8)
+    }
+
+    // MARK: - Filter Chips
+
+    private var filterChips: some View {
+        HStack(spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { filter = .all }
+            } label: {
+                BIChip("全部 · \(plannedProjects.count)", active: filter == .all, color: nil, size: .sm)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { filter = .needsBeads }
+            } label: {
+                BIChip("待补豆 · \(needsBeadsCount)", active: filter == .needsBeads, color: Theme.ColorToken.Morandi.rose, size: .sm)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { filter = .ready }
+            } label: {
+                BIChip("可执行 · \(readyCount)", active: filter == .ready, color: Theme.ColorToken.Morandi.sage, size: .sm)
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Tips Block
+
+    @ViewBuilder
+    private var tipsBlock: some View {
+        VStack(spacing: 8) {
+            if plannedProjects.count >= 2 {
+                TipView(PlanMergeTip())
+            }
+            TipView(ReplenishTip())
+        }
+        .padding(.horizontal, 18)
+    }
+
+    // MARK: - Plan List
+
+    private var planList: some View {
+        VStack(spacing: 10) {
+            ForEach(filteredProjects) { project in
+                let isSelected = sel.contains(project.id)
+                let short = shortageCount(for: project)
+
+                ZStack {
+                    NavigationLink {
+                        PlannedProjectDetailView(project: project)
+                    } label: {
+                        EmptyView()
+                    }
+                    .opacity(0)
+
+                    PlanCard(
+                        project: project,
+                        shortageColors: short,
+                        isSelected: isSelected,
+                        selectionActive: sel.isActive,
+                        inventoryManager: inventoryManager
+                    )
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if sel.isActive {
+                        sel.toggle(project.id)
+                    }
+                }
+                .onLongPressGesture(minimumDuration: 0.4) {
+                    if !sel.isActive {
+                        withAnimation { sel.enter(initial: project.id) }
+                    }
+                }
+                .contextMenu {
+                    if !sel.isActive {
+                        Button {
+                            activeSheet = .execute(project)
+                        } label: {
+                            Label("执行", systemImage: "play.fill")
+                        }
+                        Button {
+                            _ = inventoryManager.duplicatePlannedProject(project.id)
+                        } label: {
+                            Label("复制", systemImage: "doc.on.doc")
+                        }
+                        Button(role: .destructive) {
+                            inventoryManager.deletePlannedProject(project.id)
+                        } label: {
+                            Label("删除", systemImage: "trash")
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 4)
+    }
+}
+
+// MARK: - PlanCard (新设计风格卡片)
+
+private struct PlanCard: View {
+    let project: ProjectRecord
+    let shortageColors: Int
+    let isSelected: Bool
+    let selectionActive: Bool
+    let inventoryManager: InventoryManager
+
+    private var isParent: Bool {
+        inventoryManager.isParentProject(project.id)
+    }
+
+    private var totalBeads: Int {
+        isParent ? inventoryManager.plannedAggregatedTotalBeads(for: project.id) : project.totalBeads
+    }
+
+    private var colorCount: Int {
+        isParent ? inventoryManager.plannedAggregatedColorCount(for: project.id) : project.beadUsage.count
+    }
+
+    private var beadUsages: [BeadUsage] {
+        isParent ? inventoryManager.plannedAggregatedBeadUsage(for: project.id) : project.beadUsage
+    }
+
+    /// 取前 4 个不同的颜色用于缩略图；不足时回落到 Morandi 颜色
+    private var thumbnailColors: [Color] {
+        let fallback: [Color] = [
+            Theme.ColorToken.Morandi.latte,
+            Theme.ColorToken.Morandi.rose,
+            Theme.ColorToken.Morandi.sage,
+            Theme.ColorToken.Morandi.mauve
+        ]
+        let topUsages = beadUsages.sorted { $0.quantity > $1.quantity }.prefix(4)
+        var colors: [Color] = []
+        for u in topUsages {
+            if let bc = inventoryManager.findColor(byCode: u.colorCode) {
+                colors.append(bc.color)
+            }
+        }
+        if colors.isEmpty {
+            return fallback
+        }
+        while colors.count < 4 {
+            colors.append(fallback[colors.count % fallback.count])
+        }
+        return colors
+    }
+
+    private func formattedNumber(_ value: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.groupingSeparator = ","
+        return f.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // 缩略图
+            thumbnail
+
+            // 中间内容
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(project.name)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                        .lineLimit(1)
+
+                    if shortageColors > 0 {
+                        BIChip("缺 \(shortageColors) 色", active: true, color: Theme.ColorToken.Morandi.rose, size: .sm)
+                    } else {
+                        BIChip("可执行", active: true, color: Theme.ColorToken.Morandi.sage, size: .sm)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(formattedNumber(totalBeads))
+                        .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                    Text("颗 · \(colorCount) 色")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                }
+
+                HStack(spacing: 4) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                    Text(project.date.formatted(date: .abbreviated, time: .omitted))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                }
+            }
+
+            // 右侧 chevron 或选择圈
+            if selectionActive {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18))
+                    .foregroundStyle(isSelected ? Color.accentColor : Theme.ColorToken.Text.tertiary)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(isSelected ? Color.accentColor : Theme.ColorToken.Border.default, lineWidth: 1)
+        )
+    }
+
+    private var thumbnail: some View {
+        let palette = thumbnailColors
+        return ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.ColorToken.Surface.subtle)
+
+            if let data = project.thumbnail, let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 1), count: 8),
+                    spacing: 1
+                ) {
+                    ForEach(0..<64, id: \.self) { i in
+                        Rectangle()
+                            .fill(palette[(i * 13 + i % 7) % palette.count])
+                            .frame(height: 6)
+                            .clipShape(RoundedRectangle(cornerRadius: 1))
+                    }
+                }
+                .padding(4)
+            }
+        }
+        .frame(width: 64, height: 64)
     }
 }
 

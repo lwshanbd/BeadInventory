@@ -2,26 +2,25 @@
 //  TabFlavor.swift
 //  BeadInventory
 //
-//  每个 Tab 的"风味色"环境值 —— TabBar 选中色、FAB、空状态、页眉强调。
+//  每个 Tab 的"风味色"环境值 —— 锚定奶油拿铁莫兰迪 6 色（latte/mauve/honey/sage/mist）。
 //
 
 import SwiftUI
 
-/// 5 个 Tab 的"风味色"，仅作用于：TabBar 选中色、FAB、空状态、页眉强调、Interactive.primary。
+/// 4 个 Tab 的"风味色"（按设计稿）：库存 / 工作台（扫描+计划+运输 sub-tabs）/ 统计 / 更多。
+/// 仅作用于：TabBar 选中色、FAB、空状态、页眉强调、Interactive.primary。
 enum TabFlavor: Int, CaseIterable {
     case inventory = 0
-    case scan      = 1
-    case plan      = 2
-    case statistics = 3
-    case more      = 4
+    case workshop  = 1
+    case statistics = 2
+    case more      = 3
 
     var color: Color {
         switch self {
-        case .inventory:  return Color("Palette/Peach")
-        case .scan:       return Color("Palette/Coral")
-        case .plan:       return Color("Palette/Lavender")
-        case .statistics: return Color("Palette/Mint")
-        case .more:       return Color("Palette/Sky")
+        case .inventory:  return Color("Palette/Peach")    // latte
+        case .workshop:   return Color("Palette/Lavender") // mauve（工作台主色）
+        case .statistics: return Color("Palette/Mint")     // sage
+        case .more:       return Color("Palette/Sky")      // mist
         }
     }
 }
