@@ -21,8 +21,15 @@ class InventoryManager: ObservableObject {
 
     // 品牌相关
     @Published var brands: [Brand] = []
-    @Published var brandStocks: [BrandStock] = []
+    @Published var brandStocks: [BrandStock] = [] {
+        didSet { rebuildStockPositionIndex() }
+    }
     @Published var currentBrandId: UUID?
+
+    // (brandId, mardCode) → 在 brandStocks 中的下标。
+    // 用 didSet 维护，把 getStock 从 O(N) 降到 O(1)。
+    // 计划页一次 body 会跨多个统计入口反复查 getStock，N 大时这是切 Tab 卡顿的主因。
+    private var stockPositionIndex: [UUID: [String: Int]] = [:]
 
     // SwiftData ModelContext
     private var modelContext: ModelContext?
@@ -408,7 +415,25 @@ class InventoryManager: ObservableObject {
     }
 
     func getStock(brandId: UUID, mardCode: String) -> BrandStock? {
+        guard let i = stockPositionIndex[brandId]?[mardCode],
+              i < brandStocks.count else {
+            return nil
+        }
+        let stock = brandStocks[i]
+        // 防御性校验：若索引意外失同步（理论上 didSet 保证不会），回退到线性扫描
+        if stock.brandId == brandId && stock.mardCode == mardCode {
+            return stock
+        }
         return brandStocks.first { $0.brandId == brandId && $0.mardCode == mardCode }
+    }
+
+    private func rebuildStockPositionIndex() {
+        var index: [UUID: [String: Int]] = [:]
+        index.reserveCapacity(brands.count)
+        for (i, s) in brandStocks.enumerated() {
+            index[s.brandId, default: [:]][s.mardCode] = i
+        }
+        stockPositionIndex = index
     }
 
     func updateStock(brandId: UUID, mardCode: String, newStock: Int) {

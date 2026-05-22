@@ -4,15 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Run
 
+**模拟器目标：永远使用 `iPhone 17 Pro Max`（最新版本），不要用其它型号（如 iPhone 16）。**
+- 命令行 `xcodebuild` 的 `-destination` 必须写 `name=iPhone 17 Pro Max`。
+- 通过 `ios-simulator-skill` 等工具启动/截图时，也指定 iPhone 17 Pro Max。
+- 用户已经把它作为日常调试机型，切换会破坏现有 booted 实例和 UI 调优。
+
 ```bash
 # Open project in Xcode
 open BeadInventory.xcodeproj
 
 # Build from command line
-xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 16' build
+xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' build
 
 # Run tests (if any)
-xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 16' test
+xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' test
 ```
 
 Requirements: iOS 17.0+, Xcode 15.0+
