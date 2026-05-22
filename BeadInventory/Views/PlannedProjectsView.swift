@@ -554,30 +554,6 @@ private struct PlanCard: View {
         isParent ? inventoryManager.plannedAggregatedBeadUsage(for: project.id) : project.beadUsage
     }
 
-    /// 取前 4 个不同的颜色用于缩略图；不足时回落到 Morandi 颜色
-    private var thumbnailColors: [Color] {
-        let fallback: [Color] = [
-            Theme.ColorToken.Morandi.latte,
-            Theme.ColorToken.Morandi.rose,
-            Theme.ColorToken.Morandi.sage,
-            Theme.ColorToken.Morandi.mauve
-        ]
-        let topUsages = beadUsages.sorted { $0.quantity > $1.quantity }.prefix(4)
-        var colors: [Color] = []
-        for u in topUsages {
-            if let bc = inventoryManager.findColor(byCode: u.colorCode) {
-                colors.append(bc.color)
-            }
-        }
-        if colors.isEmpty {
-            return fallback
-        }
-        while colors.count < 4 {
-            colors.append(fallback[colors.count % fallback.count])
-        }
-        return colors
-    }
-
     private func formattedNumber(_ value: Int) -> String {
         let f = NumberFormatter()
         f.numberStyle = .decimal
@@ -650,8 +626,7 @@ private struct PlanCard: View {
     }
 
     private var thumbnail: some View {
-        let palette = thumbnailColors
-        return ZStack {
+        ZStack {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Theme.ColorToken.Surface.subtle)
 
@@ -662,21 +637,16 @@ private struct PlanCard: View {
                     .frame(width: 64, height: 64)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             } else {
-                LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 1), count: 8),
-                    spacing: 1
-                ) {
-                    ForEach(0..<64, id: \.self) { i in
-                        Rectangle()
-                            .fill(palette[(i * 13 + i % 7) % palette.count])
-                            .frame(height: 6)
-                            .clipShape(RoundedRectangle(cornerRadius: 1))
-                    }
-                }
-                .padding(4)
+                Image(systemName: "photo")
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
             }
         }
         .frame(width: 64, height: 64)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Theme.ColorToken.Border.divider, lineWidth: 1)
+        )
     }
 }
 
