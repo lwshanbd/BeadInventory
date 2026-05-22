@@ -1315,7 +1315,7 @@ struct RecognizedResultsSectionNew: View {
 
             // 提示 pill
             HStack {
-                Text("← 左滑任意一行可编辑或删除")
+                Text("← 左滑任意一行可编辑、改品牌或删除")
                     .font(.caption2)
                     .foregroundStyle(Theme.ColorToken.Text.tertiary)
                 Spacer()
@@ -1357,6 +1357,7 @@ struct RecognizedItemRowNew: View {
     @State private var editCode: String = ""
     @State private var editQuantity: String = ""
     @State private var showQuantityError = false
+    @State private var showingBrandPicker = false
 
     var matchedColor: BeadColor? {
         // item.colorCode 在 recognizeImage 中已规范化为 mardCode（匹配成功时）或保留为原始品牌色号（未匹配时）。
@@ -1398,6 +1399,14 @@ struct RecognizedItemRowNew: View {
     var overriddenBrand: Brand? {
         guard let id = item.preferredBrandId else { return nil }
         return inventoryManager.brands.first(where: { $0.id == id })
+    }
+
+    /// 同色系下的所有可选品牌（含当前主品牌），按 sortOrder 排序。
+    /// 给 contextMenu 的「改用品牌」子菜单使用 —— 不限缺豆，用户可以任意切换。
+    var brandsForOverride: [Brand] {
+        inventoryManager.brands
+            .filter { $0.colorSystem == colorSystem }
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     /// 当前色系下、非当前主品牌中、对该 mardCode 仍有库存的最佳替补品牌。
@@ -1460,10 +1469,6 @@ struct RecognizedItemRowNew: View {
     var body: some View {
         SwipeActionRow(
             actions: [
-                // 注意：之前这一条挂了 "改品牌" 的标签，但代码逻辑只是进入色号/数量
-                // 的 inline 编辑，根本不切换品牌（这套字面意义上的"改品牌"由新增的
-                // 「试试用 X」推荐行承担）。这里跟 contextMenu 的"编辑"对齐，去掉
-                // 误导。
                 SwipeActionItem(
                     "编辑",
                     systemImage: "pencil",
@@ -1472,6 +1477,15 @@ struct RecognizedItemRowNew: View {
                     editCode = matchedColor?.displayCode(for: colorSystem) ?? item.colorCode
                     editQuantity = "\(item.quantity)"
                     isEditing = true
+                },
+                // 「改品牌」：不限缺豆场景，任何颜色都能切到同色系下的其他品牌。
+                // handler 只翻 state，真正的选择走下面的 confirmationDialog。
+                SwipeActionItem(
+                    "改品牌",
+                    systemImage: "arrow.left.arrow.right",
+                    tint: Theme.ColorToken.Morandi.honey
+                ) {
+                    showingBrandPicker = true
                 },
                 SwipeActionItem(
                     "删除",
@@ -1522,6 +1536,38 @@ struct RecognizedItemRowNew: View {
                 } label: {
                     Label("编辑", systemImage: "pencil")
                 }
+                // 任意颜色都能改品牌（不限缺豆场景）。子菜单列出同色系所有品牌 +
+                // 各自该色号的库存量，当前生效品牌前缀打勾。
+                // 选当前主品牌 = 清掉 override；选其他品牌 = 设 override。
+                Menu {
+                    if isBrandOverridden {
+                        Button {
+                            onApplyPreferredBrand(nil)
+                        } label: {
+                            Label("改回主品牌", systemImage: "arrow.uturn.backward")
+                        }
+                        Divider()
+                    }
+                    ForEach(brandsForOverride) { brand in
+                        let stock = inventoryManager.getStock(brandId: brand.id, mardCode: item.colorCode)?.available ?? 0
+                        let isCurrent = brand.id == (item.preferredBrandId ?? inventoryManager.currentBrandId)
+                        Button {
+                            if brand.id == inventoryManager.currentBrandId {
+                                onApplyPreferredBrand(nil)
+                            } else {
+                                onApplyPreferredBrand(brand.id)
+                            }
+                        } label: {
+                            if isCurrent {
+                                Label("\(brand.name) · 库存 \(stock)", systemImage: "checkmark")
+                            } else {
+                                Text("\(brand.name) · 库存 \(stock)")
+                            }
+                        }
+                    }
+                } label: {
+                    Label("改用品牌", systemImage: "arrow.left.arrow.right")
+                }
                 Button(role: .destructive) {
                     onRemove()
                 } label: {
@@ -1529,6 +1575,49 @@ struct RecognizedItemRowNew: View {
                 }
             }
         }
+        // 左滑的「改品牌」按钮触发的选择器。同色系所有品牌 + 各自该色号库存量。
+        // 用 confirmationDialog 是因为它原生支持「按钮列表 + 取消」这种半屏 UI，
+        // 而且自带 destructive/cancel 角色样式，不用自己撸 Sheet。
+        .confirmationDialog(
+            brandPickerTitle,
+            isPresented: $showingBrandPicker,
+            titleVisibility: .visible
+        ) {
+            ForEach(brandsForOverride) { brand in
+                let stock = inventoryManager.getStock(brandId: brand.id, mardCode: item.colorCode)?.available ?? 0
+                let isCurrent = brand.id == (item.preferredBrandId ?? inventoryManager.currentBrandId)
+                Button {
+                    if brand.id == inventoryManager.currentBrandId {
+                        onApplyPreferredBrand(nil)
+                    } else {
+                        onApplyPreferredBrand(brand.id)
+                    }
+                } label: {
+                    // confirmationDialog 的 Button label 在 iOS 上只取 Text，
+                    // 用 ✓ 前缀直观标出当前生效品牌。
+                    Text(isCurrent ? "✓ \(brand.name) · 库存 \(stock)" : "\(brand.name) · 库存 \(stock)")
+                }
+            }
+            if isBrandOverridden {
+                Button("改回主品牌", role: .destructive) {
+                    onApplyPreferredBrand(nil)
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text(brandPickerMessage)
+        }
+    }
+
+    /// confirmationDialog 标题：色号
+    private var brandPickerTitle: String {
+        let code = matchedColor?.displayCode(for: colorSystem) ?? item.colorCode
+        return String(localized: "改用品牌 · \(code)")
+    }
+
+    /// confirmationDialog 副标题：数量
+    private var brandPickerMessage: String {
+        String(localized: "本图需要 \(item.quantity) 颗")
     }
 
     @ViewBuilder

@@ -49,11 +49,19 @@ struct WorkshopView: View {
             .background(Theme.ColorToken.Surface.background)
 
             // 内容
-            switch subTab.wrappedValue {
-            case .scan:
+            // 注意：不要用 `switch subTab.wrappedValue` 直接选视图 ——
+            // 那样切到 plan 再切回 scan 时 ScanView 会被销毁重建，
+            // selectedImage / recognizedItems 等 @State 全部丢失。
+            // 用 ZStack + opacity 让两个子视图都常驻，仅切换可见性。
+            ZStack {
                 ScanView(externalImage: $externalImage)
-            case .plan:
+                    .opacity(subTab.wrappedValue == .scan ? 1 : 0)
+                    .allowsHitTesting(subTab.wrappedValue == .scan)
+                    .accessibilityHidden(subTab.wrappedValue != .scan)
                 PlannedProjectsView()
+                    .opacity(subTab.wrappedValue == .plan ? 1 : 0)
+                    .allowsHitTesting(subTab.wrappedValue == .plan)
+                    .accessibilityHidden(subTab.wrappedValue != .plan)
             }
         }
         .background(Theme.ColorToken.Surface.background)
