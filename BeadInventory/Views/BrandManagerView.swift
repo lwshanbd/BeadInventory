@@ -25,10 +25,6 @@ struct BrandManagerView: View {
         inventoryManager.brands.sorted { $0.sortOrder < $1.sortOrder }
     }
 
-    private var totalColorsCount: Int {
-        inventoryManager.brandStocks.filter { $0.stock > 0 || $0.used > 0 }.count
-    }
-
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottomTrailing) {
@@ -391,7 +387,7 @@ private struct BrandManagerCard: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(
                         isCurrent ? flavor : Theme.ColorToken.Border.default,
-                        lineWidth: isCurrent ? 1 : 1
+                        lineWidth: 1
                     )
             )
             .overlay(alignment: .leading) {

@@ -3,7 +3,8 @@
 //  BeadInventory
 //
 //  自定义色号管理 —— 二级页骨架（SecondaryNav + ScrollView + GroupCard）。
-//  入口图标色 = mauve，本页 flavor 跟随；自定义色号在列表中用 honey 立边表示。
+//  本页主调色 = Morandi.mauve（内部硬编码，不读 @Environment(\.tabFlavor)）；
+//  自定义色号在列表中用 honey 立边表示。
 //
 
 import SwiftUI

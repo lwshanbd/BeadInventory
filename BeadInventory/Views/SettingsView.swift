@@ -163,6 +163,8 @@ struct RecognitionSettingsScreen: View {
     @ObservedObject private var localModelManager = LocalModelManager.shared
     @State private var showingAPIHelpSheet = false
     @State private var isAPIKeyVisible = false
+    @State private var isTesting = false
+    @State private var testResult: TestConnectionResult?
 
     private var deviceProfile: LocalModelDeviceProfile { .current }
 
@@ -419,14 +421,56 @@ struct RecognitionSettingsScreen: View {
         }
 
         // 测试连接 / 主操作 CTA
-        BIPrimaryButton("测试连接", systemImage: "bolt.fill") {
-            // 占位：当前 AIServiceManager 暂未提供独立的 testConnection；
-            // 触发一次状态刷新即可让用户看到状态卡更新。
-            APISetupTip.hasConfiguredAPI = aiService.isConfigured
+        VStack(spacing: 8) {
+            BIPrimaryButton("测试连接", systemImage: "bolt.fill") {
+                Task {
+                    isTesting = true
+                    defer { isTesting = false }
+                    testResult = nil
+                    let result = await aiService.testConnection()
+                    testResult = result
+                    APISetupTip.hasConfiguredAPI = aiService.isConfigured
+                }
+            }
+            .disabled(aiService.config.apiKey.isEmpty || isTesting)
+            .overlay(alignment: .center) {
+                if isTesting {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.white)
+                }
+            }
+
+            if let testResult, !isTesting {
+                testResultLabel(for: testResult)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        .disabled(aiService.config.apiKey.isEmpty)
         .padding(.horizontal, 18)
         .padding(.top, 14)
+    }
+
+    @ViewBuilder
+    private func testResultLabel(for result: TestConnectionResult) -> some View {
+        switch result {
+        case .success(let latencyMs):
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 11))
+                Text("连接成功 · \(latencyMs) ms")
+                    .font(.system(size: 12))
+            }
+            .foregroundStyle(Theme.ColorToken.Morandi.sage)
+        case .failure(let reason):
+            HStack(alignment: .top, spacing: 4) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 11))
+                Text("失败：\(reason)")
+                    .font(.system(size: 12))
+                    .multilineTextAlignment(.leading)
+            }
+            .foregroundStyle(Theme.ColorToken.Morandi.rose)
+        }
     }
 
     // MARK: local

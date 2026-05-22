@@ -3,7 +3,7 @@
 //  BeadInventory
 //
 //  成品日历 —— 二级页骨架（SecondaryNav + ScrollView + GroupCard）。
-//  入口图标色 = sage，本页 flavor 跟随。
+//  本页主调色 = Morandi.sage（内部硬编码，不读 @Environment(\.tabFlavor)）。
 //
 
 import SwiftUI

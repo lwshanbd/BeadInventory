@@ -3,10 +3,12 @@
 //  BeadInventory
 //
 //  关于啃豆小仓 —— 二级页骨架（SecondaryNav + ScrollView + GroupCard）。
-//  入口图标色 = latte，本页 flavor 跟随。
+//  本页主调色 = Morandi.latte（内部硬编码，不读 @Environment(\.tabFlavor)）。
 //
 
 import SwiftUI
+import StoreKit
+import UIKit
 
 struct AboutView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
@@ -243,27 +245,45 @@ struct AboutView: View {
 
     private var legalLinksGroup: some View {
         VStack(spacing: 0) {
-            BIGroupHeader(title: "")
             BIGroupCard {
                 BIListRow(
                     icon: "star",
                     iconColor: Theme.ColorToken.Morandi.mist,
                     title: "评分 & 反馈",
-                    subtitle: "去 App Store 留下你的脚印 ✦"
+                    subtitle: "去 App Store 留下你的脚印 ✦",
+                    action: { requestAppReview() }
                 )
                 BIListRow(
                     icon: "book",
                     iconColor: Theme.ColorToken.Morandi.mist,
-                    title: "隐私协议"
+                    title: "隐私协议",
+                    action: { openExternalURL("https://lwshanbd.github.io/BeadInventory/privacy.html") }
                 )
                 BIListRow(
                     icon: "book.closed",
                     iconColor: Theme.ColorToken.Morandi.mist,
                     title: "服务条款",
-                    isLast: true
+                    isLast: true,
+                    action: { openExternalURL("https://lwshanbd.github.io/BeadInventory/terms.html") }
                 )
             }
+            .padding(.top, 18)
         }
+    }
+
+    private func requestAppReview() {
+        // SKStoreReviewController 在 iOS 18+ 推荐用 RequestReviewAction（@Environment(\.requestReview)），
+        // 但这里通过 windowScene 直接触发以避免在 helper 内引入环境读取。
+        if let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) {
+            SKStoreReviewController.requestReview(in: scene)
+        }
+    }
+
+    private func openExternalURL(_ urlString: String) {
+        guard let url = URL(string: urlString) else { return }
+        UIApplication.shared.open(url)
     }
 
     // MARK: - ICP

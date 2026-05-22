@@ -18,13 +18,13 @@
 		385001022FB3A70D00F5DDE2 /* GridGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001012FB3A70D00F5DDE2 /* GridGeometry.swift */; };
 		385001042FB3A70D00F5DDE2 /* GridDetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001032FB3A70D00F5DDE2 /* GridDetectionService.swift */; };
 		385001062FB3A70D00F5DDE2 /* GridCellSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001052FB3A70D00F5DDE2 /* GridCellSampler.swift */; };
-		386001022FB3A70D00F5DDE2 /* GridOCRSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386001012FB3A70D00F5DDE2 /* GridOCRSampler.swift */; };
 		385001082FB3A70D00F5DDE2 /* PatternHighlightView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001072FB3A70D00F5DDE2 /* PatternHighlightView.swift */; };
 		3850010A2FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */; };
 		3850010C2FB3A70D00F5DDE2 /* ColorPaletteBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */; };
 		3850010E2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3850010D2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift */; };
 		385001102FB3A70D00F5DDE2 /* GridValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3850010F2FB3A70D00F5DDE2 /* GridValidator.swift */; };
 		385001122FB3A70D00F5DDE2 /* ValidationDiffSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001112FB3A70D00F5DDE2 /* ValidationDiffSheet.swift */; };
+		386001022FB3A70D00F5DDE2 /* GridOCRSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386001012FB3A70D00F5DDE2 /* GridOCRSampler.swift */; };
 		386ECBFA2F332DB600BD92E8 /* AnnouncementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */; };
 		386ECBFC2F332DB600BD92E8 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFB2F332DB600BD92E8 /* BackupManager.swift */; };
 		386ECBFE2F332E1500BD92E8 /* BackupRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */; };
@@ -39,7 +39,6 @@
 		38B1A0012F01000100000009 /* SwiftDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000019 /* SwiftDataModels.swift */; };
 		38B1A0012F0100010000000A /* ProjectDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000001A /* ProjectDetailView.swift */; };
 		38B1A0012F0100010000000B /* PlannedProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000001B /* PlannedProjectsView.swift */; };
-		5F0094000000000000005B41 /* WorkshopView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0094000000000000005B40 /* WorkshopView.swift */; };
 		38B1A0012F0100010000000C /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F0100010000001C /* MoreView.swift */; };
 		38B1A0012F0100010000000D /* HistoryRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000021 /* HistoryRecord.swift */; };
 		38B1A0012F0100010000000E /* HistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000022 /* HistoryManager.swift */; };
@@ -54,7 +53,6 @@
 		38B1A0012F01000100000050 /* ColorSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000051 /* ColorSystem.swift */; };
 		38B1A0012F01000100000053 /* colorwithkaka.csv in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000052 /* colorwithkaka.csv */; };
 		38B1A0012F01000100000055 /* allcolors.json in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000054 /* allcolors.json */; };
-		5F0094000000000000005A41 /* ZCOOLKuaiLe-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5F0094000000000000005A40 /* ZCOOLKuaiLe-Regular.ttf */; };
 		38B1A0012F01000100000061 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000060 /* Localizable.xcstrings */; };
 		38FA2CDA2F2482A300912E02 /* ImportFullDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38FA2CD92F2482A300912E02 /* ImportFullDataView.swift */; };
 		38FA2CDD2F25B67200912E02 /* CustomColorEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38FA2CDB2F25B67200912E02 /* CustomColorEditView.swift */; };
@@ -67,6 +65,8 @@
 		39AA00012F5000010099AA01 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39AA00022F5000010099AA01 /* AppLogger.swift */; };
 		39AA00032F5000010099AA01 /* AppBackgroundTaskManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39AA00042F5000010099AA01 /* AppBackgroundTaskManager.swift */; };
 		4E228907D2F847A9AC5C12D1 /* TutorialDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC5DB3B1DAD44CD8E0D1717 /* TutorialDetailView.swift */; };
+		5F0094000000000000005A41 /* Resources/Fonts/ZCOOLKuaiLe-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5F0094000000000000005A40 /* Resources/Fonts/ZCOOLKuaiLe-Regular.ttf */; };
+		5F0094000000000000005B41 /* WorkshopView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0094000000000000005B40 /* WorkshopView.swift */; };
 		6EC4A1187CBB489B83C6E6559E6BABBA /* LowStockDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EC4A1187CBB489B83C6E6559E6BABBB /* LowStockDetailView.swift */; };
 		937EF9B644E743C2A9AC8A78 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C23995DEFC5411C9C4AD56C /* EmptyStateView.swift */; };
 		A01234560001 /* BeadInventoryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560011 /* BeadInventoryApp.swift */; };
@@ -77,11 +77,11 @@
 		A01234560006 /* OCRManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560016 /* OCRManager.swift */; };
 		A01234560007 /* InventoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560017 /* InventoryView.swift */; };
 		A01234560008 /* ScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560018 /* ScanView.swift */; };
-		A0123456DR01 /* DeductionReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456DR02 /* DeductionReviewView.swift */; };
 		A01234560009 /* ColorConverterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01234560019 /* ColorConverterView.swift */; };
 		A0123456000A /* StatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001A /* StatisticsView.swift */; };
 		A0123456000B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001B /* SettingsView.swift */; };
 		A0123456000C /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001C /* AIService.swift */; };
+		A0123456DR01 /* DeductionReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456DR02 /* DeductionReviewView.swift */; };
 		A1BA6000BAA242C797A1967F /* HelpCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5573A291D954C97BD8955A5 /* HelpCenterView.swift */; };
 		BACDA9EDBD274C6A9923F797 /* FAQView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 101C8A44E38F4E17BB2A00F3 /* FAQView.swift */; };
 		CC510001A0050001DEADBEEF /* ColorSimilarityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC510001A0050002DEADBEEF /* ColorSimilarityService.swift */; };
@@ -139,13 +139,13 @@
 		385001012FB3A70D00F5DDE2 /* GridGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridGeometry.swift; sourceTree = "<group>"; };
 		385001032FB3A70D00F5DDE2 /* GridDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridDetectionService.swift; sourceTree = "<group>"; };
 		385001052FB3A70D00F5DDE2 /* GridCellSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridCellSampler.swift; sourceTree = "<group>"; };
-		386001012FB3A70D00F5DDE2 /* GridOCRSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridOCRSampler.swift; sourceTree = "<group>"; };
 		385001072FB3A70D00F5DDE2 /* PatternHighlightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternHighlightView.swift; path = BeadInventory/Views/PatternHighlight/PatternHighlightView.swift; sourceTree = SOURCE_ROOT; };
 		385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternHighlightOverlay.swift; path = BeadInventory/Views/PatternHighlight/PatternHighlightOverlay.swift; sourceTree = SOURCE_ROOT; };
 		3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorPaletteBar.swift; path = BeadInventory/Views/PatternHighlight/ColorPaletteBar.swift; sourceTree = SOURCE_ROOT; };
 		3850010D2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ZoomablePatternCanvas.swift; path = BeadInventory/Views/PatternHighlight/ZoomablePatternCanvas.swift; sourceTree = SOURCE_ROOT; };
 		3850010F2FB3A70D00F5DDE2 /* GridValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridValidator.swift; sourceTree = "<group>"; };
 		385001112FB3A70D00F5DDE2 /* ValidationDiffSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ValidationDiffSheet.swift; path = BeadInventory/Views/PatternHighlight/ValidationDiffSheet.swift; sourceTree = SOURCE_ROOT; };
+		386001012FB3A70D00F5DDE2 /* GridOCRSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridOCRSampler.swift; sourceTree = "<group>"; };
 		386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnouncementManager.swift; sourceTree = "<group>"; };
 		386ECBFB2F332DB600BD92E8 /* BackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
 		386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreView.swift; sourceTree = "<group>"; };
@@ -160,7 +160,6 @@
 		38B1A0012F01000100000019 /* SwiftDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftDataModels.swift; sourceTree = "<group>"; };
 		38B1A0012F0100010000001A /* ProjectDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDetailView.swift; sourceTree = "<group>"; };
 		38B1A0012F0100010000001B /* PlannedProjectsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannedProjectsView.swift; sourceTree = "<group>"; };
-		5F0094000000000000005B40 /* WorkshopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkshopView.swift; sourceTree = "<group>"; };
 		38B1A0012F0100010000001C /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000021 /* HistoryRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryRecord.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000022 /* HistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryManager.swift; sourceTree = "<group>"; };
@@ -175,7 +174,6 @@
 		38B1A0012F01000100000051 /* ColorSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorSystem.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000052 /* colorwithkaka.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = colorwithkaka.csv; sourceTree = "<group>"; };
 		38B1A0012F01000100000054 /* allcolors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = allcolors.json; sourceTree = "<group>"; };
-		5F0094000000000000005A40 /* ZCOOLKuaiLe-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Resources/Fonts/ZCOOLKuaiLe-Regular.ttf"; sourceTree = "<group>"; };
 		38B1A0012F01000100000060 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		38FA2CD92F2482A300912E02 /* ImportFullDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportFullDataView.swift; sourceTree = "<group>"; };
 		38FA2CDB2F25B67200912E02 /* CustomColorEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomColorEditView.swift; sourceTree = "<group>"; };
@@ -189,6 +187,8 @@
 		39AA00022F5000010099AA01 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
 		39AA00042F5000010099AA01 /* AppBackgroundTaskManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBackgroundTaskManager.swift; sourceTree = "<group>"; };
 		4CC5DB3B1DAD44CD8E0D1717 /* TutorialDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialDetailView.swift; sourceTree = "<group>"; };
+		5F0094000000000000005A40 /* Resources/Fonts/ZCOOLKuaiLe-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Resources/Fonts/ZCOOLKuaiLe-Regular.ttf"; sourceTree = "<group>"; };
+		5F0094000000000000005B40 /* WorkshopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkshopView.swift; sourceTree = "<group>"; };
 		6EC4A1187CBB489B83C6E6559E6BABBB /* LowStockDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LowStockDetailView.swift; sourceTree = "<group>"; };
 		9C23995DEFC5411C9C4AD56C /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		A01234560010 /* BeadInventory.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BeadInventory.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -200,11 +200,11 @@
 		A01234560016 /* OCRManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCRManager.swift; sourceTree = "<group>"; };
 		A01234560017 /* InventoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventoryView.swift; sourceTree = "<group>"; };
 		A01234560018 /* ScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanView.swift; sourceTree = "<group>"; };
-		A0123456DR02 /* DeductionReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionReviewView.swift; sourceTree = "<group>"; };
 		A01234560019 /* ColorConverterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorConverterView.swift; sourceTree = "<group>"; };
 		A0123456001A /* StatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsView.swift; sourceTree = "<group>"; };
 		A0123456001B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A0123456001C /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
+		A0123456DR02 /* DeductionReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionReviewView.swift; sourceTree = "<group>"; };
 		C5573A291D954C97BD8955A5 /* HelpCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpCenterView.swift; sourceTree = "<group>"; };
 		CC510001A0050002DEADBEEF /* ColorSimilarityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorSimilarityService.swift; sourceTree = "<group>"; };
 		DD0A1B01A0060002DEADBEEF /* DeductionItemRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionItemRow.swift; sourceTree = "<group>"; };
@@ -227,7 +227,7 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		382001082FB3A70D00F5DDE2 /* BeadInventoryTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = BeadInventoryTests; sourceTree = "<group>"; };
 		38FA2CE42F274B2900912E02 /* ShareExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (38FA2CF12F274B2900912E02 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ShareExtension; sourceTree = "<group>"; };
-		DE516C7000000000000DESYS /* DesignSystem */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Views/DesignSystem; sourceTree = "<group>"; };
+		DE516C7000000000000DESYS /* Views/DesignSystem */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Views/DesignSystem; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -341,12 +341,12 @@
 				A01234560033 /* Models */,
 				A01234560034 /* Managers */,
 				A01234560035 /* Views */,
-				DE516C7000000000000DESYS /* DesignSystem */,
+				DE516C7000000000000DESYS /* Views/DesignSystem */,
 				A01234560013 /* Assets.xcassets */,
 				38B1A0012F01000100000052 /* colorwithkaka.csv */,
 				38B1A0012F01000100000054 /* allcolors.json */,
 				38B1A0012F01000100000060 /* Localizable.xcstrings */,
-				5F0094000000000000005A40 /* ZCOOLKuaiLe-Regular.ttf */,
+				5F0094000000000000005A40 /* Resources/Fonts/ZCOOLKuaiLe-Regular.ttf */,
 			);
 			path = BeadInventory;
 			sourceTree = "<group>";
@@ -504,7 +504,7 @@
 				38FA2CEC2F274B2900912E02 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				DE516C7000000000000DESYS /* DesignSystem */,
+				DE516C7000000000000DESYS /* Views/DesignSystem */,
 			);
 			name = BeadInventory;
 			packageProductDependencies = (
@@ -583,7 +583,7 @@
 				A01234560003 /* Assets.xcassets in Resources */,
 				38B1A0012F01000100000053 /* colorwithkaka.csv in Resources */,
 				38B1A0012F01000100000055 /* allcolors.json in Resources */,
-				5F0094000000000000005A41 /* ZCOOLKuaiLe-Regular.ttf in Resources */,
+				5F0094000000000000005A41 /* Resources/Fonts/ZCOOLKuaiLe-Regular.ttf in Resources */,
 				38B1A0012F01000100000061 /* Localizable.xcstrings in Resources */,
 				3806E50E2F00FB4300187AA7 /* InfoPlist.strings in Resources */,
 				3806E50A2F00FB3900187AA7 /* InfoPlist.strings in Resources */,

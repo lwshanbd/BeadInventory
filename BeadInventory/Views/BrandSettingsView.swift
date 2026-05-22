@@ -3,7 +3,7 @@
 //  BeadInventory
 //
 //  品牌设置 —— 二级页（SecondaryNav + ScrollView + GroupCard）。
-//  入口图标色 = rose，本页 flavor 跟随。
+//  本页主调色 = Morandi.rose（内部硬编码）；env 设为 .more 让 children sheet 继承默认 mist 风味。
 //
 
 import SwiftUI
@@ -35,11 +35,8 @@ struct BrandSettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                BISecondaryNav(title: "品牌设置") {
-                    BINavIconButton(systemImage: "ellipsis", action: {})
-                }
+        VStack(spacing: 0) {
+            BISecondaryNav(title: "品牌设置")
 
                 if let brand = brand {
                     ScrollView {
@@ -159,10 +156,9 @@ struct BrandSettingsView: View {
                         subtitle: "切换或添加一个品牌后再进入设置"
                     )
                 }
-            }
-            .background(Theme.ColorToken.Surface.background)
-            .navigationBarHidden(true)
         }
+        .background(Theme.ColorToken.Surface.background)
+        .navigationBarHidden(true)
         .environment(\.tabFlavor, .more)
     }
 

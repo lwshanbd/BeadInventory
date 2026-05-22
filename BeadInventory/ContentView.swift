@@ -95,7 +95,7 @@ struct ContentView: View {
 
             if !inventoryManager.hasCompletedInitialLoad {
                 ZStack {
-                    Color(.systemBackground)
+                    Theme.ColorToken.Surface.background
                         .opacity(0.96)
                         .ignoresSafeArea()
 
@@ -103,7 +103,7 @@ struct ContentView: View {
                         if let errorMessage = inventoryManager.initialLoadErrorMessage {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: 32))
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
 
                             Text(String(localized: "数据加载失败"))
                                 .font(.headline)

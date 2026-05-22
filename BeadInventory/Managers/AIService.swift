@@ -803,6 +803,13 @@ final class LocalModelManager: ObservableObject {
     }
 }
 
+// MARK: - 连接测试结果
+
+enum TestConnectionResult {
+    case success(latencyMs: Int)        // 成功，附带延迟（毫秒）
+    case failure(reason: String)         // 失败，附带中文人话原因
+}
+
 // MARK: - 识别模式
 
 enum RecognitionMode {
@@ -1142,6 +1149,165 @@ class AIServiceManager: ObservableObject {
             return try await recognizeWithAnthropic(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem)
         case .gemini:
             return try await recognizeWithGemini(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem)
+        }
+    }
+
+    // MARK: - 连接测试
+
+    /// 真实地尝试一次网络/本地探测，返回延迟或中文失败原因。
+    /// 不吞错：每个失败分支都给出可读的中文 reason。
+    func testConnection() async -> TestConnectionResult {
+        switch config.backend {
+        case .local:
+            // 本地：只看模型是否下载
+            if LocalModelManager.shared.isDownloaded(config.localModel) {
+                return .success(latencyMs: 0)
+            } else {
+                return .failure(reason: String(localized: "模型未下载，请先下载"))
+            }
+        case .cloud:
+            guard !config.apiKey.isEmpty else {
+                return .failure(reason: String(localized: "未填写 API Key"))
+            }
+            return await pingCloudProvider()
+        }
+    }
+
+    /// 对当前 provider 做一次轻量 ping（优先 /models 列表接口，不行再 fallback 到对话接口）
+    private func pingCloudProvider() async -> TestConnectionResult {
+        let session = Self.testConnectionSession
+        let start = Date()
+
+        do {
+            let request = try buildPingRequest()
+            let (data, response) = try await session.data(for: request)
+            let latencyMs = Int((Date().timeIntervalSince(start)) * 1000)
+
+            guard let http = response as? HTTPURLResponse else {
+                return .failure(reason: String(localized: "服务器返回无效响应"))
+            }
+
+            if (200..<300).contains(http.statusCode) {
+                return .success(latencyMs: latencyMs)
+            }
+
+            let bodyText = String(data: data, encoding: .utf8) ?? ""
+            return .failure(reason: Self.humanReason(forHTTPStatus: http.statusCode, body: bodyText))
+        } catch let urlError as URLError {
+            return .failure(reason: Self.humanReason(forURLError: urlError))
+        } catch {
+            return .failure(reason: String(localized: "请求失败：\(error.localizedDescription)"))
+        }
+    }
+
+    /// 构造一次轻量探测请求。
+    /// - Kimi / OpenAI / Qwen：GET {baseURL}/models（OpenAI 兼容）
+    /// - Anthropic：POST /v1/messages 带 max_tokens=1 的最小 ping
+    /// - Gemini：GET /models?key=...
+    private func buildPingRequest() throws -> URLRequest {
+        let base = config.effectiveBaseURL
+        switch config.provider {
+        case .kimi, .openai, .qwen:
+            guard let url = URL(string: "\(base)/models") else {
+                throw URLError(.badURL)
+            }
+            var req = URLRequest(url: url)
+            req.httpMethod = "GET"
+            req.setValue("Bearer \(config.effectiveAPIKey)", forHTTPHeaderField: "Authorization")
+            req.timeoutInterval = 8
+            return req
+
+        case .anthropic:
+            // Anthropic 没有公开的 GET 列表接口，直接发一个 max_tokens=1 的最小 ping
+            guard let url = URL(string: "\(base)/v1/messages") else {
+                throw URLError(.badURL)
+            }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue(config.effectiveAPIKey, forHTTPHeaderField: "x-api-key")
+            req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let body: [String: Any] = [
+                "model": config.effectiveModel,
+                "max_tokens": 1,
+                "messages": [
+                    ["role": "user", "content": "ping"]
+                ]
+            ]
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
+            req.timeoutInterval = 8
+            return req
+
+        case .gemini:
+            guard let url = URL(string: "\(base)/models?key=\(config.effectiveAPIKey)") else {
+                throw URLError(.badURL)
+            }
+            var req = URLRequest(url: url)
+            req.httpMethod = "GET"
+            req.timeoutInterval = 8
+            return req
+        }
+    }
+
+    /// 共享的短超时 URLSession，专门用于探测
+    private static let testConnectionSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 8
+        config.timeoutIntervalForResource = 8
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
+
+    /// 把 URLError 翻译成中文人话
+    private static func humanReason(forURLError error: URLError) -> String {
+        switch error.code {
+        case .timedOut:
+            return String(localized: "连接超时（8 秒）")
+        case .cannotFindHost:
+            return String(localized: "找不到服务器主机，请检查 API 地址")
+        case .cannotConnectToHost:
+            return String(localized: "无法连接到服务器，请检查 API 地址和网络")
+        case .notConnectedToInternet:
+            return String(localized: "设备未连接到互联网")
+        case .networkConnectionLost:
+            return String(localized: "网络连接中断")
+        case .dnsLookupFailed:
+            return String(localized: "DNS 解析失败")
+        case .badURL:
+            return String(localized: "API 地址无效")
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+             .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot:
+            return String(localized: "HTTPS 证书验证失败")
+        default:
+            return String(localized: "网络错误：\(error.localizedDescription)")
+        }
+    }
+
+    /// 把 HTTP 状态码翻译成中文人话
+    private static func humanReason(forHTTPStatus status: Int, body: String) -> String {
+        let snippet = body.count > 200 ? String(body.prefix(200)) + "…" : body
+        switch status {
+        case 400:
+            return String(localized: "请求被服务器拒绝（400），可能是模型名或参数不合法")
+        case 401:
+            return String(localized: "API Key 无效或已被吊销（401）")
+        case 403:
+            return String(localized: "权限不足（403），请检查 API Key 是否有访问权限")
+        case 404:
+            return String(localized: "接口不存在（404），请检查 API 地址是否正确")
+        case 429:
+            let lower = body.lowercased()
+            let isBalance = lower.contains("insufficient") || lower.contains("balance")
+                || lower.contains("quota") || lower.contains("billing")
+                || body.contains("余额") || body.contains("欠费") || body.contains("额度")
+            if isBalance {
+                return String(localized: "账户余额或额度不足（429）")
+            }
+            return String(localized: "请求过于频繁或服务器忙（429）")
+        case 500...599:
+            return String(localized: "服务器错误（\(status)）：\(snippet)")
+        default:
+            return String(localized: "HTTP \(status)：\(snippet)")
         }
     }
 

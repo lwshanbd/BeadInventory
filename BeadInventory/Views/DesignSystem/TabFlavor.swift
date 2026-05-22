@@ -2,7 +2,7 @@
 //  TabFlavor.swift
 //  BeadInventory
 //
-//  每个 Tab 的"风味色"环境值 —— 锚定奶油拿铁莫兰迪 6 色（latte/mauve/honey/sage/mist）。
+//  每个 Tab 的"风味色"环境值 —— 4 个 Tab → 4 种 Morandi 风味色（latte/mauve/sage/mist）。
 //
 
 import SwiftUI

@@ -633,7 +633,9 @@ struct InventoryView: View {
                 EditStockSheet(color: color, stock: stockDict[color.mardCode])
             }
             .sheet(isPresented: $showingBrandSettings) {
-                BrandSettingsView()
+                NavigationStack {
+                    BrandSettingsView()
+                }
             }
             .sheet(item: $lowStockDetailItem) { item in
                 LowStockDetailView(brandId: item.brandId)
@@ -1422,12 +1424,9 @@ struct EditStockSheet: View {
         if adjustDelta > 0 {
             inventoryManager.addStock(brandId: brandId, mardCode: color.mardCode, amount: amount)
         } else {
-            if let index = inventoryManager.brandStocks.firstIndex(where: {
-                $0.brandId == brandId && $0.mardCode == color.mardCode
-            }) {
-                inventoryManager.brandStocks[index].used += amount
-                inventoryManager.saveData()
-            }
+            // 走 inventoryManager.useStock 正确写入 used + 记录 stockDeduct 历史。
+            // 不直接改 brandStocks[index].used 以避免绕过 HistoryManager（CLAUDE.md 约定）。
+            inventoryManager.useStock(brandId: brandId, mardCode: color.mardCode, amount: amount)
         }
         adjustDelta = 0
         lastSuccessAt = Date()

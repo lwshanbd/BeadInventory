@@ -463,27 +463,6 @@ struct CustomColorEditView: View {
     }
 }
 
-// MARK: - Character isHexDigit
-// 旧实现里在本文件定义过 isHexDigit；保留以避免影响其他调用方。
-extension Character {
-    var isHexDigit: Bool {
-        return "0123456789ABCDEFabcdef".contains(self)
-    }
-}
-
-// MARK: - Color toHex
-// 保留旧实现的 Color.toHex() 工具方法，避免影响其他调用方。
-extension Color {
-    /// 将 Color 转换为 6 位大写 Hex 字符串。
-    func toHex() -> String? {
-        guard let components = UIColor(self).cgColor.components else { return nil }
-        let r = components[0]
-        let g = components.count > 1 ? components[1] : r
-        let b = components.count > 2 ? components[2] : r
-        return String(format: "%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
-    }
-}
-
 #Preview {
     CustomColorEditView(editingColor: nil as CustomColor?)
         .environmentObject(InventoryManager())

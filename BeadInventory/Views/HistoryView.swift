@@ -3,7 +3,7 @@
 //  BeadInventory
 //
 //  历史记录 —— 二级页骨架（SecondaryNav + ScrollView + GroupCard）。
-//  入口图标色 = honey，本页 flavor 跟随。
+//  本页主调色 = Morandi.honey（内部硬编码，不读 @Environment(\.tabFlavor)）。
 //
 
 import SwiftUI
@@ -107,6 +107,8 @@ struct HistoryView: View {
     @State private var showBatchRevertAlert = false
     @State private var revertSuccessAt: Date = .distantPast
     @State private var filter: HistoryFilter = .all
+    @State private var showingRevertError = false
+    @State private var revertErrorMessage = ""
 
     private let honey = Theme.ColorToken.Morandi.honey
 
@@ -175,6 +177,11 @@ struct HistoryView: View {
             Text("将按时间倒序逐条撤回。不可撤回的记录会被跳过。")
         }
         .haptic(.success, trigger: revertSuccessAt)
+        .alert("撤回结果", isPresented: $showingRevertError) {
+            Button("我知道了", role: .cancel) {}
+        } message: {
+            Text(revertErrorMessage)
+        }
     }
 
     // MARK: - 顶部 nav
@@ -410,19 +417,35 @@ struct HistoryView: View {
         let success = historyManager.revert(record.id)
         if success {
             revertSuccessAt = Date()
+        } else {
+            revertErrorMessage = "撤回失败，记录可能已不可恢复"
+            showingRevertError = true
         }
     }
 
     /// 批量撤回：按记录时间倒序逐条撤回。
+    /// 区分成功/失败：仅当至少一条成功时触发 success 触感；如有失败则弹 alert 列出统计。
     private func batchRevertSelected() {
         let toRevert = historyManager.records
             .filter { sel.contains($0.id) && historyManager.canRevert($0) }
             .sorted { $0.timestamp > $1.timestamp }
+        var successCount = 0
+        var failureCount = 0
         for record in toRevert {
-            _ = historyManager.revert(record.id)
+            if historyManager.revert(record.id) {
+                successCount += 1
+            } else {
+                failureCount += 1
+            }
         }
-        if !toRevert.isEmpty {
+        if successCount > 0 {
             revertSuccessAt = Date()
+        }
+        if failureCount > 0 {
+            revertErrorMessage = successCount > 0
+                ? "成功撤回 \(successCount) 条,失败 \(failureCount) 条"
+                : "全部 \(failureCount) 条撤回均失败"
+            showingRevertError = true
         }
         withAnimation { sel.exit() }
     }

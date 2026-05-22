@@ -3,7 +3,7 @@
 //  BeadInventory
 //
 //  色号转换 —— 二级页骨架（SecondaryNav + ScrollView + GroupCard）。
-//  入口图标色 = mauve，本页 flavor 跟随。
+//  本页主调色 = Morandi.mauve（内部硬编码，不读 @Environment(\.tabFlavor)）。
 //  铁律: 绝不为色号造中文名 —— 只显示 code + HEX + bead。
 //
 
@@ -23,18 +23,19 @@ struct ColorConverterView: View {
         return results
     }
 
+    /// 跨品牌覆盖数：在所有命中结果里,有多少个品牌字段至少有一个非空。
     private var brandsCovered: Int {
-        // 简化：6 个固定品牌字段 (MARD/COCO/漫漫/盼盼/咪小窝/卡卡)
-        var present = 0
-        for color in searchResults.prefix(5) {
-            if !color.mardCode.isEmpty { present = max(present, 1) }
-            if !color.cocoCode.isEmpty { present = max(present, 2) }
-            if !color.manmanCode.isEmpty { present = max(present, 3) }
-            if !color.panpanCode.isEmpty { present = max(present, 4) }
-            if !color.mixiaowoCode.isEmpty { present = max(present, 5) }
-            if !color.kakaCode.isEmpty { present = max(present, 6) }
+        var hasMARD = false, hasCOCO = false, hasManman = false
+        var hasPanpan = false, hasMixiaowo = false, hasKaka = false
+        for color in searchResults {
+            if !color.mardCode.isEmpty { hasMARD = true }
+            if !color.cocoCode.isEmpty { hasCOCO = true }
+            if !color.manmanCode.isEmpty { hasManman = true }
+            if !color.panpanCode.isEmpty { hasPanpan = true }
+            if !color.mixiaowoCode.isEmpty { hasMixiaowo = true }
+            if !color.kakaCode.isEmpty { hasKaka = true }
         }
-        return present
+        return [hasMARD, hasCOCO, hasManman, hasPanpan, hasMixiaowo, hasKaka].filter { $0 }.count
     }
 
     private var lowStockThreshold: Int {

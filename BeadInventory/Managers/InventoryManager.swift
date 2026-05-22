@@ -462,6 +462,29 @@ class InventoryManager: ObservableObject {
         }
     }
 
+    /// 增加 used（即"使用/扣减库存"），并记录 stockDeduct 历史。
+    /// EditStockSheet 的负数调整路径应走这个方法，避免绕过 HistoryManager。
+    @discardableResult
+    func useStock(brandId: UUID, mardCode: String, amount: Int) -> Bool {
+        guard amount > 0,
+              let index = brandStocks.firstIndex(where: {
+                  $0.brandId == brandId && $0.mardCode == mardCode
+              })
+        else { return false }
+        let oldUsed = brandStocks[index].used
+        brandStocks[index].used += amount
+        saveData()
+        historyManager.recordStockChange(
+            type: .stockDeduct,
+            brandId: brandId,
+            mardCode: mardCode,
+            oldValue: oldUsed,
+            newValue: brandStocks[index].used,
+            changeAmount: amount
+        )
+        return true
+    }
+
     /// 批量导入库存（累加模式）
     /// - Parameters:
     ///   - brandId: 目标品牌 ID

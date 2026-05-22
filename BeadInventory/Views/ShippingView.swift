@@ -3,7 +3,7 @@
 //  BeadInventory
 //
 //  运输中（待到货的购买记录）—— 二级页骨架（SecondaryNav + ScrollView + GroupCard）。
-//  入口图标色 = latte，本页 flavor 跟随。
+//  本页主调色 = Morandi.latte（内部硬编码，不读 @Environment(\.tabFlavor)）。
 //
 
 import SwiftUI
@@ -13,31 +13,9 @@ struct ShippingView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showingAddPurchase = false
     @State private var showingPasteSheet = false
-    @State private var pasteError: String?
-    @State private var showingPasteError = false
-    @State private var selectedFilter: ShippingFilter = .all
-
-    enum ShippingFilter: String, CaseIterable {
-        case all, shipped, pending
-        var label: String {
-            switch self {
-            case .all: return "全部"
-            case .shipped: return "已发货"
-            case .pending: return "待发货"
-            }
-        }
-    }
 
     private var allRecords: [PurchaseRecord] {
         inventoryManager.purchaseRecords
-    }
-
-    private var filteredRecords: [PurchaseRecord] {
-        // 当前数据模型没有显式 status；按"是否有 note" 简单作分类示意（保持现有数据流不动）。
-        switch selectedFilter {
-        case .all: return allRecords
-        case .shipped, .pending: return allRecords
-        }
     }
 
     private var totalBeads: Int {
@@ -114,7 +92,6 @@ struct ShippingView: View {
                     ScrollView {
                         VStack(spacing: 14) {
                             overviewHero
-                            filterChipRow
                             recordList
                             pasteHintCard
                         }
@@ -137,11 +114,6 @@ struct ShippingView: View {
         .sheet(isPresented: $showingPasteSheet) {
             PasteReplenishSheet()
                 .environmentObject(inventoryManager)
-        }
-        .alert("粘贴失败", isPresented: $showingPasteError) {
-            Button("确定", role: .cancel) { }
-        } message: {
-            Text(pasteError ?? "未知错误")
         }
     }
 
@@ -202,36 +174,10 @@ struct ShippingView: View {
         .padding(.top, 8)
     }
 
-    // MARK: - Filter chips
-    private var filterChipRow: some View {
-        HStack(spacing: 6) {
-            ForEach(ShippingFilter.allCases, id: \.self) { filter in
-                Button {
-                    selectedFilter = filter
-                } label: {
-                    BIChip(
-                        "\(filter.label) · \(allRecords.count)",
-                        active: selectedFilter == filter,
-                        color: Theme.ColorToken.Morandi.latte,
-                        size: .sm
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-            Spacer(minLength: 0)
-            BIChip(label: "新→旧", active: false, color: nil, size: .sm) {
-                Image(systemName: "arrow.up.arrow.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.ColorToken.Text.secondary)
-            }
-        }
-        .padding(.horizontal, 18)
-    }
-
     // MARK: - Record list
     private var recordList: some View {
         VStack(spacing: 10) {
-            ForEach(filteredRecords) { record in
+            ForEach(allRecords) { record in
                 NavigationLink {
                     PurchaseRecordDetailView(record: record)
                 } label: {
@@ -322,30 +268,10 @@ struct ShippingCard: View {
         brand?.colorSystem ?? .mard
     }
 
-    // 当前数据模型没有 status；按"创建是否近 3 天"做轻量近似 (>3天=已发货)
-    private var isShipped: Bool {
-        Date().timeIntervalSince(record.date) > 60 * 60 * 24 * 3
-    }
-
-    private var statusLabel: String { isShipped ? "已发货" : "待发货" }
-    private var subStatus: String {
-        if isShipped {
-            return "运输中 · 即将到达"
-        } else {
-            return "已下单 · 等待商家发货"
-        }
-    }
-
-    private var etaText: String {
+    private var orderDateText: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "M/d"
-        let est = record.date.addingTimeInterval(60 * 60 * 24 * 6)
-        return "预计 \(formatter.string(from: est))"
-    }
-
-    private var totalAmount: Int {
-        // 估算金额（兜底显示，业务实际未维护单价）
-        max(1, record.totalBeads / 100 * 2 / 10)
+        return formatter.string(from: record.date)
     }
 
     private var previewColors: [Color] {
@@ -360,37 +286,23 @@ struct ShippingCard: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            // 顶行：tile + 品牌 + Badge + chevron
+            // 顶行：tile + 商品名 + chevron
             HStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(
-                            isShipped
-                                ? Theme.ColorToken.Morandi.latte.opacity(0.18)
-                                : Theme.ColorToken.Text.tertiary.opacity(0.18)
-                        )
+                        .fill(Theme.ColorToken.Morandi.latte.opacity(0.18))
                         .frame(width: 38, height: 38)
                     Image(systemName: "shippingbox.fill")
                         .font(.system(size: 18))
-                        .foregroundStyle(
-                            isShipped
-                                ? Theme.ColorToken.Morandi.latte
-                                : Theme.ColorToken.Text.secondary
-                        )
+                        .foregroundStyle(Theme.ColorToken.Morandi.latte)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(record.name.isEmpty ? brandName : record.name)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Theme.ColorToken.Text.primary)
-                            .lineLimit(1)
-                        BIBadge(
-                            statusLabel,
-                            style: isShipped ? .accent : .neutral
-                        )
-                    }
-                    Text("\(brandName) · \(subStatus)")
+                    Text(record.name.isEmpty ? brandName : record.name)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                        .lineLimit(1)
+                    Text("\(brandName) · 下单 \(orderDateText)")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.ColorToken.Text.secondary)
                         .lineLimit(1)
@@ -403,13 +315,11 @@ struct ShippingCard: View {
                     .foregroundStyle(Theme.ColorToken.Text.tertiary)
             }
 
-            // 数据条
+            // 数据条（色号 / 豆粒）
             HStack(spacing: 0) {
                 ShipStatCol(label: "色号", value: "\(record.colorCount)", suffix: "种")
                 ShipDivider()
                 ShipStatCol(label: "豆粒", value: formatNumber(record.totalBeads), suffix: "颗")
-                ShipDivider()
-                ShipStatCol(label: "金额", value: "\(totalAmount)", suffix: "元")
             }
             .padding(.vertical, 10)
             .background(
@@ -417,40 +327,20 @@ struct ShippingCard: View {
                     .fill(Theme.ColorToken.Surface.subtle)
             )
 
-            // 色块预览 + ETA pill
-            HStack(spacing: 10) {
-                HStack(spacing: 0) {
-                    ForEach(Array(previewColors.enumerated()), id: \.offset) { idx, c in
-                        BeadView(color: c, size: 22, ring: Theme.ColorToken.Surface.elevated)
-                            .padding(.leading, idx == 0 ? 0 : -8)
-                            .zIndex(Double(6 - idx))
-                    }
-                    if extraColorCount > 0 {
-                        Text("+\(extraColorCount)")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Theme.ColorToken.Text.tertiary)
-                            .padding(.leading, 6)
-                    }
+            // 色块预览
+            HStack(spacing: 0) {
+                ForEach(Array(previewColors.enumerated()), id: \.offset) { idx, c in
+                    BeadView(color: c, size: 22, ring: Theme.ColorToken.Surface.elevated)
+                        .padding(.leading, idx == 0 ? 0 : -8)
+                        .zIndex(Double(6 - idx))
+                }
+                if extraColorCount > 0 {
+                    Text("+\(extraColorCount)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                        .padding(.leading, 6)
                 }
                 Spacer(minLength: 4)
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(etaText)
-                        .font(.system(size: 11, weight: .semibold))
-                }
-                .foregroundStyle(
-                    isShipped ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.secondary
-                )
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule().fill(
-                        isShipped
-                            ? Theme.ColorToken.Morandi.latte.opacity(0.12)
-                            : Theme.ColorToken.Surface.subtle
-                    )
-                )
             }
         }
         .padding(14)
