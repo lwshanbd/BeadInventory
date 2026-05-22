@@ -85,10 +85,16 @@ struct PlannedProjectsView: View {
 
     /// 从 shortageMap 取项目的缺豆数。缺 key 时视为 bug：DEBUG 暴露，release 现场补算
     /// 而不是默认为 ready —— "找不到 → 当作齐豆" 会把异常状态涂成成功。
+    /// release 路径也通过 AppLogger 上报，避免 release no-op assert 让 bug 静默。
     private func shortage(of project: ProjectRecord, in map: [UUID: Int]) -> Int {
         if let v = map[project.id] { return v }
         assertionFailure(
             "shortageMap missing project \(project.id) — caller passed inconsistent projects"
+        )
+        AppLogger.shared.error(
+            "PlannedProjectsView",
+            "shortage_map_miss",
+            metadata: ["projectId": "\(project.id)"]
         )
         return shortageCount(for: project)
     }
@@ -154,7 +160,7 @@ struct PlannedProjectsView: View {
                                 needsCount: needsCount,
                                 readyCount: readyCount
                             )
-                            tipsBlock
+                            tipsBlock(planCount: plans.count)
                             planList(filtered: filtered, shortageMap: shortageMap)
                         }
                         .padding(.bottom, 20)
@@ -442,9 +448,9 @@ struct PlannedProjectsView: View {
     // MARK: - Tips Block
 
     @ViewBuilder
-    private var tipsBlock: some View {
+    private func tipsBlock(planCount: Int) -> some View {
         VStack(spacing: 8) {
-            if plannedProjects.count >= 2 {
+            if planCount >= 2 {
                 TipView(PlanMergeTip())
             }
             TipView(ReplenishTip())

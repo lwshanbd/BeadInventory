@@ -437,13 +437,30 @@ class InventoryManager: ObservableObject {
                 return stock
             }
             // 命中到这里说明索引指向了不匹配的行——属于"索引被绕过维护"的 bug。
-            // DEBUG 立刻暴露；release 继续走下面的线性扫描兜底，避免给用户错数据。
+            // DEBUG 立刻暴露；release 走 AppLogger 上报到日志流，再线性扫描兜底
+            // 避免给用户错数据。两条信号至少一条会被开发者看到，不让 bug 静默。
             assertionFailure(
                 "stockPositionIndex stale at [\(brandId)][\(mardCode)] → row \(i)"
             )
+            logError("stock_index_stale", metadata: [
+                "brandId": "\(brandId)",
+                "mardCode": mardCode,
+                "row": i
+            ])
         }
-        // 慢路径：索引缺 key（旧数据 / 极端时序）或失同步。正常生产路径不应命中。
-        return brandStocks.first { $0.brandId == brandId && $0.mardCode == mardCode }
+        // 慢路径：索引缺 key。正常情况是「真的没这条记录」→ 线性扫描返回 nil。
+        // 异常情况是「索引漏 key 但数组里有这一行」→ 这才是 bug，要单独上报。
+        let hit = brandStocks.first { $0.brandId == brandId && $0.mardCode == mardCode }
+        if hit != nil, stockPositionIndex[brandId]?[mardCode] == nil {
+            assertionFailure(
+                "stockPositionIndex missing key for existing row [\(brandId)][\(mardCode)]"
+            )
+            logError("stock_index_missing_key", metadata: [
+                "brandId": "\(brandId)",
+                "mardCode": mardCode
+            ])
+        }
+        return hit
     }
 
     private func rebuildStockPositionIndex() {

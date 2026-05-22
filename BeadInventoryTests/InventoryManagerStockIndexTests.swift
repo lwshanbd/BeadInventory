@@ -137,4 +137,28 @@ final class InventoryManagerStockIndexTests: XCTestCase {
         ]
         XCTAssertEqual(m.getStock(brandId: brandA, mardCode: "H01")?.stock, 100)
     }
+
+    // MARK: - lazy rebuild 时序
+
+    func test_multiple_writes_before_single_read_all_visible() {
+        // dirty-flag 模式最常见 bug 模式：「第二次 / 第三次写后忘了 mark dirty」。
+        // 多次连续写之间不读，最后一次读必须能看到所有写的累积结果。
+        let m = makeManager()
+        m.brandStocks = [BrandStock(brandId: brandA, mardCode: "H01", stock: 100)]
+        m.brandStocks[0].stock = 200
+        m.brandStocks[0].stock = 300
+        m.brandStocks.append(BrandStock(brandId: brandA, mardCode: "H02", stock: 50))
+        XCTAssertEqual(m.getStock(brandId: brandA, mardCode: "H01")?.stock, 300)
+        XCTAssertEqual(m.getStock(brandId: brandA, mardCode: "H02")?.stock, 50)
+    }
+
+    func test_write_read_write_read_stays_consistent() {
+        // 「第一次读把 dirty 清零后，第二次写没 mark dirty」是 lazy rebuild
+        // 模式的另一典型回归。这条用例专门钉住"读后再写仍能感知到新值"。
+        let m = makeManager()
+        m.brandStocks = [BrandStock(brandId: brandA, mardCode: "H01", stock: 100)]
+        XCTAssertEqual(m.getStock(brandId: brandA, mardCode: "H01")?.stock, 100)
+        m.brandStocks[0].stock = 999
+        XCTAssertEqual(m.getStock(brandId: brandA, mardCode: "H01")?.stock, 999)
+    }
 }

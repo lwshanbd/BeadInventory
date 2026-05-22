@@ -61,7 +61,7 @@ struct InventoryView: View {
     // 在 brandStocks 较大时阻塞主线程。
     //
     // 也不要把实例存进 @State 跨帧复用：snapshot 是 per-body-frame 的只读视图。
-    fileprivate struct InventorySnapshot {
+    private struct InventorySnapshot {
         let brandId: UUID?
         let lowStockThreshold: Int
         let stockDict: [String: BrandStock]   // 仅未隐藏的色号
@@ -92,7 +92,12 @@ struct InventoryView: View {
             for s in brandStocks where s.brandId == brandId {
                 entryCount += 1
                 if s.isHidden { continue }
-                dict[s.mardCode] = s
+                // first-match：与 InventoryManager.rebuildStockPositionIndex 对齐。
+                // 重复 (brandId, mardCode) 行（iCloud 同步罕见情况下可能产生）若用
+                // last-write-wins，会让库存页编辑的行与 mutator 实际改的行错位。
+                if dict[s.mardCode] == nil {
+                    dict[s.mardCode] = s
+                }
                 totalAvailable += s.available
                 totalUsed += s.used
                 if s.available < lowStockThreshold { lowCount += 1 }
