@@ -67,6 +67,9 @@ struct ScanView: View {
         let id = UUID()
         var colorCode: String
         var quantity: Int
+        /// 用户在缺豆建议行上「应用推荐品牌」时记下的目标品牌；
+        /// 进入 DeductionResolver 时会调用 overrideBrand(...) 落地。
+        var preferredBrandId: UUID? = nil
     }
 
     var totalBeads: Int {
@@ -648,6 +651,14 @@ struct ScanView: View {
             primaryBrandId: brandId,
             colorSystem: scanColorSystem
         )
+        // DeductionResolver.initializeFromRecognizedItems 按顺序生成 items，索引对齐安全。
+        // 把识别行上记下的 preferredBrandId 落到 resolver.overrideBrand(...)，
+        // 让 ScanView 这一步选好的跨品牌方案直接传到下一页的扣减审核。
+        for (idx, recognized) in recognizedItems.enumerated() {
+            guard let preferred = recognized.preferredBrandId,
+                  idx < resolver.items.count else { continue }
+            resolver.overrideBrand(for: resolver.items[idx].id, to: preferred)
+        }
         self.deductionResolver = resolver
     }
 
@@ -1113,20 +1124,18 @@ struct RecognizedResultsSectionNew: View {
         return stock.available
     }
 
-    /// 缺豆项数量
-    private var shortageCount: Int {
-        guard let brandId = inventoryManager.currentBrandId else { return 0 }
-        return items.reduce(0) { acc, item in
-            guard let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode) else { return acc }
-            return acc + ((stock.available - item.quantity) < 0 ? 1 : 0)
+    /// 该 item 当前在 *生效品牌*（preferred 优先，否则主品牌）下是否缺豆
+    private func itemHasEffectiveShortage(_ item: ScanView.RecognizedItem) -> Bool {
+        let effectiveBrandId = item.preferredBrandId ?? inventoryManager.currentBrandId
+        guard let brandId = effectiveBrandId,
+              let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode) else {
+            return false
         }
+        return (stock.available - item.quantity) < 0
     }
 
-    /// 品牌改写项数量（暂无数据源，预留 0）
-    private var overriddenCount: Int { 0 }
-
-    /// 该 item 当前是否会触发 shortageSuggestionRow（多一行换品牌建议，约 +40pt）
-    private func itemHasShortage(_ item: ScanView.RecognizedItem) -> Bool {
+    /// 在主品牌下是否缺豆（用于决定是否触发跨品牌建议行的显示）
+    private func itemHasPrimaryShortage(_ item: ScanView.RecognizedItem) -> Bool {
         guard let brandId = inventoryManager.currentBrandId,
               let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode) else {
             return false
@@ -1134,15 +1143,44 @@ struct RecognizedResultsSectionNew: View {
         return (stock.available - item.quantity) < 0
     }
 
+    /// 该 item 是否存在「色系匹配、非主品牌、对该色仍有库存」的候选品牌
+    private func itemHasAlternativeBrand(_ item: ScanView.RecognizedItem) -> Bool {
+        let currentId = inventoryManager.currentBrandId
+        for brand in inventoryManager.brands
+        where brand.id != currentId && brand.colorSystem == colorSystem {
+            if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: item.colorCode),
+               stock.available > 0 {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// 该 item 是否会渲染建议/已切换行（决定行高估算）
+    private func itemShowsRecommendation(_ item: ScanView.RecognizedItem) -> Bool {
+        if item.preferredBrandId != nil { return true }
+        return itemHasPrimaryShortage(item) && itemHasAlternativeBrand(item)
+    }
+
+    /// 缺豆项数量（按生效品牌算；切换后被解决的项不再算缺豆）
+    private var shortageCount: Int {
+        items.reduce(0) { $0 + (itemHasEffectiveShortage($1) ? 1 : 0) }
+    }
+
+    /// 已应用跨品牌建议的项数量
+    private var overriddenCount: Int {
+        items.reduce(0) { $0 + ($1.preferredBrandId != nil ? 1 : 0) }
+    }
+
     /// List 套在外层 ScrollView 里、scrollDisabled，必须给出精确高度，
     /// 否则任何超出 frame 的行会被裁掉、外层也滚不到。
-    /// mainRow ≈ 68pt，shortageSuggestionRow 额外占 ≈ 44pt。
+    /// mainRow ≈ 68pt，建议/已切换子行额外占 ≈ 44pt（仅当该行实际渲染时计入）。
     private var estimatedListHeight: CGFloat {
         let normalRow: CGFloat = 76
-        let shortageExtra: CGFloat = 44
-        let shortageVisibleCount = visibleItems.reduce(0) { $0 + (itemHasShortage($1) ? 1 : 0) }
+        let recommendationExtra: CGFloat = 44
+        let recVisible = visibleItems.reduce(0) { $0 + (itemShowsRecommendation($1) ? 1 : 0) }
         return CGFloat(visibleItems.count) * normalRow
-            + CGFloat(shortageVisibleCount) * shortageExtra
+            + CGFloat(recVisible) * recommendationExtra
             + 8
     }
 
@@ -1152,13 +1190,9 @@ struct RecognizedResultsSectionNew: View {
         case .all:
             return sortedItems
         case .shortage:
-            guard let brandId = inventoryManager.currentBrandId else { return [] }
-            return sortedItems.filter { item in
-                guard let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode) else { return false }
-                return (stock.available - item.quantity) < 0
-            }
+            return sortedItems.filter { itemHasEffectiveShortage($0) }
         case .overridden:
-            return [] // 暂无品牌改写数据源
+            return sortedItems.filter { $0.preferredBrandId != nil }
         }
     }
 
@@ -1267,6 +1301,11 @@ struct RecognizedResultsSectionNew: View {
                         },
                         onRemove: {
                             items.removeAll { $0.id == item.id }
+                        },
+                        onApplyPreferredBrand: { brandId in
+                            if let index = items.firstIndex(where: { $0.id == item.id }) {
+                                items[index].preferredBrandId = brandId
+                            }
                         }
                     )
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
@@ -1314,6 +1353,9 @@ struct RecognizedItemRowNew: View {
     var colorSystem: ColorSystem = .mard
     let onUpdate: (String?, Int?) -> Void
     let onRemove: () -> Void
+    /// 用户点了缺豆建议行：传 brandId 表示「切换到推荐品牌」，
+    /// 传 nil 表示「撤销切换、改回主品牌」。
+    var onApplyPreferredBrand: (UUID?) -> Void = { _ in }
 
     @Environment(\.tabFlavor) private var flavor
     @State private var isEditing = false
@@ -1334,11 +1376,16 @@ struct RecognizedItemRowNew: View {
         return inventoryManager.getLowStockThreshold(for: brandId)
     }
 
+    /// 该行实际计算库存/缺口时所用的品牌：用户已应用推荐品牌时用推荐品牌，否则用当前主品牌。
+    var effectiveBrandId: UUID? {
+        item.preferredBrandId ?? inventoryManager.currentBrandId
+    }
+
     // 计算当前库存和扣减后库存
     // isInsufficient: 库存不足（负数）
     // isLowStock: 低库存预警（低于阈值但非负）
     var stockInfo: (current: Int, after: Int, isInsufficient: Bool, isLowStock: Bool)? {
-        guard let brandId = inventoryManager.currentBrandId,
+        guard let brandId = effectiveBrandId,
               let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode) else {
             return nil
         }
@@ -1349,14 +1396,58 @@ struct RecognizedItemRowNew: View {
         return (current, after, isInsufficient, isLowStock)
     }
 
-    /// 在 ScanView 这一层暂无品牌覆盖概念（覆盖发生在 DeductionReviewView）。
-    /// 预留 false，保留视觉钩子；后续接入时改为真实判断即可。
-    var isBrandOverridden: Bool { false }
+    /// 是否已通过缺豆建议切到了非主品牌
+    var isBrandOverridden: Bool { item.preferredBrandId != nil }
 
-    /// 短缺：缺豆数量为正
+    /// 已应用推荐品牌时，对应的 Brand
+    var overriddenBrand: Brand? {
+        guard let id = item.preferredBrandId else { return nil }
+        return inventoryManager.brands.first(where: { $0.id == id })
+    }
+
+    /// 当前色系下、非当前主品牌中、对该 mardCode 仍有库存的最佳替补品牌。
+    /// 用于在还没应用推荐时显示"试试用 X"建议。
+    /// 选择策略：库存可用量最大者；并列时取 sortOrder 较小（视为更优先）。
+    var candidateBrand: (brand: Brand, available: Int)? {
+        let currentId = inventoryManager.currentBrandId
+        var best: (Brand, Int)? = nil
+        for brand in inventoryManager.brands
+        where brand.id != currentId && brand.colorSystem == colorSystem {
+            guard let stock = inventoryManager.getStock(brandId: brand.id, mardCode: item.colorCode),
+                  stock.available > 0 else { continue }
+            if let current = best {
+                if stock.available > current.1
+                    || (stock.available == current.1 && brand.sortOrder < current.0.sortOrder) {
+                    best = (brand, stock.available)
+                }
+            } else {
+                best = (brand, stock.available)
+            }
+        }
+        return best
+    }
+
+    /// 短缺：在 *当前生效品牌* 下缺豆数量为正
     var shortageDelta: Int? {
         guard let info = stockInfo, info.isInsufficient else { return nil }
         return -info.after
+    }
+
+    /// 仅看主品牌的缺口（用于判断"是否需要展示跨品牌建议行"，
+    /// 哪怕用户已经切换、原始缺豆问题依然存在所以建议行也应当持续可见以便撤销）。
+    var primaryShortageDelta: Int? {
+        guard let primaryId = inventoryManager.currentBrandId,
+              let stock = inventoryManager.getStock(brandId: primaryId, mardCode: item.colorCode) else {
+            return nil
+        }
+        let after = stock.available - item.quantity
+        return after < 0 ? -after : nil
+    }
+
+    /// 是否要展示跨品牌建议行：1) 已应用推荐品牌（要给撤销入口）；或 2) 主品牌缺豆且能找到候选品牌
+    var shouldShowRecommendation: Bool {
+        if isBrandOverridden { return true }
+        return primaryShortageDelta != nil && candidateBrand != nil
     }
 
     private var borderColor: Color {
@@ -1374,8 +1465,8 @@ struct RecognizedItemRowNew: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             mainRow
-            if shortageDelta != nil {
-                shortageSuggestionRow
+            if shouldShowRecommendation {
+                recommendationRow
             }
         }
         .padding(0)
@@ -1499,17 +1590,16 @@ struct RecognizedItemRowNew: View {
             Text("未匹配")
                 .font(.caption2)
                 .foregroundStyle(Theme.ColorToken.Status.warning)
-        } else if isBrandOverridden {
-            Text("米卡 库存 \(stockInfo?.current ?? 0)")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(Theme.ColorToken.Text.secondary)
         } else if let delta = shortageDelta, let info = stockInfo {
-            Text("缺\(delta)颗 · 库存仅\(info.current)")
+            // 主品牌或已切换品牌仍缺豆：前缀带上品牌名（仅在 override 状态下），并保留 error 色
+            let prefix = overriddenBrand.map { "\($0.name) " } ?? ""
+            Text("\(prefix)缺\(delta)颗 · 库存仅\(info.current)")
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(Theme.ColorToken.Status.error)
         } else if let info = stockInfo {
             HStack(spacing: 4) {
-                Text("库存 \(info.current) → \(info.after)")
+                let prefix = overriddenBrand.map { "\($0.name) " } ?? ""
+                Text("\(prefix)库存 \(info.current) → \(info.after)")
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
                 if info.isLowStock {
@@ -1542,12 +1632,13 @@ struct RecognizedItemRowNew: View {
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             }
-            if isBrandOverridden {
+            if let brand = overriddenBrand {
                 HStack(spacing: 2) {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.system(size: 9, weight: .bold))
-                    Text("米卡")
+                    Text(brand.name)
                         .font(.system(size: 10, weight: .semibold))
+                        .lineLimit(1)
                 }
                 .foregroundStyle(Theme.ColorToken.Text.onAccent)
                 .padding(.horizontal, 6)
@@ -1559,8 +1650,11 @@ struct RecognizedItemRowNew: View {
         }
     }
 
+    /// 跨品牌建议 / 已切换状态行。
+    /// - 未切换 + 主品牌缺豆 + 有候选品牌：「✨ 试试用 [品牌] · 可补 N / M 颗 →」 点击 = 应用
+    /// - 已切换：「✓ 已切换为 [品牌] · 已补 X 颗」 + 「改回主品牌」 点击 = 撤销
     @ViewBuilder
-    private var shortageSuggestionRow: some View {
+    private var recommendationRow: some View {
         VStack(spacing: 0) {
             // dashed 顶部分隔
             Rectangle()
@@ -1573,6 +1667,21 @@ struct RecognizedItemRowNew: View {
                             style: StrokeStyle(lineWidth: 1, dash: [3, 3])
                         )
                 )
+            if isBrandOverridden, let brand = overriddenBrand {
+                appliedRecommendationContent(brand: brand)
+            } else if let cand = candidateBrand, let shortage = primaryShortageDelta {
+                suggestRecommendationContent(brand: cand.brand, available: cand.available, shortage: shortage)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func suggestRecommendationContent(brand: Brand, available: Int, shortage: Int) -> some View {
+        let covered = min(available, shortage)
+        let fullyCovers = covered >= shortage
+        Button {
+            onApplyPreferredBrand(brand.id)
+        } label: {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")
                     .font(.caption)
@@ -1580,13 +1689,14 @@ struct RecognizedItemRowNew: View {
                 Text("试试用")
                     .font(.caption2)
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
-                Text("米卡 +50")
+                Text(brand.name)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(Theme.ColorToken.Text.onAccent)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(Capsule().fill(flavor.color))
-                Text("可补足")
+                    .background(Capsule().fill(Theme.ColorToken.Morandi.honey))
+                    .lineLimit(1)
+                Text(fullyCovers ? "可补足 \(shortage) 颗" : "可补 \(covered) / \(shortage) 颗")
                     .font(.caption2)
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
                 Spacer()
@@ -1596,7 +1706,55 @@ struct RecognizedItemRowNew: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func appliedRecommendationContent(brand: Brand) -> some View {
+        // 切换后的状态：已用 = min(quantity, 该品牌该色库存)
+        let appliedAvailable: Int = {
+            guard let stock = inventoryManager.getStock(brandId: brand.id, mardCode: item.colorCode) else { return 0 }
+            return stock.available
+        }()
+        let coveredNow = min(appliedAvailable, item.quantity)
+        let stillShortAfter = max(0, item.quantity - appliedAvailable)
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(Theme.ColorToken.Morandi.honey)
+            Text("已切换为")
+                .font(.caption2)
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
+            Text(brand.name)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Theme.ColorToken.Text.onAccent)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Theme.ColorToken.Morandi.honey))
+                .lineLimit(1)
+            if stillShortAfter > 0 {
+                Text("已补 \(coveredNow) · 仍差 \(stillShortAfter)")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.ColorToken.Status.error)
+            } else {
+                Text("已补足 \(coveredNow) 颗")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+            }
+            Spacer()
+            Button {
+                onApplyPreferredBrand(nil)
+            } label: {
+                Text("改回")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Theme.ColorToken.Morandi.mauve)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 }
 
