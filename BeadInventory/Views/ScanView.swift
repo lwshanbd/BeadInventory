@@ -1125,6 +1125,27 @@ struct RecognizedResultsSectionNew: View {
     /// 品牌改写项数量（暂无数据源，预留 0）
     private var overriddenCount: Int { 0 }
 
+    /// 该 item 当前是否会触发 shortageSuggestionRow（多一行换品牌建议，约 +40pt）
+    private func itemHasShortage(_ item: ScanView.RecognizedItem) -> Bool {
+        guard let brandId = inventoryManager.currentBrandId,
+              let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode) else {
+            return false
+        }
+        return (stock.available - item.quantity) < 0
+    }
+
+    /// List 套在外层 ScrollView 里、scrollDisabled，必须给出精确高度，
+    /// 否则任何超出 frame 的行会被裁掉、外层也滚不到。
+    /// mainRow ≈ 68pt，shortageSuggestionRow 额外占 ≈ 44pt。
+    private var estimatedListHeight: CGFloat {
+        let normalRow: CGFloat = 76
+        let shortageExtra: CGFloat = 44
+        let shortageVisibleCount = visibleItems.reduce(0) { $0 + (itemHasShortage($1) ? 1 : 0) }
+        return CGFloat(visibleItems.count) * normalRow
+            + CGFloat(shortageVisibleCount) * shortageExtra
+            + 8
+    }
+
     /// 按筛选过滤
     private var visibleItems: [ScanView.RecognizedItem] {
         switch resultFilter {
@@ -1255,7 +1276,7 @@ struct RecognizedResultsSectionNew: View {
             }
             .listStyle(.plain)
             .scrollDisabled(true)
-            .frame(minHeight: CGFloat(visibleItems.count) * 76 + 8)
+            .frame(height: estimatedListHeight)
             .environment(\.defaultMinListRowHeight, 0)
 
             // 提示 pill
