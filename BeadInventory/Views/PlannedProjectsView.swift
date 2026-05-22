@@ -114,6 +114,7 @@ struct PlannedProjectsView: View {
             Group {
                 if plannedProjects.isEmpty {
                     EmptyPlannedProjectsView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Theme.ColorToken.Surface.background)
                 } else {
                     ScrollView {
