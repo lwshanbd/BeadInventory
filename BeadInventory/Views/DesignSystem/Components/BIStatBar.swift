@@ -106,6 +106,8 @@ struct BIStatBar: View {
                 .foregroundStyle(Theme.ColorToken.Text.secondary)
                 .tracking(0.4)
             HStack(alignment: .lastTextBaseline, spacing: 4) {
+                // 配合 InventoryView.formatLocale 的紧凑单位：单行 + 最多缩到 60%，
+                // 防止极端宽度（不同 locale 的 compact 输出长度差异 / Dynamic Type）下溢出。
                 Text(cell.value)
                     .font(.system(size: 22, weight: .semibold).monospacedDigit())
                     .foregroundStyle(cell.warn ? Theme.ColorToken.Status.error : Theme.ColorToken.Text.primary)

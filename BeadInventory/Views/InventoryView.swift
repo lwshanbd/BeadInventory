@@ -21,6 +21,7 @@ struct LowStockSheetItem: Identifiable {
 struct InventoryView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.tabFlavor) private var flavor
+    @Environment(\.locale) private var locale
     @State private var searchText = ""
     @State private var selectedColor: BeadColor?
     @State private var showingBrandSettings = false
@@ -169,20 +170,21 @@ struct InventoryView: View {
     }
 
     private func formatLocale(_ n: Int) -> String {
-        // 小于 1 万：保留完整数字 + 千位分隔符（如 "9,876"）。
-        // ≥ 1 万：用本地化紧凑单位（zh-Hans: "1.2万" / "300万" / "3000万" / "1.2亿"；en: "12K" / "3M"），
-        // 避免在三栏 stat bar 里被撑成两行。
-        if n >= 10_000 {
+        // 数值过大时（≥ 1 万，含负数）改用 CLDR 紧凑单位（zh-Hans: "1.2万 / 300万 / 1.2亿"；
+        // 其他语言按本地 CLDR 规则），避免在固定宽度的 stat 单元里被撑成两行；otherwise 保留
+        // 千位分隔符（"9,876"）。两条分支都显式锁定到 SwiftUI 环境 locale，避免 in-bundle
+        // 语言覆盖时数字本地化与界面文案不一致。
+        // 小数位 0–1：整数倍单位省略小数（"300万" 而非 "300.0万"）。
+        // 负数判定用 abs 避免长串如 "-50,000,000" fall-through 到逗号分支重新触发折行。
+        if abs(n) >= 10_000 {
             return n.formatted(
                 .number
                     .notation(.compactName)
                     .precision(.fractionLength(0...1))
+                    .locale(locale)
             )
         }
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        f.groupingSeparator = ","
-        return f.string(from: NSNumber(value: n)) ?? "\(n)"
+        return n.formatted(.number.grouping(.automatic).locale(locale))
     }
 
     // MARK: - Hero 区域
