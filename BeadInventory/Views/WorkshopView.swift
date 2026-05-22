@@ -12,6 +12,10 @@ import UIKit
 struct WorkshopView: View {
     @Binding var externalImage: UIImage?
     @AppStorage("workshopSubTab") private var subTabRaw: String = SubTab.scan.rawValue
+    /// PlannedProjectsView 是否已经被首次访问过。一旦 true 就保持 mount 在 ZStack 里
+    /// 让 @State 在 scan/plan 之间不丢；但用户从来没切到 plan 之前不实例化，
+    /// 避免一进 Workshop 就跑 buildShortageMap (O(M × B × stocks)) 这种贵活。
+    @State private var planEverShown: Bool = false
 
     enum SubTab: String, CaseIterable, Hashable {
         case scan = "scan"
@@ -49,21 +53,30 @@ struct WorkshopView: View {
             .background(Theme.ColorToken.Surface.background)
 
             // 内容
-            // 注意：不要用 `switch subTab.wrappedValue` 直接选视图 ——
+            // 不要用 `switch subTab.wrappedValue` 直接选视图 ——
             // 那样切到 plan 再切回 scan 时 ScanView 会被销毁重建，
             // selectedImage / recognizedItems 等 @State 全部丢失。
-            // 用 ZStack + opacity 让两个子视图都常驻，仅切换可见性。
+            // 用 ZStack + opacity 让 ScanView 常驻；PlannedProjectsView 第一次被访问
+            // 后再 mount 然后保留（懒实例化避免 body 跑 O(M × B × stocks) shortageMap
+            // 的代价在用户根本没打开过 plan 时白白付出）。
             ZStack {
                 ScanView(externalImage: $externalImage)
                     .opacity(subTab.wrappedValue == .scan ? 1 : 0)
                     .allowsHitTesting(subTab.wrappedValue == .scan)
                     .accessibilityHidden(subTab.wrappedValue != .scan)
-                PlannedProjectsView()
-                    .opacity(subTab.wrappedValue == .plan ? 1 : 0)
-                    .allowsHitTesting(subTab.wrappedValue == .plan)
-                    .accessibilityHidden(subTab.wrappedValue != .plan)
+                if planEverShown {
+                    PlannedProjectsView()
+                        .opacity(subTab.wrappedValue == .plan ? 1 : 0)
+                        .allowsHitTesting(subTab.wrappedValue == .plan)
+                        .accessibilityHidden(subTab.wrappedValue != .plan)
+                }
             }
         }
         .background(Theme.ColorToken.Surface.background)
+        // initial: true 处理「上次会话停在 plan tab」的情况 —— @AppStorage 拿回来的
+        // subTabRaw 就是 plan，body 第一次跑就要让 planEverShown 立刻翻 true。
+        .onChange(of: subTab.wrappedValue, initial: true) { _, new in
+            if new == .plan { planEverShown = true }
+        }
     }
 }
