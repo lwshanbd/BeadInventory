@@ -22,14 +22,29 @@ class InventoryManager: ObservableObject {
     // 品牌相关
     @Published var brands: [Brand] = []
     @Published var brandStocks: [BrandStock] = [] {
-        didSet { rebuildStockPositionIndex() }
+        didSet { stockPositionIndexDirty = true }
     }
     @Published var currentBrandId: UUID?
 
-    // (brandId, mardCode) → 在 brandStocks 中的下标。
-    // 用 didSet 维护，把 getStock 从 O(N) 降到 O(1)。
-    // 计划页一次 body 会跨多个统计入口反复查 getStock，N 大时这是切 Tab 卡顿的主因。
-    private var stockPositionIndex: [UUID: [String: Int]] = [:]
+    // (brandId, mardCode) → brandStocks 中的下标。
+    // 让 getStock 保持 O(1)；调用方可以在 body / ForEach 中无忧反复查。
+    //
+    // 用「dirty flag + 读时摊销重建」而不是直接 didSet 重建，是因为元素级写入
+    // （brandStocks[i].stock = x）也会触发 didSet：批量场景（resetAllStock 走
+    // removeAll + N 次 append、mergeBrands、addToInventory 等）会变成 K × O(N)。
+    // 标记 dirty 后多次写只摊销成下一次读时的一次 O(N) 重建。
+    //
+    // 与所有 mutator 的 firstIndex(where:) 语义一致：rebuild 时若同一 (brandId,
+    // mardCode) 在数组里出现多次（历史/iCloud 同步意外产生），索引保留第一条。
+    private var _stockPositionIndex: [UUID: [String: Int]] = [:]
+    private var stockPositionIndexDirty = true
+    private var stockPositionIndex: [UUID: [String: Int]] {
+        if stockPositionIndexDirty {
+            rebuildStockPositionIndex()
+            stockPositionIndexDirty = false
+        }
+        return _stockPositionIndex
+    }
 
     // SwiftData ModelContext
     private var modelContext: ModelContext?
@@ -415,25 +430,32 @@ class InventoryManager: ObservableObject {
     }
 
     func getStock(brandId: UUID, mardCode: String) -> BrandStock? {
-        guard let i = stockPositionIndex[brandId]?[mardCode],
-              i < brandStocks.count else {
-            return nil
+        // 快路径：索引命中且行内容匹配。
+        if let i = stockPositionIndex[brandId]?[mardCode], i < brandStocks.count {
+            let stock = brandStocks[i]
+            if stock.brandId == brandId && stock.mardCode == mardCode {
+                return stock
+            }
+            // 命中到这里说明索引指向了不匹配的行——属于"索引被绕过维护"的 bug。
+            // DEBUG 立刻暴露；release 继续走下面的线性扫描兜底，避免给用户错数据。
+            assertionFailure(
+                "stockPositionIndex stale at [\(brandId)][\(mardCode)] → row \(i)"
+            )
         }
-        let stock = brandStocks[i]
-        // 防御性校验：若索引意外失同步（理论上 didSet 保证不会），回退到线性扫描
-        if stock.brandId == brandId && stock.mardCode == mardCode {
-            return stock
-        }
+        // 慢路径：索引缺 key（旧数据 / 极端时序）或失同步。正常生产路径不应命中。
         return brandStocks.first { $0.brandId == brandId && $0.mardCode == mardCode }
     }
 
     private func rebuildStockPositionIndex() {
         var index: [UUID: [String: Int]] = [:]
-        index.reserveCapacity(brands.count)
         for (i, s) in brandStocks.enumerated() {
-            index[s.brandId, default: [:]][s.mardCode] = i
+            // 与所有 mutator 的 firstIndex(where:) 保持一致：重复行只记第一条，
+            // 避免索引指向 last-write 而 mutator 改 first-write 导致读写错位。
+            if index[s.brandId]?[s.mardCode] == nil {
+                index[s.brandId, default: [:]][s.mardCode] = i
+            }
         }
-        stockPositionIndex = index
+        _stockPositionIndex = index
     }
 
     func updateStock(brandId: UUID, mardCode: String, newStock: Int) {

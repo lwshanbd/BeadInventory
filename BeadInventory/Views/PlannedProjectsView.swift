@@ -71,9 +71,9 @@ struct PlannedProjectsView: View {
         return shortage
     }
 
-    /// 对当前所有计划项目计算一次 shortage，返回 projectId → 缺豆色号数。
-    /// body 内只调一次，再把结果分别喂给 overview / filterChips / planList，
-    /// 避免每个统计入口各算一遍（原来一次 body 里 shortageCount 会被调 3N~5N 次）。
+    /// 对一组计划项目预计算一次 shortage（projectId → 缺豆色号数）。
+    /// body 必须只调一次并把结果传给所有需要 shortage 的子视图，否则每个统计入口
+    /// 都会各自 O(M × B × stocks) 重算（M=色号数 / B=同色系品牌数），body 越复杂越接近 O(N²)。
     private func buildShortageMap(for projects: [ProjectRecord]) -> [UUID: Int] {
         var map: [UUID: Int] = [:]
         map.reserveCapacity(projects.count)
@@ -83,12 +83,22 @@ struct PlannedProjectsView: View {
         return map
     }
 
+    /// 从 shortageMap 取项目的缺豆数。缺 key 时视为 bug：DEBUG 暴露，release 现场补算
+    /// 而不是默认为 ready —— "找不到 → 当作齐豆" 会把异常状态涂成成功。
+    private func shortage(of project: ProjectRecord, in map: [UUID: Int]) -> Int {
+        if let v = map[project.id] { return v }
+        assertionFailure(
+            "shortageMap missing project \(project.id) — caller passed inconsistent projects"
+        )
+        return shortageCount(for: project)
+    }
+
     private func applyFilter(_ projects: [ProjectRecord], shortageMap: [UUID: Int]) -> [ProjectRecord] {
         var list = projects
         switch filter {
         case .all: break
-        case .needsBeads: list = list.filter { (shortageMap[$0.id] ?? 0) > 0 }
-        case .ready: list = list.filter { (shortageMap[$0.id] ?? 0) == 0 }
+        case .needsBeads: list = list.filter { shortage(of: $0, in: shortageMap) > 0 }
+        case .ready: list = list.filter { shortage(of: $0, in: shortageMap) == 0 }
         }
         if !searchText.isEmpty {
             list = list.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
@@ -96,8 +106,10 @@ struct PlannedProjectsView: View {
         return list
     }
 
-    var totalBeadsAcrossPlans: Int {
-        plannedProjects.reduce(0) { sum, p in
+    /// 给定一组计划项目（含 parent / 子项目混合）汇总总颗数。
+    /// 由 body 把 plans 快照传进来，保证 overviewCard 看到的数字与 filter/planList 同帧一致。
+    private func totalBeads(in plans: [ProjectRecord]) -> Int {
+        plans.reduce(0) { sum, p in
             let isParent = inventoryManager.isParentProject(p.id)
             return sum + (isParent ? inventoryManager.plannedAggregatedTotalBeads(for: p.id) : p.totalBeads)
         }
@@ -115,9 +127,13 @@ struct PlannedProjectsView: View {
         let plans = plannedProjects
         let shortageMap = buildShortageMap(for: plans)
         let filtered = applyFilter(plans, shortageMap: shortageMap)
-        let readyCount = shortageMap.values.reduce(into: 0) { $0 += ($1 == 0 ? 1 : 0) }
+        // 单次扫描同时算出 readyCount / totalShortageColors，避免 values 跑两遍。
+        var readyCount = 0
+        var totalShortageColors = 0
+        for v in shortageMap.values {
+            if v == 0 { readyCount += 1 } else { totalShortageColors += v }
+        }
         let needsCount = plans.count - readyCount
-        let totalShortageColors = shortageMap.values.reduce(0, +)
 
         return NavigationStack {
             Group {
@@ -128,7 +144,7 @@ struct PlannedProjectsView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             overviewCard(
-                                planCount: plans.count,
+                                plans: plans,
                                 totalShortageColors: totalShortageColors,
                                 shortageMap: shortageMap
                             )
@@ -287,7 +303,7 @@ struct PlannedProjectsView: View {
     // MARK: - Overview Card
 
     private func overviewCard(
-        planCount: Int,
+        plans: [ProjectRecord],
         totalShortageColors: Int,
         shortageMap: [UUID: Int]
     ) -> some View {
@@ -297,10 +313,10 @@ struct PlannedProjectsView: View {
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.85))
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("\(planCount)")
+                    Text("\(plans.count)")
                         .font(.system(size: 26, weight: .semibold).monospacedDigit())
                         .foregroundStyle(Color.white)
-                    Text("个 · 共 \(formattedNumber(totalBeadsAcrossPlans)) 颗")
+                    Text("个 · 共 \(formattedNumber(totalBeads(in: plans))) 颗")
                         .font(.caption2)
                         .foregroundStyle(Color.white.opacity(0.85))
                 }
@@ -315,9 +331,10 @@ struct PlannedProjectsView: View {
                     .foregroundStyle(Color.white)
                 Button {
                     if !sel.isActive {
-                        // 选中所有缺豆计划并打开补豆建议
-                        let needsIds = plannedProjects
-                            .filter { (shortageMap[$0.id] ?? 0) > 0 }
+                        // 选中所有缺豆计划并打开补豆建议（用 plans 快照，保证与
+                        // shortageMap 同帧一致；不要再读 plannedProjects）。
+                        let needsIds = plans
+                            .filter { shortage(of: $0, in: shortageMap) > 0 }
                             .map { $0.id }
                         if !needsIds.isEmpty {
                             withAnimation { sel.enter() }
@@ -441,7 +458,7 @@ struct PlannedProjectsView: View {
         VStack(spacing: 10) {
             ForEach(filtered) { project in
                 let isSelected = sel.contains(project.id)
-                let short = shortageMap[project.id] ?? 0
+                let short = shortage(of: project, in: shortageMap)
 
                 Group {
                     if sel.isActive {

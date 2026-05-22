@@ -56,57 +56,62 @@ struct InventoryView: View {
     }
 
     // 当前品牌的可见库存快照。
-    // 由 body 调用一次后通过 let 缓存，下面所有派生数据共用同一份。
-    // 历史教训：原先 stockDict 是 computed property，body 里 ForEach 每行的
-    // `stockDict[color.mardCode]` 都会触发整个字典重建，N 行就是 N × O(brandStocks)，
-    // 切 Tab 时主线程被反复阻塞。
-    private struct InventorySnapshot {
+    // 在 body 顶部构造一次后通过 let 共享给所有派生数据（filtered / grouped / cells / 各 ForEach）。
+    // 不要改成 computed property —— ForEach 每行访问会重新执行整段构造，
+    // 在 brandStocks 较大时阻塞主线程。
+    //
+    // 也不要把实例存进 @State 跨帧复用：snapshot 是 per-body-frame 的只读视图。
+    fileprivate struct InventorySnapshot {
         let brandId: UUID?
         let lowStockThreshold: Int
         let stockDict: [String: BrandStock]   // 仅未隐藏的色号
         let totalAvailable: Int
         let totalUsed: Int
         let lowStockCount: Int
-        let recordedColorCount: Int           // = stockDict.count
-        let totalColorCount: Int              // 包含隐藏的条目数（用于 hero "x/y 色"）
+        let totalColorCount: Int              // 含隐藏（用于 hero "x/y 色"）
+
+        /// 已记录（未隐藏）色号数 —— 由 stockDict 派生以保证不变量永远成立。
+        var recordedColorCount: Int { stockDict.count }
+
+        init(brandStocks: [BrandStock], brandId: UUID?, lowStockThreshold: Int) {
+            self.brandId = brandId
+            self.lowStockThreshold = lowStockThreshold
+            guard let brandId = brandId else {
+                self.stockDict = [:]
+                self.totalAvailable = 0
+                self.totalUsed = 0
+                self.lowStockCount = 0
+                self.totalColorCount = 0
+                return
+            }
+            var dict: [String: BrandStock] = [:]
+            var totalAvailable = 0
+            var totalUsed = 0
+            var lowCount = 0
+            var entryCount = 0
+            for s in brandStocks where s.brandId == brandId {
+                entryCount += 1
+                if s.isHidden { continue }
+                dict[s.mardCode] = s
+                totalAvailable += s.available
+                totalUsed += s.used
+                if s.available < lowStockThreshold { lowCount += 1 }
+            }
+            self.stockDict = dict
+            self.totalAvailable = totalAvailable
+            self.totalUsed = totalUsed
+            self.lowStockCount = lowCount
+            self.totalColorCount = entryCount
+        }
     }
 
     private func makeSnapshot() -> InventorySnapshot {
-        guard let brandId = inventoryManager.currentBrandId else {
-            return InventorySnapshot(
-                brandId: nil,
-                lowStockThreshold: 100,
-                stockDict: [:],
-                totalAvailable: 0,
-                totalUsed: 0,
-                lowStockCount: 0,
-                recordedColorCount: 0,
-                totalColorCount: 0
-            )
-        }
-        let threshold = inventoryManager.getLowStockThreshold(for: brandId)
-        var dict: [String: BrandStock] = [:]
-        var totalAvailable = 0
-        var totalUsed = 0
-        var lowCount = 0
-        var entryCount = 0
-        for s in inventoryManager.brandStocks where s.brandId == brandId {
-            entryCount += 1
-            if s.isHidden { continue }
-            dict[s.mardCode] = s
-            totalAvailable += s.available
-            totalUsed += s.used
-            if s.available < threshold { lowCount += 1 }
-        }
+        let brandId = inventoryManager.currentBrandId
+        let threshold = brandId.map { inventoryManager.getLowStockThreshold(for: $0) } ?? 100
         return InventorySnapshot(
+            brandStocks: inventoryManager.brandStocks,
             brandId: brandId,
-            lowStockThreshold: threshold,
-            stockDict: dict,
-            totalAvailable: totalAvailable,
-            totalUsed: totalUsed,
-            lowStockCount: lowCount,
-            recordedColorCount: dict.count,
-            totalColorCount: entryCount
+            lowStockThreshold: threshold
         )
     }
 
