@@ -1,0 +1,64 @@
+//
+//  BISegmented.swift
+//  BeadInventory
+//
+//  跑道型分段控件：选中项用浅色卡片+柔和投影，未选中透明。
+//
+
+import SwiftUI
+
+struct BISegmented<T: Hashable>: View {
+    @Binding var selection: T
+    var segments: [(value: T, label: String)]
+    var fillWidth: Bool = false
+
+    init(
+        selection: Binding<T>,
+        segments: [(value: T, label: String)],
+        fillWidth: Bool = false
+    ) {
+        self._selection = selection
+        self.segments = segments
+        self.fillWidth = fillWidth
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(segments, id: \.value) { seg in
+                segmentButton(seg.value, label: seg.label)
+            }
+        }
+        .padding(3)
+        .background(Theme.ColorToken.Surface.subtle)
+        .clipShape(Capsule())
+    }
+
+    @ViewBuilder
+    private func segmentButton(_ value: T, label: String) -> some View {
+        let isSelected = selection == value
+        Button {
+            selection = value
+        } label: {
+            Text(label)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isSelected ? Theme.ColorToken.Text.primary : Theme.ColorToken.Text.secondary)
+                .padding(.vertical, 7)
+                .padding(.horizontal, 14)
+                .frame(maxWidth: fillWidth ? .infinity : nil)
+                .background(
+                    Group {
+                        if isSelected {
+                            Capsule()
+                                .fill(Theme.ColorToken.Surface.elevated)
+                                .shadow(color: Color.black.opacity(0.06), radius: 1, x: 0, y: 1)
+                        } else {
+                            Color.clear
+                        }
+                    }
+                )
+                .clipShape(Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}

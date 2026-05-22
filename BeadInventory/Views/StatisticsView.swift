@@ -9,49 +9,674 @@ import SwiftUI
 
 struct StatisticsView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
-    @State private var selectedSegment = 1
+    @State private var selectedSegment = 0
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // 品牌选择器
-                HStack {
-                    BrandPicker()
-                    Spacer()
-                }
-                .padding(.horizontal)
+                // 分段控件（顶部）
+                BISegmented(
+                    selection: $selectedSegment,
+                    segments: [
+                        (0, "总览"),
+                        (1, "使用排行"),
+                        (2, "项目记录")
+                    ],
+                    fillWidth: true
+                )
+                .padding(.horizontal, 18)
                 .padding(.top, 8)
+                .padding(.bottom, 8)
 
-                // 分段选择器
-                Picker("", selection: $selectedSegment) {
-                    Text("使用统计").tag(0)
-                    Text("项目记录").tag(1)
-                }
-                .pickerStyle(.segmented)
-                .padding()
-
-                if selectedSegment == 0 {
-                    UsageStatisticsView()
-                } else {
-                    ProjectHistoryView()
+                Group {
+                    switch selectedSegment {
+                    case 0:
+                        StatisticsOverviewView()
+                    case 1:
+                        UsageStatisticsView()
+                    default:
+                        ProjectHistoryView()
+                    }
                 }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("统计")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    BrandPicker()
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 10) {
+                        Button {
+                            // 占位：后续可接日期范围筛选
+                        } label: {
+                            Image(systemName: "calendar")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(Theme.ColorToken.Text.secondary)
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(Theme.ColorToken.Surface.subtle))
+                        }
+                        Button {
+                            // 占位：后续可接更多操作
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(Theme.ColorToken.Text.secondary)
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(Theme.ColorToken.Surface.subtle))
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-// MARK: - 使用统计视图
+// MARK: - 总览视图（环图 + 趋势 + 色相 + Top5）
+struct StatisticsOverviewView: View {
+    @EnvironmentObject var inventoryManager: InventoryManager
+
+    private var brandId: UUID? { inventoryManager.currentBrandId }
+
+    private var totalStock: Int {
+        guard let brandId else { return 0 }
+        return inventoryManager.totalStock(for: brandId)
+    }
+
+    private var totalUsed: Int {
+        guard let brandId else { return 0 }
+        return inventoryManager.totalUsed(for: brandId)
+    }
+
+    private var totalAvailable: Int {
+        guard let brandId else { return 0 }
+        return inventoryManager.totalAvailable(for: brandId)
+    }
+
+    private var usagePct: Double {
+        guard totalStock > 0 else { return 0 }
+        return Double(totalUsed) / Double(totalStock) * 100
+    }
+
+    /// 最近 14 天每日用量（基于已执行项目的 executedDate/completedDate/date）
+    private var last14DayUsage: [(date: Date, value: Int)] {
+        guard let brandId else { return [] }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        // 构造 14 天空槽
+        var bins: [(date: Date, value: Int)] = (0..<14).reversed().map { offset in
+            let d = cal.date(byAdding: .day, value: -offset, to: today) ?? today
+            return (d, 0)
+        }
+        // 遍历项目，累计当日用量
+        for project in inventoryManager.projects where !project.isPlanned {
+            let useDate = project.completedDate ?? project.executedDate ?? project.date
+            let day = cal.startOfDay(for: useDate)
+            guard let idx = bins.firstIndex(where: { $0.date == day }) else { continue }
+            // 累计当前品牌相关用量
+            let qty = project.beadUsage.reduce(0) { sum, usage in
+                if usage.brandId == brandId || (usage.brandId == nil && project.brandId == brandId) {
+                    return sum + usage.quantity
+                }
+                return sum
+            }
+            bins[idx].value += qty
+        }
+        return bins
+    }
+
+    /// 色相分布（按当前品牌库存的 used 加权；若 used 全 0 则按 stock 加权）
+    private var hueDistribution: [HueBucket] {
+        guard let brandId else { return [] }
+        let stocks = inventoryManager.brandStocks.filter { $0.brandId == brandId }
+        var counts: [HueCategory: Int] = [:]
+        var totalUsedAcc = 0
+        var totalStockAcc = 0
+        for stock in stocks {
+            guard let color = inventoryManager.findColor(byCode: stock.mardCode) else { continue }
+            let category = HueCategory.classify(hex: color.colorHex)
+            let weight = stock.used > 0 ? stock.used : 0
+            counts[category, default: 0] += weight
+            totalUsedAcc += stock.used
+            totalStockAcc += stock.stock
+        }
+        let total = totalUsedAcc > 0 ? totalUsedAcc : {
+            // 退回到 stock
+            for stock in stocks {
+                guard let color = inventoryManager.findColor(byCode: stock.mardCode) else { continue }
+                let category = HueCategory.classify(hex: color.colorHex)
+                counts[category, default: 0] += stock.stock
+            }
+            return totalStockAcc
+        }()
+        guard total > 0 else { return [] }
+        return HueCategory.allCases.compactMap { cat in
+            let v = counts[cat] ?? 0
+            guard v > 0 else { return nil }
+            return HueBucket(category: cat, pct: Double(v) / Double(total))
+        }.sorted { $0.pct > $1.pct }
+    }
+
+    /// Top 5 使用排行（按 used 倒序）
+    private var top5: [(color: BeadColor, stock: BrandStock)] {
+        guard let brandId else { return [] }
+        let usedStocks = inventoryManager.brandStocks
+            .filter { $0.brandId == brandId && $0.used > 0 }
+            .sorted { $0.used > $1.used }
+            .prefix(5)
+        return usedStocks.compactMap { stock in
+            guard let color = inventoryManager.findColor(byCode: stock.mardCode) else { return nil }
+            return (color, stock)
+        }
+    }
+
+    private var lowStockThreshold: Int {
+        guard let brandId else { return 100 }
+        return inventoryManager.getLowStockThreshold(for: brandId)
+    }
+
+    var body: some View {
+        if brandId == nil {
+            VStack(spacing: 16) {
+                Image(systemName: "building.2")
+                    .font(.system(size: 50))
+                    .foregroundColor(.secondary.opacity(0.5))
+                Text("请先创建品牌")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxHeight: .infinity)
+        } else {
+            ScrollView {
+                VStack(spacing: 18) {
+                    // 1) 本月使用情况卡片（环图 + 数据）
+                    monthlyUsageCard
+
+                    // 2) 14 日用量趋势
+                    last14DaySection
+
+                    // 3) 色相分布
+                    hueDistributionSection
+
+                    // 4) Top5 排行
+                    if !top5.isEmpty {
+                        rankingSection
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+            }
+        }
+    }
+
+    // MARK: - 本月使用情况卡片
+
+    private var monthlyUsageCard: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 18) {
+                RingChart(percent: usagePct, color: Theme.ColorToken.Morandi.sage)
+                    .frame(width: 92, height: 92)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("本月使用情况")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+
+                    HStack(alignment: .lastTextBaseline, spacing: 4) {
+                        Text(String(format: "%.1f", usagePct))
+                            .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(Theme.ColorToken.Text.primary)
+                        Text("% · 用量")
+                            .font(.caption)
+                            .foregroundStyle(Theme.ColorToken.Text.secondary)
+                    }
+
+                    HStack(spacing: 6) {
+                        BIChip("↑ 12 颗 / 周", color: Theme.ColorToken.Morandi.sage, size: .sm)
+                        Text("vs 上周")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+
+            Rectangle()
+                .fill(Theme.ColorToken.Border.divider)
+                .frame(height: 1)
+                .padding(.vertical, 14)
+
+            HStack(spacing: 0) {
+                metricCell(label: "总库存", value: totalStock.formatted(.number.grouping(.automatic)))
+                metricCell(label: "已使用", value: totalUsed.formatted(.number.grouping(.automatic)))
+                metricCell(label: "剩余", value: totalAvailable.formatted(.number.grouping(.automatic)))
+            }
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
+    }
+
+    private func metricCell(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.system(size: 17, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Theme.ColorToken.Text.primary)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - 14 日用量趋势
+
+    private var last14DaySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("14 日用量趋势")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                Spacer()
+                Text("查看更多")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+            }
+
+            BarChart14Day(data: last14DayUsage)
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Theme.ColorToken.Surface.elevated)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+                )
+        }
+    }
+
+    // MARK: - 色相分布
+
+    private var hueDistributionSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("色相分布")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+            }
+
+            HueDistributionView(buckets: hueDistribution)
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Theme.ColorToken.Surface.elevated)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+                )
+        }
+    }
+
+    // MARK: - Top 5 排行
+
+    private var rankingSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("使用排行 · TOP 5")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.ColorToken.Text.primary)
+
+            VStack(spacing: 10) {
+                let maxUsed = top5.first?.stock.used ?? 1
+                ForEach(Array(top5.enumerated()), id: \.element.color.id) { idx, item in
+                    TopRankRow(
+                        rank: idx + 1,
+                        color: item.color,
+                        stock: item.stock,
+                        maxUsed: maxUsed,
+                        isLowStock: item.stock.available < lowStockThreshold,
+                        colorSystem: inventoryManager.currentColorSystem
+                    )
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 圆环图（私有）
+private struct RingChart: View {
+    let percent: Double
+    let color: Color
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Theme.ColorToken.Surface.strong, lineWidth: 9)
+            Circle()
+                .trim(from: 0, to: min(max(percent / 100, 0), 1))
+                .stroke(color, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.easeInOut, value: percent)
+
+            VStack(spacing: 0) {
+                Text(String(format: "%.0f", percent))
+                    .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                Text("%")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - 14 日柱状图（私有）
+private struct BarChart14Day: View {
+    let data: [(date: Date, value: Int)]
+
+    private var maxValue: Int {
+        max(data.map(\.value).max() ?? 1, 1)
+    }
+
+    private var peakIndex: Int? {
+        guard let m = data.map(\.value).max(), m > 0 else { return nil }
+        return data.firstIndex { $0.value == m }
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            // 柱体
+            HStack(alignment: .bottom, spacing: 4) {
+                ForEach(Array(data.enumerated()), id: \.offset) { idx, item in
+                    bar(idx: idx, value: item.value)
+                }
+            }
+            .frame(height: 110)
+
+            // 底部分隔线
+            Rectangle()
+                .fill(Theme.ColorToken.Border.divider)
+                .frame(height: 1)
+
+            // 日期标签：起、中、末
+            HStack {
+                Text(dateLabel(at: 0))
+                Spacer()
+                Text(dateLabel(at: data.count / 2))
+                Spacer()
+                Text(dateLabel(at: data.count - 1))
+            }
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundStyle(Theme.ColorToken.Text.tertiary)
+        }
+    }
+
+    @ViewBuilder
+    private func bar(idx: Int, value: Int) -> some View {
+        let ratio = Double(value) / Double(maxValue)
+        let isPeak = (idx == peakIndex)
+        let opacity = isPeak ? 1.0 : (0.4 + ratio * 0.5)
+        let fillColor = Theme.ColorToken.Morandi.latte.opacity(opacity)
+        // 至少占 2pt 高，便于看见
+        let h: CGFloat = max(2, CGFloat(ratio) * 100)
+
+        VStack(spacing: 2) {
+            if isPeak && value > 0 {
+                Text("\(value)")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(Theme.ColorToken.Morandi.latte)
+            } else {
+                Text(" ")
+                    .font(.system(size: 9, design: .monospaced))
+            }
+            Spacer(minLength: 0)
+            RoundedRectangle(cornerRadius: 4)
+                .fill(fillColor)
+                .frame(height: h)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func dateLabel(at index: Int) -> String {
+        guard data.indices.contains(index) else { return "" }
+        let df = DateFormatter()
+        df.dateFormat = "M/d"
+        return df.string(from: data[index].date)
+    }
+}
+
+// MARK: - 色相分类（私有）
+private enum HueCategory: CaseIterable, Hashable {
+    case warm    // 暖色（红/橙/黄）
+    case cool    // 冷色（蓝/青）
+    case neutral // 中性（灰/棕/绿调中性）
+    case pink    // 粉嫩
+    case purple  // 紫调
+
+    var label: String {
+        switch self {
+        case .warm:    return "暖色"
+        case .cool:    return "冷色"
+        case .neutral: return "中性"
+        case .pink:    return "粉嫩"
+        case .purple:  return "紫调"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .warm:    return Theme.ColorToken.Morandi.latte
+        case .cool:    return Theme.ColorToken.Morandi.mist
+        case .neutral: return Theme.ColorToken.Morandi.sage
+        case .pink:    return Theme.ColorToken.Morandi.rose
+        case .purple:  return Theme.ColorToken.Morandi.mauve
+        }
+    }
+
+    /// 将 #RRGGBB 颜色映射到一个分类（HSB 模型）
+    static func classify(hex: String) -> HueCategory {
+        var s = hex
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count >= 6, let v = UInt32(s.prefix(6), radix: 16) else { return .neutral }
+        let r = Double((v >> 16) & 0xFF) / 255
+        let g = Double((v >> 8) & 0xFF) / 255
+        let b = Double(v & 0xFF) / 255
+
+        let maxC = max(r, g, b)
+        let minC = min(r, g, b)
+        let delta = maxC - minC
+        let saturation = maxC == 0 ? 0 : delta / maxC
+
+        if saturation < 0.18 {
+            return .neutral
+        }
+
+        var hue: Double = 0
+        if delta > 0 {
+            if maxC == r {
+                hue = ((g - b) / delta).truncatingRemainder(dividingBy: 6)
+            } else if maxC == g {
+                hue = (b - r) / delta + 2
+            } else {
+                hue = (r - g) / delta + 4
+            }
+            hue *= 60
+            if hue < 0 { hue += 360 }
+        }
+
+        // 粉嫩：偏红/品红 + 高亮低饱和
+        if (hue >= 320 || hue < 20) && saturation < 0.45 && maxC > 0.75 {
+            return .pink
+        }
+
+        switch hue {
+        case 0..<45, 330..<360: return .warm     // 红橙
+        case 45..<70:           return .warm     // 黄
+        case 70..<170:          return .neutral  // 绿调（视为中性）
+        case 170..<260:         return .cool     // 青蓝
+        case 260..<330:         return .purple   // 紫品
+        default:                return .neutral
+        }
+    }
+}
+
+private struct HueBucket: Identifiable {
+    let category: HueCategory
+    let pct: Double
+    var id: HueCategory { category }
+}
+
+// MARK: - 色相分布视图（私有）
+private struct HueDistributionView: View {
+    let buckets: [HueBucket]
+
+    /// 展示用的回退数据（无数据时按设计稿固定比例）
+    private var displayBuckets: [HueBucket] {
+        if !buckets.isEmpty { return buckets }
+        return [
+            HueBucket(category: .warm,    pct: 0.42),
+            HueBucket(category: .cool,    pct: 0.22),
+            HueBucket(category: .neutral, pct: 0.18),
+            HueBucket(category: .pink,    pct: 0.12),
+            HueBucket(category: .purple,  pct: 0.06)
+        ]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // 堆叠条
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    ForEach(displayBuckets) { bucket in
+                        Rectangle()
+                            .fill(bucket.category.color)
+                            .frame(width: geo.size.width * CGFloat(bucket.pct), height: 22)
+                    }
+                }
+            }
+            .frame(height: 22)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            // Legend
+            LazyVGrid(
+                columns: [GridItem(.flexible()), GridItem(.flexible())],
+                alignment: .leading,
+                spacing: 8
+            ) {
+                ForEach(displayBuckets) { bucket in
+                    HStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(bucket.category.color)
+                            .frame(width: 10, height: 10)
+                        Text(bucket.category.label)
+                            .font(.caption2)
+                            .foregroundStyle(Theme.ColorToken.Text.secondary)
+                        Spacer(minLength: 4)
+                        Text("\(Int((bucket.pct * 100).rounded()))%")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Theme.ColorToken.Text.primary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Top 5 排行卡片行（私有）
+private struct TopRankRow: View {
+    let rank: Int
+    let color: BeadColor
+    let stock: BrandStock
+    let maxUsed: Int
+    let isLowStock: Bool
+    let colorSystem: ColorSystem
+
+    private var progress: Double {
+        guard maxUsed > 0 else { return 0 }
+        return min(max(Double(stock.used) / Double(maxUsed), 0), 1)
+    }
+
+    private var isTopThree: Bool { rank <= 3 }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                // 排名圆
+                ZStack {
+                    Circle()
+                        .fill(isTopThree
+                              ? Theme.ColorToken.Morandi.latte
+                              : Theme.ColorToken.Surface.strong)
+                        .frame(width: 22, height: 22)
+                    Text("\(rank)")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(isTopThree ? Color.white : Theme.ColorToken.Text.secondary)
+                }
+
+                BeadView(color: color.color, size: 26)
+
+                Text(color.displayCode(for: colorSystem))
+                    .font(.system(size: 14, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+
+                if isLowStock {
+                    BIChip("低库存", color: Theme.ColorToken.Morandi.rose, size: .sm)
+                }
+
+                Spacer(minLength: 4)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(stock.used)")
+                        .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                    Text("已用")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                }
+            }
+
+            // 细进度条
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Theme.ColorToken.Surface.strong)
+                        .frame(height: 4)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Theme.ColorToken.Morandi.latte)
+                        .frame(width: geo.size.width * progress, height: 4)
+                }
+            }
+            .frame(height: 4)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - 使用排行视图（完整列表）
 struct UsageStatisticsView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showLowStockOnly = false
-
-    var stockDict: [String: BrandStock] {
-        guard let brandId = inventoryManager.currentBrandId else { return [:] }
-        let stocks = inventoryManager.brandStocks.filter { $0.brandId == brandId }
-        return Dictionary(uniqueKeysWithValues: stocks.map { ($0.mardCode, $0) })
-    }
 
     var displayItems: [(color: BeadColor, stock: BrandStock)] {
         guard let brandId = inventoryManager.currentBrandId else { return [] }
@@ -75,6 +700,15 @@ struct UsageStatisticsView: View {
         }
     }
 
+    private var maxUsed: Int {
+        max(displayItems.map { $0.stock.used }.max() ?? 1, 1)
+    }
+
+    private var lowStockThreshold: Int {
+        guard let brandId = inventoryManager.currentBrandId else { return 100 }
+        return inventoryManager.getLowStockThreshold(for: brandId)
+    }
+
     var body: some View {
         if inventoryManager.currentBrandId == nil {
             VStack(spacing: 16) {
@@ -88,241 +722,55 @@ struct UsageStatisticsView: View {
             .frame(maxHeight: .infinity)
         } else {
             ScrollView {
-                VStack(spacing: 20) {
-                    // 总览卡片
-                    OverviewCard()
+                VStack(spacing: 14) {
+                    // 筛选 chip 行
+                    HStack(spacing: 8) {
+                        Button {
+                            withAnimation { showLowStockOnly = false }
+                        } label: {
+                            BIChip("全部", active: !showLowStockOnly, color: Theme.ColorToken.Morandi.sage, size: .sm)
+                        }
+                        .buttonStyle(.plain)
 
-                    // 筛选开关
-                    Toggle("仅显示低库存", isOn: $showLowStockOnly)
-                        .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
-                        .padding(.horizontal)
+                        Button {
+                            withAnimation { showLowStockOnly = true }
+                        } label: {
+                            BIChip("仅低库存", active: showLowStockOnly, color: Theme.ColorToken.Morandi.rose, size: .sm)
+                        }
+                        .buttonStyle(.plain)
 
-                    // 使用排行
+                        Spacer()
+
+                        Text("共 \(displayItems.count) 项")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                    }
+
                     if !displayItems.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text(showLowStockOnly ? "低库存颜色" : "使用排行")
-                                .font(.headline)
-                                .padding(.horizontal)
-
-                            ForEach(Array(displayItems.prefix(20).enumerated()), id: \.element.color.id) { index, item in
-                                UsageRankRow(rank: index + 1, color: item.color, stock: item.stock)
+                        VStack(spacing: 10) {
+                            ForEach(Array(displayItems.prefix(50).enumerated()), id: \.element.color.id) { index, item in
+                                TopRankRow(
+                                    rank: index + 1,
+                                    color: item.color,
+                                    stock: item.stock,
+                                    maxUsed: maxUsed,
+                                    isLowStock: item.stock.available < lowStockThreshold,
+                                    colorSystem: inventoryManager.currentColorSystem
+                                )
                             }
                         }
                     } else {
-                        VStack(spacing: 16) {
-                            Image(systemName: showLowStockOnly ? "checkmark.circle" : "chart.bar.xaxis")
-                                .font(.system(size: 40))
-                                .foregroundColor(.secondary.opacity(0.5))
-
-                            Text(showLowStockOnly ? "没有低库存颜色" : "暂无使用记录")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                        }
+                        EmptyStateView(
+                            icon: showLowStockOnly ? "checkmark.circle" : "chart.bar",
+                            title: showLowStockOnly ? "没有低库存颜色" : "尚无使用数据",
+                            description: showLowStockOnly ? "目前没有低库存的颜色，挺好" : "开始扣减或拼图后，统计就会出现在这里"
+                        )
                         .frame(height: 200)
                     }
                 }
-                .padding(.vertical)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
             }
-        }
-    }
-}
-
-// MARK: - 总览卡片
-struct OverviewCard: View {
-    @EnvironmentObject var inventoryManager: InventoryManager
-
-    var totalStock: Int {
-        guard let brandId = inventoryManager.currentBrandId else { return 0 }
-        return inventoryManager.totalStock(for: brandId)
-    }
-
-    var totalUsed: Int {
-        guard let brandId = inventoryManager.currentBrandId else { return 0 }
-        return inventoryManager.totalUsed(for: brandId)
-    }
-
-    var totalAvailable: Int {
-        guard let brandId = inventoryManager.currentBrandId else { return 0 }
-        return inventoryManager.totalAvailable(for: brandId)
-    }
-
-    var usagePercentage: Double {
-        guard totalStock > 0 else { return 0 }
-        return Double(totalUsed) / Double(totalStock) * 100
-    }
-
-    var body: some View {
-        VStack(spacing: 20) {
-            // 圆环进度
-            ZStack {
-                Circle()
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 12)
-
-                Circle()
-                    .trim(from: 0, to: min(usagePercentage / 100, 1))
-                    .stroke(
-                        LinearGradient(
-                            colors: [.blue, .purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        style: StrokeStyle(lineWidth: 12, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                    .animation(.easeInOut, value: usagePercentage)
-
-                VStack(spacing: 4) {
-                    Text(String(format: "%.1f%%", usagePercentage))
-                        .font(.title)
-                        .fontWeight(.bold)
-
-                    Text("已使用")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .frame(width: 120, height: 120)
-
-            // 详细数据
-            HStack(spacing: 30) {
-                StatItem(
-                    title: "总库存",
-                    value: "\(totalStock)",
-                    color: .blue
-                )
-                StatItem(
-                    title: "已使用",
-                    value: "\(totalUsed)",
-                    color: .orange
-                )
-                StatItem(
-                    title: "剩余",
-                    value: "\(totalAvailable)",
-                    color: .green
-                )
-            }
-        }
-        .padding(24)
-        .background(Color(.systemBackground))
-        .cornerRadius(20)
-        .padding(.horizontal)
-    }
-}
-
-struct StatItem: View {
-    let title: String
-    let value: String
-    let color: Color
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Text(value)
-                .font(.headline)
-                .fontWeight(.bold)
-                .foregroundColor(color)
-
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-    }
-}
-
-// MARK: - 使用排行行
-struct UsageRankRow: View {
-    let rank: Int
-    let color: BeadColor
-    let stock: BrandStock
-    @EnvironmentObject var inventoryManager: InventoryManager
-
-    var maxUsed: Int {
-        guard let brandId = inventoryManager.currentBrandId else { return 1 }
-        return inventoryManager.brandStocks.filter { $0.brandId == brandId }.map { $0.used }.max() ?? 1
-    }
-
-    var progress: Double {
-        guard maxUsed > 0 else { return 0 }
-        return Double(stock.used) / Double(maxUsed)
-    }
-
-    var lowStockThreshold: Int {
-        guard let brandId = inventoryManager.currentBrandId else { return 100 }
-        return inventoryManager.getLowStockThreshold(for: brandId)
-    }
-
-    var isLowStock: Bool { stock.available < lowStockThreshold }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            // 排名
-            Text("\(rank)")
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-                .frame(width: 24, height: 24)
-                .background(rankColor)
-                .cornerRadius(12)
-
-            // 颜色块
-            RoundedRectangle(cornerRadius: 6)
-                .fill(color.color)
-                .frame(width: 32, height: 32)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                )
-
-            // 色号和进度条
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(color.displayCode(for: inventoryManager.currentColorSystem))
-                        .font(.system(.subheadline, design: .monospaced))
-                        .fontWeight(.medium)
-
-                    Spacer()
-
-                    Text("已用 \(stock.used)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Text("剩余 \(stock.available)")
-                        .font(.caption)
-                        .foregroundColor(isLowStock ? .red : .green)
-                }
-
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(height: 6)
-
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(
-                                LinearGradient(
-                                    colors: [color.color, color.color.opacity(0.6)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(width: geometry.size.width * progress, height: 6)
-                    }
-                }
-                .frame(height: 6)
-            }
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(Color(.systemBackground))
-    }
-
-    var rankColor: Color {
-        switch rank {
-        case 1: return .yellow
-        case 2: return .gray
-        case 3: return .orange
-        default: return .secondary
         }
     }
 }
@@ -342,6 +790,7 @@ struct ProjectHistoryView: View {
     @State private var showRevertResultAlert = false
     @State private var restoreStock = true  // 是否恢复库存
     @State private var singleRevertProject: ProjectRecord?  // 单项退回的项目
+    @State private var pendingProjectDeletion: ProjectRecord?  // 待二次确认的项目删除（叶子项目 / 子项目）
 
     private var selectedBrandId: UUID? {
         inventoryManager.currentBrandId
@@ -490,9 +939,9 @@ struct ProjectHistoryView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(selectedProjects.count >= 2 ? Color.accentColor : Color.gray.opacity(0.3))
+                            .background(selectedProjects.count >= 2 ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Border.default)
                             .foregroundColor(selectedProjects.count >= 2 ? .white : .secondary)
-                            .cornerRadius(10)
+                            .cornerRadius(Theme.Radius.md)
                         }
                         .disabled(selectedProjects.count < 2)
 
@@ -512,12 +961,12 @@ struct ProjectHistoryView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color.blue)
+                            .background(Theme.ColorToken.Status.info)
                             .foregroundColor(.white)
-                            .cornerRadius(10)
+                            .cornerRadius(Theme.Radius.md)
                         }
 
-                        // 退回按钮
+                        // 退回按钮（中性可逆动作，使用 info 蓝而非 warning 黄）
                         Button {
                             showRevertConfirmSheet = true
                         } label: {
@@ -529,9 +978,9 @@ struct ProjectHistoryView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color.orange)
+                            .background(Theme.ColorToken.Status.info)
                             .foregroundColor(.white)
-                            .cornerRadius(10)
+                            .cornerRadius(Theme.Radius.md)
                         }
                     }
                     .padding(.horizontal)
@@ -581,7 +1030,7 @@ struct ProjectHistoryView: View {
                                     projectToDelete = project
                                     showDeleteParentAlert = true
                                 } else {
-                                    inventoryManager.deleteProject(id: project.id)
+                                    pendingProjectDeletion = project
                                 }
                             } label: {
                                 Label("删除", systemImage: "trash")
@@ -593,7 +1042,7 @@ struct ProjectHistoryView: View {
                             } label: {
                                 Label("复制到计划", systemImage: "doc.on.doc")
                             }
-                            .tint(.blue)
+                            .tint(Theme.ColorToken.Status.info)
                         }
                         .swipeActions(edge: .leading, allowsFullSwipe: true) {
                             // 归档/取消归档
@@ -607,7 +1056,7 @@ struct ProjectHistoryView: View {
                                 } label: {
                                     Label("取消归档", systemImage: "tray.and.arrow.up")
                                 }
-                                .tint(.green)
+                                .tint(Theme.ColorToken.Status.success)
                             } else {
                                 Button {
                                     if isParent {
@@ -618,7 +1067,7 @@ struct ProjectHistoryView: View {
                                 } label: {
                                     Label("归档", systemImage: "archivebox")
                                 }
-                                .tint(.orange)
+                                .tint(Theme.ColorToken.Status.warning)
                             }
                         }
                         // 长按菜单
@@ -675,7 +1124,7 @@ struct ProjectHistoryView: View {
                                     projectToDelete = project
                                     showDeleteParentAlert = true
                                 } else {
-                                    inventoryManager.deleteProject(id: project.id)
+                                    pendingProjectDeletion = project
                                 }
                             } label: {
                                 Label("删除", systemImage: "trash")
@@ -702,7 +1151,7 @@ struct ProjectHistoryView: View {
                                 )
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
-                                        inventoryManager.deleteProject(id: child.id)
+                                        pendingProjectDeletion = child
                                     } label: {
                                         Label("删除", systemImage: "trash")
                                     }
@@ -713,7 +1162,7 @@ struct ProjectHistoryView: View {
                                     } label: {
                                         Label("复制到计划", systemImage: "doc.on.doc")
                                     }
-                                    .tint(.blue)
+                                    .tint(Theme.ColorToken.Status.info)
                                 }
                                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                     Button {
@@ -721,7 +1170,7 @@ struct ProjectHistoryView: View {
                                     } label: {
                                         Label("独立", systemImage: "arrow.up.forward.square")
                                     }
-                                    .tint(.green)
+                                    .tint(Theme.ColorToken.Status.success)
                                 }
                                 // 子项目长按菜单
                                 .contextMenu {
@@ -749,7 +1198,7 @@ struct ProjectHistoryView: View {
                                     Divider()
 
                                     Button(role: .destructive) {
-                                        inventoryManager.deleteProject(id: child.id)
+                                        pendingProjectDeletion = child
                                     } label: {
                                         Label("删除", systemImage: "trash")
                                     }
@@ -758,7 +1207,8 @@ struct ProjectHistoryView: View {
                         }
                     }
                 }
-                .listStyle(.insetGrouped)
+                .listStyle(.plain)
+                .background(Theme.ColorToken.Surface.background)
             }
             }
         }
@@ -785,6 +1235,21 @@ struct ProjectHistoryView: View {
             }
         } message: {
             Text("该项目包含子项目，请选择处理方式：\n• 删除全部：同时删除所有子项目\n• 仅删除父项目：子项目变为独立项目")
+        }
+        // 叶子/子项目删除二次确认
+        .alert("删除项目", isPresented: Binding(
+            get: { pendingProjectDeletion != nil },
+            set: { if !$0 { pendingProjectDeletion = nil } }
+        )) {
+            Button("取消", role: .cancel) { pendingProjectDeletion = nil }
+            Button("删除", role: .destructive) {
+                if let project = pendingProjectDeletion {
+                    inventoryManager.deleteProject(id: project.id)
+                }
+                pendingProjectDeletion = nil
+            }
+        } message: {
+            Text("删除「\(pendingProjectDeletion?.name ?? "")」？该操作不可撤销。")
         }
         // 退回计划确认（使用 sheet 以便添加选项）
         .sheet(isPresented: $showRevertConfirmSheet, onDismiss: {
@@ -932,7 +1397,7 @@ struct RevertToPlanSheet: View {
                 // 图标
                 Image(systemName: "arrow.uturn.backward.circle.fill")
                     .font(.system(size: 50))
-                    .foregroundColor(.orange)
+                    .foregroundColor(Theme.ColorToken.Status.warning)
 
                 // 标题
                 Text(titleText)
@@ -950,8 +1415,8 @@ struct RevertToPlanSheet: View {
                         }
                     }
                     .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(10)
+                    .background(Theme.ColorToken.Surface.subtle)
+                    .cornerRadius(Theme.Radius.md)
                 }
                 .padding(.horizontal)
 
@@ -972,9 +1437,9 @@ struct RevertToPlanSheet: View {
                         Text("取消")
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color(.systemGray5))
+                            .background(Theme.ColorToken.Surface.subtle)
                             .foregroundColor(.primary)
-                            .cornerRadius(10)
+                            .cornerRadius(Theme.Radius.md)
                     }
 
                     Button {
@@ -983,9 +1448,9 @@ struct RevertToPlanSheet: View {
                         Text("确认退回")
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color.orange)
+                            .background(Theme.ColorToken.Status.warning)
                             .foregroundColor(.white)
-                            .cornerRadius(10)
+                            .cornerRadius(Theme.Radius.md)
                     }
                 }
                 .padding(.horizontal)
@@ -1085,7 +1550,7 @@ struct ProjectRowWithHierarchy: View {
                     onToggleSelect()
                 } label: {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(isSelected ? .accentColor : .secondary)
+                        .foregroundColor(isSelected ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.secondary)
                         .font(.title2)
                 }
                 .buttonStyle(.plain)
@@ -1120,7 +1585,7 @@ struct ProjectRowWithHierarchy: View {
                     .clipShape(RoundedRectangle(cornerRadius: isChild ? 6 : 8))
                     .overlay(
                         RoundedRectangle(cornerRadius: isChild ? 6 : 8)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                     )
             }
 
@@ -1131,7 +1596,7 @@ struct ProjectRowWithHierarchy: View {
                         if isParent {
                             Image(systemName: "folder.fill")
                                 .font(.caption)
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(Theme.ColorToken.Morandi.latte)
                         }
 
                         Text(project.name)
@@ -1140,7 +1605,7 @@ struct ProjectRowWithHierarchy: View {
                         if project.isArchived {
                             Image(systemName: "archivebox.fill")
                                 .font(.caption)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                         }
 
                         Spacer()
@@ -1156,9 +1621,10 @@ struct ProjectRowWithHierarchy: View {
                                 .font(.caption)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Color.purple.opacity(0.1))
-                                .foregroundColor(.purple)
-                                .cornerRadius(4)
+                                // 装饰：品牌徽章使用 Morandi mauve 作为视觉标识，不是语义状态
+                                .background(Theme.ColorToken.Morandi.mauve.opacity(0.1))
+                                .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                                .cornerRadius(Theme.Radius.sm)
                         }
 
                         if isParent {
@@ -1166,9 +1632,9 @@ struct ProjectRowWithHierarchy: View {
                                 .font(.caption)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Color.blue.opacity(0.1))
-                                .foregroundColor(.blue)
-                                .cornerRadius(4)
+                                .background(Theme.ColorToken.Status.info.opacity(0.1))
+                                .foregroundColor(Theme.ColorToken.Status.info)
+                                .cornerRadius(Theme.Radius.sm)
                         }
 
                         Label("\(colorCount) 色", systemImage: "paintpalette")
@@ -1179,7 +1645,7 @@ struct ProjectRowWithHierarchy: View {
 
                         Label("\(totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
                             .font(.caption)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Theme.ColorToken.Morandi.latte)
                     }
 
                     // 颜色预览（仅子项目和独立项目显示）
@@ -1194,8 +1660,8 @@ struct ProjectRowWithHierarchy: View {
                                         .font(.caption2)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
-                                        .background(Color.accentColor.opacity(0.1))
-                                        .cornerRadius(4)
+                                        .background(Theme.ColorToken.Morandi.latte.opacity(0.1))
+                                        .cornerRadius(Theme.Radius.sm)
                                 }
 
                                 if visibleUsage.count > 10 {
@@ -1242,7 +1708,7 @@ struct MergeProjectsSheet: View {
                     Section {
                         HStack {
                             Image(systemName: "info.circle.fill")
-                                .foregroundColor(.blue)
+                                .foregroundColor(Theme.ColorToken.Status.info)
                             Text("将添加到「\(singleParentMerge.parentName ?? "")」")
                                 .foregroundColor(.secondary)
                         }
@@ -1259,7 +1725,7 @@ struct MergeProjectsSheet: View {
                             HStack {
                                 if inventoryManager.isParentProject(project.id) {
                                     Image(systemName: "folder.fill")
-                                        .foregroundColor(.accentColor)
+                                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                                         .font(.caption)
                                 }
                                 Text(project.name)

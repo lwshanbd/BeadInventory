@@ -49,8 +49,8 @@ struct ColorPaletteBar: View {
                     .fill(Color(hex: hex))
                     .frame(width: 32, height: 32)
                     .overlay(Circle().stroke(
-                        isSelected ? Color.accentColor :
-                            (isExtra ? Color.gray.opacity(0.6) : Color.gray.opacity(0.4)),
+                        isSelected ? Theme.ColorToken.Morandi.mauve :
+                            (isExtra ? Theme.ColorToken.Text.tertiary : Theme.ColorToken.Border.default),
                         lineWidth: isSelected ? 3 : (isExtra ? 1.5 : 1)
                     ))
                     // 额外色号用虚线圈标记
@@ -59,7 +59,7 @@ struct ColorPaletteBar: View {
                             ? AnyView(
                                 Circle()
                                     .stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.ColorToken.Text.secondary)
                                     .frame(width: 36, height: 36)
                             )
                             : AnyView(EmptyView())
@@ -70,12 +70,12 @@ struct ColorPaletteBar: View {
                     .foregroundStyle(isExtra ? .secondary : .primary)
                 Text("\(count)")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
-            .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-            .cornerRadius(8)
+            .background(isSelected ? Theme.ColorToken.Morandi.mauve.opacity(0.15) : Color.clear)
+            .cornerRadius(Theme.Radius.sm)
         }
         .buttonStyle(.plain)
     }

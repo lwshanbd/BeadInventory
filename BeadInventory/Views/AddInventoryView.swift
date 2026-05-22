@@ -71,7 +71,7 @@ struct AddInventoryView: View {
                             .foregroundColor(.secondary)
                         Text(brandName)
                             .fontWeight(.bold)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Theme.ColorToken.Morandi.latte)
                         Text("增加库存")
                             .foregroundColor(.secondary)
                         Spacer()
@@ -79,7 +79,7 @@ struct AddInventoryView: View {
                     .font(.subheadline)
                     .padding(.horizontal)
                     .padding(.vertical, 8)
-                    .background(Color(.systemGray6))
+                    .background(Theme.ColorToken.Surface.subtle)
                 }
 
                 // 色系选择器
@@ -124,7 +124,7 @@ struct AddInventoryView: View {
                     )
                 }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("增加库存")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -274,9 +274,9 @@ struct SeriesSelector: View {
                             .fontWeight(.medium)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(selectedSeries == s ? Color.accentColor : Color(.systemGray5))
+                            .background(selectedSeries == s ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Surface.subtle)
                             .foregroundColor(selectedSeries == s ? .white : .primary)
-                            .cornerRadius(20)
+                            .cornerRadius(Theme.Radius.lg)
                     }
                 }
             }
@@ -304,12 +304,12 @@ struct ColorAddRow: View {
             Button(action: onToggle) {
                 ZStack {
                     Circle()
-                        .stroke(isSelected ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 2)
+                        .stroke(isSelected ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Border.default, lineWidth: 2)
                         .frame(width: 28, height: 28)
 
                     if isSelected {
                         Circle()
-                            .fill(Color.accentColor)
+                            .fill(Theme.ColorToken.Morandi.latte)
                             .frame(width: 20, height: 20)
 
                         Image(systemName: "checkmark")
@@ -321,12 +321,12 @@ struct ColorAddRow: View {
             }
 
             // 颜色预览
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(color.color)
                 .frame(width: 40, height: 40)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号
@@ -342,8 +342,8 @@ struct ColorAddRow: View {
             }
         }
         .padding(12)
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -376,8 +376,8 @@ struct QuantityControl: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(width: 28, height: 28)
-                    .background(quantity > 0.5 ? Color.gray.opacity(0.6) : Color.gray.opacity(0.3))
-                    .cornerRadius(14)
+                    .background(quantity > 0.5 ? Theme.ColorToken.Text.tertiary : Theme.ColorToken.Border.default)
+                    .cornerRadius(Theme.Radius.md)
             }
             .buttonStyle(PlainButtonStyle())
             .disabled(quantity <= 0.5)
@@ -388,8 +388,8 @@ struct QuantityControl: View {
                 .multilineTextAlignment(.center)
                 .font(.system(size: 16, weight: .regular, design: .monospaced))
                 .frame(width: 60, height: 32)
-                .background(Color(.systemGray6))
-                .cornerRadius(8)
+                .background(Theme.ColorToken.Surface.subtle)
+                .cornerRadius(Theme.Radius.sm)
                 .focused($isFocused)
                 .onChange(of: editText) { _, newValue in
                     // 过滤只允许数字和小数点
@@ -416,8 +416,8 @@ struct QuantityControl: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(width: 28, height: 28)
-                    .background(Color.accentColor)
-                    .cornerRadius(14)
+                    .background(Theme.ColorToken.Morandi.latte)
+                    .cornerRadius(Theme.Radius.md)
             }
             .buttonStyle(PlainButtonStyle())
 
@@ -464,7 +464,7 @@ struct ConfirmBar: View {
                         .foregroundColor(.secondary)
                     Text("共 +\(formatNumber(totalToAdd)) 颗")
                         .font(.headline)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                 }
 
                 Spacer()
@@ -475,12 +475,12 @@ struct ConfirmBar: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 12)
-                        .background(Color.accentColor)
-                        .cornerRadius(24)
+                        .background(Theme.ColorToken.Morandi.latte)
+                        .cornerRadius(Theme.Radius.lg)
                 }
             }
             .padding()
-            .background(Color(.systemBackground))
+            .background(Theme.ColorToken.Surface.elevated)
         }
     }
 

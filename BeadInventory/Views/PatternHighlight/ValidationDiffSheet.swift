@@ -54,7 +54,7 @@ struct ValidationDiffSheet: View {
 
     private func statLabel(title: String, value: Int, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(title).font(.caption2).foregroundStyle(Theme.ColorToken.Text.secondary)
             Text("\(value)")
                 .font(.headline)
                 .foregroundStyle(color)
@@ -67,8 +67,8 @@ struct ValidationDiffSheet: View {
             .font(.caption)
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
-            .background(d.delta > 0 ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
-            .foregroundStyle(d.delta > 0 ? Color.green : Color.red)
-            .cornerRadius(4)
+            .background(d.delta > 0 ? Theme.ColorToken.Status.success.opacity(0.2) : Theme.ColorToken.Status.error.opacity(0.2))
+            .foregroundStyle(d.delta > 0 ? Theme.ColorToken.Status.success : Theme.ColorToken.Status.error)
+            .cornerRadius(Theme.Radius.sm)
     }
 }

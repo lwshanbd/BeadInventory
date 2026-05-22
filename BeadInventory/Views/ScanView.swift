@@ -28,7 +28,6 @@ struct ScanView: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var showingCamera = false
     @State private var showingManualEntry = false
-    @State private var showingConfirmation = false
     @State private var showingCropView = false
     @State private var projectName = ""
     @State private var isLoadingImage = false
@@ -40,6 +39,7 @@ struct ScanView: View {
     @State private var deductionResolver: DeductionResolver?
     @State private var showingDeductionFailure = false
     @State private var deductionFailureMessage = ""
+    @State private var deductSuccessAt: Date = .distantPast
 
     private let similarityService = ColorSimilarityService()
 
@@ -79,21 +79,14 @@ struct ScanView: View {
         return brand.colorSystem == scanColorSystem
     }
 
-    /// 检查扣除后库存会变为负数的颜色
-    var insufficientStockItems: [(colorCode: String, currentStock: Int, deductAmount: Int)] {
-        guard let brandId = inventoryManager.currentBrandId else { return [] }
-        var result: [(colorCode: String, currentStock: Int, deductAmount: Int)] = []
-        for item in recognizedItems {
-            let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode)
-            let currentStock = stock?.available ?? 0
-            if currentStock < item.quantity {
-                // 显示当前扫描色号体系的色号（而非内部 mardCode）
-                // 严格按 mardCode 查，避免未匹配的原始色号跨品牌乱碰（如 Kaka "B02" 撞到 COCO B02 显示成 H14）
-                let displayCode = inventoryManager.findColor(byMardCode: item.colorCode)?.displayCode(for: scanColorSystem) ?? item.colorCode
-                result.append((colorCode: displayCode, currentStock: currentStock, deductAmount: item.quantity))
-            }
-        }
-        return result
+    /// 三段进度指示器的当前 step：0 识别，1 调整，2 确认
+    /// 0：尚未识别（无识别结果）
+    /// 1：已识别、正在调整（有识别结果但还没进入扣减审核）
+    /// 2：进入扣减审核（已 push DeductionReviewView）
+    private var stepperIndex: Int {
+        if recognizedItems.isEmpty { return 0 }
+        if deductionResolver != nil { return 2 }
+        return 1
     }
 
     var body: some View {
@@ -113,6 +106,9 @@ struct ScanView: View {
                     )
                 }
 
+                // 三段进度指示器卡片：上传图纸 → 识别调整 → 扣减执行
+                ScanStepIndicatorCard(currentIndex: stepperIndex)
+
                 GeometryReader { geometry in
                     ScrollView {
                         VStack(spacing: 20) {
@@ -131,148 +127,24 @@ struct ScanView: View {
                                     isLoadingImage: $isLoadingImage,
                                     showingCropView: $showingCropView,
                                     isPinned: $isImagePinned,
-                                    hasRecognizedItems: !recognizedItems.isEmpty
+                                    hasRecognizedItems: !recognizedItems.isEmpty,
+                                    onManualTap: { showingManualEntry = true }
                                 )
                             }
 
                             // AI 配置状态提示
-                            if !aiService.isConfigured {
-                                HStack {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundColor(.orange)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(aiService.statusMessage)
-                                            .font(.caption)
-                                        Text(aiService.setupBannerText)
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
+                            aiStatusBanner
 
-                                        if aiService.config.backend == .local,
-                                           localModelManager.isDownloading.contains(aiService.config.localModel) {
-                                            ProgressView(value: localModelManager.progress(for: aiService.config.localModel))
-                                                .progressViewStyle(.linear)
-                                        }
-                                    }
-                                    .font(.caption)
-                                    Spacer()
-                                    NavigationLink(aiService.setupActionTitle) {
-                                        RecognitionSettingsScreen()
-                                    }
-                                    .font(.caption)
-                                }
-                                .padding()
-                                .background(Color.orange.opacity(0.1))
-                                .cornerRadius(8)
-                                .padding(.horizontal)
-                            } else if aiService.config.backend == .local {
-                                HStack(alignment: .top) {
-                                    Image(systemName: "iphone.gen3")
-                                        .foregroundColor(.blue)
-                                    Text("当前使用 \(aiService.config.localModel.displayName) 本地识别。无需 API，但速度相对更慢，也可能引起发热。")
-                                        .font(.caption)
-                                    Spacer()
-                                }
-                                .padding()
-                                .background(Color.blue.opacity(0.08))
-                                .cornerRadius(8)
-                                .padding(.horizontal)
-                            }
-
-                            // 色号体系选择（独立于品牌，影响 AI 提示词和计划绑定）
-                            HStack {
-                                Text("色号体系:")
-                                    .foregroundColor(.secondary)
-                                    .font(.subheadline)
-                                Picker("色号体系", selection: $scanColorSystem) {
-                                    Text("MARD").tag(ColorSystem.mard)
-                                    Text("卡卡").tag(ColorSystem.kaka)
-                                }
-                                .pickerStyle(.segmented)
-                            }
-                            .padding(.horizontal)
+                            // 色号体系 + 备扣品牌（合并卡片）
+                            contextBarCard
 
                             // 识别按钮
                             if selectedImage != nil {
-                                HStack(spacing: 12) {
-                                    // 表格识别按钮
-                                    Button {
-                                        recognizeImage(mode: .table)
-                                    } label: {
-                                        HStack {
-                                            if isRecognizing {
-                                                ProgressView()
-                                                    .tint(.white)
-                                            } else {
-                                                Image(systemName: "tablecells")
-                                            }
-                                            Text(isRecognizing ? "识别中..." : "表格识别")
-                                        }
-                                        .font(.headline)
-                                        .frame(maxWidth: .infinity)
-                                        .padding()
-                                        .background(aiService.isConfigured ? Color.accentColor : Color.gray)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(12)
-                                    }
-                                    .disabled(isRecognizing || !aiService.isConfigured)
-
-                                    // 色号统计识别按钮
-                                    Button {
-                                        recognizeImage(mode: .blueprint)
-                                    } label: {
-                                        HStack {
-                                            if isRecognizing {
-                                                ProgressView()
-                                                    .tint(.white)
-                                            } else {
-                                                Image(systemName: "doc.richtext")
-                                            }
-                                            Text(isRecognizing ? "识别中..." : "色号统计识别")
-                                        }
-                                        .font(.headline)
-                                        .frame(maxWidth: .infinity)
-                                        .padding()
-                                        .background(aiService.isConfigured ? Color.orange : Color.gray)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(12)
-                                    }
-                                    .disabled(isRecognizing || !aiService.isConfigured)
-                                }
-                                .padding(.horizontal)
+                                recognitionButtons
                             }
 
                             // 错误提示
-                            if let error = errorMessage {
-                                Text(error)
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                                    .padding()
-                                    .background(Color.red.opacity(0.1))
-                                    .cornerRadius(8)
-                                    .padding(.horizontal)
-                            }
-
-                            // 备扣品牌显示（仅显示与当前色号体系匹配的品牌）
-                            if !recognizedItems.isEmpty {
-                                HStack {
-                                    Text("备扣品牌:")
-                                        .foregroundColor(.secondary)
-                                    if inventoryManager.currentBrandId != nil,
-                                       let brand = inventoryManager.currentBrand,
-                                       brand.colorSystem == scanColorSystem {
-                                        Text(brand.name)
-                                            .fontWeight(.medium)
-                                            .foregroundColor(.accentColor)
-                                    } else {
-                                        Text("请选择")
-                                            .foregroundColor(.orange)
-                                    }
-                                    Spacer()
-                                    BrandPicker(colorSystemFilter: scanColorSystem)
-                                }
-                                .font(.subheadline)
-                                .padding(.horizontal)
-                            }
+                            errorBanner
 
                             // 识别结果
                             if !recognizedItems.isEmpty {
@@ -286,85 +158,11 @@ struct ScanView: View {
                             }
 
                             // 手动添加/编辑按钮
-                            Button {
-                                showingManualEntry = true
-                            } label: {
-                                HStack {
-                                    Image(systemName: recognizedItems.isEmpty ? "plus.circle" : "pencil.circle")
-                                    Text(recognizedItems.isEmpty ? "手动添加" : "编辑颜色")
-                                }
-                                .font(.subheadline)
-                                .foregroundColor(.accentColor)
-                            }
-                            .padding(.top, 8)
+                            manualEntryButton
 
-                            // 确认操作按钮区域
+                            // 项目名称 + 缩略图预览（按钮已移至底部 safeAreaInset / toolbar Menu）
                             if !recognizedItems.isEmpty {
-                                VStack(spacing: 16) {
-                                    // 项目名称输入
-                                    TextField("项目名称（可选）", text: $projectName)
-                                        .textFieldStyle(.roundedBorder)
-                                        .padding(.horizontal)
-
-                                    // 缩略图预览和裁切
-                                    ThumbnailPreviewSection(
-                                        thumbnailImage: $thumbnailImage,
-                                        originalImage: originalImage,
-                                        showingThumbnailCrop: $showingThumbnailCrop
-                                    )
-                                    .padding(.horizontal)
-
-                                    // 两个操作按钮
-                                    HStack(spacing: 12) {
-                                        // 创建计划按钮（不需要选择品牌）
-                                        Button {
-                                            showingCreatePlan = true
-                                        } label: {
-                                            HStack {
-                                                Image(systemName: "calendar.badge.plus")
-                                                Text("创建计划")
-                                            }
-                                            .font(.headline)
-                                            .frame(maxWidth: .infinity)
-                                            .padding()
-                                            .background(Color.orange)
-                                            .foregroundColor(.white)
-                                            .cornerRadius(12)
-                                        }
-
-                                        // 扣减库存按钮（需要选择匹配色系的品牌）
-                                        Button {
-                                            prepareDeduction()
-                                        } label: {
-                                            HStack {
-                                                Image(systemName: insufficientStockItems.isEmpty ? "minus.circle.fill" : "exclamationmark.triangle.fill")
-                                                Text("扣减库存")
-                                            }
-                                            .font(.headline)
-                                            .frame(maxWidth: .infinity)
-                                            .padding()
-                                            .background(brandMatchesScanSystem ? (insufficientStockItems.isEmpty ? Color.green : Color.red) : Color.gray)
-                                            .foregroundColor(.white)
-                                            .cornerRadius(12)
-                                        }
-                                        .disabled(!brandMatchesScanSystem)
-                                    }
-                                    .padding(.horizontal)
-
-                                    // 提示信息
-                                    if !brandMatchesScanSystem {
-                                        HStack {
-                                            Image(systemName: inventoryManager.currentBrandId == nil ? "info.circle" : "exclamationmark.triangle")
-                                                .foregroundColor(inventoryManager.currentBrandId == nil ? .blue : .orange)
-                                            Text(inventoryManager.currentBrandId == nil
-                                                 ? "创建计划无需选择品牌，执行时再选择"
-                                                 : "当前品牌色系与扫描色系不匹配，请切换品牌")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
-                                        .padding(.horizontal)
-                                    }
-                                }
+                                projectInfoSection
                             }
 
                             Spacer(minLength: 50)
@@ -376,50 +174,24 @@ struct ScanView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("图纸扫描")
+            .background(Theme.ColorToken.Surface.background)
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .bottom) { bottomCTAInset }
+            .toolbar { scanToolbarContent }
+            .pipe { applySheets($0) }
+            .pipe { applyAlerts($0) }
+            .pipe { applyChangeHandlers($0) }
+            .pipe { applyHelpAndOnAppear($0) }
+        }
+    }
+
+    /// Helper to chain View transforms without exploding type-checker complexity.
+    private func applySheets<V: View>(_ view: V) -> some View {
+        view
             .sheet(isPresented: $showingCamera) {
                 CameraPicker(image: $selectedImage)
-            }
-            .onChange(of: selectedPhotoItem) { _, newItem in
-                guard let newItem = newItem else { return }
-                isLoadingImage = true
-                Task {
-                    if let data = try? await newItem.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        await MainActor.run {
-                            selectedImage = image
-                            // 保存原图作为缩略图来源
-                            originalImage = image
-                            thumbnailImage = image
-                            isLoadingImage = false
-                        }
-                    } else {
-                        await MainActor.run {
-                            isLoadingImage = false
-                        }
-                    }
-                }
-            }
-            .onChange(of: selectedImage) { _, newImage in
-                // 当从相机获取图片时，也设置原图和缩略图
-                if let image = newImage, originalImage == nil {
-                    originalImage = image
-                    thumbnailImage = image
-                }
-            }
-            // 监听从 Share Extension 传入的外部图片
-            .onChange(of: externalImage) { _, newImage in
-                if let image = newImage {
-                    // 清除之前的状态
-                    clearState()
-                    // 设置新图片
-                    selectedImage = image
-                    originalImage = image
-                    thumbnailImage = image
-                    // 清除外部图片引用
-                    externalImage = nil
-                }
             }
             .sheet(isPresented: $showingManualEntry) {
                 ManualEntrySheetNew(recognizedItems: $recognizedItems, colorSystem: scanColorSystem)
@@ -435,7 +207,6 @@ struct ScanView: View {
                 }
             }
             .fullScreenCover(isPresented: $showingThumbnailCrop) {
-                // 优先使用当前缩略图（可能是用户上传的新图片），否则使用原始图
                 if let image = thumbnailImage ?? originalImage {
                     ImageCropView(image: image) { croppedImage in
                         thumbnailImage = croppedImage
@@ -444,20 +215,8 @@ struct ScanView: View {
                     Color.black.onAppear { showingThumbnailCrop = false }
                 }
             }
-            .alert("确认扣减", isPresented: $showingConfirmation) {
-                Button("取消", role: .cancel) { }
-                Button("确认扣减", role: insufficientStockItems.isEmpty ? .none : .destructive) {
-                    applyToInventory()
-                }
-            } message: {
-                if insufficientStockItems.isEmpty {
-                    Text("将从库存中扣减 \(totalBeads) 颗豆子，共 \(recognizedItems.count) 种颜色。")
-                } else {
-                    Text("将从库存中扣减 \(totalBeads) 颗豆子，共 \(recognizedItems.count) 种颜色。\n\n⚠️ 以下 \(insufficientStockItems.count) 种颜色扣除后库存将为负数：\n\(insufficientStockItems.map { "\($0.colorCode): \($0.currentStock) - \($0.deductAmount) = \($0.currentStock - $0.deductAmount)" }.joined(separator: "\n"))")
-                }
-            }
-            .sheet(item: $deductionResolver) { resolver in
-                DeductionReviewSheet(
+            .navigationDestination(item: $deductionResolver) { resolver in
+                DeductionReviewView(
                     resolver: resolver,
                     colorSystem: scanColorSystem,
                     matchingBrands: inventoryManager.brands
@@ -467,12 +226,15 @@ struct ScanView: View {
                     similarityService: similarityService,
                     onConfirm: {
                         applyToInventoryWithResolver(resolver)
-                    },
-                    onCancel: {
-                        deductionResolver = nil
                     }
                 )
             }
+    }
+
+    private func applyAlerts<V: View>(_ view: V) -> some View {
+        view
+            .haptic(.success, trigger: deductSuccessAt)
+            .haptic(.error, trigger: showingDeductionFailure)
             .alert("部分颜色扣减失败", isPresented: $showingDeductionFailure) {
                 Button("知道了") { }
             } message: {
@@ -486,7 +248,27 @@ struct ScanView: View {
             } message: {
                 Text("将创建包含 \(totalBeads) 颗豆子（\(recognizedItems.count) 种颜色）的计划项目。执行时需要选择品牌。")
             }
-            // 首次使用引导弹窗
+    }
+
+    private func applyChangeHandlers<V: View>(_ view: V) -> some View {
+        view
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                handlePhotoItemChange(newItem)
+            }
+            .onChange(of: selectedImage) { _, newImage in
+                // 当从相机获取图片时，也设置原图和缩略图
+                if let image = newImage, originalImage == nil {
+                    originalImage = image
+                    thumbnailImage = image
+                }
+            }
+            .onChange(of: externalImage) { _, newImage in
+                handleExternalImageChange(newImage)
+            }
+    }
+
+    private func applyHelpAndOnAppear<V: View>(_ view: V) -> some View {
+        view
             .sheet(isPresented: $showingHelpSheet) {
                 ScanHelpSheet(
                     onDismiss: {
@@ -499,12 +281,320 @@ struct ScanView: View {
                 )
             }
             .onAppear {
-                // 从设置中读取默认色号体系
                 scanColorSystem = ColorSystem(rawValue: defaultColorSystemRaw) ?? .mard
-                // 首次打开时显示引导弹窗
                 if !helpHasBeenDismissed {
                     showingHelpSheet = true
                 }
+            }
+    }
+
+    private func handlePhotoItemChange(_ newItem: PhotosPickerItem?) {
+        guard let newItem = newItem else { return }
+        isLoadingImage = true
+        Task {
+            if let data = try? await newItem.loadTransferable(type: Data.self),
+               let image = UIImage(data: data) {
+                await MainActor.run {
+                    selectedImage = image
+                    originalImage = image
+                    thumbnailImage = image
+                    isLoadingImage = false
+                }
+            } else {
+                await MainActor.run {
+                    isLoadingImage = false
+                }
+            }
+        }
+    }
+
+    private func handleExternalImageChange(_ newImage: UIImage?) {
+        if let image = newImage {
+            clearState()
+            selectedImage = image
+            originalImage = image
+            thumbnailImage = image
+            externalImage = nil
+        }
+    }
+
+    // MARK: - 主 body 的子片段（拆分以减轻类型检查复杂度）
+
+    @ViewBuilder
+    private var aiStatusBanner: some View {
+        if !aiService.isConfigured {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(Theme.ColorToken.Status.warning)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(aiService.statusMessage)
+                        .font(.caption)
+                    Text(aiService.setupBannerText)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
+                    if aiService.config.backend == .local,
+                       localModelManager.isDownloading.contains(aiService.config.localModel) {
+                        ProgressView(value: localModelManager.progress(for: aiService.config.localModel))
+                            .progressViewStyle(.linear)
+                    }
+                }
+                .font(.caption)
+                Spacer()
+                NavigationLink(aiService.setupActionTitle) {
+                    RecognitionSettingsScreen()
+                }
+                .font(.caption)
+            }
+            .padding()
+            .background(Theme.ColorToken.Status.warning.opacity(0.1))
+            .cornerRadius(Theme.Radius.sm)
+            .padding(.horizontal)
+        } else if aiService.config.backend == .local {
+            HStack(alignment: .top) {
+                Image(systemName: "iphone.gen3")
+                    .foregroundColor(Theme.ColorToken.Status.info)
+                Text("当前使用 \(aiService.config.localModel.displayName) 本地识别。无需 API，但速度相对更慢，也可能引起发热。")
+                    .font(.caption)
+                Spacer()
+            }
+            .padding()
+            .background(Theme.ColorToken.Status.info.opacity(0.08))
+            .cornerRadius(Theme.Radius.sm)
+            .padding(.horizontal)
+        }
+    }
+
+    private var colorSystemPicker: some View {
+        HStack {
+            Text("色号体系:")
+                .foregroundColor(.secondary)
+                .font(.subheadline)
+            Picker("色号体系", selection: $scanColorSystem) {
+                Text("MARD").tag(ColorSystem.mard)
+                Text("卡卡").tag(ColorSystem.kaka)
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(.horizontal)
+    }
+
+    /// 上下文卡片：色号体系（BISegmented）+ 备扣品牌（pill 按钮）合并
+    private var contextBarCard: some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.md) {
+                Text("色号体系")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+                    .frame(minWidth: 56, alignment: .leading)
+                Spacer(minLength: 0)
+                BISegmented(
+                    selection: $scanColorSystem,
+                    segments: [
+                        (value: .mard, label: "MARD"),
+                        (value: .kaka, label: "卡卡")
+                    ]
+                )
+            }
+            Rectangle()
+                .fill(Theme.ColorToken.Border.divider)
+                .frame(height: 1)
+            HStack(spacing: Theme.Spacing.md) {
+                Text("备扣品牌")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+                    .frame(minWidth: 56, alignment: .leading)
+                Spacer(minLength: 0)
+                BrandPicker(colorSystemFilter: scanColorSystem)
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
+        .padding(.horizontal, 18)
+    }
+
+    private var recognitionButtons: some View {
+        HStack(spacing: 12) {
+            // 表格识别按钮
+            Button {
+                recognizeImage(mode: .table)
+            } label: {
+                HStack {
+                    if isRecognizing {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "tablecells")
+                    }
+                    Text(isRecognizing ? "识别中..." : "表格识别")
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(aiService.isConfigured ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default)
+                .foregroundColor(.white)
+                .cornerRadius(Theme.Radius.md)
+            }
+            .disabled(isRecognizing || !aiService.isConfigured)
+
+            // 色号统计识别按钮
+            Button {
+                recognizeImage(mode: .blueprint)
+            } label: {
+                HStack {
+                    if isRecognizing {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "doc.richtext")
+                    }
+                    Text(isRecognizing ? "识别中..." : "色号统计识别")
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(aiService.isConfigured ? Theme.ColorToken.Morandi.honey : Theme.ColorToken.Border.default)
+                .foregroundColor(.white)
+                .cornerRadius(Theme.Radius.md)
+            }
+            .disabled(isRecognizing || !aiService.isConfigured)
+        }
+        .padding(.horizontal)
+    }
+
+    @ViewBuilder
+    private var errorBanner: some View {
+        if let error = errorMessage {
+            Text(error)
+                .font(.caption)
+                .foregroundColor(Theme.ColorToken.Status.error)
+                .padding()
+                .background(Theme.ColorToken.Status.error.opacity(0.1))
+                .cornerRadius(Theme.Radius.sm)
+                .padding(.horizontal)
+        }
+    }
+
+    private var brandPickerRow: some View {
+        HStack {
+            Text("备扣品牌:")
+                .foregroundColor(.secondary)
+            if inventoryManager.currentBrandId != nil,
+               let brand = inventoryManager.currentBrand,
+               brand.colorSystem == scanColorSystem {
+                Text(brand.name)
+                    .fontWeight(.medium)
+                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
+            } else {
+                Text("请选择")
+                    .foregroundColor(Theme.ColorToken.Status.warning)
+            }
+            Spacer()
+            BrandPicker(colorSystemFilter: scanColorSystem)
+        }
+        .font(.subheadline)
+        .padding(.horizontal)
+    }
+
+    private var manualEntryButton: some View {
+        Button {
+            showingManualEntry = true
+        } label: {
+            HStack {
+                Image(systemName: recognizedItems.isEmpty ? "plus.circle" : "pencil.circle")
+                Text(recognizedItems.isEmpty ? "手动添加" : "编辑颜色")
+            }
+            .font(.subheadline)
+            .foregroundColor(Theme.ColorToken.Morandi.mauve)
+        }
+        .padding(.top, 8)
+    }
+
+    private var projectInfoSection: some View {
+        VStack(spacing: 16) {
+            // 项目名称输入
+            TextField("项目名称（可选）", text: $projectName)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal)
+
+            // 缩略图预览和裁切
+            ThumbnailPreviewSection(
+                thumbnailImage: $thumbnailImage,
+                originalImage: originalImage,
+                showingThumbnailCrop: $showingThumbnailCrop
+            )
+            .padding(.horizontal)
+
+            // 提示信息
+            if !brandMatchesScanSystem {
+                HStack {
+                    Image(systemName: inventoryManager.currentBrandId == nil ? "info.circle" : "exclamationmark.triangle")
+                        .foregroundColor(inventoryManager.currentBrandId == nil ? .blue : .orange)
+                    Text(inventoryManager.currentBrandId == nil
+                         ? "创建计划无需选择品牌，执行时再选择"
+                         : "当前品牌色系与扫描色系不匹配，请切换品牌")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    // MARK: - 底部 sticky 单主 CTA
+
+    @ViewBuilder
+    private var bottomCTAInset: some View {
+        if !recognizedItems.isEmpty {
+            ScanBottomCTABar(
+                totalBeads: totalBeads,
+                canDeduct: brandMatchesScanSystem,
+                onPlan: { showingCreatePlan = true },
+                onDeduct: { prepareDeduction() }
+            )
+        }
+    }
+
+    // MARK: - 顶部 toolbar Menu（次级操作溢出）
+
+    @ToolbarContentBuilder
+    private var scanToolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                Button {
+                    showingCreatePlan = true
+                } label: {
+                    Label("仅创建计划，不扣减", systemImage: "calendar.badge.plus")
+                }
+                .disabled(recognizedItems.isEmpty)
+
+                Divider()
+
+                Button {
+                    // 重新选择图片：清除当前图片但保留识别结果
+                    selectedImage = nil
+                    selectedPhotoItem = nil
+                    isImagePinned = false
+                } label: {
+                    Label("重新选择图片", systemImage: "arrow.counterclockwise")
+                }
+                .disabled(selectedImage == nil)
+
+                Button(role: .destructive) {
+                    clearState()
+                } label: {
+                    Label("清空当前识别", systemImage: "trash")
+                }
+                .disabled(recognizedItems.isEmpty && selectedImage == nil)
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
         }
     }
@@ -561,41 +651,6 @@ struct ScanView: View {
         self.deductionResolver = resolver
     }
 
-    func applyToInventory() {
-        guard let brandId = inventoryManager.currentBrandId,
-              brandMatchesScanSystem else { return }
-
-        // 生成压缩的缩略图数据
-        let thumbnailData = generateThumbnailData()
-
-        // 先执行扣减，记录失败项
-        var failedIndices: Set<Int> = []
-        for (index, item) in recognizedItems.enumerated() {
-            let success = inventoryManager.deductFromStock(brandId: brandId, colorCode: item.colorCode, amount: item.quantity, shouldSave: false)
-            if !success {
-                failedIndices.insert(index)
-            }
-        }
-
-        // 根据扣减结果正确标记 isDeducted
-        let beadUsages = recognizedItems.enumerated().map { index, item in
-            BeadUsage(colorCode: item.colorCode, brandId: brandId, quantity: item.quantity, isDeducted: !failedIndices.contains(index))
-        }
-        let project = ProjectRecord(
-            name: projectName.isEmpty ? "图纸\(Date().formatted(date: .numeric, time: .omitted))" : projectName,
-            beadUsage: beadUsages,
-            brandId: brandId,
-            thumbnail: thumbnailData,
-            colorSystem: scanColorSystem
-        )
-        inventoryManager.addProject(project) // addProject 内部已调用 saveData()
-
-        let failedCodes = failedIndices.sorted().map { recognizedItems[$0].colorCode }
-        showDeductionFailureIfNeeded(failedCodes: failedCodes)
-
-        clearState()
-    }
-
     func applyToInventoryWithResolver(_ resolver: DeductionResolver) {
         // 先执行扣减（不保存），确认结果后再创建项目记录
         let failedItems = resolver.executeDeductions(shouldSave: false)
@@ -622,6 +677,7 @@ struct ScanView: View {
         clearState()
 
         if failedItems.isEmpty {
+            deductSuccessAt = Date()
             deductionResolver = nil
         } else {
             // 先关闭 sheet，等动画结束后再弹出失败提示，避免 SwiftUI 同时 dismiss sheet + present alert 的竞争
@@ -691,6 +747,14 @@ struct ScanView: View {
 
 }
 
+// MARK: - View 扩展：用 .pipe 把 modifier 链拆段（绕开 Swift 类型检查复杂度）
+
+private extension View {
+    func pipe<V: View>(_ transform: (Self) -> V) -> V {
+        transform(self)
+    }
+}
+
 // MARK: - 固定在顶部的图片视图
 struct PinnedImageView: View {
     let image: UIImage
@@ -757,7 +821,7 @@ struct PinnedImageView: View {
             Divider()
         }
         .frame(maxWidth: .infinity)
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
     }
 }
 
@@ -770,6 +834,9 @@ struct ImageSelectionSection: View {
     @Binding var showingCropView: Bool
     @Binding var isPinned: Bool
     var hasRecognizedItems: Bool
+    var onManualTap: (() -> Void)? = nil
+
+    @Environment(\.tabFlavor) private var flavor
 
     var body: some View {
         VStack(spacing: 16) {
@@ -784,8 +851,8 @@ struct ImageSelectionSection: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 200)
-                .background(Color(.systemBackground))
-                .cornerRadius(16)
+                .background(Theme.ColorToken.Surface.elevated)
+                .cornerRadius(Theme.Radius.lg)
             } else if let image = selectedImage {
                 ScanPreviewImageView(
                     image: image,
@@ -822,50 +889,110 @@ struct ImageSelectionSection: View {
                     .foregroundColor(.secondary)
                 }
             } else {
-                // 占位区域
-                VStack(spacing: 16) {
-                    Image(systemName: "doc.text.image")
-                        .font(.system(size: 50))
-                        .foregroundColor(.secondary)
-
-                    Text("选择或拍摄色号表格图片")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    HStack(spacing: 20) {
-                        // 使用 SwiftUI 原生 PhotosPicker
-                        PhotosPicker(selection: $selectedPhotoItem,
-                                     matching: .images,
-                                     photoLibrary: .shared()) {
-                            Label("相册", systemImage: "photo.on.rectangle")
-                                .font(.subheadline)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                                .background(Color.accentColor)
-                                .foregroundColor(.white)
-                                .cornerRadius(10)
-                        }
-
-                        Button {
-                            showingCamera = true
-                        } label: {
-                            Label("拍照", systemImage: "camera")
-                                .font(.subheadline)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                                .background(Color.orange)
-                                .foregroundColor(.white)
-                                .cornerRadius(10)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 200)
-                .background(Color(.systemBackground))
-                .cornerRadius(16)
+                // 莫兰迪上传占位区域：虚线圆角 + mauve 图标块 + 三个动作按钮
+                emptyUploadZone
             }
         }
         .padding(.horizontal)
+    }
+
+    @ViewBuilder
+    private var emptyUploadZone: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            // 主图标块：56pt mauve 圆角 + 右下角 BeadView
+            ZStack(alignment: .bottomTrailing) {
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(flavor.color.opacity(0.15))
+                    .frame(width: 56, height: 56)
+                    .overlay(
+                        Image(systemName: "doc.text.image")
+                            .font(.system(size: 24, weight: .semibold))
+                            .foregroundStyle(flavor.color)
+                    )
+                BeadView(color: flavor.color, size: 18)
+                    .offset(x: 6, y: 6)
+            }
+            .padding(.top, 4)
+
+            VStack(spacing: 4) {
+                Text("放一张色号表给小豆吃")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                Text("支持表格、色号统计、拼图等图纸")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+            }
+
+            HStack(spacing: Theme.Spacing.sm) {
+                // 相册（filled mauve）
+                PhotosPicker(
+                    selection: $selectedPhotoItem,
+                    matching: .images,
+                    photoLibrary: .shared()
+                ) {
+                    Label("相册", systemImage: "photo.on.rectangle")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.ColorToken.Text.onAccent)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(flavor.color, in: RoundedRectangle(cornerRadius: 12))
+                }
+
+                // 拍照（outlined）
+                Button {
+                    showingCamera = true
+                } label: {
+                    Label("拍照", systemImage: "camera")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Theme.ColorToken.Surface.elevated)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+                        )
+                }
+
+                // 手动（outlined）
+                if let onManualTap {
+                    Button {
+                        onManualTap()
+                    } label: {
+                        Label("手动", systemImage: "pencil")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.ColorToken.Text.primary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Theme.ColorToken.Surface.elevated)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+                            )
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .strokeBorder(
+                    Theme.ColorToken.Border.default,
+                    style: StrokeStyle(lineWidth: 2, dash: [6, 5])
+                )
+        )
     }
 }
 
@@ -933,6 +1060,7 @@ struct RecognizedResultsSectionNew: View {
     @State private var showingClearAlert = false
     @State private var sortOption: ResultSortOption = .original
     @State private var sortAscending: Bool = true
+    @State private var resultFilter: RecognizedResultsFilter = .all
 
     enum ResultSortOption: String, CaseIterable {
         case original = "默认"
@@ -985,29 +1113,82 @@ struct RecognizedResultsSectionNew: View {
         return stock.available
     }
 
+    /// 缺豆项数量
+    private var shortageCount: Int {
+        guard let brandId = inventoryManager.currentBrandId else { return 0 }
+        return items.reduce(0) { acc, item in
+            guard let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode) else { return acc }
+            return acc + ((stock.available - item.quantity) < 0 ? 1 : 0)
+        }
+    }
+
+    /// 品牌改写项数量（暂无数据源，预留 0）
+    private var overriddenCount: Int { 0 }
+
+    /// 按筛选过滤
+    private var visibleItems: [ScanView.RecognizedItem] {
+        switch resultFilter {
+        case .all:
+            return sortedItems
+        case .shortage:
+            guard let brandId = inventoryManager.currentBrandId else { return [] }
+            return sortedItems.filter { item in
+                guard let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode) else { return false }
+                return (stock.available - item.quantity) < 0
+            }
+        case .overridden:
+            return [] // 暂无品牌改写数据源
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // 标题栏
-            HStack {
-                Text("识别结果")
-                    .font(.headline)
+            // 标题/筛选 chip 行
+            HStack(spacing: 8) {
+                Text("已识别 \(items.count) 项")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
                 Spacer()
-                Text("共 \(items.count) 色 / \(totalBeads) 颗")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                // 清空按钮
+                BIChip(
+                    "全部",
+                    active: resultFilter == .all,
+                    size: .sm
+                )
+                .onTapGesture { resultFilter = .all }
+                if shortageCount > 0 {
+                    BIChip(
+                        "缺豆 \(shortageCount)",
+                        active: resultFilter == .shortage,
+                        color: Theme.ColorToken.Morandi.rose,
+                        size: .sm
+                    )
+                    .onTapGesture { resultFilter = .shortage }
+                }
+                if overriddenCount > 0 {
+                    BIChip(
+                        "改品牌 \(overriddenCount)",
+                        active: resultFilter == .overridden,
+                        color: Theme.ColorToken.Morandi.honey,
+                        size: .sm
+                    )
+                    .onTapGesture { resultFilter = .overridden }
+                }
                 if onClear != nil {
                     Button {
                         showingClearAlert = true
                     } label: {
                         Image(systemName: "trash")
                             .font(.subheadline)
-                            .foregroundColor(.red)
+                            .foregroundStyle(Theme.ColorToken.Status.error)
                     }
-                    .padding(.leading, 8)
+                    .padding(.leading, 4)
                 }
             }
+
+            // 总量摘要
+            Text("共 \(items.count) 色 / \(totalBeads) 颗")
+                .font(.caption2)
+                .foregroundStyle(Theme.ColorToken.Text.tertiary)
 
             // 排序选项栏
             ScrollView(.horizontal, showsIndicators: false) {
@@ -1033,47 +1214,67 @@ struct RecognizedResultsSectionNew: View {
                             .font(.caption)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background(sortOption == option ? Color.accentColor : Color(.systemGray5))
+                            .background(sortOption == option ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Surface.subtle)
                             .foregroundColor(sortOption == option ? .white : .primary)
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                         }
                     }
                 }
             }
 
-            // 结果列表
-            ForEach(sortedItems) { item in
-                RecognizedItemRowNew(
-                    item: item,
-                    inventoryManager: inventoryManager,
-                    colorSystem: colorSystem,
-                    onUpdate: { code, qty in
-                        if let index = items.firstIndex(where: { $0.id == item.id }) {
-                            // 将所有修改合并到一个副本中，最后一次性写回，
-                            // 避免多次触发 @Binding 更新导致 SwiftUI 在 ForEach 中崩溃
-                            var updatedItem = items[index]
-                            if let c = code {
-                                // 非 MARD 色系时，用户输入的可能是该色系的色号，需转为内部 mardCode
-                                if colorSystem != .mard,
-                                   let color = inventoryManager.findColor(byCode: c, preferSystem: colorSystem) {
-                                    updatedItem.colorCode = color.mardCode
-                                } else {
-                                    updatedItem.colorCode = c.uppercased()
+            // 结果列表（List 包装可让 swipeActions 实际生效）
+            List {
+                ForEach(visibleItems) { item in
+                    RecognizedItemRowNew(
+                        item: item,
+                        inventoryManager: inventoryManager,
+                        colorSystem: colorSystem,
+                        onUpdate: { code, qty in
+                            if let index = items.firstIndex(where: { $0.id == item.id }) {
+                                var updatedItem = items[index]
+                                if let c = code {
+                                    if colorSystem != .mard,
+                                       let color = inventoryManager.findColor(byCode: c, preferSystem: colorSystem) {
+                                        updatedItem.colorCode = color.mardCode
+                                    } else {
+                                        updatedItem.colorCode = c.uppercased()
+                                    }
                                 }
+                                if let q = qty { updatedItem.quantity = q }
+                                items[index] = updatedItem
                             }
-                            if let q = qty { updatedItem.quantity = q }
-                            items[index] = updatedItem
+                        },
+                        onRemove: {
+                            items.removeAll { $0.id == item.id }
                         }
-                    },
-                    onRemove: {
-                        items.removeAll { $0.id == item.id }
-                    }
-                )
+                    )
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
             }
+            .listStyle(.plain)
+            .scrollDisabled(true)
+            .frame(minHeight: CGFloat(visibleItems.count) * 76 + 8)
+            .environment(\.defaultMinListRowHeight, 0)
+
+            // 提示 pill
+            HStack {
+                Text("← 左滑任意一行可改品牌或删除")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Theme.ColorToken.Surface.subtle)
+            )
         }
         .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.lg)
         .padding(.horizontal)
         .alert("清空确认", isPresented: $showingClearAlert) {
             Button("取消", role: .cancel) { }
@@ -1093,6 +1294,7 @@ struct RecognizedItemRowNew: View {
     let onUpdate: (String?, Int?) -> Void
     let onRemove: () -> Void
 
+    @Environment(\.tabFlavor) private var flavor
     @State private var isEditing = false
     @State private var editCode: String = ""
     @State private var editQuantity: String = ""
@@ -1126,28 +1328,105 @@ struct RecognizedItemRowNew: View {
         return (current, after, isInsufficient, isLowStock)
     }
 
+    /// 在 ScanView 这一层暂无品牌覆盖概念（覆盖发生在 DeductionReviewView）。
+    /// 预留 false，保留视觉钩子；后续接入时改为真实判断即可。
+    var isBrandOverridden: Bool { false }
+
+    /// 短缺：缺豆数量为正
+    var shortageDelta: Int? {
+        guard let info = stockInfo, info.isInsufficient else { return nil }
+        return -info.after
+    }
+
+    private var borderColor: Color {
+        if shortageDelta != nil { return Theme.ColorToken.Morandi.rose }
+        if isBrandOverridden { return Theme.ColorToken.Morandi.honey }
+        return Theme.ColorToken.Border.default
+    }
+
+    private var leftEdgeColor: Color? {
+        if shortageDelta != nil { return Theme.ColorToken.Morandi.rose }
+        if isBrandOverridden { return Theme.ColorToken.Morandi.honey }
+        return nil
+    }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            mainRow
+            if shortageDelta != nil {
+                shortageSuggestionRow
+            }
+        }
+        .padding(0)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(borderColor, lineWidth: 1)
+        )
+        .overlay(alignment: .leading) {
+            if let edgeColor = leftEdgeColor {
+                Rectangle()
+                    .fill(edgeColor)
+                    .frame(width: 3)
+                    .clipShape(
+                        RoundedRectangle(cornerRadius: 2)
+                    )
+                    .padding(.vertical, 4)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button {
+                editCode = matchedColor?.displayCode(for: colorSystem) ?? item.colorCode
+                editQuantity = "\(item.quantity)"
+                isEditing = true
+            } label: {
+                Label("改品牌", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .tint(Theme.ColorToken.Morandi.mauve)
+
+            Button(role: .destructive) {
+                onRemove()
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+            .tint(Theme.ColorToken.Morandi.rose)
+        }
+        .contextMenu {
+            Button {
+                editCode = matchedColor?.displayCode(for: colorSystem) ?? item.colorCode
+                editQuantity = "\(item.quantity)"
+                isEditing = true
+            } label: {
+                Label("编辑", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                onRemove()
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var mainRow: some View {
         HStack(spacing: 12) {
-            // 颜色预览
+            // 颜色珠子
             if let color = matchedColor {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(color.color)
-                    .frame(width: 36, height: 36)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
+                BeadView(color: color.color, size: 32)
             } else {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 36, height: 36)
-                    .overlay(
-                        Image(systemName: "questionmark")
-                            .foregroundColor(.gray)
-                    )
+                ZStack {
+                    Circle()
+                        .fill(Theme.ColorToken.Surface.subtle)
+                        .frame(width: 32, height: 32)
+                    Image(systemName: "questionmark")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                }
             }
 
-            // 色号和数量
             if isEditing {
                 TextField("色号", text: $editCode)
                     .textFieldStyle(.roundedBorder)
@@ -1158,8 +1437,8 @@ struct RecognizedItemRowNew: View {
                     .keyboardType(.asciiCapableNumberPad)
                     .frame(width: 60)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(showQuantityError ? Color.red : Color.clear, lineWidth: 1)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(showQuantityError ? Theme.ColorToken.Status.error : Color.clear, lineWidth: 1)
                     )
                     .onChange(of: editQuantity) { _, _ in
                         showQuantityError = false
@@ -1178,255 +1457,125 @@ struct RecognizedItemRowNew: View {
             } else {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(matchedColor?.displayCode(for: colorSystem) ?? item.colorCode)
-                        .font(.system(.body, design: .monospaced))
-                        .fontWeight(.medium)
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
 
-                    if matchedColor == nil {
-                        Text("未匹配")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                    } else if let info = stockInfo {
-                        // 显示库存状态
-                        HStack(spacing: 4) {
-                            Text("库存 \(info.current)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            Text("→")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            Text("\(info.after)")
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .foregroundColor(info.isInsufficient ? .red : (info.isLowStock ? .orange : .green))
-                            if info.isInsufficient {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.caption2)
-                                    .foregroundColor(.red)
-                            } else if info.isLowStock {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.caption2)
-                                    .foregroundColor(.orange)
-                            }
-                        }
-                    }
+                    stockLine
                 }
 
                 Spacer()
 
-                Text("×\(item.quantity)")
-                    .font(.headline)
-                    .foregroundColor(.accentColor)
-
-                // 操作按钮
-                Menu {
-                    Button {
-                        // 编辑时显示当前色系的色号，而非内部 MARD 码
-                        editCode = matchedColor?.displayCode(for: colorSystem) ?? item.colorCode
-                        editQuantity = "\(item.quantity)"
-                        isEditing = true
-                    } label: {
-                        Label("编辑", systemImage: "pencil")
-                    }
-
-                    Button(role: .destructive) {
-                        onRemove()
-                    } label: {
-                        Label("删除", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .foregroundColor(.secondary)
-                }
+                qtyChip
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
         .padding(.horizontal, 12)
-        .background(stockInfo?.isInsufficient == true ? Color.red.opacity(0.1) : Color(.systemGray6))
-        .cornerRadius(10)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(stockInfo?.isInsufficient == true ? Color.red.opacity(0.3) : Color.clear, lineWidth: 1)
-        )
-    }
-}
-
-// MARK: - 扣减审核弹窗
-struct DeductionReviewSheet: View {
-    @ObservedObject var resolver: DeductionResolver
-    let colorSystem: ColorSystem
-    let matchingBrands: [Brand]
-    let inventoryManager: InventoryManager
-    let similarityService: ColorSimilarityService
-    var onConfirm: () -> Void
-    var onCancel: () -> Void
-
-    @State private var showConfirmAlert = false
-
-    private var confirmAlertMessage: String {
-        let total = resolver.items.reduce(0) { $0 + $1.quantity }
-        let count = resolver.items.count
-        if resolver.insufficientItems.isEmpty && !resolver.hasManualOverrides {
-            return "将扣减 \(total) 颗豆子，共 \(count) 种颜色。"
-        }
-        var msg = "将扣减 \(total) 颗豆子，共 \(count) 种颜色。"
-        if resolver.hasManualOverrides {
-            let overrides = resolver.manualOverrideItems.compactMap { item in
-                if let brand = matchingBrands.first(where: { $0.id == item.brandId }) {
-                    return "\(item.colorCode) → \(brand.name)"
-                }
-                return nil
-            }
-            msg += "\n\n跨品牌扣减：\n" + overrides.joined(separator: "\n")
-        }
-        if !resolver.insufficientItems.isEmpty {
-            msg += "\n\n⚠️ \(resolver.insufficientItems.count) 种颜色库存不足"
-        }
-        return msg
     }
 
     @ViewBuilder
-    private func deductionItemRowView(item: DeductionItem, resolver: DeductionResolver) -> some View {
-        let beadColor = inventoryManager.findColor(byCode: item.mardCode)
-        let brandName = matchingBrands.first(where: { $0.id == item.brandId })?.name ?? "未知"
-        let threshold = matchingBrands.first(where: { $0.id == item.brandId })?.lowStockThreshold ?? 100
-        let similarColors = similarityService.findSimilarColors(
-            for: item.mardCode,
-            brandId: item.brandId,
-            allColors: inventoryManager.allBeadColors,
-            brandStocks: inventoryManager.brandStocks
-        )
-
-        DeductionItemRow(
-            item: item,
-            beadColor: beadColor,
-            matchingBrands: matchingBrands,
-            similarColors: similarColors,
-            colorSystem: colorSystem,
-            lowStockThreshold: threshold,
-            brandName: brandName,
-            onBrandChanged: { newBrandId in
-                resolver.overrideBrand(for: item.id, to: newBrandId)
-            },
-            onResetBrand: {
-                resolver.resetToPrimary(for: item.id)
-            },
-            onSubstitute: { newMardCode, newColorCode in
-                resolver.substituteColor(
-                    itemId: item.id,
-                    newMardCode: newMardCode,
-                    newColorCode: newColorCode
-                )
-            }
-        )
-    }
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                HStack {
-                    Text("主品牌:")
-                        .foregroundColor(.secondary)
-                    if let brand = matchingBrands.first(where: { $0.id == resolver.primaryBrandId }) {
-                        Text(brand.name)
-                            .fontWeight(.medium)
-                    }
-                    Spacer()
-                    Menu {
-                        ForEach(matchingBrands) { brand in
-                            Button {
-                                resolver.setPrimaryBrand(brand.id)
-                            } label: {
-                                HStack {
-                                    Text(brand.name)
-                                    if brand.id == resolver.primaryBrandId {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text("切换")
-                                .font(.caption)
-                            Image(systemName: "chevron.down")
-                                .font(.caption2)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color.accentColor.opacity(0.1))
-                        .foregroundColor(.accentColor)
-                        .cornerRadius(12)
-                    }
+    private var stockLine: some View {
+        if matchedColor == nil {
+            Text("未匹配")
+                .font(.caption2)
+                .foregroundStyle(Theme.ColorToken.Status.warning)
+        } else if isBrandOverridden {
+            Text("米卡 库存 \(stockInfo?.current ?? 0)")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
+        } else if let delta = shortageDelta, let info = stockInfo {
+            Text("缺\(delta)颗 · 库存仅\(info.current)")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Theme.ColorToken.Status.error)
+        } else if let info = stockInfo {
+            HStack(spacing: 4) {
+                Text("库存 \(info.current) → \(info.after)")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+                if info.isLowStock {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.ColorToken.Status.warning)
                 }
-                .padding()
-
-                Divider()
-
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(resolver.items) { item in
-                            deductionItemRowView(item: item, resolver: resolver)
-                        }
-                    }
-                    .padding()
-                }
-
-                Divider()
-
-                VStack(spacing: 8) {
-                    HStack {
-                        Text("\(resolver.items.count) 种颜色")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("·")
-                            .foregroundColor(.secondary)
-                        Text("\(resolver.items.reduce(0) { $0 + $1.quantity }) 颗")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        if !resolver.insufficientItems.isEmpty {
-                            Text("·")
-                                .foregroundColor(.secondary)
-                            Text("\(resolver.insufficientItems.count) 种不足")
-                                .font(.caption)
-                                .foregroundColor(.red)
-                        }
-                        Spacer()
-                    }
-
-                    Button {
-                        showConfirmAlert = true
-                    } label: {
-                        HStack {
-                            Image(systemName: resolver.insufficientItems.isEmpty ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            Text("确认扣减")
-                        }
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(resolver.insufficientItems.isEmpty ? Color.green : Color.red)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                    }
-                }
-                .padding()
-            }
-            .navigationTitle("扣减审核")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("取消", action: onCancel)
-                }
-            }
-            .alert("确认扣减", isPresented: $showConfirmAlert) {
-                Button("取消", role: .cancel) { }
-                Button("确认", role: resolver.insufficientItems.isEmpty ? .none : .destructive) {
-                    onConfirm()
-                }
-            } message: {
-                Text(confirmAlertMessage)
             }
         }
-        .presentationDetents([.large])
+    }
+
+    @ViewBuilder
+    private var qtyChip: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            VStack(spacing: 0) {
+                Text("\(item.quantity)")
+                    .font(.system(size: 18, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Theme.ColorToken.Surface.subtle)
+                    )
+                    .overlay(alignment: .bottom) {
+                        Rectangle()
+                            .fill(Theme.ColorToken.Border.default)
+                            .frame(height: 2)
+                            .padding(.horizontal, 2)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            if isBrandOverridden {
+                HStack(spacing: 2) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("米卡")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(Theme.ColorToken.Text.onAccent)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    Capsule().fill(Theme.ColorToken.Morandi.honey)
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var shortageSuggestionRow: some View {
+        VStack(spacing: 0) {
+            // dashed 顶部分隔
+            Rectangle()
+                .fill(Color.clear)
+                .frame(height: 1)
+                .overlay(
+                    Rectangle()
+                        .strokeBorder(
+                            Theme.ColorToken.Border.divider,
+                            style: StrokeStyle(lineWidth: 1, dash: [3, 3])
+                        )
+                )
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.caption)
+                    .foregroundStyle(Theme.ColorToken.Morandi.honey)
+                Text("试试用")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+                Text("米卡 +50")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.onAccent)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(flavor.color))
+                Text("可补足")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
     }
 }
 
@@ -1438,7 +1587,7 @@ struct ManualEntrySheetNew: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var selectedSeries = "A"
-    @State private var selectedColors: Set<UUID> = []
+    @StateObject private var sel = SelectionContext<UUID>()
     @State private var quantities: [UUID: Int] = [:]  // 每个颜色的数量（以颜色ID为key）
     @State private var isInitialized = false
 
@@ -1475,7 +1624,7 @@ struct ManualEntrySheetNew: View {
 
     var totalToAdd: Int {
         var total = 0
-        for colorId in selectedColors {
+        for colorId in sel.selected {
             let qty = quantities[colorId] ?? 1
             total += qty
         }
@@ -1498,7 +1647,7 @@ struct ManualEntrySheetNew: View {
                         ForEach(colorsInSeries) { color in
                             ManualEntryColorRow(
                                 color: color,
-                                isSelected: selectedColors.contains(color.id),
+                                isSelected: sel.contains(color.id),
                                 quantity: bindingForColor(color.id),
                                 onToggle: {
                                     toggleSelection(color.id)
@@ -1516,34 +1665,51 @@ struct ManualEntrySheetNew: View {
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
 
-                // 底部确认栏
-                if !selectedColors.isEmpty {
-                    ManualEntryConfirmBar(
-                        selectedCount: selectedColors.count,
-                        totalQuantity: totalToAdd,
-                        onConfirm: confirmAdd
-                    )
-                }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("编辑颜色")
             .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                // Sheet 内"始终处于选择态"：选中任何颜色就显示统一动作条
+                if sel.count > 0 {
+                    MultiSelectActionBar(count: sel.count) {
+                        HStack(spacing: Theme.Spacing.md) {
+                            Text("共 \(totalToAdd) 颗")
+                                .font(Theme.Typography.metadata)
+                                .foregroundStyle(Theme.ColorToken.Text.secondary)
+                            Button(action: confirmAdd) {
+                                Text("添加")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 24)
+                                    .padding(.vertical, 10)
+                                    .background(Theme.ColorToken.Morandi.mauve, in: Capsule())
+                            }
+                        }
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if !selectedColors.isEmpty {
+                    if sel.count > 0 {
                         Button("清空") {
-                            selectedColors.removeAll()
-                            quantities.removeAll()
+                            withAnimation {
+                                sel.clear()
+                                quantities.removeAll()
+                            }
                         }
-                        .foregroundColor(.red)
+                        .foregroundColor(Theme.ColorToken.Status.error)
                     }
                 }
             }
             .onAppear {
                 selectedSeries = colorSystem.defaultSeries
+                // Sheet 始终处于选择态：进入时即激活多选容器
+                if !sel.isActive { sel.enter() }
                 initializeFromRecognizedItems()
             }
         }
@@ -1558,7 +1724,7 @@ struct ManualEntrySheetNew: View {
             // 根据 mardCode 找到对应的颜色（包括自定义色号，兼容旧 C_ 前缀）
             // 严格按 mardCode 查，避免未匹配的原始色号跨品牌乱碰
             if let color = inventoryManager.findColor(byMardCode: item.colorCode) {
-                selectedColors.insert(color.id)
+                sel.toggle(color.id)  // 进入时未选中 → toggle 等价于 insert
                 quantities[color.id] = item.quantity
             }
         }
@@ -1566,14 +1732,12 @@ struct ManualEntrySheetNew: View {
 
     func toggleSelection(_ colorId: UUID) {
         withAnimation(.easeInOut(duration: 0.2)) {
-            if selectedColors.contains(colorId) {
-                selectedColors.remove(colorId)
+            let wasSelected = sel.contains(colorId)
+            sel.toggle(colorId)
+            if wasSelected {
                 quantities.removeValue(forKey: colorId)
-            } else {
-                selectedColors.insert(colorId)
-                if quantities[colorId] == nil {
-                    quantities[colorId] = 1
-                }
+            } else if quantities[colorId] == nil {
+                quantities[colorId] = 1
             }
         }
     }
@@ -1581,7 +1745,7 @@ struct ManualEntrySheetNew: View {
     func confirmAdd() {
         // 用新的选择替换原来的 recognizedItems
         var newItems: [ScanView.RecognizedItem] = []
-        for colorId in selectedColors {
+        for colorId in sel.selected {
             guard let color = inventoryManager.allBeadColors.first(where: { $0.id == colorId }) else { continue }
             let qty = quantities[colorId] ?? 1
             newItems.append(ScanView.RecognizedItem(colorCode: color.mardCode, quantity: qty))
@@ -1616,9 +1780,9 @@ struct ManualEntrySeriesSelector: View {
                             .fontWeight(.medium)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(selectedSeries == s ? Color.accentColor : Color(.systemGray5))
+                            .background(selectedSeries == s ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Surface.subtle)
                             .foregroundColor(selectedSeries == s ? .white : .primary)
-                            .cornerRadius(20)
+                            .cornerRadius(Theme.Radius.lg)
                     }
                 }
             }
@@ -1642,12 +1806,12 @@ struct ManualEntryColorRow: View {
             Button(action: onToggle) {
                 ZStack {
                     Circle()
-                        .stroke(isSelected ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 2)
+                        .stroke(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default, lineWidth: 2)
                         .frame(width: 28, height: 28)
 
                     if isSelected {
                         Circle()
-                            .fill(Color.accentColor)
+                            .fill(Theme.ColorToken.Morandi.mauve)
                             .frame(width: 20, height: 20)
 
                         Image(systemName: "checkmark")
@@ -1659,12 +1823,12 @@ struct ManualEntryColorRow: View {
             }
 
             // 颜色预览
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(color.color)
                 .frame(width: 40, height: 40)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号
@@ -1680,8 +1844,8 @@ struct ManualEntryColorRow: View {
             }
         }
         .padding(12)
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -1705,8 +1869,8 @@ struct ManualEntryQuantityControl: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(width: 28, height: 28)
-                    .background(quantity > 1 ? Color.gray.opacity(0.6) : Color.gray.opacity(0.3))
-                    .cornerRadius(14)
+                    .background(quantity > 1 ? Theme.ColorToken.Text.tertiary : Theme.ColorToken.Border.default)
+                    .cornerRadius(Theme.Radius.md)
             }
             .buttonStyle(PlainButtonStyle())
             .disabled(quantity <= 1)
@@ -1717,8 +1881,8 @@ struct ManualEntryQuantityControl: View {
                 .multilineTextAlignment(.center)
                 .font(.system(size: 16, weight: .regular, design: .monospaced))
                 .frame(width: 60, height: 32)
-                .background(Color(.systemGray6))
-                .cornerRadius(8)
+                .background(Theme.ColorToken.Surface.subtle)
+                .cornerRadius(Theme.Radius.sm)
                 .focused($isFocused)
                 .onChange(of: editText) { _, newValue in
                     let filtered = newValue.filter { $0.isNumber }
@@ -1740,8 +1904,8 @@ struct ManualEntryQuantityControl: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(width: 28, height: 28)
-                    .background(Color.accentColor)
-                    .cornerRadius(14)
+                    .background(Theme.ColorToken.Morandi.mauve)
+                    .cornerRadius(Theme.Radius.md)
             }
             .buttonStyle(PlainButtonStyle())
 
@@ -1797,7 +1961,7 @@ struct ThumbnailPreviewSection: View {
                         Text(thumbnailImage == nil ? "上传封面" : "更换")
                     }
                     .font(.caption)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
                 }
                 .onChange(of: selectedPhotoItem) { _, newItem in
                     if let newItem = newItem {
@@ -1832,7 +1996,7 @@ struct ThumbnailPreviewSection: View {
                             Text("裁切")
                         }
                         .font(.caption)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                     }
                     .padding(.leading, 8)
 
@@ -1844,7 +2008,7 @@ struct ThumbnailPreviewSection: View {
                             Text("移除")
                         }
                         .font(.caption)
-                        .foregroundColor(.red)
+                        .foregroundColor(Theme.ColorToken.Status.error)
                     }
                     .padding(.leading, 8)
                 }
@@ -1865,10 +2029,10 @@ struct ThumbnailPreviewSection: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: 80, height: 80)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                         )
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -1884,13 +2048,13 @@ struct ThumbnailPreviewSection: View {
                 }
             } else {
                 HStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.gray.opacity(0.2))
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .fill(Theme.ColorToken.Border.default.opacity(0.5))
                         .frame(width: 80, height: 80)
                         .overlay(
                             Image(systemName: "photo.badge.plus")
                                 .font(.title2)
-                                .foregroundColor(.gray)
+                                .foregroundColor(Theme.ColorToken.Text.secondary)
                         )
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -1907,8 +2071,8 @@ struct ThumbnailPreviewSection: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.md)
         // 上传图片的裁切视图
         .fullScreenCover(isPresented: $showingUploadedImageCrop) {
             if let image = uploadedImage {
@@ -1928,44 +2092,6 @@ struct ThumbnailPreviewSection: View {
             if !isShowing && uploadedImage != nil {
                 uploadedImage = nil
             }
-        }
-    }
-}
-
-// MARK: - 手动添加确认栏（多选模式）
-struct ManualEntryConfirmBar: View {
-    let selectedCount: Int
-    let totalQuantity: Int
-    let onConfirm: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("已选择 \(selectedCount) 色")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Text("共 \(totalQuantity) 颗")
-                        .font(.headline)
-                        .foregroundColor(.accentColor)
-                }
-
-                Spacer()
-
-                Button(action: onConfirm) {
-                    Text("添加")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 32)
-                        .padding(.vertical, 12)
-                        .background(Color.accentColor)
-                        .cornerRadius(24)
-                }
-            }
-            .padding()
-            .background(Color(.systemBackground))
         }
     }
 }
@@ -2199,13 +2325,13 @@ struct CropPreviewView: View {
             Image(uiImage: croppedImage)
                 .resizable()
                 .scaledToFit()
-                .cornerRadius(12)
+                .cornerRadius(Theme.Radius.md)
                 .padding(.horizontal, 20)
 
             // 尺寸信息
             Text("尺寸: \(Int(croppedImage.size.width)) × \(Int(croppedImage.size.height))")
                 .font(.caption)
-                .foregroundColor(.gray)
+                .foregroundColor(Theme.ColorToken.Text.secondary)
 
             Spacer()
 
@@ -2218,9 +2344,9 @@ struct CropPreviewView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.gray.opacity(0.3))
+                        .background(Theme.ColorToken.Border.default)
                         .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
 
                 Button {
@@ -2230,9 +2356,9 @@ struct CropPreviewView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.accentColor)
+                        .background(Theme.ColorToken.Morandi.mauve)
                         .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
             }
             .padding(.horizontal, 20)
@@ -2452,7 +2578,7 @@ struct ScanHelpSheet: View {
                         Image("HelpNew1")
                             .resizable()
                             .scaledToFit()
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal, 20)
 
                         Spacer(minLength: 100)
@@ -2480,13 +2606,13 @@ struct ScanHelpSheet: View {
                         Image("HelpNew2")
                             .resizable()
                             .scaledToFit()
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal, 20)
 
                         Image("HelpNew3")
                             .resizable()
                             .scaledToFit()
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal, 20)
 
                         Spacer(minLength: 100)
@@ -2505,9 +2631,9 @@ struct ScanHelpSheet: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.accentColor)
+                        .background(Theme.ColorToken.Morandi.mauve)
                         .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
 
                 if let onNeverShowAgain = onNeverShowAgain {
@@ -2522,9 +2648,145 @@ struct ScanHelpSheet: View {
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
-            .background(Color(.systemBackground))
+            .background(Theme.ColorToken.Surface.elevated)
         }
         .presentationDetents([.large])
+    }
+}
+
+// MARK: - 莫兰迪风步骤指示器卡片
+struct ScanStepIndicatorCard: View {
+    let currentIndex: Int
+    private let steps: [String] = ["上传图纸", "识别调整", "扣减执行"]
+
+    @Environment(\.tabFlavor) private var flavor
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(steps.enumerated()), id: \.offset) { idx, label in
+                stepCell(idx: idx, label: label)
+                if idx < steps.count - 1 {
+                    Rectangle()
+                        .fill(idx < currentIndex ? Theme.ColorToken.Status.success : Theme.ColorToken.Border.default)
+                        .frame(height: 2)
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 16) // 与圆圈中心对齐（label 在下方）
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 4)
+    }
+
+    @ViewBuilder
+    private func stepCell(idx: Int, label: String) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                if idx == currentIndex {
+                    Circle()
+                        .stroke(flavor.color.opacity(0.35), lineWidth: 3)
+                        .frame(width: 28, height: 28)
+                }
+                Circle()
+                    .fill(circleFill(idx: idx))
+                    .frame(width: 22, height: 22)
+                if idx < currentIndex {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Theme.ColorToken.Text.onAccent)
+                } else {
+                    Text("\(idx + 1)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(circleTextColor(idx: idx))
+                }
+            }
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(idx <= currentIndex ? Theme.ColorToken.Text.primary : Theme.ColorToken.Text.tertiary)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private func circleFill(idx: Int) -> Color {
+        if idx < currentIndex { return Theme.ColorToken.Status.success }
+        if idx == currentIndex { return flavor.color }
+        return Theme.ColorToken.Surface.subtle
+    }
+
+    private func circleTextColor(idx: Int) -> Color {
+        if idx == currentIndex { return Theme.ColorToken.Text.onAccent }
+        return Theme.ColorToken.Text.tertiary
+    }
+}
+
+// MARK: - 识别结果筛选状态
+enum RecognizedResultsFilter: Hashable {
+    case all, shortage, overridden
+}
+
+// MARK: - 莫兰迪风底部 CTA 条
+struct ScanBottomCTABar: View {
+    let totalBeads: Int
+    let canDeduct: Bool
+    let onPlan: () -> Void
+    let onDeduct: () -> Void
+
+    @Environment(\.tabFlavor) private var flavor
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // 存为计划（outlined）
+            Button(action: onPlan) {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar.badge.plus")
+                    Text("存为计划")
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.ColorToken.Text.primary)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Theme.ColorToken.Surface.elevated)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+                )
+            }
+
+            // 扣减 N 颗（filled mauve）
+            Button(action: onDeduct) {
+                HStack(spacing: 6) {
+                    Image(systemName: "minus.circle.fill")
+                    Text("扣减 \(totalBeads) 颗")
+                }
+                .font(.headline)
+                .foregroundStyle(Theme.ColorToken.Text.onAccent)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(canDeduct ? flavor.color : Theme.ColorToken.Border.default)
+                )
+                .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
+            }
+            .disabled(!canDeduct)
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(.bar)
     }
 }
 

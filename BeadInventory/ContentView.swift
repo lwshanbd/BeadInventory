@@ -19,6 +19,9 @@ struct ContentView: View {
     @State private var showingLocalFallbackConfirmation = false
     @State private var showingDisableCloudSyncConfirmation = false
     @State private var showingDisableCloudSyncDoneAlert = false
+    /// 库存页是否处于多选态，由 InventoryView 通过 PreferenceKey 上报。
+    /// 多选态下需要隐藏 FAB，避免与底部 MultiSelectActionBar（含"隐藏"按钮）重叠。
+    @State private var inventoryInSelectMode = false
 
     /// 从 Share Extension 传入的图片
     @State private var externalImage: UIImage?
@@ -28,74 +31,71 @@ struct ContentView: View {
     }
 
     var body: some View {
+        let currentFlavor = TabFlavor(rawValue: selectedTab) ?? .inventory
         ZStack(alignment: .bottom) {
             TabView(selection: $selectedTab) {
                 // 库存管理
                 InventoryView()
+                    .environment(\.tabFlavor, .inventory)
                     .tabItem {
                         Label("库存", systemImage: "square.grid.3x3.fill")
                     }
                     .tag(0)
 
-                // 图纸导入
-                ScanView(externalImage: $externalImage)
+                // 工作台（扫描 + 计划合并到同一个 Tab）
+                WorkshopView(externalImage: $externalImage)
+                    .environment(\.tabFlavor, .workshop)
                     .tabItem {
-                        Label("扫描", systemImage: "doc.text.viewfinder")
+                        Label("工作台", systemImage: "wand.and.stars")
                     }
                     .tag(1)
 
-                // 计划项目
-                PlannedProjectsView()
-                    .tabItem {
-                        Label("计划", systemImage: "calendar.badge.clock")
-                    }
-                    .tag(2)
-
                 // 统计
                 StatisticsView()
+                    .environment(\.tabFlavor, .statistics)
                     .tabItem {
                         Label("统计", systemImage: "chart.bar.fill")
                     }
-                    .tag(3)
+                    .tag(2)
 
                 // 更多（包含色号转换和设置）
                 MoreView()
+                    .environment(\.tabFlavor, .more)
                     .tabItem {
                         Label("更多", systemImage: "ellipsis.circle.fill")
                     }
-                    .tag(4)
+                    .tag(3)
             }
-            .tint(Color("AccentColor"))
-
-            // 右侧浮动加号按钮（仅在库存页显示）
-            if selectedTab == 0 {
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    Button {
-                        showingAddInventory = true
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(Color.accentColor)
-                                .frame(width: 60, height: 60)
-                                .shadow(color: Color.accentColor.opacity(0.4), radius: 8, x: 0, y: 4)
-
-                            Image(systemName: "plus")
-                                .font(.system(size: 26, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                    }
-                    .padding(.trailing, 20)
-                    .padding(.bottom, 80)
+            .tint(currentFlavor.color)
+            .onPreferenceChange(SelectModeActivePreferenceKey.self) { active in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    inventoryInSelectMode = active
                 }
             }
+
+            // 右侧浮动加号按钮（仅在库存页显示；多选态下隐藏，避免与底部"隐藏"操作条重叠）
+            if selectedTab == 0 && !inventoryInSelectMode {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button { showingAddInventory = true } label: {
+                            Image(systemName: "plus")
+                                .font(.title2.weight(.bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 60, height: 60)
+                                .background(TabFlavor.inventory.color, in: Circle())
+                                .shadow(color: TabFlavor.inventory.color.opacity(0.4), radius: 8, x: 0, y: 4)
+                        }
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 80)
+                    }
+                }
             }
 
             if !inventoryManager.hasCompletedInitialLoad {
                 ZStack {
-                    Color(.systemBackground)
+                    Theme.ColorToken.Surface.background
                         .opacity(0.96)
                         .ignoresSafeArea()
 
@@ -103,7 +103,7 @@ struct ContentView: View {
                         if let errorMessage = inventoryManager.initialLoadErrorMessage {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: 32))
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
 
                             Text(String(localized: "数据加载失败"))
                                 .font(.headline)

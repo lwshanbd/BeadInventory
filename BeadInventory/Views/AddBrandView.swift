@@ -133,9 +133,9 @@ struct AddBrandView: View {
                                         .font(.caption)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 6)
-                                        .background(defaultStock == amount ? Color.accentColor : Color(.systemGray5))
+                                        .background(defaultStock == amount ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Surface.subtle)
                                         .foregroundColor(defaultStock == amount ? .white : .primary)
-                                        .cornerRadius(8)
+                                        .cornerRadius(Theme.Radius.sm)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -190,7 +190,7 @@ struct AddBrandView: View {
 
                                     if selectedPreset == preset {
                                         Image(systemName: "checkmark")
-                                            .foregroundColor(.accentColor)
+                                            .foregroundColor(Theme.ColorToken.Morandi.latte)
                                     }
                                 }
                             }

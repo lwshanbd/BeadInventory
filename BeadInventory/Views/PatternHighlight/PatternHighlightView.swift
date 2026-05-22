@@ -52,7 +52,7 @@ struct PatternHighlightView: View {
                     if !mismatches.isEmpty && !dismissedBanner {
                         HStack(spacing: 8) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(Theme.ColorToken.Status.warning)
                             Text("网格与图例有 \(mismatches.count) 处差异")
                                 .font(.footnote)
                             Spacer()
@@ -63,10 +63,10 @@ struct PatternHighlightView: View {
                                     .font(.caption)
                             }
                             .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.ColorToken.Text.secondary)
                         }
                         .padding(8)
-                        .background(Color.orange.opacity(0.15))
+                        .background(Theme.ColorToken.Status.warning.opacity(0.15))
                     }
                 }
 
@@ -83,9 +83,9 @@ struct PatternHighlightView: View {
                     VStack(spacing: 12) {
                         Image(systemName: "questionmark.square.dashed")
                             .font(.system(size: 60))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.ColorToken.Text.secondary)
                         Text(image == nil ? "项目无图片" : "未标定网格")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.ColorToken.Text.secondary)
                         if image != nil && currentProject.patternGrid == nil {
                             Button("开始标定") {
                                 showingRecalibrate = true

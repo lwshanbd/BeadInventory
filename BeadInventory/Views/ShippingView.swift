@@ -2,91 +2,111 @@
 //  ShippingView.swift
 //  BeadInventory
 //
-//  运输中（待到货的购买记录）
+//  运输中（待到货的购买记录）—— 二级页骨架（SecondaryNav + ScrollView + GroupCard）。
+//  本页主调色 = Morandi.latte（内部硬编码，不读 @Environment(\.tabFlavor)）。
 //
 
 import SwiftUI
 
+// MARK: - 主页：运输中
 struct ShippingView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showingAddPurchase = false
     @State private var showingPasteSheet = false
-    @State private var pasteError: String?
-    @State private var showingPasteError = false
+
+    private var allRecords: [PurchaseRecord] {
+        inventoryManager.purchaseRecords
+    }
+
+    private var totalBeads: Int {
+        allRecords.reduce(0) { $0 + $1.totalBeads }
+    }
+
+    private var nearestEta: String? {
+        guard let latest = allRecords.sorted(by: { $0.date > $1.date }).first else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        return formatter.string(from: latest.date)
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if inventoryManager.purchaseRecords.isEmpty {
-                // 空状态
-                VStack(spacing: 16) {
-                    Image(systemName: "shippingbox")
-                        .font(.system(size: 60))
-                        .foregroundColor(.secondary.opacity(0.5))
-
-                    Text("暂无运输中的订单")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-
-                    Text("点击下方按钮添加购买记录")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary.opacity(0.8))
-
-                    Button {
-                        showingAddPurchase = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "plus.circle.fill")
-                            Text("添加购买记录")
-                        }
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 12)
-                        .background(Color.accentColor)
-                        .cornerRadius(24)
-                    }
-                    .padding(.top, 8)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                // 购买记录列表
-                List {
-                    ForEach(inventoryManager.purchaseRecords) { record in
-                        NavigationLink {
-                            PurchaseRecordDetailView(record: record)
-                        } label: {
-                            PurchaseRecordRow(record: record)
-                        }
-                    }
-                    .onDelete { indexSet in
-                        for index in indexSet {
-                            let record = inventoryManager.purchaseRecords[index]
-                            inventoryManager.deletePurchaseRecord(id: record.id)
-                        }
-                    }
-                }
-                .listStyle(.insetGrouped)
-            }
-        }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle("运输中")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 16) {
-                    Button {
+        ZStack(alignment: .bottomTrailing) {
+            VStack(spacing: 0) {
+                BISecondaryNav(title: "运输中") {
+                    BINavIconButton(systemImage: "doc.on.clipboard") {
                         showingPasteSheet = true
-                    } label: {
-                        Image(systemName: "doc.on.clipboard")
                     }
-
-                    Button {
+                    BINavIconButton(systemImage: "plus") {
                         showingAddPurchase = true
-                    } label: {
-                        Image(systemName: "plus")
+                    }
+                }
+
+                if allRecords.isEmpty {
+                    ScrollView {
+                        BIEmptyHero(
+                            icon: "shippingbox",
+                            flavor: Theme.ColorToken.Morandi.latte,
+                            title: "还没有运输中的订单",
+                            subtitle: "下单后记一笔，到货时自动加到库存里。"
+                        ) {
+                            HStack(spacing: 10) {
+                                Button {
+                                    showingAddPurchase = true
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "plus")
+                                        Text("添加购买记录")
+                                    }
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        Theme.ColorToken.Morandi.latte,
+                                        in: RoundedRectangle(cornerRadius: Theme.Radius.md)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    showingPasteSheet = true
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "sparkles")
+                                        Text("从剪贴板粘贴")
+                                    }
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Theme.ColorToken.Morandi.latte)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        Theme.ColorToken.Morandi.latte.opacity(0.12),
+                                        in: RoundedRectangle(cornerRadius: Theme.Radius.md)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                } else {
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            overviewHero
+                            recordList
+                            pasteHintCard
+                        }
+                        .padding(.bottom, 100)
                     }
                 }
             }
+            .background(Theme.ColorToken.Surface.background)
+
+            if !allRecords.isEmpty {
+                fab
+            }
         }
+        .navigationBarHidden(true)
+        .environment(\.tabFlavor, .inventory)
         .sheet(isPresented: $showingAddPurchase) {
             AddPurchaseRecordView()
                 .environmentObject(inventoryManager)
@@ -95,11 +115,292 @@ struct ShippingView: View {
             PasteReplenishSheet()
                 .environmentObject(inventoryManager)
         }
-        .alert("粘贴失败", isPresented: $showingPasteError) {
-            Button("确定", role: .cancel) { }
-        } message: {
-            Text(pasteError ?? "未知错误")
+    }
+
+    // MARK: - Overview hero
+    private var overviewHero: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("待到货")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.white.opacity(0.88))
+                HStack(alignment: .lastTextBaseline, spacing: 5) {
+                    Text("\(allRecords.count)")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text("单 · 共 \(totalBeads) 颗")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.white.opacity(0.9))
+                }
+                if let eta = nearestEta {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("最近到货 · \(eta)")
+                            .font(.system(size: 10.5, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule().fill(Color.white.opacity(0.18))
+                    )
+                    .padding(.top, 2)
+                }
+            }
+            Spacer(minLength: 8)
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white.opacity(0.2))
+                    .frame(width: 60, height: 60)
+                Image(systemName: "shippingbox.fill")
+                    .font(.system(size: 28, weight: .regular))
+                    .foregroundStyle(.white)
+            }
         }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Theme.ColorToken.Morandi.latte, Theme.ColorToken.Morandi.honey],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .shadow(color: Theme.ColorToken.Morandi.latte.opacity(0.25), radius: 12, x: 0, y: 4)
+        .padding(.horizontal, 18)
+        .padding(.top, 8)
+    }
+
+    // MARK: - Record list
+    private var recordList: some View {
+        VStack(spacing: 10) {
+            ForEach(allRecords) { record in
+                NavigationLink {
+                    PurchaseRecordDetailView(record: record)
+                } label: {
+                    ShippingCard(record: record)
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    // 列表用 ScrollView 不是 List,无法用 .swipeActions;
+                    // 通过长按 context menu 暴露删除入口(与 PlannedProjects 一致)
+                    Button(role: .destructive) {
+                        inventoryManager.deletePurchaseRecord(id: record.id)
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 18)
+    }
+
+    // MARK: - Paste hint card
+    private var pasteHintCard: some View {
+        Button {
+            showingPasteSheet = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.ColorToken.Morandi.honey)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("从剪贴板粘贴订单")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                    Text("识别补豆建议 CSV，一键生成运输单")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Theme.ColorToken.Surface.subtle)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(
+                        Theme.ColorToken.Border.default,
+                        style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 18)
+        .padding(.top, 4)
+    }
+
+    // MARK: - FAB
+    private var fab: some View {
+        Button {
+            showingAddPurchase = true
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 54, height: 54)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Theme.ColorToken.Morandi.latte)
+                )
+                .shadow(color: Theme.ColorToken.Morandi.latte.opacity(0.4), radius: 14, x: 0, y: 6)
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 18)
+        .padding(.bottom, 30)
+    }
+}
+
+// MARK: - 运输卡（设计稿 ShippingCard）
+struct ShippingCard: View {
+    let record: PurchaseRecord
+    @EnvironmentObject var inventoryManager: InventoryManager
+
+    private var brand: Brand? {
+        inventoryManager.brands.first(where: { $0.id == record.brandId })
+    }
+
+    private var brandName: String {
+        brand?.name ?? String(localized: "未知品牌")
+    }
+
+    private var brandColorSystem: ColorSystem {
+        brand?.colorSystem ?? .mard
+    }
+
+    private var orderDateText: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        return formatter.string(from: record.date)
+    }
+
+    private var previewColors: [Color] {
+        record.items.prefix(6).map { item in
+            inventoryManager.findColor(byCode: item.colorCode)?.color ?? Color.gray
+        }
+    }
+
+    private var extraColorCount: Int {
+        max(0, record.items.count - 6)
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            // 顶行：tile + 商品名 + chevron
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Theme.ColorToken.Morandi.latte.opacity(0.18))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: "shippingbox.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Theme.ColorToken.Morandi.latte)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(record.name.isEmpty ? brandName : record.name)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                        .lineLimit(1)
+                    Text("\(brandName) · 下单 \(orderDateText)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+            }
+
+            // 数据条（色号 / 豆粒）
+            HStack(spacing: 0) {
+                ShipStatCol(label: "色号", value: "\(record.colorCount)", suffix: "种")
+                ShipDivider()
+                ShipStatCol(label: "豆粒", value: formatNumber(record.totalBeads), suffix: "颗")
+            }
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Theme.ColorToken.Surface.subtle)
+            )
+
+            // 色块预览
+            HStack(spacing: 0) {
+                ForEach(Array(previewColors.enumerated()), id: \.offset) { idx, c in
+                    BeadView(color: c, size: 22, ring: Theme.ColorToken.Surface.elevated)
+                        .padding(.leading, idx == 0 ? 0 : -8)
+                        .zIndex(Double(6 - idx))
+                }
+                if extraColorCount > 0 {
+                    Text("+\(extraColorCount)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                        .padding(.leading, 6)
+                }
+                Spacer(minLength: 4)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
+    }
+
+    private func formatNumber(_ num: Int) -> String {
+        if num >= 10000 {
+            return String(format: "%.1fW", Double(num) / 10000)
+        } else if num >= 1000 {
+            return String(format: "%.1fK", Double(num) / 1000)
+        }
+        return "\(num)"
+    }
+}
+
+private struct ShipStatCol: View {
+    let label: String
+    let value: String
+    let suffix: String
+    var body: some View {
+        VStack(spacing: 2) {
+            HStack(alignment: .lastTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                Text(suffix)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+            }
+            Text(label)
+                .font(.system(size: 10.5))
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct ShipDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Theme.ColorToken.Border.divider)
+            .frame(width: 1)
+            .padding(.vertical, 4)
     }
 }
 
@@ -146,7 +447,7 @@ struct PasteReplenishSheet: View {
                     VStack(spacing: 20) {
                         Image(systemName: "doc.on.clipboard")
                             .font(.system(size: 60))
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Theme.ColorToken.Morandi.latte)
 
                         Text("粘贴补豆建议")
                             .font(.title2)
@@ -162,8 +463,8 @@ struct PasteReplenishSheet: View {
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(8)
+                            .background(Theme.ColorToken.Surface.subtle)
+                            .cornerRadius(Theme.Radius.sm)
 
                         Button {
                             parseClipboard()
@@ -176,14 +477,14 @@ struct PasteReplenishSheet: View {
                             .foregroundColor(.white)
                             .padding(.horizontal, 32)
                             .padding(.vertical, 14)
-                            .background(Color.accentColor)
-                            .cornerRadius(25)
+                            .background(Theme.ColorToken.Morandi.latte)
+                            .cornerRadius(Theme.Radius.lg)
                         }
 
                         if let error = parseError {
                             Text(error)
                                 .font(.caption)
-                                .foregroundColor(.red)
+                                .foregroundColor(Theme.ColorToken.Status.error)
                                 .padding(.top, 8)
                         }
                     }
@@ -207,17 +508,17 @@ struct PasteReplenishSheet: View {
                                                     .font(.subheadline)
                                                     .padding(.horizontal, 16)
                                                     .padding(.vertical, 10)
-                                                    .background(selectedBrandId == brand.id ? Color.accentColor : Color.gray.opacity(0.2))
-                                                    .foregroundColor(selectedBrandId == brand.id ? .white : .primary)
-                                                    .cornerRadius(20)
+                                                    .background(selectedBrandId == brand.id ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Surface.subtle)
+                                                    .foregroundColor(selectedBrandId == brand.id ? .white : Theme.ColorToken.Text.primary)
+                                                    .cornerRadius(Theme.Radius.lg)
                                             }
                                         }
                                     }
                                 }
                             }
                             .padding()
-                            .background(Color(.systemBackground))
-                            .cornerRadius(12)
+                            .background(Theme.ColorToken.Surface.elevated)
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal)
 
                             // 记录名称
@@ -225,7 +526,10 @@ struct PasteReplenishSheet: View {
                                 Text("名称")
                                     .foregroundColor(.secondary)
                                 TextField("默认：\(defaultName)", text: $recordName)
-                                    .textFieldStyle(.roundedBorder)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Theme.ColorToken.Surface.subtle)
+                                    .cornerRadius(Theme.Radius.sm)
                             }
                             .padding(.horizontal)
 
@@ -236,7 +540,7 @@ struct PasteReplenishSheet: View {
                                         .font(.headline)
                                     Text("\(totalGrams)g（\(totalBeads) 颗）")
                                         .font(.subheadline)
-                                        .foregroundColor(.green)
+                                        .foregroundColor(Theme.ColorToken.Status.success)
                                 }
                                 Spacer()
                                 Button("重新粘贴") {
@@ -245,10 +549,11 @@ struct PasteReplenishSheet: View {
                                     parseError = nil
                                 }
                                 .font(.subheadline)
+                                .foregroundColor(Theme.ColorToken.Morandi.latte)
                             }
                             .padding()
-                            .background(Color.green.opacity(0.1))
-                            .cornerRadius(12)
+                            .background(Theme.ColorToken.Status.success.opacity(0.1))
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal)
 
                             // 颜色列表预览
@@ -281,21 +586,22 @@ struct PasteReplenishSheet: View {
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(canSave ? Color.accentColor : Color.gray)
-                                .cornerRadius(12)
+                                .background(canSave ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.tertiary)
+                                .cornerRadius(Theme.Radius.md)
                         }
                         .disabled(!canSave)
                         .padding()
                     }
-                    .background(Color(.systemBackground))
+                    .background(Theme.ColorToken.Surface.elevated)
                 }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("粘贴补豆")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") { dismiss() }
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                 }
             }
         }
@@ -394,12 +700,12 @@ struct PasteItemRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 36, height: 36)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             Text(displayCodeText)
@@ -415,72 +721,11 @@ struct PasteItemRow: View {
             Text("+\(grams * 100)")
                 .font(.subheadline)
                 .fontWeight(.semibold)
-                .foregroundColor(.green)
+                .foregroundColor(Theme.ColorToken.Status.success)
         }
         .padding(10)
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
-    }
-}
-
-// MARK: - 购买记录行
-struct PurchaseRecordRow: View {
-    let record: PurchaseRecord
-    @EnvironmentObject var inventoryManager: InventoryManager
-
-    var brandName: String {
-        inventoryManager.brands.first(where: { $0.id == record.brandId })?.name ?? String(localized: "未知品牌")
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            // 图标
-            Image(systemName: "shippingbox.fill")
-                .font(.title2)
-                .foregroundColor(.orange)
-                .frame(width: 40)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(record.name)
-                    .font(.headline)
-
-                HStack(spacing: 8) {
-                    Label(brandName, systemImage: "tag")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Text("·")
-                        .foregroundColor(.secondary)
-
-                    Text("\(record.colorCount) 色")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Text("·")
-                        .foregroundColor(.secondary)
-
-                    Text("+\(formatNumber(record.totalBeads)) 颗")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                }
-
-                Text(record.date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
-        }
-        .padding(.vertical, 4)
-    }
-
-    func formatNumber(_ num: Int) -> String {
-        if num >= 10000 {
-            return String(format: "%.1fW", Double(num) / 10000)
-        } else if num >= 1000 {
-            return String(format: "%.1fK", Double(num) / 1000)
-        }
-        return "\(num)"
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -492,6 +737,7 @@ struct PurchaseRecordDetailView: View {
     @State private var showingConfirmation = false
     @State private var showingDeleteConfirmation = false
     @State private var showingEditSheet = false
+    @State private var showingMoreMenu = false
 
     // 获取最新的记录数据
     var currentRecord: PurchaseRecord {
@@ -510,133 +756,55 @@ struct PurchaseRecordDetailView: View {
         brand?.colorSystem ?? .mard
     }
 
+    private var orderDateText: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy.MM.dd"
+        return formatter.string(from: currentRecord.date)
+    }
+
+    private var isShipped: Bool {
+        Date().timeIntervalSince(currentRecord.date) > 60 * 60 * 24 * 3
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                // 概览卡片
-                VStack(spacing: 12) {
-                    HStack {
-                        Image(systemName: "shippingbox.fill")
-                            .font(.title)
-                            .foregroundColor(.orange)
-                        Text(currentRecord.name)
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        Spacer()
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                BISecondaryNav(title: "购买详情") {
+                    BINavIconButton(systemImage: "square.and.pencil") {
+                        showingEditSheet = true
                     }
-
-                    Divider()
-
-                    HStack(spacing: 20) {
-                        VStack(spacing: 4) {
-                            Text(brandName)
-                                .font(.headline)
-                                .foregroundColor(.accentColor)
-                            Text("品牌")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
-                        VStack(spacing: 4) {
-                            Text("\(currentRecord.colorCount)")
-                                .font(.headline)
-                                .foregroundColor(.purple)
-                            Text("颜色数")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
-                        VStack(spacing: 4) {
-                            Text("+\(currentRecord.totalBeads)")
-                                .font(.headline)
-                                .foregroundColor(.green)
-                            Text("总颗数")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    if let note = currentRecord.note, !note.isEmpty {
-                        Divider()
-                        HStack {
-                            Text(note)
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                        }
+                    BINavIconButton(systemImage: "ellipsis") {
+                        showingMoreMenu = true
                     }
                 }
-                .padding()
-                .background(Color(.systemBackground))
-                .cornerRadius(12)
-                .padding(.horizontal)
 
-                // 颜色列表
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("购买明细")
-                        .font(.headline)
-                        .padding(.horizontal)
-
-                    VStack(spacing: 8) {
-                        ForEach(currentRecord.items) { item in
-                            PurchaseItemRow(item: item, colorSystem: brandColorSystem)
+                ScrollView {
+                    VStack(spacing: 16) {
+                        statusHero
+                        timelineCard
+                        colorListCard
+                        if let note = currentRecord.note, !note.isEmpty {
+                            noteCard(note)
                         }
+                        Color.clear.frame(height: 110)
                     }
-                    .padding(.horizontal)
+                    .padding(.top, 8)
                 }
-
-                // 操作按钮
-                VStack(spacing: 12) {
-                    Button {
-                        showingConfirmation = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                            Text("确认到货")
-                        }
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.green)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                    }
-
-                    HStack(spacing: 24) {
-                        Button {
-                            showingEditSheet = true
-                        } label: {
-                            HStack {
-                                Image(systemName: "pencil")
-                                Text("编辑记录")
-                            }
-                            .font(.subheadline)
-                            .foregroundColor(.accentColor)
-                        }
-
-                        Button {
-                            showingDeleteConfirmation = true
-                        } label: {
-                            HStack {
-                                Image(systemName: "trash")
-                                Text("删除记录")
-                            }
-                            .font(.subheadline)
-                            .foregroundColor(.red)
-                        }
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
             }
-            .padding(.vertical)
+            .background(Theme.ColorToken.Surface.background)
+
+            stickyBottomCTA
         }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle("购买详情")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarHidden(true)
+        .environment(\.tabFlavor, .inventory)
         .sheet(isPresented: $showingEditSheet) {
             EditPurchaseRecordSheet(record: currentRecord)
                 .environmentObject(inventoryManager)
+        }
+        .confirmationDialog("更多操作", isPresented: $showingMoreMenu, titleVisibility: .visible) {
+            Button("编辑记录") { showingEditSheet = true }
+            Button("删除记录", role: .destructive) { showingDeleteConfirmation = true }
+            Button("取消", role: .cancel) { }
         }
         .alert("确认到货", isPresented: $showingConfirmation) {
             Button("取消", role: .cancel) { }
@@ -657,9 +825,295 @@ struct PurchaseRecordDetailView: View {
             Text("确定要删除这条购买记录吗？此操作不可撤销。")
         }
     }
+
+    // MARK: Sub-views
+
+    private var statusHero: some View {
+        VStack(spacing: 14) {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Theme.ColorToken.Morandi.latte, Theme.ColorToken.Morandi.honey],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 50, height: 50)
+                    Image(systemName: "shippingbox.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.white)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(currentRecord.name.isEmpty ? brandName : currentRecord.name)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                        .lineLimit(1)
+                    Text("\(brandName) · 下单 · \(orderDateText)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                }
+                Spacer(minLength: 4)
+                BIBadge(isShipped ? "运输中" : "待发货", style: .accent)
+            }
+
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(currentRecord.totalBeads)")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.ColorToken.Morandi.latte)
+                    Text("颗")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                }
+                Rectangle()
+                    .fill(Theme.ColorToken.Border.divider)
+                    .frame(width: 1, height: 32)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(currentRecord.colorCount)")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                    Text("色")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
+        .padding(.horizontal, 18)
+    }
+
+    private var timelineCard: some View {
+        VStack(spacing: 0) {
+            BIGroupHeader(title: "物流进度", hint: isShipped ? "运输中" : "待发货")
+            BIGroupCard {
+                ShipTimeline(orderDate: currentRecord.date, isShipped: isShipped)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 18)
+            }
+        }
+    }
+
+    private var colorListCard: some View {
+        VStack(spacing: 0) {
+            BIGroupHeader(
+                title: "包含色号",
+                hint: "\(currentRecord.colorCount) 种 · \(currentRecord.totalBeads) 颗"
+            )
+            BIGroupCard {
+                VStack(spacing: 0) {
+                    ForEach(Array(currentRecord.items.enumerated()), id: \.element.id) { idx, item in
+                        DetailColorRow(
+                            item: item,
+                            colorSystem: brandColorSystem,
+                            isLast: idx == currentRecord.items.count - 1
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private func noteCard(_ note: String) -> some View {
+        VStack(spacing: 0) {
+            BIGroupHeader(title: "备注")
+            BIGroupCard {
+                Text(note)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+            }
+        }
+    }
+
+    private var stickyBottomCTA: some View {
+        HStack(spacing: 8) {
+            Button {
+                showingEditSheet = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.and.pencil")
+                    Text("编辑")
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.ColorToken.Morandi.latte)
+                .frame(height: 48)
+                .padding(.horizontal, 18)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(Theme.ColorToken.Morandi.latte.opacity(0.12))
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                showingConfirmation = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark")
+                    Text("标记为已到货 · 加入库存")
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(Theme.ColorToken.Morandi.latte)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 12)
+        .padding(.bottom, 30)
+        .background(
+            LinearGradient(
+                colors: [Theme.ColorToken.Surface.background.opacity(0), Theme.ColorToken.Surface.background],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .bottom)
+        )
+    }
 }
 
-// MARK: - 购买项行
+// MARK: - 物流时间轴
+private struct ShipTimeline: View {
+    let orderDate: Date
+    let isShipped: Bool
+
+    private struct Step {
+        let label: String
+        let date: String
+        let done: Bool
+        let current: Bool
+    }
+
+    private var steps: [Step] {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "M/d"
+        let order = fmt.string(from: orderDate)
+        let ship = fmt.string(from: orderDate.addingTimeInterval(60 * 60 * 24 * 1))
+        let transit = fmt.string(from: orderDate.addingTimeInterval(60 * 60 * 24 * 2))
+        let eta = fmt.string(from: orderDate.addingTimeInterval(60 * 60 * 24 * 6))
+        return [
+            Step(label: "已下单", date: order, done: true, current: !isShipped),
+            Step(label: "商家发货", date: ship, done: isShipped, current: false),
+            Step(label: "运输中", date: transit, done: isShipped, current: isShipped),
+            Step(label: "签收", date: "预 \(eta)", done: false, current: false),
+        ]
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(steps.enumerated()), id: \.offset) { idx, step in
+                stepView(step)
+                if idx < steps.count - 1 {
+                    Rectangle()
+                        .fill(steps[idx + 1].done ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Border.default)
+                        .frame(height: 2)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 8)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func stepView(_ step: Step) -> some View {
+        VStack(spacing: 4) {
+            ZStack {
+                if step.current {
+                    Circle()
+                        .strokeBorder(Theme.ColorToken.Morandi.latte.opacity(0.3), lineWidth: 3)
+                        .frame(width: 24, height: 24)
+                }
+                Circle()
+                    .fill(step.done ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Surface.strong)
+                    .frame(width: 18, height: 18)
+                if step.done {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+            Text(step.label)
+                .font(.system(size: 10, weight: step.current ? .bold : .medium))
+                .foregroundStyle(step.done ? Theme.ColorToken.Text.primary : Theme.ColorToken.Text.tertiary)
+            Text(step.date)
+                .font(.system(size: 9.5, design: .monospaced))
+                .foregroundStyle(Theme.ColorToken.Text.tertiary)
+        }
+        .frame(width: 60)
+    }
+}
+
+// MARK: - 详情页色号行
+private struct DetailColorRow: View {
+    let item: PurchaseItem
+    let colorSystem: ColorSystem
+    let isLast: Bool
+    @EnvironmentObject var inventoryManager: InventoryManager
+
+    private var beadColor: BeadColor? {
+        inventoryManager.findColor(byCode: item.colorCode)
+    }
+
+    private var displayColor: Color {
+        beadColor?.color ?? .gray
+    }
+
+    private var displayCodeText: String {
+        beadColor?.displayCode(for: colorSystem) ?? item.colorCode
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            BeadView(color: displayColor, size: 28)
+            HStack(spacing: 8) {
+                Text(displayCodeText)
+                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+            }
+            Spacer(minLength: 8)
+            HStack(alignment: .lastTextBaseline, spacing: 3) {
+                Text("+")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                Text("\(item.quantity)")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.ColorToken.Morandi.latte)
+                Text("颗")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .overlay(alignment: .bottom) {
+            if !isLast {
+                Rectangle()
+                    .fill(Theme.ColorToken.Border.divider)
+                    .frame(height: 1)
+                    .padding(.leading, 54)
+            }
+        }
+    }
+}
+
+// MARK: - 购买项行（保留兼容，作为预览/复用）
 struct PurchaseItemRow: View {
     let item: PurchaseItem
     var colorSystem: ColorSystem = .mard
@@ -679,31 +1133,28 @@ struct PurchaseItemRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // 颜色预览
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 36, height: 36)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
-            // 色号（按品牌色号体系显示）
             Text(displayCodeText)
                 .font(.system(.body, design: .monospaced))
                 .fontWeight(.medium)
 
             Spacer()
 
-            // 数量
             Text("+\(item.quantity)")
                 .font(.subheadline)
                 .fontWeight(.semibold)
-                .foregroundColor(.green)
+                .foregroundColor(Theme.ColorToken.Status.success)
         }
         .padding(10)
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -789,7 +1240,10 @@ struct AddPurchaseRecordView: View {
                 VStack(spacing: 12) {
                     // 记录名称（可选）
                     TextField("名称（可选，默认：\(defaultName)）", text: $recordName)
-                        .textFieldStyle(.roundedBorder)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Theme.ColorToken.Surface.subtle)
+                        .cornerRadius(Theme.Radius.sm)
 
                     // 品牌选择
                     HStack {
@@ -803,14 +1257,18 @@ struct AddPurchaseRecordView: View {
                             }
                         }
                         .pickerStyle(.menu)
+                        .tint(Theme.ColorToken.Morandi.latte)
                     }
 
                     // 备注
                     TextField("备注（可选）", text: $note)
-                        .textFieldStyle(.roundedBorder)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Theme.ColorToken.Surface.subtle)
+                        .cornerRadius(Theme.Radius.sm)
                 }
                 .padding()
-                .background(Color(.systemBackground))
+                .background(Theme.ColorToken.Surface.elevated)
 
                 // 色系选择器
                 SeriesSelector(
@@ -860,7 +1318,7 @@ struct AddPurchaseRecordView: View {
                                     .foregroundColor(.secondary)
                                 Text("共 +\(formatNumber(totalToAdd)) 颗")
                                     .font(.headline)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(Theme.ColorToken.Status.success)
                             }
 
                             Spacer()
@@ -871,22 +1329,23 @@ struct AddPurchaseRecordView: View {
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 24)
                                     .padding(.vertical, 12)
-                                    .background(canSave ? Color.accentColor : Color.gray)
-                                    .cornerRadius(24)
+                                    .background(canSave ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.tertiary)
+                                    .cornerRadius(Theme.Radius.lg)
                             }
                             .disabled(!canSave)
                         }
                         .padding()
-                        .background(Color(.systemBackground))
+                        .background(Theme.ColorToken.Surface.elevated)
                     }
                 }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("添加购买记录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") { dismiss() }
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -904,6 +1363,7 @@ struct AddPurchaseRecordView: View {
                         }
                     } label: {
                         Text("快速选择")
+                            .foregroundColor(Theme.ColorToken.Morandi.latte)
                     }
                 }
             }
@@ -1011,7 +1471,10 @@ struct EditPurchaseRecordSheet: View {
                                 Text("名称")
                                     .foregroundColor(.secondary)
                                 TextField("记录名称", text: $recordName)
-                                    .textFieldStyle(.roundedBorder)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Theme.ColorToken.Surface.subtle)
+                                    .cornerRadius(Theme.Radius.sm)
                             }
 
                             HStack {
@@ -1024,18 +1487,22 @@ struct EditPurchaseRecordSheet: View {
                                     }
                                 }
                                 .pickerStyle(.menu)
+                                .tint(Theme.ColorToken.Morandi.latte)
                             }
 
                             HStack {
                                 Text("备注")
                                     .foregroundColor(.secondary)
                                 TextField("备注（可选）", text: $note)
-                                    .textFieldStyle(.roundedBorder)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Theme.ColorToken.Surface.subtle)
+                                    .cornerRadius(Theme.Radius.sm)
                             }
                         }
                         .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
+                        .background(Theme.ColorToken.Surface.elevated)
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 汇总信息
@@ -1045,7 +1512,7 @@ struct EditPurchaseRecordSheet: View {
                                     .font(.headline)
                                 Text("+\(totalBeads) 颗")
                                     .font(.subheadline)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(Theme.ColorToken.Status.success)
                             }
                             Spacer()
                             Button {
@@ -1056,11 +1523,12 @@ struct EditPurchaseRecordSheet: View {
                                     Text("添加颜色")
                                 }
                                 .font(.subheadline)
+                                .foregroundColor(Theme.ColorToken.Morandi.latte)
                             }
                         }
                         .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
+                        .background(Theme.ColorToken.Surface.elevated)
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 颜色列表
@@ -1104,20 +1572,21 @@ struct EditPurchaseRecordSheet: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(hasChanges && !items.isEmpty ? Color.accentColor : Color.gray)
-                            .cornerRadius(12)
+                            .background(hasChanges && !items.isEmpty ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.tertiary)
+                            .cornerRadius(Theme.Radius.md)
                     }
                     .disabled(!hasChanges || items.isEmpty)
                     .padding()
                 }
-                .background(Color(.systemBackground))
+                .background(Theme.ColorToken.Surface.elevated)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("编辑记录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") { dismiss() }
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                 }
             }
             .onAppear {
@@ -1179,12 +1648,12 @@ struct EditableItemRow: View {
     var body: some View {
         HStack(spacing: 12) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 36, height: 36)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号（按品牌色号体系显示）
@@ -1202,7 +1671,7 @@ struct EditableItemRow: View {
                     }
                 } label: {
                     Image(systemName: "minus.circle.fill")
-                        .foregroundColor(item.quantity > 1000 ? .blue : .gray)
+                        .foregroundColor(item.quantity > 1000 ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.tertiary)
                         .font(.title3)
                 }
                 .disabled(item.quantity <= 1000)
@@ -1211,7 +1680,7 @@ struct EditableItemRow: View {
                     Text("\(item.quantity)")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.green)
+                        .foregroundColor(Theme.ColorToken.Status.success)
                     Text("\(grams)g")
                         .font(.caption2)
                         .foregroundColor(.secondary)
@@ -1222,7 +1691,7 @@ struct EditableItemRow: View {
                     item.quantity += 1000
                 } label: {
                     Image(systemName: "plus.circle.fill")
-                        .foregroundColor(.blue)
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                         .font(.title3)
                 }
             }
@@ -1232,14 +1701,14 @@ struct EditableItemRow: View {
                 onDelete()
             } label: {
                 Image(systemName: "trash")
-                    .foregroundColor(.red)
+                    .foregroundColor(Theme.ColorToken.Status.error)
                     .font(.subheadline)
             }
             .padding(.leading, 8)
         }
         .padding(10)
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -1316,12 +1785,12 @@ struct AddColorToRecordSheet: View {
                                 selectedColorId = color.id
                             } label: {
                                 HStack(spacing: 12) {
-                                    RoundedRectangle(cornerRadius: 6)
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                         .fill(color.color)
                                         .frame(width: 36, height: 36)
                                         .overlay(
-                                            RoundedRectangle(cornerRadius: 6)
-                                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                                         )
 
                                     Text(color.displayCode(for: brandColorSystem))
@@ -1333,12 +1802,12 @@ struct AddColorToRecordSheet: View {
 
                                     if selectedColorId == color.id {
                                         Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(.accentColor)
+                                            .foregroundColor(Theme.ColorToken.Morandi.latte)
                                     }
                                 }
                                 .padding(10)
-                                .background(selectedColorId == color.id ? Color.accentColor.opacity(0.1) : Color(.systemBackground))
-                                .cornerRadius(10)
+                                .background(selectedColorId == color.id ? Theme.ColorToken.Morandi.latte.opacity(0.1) : Theme.ColorToken.Surface.elevated)
+                                .cornerRadius(Theme.Radius.md)
                             }
                         }
                     }
@@ -1355,7 +1824,7 @@ struct AddColorToRecordSheet: View {
                             // 已选颜色
                             HStack {
                                 if let color = selectedColor {
-                                    RoundedRectangle(cornerRadius: 4)
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                         .fill(color.color)
                                         .frame(width: 24, height: 24)
                                     Text(color.displayCode(for: brandColorSystem))
@@ -1378,7 +1847,7 @@ struct AddColorToRecordSheet: View {
                                     } label: {
                                         Image(systemName: "minus.circle.fill")
                                             .font(.title2)
-                                            .foregroundColor(quantity > 1 ? .blue : .gray)
+                                            .foregroundColor(quantity > 1 ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.tertiary)
                                     }
                                     .disabled(quantity <= 1)
 
@@ -1392,7 +1861,7 @@ struct AddColorToRecordSheet: View {
                                     } label: {
                                         Image(systemName: "plus.circle.fill")
                                             .font(.title2)
-                                            .foregroundColor(.blue)
+                                            .foregroundColor(Theme.ColorToken.Morandi.latte)
                                     }
                                 }
                             }
@@ -1408,21 +1877,22 @@ struct AddColorToRecordSheet: View {
                                     .foregroundColor(.white)
                                     .frame(maxWidth: .infinity)
                                     .padding()
-                                    .background(Color.accentColor)
-                                    .cornerRadius(12)
+                                    .background(Theme.ColorToken.Morandi.latte)
+                                    .cornerRadius(Theme.Radius.md)
                             }
                         }
                         .padding()
-                        .background(Color(.systemBackground))
+                        .background(Theme.ColorToken.Surface.elevated)
                     }
                 }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("添加颜色")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") { dismiss() }
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                 }
             }
             .onAppear {

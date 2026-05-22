@@ -20,10 +20,10 @@ struct TutorialDetailView: View {
                     HStack(spacing: 12) {
                         Image(systemName: section.icon)
                             .font(.title)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Theme.ColorToken.Morandi.latte)
                             .frame(width: 44, height: 44)
-                            .background(Color.accentColor.opacity(0.1))
-                            .cornerRadius(10)
+                            .background(Theme.ColorToken.Morandi.latte.opacity(0.1))
+                            .cornerRadius(Theme.Radius.md)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(section.localizedTitle)
@@ -83,8 +83,8 @@ struct StepCardView: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(width: 24, height: 24)
-                    .background(Color.accentColor)
-                    .cornerRadius(12)
+                    .background(Theme.ColorToken.Morandi.latte)
+                    .cornerRadius(Theme.Radius.md)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(step.localizedTitle)
@@ -101,7 +101,7 @@ struct StepCardView: View {
                 Image(imageName)
                     .resizable()
                     .scaledToFit()
-                    .cornerRadius(12)
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.leading, 36)
             }
 
@@ -116,19 +116,19 @@ struct StepCardView: View {
                     }
                     .font(.subheadline)
                     .fontWeight(.medium)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Theme.ColorToken.Morandi.latte)
                 }
                 .padding(.leading, 36)
             }
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(isHighlighted ? Color.accentColor.opacity(0.08) : Color(.secondarySystemGroupedBackground))
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .fill(isHighlighted ? Theme.ColorToken.Morandi.latte.opacity(0.08) : Theme.ColorToken.Surface.subtle)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isHighlighted ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 1.5)
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(isHighlighted ? Theme.ColorToken.Morandi.latte.opacity(0.3) : Color.clear, lineWidth: 1.5)
         )
         .padding(.horizontal)
     }

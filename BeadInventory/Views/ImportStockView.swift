@@ -109,7 +109,7 @@ struct ImportStockView: View {
             // 图标
             Image(systemName: "doc.text")
                 .font(.system(size: 60))
-                .foregroundColor(.accentColor)
+                .foregroundColor(Theme.ColorToken.Morandi.mist)
 
             // 说明文字
             VStack(spacing: 8) {
@@ -133,9 +133,9 @@ struct ImportStockView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(Color.accentColor)
+                .background(Theme.ColorToken.Morandi.mist)
                 .foregroundColor(.white)
-                .cornerRadius(12)
+                .cornerRadius(Theme.Radius.md)
             }
             .padding(.horizontal, 40)
 
@@ -164,16 +164,16 @@ struct ImportStockView: View {
             .foregroundColor(.secondary)
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.systemGray6))
-            .cornerRadius(8)
+            .background(Theme.ColorToken.Surface.subtle)
+            .cornerRadius(Theme.Radius.sm)
 
             Text("支持的列名：色号/颜色/color/code，数量/库存/quantity/stock 等")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
         .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.md)
     }
 
     // MARK: - 文件处理
@@ -280,7 +280,7 @@ struct ImportPreviewView: View {
                                     Text("\(item.quantity)")
                                         .foregroundColor(.secondary)
                                     Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundColor(.orange)
+                                        .foregroundColor(Theme.ColorToken.Status.warning)
                                         .font(.caption)
                                 }
                             }
@@ -298,7 +298,7 @@ struct ImportPreviewView: View {
                         ForEach(result.parseErrors, id: \.self) { error in
                             Text(error)
                                 .font(.caption)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                         }
                     } header: {
                         Text("解析警告")
@@ -327,9 +327,9 @@ struct ImportPreviewView: View {
                     Text("重新选择")
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color(.systemGray5))
+                        .background(Theme.ColorToken.Surface.subtle)
                         .foregroundColor(.primary)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
 
                 Button {
@@ -338,9 +338,9 @@ struct ImportPreviewView: View {
                     Text("确认导入")
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(result.validItems.isEmpty ? Color.gray : Color.accentColor)
+                        .background(result.validItems.isEmpty ? Theme.ColorToken.Border.default : Theme.ColorToken.Morandi.mist)
                         .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
                 .disabled(result.validItems.isEmpty)
             }
@@ -354,7 +354,7 @@ struct ImportPreviewView: View {
                 Text("\(result.validItems.count)")
                     .font(.title)
                     .fontWeight(.bold)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Theme.ColorToken.Morandi.mist)
                 Text("种颜色")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -367,7 +367,7 @@ struct ImportPreviewView: View {
                 Text("\(result.totalValidQuantity)")
                     .font(.title)
                     .fontWeight(.bold)
-                    .foregroundColor(.green)
+                    .foregroundColor(Theme.ColorToken.Status.success)
                 Text("总数量")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -381,7 +381,7 @@ struct ImportPreviewView: View {
                     Text("\(result.invalidItems.count)")
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                     Text("无效")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -389,7 +389,7 @@ struct ImportPreviewView: View {
             }
         }
         .padding()
-        .background(Color(.systemGray6))
+        .background(Theme.ColorToken.Surface.subtle)
     }
 }
 
@@ -416,7 +416,7 @@ struct ImportItemRow: View {
 
             Text("+\(item.quantity)")
                 .font(.system(.body, design: .monospaced))
-                .foregroundColor(.green)
+                .foregroundColor(Theme.ColorToken.Status.success)
                 .fontWeight(.medium)
         }
     }

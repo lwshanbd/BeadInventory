@@ -83,7 +83,7 @@ struct ColorSelectionView: View {
                         .foregroundColor(.secondary)
                     Text("\(selectedColors.count)")
                         .fontWeight(.bold)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                     Text("/ \(totalColorsForSystem) 色")
                         .foregroundColor(.secondary)
                     Spacer()
@@ -125,7 +125,7 @@ struct ColorSelectionView: View {
                 .font(.subheadline)
                 .padding(.horizontal)
                 .padding(.vertical, 10)
-                .background(Color(.systemGray6))
+                .background(Theme.ColorToken.Surface.subtle)
 
                 // 色系选择器
                 SeriesSelector(
@@ -152,7 +152,7 @@ struct ColorSelectionView: View {
                     .padding(.bottom, 20)
                 }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("选择颜色")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -227,12 +227,12 @@ struct ColorSelectRow: View {
                 // 选择按钮
                 ZStack {
                     Circle()
-                        .stroke(isSelected ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 2)
+                        .stroke(isSelected ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Border.default, lineWidth: 2)
                         .frame(width: 28, height: 28)
 
                     if isSelected {
                         Circle()
-                            .fill(Color.accentColor)
+                            .fill(Theme.ColorToken.Morandi.latte)
                             .frame(width: 20, height: 20)
 
                         Image(systemName: "checkmark")
@@ -243,12 +243,12 @@ struct ColorSelectRow: View {
                 }
 
                 // 颜色预览
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
                     .fill(color.color)
                     .frame(width: 40, height: 40)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                     )
 
                 // 色号和名称
@@ -269,13 +269,13 @@ struct ColorSelectRow: View {
                 // 选中标记
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                         .font(.title3)
                 }
             }
             .padding(12)
-            .background(isSelected ? Color.accentColor.opacity(0.08) : Color(.systemBackground))
-            .cornerRadius(12)
+            .background(isSelected ? Theme.ColorToken.Morandi.latte.opacity(0.08) : Theme.ColorToken.Surface.elevated)
+            .cornerRadius(Theme.Radius.md)
         }
         .buttonStyle(PlainButtonStyle())
     }

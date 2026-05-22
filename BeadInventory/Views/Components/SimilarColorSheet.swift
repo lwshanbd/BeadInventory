@@ -22,12 +22,12 @@ struct SimilarColorSheet: View {
                 if let color = originalColor {
                     Section("原色") {
                         HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                 .fill(color.color)
                                 .frame(width: 48, height: 48)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                                 )
                             VStack(alignment: .leading) {
                                 Text(originalColorCode)
@@ -40,7 +40,7 @@ struct SimilarColorSheet: View {
                                 }
                             }
                         }
-                        .listRowBackground(Color(.systemGray6))
+                        .listRowBackground(Theme.ColorToken.Surface.subtle)
                     }
                 }
 
@@ -61,12 +61,12 @@ struct SimilarColorSheet: View {
                                 dismiss()
                             } label: {
                                 HStack(spacing: 12) {
-                                    RoundedRectangle(cornerRadius: 8)
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                         .fill(similar.beadColor.color)
                                         .frame(width: 48, height: 48)
                                         .overlay(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                                         )
 
                                     VStack(alignment: .leading, spacing: 2) {
@@ -86,11 +86,11 @@ struct SimilarColorSheet: View {
                                     VStack(alignment: .trailing) {
                                         Text("库存 \(similar.availableStock)")
                                             .font(.caption)
-                                            .foregroundColor(.green)
+                                            .foregroundColor(Theme.ColorToken.Status.success)
                                     }
 
                                     Image(systemName: "arrow.right.circle.fill")
-                                        .foregroundColor(.accentColor)
+                                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                                 }
                             }
                         }

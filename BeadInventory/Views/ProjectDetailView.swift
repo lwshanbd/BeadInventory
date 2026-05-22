@@ -121,8 +121,8 @@ struct ProjectDetailView: View {
                         }
                     }
                     .padding()
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
+                    .background(Theme.ColorToken.Surface.elevated)
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
                 }
 
@@ -152,7 +152,7 @@ struct ProjectDetailView: View {
                             Image(systemName: "arrow.up.arrow.down")
                                 .font(.caption)
                         }
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                     }
                 }
                 .padding(.horizontal)
@@ -167,7 +167,7 @@ struct ProjectDetailView: View {
             }
             .padding(.vertical)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Theme.ColorToken.Surface.background)
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -244,10 +244,10 @@ struct ChildProjectRow: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                     )
             }
 
@@ -271,7 +271,7 @@ struct ChildProjectRow: View {
 
                 Text("\(project.totalBeads) 颗")
                     .font(.caption)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Theme.ColorToken.Morandi.latte)
             }
 
             Image(systemName: "chevron.right")
@@ -279,8 +279,8 @@ struct ChildProjectRow: View {
                 .foregroundColor(.secondary)
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(8)
+        .background(Theme.ColorToken.Surface.subtle)
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 
@@ -304,10 +304,10 @@ struct ChildProjectRowWithActions: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                     )
             }
 
@@ -331,7 +331,7 @@ struct ChildProjectRowWithActions: View {
 
                         Text("\(project.totalBeads) 颗")
                             .font(.caption)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Theme.ColorToken.Morandi.latte)
                     }
                 }
             }
@@ -356,8 +356,8 @@ struct ChildProjectRowWithActions: View {
             }
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(8)
+        .background(Theme.ColorToken.Surface.subtle)
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 
@@ -386,15 +386,15 @@ struct ProjectInfoCardEnhanced: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 150)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                         )
                 } else if onEditThumbnail != nil {
                     // 无图片时的占位符
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.gray.opacity(0.1))
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(Theme.ColorToken.Surface.subtle)
                         .frame(height: 100)
                         .overlay(
                             VStack(spacing: 8) {
@@ -419,7 +419,7 @@ struct ProjectInfoCardEnhanced: View {
                         Image(systemName: "pencil.circle.fill")
                             .font(.title2)
                             .foregroundColor(.white)
-                            .background(Circle().fill(Color.accentColor))
+                            .background(Circle().fill(Theme.ColorToken.Morandi.latte))
                     }
                     .padding(8)
                 }
@@ -430,11 +430,11 @@ struct ProjectInfoCardEnhanced: View {
                 if isParent {
                     Label("父项目", systemImage: "folder.fill")
                         .font(.caption)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.accentColor.opacity(0.1))
-                        .cornerRadius(6)
+                        .background(Theme.ColorToken.Morandi.latte.opacity(0.1))
+                        .cornerRadius(Theme.Radius.sm)
                 }
 
                 Label(project.date.formatted(date: .long, time: .omitted), systemImage: "calendar")
@@ -446,11 +446,11 @@ struct ProjectInfoCardEnhanced: View {
                 if project.isArchived {
                     Label("已归档", systemImage: "archivebox.fill")
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.orange.opacity(0.1))
-                        .cornerRadius(6)
+                        .background(Theme.ColorToken.Status.warning.opacity(0.1))
+                        .cornerRadius(Theme.Radius.sm)
                 }
             }
 
@@ -463,7 +463,7 @@ struct ProjectInfoCardEnhanced: View {
                         Text("\(childCount)")
                             .font(.title2)
                             .fontWeight(.bold)
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Decorative.lemon)
                         Text("子项目")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -474,7 +474,7 @@ struct ProjectInfoCardEnhanced: View {
                     Text("\(colorCount)")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(.purple)
+                        .foregroundColor(Theme.ColorToken.Decorative.lavender)
                     Text(isParent ? "总颜色" : "颜色数")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -484,7 +484,7 @@ struct ProjectInfoCardEnhanced: View {
                     Text("\(totalBeads)")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(.blue)
+                        .foregroundColor(Theme.ColorToken.Decorative.sky)
                     Text("总颗数")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -495,7 +495,7 @@ struct ProjectInfoCardEnhanced: View {
                         Text(brandName)
                             .font(.title2)
                             .fontWeight(.bold)
-                            .foregroundColor(.green)
+                            .foregroundColor(Theme.ColorToken.Decorative.mint)
                         Text("品牌")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -504,8 +504,8 @@ struct ProjectInfoCardEnhanced: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 }
@@ -536,12 +536,12 @@ struct BeadUsageRow: View {
     var body: some View {
         HStack(spacing: 12) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 44, height: 44)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号和名称
@@ -573,13 +573,13 @@ struct BeadUsageRow: View {
             // 扣减状态
             if usage.isDeducted {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
+                    .foregroundColor(Theme.ColorToken.Status.success)
                     .font(.title3)
             }
         }
         .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -611,7 +611,7 @@ struct FinishedImageSection: View {
                         Text(finishedImage == nil ? "上传成品图" : "修改")
                     }
                     .font(.caption)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Theme.ColorToken.Morandi.latte)
                 }
             }
 
@@ -620,10 +620,10 @@ struct FinishedImageSection: View {
                     .resizable()
                     .scaledToFit()
                     .frame(maxHeight: 300)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: Theme.Radius.md)
+                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                     )
 
                 // 完成日期选择
@@ -639,10 +639,10 @@ struct FinishedImageSection: View {
                     } label: {
                         if let date = project.completedDate {
                             Text(formatDate(date))
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(Theme.ColorToken.Morandi.latte)
                         } else {
                             Text("选择日期")
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(Theme.ColorToken.Morandi.latte)
                         }
                     }
 
@@ -659,8 +659,8 @@ struct FinishedImageSection: View {
                 .padding(.top, 8)
             } else {
                 // 空状态占位符
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.gray.opacity(0.1))
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .fill(Theme.ColorToken.Surface.subtle)
                     .frame(height: 150)
                     .overlay(
                         VStack(spacing: 12) {
@@ -678,8 +678,8 @@ struct FinishedImageSection: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
         .sheet(isPresented: $showingDatePicker) {
             CompletedDatePickerSheet(
@@ -755,6 +755,7 @@ struct ProjectImageEditorSheet: View {
     @State private var imageToCrop: UIImage?
     @State private var showingCamera = false
     @State private var pendingCropAfterCamera = false  // 相机关闭后需要打开裁切
+    @State private var saveSuccessAt: Date = .distantPast
 
     var displayImage: UIImage? {
         editedImage ?? currentImage
@@ -772,16 +773,16 @@ struct ProjectImageEditorSheet: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 250)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                         )
                         .padding(.horizontal)
                 } else {
                     // 空状态
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.gray.opacity(0.1))
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(Theme.ColorToken.Surface.subtle)
                         .frame(height: 200)
                         .overlay(
                             VStack(spacing: 12) {
@@ -809,9 +810,9 @@ struct ProjectImageEditorSheet: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color.accentColor)
+                            .background(Theme.ColorToken.Morandi.latte)
                             .foregroundColor(.white)
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                         }
 
                         // 拍照按钮
@@ -825,9 +826,9 @@ struct ProjectImageEditorSheet: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color.green)
+                            .background(Theme.ColorToken.Status.success)
                             .foregroundColor(.white)
-                            .cornerRadius(12)
+                            .cornerRadius(Theme.Radius.md)
                         }
                     }
                     .padding(.horizontal)
@@ -845,9 +846,9 @@ struct ProjectImageEditorSheet: View {
                                 .font(.subheadline)
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(Color.blue.opacity(0.1))
-                                .foregroundColor(.blue)
-                                .cornerRadius(12)
+                                .background(Theme.ColorToken.Status.info.opacity(0.1))
+                                .foregroundColor(Theme.ColorToken.Status.info)
+                                .cornerRadius(Theme.Radius.md)
                             }
 
                             Button {
@@ -860,9 +861,9 @@ struct ProjectImageEditorSheet: View {
                                 .font(.subheadline)
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(Color.orange.opacity(0.1))
-                                .foregroundColor(.orange)
-                                .cornerRadius(12)
+                                .background(Theme.ColorToken.Status.warning.opacity(0.1))
+                                .foregroundColor(Theme.ColorToken.Status.warning)
+                                .cornerRadius(Theme.Radius.md)
                             }
                             .disabled(editedImage == nil)
                         }
@@ -880,7 +881,7 @@ struct ProjectImageEditorSheet: View {
                                 Text("移除图片")
                             }
                             .font(.subheadline)
-                            .foregroundColor(.red)
+                            .foregroundColor(Theme.ColorToken.Status.error)
                         }
                         .padding(.top, 8)
                     }
@@ -900,6 +901,7 @@ struct ProjectImageEditorSheet: View {
                         if let image = displayImage {
                             let imageData = generateImageData(from: image)
                             onSave(imageData)
+                            saveSuccessAt = Date()
                         }
                         dismiss()
                     }
@@ -971,6 +973,7 @@ struct ProjectImageEditorSheet: View {
                 }
             }
         }
+        .haptic(.success, trigger: saveSuccessAt)
         .presentationDetents([.medium, .large])
     }
 

@@ -89,7 +89,7 @@ struct HiddenColorsManageView: View {
                             } label: {
                                 Label("取消隐藏", systemImage: "eye")
                             }
-                            .tint(.green)
+                            .tint(Theme.ColorToken.Status.success)
                         }
                     }
                 } header: {
@@ -125,8 +125,8 @@ struct HiddenColorsManageView: View {
                     .foregroundColor(.white)
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color.green)
-                    .cornerRadius(12)
+                    .background(Theme.ColorToken.Status.success)
+                    .cornerRadius(Theme.Radius.md)
                 }
                 .padding()
             }
@@ -176,7 +176,7 @@ struct HiddenColorRow: View {
                     onToggleSelect()
                 } label: {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(isSelected ? .accentColor : .secondary)
+                        .foregroundColor(isSelected ? Theme.ColorToken.Morandi.latte : .secondary)
                         .font(.title2)
                 }
                 .buttonStyle(.plain)
@@ -184,16 +184,16 @@ struct HiddenColorRow: View {
 
             // 颜色块
             if let color = color {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
                     .fill(color.color)
                     .frame(width: 40, height: 40)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                     )
             } else {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.gray.opacity(0.3))
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .fill(Theme.ColorToken.Border.default)
                     .frame(width: 40, height: 40)
             }
 
@@ -201,7 +201,9 @@ struct HiddenColorRow: View {
                 Text(color?.displayCode(for: inventoryManager.currentColorSystem) ?? stock.mardCode)
                     .font(.system(.headline, design: .monospaced))
 
-                if let color = color {
+                // 仅自定义色号(# 开头)显示用户输入的名字;
+                // 预设色号绝不显示编造的中文名（HANDOFF 铁律）
+                if let color = color, color.mardCode.hasPrefix("#"), !color.colorName.isEmpty {
                     Text(color.colorName)
                         .font(.caption)
                         .foregroundColor(.secondary)

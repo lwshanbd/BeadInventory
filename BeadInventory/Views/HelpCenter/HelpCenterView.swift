@@ -62,7 +62,7 @@ struct HelpCenterView: View {
                     }
                 } icon: {
                     Image(systemName: section.icon)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                 }
             }
         }
@@ -80,7 +80,7 @@ struct HelpCenterView: View {
                     }
                 } icon: {
                     Image(systemName: "questionmark.circle.fill")
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                 }
             }
         }

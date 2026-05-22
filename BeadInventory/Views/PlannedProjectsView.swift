@@ -28,22 +28,85 @@ struct PlannedProjectsView: View {
         }
     }
 
+    enum PlanFilter: Hashable {
+        case all
+        case needsBeads
+        case ready
+    }
+
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var expandedProjects: Set<UUID> = []
-    @State private var isSelectMode = false
-    @State private var selectedProjects: Set<UUID> = []
+    @StateObject private var sel = SelectionContext<UUID>()
     @State private var activeSheet: ActiveSheet?
     @State private var searchText = ""
+    @State private var showBatchDeleteAlert = false
+    @State private var lastSuccessAt: Date = .distantPast
+    @State private var filter: PlanFilter = .all
 
     var plannedProjects: [ProjectRecord] {
         inventoryManager.plannedProjects()
     }
 
-    var filteredProjects: [ProjectRecord] {
-        if searchText.isEmpty {
-            return plannedProjects
+    /// 项目库存是否充足（用于判定 ready/short）
+    /// 跨所有同色系品牌汇总该色号库存，若任意颜色不足即为缺豆
+    private func shortageCount(for project: ProjectRecord) -> Int {
+        let isParent = inventoryManager.isParentProject(project.id)
+        let usages: [BeadUsage] = isParent
+            ? inventoryManager.plannedAggregatedBeadUsage(for: project.id)
+            : project.beadUsage
+        let brandsInSystem = inventoryManager.brands.filter { $0.colorSystem == project.colorSystem }
+        guard !brandsInSystem.isEmpty else { return 0 }
+
+        var shortage = 0
+        for usage in usages {
+            let mardCode = inventoryManager.findColor(byCode: usage.colorCode)?.mardCode ?? usage.colorCode
+            var available = 0
+            for brand in brandsInSystem {
+                if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: mardCode) {
+                    available += stock.available
+                }
+            }
+            if available < usage.quantity { shortage += 1 }
         }
-        return plannedProjects.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        return shortage
+    }
+
+    private func isReady(_ project: ProjectRecord) -> Bool {
+        shortageCount(for: project) == 0
+    }
+
+    var needsBeadsCount: Int { plannedProjects.filter { !isReady($0) }.count }
+    var readyCount: Int { plannedProjects.filter { isReady($0) }.count }
+
+    var totalBeadsAcrossPlans: Int {
+        plannedProjects.reduce(0) { sum, p in
+            let isParent = inventoryManager.isParentProject(p.id)
+            return sum + (isParent ? inventoryManager.plannedAggregatedTotalBeads(for: p.id) : p.totalBeads)
+        }
+    }
+
+    var totalShortageColors: Int {
+        plannedProjects.reduce(0) { $0 + shortageCount(for: $1) }
+    }
+
+    var filteredProjects: [ProjectRecord] {
+        var list = plannedProjects
+        switch filter {
+        case .all: break
+        case .needsBeads: list = list.filter { !isReady($0) }
+        case .ready: list = list.filter { isReady($0) }
+        }
+        if !searchText.isEmpty {
+            list = list.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        }
+        return list
+    }
+
+    private func formattedNumber(_ value: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.groupingSeparator = ","
+        return f.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 
     var body: some View {
@@ -51,215 +114,150 @@ struct PlannedProjectsView: View {
             Group {
                 if plannedProjects.isEmpty {
                     EmptyPlannedProjectsView()
+                        .background(Theme.ColorToken.Surface.background)
                 } else {
-                    VStack(spacing: 0) {
-                        List {
-                            if plannedProjects.count >= 2 {
-                                TipView(PlanMergeTip())
-                            }
-                            TipView(ReplenishTip())
-                            // 多选操作按钮区域（放在 List 内部，随列表滚动）
-                            if isSelectMode && !selectedProjects.isEmpty {
-                                Section {
-                                    VStack(spacing: 8) {
-                                        HStack(spacing: 8) {
-                                            // 库存确认按钮
-                                            Button {
-                                                activeSheet = .multiStockCheck
-                                            } label: {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "checklist")
-                                                    Text("库存确认")
-                                                }
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundColor(.white)
-                                                .padding(.vertical, 12)
-                                                .frame(maxWidth: .infinity)
-                                                .background(Color.blue)
-                                                .cornerRadius(10)
-                                            }
-                                            .buttonStyle(.borderless)
-
-                                            // 补豆建议按钮
-                                            Button {
-                                                activeSheet = .replenishSuggestion
-                                            } label: {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "cart.badge.plus")
-                                                    Text("补豆建议")
-                                                }
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundColor(.white)
-                                                .padding(.vertical, 12)
-                                                .frame(maxWidth: .infinity)
-                                                .background(Color.orange)
-                                                .cornerRadius(10)
-                                            }
-                                            .buttonStyle(.borderless)
-                                        }
-
-                                        HStack(spacing: 8) {
-                                            // 直接补豆按钮
-                                            Button {
-                                                activeSheet = .directPurchase
-                                            } label: {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "bag.badge.plus")
-                                                    Text("直接补豆")
-                                                }
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundColor(.white)
-                                                .padding(.vertical, 12)
-                                                .frame(maxWidth: .infinity)
-                                                .background(Color.green)
-                                                .cornerRadius(10)
-                                            }
-                                            .buttonStyle(.borderless)
-
-                                            // 合并按钮（需要选中 2 个及以上）
-                                            Button {
-                                                activeSheet = .merge
-                                            } label: {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "arrow.triangle.merge")
-                                                    Text("合并")
-                                                }
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundColor(.white)
-                                                .padding(.vertical, 12)
-                                                .frame(maxWidth: .infinity)
-                                                .background(selectedProjects.count >= 2 ? Color.accentColor : Color.gray)
-                                                .cornerRadius(10)
-                                            }
-                                            .buttonStyle(.borderless)
-                                            .disabled(selectedProjects.count < 2)
-                                        }
-                                    }
-                                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                                }
-                            }
-
-                            ForEach(filteredProjects) { project in
-                                let isParent = inventoryManager.isParentProject(project.id)
-                                let isExpanded = expandedProjects.contains(project.id)
-
-                                PlannedProjectRow(
-                                    project: project,
-                                    isParent: isParent,
-                                    isExpanded: isExpanded,
-                                    isSelectMode: isSelectMode,
-                                    isSelected: selectedProjects.contains(project.id),
-                                    showSearchCheckbox: !searchText.isEmpty && !isSelectMode,
-                                    onToggleExpand: {
-                                        withAnimation {
-                                            if isExpanded {
-                                                expandedProjects.remove(project.id)
-                                            } else {
-                                                expandedProjects.insert(project.id)
-                                            }
-                                        }
-                                    },
-                                    onToggleSelect: {
-                                        // 搜索时点击复选框自动进入多选模式
-                                        if !isSelectMode && !searchText.isEmpty {
-                                            withAnimation { isSelectMode = true }
-                                        }
-                                        if selectedProjects.contains(project.id) {
-                                            selectedProjects.remove(project.id)
-                                        } else {
-                                            selectedProjects.insert(project.id)
-                                        }
-                                    },
-                                    onExecute: {
-                                        activeSheet = .execute(project)
-                                    }
-                                )
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button(role: .destructive) {
-                                        inventoryManager.deletePlannedProject(project.id)
-                                    } label: {
-                                        Label("删除", systemImage: "trash")
-                                    }
-
-                                    Button {
-                                        _ = inventoryManager.duplicatePlannedProject(project.id)
-                                    } label: {
-                                        Label("复制", systemImage: "doc.on.doc")
-                                    }
-                                    .tint(.blue)
-                                }
-                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                    Button {
-                                        activeSheet = .execute(project)
-                                    } label: {
-                                        Label("执行", systemImage: "play.fill")
-                                    }
-                                    .tint(.green)
-                                }
-
-                                // 展开的子项目
-                                if isParent && isExpanded {
-                                    ForEach(inventoryManager.plannedChildProjects(of: project.id)) { child in
-                                        PlannedChildProjectRow(project: child)
-                                            .padding(.leading, 20)
-                                    }
-                                }
-                            }
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            overviewCard
+                            searchField
+                            filterChips
+                            tipsBlock
+                            planList
                         }
-                        .listStyle(.insetGrouped)
-                        .scrollDismissesKeyboard(.immediately)
+                        .padding(.bottom, 20)
                     }
+                    .scrollDismissesKeyboard(.immediately)
                 }
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("计划项目")
-            .searchable(text: $searchText, prompt: "搜索计划名称")
+            .background(Theme.ColorToken.Surface.background)
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    if isSelectMode {
+                    if sel.isActive {
                         Button {
-                            if selectedProjects.count == filteredProjects.count {
-                                selectedProjects.removeAll()
-                            } else {
-                                selectedProjects = Set(filteredProjects.map { $0.id })
-                            }
+                            withAnimation { sel.exit() }
                         } label: {
-                            Text(selectedProjects.count == filteredProjects.count ? "取消全选" : "全选")
+                            Text("取消")
                         }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if !plannedProjects.isEmpty {
-                        Button {
-                            withAnimation {
-                                isSelectMode.toggle()
-                                if !isSelectMode {
-                                    selectedProjects.removeAll()
+                    if sel.isActive {
+                        // 多选模式：全选 / 取消全选 + 完成
+                        HStack(spacing: 12) {
+                            Button {
+                                if sel.count == filteredProjects.count {
+                                    sel.clear()
+                                } else {
+                                    sel.selectAll(filteredProjects.map { $0.id })
                                 }
+                            } label: {
+                                Text(sel.count == filteredProjects.count ? "取消全选" : "全选")
                             }
+                            Button {
+                                withAnimation { sel.exit() }
+                            } label: {
+                                Text("完成").fontWeight(.semibold)
+                            }
+                        }
+                    } else if !plannedProjects.isEmpty {
+                        Button {
+                            withAnimation { sel.enter() }
                         } label: {
-                            Text(isSelectMode ? "取消" : "多选")
+                            Text("选择")
                         }
                     }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                if sel.isActive {
+                    MultiSelectActionBar(count: sel.count) {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Button {
+                                activeSheet = .multiStockCheck
+                            } label: {
+                                Label("库存确认", systemImage: "checklist")
+                                    .labelStyle(.iconOnly)
+                                    .font(.title3)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .disabled(sel.count == 0)
+
+                            Button {
+                                activeSheet = .replenishSuggestion
+                            } label: {
+                                Label("补豆建议", systemImage: "cart.badge.plus")
+                                    .labelStyle(.iconOnly)
+                                    .font(.title3)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .disabled(sel.count == 0)
+
+                            Button {
+                                activeSheet = .directPurchase
+                            } label: {
+                                Label("直接补豆", systemImage: "bag.badge.plus")
+                                    .labelStyle(.iconOnly)
+                                    .font(.title3)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .disabled(sel.count == 0)
+
+                            Button {
+                                activeSheet = .merge
+                            } label: {
+                                Label("合并", systemImage: "arrow.triangle.merge")
+                                    .labelStyle(.iconOnly)
+                                    .font(.title3)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .disabled(sel.count < 2)
+
+                            Button(role: .destructive) {
+                                showBatchDeleteAlert = true
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                                    .labelStyle(.iconOnly)
+                                    .font(.title3)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .disabled(sel.count == 0)
+                        }
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .alert("删除选中的计划？", isPresented: $showBatchDeleteAlert) {
+                Button("取消", role: .cancel) {}
+                Button("删除 \(sel.count) 个", role: .destructive) {
+                    for id in sel.selected {
+                        inventoryManager.deletePlannedProject(id)
+                    }
+                    lastSuccessAt = Date()
+                    withAnimation { sel.exit() }
+                }
+            } message: {
+                Text("此操作无法撤销")
+            }
+            .haptic(.success, trigger: lastSuccessAt)
             // 使用与统计页面相同的方式：传递 projectIds
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .merge:
-                    MergePlannedProjectsSheet(projectIds: Array(selectedProjects)) {
-                        isSelectMode = false
-                        selectedProjects.removeAll()
+                    MergePlannedProjectsSheet(projectIds: Array(sel.selected)) {
+                        sel.exit()
                     }
                     .environmentObject(inventoryManager)
                 case .multiStockCheck:
-                    MultiProjectStockCheckSheet(projectIds: Array(selectedProjects))
+                    MultiProjectStockCheckSheet(projectIds: Array(sel.selected))
                         .environmentObject(inventoryManager)
                 case .replenishSuggestion:
-                    ReplenishSuggestionSheet(projectIds: Array(selectedProjects))
+                    ReplenishSuggestionSheet(projectIds: Array(sel.selected))
                         .environmentObject(inventoryManager)
                 case .directPurchase:
-                    DirectPurchaseSheet(projectIds: Array(selectedProjects))
+                    DirectPurchaseSheet(projectIds: Array(sel.selected))
                         .environmentObject(inventoryManager)
                 case .execute(let project):
                     ExecutePlannedProjectSheet(project: project)
@@ -268,133 +266,382 @@ struct PlannedProjectsView: View {
             }
         }
     }
-}
 
-// MARK: - 空状态视图
-struct EmptyPlannedProjectsView: View {
-    var body: some View {
-        EmptyStateView(
-            icon: "calendar.badge.clock",
-            title: "暂无计划项目",
-            description: "扫描图纸后选择「创建计划」\n可在此处管理和执行"
-        )
-    }
-}
+    // MARK: - Overview Card
 
-// MARK: - 计划项目列表
-struct PlannedProjectsListView: View {
-    let projects: [ProjectRecord]
-    @Binding var expandedProjects: Set<UUID>
-    @Binding var isSelectMode: Bool
-    @Binding var selectedProjects: Set<UUID>
-    let onMerge: () -> Void
-    let onExecute: (ProjectRecord) -> Void
-
-    @EnvironmentObject var inventoryManager: InventoryManager
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // 合并确认按钮
-            if isSelectMode && selectedProjects.count >= 2 {
-                Button {
-                    onMerge()
-                } label: {
-                    HStack {
-                        Image(systemName: "arrow.triangle.merge")
-                        Text("合并 \(selectedProjects.count) 个计划")
-                    }
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color.accentColor)
-                    .cornerRadius(10)
+    private var overviewCard: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("等待执行的计划")
+                    .font(.caption2)
+                    .foregroundStyle(Color.white.opacity(0.85))
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("\(plannedProjects.count)")
+                        .font(.system(size: 26, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(Color.white)
+                    Text("个 · 共 \(formattedNumber(totalBeadsAcrossPlans)) 颗")
+                        .font(.caption2)
+                        .foregroundStyle(Color.white.opacity(0.85))
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
             }
-
-            List {
-                ForEach(projects) { project in
-                    let isParent = inventoryManager.isParentProject(project.id)
-                    let isExpanded = expandedProjects.contains(project.id)
-
-                    PlannedProjectRow(
-                        project: project,
-                        isParent: isParent,
-                        isExpanded: isExpanded,
-                        isSelectMode: isSelectMode,
-                        isSelected: selectedProjects.contains(project.id),
-                        showSearchCheckbox: false,
-                        onToggleExpand: {
-                            withAnimation {
-                                if isExpanded {
-                                    expandedProjects.remove(project.id)
-                                } else {
-                                    expandedProjects.insert(project.id)
-                                }
-                            }
-                        },
-                        onToggleSelect: {
-                            if selectedProjects.contains(project.id) {
-                                selectedProjects.remove(project.id)
-                            } else {
-                                selectedProjects.insert(project.id)
-                            }
-                        },
-                        onExecute: {
-                            onExecute(project)
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("缺豆")
+                    .font(.caption2)
+                    .foregroundStyle(Color.white.opacity(0.8))
+                Text("\(totalShortageColors) 种")
+                    .font(.system(size: 18, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Color.white)
+                Button {
+                    if !sel.isActive {
+                        // 选中所有缺豆计划并打开补豆建议
+                        let needsIds = plannedProjects.filter { !isReady($0) }.map { $0.id }
+                        if !needsIds.isEmpty {
+                            withAnimation { sel.enter() }
+                            sel.selectAll(needsIds)
+                            activeSheet = .replenishSuggestion
                         }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 10))
+                        Text("补豆建议 →")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule().fill(Theme.ColorToken.Surface.subtle.opacity(0.18))
                     )
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) {
-                            inventoryManager.deletePlannedProject(project.id)
-                        } label: {
-                            Label("删除", systemImage: "trash")
-                        }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            LinearGradient(
+                colors: [Theme.ColorToken.Morandi.mauve, Theme.ColorToken.Morandi.latte],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .shadow(color: Theme.ColorToken.Morandi.mauve.opacity(0.25), radius: 8, x: 0, y: 4)
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
+    }
 
+    // MARK: - Search Field
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.ColorToken.Text.tertiary)
+            TextField("搜索计划名称", text: $searchText)
+                .font(.subheadline)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.ColorToken.Surface.subtle)
+        )
+        .padding(.horizontal, 18)
+        .padding(.top, 8)
+    }
+
+    // MARK: - Filter Chips
+
+    private var filterChips: some View {
+        HStack(spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { filter = .all }
+            } label: {
+                BIChip("全部 · \(plannedProjects.count)", active: filter == .all, color: nil, size: .sm)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { filter = .needsBeads }
+            } label: {
+                BIChip("待补豆 · \(needsBeadsCount)", active: filter == .needsBeads, color: Theme.ColorToken.Morandi.rose, size: .sm)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { filter = .ready }
+            } label: {
+                BIChip("可执行 · \(readyCount)", active: filter == .ready, color: Theme.ColorToken.Morandi.sage, size: .sm)
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Tips Block
+
+    @ViewBuilder
+    private var tipsBlock: some View {
+        VStack(spacing: 8) {
+            if plannedProjects.count >= 2 {
+                TipView(PlanMergeTip())
+            }
+            TipView(ReplenishTip())
+        }
+        .padding(.horizontal, 18)
+    }
+
+    // MARK: - Plan List
+
+    private var planList: some View {
+        VStack(spacing: 10) {
+            ForEach(filteredProjects) { project in
+                let isSelected = sel.contains(project.id)
+                let short = shortageCount(for: project)
+
+                Group {
+                    if sel.isActive {
+                        // 多选态：整卡作为 toggle button，禁止跳转
+                        Button {
+                            sel.toggle(project.id)
+                        } label: {
+                            PlanCard(
+                                project: project,
+                                shortageColors: short,
+                                isSelected: isSelected,
+                                selectionActive: true,
+                                inventoryManager: inventoryManager
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        // 普通态：NavigationLink 直接包卡片，整张卡可点跳转
+                        NavigationLink {
+                            PlannedProjectDetailView(project: project)
+                        } label: {
+                            PlanCard(
+                                project: project,
+                                shortageColors: short,
+                                isSelected: false,
+                                selectionActive: false,
+                                inventoryManager: inventoryManager
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .onLongPressGesture(minimumDuration: 0.4) {
+                    if !sel.isActive {
+                        withAnimation { sel.enter(initial: project.id) }
+                    }
+                }
+                .contextMenu {
+                    if !sel.isActive {
+                        Button {
+                            activeSheet = .execute(project)
+                        } label: {
+                            Label("执行", systemImage: "play.fill")
+                        }
                         Button {
                             _ = inventoryManager.duplicatePlannedProject(project.id)
                         } label: {
                             Label("复制", systemImage: "doc.on.doc")
                         }
-                        .tint(.blue)
-                    }
-                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                        Button {
-                            onExecute(project)
+                        Button(role: .destructive) {
+                            inventoryManager.deletePlannedProject(project.id)
                         } label: {
-                            Label("执行", systemImage: "play.fill")
-                        }
-                        .tint(.green)
-                    }
-
-                    // 子项目
-                    if isParent && isExpanded {
-                        let children = inventoryManager.plannedChildProjects(of: project.id)
-                        ForEach(children) { child in
-                            PlannedChildProjectRow(project: child)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        inventoryManager.deletePlannedProject(child.id)
-                                    } label: {
-                                        Label("删除", systemImage: "trash")
-                                    }
-                                }
-                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                    Button {
-                                        inventoryManager.detachProject(child.id)
-                                    } label: {
-                                        Label("独立", systemImage: "arrow.up.forward.square")
-                                    }
-                                    .tint(.blue)
-                                }
+                            Label("删除", systemImage: "trash")
                         }
                     }
                 }
             }
-            .listStyle(.insetGrouped)
         }
+        .padding(.horizontal, 18)
+        .padding(.top, 4)
+    }
+}
+
+// MARK: - PlanCard (新设计风格卡片)
+
+private struct PlanCard: View {
+    let project: ProjectRecord
+    let shortageColors: Int
+    let isSelected: Bool
+    let selectionActive: Bool
+    let inventoryManager: InventoryManager
+
+    private var isParent: Bool {
+        inventoryManager.isParentProject(project.id)
+    }
+
+    private var totalBeads: Int {
+        isParent ? inventoryManager.plannedAggregatedTotalBeads(for: project.id) : project.totalBeads
+    }
+
+    private var colorCount: Int {
+        isParent ? inventoryManager.plannedAggregatedColorCount(for: project.id) : project.beadUsage.count
+    }
+
+    private var beadUsages: [BeadUsage] {
+        isParent ? inventoryManager.plannedAggregatedBeadUsage(for: project.id) : project.beadUsage
+    }
+
+    /// 取前 4 个不同的颜色用于缩略图；不足时回落到 Morandi 颜色
+    private var thumbnailColors: [Color] {
+        let fallback: [Color] = [
+            Theme.ColorToken.Morandi.latte,
+            Theme.ColorToken.Morandi.rose,
+            Theme.ColorToken.Morandi.sage,
+            Theme.ColorToken.Morandi.mauve
+        ]
+        let topUsages = beadUsages.sorted { $0.quantity > $1.quantity }.prefix(4)
+        var colors: [Color] = []
+        for u in topUsages {
+            if let bc = inventoryManager.findColor(byCode: u.colorCode) {
+                colors.append(bc.color)
+            }
+        }
+        if colors.isEmpty {
+            return fallback
+        }
+        while colors.count < 4 {
+            colors.append(fallback[colors.count % fallback.count])
+        }
+        return colors
+    }
+
+    private func formattedNumber(_ value: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.groupingSeparator = ","
+        return f.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // 缩略图
+            thumbnail
+
+            // 中间内容
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(project.name)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                        .lineLimit(1)
+
+                    if shortageColors > 0 {
+                        BIChip("缺 \(shortageColors) 色", active: true, color: Theme.ColorToken.Morandi.rose, size: .sm)
+                    } else {
+                        BIChip("可执行", active: true, color: Theme.ColorToken.Morandi.sage, size: .sm)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(formattedNumber(totalBeads))
+                        .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                    Text("颗 · \(colorCount) 色")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                }
+
+                HStack(spacing: 4) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                    Text(project.date.formatted(date: .abbreviated, time: .omitted))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                }
+            }
+
+            // 右侧 chevron 或选择圈
+            if selectionActive {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18))
+                    .foregroundStyle(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Text.tertiary)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default, lineWidth: 1)
+        )
+    }
+
+    private var thumbnail: some View {
+        let palette = thumbnailColors
+        return ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.ColorToken.Surface.subtle)
+
+            if let data = project.thumbnail, let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 1), count: 8),
+                    spacing: 1
+                ) {
+                    ForEach(0..<64, id: \.self) { i in
+                        Rectangle()
+                            .fill(palette[(i * 13 + i % 7) % palette.count])
+                            .frame(height: 6)
+                            .clipShape(RoundedRectangle(cornerRadius: 1))
+                    }
+                }
+                .padding(4)
+            }
+        }
+        .frame(width: 64, height: 64)
+    }
+}
+
+// MARK: - 空状态视图
+struct EmptyPlannedProjectsView: View {
+    var body: some View {
+        BIEmptyHero(
+            icon: "calendar.badge.clock",
+            flavor: Theme.ColorToken.Morandi.mauve,
+            title: "暂无计划项目",
+            subtitle: "扫描图纸后选择「创建计划」\n可在此处管理和执行"
+        )
     }
 }
 
@@ -441,7 +688,7 @@ struct PlannedProjectRow: View {
             // 选择模式：整行使用 onTapGesture，避免 Button 在搜索键盘弹出时被吞掉点击
             HStack(spacing: 8) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(isSelected ? .accentColor : .secondary)
+                    .foregroundColor(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Text.secondary)
                     .font(.title2)
                     .frame(width: 44, height: 44)
 
@@ -450,10 +697,10 @@ struct PlannedProjectRow: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: 50, height: 50)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                         )
                 }
 
@@ -470,7 +717,7 @@ struct PlannedProjectRow: View {
                         onToggleSelect()
                     } label: {
                         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .foregroundColor(isSelected ? .accentColor : .secondary)
+                            .foregroundColor(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Text.secondary)
                             .font(.title3)
                             .frame(width: 36, height: 36)
                             .contentShape(Rectangle())
@@ -495,10 +742,10 @@ struct PlannedProjectRow: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: 50, height: 50)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                         )
                 }
 
@@ -511,7 +758,7 @@ struct PlannedProjectRow: View {
                 } label: {
                     Image(systemName: "play.circle.fill")
                         .font(.title2)
-                        .foregroundColor(.green)
+                        .foregroundColor(Theme.ColorToken.Status.success)
                 }
                 .buttonStyle(.plain)
             }
@@ -525,12 +772,12 @@ struct PlannedProjectRow: View {
                 // 计划标识
                 Image(systemName: "calendar.badge.clock")
                     .font(.caption)
-                    .foregroundColor(.orange)
+                    .foregroundColor(Theme.ColorToken.Status.warning)
 
                 if isParent {
                     Image(systemName: "folder.fill")
                         .font(.caption)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                 }
 
                 Text(project.name)
@@ -538,13 +785,13 @@ struct PlannedProjectRow: View {
                     .foregroundColor(.primary)
 
                 // 色号体系徽章
-                Text(project.colorSystem.displayName)
-                    .font(.caption2)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Color.blue.opacity(0.15))
-                    .foregroundColor(project.colorSystem == .kaka ? .purple : .blue)
-                    .cornerRadius(4)
+                BIBadge(
+                    project.colorSystem.displayName,
+                    style: .custom(
+                        background: project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve.opacity(0.15) : Theme.ColorToken.Morandi.latte.opacity(0.15),
+                        foreground: project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Morandi.latte
+                    )
+                )
 
                 Spacer()
 
@@ -555,13 +802,7 @@ struct PlannedProjectRow: View {
 
             HStack {
                 if isParent {
-                    Text("\(childCount) 个子项目")
-                        .font(.caption)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.1))
-                        .foregroundColor(.blue)
-                        .cornerRadius(4)
+                    BIBadge("\(childCount) 个子项目", style: .info)
                 }
 
                 Label("\(colorCount) 色", systemImage: "paintpalette")
@@ -572,7 +813,7 @@ struct PlannedProjectRow: View {
 
                 Label("\(totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
                     .font(.caption)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
             }
 
             // 颜色预览
@@ -582,12 +823,7 @@ struct PlannedProjectRow: View {
                         ForEach(project.beadUsage.prefix(8)) { usage in
                             let displayCode = inventoryManager.findColor(byCode: usage.colorCode)?
                                 .displayCode(for: project.colorSystem) ?? usage.colorCode
-                            Text(displayCode)
-                                .font(.caption2)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.1))
-                                .cornerRadius(4)
+                            BIBadge(displayCode, style: .neutral)
                         }
                         if project.beadUsage.count > 8 {
                             Text("+\(project.beadUsage.count - 8)")
@@ -624,10 +860,10 @@ struct PlannedChildProjectRow: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                     )
             }
 
@@ -638,13 +874,13 @@ struct PlannedChildProjectRow: View {
                             .font(.subheadline)
 
                         // 色号体系徽章
-                        Text(project.colorSystem.displayName)
-                            .font(.caption2)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Color.blue.opacity(0.15))
-                            .foregroundColor(project.colorSystem == .kaka ? .purple : .blue)
-                            .cornerRadius(4)
+                        BIBadge(
+                            project.colorSystem.displayName,
+                            style: .custom(
+                                background: project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve.opacity(0.15) : Theme.ColorToken.Morandi.latte.opacity(0.15),
+                                foreground: project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Morandi.latte
+                            )
+                        )
 
                         Spacer()
                         Text(project.date.formatted(date: .abbreviated, time: .omitted))
@@ -659,7 +895,7 @@ struct PlannedChildProjectRow: View {
                         Spacer()
                         Label("\(project.totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
                             .font(.caption)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
                     }
                 }
             }
@@ -677,6 +913,7 @@ struct ExecutePlannedProjectSheet: View {
     @State private var selectedBrandId: UUID?
     @State private var showConfirmation = false
     @State private var resolver: DeductionResolver?
+    @State private var executeSuccessAt: Date = .distantPast
     private let similarityService = ColorSimilarityService()
 
     var matchingBrands: [Brand] {
@@ -774,7 +1011,7 @@ struct ExecutePlannedProjectSheet: View {
                     if matchingBrands.isEmpty {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                             Text("暂无\(project.colorSystem.displayName)体系的品牌，请先创建")
                                 .foregroundColor(.secondary)
                         }
@@ -790,7 +1027,7 @@ struct ExecutePlannedProjectSheet: View {
                                     Spacer()
                                     if selectedBrandId == brand.id {
                                         Image(systemName: "checkmark")
-                                            .foregroundColor(.accentColor)
+                                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
                                     }
                                 }
                             }
@@ -837,6 +1074,7 @@ struct ExecutePlannedProjectSheet: View {
                 Button("确认", role: (resolver?.insufficientItems.isEmpty ?? true) ? .none : .destructive) {
                     if let resolver = resolver {
                         inventoryManager.executePlannedProjectWithResolver(project.id, resolver: resolver)
+                        executeSuccessAt = Date()
                         dismiss()
                         onExecuted?()
                     }
@@ -845,6 +1083,7 @@ struct ExecutePlannedProjectSheet: View {
                 Text(executeConfirmMessage)
             }
         }
+        .haptic(.success, trigger: executeSuccessAt)
         .presentationDetents([.medium, .large])
         .onAppear {
             if let currentId = inventoryManager.currentBrandId,
@@ -932,6 +1171,7 @@ struct MergePlannedProjectsSheet: View {
     @Environment(\.dismiss) var dismiss
     @State private var newName = ""
     @State private var showMergeError = false
+    @State private var mergeSuccessAt: Date = .distantPast
 
     // 从 inventoryManager 查找项目（与统计页面相同的方式）
     var projects: [ProjectRecord] {
@@ -956,7 +1196,7 @@ struct MergePlannedProjectsSheet: View {
                     Section {
                         HStack {
                             Image(systemName: "info.circle.fill")
-                                .foregroundColor(.blue)
+                                .foregroundColor(Theme.ColorToken.Status.info)
                             Text("将添加到「\(singleParentMerge.parentName ?? "")」")
                                 .foregroundColor(.secondary)
                         }
@@ -973,7 +1213,7 @@ struct MergePlannedProjectsSheet: View {
                             HStack {
                                 if inventoryManager.isParentProject(project.id) {
                                     Image(systemName: "folder.fill")
-                                        .foregroundColor(.accentColor)
+                                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                                         .font(.caption)
                                 }
                                 Text(project.name)
@@ -995,6 +1235,7 @@ struct MergePlannedProjectsSheet: View {
                     Button("确认") {
                         let name = newName.isEmpty ? "合并计划 \(Date().formatted(date: .numeric, time: .omitted))" : newName
                         if inventoryManager.mergeProjects(projectIds, newName: name) != nil {
+                            mergeSuccessAt = Date()
                             dismiss()
                             onComplete()
                         } else {
@@ -1008,6 +1249,8 @@ struct MergePlannedProjectsSheet: View {
             } message: {
                 Text("计划项目与已执行项目不能混合合并。请确保选择的项目都是计划中或都是已执行的。")
             }
+            .haptic(.success, trigger: mergeSuccessAt)
+            .haptic(.error, trigger: showMergeError)
         }
         .presentationDetents([.medium])
     }
@@ -1081,7 +1324,7 @@ struct PlannedProjectDetailView: View {
             }
             .padding(.vertical)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Theme.ColorToken.Surface.background)
         .navigationTitle(currentProject?.name ?? project.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
@@ -1117,15 +1360,15 @@ struct PlannedProjectDetailView: View {
     private var statusBannerView: some View {
         HStack {
             Image(systemName: "calendar.badge.clock")
-                .foregroundColor(.orange)
+                .foregroundColor(Theme.ColorToken.Status.warning)
             Text("计划中 - 尚未扣减库存")
                 .font(.subheadline)
-                .foregroundColor(.orange)
+                .foregroundColor(Theme.ColorToken.Status.warning)
             Spacer()
         }
         .padding()
-        .background(Color.orange.opacity(0.1))
-        .cornerRadius(10)
+        .background(Theme.ColorToken.Status.warning.opacity(0.1))
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 
@@ -1168,8 +1411,8 @@ struct PlannedProjectDetailView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding()
-            .background((currentProject ?? project).thumbnail == nil ? Color.gray : Color.purple)
-            .cornerRadius(12)
+            .background((currentProject ?? project).thumbnail == nil ? Theme.ColorToken.Border.default : Theme.ColorToken.Morandi.mauve)
+            .cornerRadius(Theme.Radius.md)
         }
         .disabled((currentProject ?? project).thumbnail == nil)
     }
@@ -1186,8 +1429,8 @@ struct PlannedProjectDetailView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding()
-            .background(Color.blue)
-            .cornerRadius(12)
+            .background(Theme.ColorToken.Status.info)
+            .cornerRadius(Theme.Radius.md)
         }
     }
 
@@ -1203,8 +1446,8 @@ struct PlannedProjectDetailView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding()
-            .background(Color.green)
-            .cornerRadius(12)
+            .background(Theme.ColorToken.Status.success)
+            .cornerRadius(Theme.Radius.md)
         }
     }
 
@@ -1236,8 +1479,8 @@ struct PlannedProjectDetailView: View {
                 }
             }
             .padding()
-            .background(Color(.systemBackground))
-            .cornerRadius(12)
+            .background(Theme.ColorToken.Surface.elevated)
+            .cornerRadius(Theme.Radius.md)
             .padding(.horizontal)
         }
     }
@@ -1271,7 +1514,7 @@ struct PlannedProjectDetailView: View {
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.caption)
             }
-            .foregroundColor(.accentColor)
+            .foregroundColor(Theme.ColorToken.Morandi.mauve)
         }
     }
 
@@ -1370,15 +1613,15 @@ struct PlannedProjectInfoCard: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 150)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                         )
                 } else if onEditThumbnail != nil {
                     // 无图片时的占位符
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.gray.opacity(0.1))
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(Theme.ColorToken.Surface.subtle)
                         .frame(height: 100)
                         .overlay(
                             VStack(spacing: 8) {
@@ -1403,7 +1646,7 @@ struct PlannedProjectInfoCard: View {
                         Image(systemName: "pencil.circle.fill")
                             .font(.title2)
                             .foregroundColor(.white)
-                            .background(Circle().fill(Color.accentColor))
+                            .background(Circle().fill(Theme.ColorToken.Morandi.mauve))
                     }
                     .padding(8)
                 }
@@ -1420,19 +1663,19 @@ struct PlannedProjectInfoCard: View {
                     // 色号体系徽章
                     Text(project.colorSystem.displayName)
                         .font(.caption)
-                        .foregroundColor(project.colorSystem == .kaka ? .purple : .blue)
+                        .foregroundColor(project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Morandi.latte)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(project.colorSystem == .kaka ? Color.purple.opacity(0.1) : Color.blue.opacity(0.1))
-                        .cornerRadius(6)
+                        .background(project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve.opacity(0.1) : Theme.ColorToken.Morandi.latte.opacity(0.1))
+                        .cornerRadius(Theme.Radius.sm)
 
                     Label("计划中", systemImage: "clock.fill")
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.orange.opacity(0.1))
-                        .cornerRadius(6)
+                        .background(Theme.ColorToken.Status.warning.opacity(0.1))
+                        .cornerRadius(Theme.Radius.sm)
                 }
             }
 
@@ -1444,7 +1687,7 @@ struct PlannedProjectInfoCard: View {
                         Text("\(childCount)")
                             .font(.title2)
                             .fontWeight(.bold)
-                            .foregroundColor(.blue)
+                            .foregroundColor(Theme.ColorToken.Decorative.sky)
                         Text("子项目")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -1455,7 +1698,7 @@ struct PlannedProjectInfoCard: View {
                     Text("\(colorCount)")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(.purple)
+                        .foregroundColor(Theme.ColorToken.Decorative.lavender)
                     Text(isParent ? "总颜色" : "颜色数")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -1465,7 +1708,7 @@ struct PlannedProjectInfoCard: View {
                     Text("\(totalBeads)")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                     Text("待扣减")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -1473,8 +1716,8 @@ struct PlannedProjectInfoCard: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 }
@@ -1495,12 +1738,12 @@ struct PlannedBeadUsageRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 44, height: 44)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             VStack(alignment: .leading, spacing: 4) {
@@ -1524,12 +1767,12 @@ struct PlannedBeadUsageRow: View {
 
             // 待扣减标识
             Image(systemName: "clock.arrow.circlepath")
-                .foregroundColor(.orange)
+                .foregroundColor(Theme.ColorToken.Status.warning)
                 .font(.title3)
         }
         .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.md)
     }
 }
 
@@ -1556,7 +1799,7 @@ struct PlannedChildProjectRowWithActions: View {
                         Spacer()
                         Label("\(project.totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
                             .font(.caption)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
                     }
                 }
             }
@@ -1614,15 +1857,15 @@ struct StockCheckSheet: View {
                     // 说明文字
                     HStack {
                         Image(systemName: "info.circle.fill")
-                            .foregroundColor(.blue)
+                            .foregroundColor(Theme.ColorToken.Status.info)
                         Text("检查各品牌库存是否满足此计划需求")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         Spacer()
                     }
                     .padding()
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(10)
+                    .background(Theme.ColorToken.Status.info.opacity(0.1))
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
                     // 各品牌库存检查结果
@@ -1630,7 +1873,7 @@ struct StockCheckSheet: View {
                         VStack(spacing: 12) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.largeTitle)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                             Text("暂无\(project.colorSystem.displayName)体系的品牌")
                                 .font(.headline)
                             Text("请先创建品牌以检查库存")
@@ -1667,7 +1910,7 @@ struct StockCheckSheet: View {
                 }
                 .padding(.vertical)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("库存确认")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1733,7 +1976,7 @@ struct AllBrandsStockCheckCard: View {
                 HStack {
                     // 图标和标题
                     Image(systemName: "square.stack.3d.up.fill")
-                        .foregroundColor(.purple)
+                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                     Text("全部品牌汇总")
                         .font(.headline)
                         .foregroundColor(.primary)
@@ -1744,11 +1987,11 @@ struct AllBrandsStockCheckCard: View {
                     if isSufficient {
                         Label("库存充足", systemImage: "checkmark.circle.fill")
                             .font(.subheadline)
-                            .foregroundColor(.green)
+                            .foregroundColor(Theme.ColorToken.Status.success)
                     } else {
                         Label("缺少 \(insufficientColors.count) 色", systemImage: "exclamationmark.triangle.fill")
                             .font(.subheadline)
-                            .foregroundColor(.red)
+                            .foregroundColor(Theme.ColorToken.Status.error)
                     }
 
                     // 展开指示器（仅当有不足时显示）
@@ -1771,7 +2014,7 @@ struct AllBrandsStockCheckCard: View {
                 HStack {
                     Label("共缺少 \(totalShortage) 颗", systemImage: "minus.circle")
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
 
                     Spacer()
 
@@ -1801,12 +2044,12 @@ struct AllBrandsStockCheckCard: View {
             }
         }
         .padding()
-        .background(isSufficient ? Color.green.opacity(0.08) : Color.red.opacity(0.08))
+        .background(isSufficient ? Theme.ColorToken.Status.success.opacity(0.08) : Theme.ColorToken.Status.error.opacity(0.08))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isSufficient ? Color.green.opacity(0.4) : Color.red.opacity(0.4), lineWidth: 2)
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(isSufficient ? Theme.ColorToken.Status.success.opacity(0.4) : Theme.ColorToken.Status.error.opacity(0.4), lineWidth: 2)
         )
-        .cornerRadius(12)
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 }
@@ -1831,12 +2074,12 @@ struct AllBrandsInsufficientColorRow: View {
     var body: some View {
         HStack(spacing: 10) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 28, height: 28)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号
@@ -1863,7 +2106,7 @@ struct AllBrandsInsufficientColorRow: View {
                         .foregroundColor(.secondary)
                     Text("\(totalAvailable)")
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                 }
             }
 
@@ -1871,13 +2114,13 @@ struct AllBrandsInsufficientColorRow: View {
             Text("-\(shortage)")
                 .font(.subheadline)
                 .fontWeight(.bold)
-                .foregroundColor(.red)
+                .foregroundColor(Theme.ColorToken.Status.error)
                 .frame(width: 50, alignment: .trailing)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
-        .background(Color(.systemBackground))
-        .cornerRadius(6)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 
@@ -1961,11 +2204,11 @@ struct BrandStockCheckCard: View {
     // 整体状态：绿色（充足）、黄色（有低库存预警）、红色（有不足）
     var statusColor: Color {
         if !isSufficient {
-            return .red
+            return Theme.ColorToken.Status.error
         } else if hasLowStock {
-            return .orange
+            return Theme.ColorToken.Status.warning
         } else {
-            return .green
+            return Theme.ColorToken.Status.success
         }
     }
 
@@ -1987,15 +2230,15 @@ struct BrandStockCheckCard: View {
                     if !isSufficient {
                         Label("缺少 \(insufficientColors.count) 色", systemImage: "exclamationmark.triangle.fill")
                             .font(.subheadline)
-                            .foregroundColor(.red)
+                            .foregroundColor(Theme.ColorToken.Status.error)
                     } else if hasLowStock {
                         Label("低库存 \(lowStockColors.count) 色", systemImage: "exclamationmark.circle.fill")
                             .font(.subheadline)
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                     } else {
                         Label("库存充足", systemImage: "checkmark.circle.fill")
                             .font(.subheadline)
-                            .foregroundColor(.green)
+                            .foregroundColor(Theme.ColorToken.Status.success)
                     }
 
                     // 展开指示器（有不足或低库存时显示）
@@ -2013,12 +2256,12 @@ struct BrandStockCheckCard: View {
                 HStack {
                     Label("共缺少 \(totalShortage) 颗", systemImage: "minus.circle")
                         .font(.caption)
-                        .foregroundColor(.red)
+                        .foregroundColor(Theme.ColorToken.Status.error)
 
                     if hasLowStock {
                         Label("低库存 \(lowStockColors.count) 色", systemImage: "exclamationmark.circle")
                             .font(.caption)
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.ColorToken.Status.warning)
                     }
 
                     Spacer()
@@ -2033,7 +2276,7 @@ struct BrandStockCheckCard: View {
                 HStack {
                     Label("\(lowStockColors.count) 种颜色扣减后低于 \(lowStockThreshold)", systemImage: "exclamationmark.circle")
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
 
                     Spacer()
 
@@ -2078,10 +2321,10 @@ struct BrandStockCheckCard: View {
         .padding()
         .background(statusColor.opacity(0.05))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(statusColor.opacity(0.3), lineWidth: 1)
         )
-        .cornerRadius(12)
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 }
@@ -2106,12 +2349,12 @@ struct InsufficientColorRow: View {
     var body: some View {
         HStack(spacing: 10) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 28, height: 28)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号
@@ -2138,7 +2381,7 @@ struct InsufficientColorRow: View {
                         .foregroundColor(.secondary)
                     Text("\(available)")
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                 }
             }
 
@@ -2146,13 +2389,13 @@ struct InsufficientColorRow: View {
             Text("-\(shortage)")
                 .font(.subheadline)
                 .fontWeight(.bold)
-                .foregroundColor(.red)
+                .foregroundColor(Theme.ColorToken.Status.error)
                 .frame(width: 50, alignment: .trailing)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
-        .background(Color.red.opacity(0.05))
-        .cornerRadius(6)
+        .background(Theme.ColorToken.Status.error.opacity(0.05))
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 
@@ -2177,12 +2420,12 @@ struct LowStockColorRow: View {
     var body: some View {
         HStack(spacing: 10) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 28, height: 28)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号
@@ -2218,7 +2461,7 @@ struct LowStockColorRow: View {
                 Text("→\(afterDeduct)")
                     .font(.subheadline)
                     .fontWeight(.bold)
-                    .foregroundColor(.orange)
+                    .foregroundColor(Theme.ColorToken.Status.warning)
                 Text("<\(threshold)")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -2227,8 +2470,8 @@ struct LowStockColorRow: View {
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
-        .background(Color.orange.opacity(0.05))
-        .cornerRadius(6)
+        .background(Theme.ColorToken.Status.warning.opacity(0.05))
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 
@@ -2298,7 +2541,7 @@ struct EditPlannedProjectSheet: View {
                     } label: {
                         HStack {
                             Image(systemName: "plus.circle.fill")
-                                .foregroundColor(.green)
+                                .foregroundColor(Theme.ColorToken.Status.success)
                             Text("添加颜色")
                         }
                     }
@@ -2385,12 +2628,12 @@ struct EditableUsageRow: View {
     var body: some View {
         HStack(spacing: 12) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 36, height: 36)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
 
             // 色号
@@ -2410,7 +2653,7 @@ struct EditableUsageRow: View {
                 } label: {
                     Image(systemName: "minus.circle.fill")
                         .font(.title2)
-                        .foregroundColor(usage.quantity > 1 ? .orange : .gray)
+                        .foregroundColor(usage.quantity > 1 ? Theme.ColorToken.Status.warning : Theme.ColorToken.Text.tertiary)
                 }
                 .buttonStyle(.plain)
                 .disabled(usage.quantity <= 1)
@@ -2420,8 +2663,8 @@ struct EditableUsageRow: View {
                     .multilineTextAlignment(.center)
                     .frame(width: 60)
                     .padding(.vertical, 6)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
+                    .background(Theme.ColorToken.Surface.subtle)
+                    .cornerRadius(Theme.Radius.sm)
                     .focused($isQuantityFocused)
                     .onChange(of: quantityText) { _, newValue in
                         if let value = Int(newValue), value > 0 {
@@ -2444,7 +2687,7 @@ struct EditableUsageRow: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.title2)
-                        .foregroundColor(.green)
+                        .foregroundColor(Theme.ColorToken.Status.success)
                 }
                 .buttonStyle(.plain)
             }
@@ -2515,8 +2758,8 @@ struct AddColorToProjectSheet: View {
                     }
                 }
                 .padding(10)
-                .background(Color(.systemGray6))
-                .cornerRadius(10)
+                .background(Theme.ColorToken.Surface.subtle)
+                .cornerRadius(Theme.Radius.md)
                 .padding()
 
                 // 已选择的颜色和数量
@@ -2524,12 +2767,12 @@ struct AddColorToProjectSheet: View {
                    let color = inventoryManager.findColor(byCode: colorCode) {
                     VStack(spacing: 12) {
                         HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                 .fill(color.color)
                                 .frame(width: 50, height: 50)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                                 )
 
                             VStack(alignment: .leading) {
@@ -2552,7 +2795,7 @@ struct AddColorToProjectSheet: View {
                                 } label: {
                                     Image(systemName: "minus.circle.fill")
                                         .font(.title2)
-                                        .foregroundColor(quantity > 1 ? .orange : .gray)
+                                        .foregroundColor(quantity > 1 ? Theme.ColorToken.Status.warning : Theme.ColorToken.Text.tertiary)
                                 }
                                 .disabled(quantity <= 1)
 
@@ -2561,8 +2804,8 @@ struct AddColorToProjectSheet: View {
                                     .multilineTextAlignment(.center)
                                     .frame(width: 60)
                                     .padding(.vertical, 6)
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(8)
+                                    .background(Theme.ColorToken.Surface.subtle)
+                                    .cornerRadius(Theme.Radius.sm)
                                     .onChange(of: quantityText) { _, newValue in
                                         if let value = Int(newValue), value > 0 {
                                             quantity = value
@@ -2575,13 +2818,13 @@ struct AddColorToProjectSheet: View {
                                 } label: {
                                     Image(systemName: "plus.circle.fill")
                                         .font(.title2)
-                                        .foregroundColor(.green)
+                                        .foregroundColor(Theme.ColorToken.Status.success)
                                 }
                             }
                         }
                         .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
+                        .background(Theme.ColorToken.Surface.elevated)
+                        .cornerRadius(Theme.Radius.md)
                         .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
                     }
                     .padding(.horizontal)
@@ -2594,12 +2837,12 @@ struct AddColorToProjectSheet: View {
                             selectedColorCode = color.mardCode
                         } label: {
                             HStack(spacing: 12) {
-                                RoundedRectangle(cornerRadius: 6)
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                     .fill(color.color)
                                     .frame(width: 32, height: 32)
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                                     )
 
                                 VStack(alignment: .leading, spacing: 2) {
@@ -2616,7 +2859,7 @@ struct AddColorToProjectSheet: View {
 
                                 if selectedColorCode == color.mardCode {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.accentColor)
+                                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                                 }
                             }
                         }
@@ -2710,7 +2953,7 @@ struct MultiProjectStockCheckSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Image(systemName: "info.circle.fill")
-                                .foregroundColor(.blue)
+                                .foregroundColor(Theme.ColorToken.Status.info)
                             Text("已选 \(selectedProjects.count) 个计划，共 \(totalColors) 色 \(totalBeads) 颗")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
@@ -2725,16 +2968,16 @@ struct MultiProjectStockCheckSheet: View {
                                         .font(.caption)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)
-                                        .background(Color.accentColor.opacity(0.1))
-                                        .foregroundColor(.accentColor)
-                                        .cornerRadius(12)
+                                        .background(Theme.ColorToken.Morandi.mauve.opacity(0.1))
+                                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                                        .cornerRadius(Theme.Radius.md)
                                 }
                             }
                         }
                     }
                     .padding()
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(10)
+                    .background(Theme.ColorToken.Status.info.opacity(0.1))
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
                     // 各品牌库存检查结果
@@ -2742,7 +2985,7 @@ struct MultiProjectStockCheckSheet: View {
                         VStack(spacing: 12) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.largeTitle)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                             Text("暂无匹配色系的品牌")
                                 .font(.headline)
                             Text("请先创建品牌以检查库存")
@@ -2780,7 +3023,7 @@ struct MultiProjectStockCheckSheet: View {
                 }
                 .padding(.vertical)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("库存确认")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -3093,9 +3336,9 @@ struct ReplenishSuggestionSheet: View {
                                                 .font(.subheadline)
                                                 .padding(.horizontal, 16)
                                                 .padding(.vertical, 10)
-                                                .background(selectedBrandId == brand.id ? Color.accentColor : Color.gray.opacity(0.2))
+                                                .background(selectedBrandId == brand.id ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default.opacity(0.5))
                                                 .foregroundColor(selectedBrandId == brand.id ? .white : .primary)
-                                                .cornerRadius(20)
+                                                .cornerRadius(Theme.Radius.lg)
                                         }
                                     }
                                 }
@@ -3103,8 +3346,8 @@ struct ReplenishSuggestionSheet: View {
                         }
                     }
                     .padding()
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
+                    .background(Theme.ColorToken.Surface.elevated)
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
                     if selectedBrand != nil {
@@ -3155,8 +3398,8 @@ struct ReplenishSuggestionSheet: View {
                             }
                         }
                         .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
+                        .background(Theme.ColorToken.Surface.elevated)
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 状态栏
@@ -3167,7 +3410,7 @@ struct ReplenishSuggestionSheet: View {
                                     .foregroundColor(.secondary)
                                 Text("\(totalSelectedQuantity)g")
                                     .font(.headline)
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
                             }
                             Spacer()
                             VStack(alignment: .trailing, spacing: 4) {
@@ -3176,26 +3419,26 @@ struct ReplenishSuggestionSheet: View {
                                     .foregroundColor(.secondary)
                                 Text(remainingForFreeShipping > 0 ? "\(remainingForFreeShipping)g" : "已达标 ✓")
                                     .font(.headline)
-                                    .foregroundColor(remainingForFreeShipping > 0 ? .orange : .green)
+                                    .foregroundColor(remainingForFreeShipping > 0 ? Theme.ColorToken.Status.warning : Theme.ColorToken.Status.success)
                             }
                         }
                         .padding()
-                        .background(remainingForFreeShipping > 0 ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
-                        .cornerRadius(12)
+                        .background(remainingForFreeShipping > 0 ? Theme.ColorToken.Status.warning.opacity(0.1) : Theme.ColorToken.Status.success.opacity(0.1))
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 选中项目信息
                         HStack {
                             Image(systemName: "info.circle.fill")
-                                .foregroundColor(.blue)
+                                .foregroundColor(Theme.ColorToken.Status.info)
                             Text("已选 \(selectedProjects.count) 个计划，低库存阈值: \(lowStockThreshold)")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                             Spacer()
                         }
                         .padding()
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(10)
+                        .background(Theme.ColorToken.Status.info.opacity(0.1))
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 负库存区域
@@ -3218,7 +3461,7 @@ struct ReplenishSuggestionSheet: View {
                             ReplenishSectionView(
                                 title: "低库存预警（建议补豆）",
                                 subtitle: "扣减后库存低于\(lowStockThreshold)",
-                                color: .orange,
+                                color: Theme.ColorToken.Status.warning,
                                 items: replenishData.lowStock,
                                 processedCodes: replenishData.processedCodes,
                                 quantities: $replenishQuantities,
@@ -3248,7 +3491,7 @@ struct ReplenishSuggestionSheet: View {
                             VStack(spacing: 12) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .font(.largeTitle)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(Theme.ColorToken.Status.success)
                                 Text("无需补豆")
                                     .font(.headline)
                                 Text("所选计划未使用任何颜色")
@@ -3274,8 +3517,8 @@ struct ReplenishSuggestionSheet: View {
                                     .foregroundColor(.white)
                                     .padding()
                                     .frame(maxWidth: .infinity)
-                                    .background(showExportSuccess ? Color.green : Color.orange)
-                                    .cornerRadius(12)
+                                    .background(showExportSuccess ? Theme.ColorToken.Status.success : Theme.ColorToken.Status.warning)
+                                    .cornerRadius(Theme.Radius.md)
                                 }
 
                                 // 复制补豆计划
@@ -3291,7 +3534,7 @@ struct ReplenishSuggestionSheet: View {
                                         Text(showCopySuccess ? "已复制" : "复制补豆计划")
                                     }
                                     .font(.subheadline)
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
                                 }
                             }
                             .padding(.horizontal)
@@ -3312,7 +3555,7 @@ struct ReplenishSuggestionSheet: View {
                 }
                 .padding(.vertical)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("补豆建议")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -3508,15 +3751,15 @@ struct DirectPurchaseSheet: View {
                     // 说明信息
                     HStack {
                         Image(systemName: "info.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundColor(Theme.ColorToken.Status.success)
                         Text("已选 \(selectedProjects.count) 个计划，共 \(totalColors) 色 \(totalBeads) 颗")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         Spacer()
                     }
                     .padding()
-                    .background(Color.green.opacity(0.1))
-                    .cornerRadius(10)
+                    .background(Theme.ColorToken.Status.success.opacity(0.1))
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
                     // 色系 & 品牌选择
@@ -3562,9 +3805,9 @@ struct DirectPurchaseSheet: View {
                                                 .font(.subheadline)
                                                 .padding(.horizontal, 16)
                                                 .padding(.vertical, 10)
-                                                .background(selectedBrandId == brand.id ? Color.green : Color.gray.opacity(0.2))
+                                                .background(selectedBrandId == brand.id ? Theme.ColorToken.Status.success : Theme.ColorToken.Border.default.opacity(0.5))
                                                 .foregroundColor(selectedBrandId == brand.id ? .white : .primary)
-                                                .cornerRadius(20)
+                                                .cornerRadius(Theme.Radius.lg)
                                         }
                                     }
                                 }
@@ -3572,8 +3815,8 @@ struct DirectPurchaseSheet: View {
                         }
                     }
                     .padding()
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
+                    .background(Theme.ColorToken.Surface.elevated)
+                    .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
                     if selectedBrand != nil {
@@ -3624,8 +3867,8 @@ struct DirectPurchaseSheet: View {
                             }
                         }
                         .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
+                        .background(Theme.ColorToken.Surface.elevated)
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 状态栏
@@ -3636,7 +3879,7 @@ struct DirectPurchaseSheet: View {
                                     .foregroundColor(.secondary)
                                 Text("\(totalSelectedQuantity)g")
                                     .font(.headline)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(Theme.ColorToken.Status.success)
                             }
                             Spacer()
                             VStack(alignment: .trailing, spacing: 4) {
@@ -3645,12 +3888,12 @@ struct DirectPurchaseSheet: View {
                                     .foregroundColor(.secondary)
                                 Text(remainingForFreeShipping > 0 ? "\(remainingForFreeShipping)g" : "已达标 ✓")
                                     .font(.headline)
-                                    .foregroundColor(remainingForFreeShipping > 0 ? .orange : .green)
+                                    .foregroundColor(remainingForFreeShipping > 0 ? Theme.ColorToken.Status.warning : Theme.ColorToken.Status.success)
                             }
                         }
                         .padding()
-                        .background(remainingForFreeShipping > 0 ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
-                        .cornerRadius(12)
+                        .background(remainingForFreeShipping > 0 ? Theme.ColorToken.Status.warning.opacity(0.1) : Theme.ColorToken.Status.success.opacity(0.1))
+                        .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
                         // 用量列表
@@ -3671,7 +3914,7 @@ struct DirectPurchaseSheet: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
                                     HStack {
-                                        Circle().fill(Color.green).frame(width: 10, height: 10)
+                                        Circle().fill(Theme.ColorToken.Status.success).frame(width: 10, height: 10)
                                         Text("计划用量汇总")
                                             .font(.headline)
                                     }
@@ -3697,9 +3940,9 @@ struct DirectPurchaseSheet: View {
                                 }
                             }
                             .padding()
-                            .background(Color.green.opacity(0.05))
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.3), lineWidth: 1))
-                            .cornerRadius(12)
+                            .background(Theme.ColorToken.Status.success.opacity(0.05))
+                            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Theme.ColorToken.Status.success.opacity(0.3), lineWidth: 1))
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal)
                         }
 
@@ -3707,14 +3950,14 @@ struct DirectPurchaseSheet: View {
                         if showEmptyExportWarning {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(Theme.ColorToken.Status.warning)
                                 Text("所有色号补豆数量为 0，无法导出")
                                     .font(.subheadline)
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(Theme.ColorToken.Status.warning)
                             }
                             .padding()
-                            .background(Color.orange.opacity(0.1))
-                            .cornerRadius(10)
+                            .background(Theme.ColorToken.Status.warning.opacity(0.1))
+                            .cornerRadius(Theme.Radius.md)
                             .padding(.horizontal)
                         }
 
@@ -3731,8 +3974,8 @@ struct DirectPurchaseSheet: View {
                                 .foregroundColor(.white)
                                 .padding()
                                 .frame(maxWidth: .infinity)
-                                .background(hasExported ? Color.green : Color.green.opacity(0.8))
-                                .cornerRadius(12)
+                                .background(hasExported ? Theme.ColorToken.Status.success : Theme.ColorToken.Status.success.opacity(0.8))
+                                .cornerRadius(Theme.Radius.md)
                             }
                             .disabled(hasExported)
 
@@ -3748,7 +3991,7 @@ struct DirectPurchaseSheet: View {
                                     Text(showCopySuccess ? "已复制" : "复制补豆计划")
                                 }
                                 .font(.subheadline)
-                                .foregroundColor(.green)
+                                .foregroundColor(Theme.ColorToken.Status.success)
                             }
                         }
                         .padding(.horizontal)
@@ -3768,7 +4011,7 @@ struct DirectPurchaseSheet: View {
                 }
                 .padding(.vertical)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("直接补豆")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -3817,10 +4060,10 @@ struct DirectPurchaseColorRow: View {
     var body: some View {
         HStack(spacing: 8) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 28, height: 28)
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.gray.opacity(0.3), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sm).stroke(Theme.ColorToken.Border.default, lineWidth: 1))
 
             // 色号 + 需要颗数
             VStack(alignment: .leading, spacing: 2) {
@@ -3865,14 +4108,14 @@ struct DirectPurchaseColorRow: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
-                        .foregroundColor(.green)
+                        .foregroundColor(Theme.ColorToken.Status.success)
                 }
             }
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
-        .background(Color(.systemBackground))
-        .cornerRadius(8)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 
@@ -3953,8 +4196,8 @@ struct ReplenishSectionView: View {
         }
         .padding()
         .background(color.opacity(0.05))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.3), lineWidth: 1))
-        .cornerRadius(12)
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(color.opacity(0.3), lineWidth: 1))
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 }
@@ -3979,7 +4222,7 @@ struct HighUsageSectionView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Circle().fill(Color.green).frame(width: 10, height: 10)
+                            Circle().fill(Theme.ColorToken.Status.success).frame(width: 10, height: 10)
                             Text(title).font(.headline).foregroundColor(.primary)
                         }
                         Text(subtitle).font(.caption).foregroundColor(.secondary)
@@ -4012,9 +4255,9 @@ struct HighUsageSectionView: View {
             }
         }
         .padding()
-        .background(Color.green.opacity(0.05))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.3), lineWidth: 1))
-        .cornerRadius(12)
+        .background(Theme.ColorToken.Status.success.opacity(0.05))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Theme.ColorToken.Status.success.opacity(0.3), lineWidth: 1))
+        .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
 }
@@ -4047,10 +4290,10 @@ struct ReplenishColorRow: View {
     var body: some View {
         HStack(spacing: 8) {
             // 颜色预览
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(displayColor)
                 .frame(width: 28, height: 28)
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.gray.opacity(0.3), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sm).stroke(Theme.ColorToken.Border.default, lineWidth: 1))
 
             // 色号
             VStack(alignment: .leading, spacing: 2) {
@@ -4064,7 +4307,7 @@ struct ReplenishColorRow: View {
                         } label: {
                             Image(systemName: "exclamationmark.circle.fill")
                                 .font(.caption)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                         }
                         .popover(isPresented: $showWarningTip) {
                             Text("此色号已在上方「库存不足」或「低库存预警」中列出，已有建议补豆量")
@@ -4120,8 +4363,8 @@ struct ReplenishColorRow: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
-        .background(Color(.systemBackground))
-        .cornerRadius(8)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.sm)
     }
 }
 

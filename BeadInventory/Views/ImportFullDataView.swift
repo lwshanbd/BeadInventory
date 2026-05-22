@@ -478,7 +478,7 @@ struct ImportFullDataView: View {
             // 图标
             Image(systemName: "arrow.down.doc.fill")
                 .font(.system(size: 60))
-                .foregroundColor(.accentColor)
+                .foregroundColor(Theme.ColorToken.Morandi.mist)
 
             // 说明文字
             VStack(spacing: 8) {
@@ -504,9 +504,9 @@ struct ImportFullDataView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(Color.accentColor)
+                .background(Theme.ColorToken.Morandi.mist)
                 .foregroundColor(.white)
-                .cornerRadius(12)
+                .cornerRadius(Theme.Radius.md)
             }
             .padding(.horizontal, 40)
 
@@ -535,16 +535,16 @@ struct ImportFullDataView: View {
                 FormatHintRow(icon: "doc.text.fill", text: "项目记录（包含详细用量）")
             }
             .padding()
-            .background(Color(.systemGray6))
-            .cornerRadius(8)
+            .background(Theme.ColorToken.Surface.subtle)
+            .cornerRadius(Theme.Radius.sm)
 
             Text("支持 JSON 和 CSV 格式，会自动识别")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
         .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .background(Theme.ColorToken.Surface.elevated)
+        .cornerRadius(Theme.Radius.md)
     }
 
     // MARK: - 文件处理
@@ -755,7 +755,7 @@ struct FormatHintRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
-                .foregroundColor(.accentColor)
+                .foregroundColor(Theme.ColorToken.Morandi.mist)
                 .frame(width: 20)
             Text(text)
                 .font(.subheadline)
@@ -790,7 +790,7 @@ struct ImportFullDataPreviewView: View {
                         Toggle(isOn: $importBrands) {
                             HStack {
                                 Image(systemName: "tag.fill")
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(Theme.ColorToken.Status.info)
                                 Text("导入品牌")
                                 Spacer()
                                 Text("\(data.brands.count) 个")
@@ -803,7 +803,7 @@ struct ImportFullDataPreviewView: View {
                         Toggle(isOn: $importStocks) {
                             HStack {
                                 Image(systemName: "square.grid.3x3.fill")
-                                    .foregroundColor(.green)
+                                    .foregroundColor(Theme.ColorToken.Status.success)
                                 Text("导入库存")
                                 Spacer()
                                 Text("\(data.stocks.count) 条")
@@ -816,7 +816,7 @@ struct ImportFullDataPreviewView: View {
                         Toggle(isOn: $importProjects) {
                             HStack {
                                 Image(systemName: "doc.text.fill")
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(Theme.ColorToken.Status.warning)
                                 Text("导入项目")
                                 Spacer()
                                 Text("\(data.projects.count) 个")
@@ -914,10 +914,10 @@ struct ImportFullDataPreviewView: View {
                                         Text("\(project.totalBeads) 颗")
                                         if project.isPlanned {
                                             Text("计划中")
-                                                .foregroundColor(.blue)
+                                                .foregroundColor(Theme.ColorToken.Status.info)
                                         } else if project.isArchived {
                                             Text("已归档")
-                                                .foregroundColor(.gray)
+                                                .foregroundColor(Theme.ColorToken.Text.secondary)
                                         }
                                     }
                                     .font(.caption)
@@ -945,7 +945,7 @@ struct ImportFullDataPreviewView: View {
                         ForEach(data.parseErrors, id: \.self) { error in
                             Text(error)
                                 .font(.caption)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Theme.ColorToken.Status.warning)
                         }
                     } header: {
                         Text("解析警告")
@@ -963,9 +963,9 @@ struct ImportFullDataPreviewView: View {
                     Text("重新选择")
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color(.systemGray5))
+                        .background(Theme.ColorToken.Surface.subtle)
                         .foregroundColor(.primary)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
 
                 Button {
@@ -974,9 +974,9 @@ struct ImportFullDataPreviewView: View {
                     Text("确认导入")
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(canImport ? Color.accentColor : Color.gray)
+                        .background(canImport ? Theme.ColorToken.Morandi.mist : Theme.ColorToken.Border.default)
                         .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .cornerRadius(Theme.Radius.md)
                 }
                 .disabled(!canImport)
             }
@@ -997,7 +997,7 @@ struct ImportFullDataPreviewView: View {
                     Text("\(data.brands.count)")
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundColor(.blue)
+                        .foregroundColor(Theme.ColorToken.Status.info)
                     Text("品牌")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -1012,7 +1012,7 @@ struct ImportFullDataPreviewView: View {
                     Text("\(data.stocks.count)")
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundColor(.green)
+                        .foregroundColor(Theme.ColorToken.Status.success)
                     Text("库存")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -1027,7 +1027,7 @@ struct ImportFullDataPreviewView: View {
                     Text("\(data.projects.count)")
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
                     Text("项目")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -1035,7 +1035,7 @@ struct ImportFullDataPreviewView: View {
             }
         }
         .padding()
-        .background(Color(.systemGray6))
+        .background(Theme.ColorToken.Surface.subtle)
     }
 }
 

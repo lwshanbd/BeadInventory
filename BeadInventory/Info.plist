@@ -19,5 +19,9 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>UIAppFonts</key>
+	<array>
+		<string>ZCOOLKuaiLe-Regular.ttf</string>
+	</array>
 </dict>
 </plist>
