@@ -169,6 +169,16 @@ struct InventoryView: View {
     }
 
     private func formatLocale(_ n: Int) -> String {
+        // 小于 1 万：保留完整数字 + 千位分隔符（如 "9,876"）。
+        // ≥ 1 万：用本地化紧凑单位（zh-Hans: "1.2万" / "300万" / "3000万" / "1.2亿"；en: "12K" / "3M"），
+        // 避免在三栏 stat bar 里被撑成两行。
+        if n >= 10_000 {
+            return n.formatted(
+                .number
+                    .notation(.compactName)
+                    .precision(.fractionLength(0...1))
+            )
+        }
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.groupingSeparator = ","

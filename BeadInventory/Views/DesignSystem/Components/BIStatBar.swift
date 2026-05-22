@@ -109,9 +109,12 @@ struct BIStatBar: View {
                 Text(cell.value)
                     .font(.system(size: 22, weight: .semibold).monospacedDigit())
                     .foregroundStyle(cell.warn ? Theme.ColorToken.Status.error : Theme.ColorToken.Text.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 Text(cell.sub)
                     .font(.system(size: 10))
                     .foregroundStyle(cell.warn ? Theme.ColorToken.Status.error : Theme.ColorToken.Text.tertiary)
+                    .lineLimit(1)
             }
         }
     }
