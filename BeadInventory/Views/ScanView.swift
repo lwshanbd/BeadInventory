@@ -1144,34 +1144,6 @@ struct RecognizedResultsSectionNew: View {
         return (stock.available - item.quantity) < 0
     }
 
-    /// 在主品牌下是否缺豆（用于决定是否触发跨品牌建议行的显示）
-    private func itemHasPrimaryShortage(_ item: ScanView.RecognizedItem) -> Bool {
-        guard let brandId = inventoryManager.currentBrandId,
-              let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode) else {
-            return false
-        }
-        return (stock.available - item.quantity) < 0
-    }
-
-    /// 该 item 是否存在「色系匹配、非主品牌、对该色仍有库存」的候选品牌
-    private func itemHasAlternativeBrand(_ item: ScanView.RecognizedItem) -> Bool {
-        let currentId = inventoryManager.currentBrandId
-        for brand in inventoryManager.brands
-        where brand.id != currentId && brand.colorSystem == colorSystem {
-            if let stock = inventoryManager.getStock(brandId: brand.id, mardCode: item.colorCode),
-               stock.available > 0 {
-                return true
-            }
-        }
-        return false
-    }
-
-    /// 该 item 是否会渲染建议/已切换行（决定行高估算）
-    private func itemShowsRecommendation(_ item: ScanView.RecognizedItem) -> Bool {
-        if item.preferredBrandId != nil { return true }
-        return itemHasPrimaryShortage(item) && itemHasAlternativeBrand(item)
-    }
-
     /// 缺豆项数量（按生效品牌算；切换后被解决的项不再算缺豆）
     private var shortageCount: Int {
         items.reduce(0) { $0 + (itemHasEffectiveShortage($1) ? 1 : 0) }
@@ -1180,18 +1152,6 @@ struct RecognizedResultsSectionNew: View {
     /// 已应用跨品牌建议的项数量
     private var overriddenCount: Int {
         items.reduce(0) { $0 + ($1.preferredBrandId != nil ? 1 : 0) }
-    }
-
-    /// List 套在外层 ScrollView 里、scrollDisabled，必须给出精确高度，
-    /// 否则任何超出 frame 的行会被裁掉、外层也滚不到。
-    /// mainRow ≈ 68pt，建议/已切换子行额外占 ≈ 44pt（仅当该行实际渲染时计入）。
-    private var estimatedListHeight: CGFloat {
-        let normalRow: CGFloat = 76
-        let recommendationExtra: CGFloat = 44
-        let recVisible = visibleItems.reduce(0) { $0 + (itemShowsRecommendation($1) ? 1 : 0) }
-        return CGFloat(visibleItems.count) * normalRow
-            + CGFloat(recVisible) * recommendationExtra
-            + 8
     }
 
     /// 按筛选过滤
@@ -1287,8 +1247,12 @@ struct RecognizedResultsSectionNew: View {
                 }
             }
 
-            // 结果列表（List 包装可让 swipeActions 实际生效）
-            List {
+            // 结果列表 —— 直接 LazyVStack，外层 ScrollView 自然滚动。
+            // 之前为了用 SwiftUI .swipeActions(edge:) 不得不包 List，引出"List 嵌在
+            // ScrollView 里要手算高度"的反模式（写死 76/44，Dynamic Type / 长品牌名
+            // / 英文翻译都能再触发裁切）。现在 SwipeActionRow 用 DragGesture 复刻了
+            // swipe 揭示按钮，可放在任何容器，整套高度估算彻底删掉。
+            LazyVStack(spacing: 8) {
                 ForEach(visibleItems) { item in
                     RecognizedItemRowNew(
                         item: item,
@@ -1324,19 +1288,12 @@ struct RecognizedResultsSectionNew: View {
                             }
                         }
                     )
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
                 }
             }
-            .listStyle(.plain)
-            .scrollDisabled(true)
-            .frame(height: estimatedListHeight)
-            .environment(\.defaultMinListRowHeight, 0)
 
             // 提示 pill
             HStack {
-                Text("← 左滑任意一行可改品牌或删除")
+                Text("← 左滑任意一行可编辑或删除")
                     .font(.caption2)
                     .foregroundStyle(Theme.ColorToken.Text.tertiary)
                 Spacer()
@@ -1479,48 +1436,57 @@ struct RecognizedItemRowNew: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            mainRow
-            if shouldShowRecommendation {
-                recommendationRow
+        SwipeActionRow(
+            actions: [
+                // 注意：之前这一条挂了 "改品牌" 的标签，但代码逻辑只是进入色号/数量
+                // 的 inline 编辑，根本不切换品牌（这套字面意义上的"改品牌"由新增的
+                // 「试试用 X」推荐行承担）。这里跟 contextMenu 的"编辑"对齐，去掉
+                // 误导。
+                SwipeActionItem(
+                    "编辑",
+                    systemImage: "pencil",
+                    tint: Theme.ColorToken.Morandi.mauve
+                ) {
+                    editCode = matchedColor?.displayCode(for: colorSystem) ?? item.colorCode
+                    editQuantity = "\(item.quantity)"
+                    isEditing = true
+                },
+                SwipeActionItem(
+                    "删除",
+                    systemImage: "trash",
+                    tint: Theme.ColorToken.Morandi.rose,
+                    role: .destructive
+                ) {
+                    onRemove()
+                }
+            ]
+        ) {
+            VStack(alignment: .leading, spacing: 0) {
+                mainRow
+                if shouldShowRecommendation {
+                    recommendationRow
+                }
             }
-        }
-        .padding(0)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Theme.ColorToken.Surface.elevated)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(borderColor, lineWidth: 1)
-        )
-        .overlay(alignment: .leading) {
-            if let edgeColor = leftEdgeColor {
-                Rectangle()
-                    .fill(edgeColor)
-                    .frame(width: 3)
-                    .clipShape(
-                        RoundedRectangle(cornerRadius: 2)
-                    )
-                    .padding(.vertical, 4)
+            .padding(0)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Theme.ColorToken.Surface.elevated)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(borderColor, lineWidth: 1)
+            )
+            .overlay(alignment: .leading) {
+                if let edgeColor = leftEdgeColor {
+                    Rectangle()
+                        .fill(edgeColor)
+                        .frame(width: 3)
+                        .clipShape(
+                            RoundedRectangle(cornerRadius: 2)
+                        )
+                        .padding(.vertical, 4)
+                }
             }
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button {
-                editCode = matchedColor?.displayCode(for: colorSystem) ?? item.colorCode
-                editQuantity = "\(item.quantity)"
-                isEditing = true
-            } label: {
-                Label("改品牌", systemImage: "arrow.triangle.2.circlepath")
-            }
-            .tint(Theme.ColorToken.Morandi.mauve)
-
-            Button(role: .destructive) {
-                onRemove()
-            } label: {
-                Label("删除", systemImage: "trash")
-            }
-            .tint(Theme.ColorToken.Morandi.rose)
         }
         .contextMenu {
             Button {
