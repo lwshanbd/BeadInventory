@@ -153,9 +153,20 @@ struct SwipeActionRow<Content: View>: View {
             .onChanged { value in
                 let dx = value.translation.width
                 let dy = value.translation.height
-                if !gestureActive {
-                    // 还没接管：必须横向占绝对主导（1.8×）才认领，否则让外层 ScrollView 滚
-                    guard abs(dx) > abs(dy) * horizontalDominanceRatio else { return }
+                // 防 latching：SwiftUI DragGesture 没有 .onCancelled/.onInterrupted。
+                // 父 TabView 抢手势、contextMenu 长按竞争退出、LazyVStack 行重排、dialog
+                // 打断等场景下 onEnded 可能不发，gestureActive 卡在 true。表现：下一次
+                // 拖动 if !gestureActive 跳过、任意方向直接平移行，整个 dominance 检查作废。
+                //
+                // 修法：只要这次 onChanged 时行还没动过（offset 等于 dragStartOffset），
+                // 就强制重新走 dominance 检查 —— 即便上一次 gestureActive 残留 true，
+                // 也要在新 drag 的开头自我证明一遍方向。
+                let atRest = offset == dragStartOffset
+                if !gestureActive || atRest {
+                    guard abs(dx) > abs(dy) * horizontalDominanceRatio else {
+                        gestureActive = false
+                        return
+                    }
                     gestureActive = true
                 }
                 let candidate = dragStartOffset + dx
