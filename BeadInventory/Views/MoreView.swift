@@ -18,6 +18,11 @@ struct MoreView: View {
         cloudSyncDisabled != CloudSyncPreferences.bootValue
     }
 
+    /// 从 Info.plist 读 CFBundleShortVersionString（与 AboutView 同源）。
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    }
+
     private var totalBeadsCount: Int {
         inventoryManager.brandStocks.reduce(0) { $0 + max($1.stock, 0) }
     }
@@ -327,7 +332,7 @@ struct MoreView: View {
     private var footerView: some View {
         HStack(spacing: 6) {
             BeadView(color: Theme.ColorToken.Morandi.latte, size: 12)
-            Text("啃豆小仓 v3.0 · 慢慢拼，慢慢爱")
+            Text("啃豆小仓 v\(appVersion) · 慢慢拼，慢慢爱")
                 .font(.caption2)
                 .foregroundColor(Theme.ColorToken.Text.tertiary)
         }
