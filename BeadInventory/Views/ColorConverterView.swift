@@ -15,10 +15,19 @@ struct ColorConverterView: View {
     @State private var onlyWithStock = false
     @State private var selectedColor: BeadColor?
 
+    /// 当前品牌库存映射(mardCode → BrandStock)。"仅有库存" 筛选 + 详情面板读这里,
+    /// 不读 BeadColor.stock/used/available(那是预设默认色,与当前品牌实际库存无关)。
+    private var currentBrandStockDict: [String: BrandStock] {
+        guard let brandId = inventoryManager.currentBrandId else { return [:] }
+        let stocks = inventoryManager.brandStocks.filter { $0.brandId == brandId && !$0.isHidden }
+        return Dictionary(uniqueKeysWithValues: stocks.map { ($0.mardCode, $0) })
+    }
+
     private var searchResults: [BeadColor] {
         let results = inventoryManager.searchColors(searchText)
         if onlyWithStock {
-            return results.filter { $0.available > 0 }
+            let dict = currentBrandStockDict
+            return results.filter { (dict[$0.mardCode]?.available ?? 0) > 0 }
         }
         return results
     }
@@ -86,7 +95,11 @@ struct ColorConverterView: View {
         .background(Theme.ColorToken.Surface.background)
         .navigationBarHidden(true)
         .sheet(item: $selectedColor) { color in
-            ColorDetailSheet(color: color, lowStockThreshold: lowStockThreshold)
+            ColorDetailSheet(
+                color: color,
+                brandStock: currentBrandStockDict[color.mardCode],
+                lowStockThreshold: lowStockThreshold
+            )
         }
     }
 
@@ -335,10 +348,15 @@ private struct FlowSuggestions: View {
 
 struct ColorDetailSheet: View {
     let color: BeadColor
+    /// 当前品牌该色号的库存（由外层传入）。读 BrandStock 而非 BeadColor 的静态字段。
+    var brandStock: BrandStock?
     var lowStockThreshold: Int = 100
     @Environment(\.dismiss) private var dismiss
 
-    private var isLowStock: Bool { color.available < lowStockThreshold }
+    private var currentStock: Int { brandStock?.stock ?? 0 }
+    private var currentUsed: Int { brandStock?.used ?? 0 }
+    private var currentAvailable: Int { brandStock?.available ?? 0 }
+    private var isLowStock: Bool { currentAvailable < lowStockThreshold }
     private var isCustomColor: Bool { color.mardCode.hasPrefix("#") }
     private var hex: String { "#" + color.colorHex.uppercased() }
 
@@ -401,11 +419,11 @@ struct ColorDetailSheet: View {
                         codeRow(brand: "卡卡", code: color.kakaCode, isLast: true)
                     }
 
-                    // 库存
+                    // 库存（基于当前品牌的 BrandStock，不是 BeadColor 的静态默认值）
                     BIGroupCard(title: "库存信息") {
-                        infoRow(label: "总库存", value: "\(color.stock)", color: .primary, isLast: false)
-                        infoRow(label: "已使用", value: "\(color.used)", color: .warning, isLast: false)
-                        infoRow(label: "可用数量", value: "\(color.available)", color: isLowStock ? .error : .primary, isLast: true)
+                        infoRow(label: "总库存", value: "\(currentStock)", color: .primary, isLast: false)
+                        infoRow(label: "已使用", value: "\(currentUsed)", color: .warning, isLast: false)
+                        infoRow(label: "可用数量", value: "\(currentAvailable)", color: isLowStock ? .error : .primary, isLast: true)
                     }
                 }
                 .padding(.bottom, 30)

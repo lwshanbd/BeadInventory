@@ -485,6 +485,32 @@ class InventoryManager: ObservableObject {
         return true
     }
 
+    /// 直接把 used 设为目标值（EditStockSheet "直接设置" 模式用）。
+    /// 内部按 delta 记录 stockDeduct 或 stockUpdate 历史，不绕过 HistoryManager。
+    @discardableResult
+    func updateUsed(brandId: UUID, mardCode: String, newUsed: Int) -> Bool {
+        guard newUsed >= 0,
+              let index = brandStocks.firstIndex(where: {
+                  $0.brandId == brandId && $0.mardCode == mardCode
+              })
+        else { return false }
+        let oldUsed = brandStocks[index].used
+        guard newUsed != oldUsed else { return false }
+        brandStocks[index].used = newUsed
+        saveData()
+        // 增加视为扣减,减少视为校正
+        let delta = newUsed - oldUsed
+        historyManager.recordStockChange(
+            type: delta > 0 ? .stockDeduct : .stockUpdate,
+            brandId: brandId,
+            mardCode: mardCode,
+            oldValue: oldUsed,
+            newValue: newUsed,
+            changeAmount: abs(delta)
+        )
+        return true
+    }
+
     /// 批量导入库存（累加模式）
     /// - Parameters:
     ///   - brandId: 目标品牌 ID

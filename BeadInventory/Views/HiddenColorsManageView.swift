@@ -201,7 +201,9 @@ struct HiddenColorRow: View {
                 Text(color?.displayCode(for: inventoryManager.currentColorSystem) ?? stock.mardCode)
                     .font(.system(.headline, design: .monospaced))
 
-                if let color = color {
+                // 仅自定义色号(# 开头)显示用户输入的名字;
+                // 预设色号绝不显示编造的中文名（HANDOFF 铁律）
+                if let color = color, color.mardCode.hasPrefix("#"), !color.colorName.isEmpty {
                     Text(color.colorName)
                         .font(.caption)
                         .foregroundColor(.secondary)

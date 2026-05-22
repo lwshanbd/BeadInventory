@@ -191,8 +191,10 @@ struct LowStockRowView: View {
                     }
                 }
 
-                if let colorName = color?.colorName, !colorName.isEmpty {
-                    Text(colorName)
+                // 仅自定义色号(# 开头)显示用户输入的名字;
+                // 预设色号绝不显示编造的中文名（HANDOFF 铁律）
+                if let c = color, c.mardCode.hasPrefix("#"), !c.colorName.isEmpty {
+                    Text(c.colorName)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)

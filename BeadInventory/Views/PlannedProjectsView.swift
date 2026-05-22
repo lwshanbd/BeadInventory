@@ -420,26 +420,35 @@ struct PlannedProjectsView: View {
                 let isSelected = sel.contains(project.id)
                 let short = shortageCount(for: project)
 
-                ZStack {
-                    NavigationLink {
-                        PlannedProjectDetailView(project: project)
-                    } label: {
-                        EmptyView()
-                    }
-                    .opacity(0)
-
-                    PlanCard(
-                        project: project,
-                        shortageColors: short,
-                        isSelected: isSelected,
-                        selectionActive: sel.isActive,
-                        inventoryManager: inventoryManager
-                    )
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
+                Group {
                     if sel.isActive {
-                        sel.toggle(project.id)
+                        // 多选态：整卡作为 toggle button，禁止跳转
+                        Button {
+                            sel.toggle(project.id)
+                        } label: {
+                            PlanCard(
+                                project: project,
+                                shortageColors: short,
+                                isSelected: isSelected,
+                                selectionActive: true,
+                                inventoryManager: inventoryManager
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        // 普通态：NavigationLink 直接包卡片，整张卡可点跳转
+                        NavigationLink {
+                            PlannedProjectDetailView(project: project)
+                        } label: {
+                            PlanCard(
+                                project: project,
+                                shortageColors: short,
+                                isSelected: false,
+                                selectionActive: false,
+                                inventoryManager: inventoryManager
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .onLongPressGesture(minimumDuration: 0.4) {

@@ -184,6 +184,15 @@ struct ShippingView: View {
                     ShippingCard(record: record)
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    // 列表用 ScrollView 不是 List,无法用 .swipeActions;
+                    // 通过长按 context menu 暴露删除入口(与 PlannedProjects 一致)
+                    Button(role: .destructive) {
+                        inventoryManager.deletePurchaseRecord(id: record.id)
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                    }
+                }
             }
         }
         .padding(.horizontal, 18)

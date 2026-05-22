@@ -1440,36 +1440,14 @@ struct EditStockSheet: View {
             inventoryManager.updateStock(brandId: brandId, mardCode: color.mardCode, newStock: newStock)
             changed = true
         }
-        if let newUsed = Int(usedAmount), newUsed >= 0, newUsed != currentUsed,
-           let index = inventoryManager.brandStocks.firstIndex(where: {
-               $0.brandId == brandId && $0.mardCode == color.mardCode
-           }) {
-            inventoryManager.brandStocks[index].used = newUsed
-            inventoryManager.saveData()
-            changed = true
+        if let newUsed = Int(usedAmount), newUsed >= 0, newUsed != currentUsed {
+            // 走 inventoryManager.updateUsed 记录 stockDeduct/stockUpdate 历史,
+            // 不直接改 brandStocks[index].used 以避免绕过 HistoryManager(CLAUDE.md 约定)。
+            if inventoryManager.updateUsed(brandId: brandId, mardCode: color.mardCode, newUsed: newUsed) {
+                changed = true
+            }
         }
         if changed { lastSuccessAt = Date() }
-        dismissAfterDataChange()
-    }
-
-    func setStock() {
-        guard let newStock = Int(stockAmount), newStock >= 0,
-              let brandId = inventoryManager.currentBrandId else { return }
-        inventoryManager.updateStock(brandId: brandId, mardCode: color.mardCode, newStock: newStock)
-        lastSuccessAt = Date()
-        dismissAfterDataChange()
-    }
-
-    func setUsed() {
-        guard let newUsed = Int(usedAmount), newUsed >= 0,
-              let brandId = inventoryManager.currentBrandId else { return }
-        if let index = inventoryManager.brandStocks.firstIndex(where: {
-            $0.brandId == brandId && $0.mardCode == color.mardCode
-        }) {
-            inventoryManager.brandStocks[index].used = newUsed
-            inventoryManager.saveData()
-        }
-        lastSuccessAt = Date()
         dismissAfterDataChange()
     }
 
