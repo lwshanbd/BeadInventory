@@ -654,10 +654,20 @@ struct ScanView: View {
         // DeductionResolver.initializeFromRecognizedItems 按顺序生成 items，索引对齐安全。
         // 把识别行上记下的 preferredBrandId 落到 resolver.overrideBrand(...)，
         // 让 ScanView 这一步选好的跨品牌方案直接传到下一页的扣减审核。
+        //
+        // 选完之后到现在的窗口里，用户可能在别处把那个品牌删了 / 改了色系 / 把那颗色的
+        // BrandStock 行清掉了。这里在落到 resolver 之前重新校验三个条件，任何一条
+        // 不满足就丢弃这次 override（用户在下一页仍可以手动改）——比静默扣错品牌的豆好。
         for (idx, recognized) in recognizedItems.enumerated() {
             guard let preferred = recognized.preferredBrandId,
                   idx < resolver.items.count else { continue }
-            resolver.overrideBrand(for: resolver.items[idx].id, to: preferred)
+            let resolverItem = resolver.items[idx]
+            guard let brand = inventoryManager.brands.first(where: { $0.id == preferred }),
+                  brand.colorSystem == scanColorSystem,
+                  inventoryManager.getStock(brandId: preferred, mardCode: resolverItem.mardCode) != nil else {
+                continue
+            }
+            resolver.overrideBrand(for: resolverItem.id, to: preferred)
         }
         self.deductionResolver = resolver
     }
@@ -1287,6 +1297,7 @@ struct RecognizedResultsSectionNew: View {
                         onUpdate: { code, qty in
                             if let index = items.firstIndex(where: { $0.id == item.id }) {
                                 var updatedItem = items[index]
+                                let oldColorCode = updatedItem.colorCode
                                 if let c = code {
                                     if colorSystem != .mard,
                                        let color = inventoryManager.findColor(byCode: c, preferSystem: colorSystem) {
@@ -1296,6 +1307,11 @@ struct RecognizedResultsSectionNew: View {
                                     }
                                 }
                                 if let q = qty { updatedItem.quantity = q }
+                                // colorCode 改了 → 之前选好的 preferredBrandId 是基于旧颜色的库存挑出来的，
+                                // 对新颜色不一定还成立。直接清掉强制用户重选，避免把豆扣到错的品牌上。
+                                if updatedItem.colorCode != oldColorCode {
+                                    updatedItem.preferredBrandId = nil
+                                }
                                 items[index] = updatedItem
                             }
                         },
