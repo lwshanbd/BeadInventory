@@ -74,7 +74,7 @@ struct DeductionItemRow: View {
 
                 Text("×\(item.quantity)")
                     .font(.headline)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
 
                 brandMenu
             }
@@ -88,7 +88,7 @@ struct DeductionItemRow: View {
                     Button(action: onResetBrand) {
                         Image(systemName: "arrow.uturn.backward.circle")
                             .font(.caption2)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
                     }
                 }
             }
@@ -172,8 +172,8 @@ struct DeductionItemRow: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(item.isManualOverride ? Theme.ColorToken.Status.warning.opacity(0.15) : Color.accentColor.opacity(0.1))
-            .foregroundColor(item.isManualOverride ? .orange : .accentColor)
+            .background(item.isManualOverride ? Theme.ColorToken.Status.warning.opacity(0.15) : Theme.ColorToken.Morandi.mauve.opacity(0.1))
+            .foregroundColor(item.isManualOverride ? .orange : Theme.ColorToken.Morandi.mauve)
             .cornerRadius(Theme.Radius.md)
         }
     }
@@ -213,7 +213,7 @@ struct DeductionItemRow: View {
                         Spacer()
                         Text("使用")
                             .font(.caption2)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
                     }
                 }
                 .buttonStyle(.plain)
@@ -225,7 +225,7 @@ struct DeductionItemRow: View {
                 } label: {
                     Text("查看更多...")
                         .font(.caption2)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                 }
             }
         }

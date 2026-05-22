@@ -329,7 +329,7 @@ struct PatternCalibrationView: View {
                 .font(.title3.monospacedDigit().bold())
                 .frame(minWidth: 50, maxWidth: 70)
                 .padding(.vertical, 4)
-                .background(Color(.systemBackground))
+                .background(Theme.ColorToken.Surface.elevated)
                 .cornerRadius(Theme.Radius.sm)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)

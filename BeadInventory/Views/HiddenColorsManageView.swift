@@ -176,7 +176,7 @@ struct HiddenColorRow: View {
                     onToggleSelect()
                 } label: {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(isSelected ? .accentColor : .secondary)
+                        .foregroundColor(isSelected ? Theme.ColorToken.Morandi.latte : .secondary)
                         .font(.title2)
                 }
                 .buttonStyle(.plain)

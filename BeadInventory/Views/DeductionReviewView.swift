@@ -109,8 +109,8 @@ struct DeductionReviewView: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Color.accentColor.opacity(0.1))
-                    .foregroundColor(.accentColor)
+                    .background(Theme.ColorToken.Morandi.latte.opacity(0.1))
+                    .foregroundColor(Theme.ColorToken.Morandi.latte)
                     .cornerRadius(Theme.Radius.md)
                 }
             }

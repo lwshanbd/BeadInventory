@@ -478,7 +478,7 @@ struct ImportFullDataView: View {
             // 图标
             Image(systemName: "arrow.down.doc.fill")
                 .font(.system(size: 60))
-                .foregroundColor(.accentColor)
+                .foregroundColor(Theme.ColorToken.Morandi.mist)
 
             // 说明文字
             VStack(spacing: 8) {
@@ -504,7 +504,7 @@ struct ImportFullDataView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(Color.accentColor)
+                .background(Theme.ColorToken.Morandi.mist)
                 .foregroundColor(.white)
                 .cornerRadius(Theme.Radius.md)
             }
@@ -543,7 +543,7 @@ struct ImportFullDataView: View {
                 .foregroundColor(.secondary)
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.md)
     }
 
@@ -755,7 +755,7 @@ struct FormatHintRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
-                .foregroundColor(.accentColor)
+                .foregroundColor(Theme.ColorToken.Morandi.mist)
                 .frame(width: 20)
             Text(text)
                 .font(.subheadline)
@@ -974,7 +974,7 @@ struct ImportFullDataPreviewView: View {
                     Text("确认导入")
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(canImport ? Color.accentColor : Theme.ColorToken.Border.default)
+                        .background(canImport ? Theme.ColorToken.Morandi.mist : Theme.ColorToken.Border.default)
                         .foregroundColor(.white)
                         .cornerRadius(Theme.Radius.md)
                 }

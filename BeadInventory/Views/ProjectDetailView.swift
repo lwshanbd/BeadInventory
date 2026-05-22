@@ -121,7 +121,7 @@ struct ProjectDetailView: View {
                         }
                     }
                     .padding()
-                    .background(Color(.systemBackground))
+                    .background(Theme.ColorToken.Surface.elevated)
                     .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
                 }
@@ -152,7 +152,7 @@ struct ProjectDetailView: View {
                             Image(systemName: "arrow.up.arrow.down")
                                 .font(.caption)
                         }
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                     }
                 }
                 .padding(.horizontal)
@@ -167,7 +167,7 @@ struct ProjectDetailView: View {
             }
             .padding(.vertical)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Theme.ColorToken.Surface.background)
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -271,7 +271,7 @@ struct ChildProjectRow: View {
 
                 Text("\(project.totalBeads) 颗")
                     .font(.caption)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Theme.ColorToken.Morandi.latte)
             }
 
             Image(systemName: "chevron.right")
@@ -331,7 +331,7 @@ struct ChildProjectRowWithActions: View {
 
                         Text("\(project.totalBeads) 颗")
                             .font(.caption)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Theme.ColorToken.Morandi.latte)
                     }
                 }
             }
@@ -419,7 +419,7 @@ struct ProjectInfoCardEnhanced: View {
                         Image(systemName: "pencil.circle.fill")
                             .font(.title2)
                             .foregroundColor(.white)
-                            .background(Circle().fill(Color.accentColor))
+                            .background(Circle().fill(Theme.ColorToken.Morandi.latte))
                     }
                     .padding(8)
                 }
@@ -430,10 +430,10 @@ struct ProjectInfoCardEnhanced: View {
                 if isParent {
                     Label("父项目", systemImage: "folder.fill")
                         .font(.caption)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.accentColor.opacity(0.1))
+                        .background(Theme.ColorToken.Morandi.latte.opacity(0.1))
                         .cornerRadius(Theme.Radius.sm)
                 }
 
@@ -504,7 +504,7 @@ struct ProjectInfoCardEnhanced: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
@@ -578,7 +578,7 @@ struct BeadUsageRow: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.md)
     }
 }
@@ -611,7 +611,7 @@ struct FinishedImageSection: View {
                         Text(finishedImage == nil ? "上传成品图" : "修改")
                     }
                     .font(.caption)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Theme.ColorToken.Morandi.latte)
                 }
             }
 
@@ -639,10 +639,10 @@ struct FinishedImageSection: View {
                     } label: {
                         if let date = project.completedDate {
                             Text(formatDate(date))
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(Theme.ColorToken.Morandi.latte)
                         } else {
                             Text("选择日期")
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(Theme.ColorToken.Morandi.latte)
                         }
                     }
 
@@ -678,7 +678,7 @@ struct FinishedImageSection: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
         .sheet(isPresented: $showingDatePicker) {
@@ -810,7 +810,7 @@ struct ProjectImageEditorSheet: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color.accentColor)
+                            .background(Theme.ColorToken.Morandi.latte)
                             .foregroundColor(.white)
                             .cornerRadius(Theme.Radius.md)
                         }

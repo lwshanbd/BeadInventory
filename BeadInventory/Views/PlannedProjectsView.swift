@@ -575,7 +575,7 @@ private struct PlanCard: View {
             if selectionActive {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 18))
-                    .foregroundStyle(isSelected ? Color.accentColor : Theme.ColorToken.Text.tertiary)
+                    .foregroundStyle(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Text.tertiary)
             } else {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 16, weight: .semibold))
@@ -589,7 +589,7 @@ private struct PlanCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(isSelected ? Color.accentColor : Theme.ColorToken.Border.default, lineWidth: 1)
+                .stroke(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default, lineWidth: 1)
         )
     }
 
@@ -627,10 +627,11 @@ private struct PlanCard: View {
 // MARK: - 空状态视图
 struct EmptyPlannedProjectsView: View {
     var body: some View {
-        EmptyStateView(
+        BIEmptyHero(
             icon: "calendar.badge.clock",
+            flavor: Theme.ColorToken.Morandi.mauve,
             title: "暂无计划项目",
-            description: "扫描图纸后选择「创建计划」\n可在此处管理和执行"
+            subtitle: "扫描图纸后选择「创建计划」\n可在此处管理和执行"
         )
     }
 }
@@ -678,7 +679,7 @@ struct PlannedProjectRow: View {
             // 选择模式：整行使用 onTapGesture，避免 Button 在搜索键盘弹出时被吞掉点击
             HStack(spacing: 8) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(isSelected ? .accentColor : .secondary)
+                    .foregroundColor(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Text.secondary)
                     .font(.title2)
                     .frame(width: 44, height: 44)
 
@@ -707,7 +708,7 @@ struct PlannedProjectRow: View {
                         onToggleSelect()
                     } label: {
                         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .foregroundColor(isSelected ? .accentColor : .secondary)
+                            .foregroundColor(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Text.secondary)
                             .font(.title3)
                             .frame(width: 36, height: 36)
                             .contentShape(Rectangle())
@@ -767,7 +768,7 @@ struct PlannedProjectRow: View {
                 if isParent {
                     Image(systemName: "folder.fill")
                         .font(.caption)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                 }
 
                 Text(project.name)
@@ -778,8 +779,8 @@ struct PlannedProjectRow: View {
                 BIBadge(
                     project.colorSystem.displayName,
                     style: .custom(
-                        background: project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Theme.ColorToken.Status.info.opacity(0.15),
-                        foreground: project.colorSystem == .kaka ? .purple : .blue
+                        background: project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve.opacity(0.15) : Theme.ColorToken.Morandi.latte.opacity(0.15),
+                        foreground: project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Morandi.latte
                     )
                 )
 
@@ -803,7 +804,7 @@ struct PlannedProjectRow: View {
 
                 Label("\(totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
                     .font(.caption)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
             }
 
             // 颜色预览
@@ -867,8 +868,8 @@ struct PlannedChildProjectRow: View {
                         BIBadge(
                             project.colorSystem.displayName,
                             style: .custom(
-                                background: project.colorSystem == .kaka ? Color.purple.opacity(0.15) : Theme.ColorToken.Status.info.opacity(0.15),
-                                foreground: project.colorSystem == .kaka ? .purple : .blue
+                                background: project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve.opacity(0.15) : Theme.ColorToken.Morandi.latte.opacity(0.15),
+                                foreground: project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Morandi.latte
                             )
                         )
 
@@ -885,7 +886,7 @@ struct PlannedChildProjectRow: View {
                         Spacer()
                         Label("\(project.totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
                             .font(.caption)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
                     }
                 }
             }
@@ -1017,7 +1018,7 @@ struct ExecutePlannedProjectSheet: View {
                                     Spacer()
                                     if selectedBrandId == brand.id {
                                         Image(systemName: "checkmark")
-                                            .foregroundColor(.accentColor)
+                                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
                                     }
                                 }
                             }
@@ -1203,7 +1204,7 @@ struct MergePlannedProjectsSheet: View {
                             HStack {
                                 if inventoryManager.isParentProject(project.id) {
                                     Image(systemName: "folder.fill")
-                                        .foregroundColor(.accentColor)
+                                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                                         .font(.caption)
                                 }
                                 Text(project.name)
@@ -1314,7 +1315,7 @@ struct PlannedProjectDetailView: View {
             }
             .padding(.vertical)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Theme.ColorToken.Surface.background)
         .navigationTitle(currentProject?.name ?? project.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
@@ -1401,7 +1402,7 @@ struct PlannedProjectDetailView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding()
-            .background((currentProject ?? project).thumbnail == nil ? Theme.ColorToken.Border.default : Color.purple)
+            .background((currentProject ?? project).thumbnail == nil ? Theme.ColorToken.Border.default : Theme.ColorToken.Morandi.mauve)
             .cornerRadius(Theme.Radius.md)
         }
         .disabled((currentProject ?? project).thumbnail == nil)
@@ -1469,7 +1470,7 @@ struct PlannedProjectDetailView: View {
                 }
             }
             .padding()
-            .background(Color(.systemBackground))
+            .background(Theme.ColorToken.Surface.elevated)
             .cornerRadius(Theme.Radius.md)
             .padding(.horizontal)
         }
@@ -1504,7 +1505,7 @@ struct PlannedProjectDetailView: View {
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.caption)
             }
-            .foregroundColor(.accentColor)
+            .foregroundColor(Theme.ColorToken.Morandi.mauve)
         }
     }
 
@@ -1636,7 +1637,7 @@ struct PlannedProjectInfoCard: View {
                         Image(systemName: "pencil.circle.fill")
                             .font(.title2)
                             .foregroundColor(.white)
-                            .background(Circle().fill(Color.accentColor))
+                            .background(Circle().fill(Theme.ColorToken.Morandi.mauve))
                     }
                     .padding(8)
                 }
@@ -1653,10 +1654,10 @@ struct PlannedProjectInfoCard: View {
                     // 色号体系徽章
                     Text(project.colorSystem.displayName)
                         .font(.caption)
-                        .foregroundColor(project.colorSystem == .kaka ? .purple : .blue)
+                        .foregroundColor(project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Morandi.latte)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(project.colorSystem == .kaka ? Color.purple.opacity(0.1) : Theme.ColorToken.Status.info.opacity(0.1))
+                        .background(project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve.opacity(0.1) : Theme.ColorToken.Morandi.latte.opacity(0.1))
                         .cornerRadius(Theme.Radius.sm)
 
                     Label("计划中", systemImage: "clock.fill")
@@ -1706,7 +1707,7 @@ struct PlannedProjectInfoCard: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
     }
@@ -1761,7 +1762,7 @@ struct PlannedBeadUsageRow: View {
                 .font(.title3)
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.md)
     }
 }
@@ -1789,7 +1790,7 @@ struct PlannedChildProjectRowWithActions: View {
                         Spacer()
                         Label("\(project.totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
                             .font(.caption)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
                     }
                 }
             }
@@ -1900,7 +1901,7 @@ struct StockCheckSheet: View {
                 }
                 .padding(.vertical)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("库存确认")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1966,7 +1967,7 @@ struct AllBrandsStockCheckCard: View {
                 HStack {
                     // 图标和标题
                     Image(systemName: "square.stack.3d.up.fill")
-                        .foregroundColor(.purple)
+                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                     Text("全部品牌汇总")
                         .font(.headline)
                         .foregroundColor(.primary)
@@ -2109,7 +2110,7 @@ struct AllBrandsInsufficientColorRow: View {
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.sm)
     }
 }
@@ -2194,11 +2195,11 @@ struct BrandStockCheckCard: View {
     // 整体状态：绿色（充足）、黄色（有低库存预警）、红色（有不足）
     var statusColor: Color {
         if !isSufficient {
-            return .red
+            return Theme.ColorToken.Status.error
         } else if hasLowStock {
-            return .orange
+            return Theme.ColorToken.Status.warning
         } else {
-            return .green
+            return Theme.ColorToken.Status.success
         }
     }
 
@@ -2643,7 +2644,7 @@ struct EditableUsageRow: View {
                 } label: {
                     Image(systemName: "minus.circle.fill")
                         .font(.title2)
-                        .foregroundColor(usage.quantity > 1 ? .orange : .gray)
+                        .foregroundColor(usage.quantity > 1 ? Theme.ColorToken.Status.warning : Theme.ColorToken.Text.tertiary)
                 }
                 .buttonStyle(.plain)
                 .disabled(usage.quantity <= 1)
@@ -2785,7 +2786,7 @@ struct AddColorToProjectSheet: View {
                                 } label: {
                                     Image(systemName: "minus.circle.fill")
                                         .font(.title2)
-                                        .foregroundColor(quantity > 1 ? .orange : .gray)
+                                        .foregroundColor(quantity > 1 ? Theme.ColorToken.Status.warning : Theme.ColorToken.Text.tertiary)
                                 }
                                 .disabled(quantity <= 1)
 
@@ -2813,7 +2814,7 @@ struct AddColorToProjectSheet: View {
                             }
                         }
                         .padding()
-                        .background(Color(.systemBackground))
+                        .background(Theme.ColorToken.Surface.elevated)
                         .cornerRadius(Theme.Radius.md)
                         .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
                     }
@@ -2849,7 +2850,7 @@ struct AddColorToProjectSheet: View {
 
                                 if selectedColorCode == color.mardCode {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.accentColor)
+                                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                                 }
                             }
                         }
@@ -2958,8 +2959,8 @@ struct MultiProjectStockCheckSheet: View {
                                         .font(.caption)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)
-                                        .background(Color.accentColor.opacity(0.1))
-                                        .foregroundColor(.accentColor)
+                                        .background(Theme.ColorToken.Morandi.mauve.opacity(0.1))
+                                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                                         .cornerRadius(Theme.Radius.md)
                                 }
                             }
@@ -3013,7 +3014,7 @@ struct MultiProjectStockCheckSheet: View {
                 }
                 .padding(.vertical)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("库存确认")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -3326,7 +3327,7 @@ struct ReplenishSuggestionSheet: View {
                                                 .font(.subheadline)
                                                 .padding(.horizontal, 16)
                                                 .padding(.vertical, 10)
-                                                .background(selectedBrandId == brand.id ? Color.accentColor : Theme.ColorToken.Border.default.opacity(0.5))
+                                                .background(selectedBrandId == brand.id ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default.opacity(0.5))
                                                 .foregroundColor(selectedBrandId == brand.id ? .white : .primary)
                                                 .cornerRadius(Theme.Radius.lg)
                                         }
@@ -3336,7 +3337,7 @@ struct ReplenishSuggestionSheet: View {
                         }
                     }
                     .padding()
-                    .background(Color(.systemBackground))
+                    .background(Theme.ColorToken.Surface.elevated)
                     .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
@@ -3388,7 +3389,7 @@ struct ReplenishSuggestionSheet: View {
                             }
                         }
                         .padding()
-                        .background(Color(.systemBackground))
+                        .background(Theme.ColorToken.Surface.elevated)
                         .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
@@ -3400,7 +3401,7 @@ struct ReplenishSuggestionSheet: View {
                                     .foregroundColor(.secondary)
                                 Text("\(totalSelectedQuantity)g")
                                     .font(.headline)
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
                             }
                             Spacer()
                             VStack(alignment: .trailing, spacing: 4) {
@@ -3409,7 +3410,7 @@ struct ReplenishSuggestionSheet: View {
                                     .foregroundColor(.secondary)
                                 Text(remainingForFreeShipping > 0 ? "\(remainingForFreeShipping)g" : "已达标 ✓")
                                     .font(.headline)
-                                    .foregroundColor(remainingForFreeShipping > 0 ? .orange : .green)
+                                    .foregroundColor(remainingForFreeShipping > 0 ? Theme.ColorToken.Status.warning : Theme.ColorToken.Status.success)
                             }
                         }
                         .padding()
@@ -3451,7 +3452,7 @@ struct ReplenishSuggestionSheet: View {
                             ReplenishSectionView(
                                 title: "低库存预警（建议补豆）",
                                 subtitle: "扣减后库存低于\(lowStockThreshold)",
-                                color: .orange,
+                                color: Theme.ColorToken.Status.warning,
                                 items: replenishData.lowStock,
                                 processedCodes: replenishData.processedCodes,
                                 quantities: $replenishQuantities,
@@ -3524,7 +3525,7 @@ struct ReplenishSuggestionSheet: View {
                                         Text(showCopySuccess ? "已复制" : "复制补豆计划")
                                     }
                                     .font(.subheadline)
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
                                 }
                             }
                             .padding(.horizontal)
@@ -3545,7 +3546,7 @@ struct ReplenishSuggestionSheet: View {
                 }
                 .padding(.vertical)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("补豆建议")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -3805,7 +3806,7 @@ struct DirectPurchaseSheet: View {
                         }
                     }
                     .padding()
-                    .background(Color(.systemBackground))
+                    .background(Theme.ColorToken.Surface.elevated)
                     .cornerRadius(Theme.Radius.md)
                     .padding(.horizontal)
 
@@ -3857,7 +3858,7 @@ struct DirectPurchaseSheet: View {
                             }
                         }
                         .padding()
-                        .background(Color(.systemBackground))
+                        .background(Theme.ColorToken.Surface.elevated)
                         .cornerRadius(Theme.Radius.md)
                         .padding(.horizontal)
 
@@ -3878,7 +3879,7 @@ struct DirectPurchaseSheet: View {
                                     .foregroundColor(.secondary)
                                 Text(remainingForFreeShipping > 0 ? "\(remainingForFreeShipping)g" : "已达标 ✓")
                                     .font(.headline)
-                                    .foregroundColor(remainingForFreeShipping > 0 ? .orange : .green)
+                                    .foregroundColor(remainingForFreeShipping > 0 ? Theme.ColorToken.Status.warning : Theme.ColorToken.Status.success)
                             }
                         }
                         .padding()
@@ -4001,7 +4002,7 @@ struct DirectPurchaseSheet: View {
                 }
                 .padding(.vertical)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("直接补豆")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -4104,7 +4105,7 @@ struct DirectPurchaseColorRow: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.sm)
     }
 }
@@ -4353,7 +4354,7 @@ struct ReplenishColorRow: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.sm)
     }
 }

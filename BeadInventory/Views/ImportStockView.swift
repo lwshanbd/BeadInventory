@@ -109,7 +109,7 @@ struct ImportStockView: View {
             // 图标
             Image(systemName: "doc.text")
                 .font(.system(size: 60))
-                .foregroundColor(.accentColor)
+                .foregroundColor(Theme.ColorToken.Morandi.mist)
 
             // 说明文字
             VStack(spacing: 8) {
@@ -133,7 +133,7 @@ struct ImportStockView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(Color.accentColor)
+                .background(Theme.ColorToken.Morandi.mist)
                 .foregroundColor(.white)
                 .cornerRadius(Theme.Radius.md)
             }
@@ -172,7 +172,7 @@ struct ImportStockView: View {
                 .foregroundColor(.secondary)
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.md)
     }
 
@@ -338,7 +338,7 @@ struct ImportPreviewView: View {
                     Text("确认导入")
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(result.validItems.isEmpty ? Theme.ColorToken.Border.default : Color.accentColor)
+                        .background(result.validItems.isEmpty ? Theme.ColorToken.Border.default : Theme.ColorToken.Morandi.mist)
                         .foregroundColor(.white)
                         .cornerRadius(Theme.Radius.md)
                 }
@@ -354,7 +354,7 @@ struct ImportPreviewView: View {
                 Text("\(result.validItems.count)")
                     .font(.title)
                     .fontWeight(.bold)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Theme.ColorToken.Morandi.mist)
                 Text("种颜色")
                     .font(.caption)
                     .foregroundColor(.secondary)

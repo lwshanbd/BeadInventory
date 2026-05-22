@@ -788,8 +788,8 @@ struct SortChip: View {
                 .font(.caption)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(isSelected ? Color.accentColor.opacity(0.2) : Theme.ColorToken.Surface.subtle)
-                .foregroundColor(isSelected ? .accentColor : .secondary)
+                .background(isSelected ? Theme.ColorToken.Morandi.latte.opacity(0.2) : Theme.ColorToken.Surface.subtle)
+                .foregroundColor(isSelected ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.secondary)
                 .cornerRadius(Theme.Radius.lg)
         }
     }

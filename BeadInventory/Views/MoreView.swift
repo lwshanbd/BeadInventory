@@ -528,67 +528,48 @@ struct DataToolsView: View {
     @State private var showingExportSheet = false
 
     var body: some View {
-        List {
-            Section("导入导出") {
-                Button {
-                    showingExportSheet = true
-                } label: {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("导出库存数据")
-                            Text("导出为 CSV 或 JSON 文件")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "square.and.arrow.up.fill")
-                            .foregroundColor(Theme.ColorToken.Status.info)
+        VStack(spacing: 0) {
+            BISecondaryNav(title: "数据与备份")
+            ScrollView {
+                VStack(spacing: 18) {
+                    BIGroupCard(title: "导入导出") {
+                        BIListRow(
+                            icon: "square.and.arrow.up.fill",
+                            iconColor: Theme.ColorToken.Morandi.mist,
+                            title: "导出库存数据",
+                            subtitle: "导出为 CSV 或 JSON 文件",
+                            trailing: .chevron,
+                            action: { showingExportSheet = true }
+                        )
+                        BIListRow(
+                            icon: "arrow.down.doc.fill",
+                            iconColor: Theme.ColorToken.Morandi.sage,
+                            title: "导入历史数据",
+                            subtitle: "从备份文件恢复全部数据",
+                            trailing: .chevron,
+                            isLast: true,
+                            action: { showingImportFullData = true }
+                        )
                     }
-                }
-                .foregroundColor(.primary)
 
-                Button {
-                    showingImportFullData = true
-                } label: {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("导入历史数据")
-                            Text("从备份文件恢复全部数据")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "arrow.down.doc.fill")
-                            .foregroundColor(Theme.ColorToken.Status.success)
+                    BIGroupCard(title: "备份恢复", footer: "涉及全量数据修改时，建议先导出库存数据留存。") {
+                        BIListRow(
+                            icon: "arrow.clockwise.icloud.fill",
+                            iconColor: Theme.ColorToken.Morandi.mauve,
+                            title: "恢复备份",
+                            subtitle: "从自动备份恢复数据",
+                            trailing: .chevron,
+                            isLast: true,
+                            action: { showingBackupRestore = true }
+                        )
                     }
                 }
-                .foregroundColor(.primary)
-            }
-
-            Section {
-                Button {
-                    showingBackupRestore = true
-                } label: {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("恢复备份")
-                            Text("从自动备份恢复数据")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "arrow.clockwise.icloud.fill")
-                            .foregroundColor(.cyan)
-                    }
-                }
-                .foregroundColor(.primary)
-            } header: {
-                Text("备份恢复")
-            } footer: {
-                Text("涉及全量数据修改时，建议先导出库存数据留存。")
+                .padding(.top, 8)
+                .padding(.bottom, 24)
             }
         }
-        .navigationTitle("数据与备份")
+        .background(Theme.ColorToken.Surface.background)
+        .navigationBarHidden(true)
         .sheet(isPresented: $showingImportFullData) {
             ImportFullDataView()
         }
@@ -611,57 +592,42 @@ struct DiagnosticsToolsView: View {
     @State private var showingDiagnosticsNotice = false
 
     var body: some View {
-        List {
-            Section("诊断日志") {
-                Button {
-                    exportDiagnosticsLogs()
-                } label: {
-                    HStack {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("导出诊断日志")
-                                Text("仅在排查问题时导出给开发者")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+        VStack(spacing: 0) {
+            BISecondaryNav(title: "诊断工具")
+            ScrollView {
+                VStack(spacing: 18) {
+                    BIGroupCard(title: "诊断日志") {
+                        BIListRow(
+                            icon: "doc.text.magnifyingglass",
+                            iconColor: Theme.ColorToken.Morandi.mauve,
+                            title: "导出诊断日志",
+                            subtitle: isExportingDiagnostics ? "正在导出…" : "仅在排查问题时导出给开发者",
+                            trailing: .chevron,
+                            action: {
+                                guard !isExportingDiagnostics && !isClearingDiagnostics else { return }
+                                exportDiagnosticsLogs()
                             }
-                        } icon: {
-                            Image(systemName: "doc.text.magnifyingglass")
-                                .foregroundColor(.indigo)
-                        }
-                        Spacer()
-                        if isExportingDiagnostics {
-                            ProgressView()
-                        }
+                        )
+                        BIListRow(
+                            icon: "trash.circle.fill",
+                            iconColor: Theme.ColorToken.Status.error,
+                            title: "清空诊断日志",
+                            subtitle: isClearingDiagnostics ? "正在清空…" : "只清空本机日志，不影响库存数据",
+                            trailing: .chevron,
+                            isLast: true,
+                            action: {
+                                guard !isExportingDiagnostics && !isClearingDiagnostics else { return }
+                                showingClearDiagnosticsAlert = true
+                            }
+                        )
                     }
                 }
-                .foregroundColor(.primary)
-                .disabled(isExportingDiagnostics || isClearingDiagnostics)
-
-                Button(role: .destructive) {
-                    showingClearDiagnosticsAlert = true
-                } label: {
-                    HStack {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("清空诊断日志")
-                                Text("只清空本机日志，不影响库存数据")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "trash.circle.fill")
-                                .foregroundColor(Theme.ColorToken.Status.error)
-                        }
-                        Spacer()
-                        if isClearingDiagnostics {
-                            ProgressView()
-                        }
-                    }
-                }
-                .disabled(isExportingDiagnostics || isClearingDiagnostics)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
             }
         }
-        .navigationTitle("诊断工具")
+        .background(Theme.ColorToken.Surface.background)
+        .navigationBarHidden(true)
         .sheet(isPresented: $showingDiagnosticsShareSheet, onDismiss: {
             diagnosticsExportURL = nil
         }) {

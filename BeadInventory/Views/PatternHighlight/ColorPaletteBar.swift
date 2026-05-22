@@ -49,7 +49,7 @@ struct ColorPaletteBar: View {
                     .fill(Color(hex: hex))
                     .frame(width: 32, height: 32)
                     .overlay(Circle().stroke(
-                        isSelected ? Color.accentColor :
+                        isSelected ? Theme.ColorToken.Morandi.mauve :
                             (isExtra ? Theme.ColorToken.Text.tertiary : Theme.ColorToken.Border.default),
                         lineWidth: isSelected ? 3 : (isExtra ? 1.5 : 1)
                     ))
@@ -74,7 +74,7 @@ struct ColorPaletteBar: View {
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
-            .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+            .background(isSelected ? Theme.ColorToken.Morandi.mauve.opacity(0.15) : Color.clear)
             .cornerRadius(Theme.Radius.sm)
         }
         .buttonStyle(.plain)

@@ -36,7 +36,8 @@ struct LowStockDetailView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: 0) {
+                BISecondaryNav(title: "低库存详情", dismissAction: { dismiss() })
                 if !brandExists {
                     ContentUnavailableView {
                         Label("品牌不存在", systemImage: "exclamationmark.triangle")
@@ -44,79 +45,98 @@ struct LowStockDetailView: View {
                         Text("该品牌可能已被删除或同步丢失")
                     }
                 } else {
-                    List {
-                        Section {
-                            HStack {
-                                Text("低库存阈值")
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text("\(lowStockThreshold)")
-                                    .fontWeight(.medium)
-                            }
-                            HStack {
-                                Text("低库存色号数")
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text("\(lowStockItems.count)")
-                                    .fontWeight(.bold)
-                                    .foregroundColor(Theme.ColorToken.Status.warning)
-                            }
-                        }
-
-                        if missingColorCount > 0 {
-                            Section {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "info.circle.fill")
-                                        .foregroundColor(Theme.ColorToken.Status.info)
-                                    Text("有 \(missingColorCount) 个色号无法匹配颜色数据，已显示原始色号")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    Spacer()
-                                }
-                            }
-                        }
-
-                        if lowStockItems.isEmpty {
-                            Section {
-                                HStack {
-                                    Spacer()
-                                    VStack(spacing: 8) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.system(size: 48))
-                                            .foregroundColor(Theme.ColorToken.Status.success)
-                                        Text("没有低库存颜色")
-                                            .font(.headline)
-                                            .foregroundColor(.secondary)
+                    ScrollView {
+                        LazyVStack(spacing: 18) {
+                            BIGroupCard {
+                                VStack(spacing: 0) {
+                                    HStack {
+                                        Text("低库存阈值")
+                                            .foregroundColor(Theme.ColorToken.Text.secondary)
+                                        Spacer()
+                                        Text("\(lowStockThreshold)")
+                                            .fontWeight(.medium)
+                                            .foregroundColor(Theme.ColorToken.Text.primary)
                                     }
-                                    .padding(.vertical, 32)
-                                    Spacer()
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 13)
+                                    Rectangle()
+                                        .fill(Theme.ColorToken.Border.divider)
+                                        .frame(height: 1)
+                                        .padding(.leading, 14)
+                                    HStack {
+                                        Text("低库存色号数")
+                                            .foregroundColor(Theme.ColorToken.Text.secondary)
+                                        Spacer()
+                                        Text("\(lowStockItems.count)")
+                                            .fontWeight(.bold)
+                                            .foregroundColor(Theme.ColorToken.Status.warning)
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 13)
                                 }
                             }
-                        } else {
-                            Section(header: Text("按可用库存从少到多排序")) {
-                                ForEach(lowStockItems, id: \.stock.id) { item in
-                                    LowStockRowView(
-                                        color: item.color,
-                                        stock: item.stock,
-                                        lowStockThreshold: lowStockThreshold,
-                                        colorSystem: inventoryManager.currentColorSystem
-                                    )
+
+                            if missingColorCount > 0 {
+                                BIGroupCard {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "info.circle.fill")
+                                            .foregroundColor(Theme.ColorToken.Status.info)
+                                        Text("有 \(missingColorCount) 个色号无法匹配颜色数据，已显示原始色号")
+                                            .font(.caption)
+                                            .foregroundColor(Theme.ColorToken.Text.secondary)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 13)
+                                }
+                            }
+
+                            if lowStockItems.isEmpty {
+                                BIGroupCard {
+                                    HStack {
+                                        Spacer()
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.system(size: 48))
+                                                .foregroundColor(Theme.ColorToken.Status.success)
+                                            Text("没有低库存颜色")
+                                                .font(.headline)
+                                                .foregroundColor(Theme.ColorToken.Text.secondary)
+                                        }
+                                        .padding(.vertical, 32)
+                                        Spacer()
+                                    }
+                                }
+                            } else {
+                                BIGroupCard(title: "按可用库存从少到多排序") {
+                                    ForEach(Array(lowStockItems.enumerated()), id: \.element.stock.id) { idx, item in
+                                        VStack(spacing: 0) {
+                                            LowStockRowView(
+                                                color: item.color,
+                                                stock: item.stock,
+                                                lowStockThreshold: lowStockThreshold,
+                                                colorSystem: inventoryManager.currentColorSystem
+                                            )
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 10)
+                                            if idx < lowStockItems.count - 1 {
+                                                Rectangle()
+                                                    .fill(Theme.ColorToken.Border.divider)
+                                                    .frame(height: 1)
+                                                    .padding(.leading, 60)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                    .listStyle(.insetGrouped)
-                }
-            }
-            .navigationTitle("低库存详情")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") {
-                        dismiss()
+                        .padding(.top, 8)
+                        .padding(.bottom, 24)
                     }
                 }
             }
+            .background(Theme.ColorToken.Surface.background)
+            .navigationBarHidden(true)
         }
     }
 }

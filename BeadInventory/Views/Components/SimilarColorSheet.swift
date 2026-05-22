@@ -90,7 +90,7 @@ struct SimilarColorSheet: View {
                                     }
 
                                     Image(systemName: "arrow.right.circle.fill")
-                                        .foregroundColor(.accentColor)
+                                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                                 }
                             }
                         }

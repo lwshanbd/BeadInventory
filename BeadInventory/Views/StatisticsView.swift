@@ -939,7 +939,7 @@ struct ProjectHistoryView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(selectedProjects.count >= 2 ? Color.accentColor : Theme.ColorToken.Border.default)
+                            .background(selectedProjects.count >= 2 ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Border.default)
                             .foregroundColor(selectedProjects.count >= 2 ? .white : .secondary)
                             .cornerRadius(Theme.Radius.md)
                         }
@@ -1207,7 +1207,8 @@ struct ProjectHistoryView: View {
                         }
                     }
                 }
-                .listStyle(.insetGrouped)
+                .listStyle(.plain)
+                .background(Theme.ColorToken.Surface.background)
             }
             }
         }
@@ -1549,7 +1550,7 @@ struct ProjectRowWithHierarchy: View {
                     onToggleSelect()
                 } label: {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(isSelected ? .accentColor : .secondary)
+                        .foregroundColor(isSelected ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.secondary)
                         .font(.title2)
                 }
                 .buttonStyle(.plain)
@@ -1595,7 +1596,7 @@ struct ProjectRowWithHierarchy: View {
                         if isParent {
                             Image(systemName: "folder.fill")
                                 .font(.caption)
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(Theme.ColorToken.Morandi.latte)
                         }
 
                         Text(project.name)
@@ -1620,9 +1621,9 @@ struct ProjectRowWithHierarchy: View {
                                 .font(.caption)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                // 装饰：品牌徽章使用紫色作为视觉标识，不是语义状态
-                                .background(Color.purple.opacity(0.1))
-                                .foregroundColor(.purple)
+                                // 装饰：品牌徽章使用 Morandi mauve 作为视觉标识，不是语义状态
+                                .background(Theme.ColorToken.Morandi.mauve.opacity(0.1))
+                                .foregroundColor(Theme.ColorToken.Morandi.mauve)
                                 .cornerRadius(Theme.Radius.sm)
                         }
 
@@ -1644,7 +1645,7 @@ struct ProjectRowWithHierarchy: View {
 
                         Label("\(totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
                             .font(.caption)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Theme.ColorToken.Morandi.latte)
                     }
 
                     // 颜色预览（仅子项目和独立项目显示）
@@ -1659,7 +1660,7 @@ struct ProjectRowWithHierarchy: View {
                                         .font(.caption2)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
-                                        .background(Color.accentColor.opacity(0.1))
+                                        .background(Theme.ColorToken.Morandi.latte.opacity(0.1))
                                         .cornerRadius(Theme.Radius.sm)
                                 }
 
@@ -1724,7 +1725,7 @@ struct MergeProjectsSheet: View {
                             HStack {
                                 if inventoryManager.isParentProject(project.id) {
                                     Image(systemName: "folder.fill")
-                                        .foregroundColor(.accentColor)
+                                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                                         .font(.caption)
                                 }
                                 Text(project.name)

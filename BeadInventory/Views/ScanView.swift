@@ -438,7 +438,7 @@ struct ScanView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(aiService.isConfigured ? Color.accentColor : Theme.ColorToken.Border.default)
+                .background(aiService.isConfigured ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default)
                 .foregroundColor(.white)
                 .cornerRadius(Theme.Radius.md)
             }
@@ -460,7 +460,7 @@ struct ScanView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(aiService.isConfigured ? Color.orange : Theme.ColorToken.Border.default)
+                .background(aiService.isConfigured ? Theme.ColorToken.Morandi.honey : Theme.ColorToken.Border.default)
                 .foregroundColor(.white)
                 .cornerRadius(Theme.Radius.md)
             }
@@ -491,7 +491,7 @@ struct ScanView: View {
                brand.colorSystem == scanColorSystem {
                 Text(brand.name)
                     .fontWeight(.medium)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
             } else {
                 Text("请选择")
                     .foregroundColor(Theme.ColorToken.Status.warning)
@@ -512,7 +512,7 @@ struct ScanView: View {
                 Text(recognizedItems.isEmpty ? "手动添加" : "编辑颜色")
             }
             .font(.subheadline)
-            .foregroundColor(.accentColor)
+            .foregroundColor(Theme.ColorToken.Morandi.mauve)
         }
         .padding(.top, 8)
     }
@@ -821,7 +821,7 @@ struct PinnedImageView: View {
             Divider()
         }
         .frame(maxWidth: .infinity)
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
     }
 }
 
@@ -851,7 +851,7 @@ struct ImageSelectionSection: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 200)
-                .background(Color(.systemBackground))
+                .background(Theme.ColorToken.Surface.elevated)
                 .cornerRadius(Theme.Radius.lg)
             } else if let image = selectedImage {
                 ScanPreviewImageView(
@@ -1214,7 +1214,7 @@ struct RecognizedResultsSectionNew: View {
                             .font(.caption)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background(sortOption == option ? Color.accentColor : Theme.ColorToken.Surface.subtle)
+                            .background(sortOption == option ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Surface.subtle)
                             .foregroundColor(sortOption == option ? .white : .primary)
                             .cornerRadius(Theme.Radius.md)
                         }
@@ -1273,7 +1273,7 @@ struct RecognizedResultsSectionNew: View {
             )
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.lg)
         .padding(.horizontal)
         .alert("清空确认", isPresented: $showingClearAlert) {
@@ -1666,7 +1666,7 @@ struct ManualEntrySheetNew: View {
                 }
 
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.ColorToken.Surface.background)
             .navigationTitle("编辑颜色")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
@@ -1683,7 +1683,7 @@ struct ManualEntrySheetNew: View {
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 24)
                                     .padding(.vertical, 10)
-                                    .background(Color.accentColor, in: Capsule())
+                                    .background(Theme.ColorToken.Morandi.mauve, in: Capsule())
                             }
                         }
                     }
@@ -1780,7 +1780,7 @@ struct ManualEntrySeriesSelector: View {
                             .fontWeight(.medium)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(selectedSeries == s ? Color.accentColor : Theme.ColorToken.Surface.subtle)
+                            .background(selectedSeries == s ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Surface.subtle)
                             .foregroundColor(selectedSeries == s ? .white : .primary)
                             .cornerRadius(Theme.Radius.lg)
                     }
@@ -1806,12 +1806,12 @@ struct ManualEntryColorRow: View {
             Button(action: onToggle) {
                 ZStack {
                     Circle()
-                        .stroke(isSelected ? Color.accentColor : Theme.ColorToken.Border.default, lineWidth: 2)
+                        .stroke(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default, lineWidth: 2)
                         .frame(width: 28, height: 28)
 
                     if isSelected {
                         Circle()
-                            .fill(Color.accentColor)
+                            .fill(Theme.ColorToken.Morandi.mauve)
                             .frame(width: 20, height: 20)
 
                         Image(systemName: "checkmark")
@@ -1844,7 +1844,7 @@ struct ManualEntryColorRow: View {
             }
         }
         .padding(12)
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.md)
     }
 }
@@ -1904,7 +1904,7 @@ struct ManualEntryQuantityControl: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(width: 28, height: 28)
-                    .background(Color.accentColor)
+                    .background(Theme.ColorToken.Morandi.mauve)
                     .cornerRadius(Theme.Radius.md)
             }
             .buttonStyle(PlainButtonStyle())
@@ -1961,7 +1961,7 @@ struct ThumbnailPreviewSection: View {
                         Text(thumbnailImage == nil ? "上传封面" : "更换")
                     }
                     .font(.caption)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
                 }
                 .onChange(of: selectedPhotoItem) { _, newItem in
                     if let newItem = newItem {
@@ -1996,7 +1996,7 @@ struct ThumbnailPreviewSection: View {
                             Text("裁切")
                         }
                         .font(.caption)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
                     }
                     .padding(.leading, 8)
 
@@ -2071,7 +2071,7 @@ struct ThumbnailPreviewSection: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.md)
         // 上传图片的裁切视图
         .fullScreenCover(isPresented: $showingUploadedImageCrop) {
@@ -2356,7 +2356,7 @@ struct CropPreviewView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.accentColor)
+                        .background(Theme.ColorToken.Morandi.mauve)
                         .foregroundColor(.white)
                         .cornerRadius(Theme.Radius.md)
                 }
@@ -2631,7 +2631,7 @@ struct ScanHelpSheet: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.accentColor)
+                        .background(Theme.ColorToken.Morandi.mauve)
                         .foregroundColor(.white)
                         .cornerRadius(Theme.Radius.md)
                 }
@@ -2648,7 +2648,7 @@ struct ScanHelpSheet: View {
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
-            .background(Color(.systemBackground))
+            .background(Theme.ColorToken.Surface.elevated)
         }
         .presentationDetents([.large])
     }

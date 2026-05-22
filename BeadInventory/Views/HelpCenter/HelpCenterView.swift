@@ -62,7 +62,7 @@ struct HelpCenterView: View {
                     }
                 } icon: {
                     Image(systemName: section.icon)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
                 }
             }
         }

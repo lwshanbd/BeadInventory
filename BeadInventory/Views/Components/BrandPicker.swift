@@ -35,7 +35,7 @@ struct BrandPicker: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(Color.accentColor)
+                .background(Theme.ColorToken.Morandi.latte)
                 .foregroundColor(.white)
                 .cornerRadius(Theme.Radius.lg)
             }
@@ -74,8 +74,8 @@ struct BrandPicker: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(Color.accentColor.opacity(0.1))
-                .foregroundColor(.accentColor)
+                .background(Theme.ColorToken.Morandi.latte.opacity(0.1))
+                .foregroundColor(Theme.ColorToken.Morandi.latte)
                 .cornerRadius(Theme.Radius.lg)
             }
             .sheet(isPresented: $showingBrandManager) {
