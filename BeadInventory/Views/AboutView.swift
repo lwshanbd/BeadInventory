@@ -2,7 +2,8 @@
 //  AboutView.swift
 //  BeadInventory
 //
-//  关于界面
+//  关于啃豆小仓 —— 二级页骨架（SecondaryNav + ScrollView + GroupCard）。
+//  入口图标色 = latte，本页 flavor 跟随。
 //
 
 import SwiftUI
@@ -10,204 +11,276 @@ import SwiftUI
 struct AboutView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
 
-    var appVersion: String {
+    private var appVersion: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-        return "版本 \(version)"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        return "v\(version) · \(build)"
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 32) {
-                // App 图标和名称
-                VStack(spacing: 16) {
-                    Image("AppIconImage")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 120, height: 120)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous))
-                        .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
-
-                    Text("啃豆小仓")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-
-                    Text(appVersion)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+        VStack(spacing: 0) {
+            BISecondaryNav(title: "关于")
+            ScrollView {
+                VStack(spacing: 0) {
+                    appIconHero
+                    madeForYJCard
+                    appDataGroup
+                    creditsGroup
+                    originalityCard
+                    legalLinksGroup
+                    icpFooter
                 }
-                .padding(.top, 40)
-
-                // 献给 Yujia
-                VStack(spacing: 12) {
-                    Text("Made with")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    HStack(spacing: 4) {
-                        Image(systemName: "heart.fill")
-                            .foregroundColor(.pink)
-                        Text("for")
-                            .foregroundColor(.secondary)
-                        Text("YJ")
-                            .fontWeight(.semibold)
-                            .foregroundColor(.pink)
-                    }
-                    .font(.title2)
-                }
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                        .fill(Theme.ColorToken.Status.error.opacity(0.1))
-                )
-                .padding(.horizontal)
-
-                // 统计信息
-                VStack(spacing: 16) {
-                    Text("应用数据")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    HStack(spacing: 20) {
-                        StatBlock(
-                            icon: "paintpalette.fill",
-                            value: "\(inventoryManager.beadColors.count)",
-                            label: "颜色",
-                            color: .blue
-                        )
-                        StatBlock(
-                            icon: "building.2.fill",
-                            value: "\(inventoryManager.brands.count)",
-                            label: "品牌",
-                            color: .purple
-                        )
-                        StatBlock(
-                            icon: "doc.text.fill",
-                            value: "\(inventoryManager.projects.count)",
-                            label: "项目",
-                            color: .orange
-                        )
-                    }
-                }
-                .padding()
-                .background(Theme.ColorToken.Surface.subtle)
-                .cornerRadius(Theme.Radius.lg)
-                .padding(.horizontal)
-
-                // 开发者信息
-                VStack(spacing: 16) {
-                    Text("开发者")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    HStack {
-                        Image(systemName: "person.fill")
-                            .foregroundColor(.accentColor)
-                            .frame(width: 24)
-                        Text("BD")
-                            .fontWeight(.medium)
-                        Spacer()
-                    }
-                }
-                .padding()
-                .background(Theme.ColorToken.Surface.subtle)
-                .cornerRadius(Theme.Radius.lg)
-                .padding(.horizontal)
-
-                // 特别感谢
-                VStack(spacing: 12) {
-                    Text("特别感谢")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    HStack(spacing: 8) {
-                        Image(systemName: "pawprint.fill")
-                            .foregroundColor(Theme.ColorToken.Status.warning)
-                        Text("啃宝")
-                            .fontWeight(.medium)
-                        Text("&")
-                            .foregroundColor(.secondary)
-                        Text("Timea")
-                            .fontWeight(.medium)
-                        Image(systemName: "pawprint.fill")
-                            .foregroundColor(Theme.ColorToken.Status.warning)
-                    }
-                    .font(.subheadline)
-
-                    Text("感谢两位猫猫的陪伴")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding()
-                .background(Theme.ColorToken.Surface.subtle)
-                .cornerRadius(Theme.Radius.lg)
-                .padding(.horizontal)
-
-                // 原创声明
-                VStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.title2)
-                        .foregroundColor(Theme.ColorToken.Status.info)
-                    Text("支持原创，拒绝抄袭")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    Text("啃豆小仓与每一份拼豆图纸都凝聚着创作者的心血，请尊重原创")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                        .fill(Theme.ColorToken.Status.info.opacity(0.1))
-                )
-                .padding(.horizontal)
-
-                // 致谢
-                VStack(spacing: 8) {
-                    Text("感谢使用啃豆小仓")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                    Text("2026")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                    Text("鲁ICP备2026003850号-1A")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.top, 20)
-                .padding(.bottom, 40)
+                .padding(.bottom, 24)
             }
         }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle("关于")
-        .navigationBarTitleDisplayMode(.inline)
+        .background(Theme.ColorToken.Surface.background)
+        .navigationBarHidden(true)
     }
-}
 
-// MARK: - 统计块
-struct StatBlock: View {
-    let icon: String
-    let value: String
-    let label: String
-    let color: Color
+    // MARK: - Hero
 
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(color)
+    private var appIconHero: some View {
+        VStack(spacing: 14) {
+            ZStack(alignment: .bottomTrailing) {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Theme.ColorToken.Morandi.latte, Theme.ColorToken.Morandi.honey],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 110, height: 110)
+                    .shadow(color: Theme.ColorToken.Morandi.latte.opacity(0.3), radius: 10, x: 0, y: 6)
+                    .overlay {
+                        BeadView(color: .white, size: 64)
+                            .opacity(0.95)
+                    }
+                Circle()
+                    .fill(Theme.ColorToken.Morandi.rose)
+                    .frame(width: 30, height: 30)
+                    .overlay(
+                        Circle().strokeBorder(Theme.ColorToken.Surface.background, lineWidth: 4)
+                    )
+                    .offset(x: 6, y: 6)
+            }
+            .padding(.bottom, 2)
 
+            Wordmark(size: 28)
+
+            Text(appVersion)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                .tracking(0.5)
+        }
+        .padding(.top, 14)
+        .padding(.bottom, 22)
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Made for YJ
+
+    private var madeForYJCard: some View {
+        ZStack(alignment: .topTrailing) {
+            // 装饰圆
+            Circle()
+                .fill(Theme.ColorToken.Morandi.rose.opacity(0.08))
+                .frame(width: 100, height: 100)
+                .offset(x: 20, y: -20)
+                .clipped()
+
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Theme.ColorToken.Morandi.rose.opacity(0.18))
+                        .frame(width: 52, height: 52)
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(Theme.ColorToken.Morandi.rose)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("MADE WITH LOVE FOR")
+                        .font(.system(size: 11))
+                        .tracking(1.2)
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                    Text("YJ")
+                        .font(.custom("Georgia-BoldItalic", size: 30))
+                        .foregroundStyle(Theme.ColorToken.Morandi.rose)
+                        .tracking(0.5)
+                    Text("慢慢拼，慢慢爱，每一颗豆都是给你的")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                        .padding(.top, 2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 18)
+        .padding(.bottom, 6)
+    }
+
+    // MARK: - 应用数据
+
+    private var appDataGroup: some View {
+        VStack(spacing: 0) {
+            BIGroupHeader(title: "应用数据")
+            BIGroupCard {
+                HStack(spacing: 0) {
+                    aboutStatCol(icon: "paintpalette.fill", label: "颜色", value: "\(inventoryManager.beadColors.count)")
+                    aboutStatColDivider
+                    aboutStatCol(icon: "square.grid.3x3.square", label: "品牌", value: "\(inventoryManager.brands.count)")
+                    aboutStatColDivider
+                    aboutStatCol(icon: "rectangle.stack", label: "项目", value: "\(inventoryManager.projects.count)")
+                }
+                .padding(.vertical, 14)
+            }
+        }
+    }
+
+    private func aboutStatCol(icon: String, label: String, value: String) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Theme.ColorToken.Morandi.latte.opacity(0.12))
+                    .frame(width: 32, height: 32)
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.ColorToken.Morandi.latte)
+            }
             Text(value)
-                .font(.title2)
-                .fontWeight(.bold)
-
+                .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Theme.ColorToken.Text.primary)
             Text(label)
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var aboutStatColDivider: some View {
+        Rectangle()
+            .fill(Theme.ColorToken.Border.divider)
+            .frame(width: 1, height: 56)
+    }
+
+    // MARK: - 制作团队 / 致谢
+
+    private var creditsGroup: some View {
+        VStack(spacing: 0) {
+            BIGroupHeader(title: "制作团队")
+            BIGroupCard {
+                BIListRow(
+                    icon: "sparkle",
+                    iconColor: Theme.ColorToken.Morandi.latte,
+                    title: "BD",
+                    subtitle: "开发者 · 独立设计 & 开发",
+                    trailing: .meta("2026 →")
+                )
+                BIListRow(
+                    icon: "pawprint.fill",
+                    iconColor: Theme.ColorToken.Morandi.honey,
+                    title: "啃宝 & Timea",
+                    subtitle: "感谢两位猫猫的陪伴",
+                    trailing: .meta("致谢"),
+                    isLast: true
+                )
+            }
+        }
+    }
+
+    // MARK: - 支持原创
+
+    private var originalityCard: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(Theme.ColorToken.Morandi.honey)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("支持原创 · 拒绝抄袭")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                Text("啃豆小仓与每一份拼豆图纸都凝聚着创作者的心血。")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+                    .lineSpacing(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Theme.ColorToken.Morandi.honey.opacity(0.20),
+                            Theme.ColorToken.Surface.subtle
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
+        .padding(.horizontal, 18)
+        .padding(.top, 18)
+    }
+
+    // MARK: - 法律链接
+
+    private var legalLinksGroup: some View {
+        VStack(spacing: 0) {
+            BIGroupHeader(title: "")
+            BIGroupCard {
+                BIListRow(
+                    icon: "star",
+                    iconColor: Theme.ColorToken.Morandi.mist,
+                    title: "评分 & 反馈",
+                    subtitle: "去 App Store 留下你的脚印 ✦"
+                )
+                BIListRow(
+                    icon: "book",
+                    iconColor: Theme.ColorToken.Morandi.mist,
+                    title: "隐私协议"
+                )
+                BIListRow(
+                    icon: "book.closed",
+                    iconColor: Theme.ColorToken.Morandi.mist,
+                    title: "服务条款",
+                    isLast: true
+                )
+            }
+        }
+    }
+
+    // MARK: - ICP
+
+    private var icpFooter: some View {
+        VStack(spacing: 4) {
+            Text("鲁ICP备2026003850号-1A")
+                .font(.system(size: 10.5, design: .monospaced))
+                .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                .tracking(0.4)
+            Text("感谢使用啃豆小仓")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Theme.ColorToken.Text.tertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 24)
+        .padding(.bottom, 16)
     }
 }
 
