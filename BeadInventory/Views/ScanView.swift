@@ -656,15 +656,37 @@ struct ScanView: View {
         // 让 ScanView 这一步选好的跨品牌方案直接传到下一页的扣减审核。
         //
         // 选完之后到现在的窗口里，用户可能在别处把那个品牌删了 / 改了色系 / 把那颗色的
-        // BrandStock 行清掉了。这里在落到 resolver 之前重新校验三个条件，任何一条
-        // 不满足就丢弃这次 override（用户在下一页仍可以手动改）——比静默扣错品牌的豆好。
+        // BrandStock 清空了。这里在落到 resolver 之前重新校验四个条件，任何一条不满足就
+        // 丢弃这次 override（用户在下一页仍可以手动改）——比静默扣错品牌的豆好。
+        //
+        // 每个丢弃分支都走 AppLogger.warning，确保用户报"我选的品牌没生效"时有日志可查。
         for (idx, recognized) in recognizedItems.enumerated() {
             guard let preferred = recognized.preferredBrandId,
                   idx < resolver.items.count else { continue }
             let resolverItem = resolver.items[idx]
-            guard let brand = inventoryManager.brands.first(where: { $0.id == preferred }),
-                  brand.colorSystem == scanColorSystem,
-                  inventoryManager.getStock(brandId: preferred, mardCode: resolverItem.mardCode) != nil else {
+            guard let brand = inventoryManager.brands.first(where: { $0.id == preferred }) else {
+                AppLogger.shared.warning("Scan", "preferred_brand_dropped_brand_missing", metadata: [
+                    "preferredBrandId": preferred.uuidString,
+                    "mardCode": resolverItem.mardCode
+                ])
+                continue
+            }
+            guard brand.colorSystem == scanColorSystem else {
+                AppLogger.shared.warning("Scan", "preferred_brand_dropped_color_system_mismatch", metadata: [
+                    "preferredBrandId": preferred.uuidString,
+                    "brandColorSystem": "\(brand.colorSystem)",
+                    "scanColorSystem": "\(scanColorSystem)"
+                ])
+                continue
+            }
+            // 选中时 candidateBrand 要求 available > 0；这里同步要求，避免选完到 commit
+            // 间用户在别处把这颗色的库存用光了还硬扣（产生"已切换为 X·缺豆"的尴尬态）。
+            guard let stock = inventoryManager.getStock(brandId: preferred, mardCode: resolverItem.mardCode),
+                  stock.available > 0 else {
+                AppLogger.shared.warning("Scan", "preferred_brand_dropped_no_usable_stock", metadata: [
+                    "preferredBrandId": preferred.uuidString,
+                    "mardCode": resolverItem.mardCode
+                ])
                 continue
             }
             resolver.overrideBrand(for: resolverItem.id, to: preferred)

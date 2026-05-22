@@ -141,6 +141,10 @@ struct SwipeActionRow<Content: View>: View {
     }
 
     private func snapClosed() {
+        // 必须先重置 gestureActive：onChanged 把它设 true 后，按按钮 → 直接走 snapClosed
+        // 而不经过 onEnded，残留的 true 会让下一次 drag 跳过开头的横向占主导判断，
+        // 任意方向的拖都直接平移行。
+        gestureActive = false
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
             offset = 0
             dragStartOffset = 0
