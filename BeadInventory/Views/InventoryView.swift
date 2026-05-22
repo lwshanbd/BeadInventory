@@ -56,31 +56,82 @@ struct InventoryView: View {
         }
     }
 
-    // 获取当前品牌的库存字典（排除隐藏的色号）
-    var stockDict: [String: BrandStock] {
-        guard let brandId = inventoryManager.currentBrandId else { return [:] }
-        let stocks = inventoryManager.brandStocks.filter { $0.brandId == brandId && !$0.isHidden }
-        return Dictionary(uniqueKeysWithValues: stocks.map { ($0.mardCode, $0) })
+    // 当前品牌的可见库存快照。
+    // 在 body 顶部构造一次后通过 let 共享给所有派生数据（filtered / grouped / cells / 各 ForEach）。
+    // 不要改成 computed property —— ForEach 每行访问会重新执行整段构造，
+    // 在 brandStocks 较大时阻塞主线程。
+    //
+    // 也不要把实例存进 @State 跨帧复用：snapshot 是 per-body-frame 的只读视图。
+    private struct InventorySnapshot {
+        let brandId: UUID?
+        let lowStockThreshold: Int
+        let stockDict: [String: BrandStock]   // 仅未隐藏的色号
+        let totalAvailable: Int
+        let totalUsed: Int
+        let lowStockCount: Int
+        let totalColorCount: Int              // 含隐藏（用于 hero "x/y 色"）
+
+        /// 已记录（未隐藏）色号数 —— 由 stockDict 派生以保证不变量永远成立。
+        var recordedColorCount: Int { stockDict.count }
+
+        init(brandStocks: [BrandStock], brandId: UUID?, lowStockThreshold: Int) {
+            self.brandId = brandId
+            self.lowStockThreshold = lowStockThreshold
+            guard let brandId = brandId else {
+                self.stockDict = [:]
+                self.totalAvailable = 0
+                self.totalUsed = 0
+                self.lowStockCount = 0
+                self.totalColorCount = 0
+                return
+            }
+            var dict: [String: BrandStock] = [:]
+            var totalAvailable = 0
+            var totalUsed = 0
+            var lowCount = 0
+            var entryCount = 0
+            for s in brandStocks where s.brandId == brandId {
+                entryCount += 1
+                if s.isHidden { continue }
+                // first-match：与 InventoryManager.rebuildStockPositionIndex 对齐。
+                // 重复 (brandId, mardCode) 行（iCloud 同步罕见情况下可能产生）若用
+                // last-write-wins，会让库存页编辑的行与 mutator 实际改的行错位。
+                if dict[s.mardCode] == nil {
+                    dict[s.mardCode] = s
+                }
+                totalAvailable += s.available
+                totalUsed += s.used
+                if s.available < lowStockThreshold { lowCount += 1 }
+            }
+            self.stockDict = dict
+            self.totalAvailable = totalAvailable
+            self.totalUsed = totalUsed
+            self.lowStockCount = lowCount
+            self.totalColorCount = entryCount
+        }
     }
 
-    // 获取当前品牌的低库存阈值
-    var lowStockThreshold: Int {
-        guard let brandId = inventoryManager.currentBrandId else { return 100 }
-        return inventoryManager.getLowStockThreshold(for: brandId)
+    private func makeSnapshot() -> InventorySnapshot {
+        let brandId = inventoryManager.currentBrandId
+        let threshold = brandId.map { inventoryManager.getLowStockThreshold(for: $0) } ?? 100
+        return InventorySnapshot(
+            brandStocks: inventoryManager.brandStocks,
+            brandId: brandId,
+            lowStockThreshold: threshold
+        )
     }
 
-    var filteredColors: [BeadColor] {
+    private func makeFilteredColors(stockDict: [String: BrandStock]) -> [BeadColor] {
         let colors = inventoryManager.searchColors(searchText)
-        // 过滤掉隐藏的色号（只显示在 stockDict 中存在的颜色）
         let visibleColors = colors.filter { stockDict[$0.mardCode] != nil }
 
-        // 自定义色号始终排在最后的辅助函数
+        // 自定义色号始终排在最后
         func customColorLast(_ c1: BeadColor, _ c2: BeadColor, by compare: (BeadColor, BeadColor) -> Bool) -> Bool {
             let c1IsCustom = c1.mardCode.hasPrefix("#")
             let c2IsCustom = c2.mardCode.hasPrefix("#")
-            if c1IsCustom && !c2IsCustom { return false }  // c1 自定义，排后面
-            if !c1IsCustom && c2IsCustom { return true }   // c2 自定义，c1 排前面
-            return compare(c1, c2)  // 都是或都不是自定义，按原规则排序
+            if c1IsCustom && !c2IsCustom { return false }
+            if !c1IsCustom && c2IsCustom { return true }
+            return compare(c1, c2)
         }
 
         let colorSystem = inventoryManager.currentColorSystem
@@ -106,12 +157,10 @@ struct InventoryView: View {
         return sortAscending ? sorted : sorted.reversed()
     }
 
-    // 按首字母分组的颜色
-    var groupedColors: [(prefix: String, colors: [BeadColor])] {
+    private func makeGroupedColors(filtered: [BeadColor]) -> [(prefix: String, colors: [BeadColor])] {
         let colorSystem = inventoryManager.currentColorSystem
         var groups: [String: [BeadColor]] = [:]
-        for color in filteredColors {
-            // 自定义色号（以 # 开头）单独分组为 "#"
+        for color in filtered {
             let code = color.displayCode(for: colorSystem)
             let prefix: String
             if code.hasPrefix("#") {
@@ -119,13 +168,8 @@ struct InventoryView: View {
             } else {
                 prefix = String(code.prefix(1)).uppercased()
             }
-            if groups[prefix] != nil {
-                groups[prefix]?.append(color)
-            } else {
-                groups[prefix] = [color]
-            }
+            groups[prefix, default: []].append(color)
         }
-        // 按首字母排序，"#"（自定义色号）放在最后
         return groups.sorted { lhs, rhs in
             if lhs.key == "#" { return false }
             if rhs.key == "#" { return true }
@@ -133,40 +177,19 @@ struct InventoryView: View {
         }.map { ($0.key, $0.value) }
     }
 
-    // MARK: - 新设计：派生数据
-
-    /// 当前品牌已记录（未隐藏）色号数量
-    private var recordedColorCount: Int {
-        stockDict.count
-    }
-
-    /// 当前品牌所有 stock 条目数（含隐藏），作为「M」的近似值
-    private var totalColorCount: Int {
-        guard let brandId = inventoryManager.currentBrandId else { return 0 }
-        return inventoryManager.brandStocks.filter { $0.brandId == brandId }.count
-    }
-
-    private var statBarCells: [BIStatBar.Cell] {
-        guard let brandId = inventoryManager.currentBrandId else { return [] }
-        let total = inventoryManager.totalAvailable(for: brandId)
-        let used = inventoryManager.totalUsed(for: brandId)
-        let denom = max(total + used, 1)
-        let pct = Int(round(Double(used) / Double(denom) * 100))
-        let lowCount = inventoryManager.lowStockColors(for: brandId).count
+    private func makeStatBarCells(snapshot: InventorySnapshot) -> [BIStatBar.Cell] {
+        let denom = max(snapshot.totalAvailable + snapshot.totalUsed, 1)
+        let pct = Int(round(Double(snapshot.totalUsed) / Double(denom) * 100))
         return [
-            .init(label: String(localized: "总库存"), value: formatLocale(total), sub: String(localized: "颗")),
-            .init(label: String(localized: "已使用"), value: formatLocale(used), sub: "\(pct)%"),
-            .init(label: String(localized: "低库存"), value: "\(lowCount)", sub: String(localized: "种"), warn: true)
+            .init(label: String(localized: "总库存"), value: formatLocale(snapshot.totalAvailable), sub: String(localized: "颗")),
+            .init(label: String(localized: "已使用"), value: formatLocale(snapshot.totalUsed), sub: "\(pct)%"),
+            .init(label: String(localized: "低库存"), value: "\(snapshot.lowStockCount)", sub: String(localized: "种"), warn: true)
         ]
     }
 
-    private var statBarProgress: Double {
-        guard let brandId = inventoryManager.currentBrandId else { return 0 }
-        let total = inventoryManager.totalAvailable(for: brandId)
-        let used = inventoryManager.totalUsed(for: brandId)
-        let denom = Double(total + used)
-        guard denom > 0 else { return 0 }
-        return Double(used) / denom
+    private func statBarProgress(snapshot: InventorySnapshot) -> Double {
+        let denom = Double(snapshot.totalAvailable + snapshot.totalUsed)
+        return denom > 0 ? Double(snapshot.totalUsed) / denom : 0
     }
 
     private func formatLocale(_ n: Int) -> String {
@@ -190,13 +213,13 @@ struct InventoryView: View {
     // MARK: - Hero 区域
 
     @ViewBuilder
-    private var heroSection: some View {
+    private func heroSection(snapshot: InventorySnapshot, hasVisibleColors: Bool) -> some View {
         VStack(spacing: 10) {
             // Top row：品牌 pill + 右侧图标按钮
             HStack(spacing: 8) {
                 BrandPicker()
                 Spacer()
-                if inventoryManager.currentBrandId != nil && !filteredColors.isEmpty {
+                if snapshot.brandId != nil && hasVisibleColors {
                     Button {
                         withAnimation { sel.enter() }
                     } label: {
@@ -214,7 +237,7 @@ struct InventoryView: View {
                             )
                     }
                 }
-                if inventoryManager.currentBrandId != nil {
+                if snapshot.brandId != nil {
                     Button {
                         showingBrandSettings = true
                     } label: {
@@ -243,12 +266,12 @@ struct InventoryView: View {
                         .foregroundStyle(Theme.ColorToken.Text.secondary)
                 }
                 Spacer()
-                if inventoryManager.currentBrandId != nil {
+                if snapshot.brandId != nil {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("已记录")
                             .font(.caption2)
                             .foregroundStyle(Theme.ColorToken.Text.tertiary)
-                        Text("\(recordedColorCount)/\(totalColorCount) 色")
+                        Text("\(snapshot.recordedColorCount)/\(snapshot.totalColorCount) 色")
                             .font(.system(size: 13, weight: .semibold).monospacedDigit())
                             .foregroundStyle(Theme.ColorToken.Text.primary)
                     }
@@ -385,16 +408,21 @@ struct InventoryView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // 新设计：自定义 Hero 区域
-                heroSection
+        // 一次 body 渲染期间，所有派生数据共用同一份计算结果。
+        let snapshot = makeSnapshot()
+        let filtered = makeFilteredColors(stockDict: snapshot.stockDict)
+        let grouped = makeGroupedColors(filtered: filtered)
+        let cells = makeStatBarCells(snapshot: snapshot)
+        let progress = statBarProgress(snapshot: snapshot)
 
-                // 顶部统计卡片
-                if inventoryManager.currentBrandId != nil {
+        return NavigationStack {
+            VStack(spacing: 0) {
+                heroSection(snapshot: snapshot, hasVisibleColors: !filtered.isEmpty)
+
+                if let brandId = snapshot.brandId {
                     BIStatBar(
-                        cells: statBarCells,
-                        progress: statBarProgress,
+                        cells: cells,
+                        progress: progress,
                         progressColor: Theme.ColorToken.Morandi.latte,
                         progressLabel: nil
                     )
@@ -402,25 +430,18 @@ struct InventoryView: View {
                     .padding(.top, 12)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        if let brandId = inventoryManager.currentBrandId {
-                            lowStockDetailItem = LowStockSheetItem(brandId: brandId)
-                        }
+                        lowStockDetailItem = LowStockSheetItem(brandId: brandId)
                     }
 
-                    // 工具栏：搜索 + 排序 + 分组 + 视图切换
                     toolbarSection
                         .padding(.top, 12)
 
-                    // 颜色列表
                     if viewMode == .grid {
-                        // 网格模式
                         ScrollView {
                             if groupByPrefix {
-                                // 分组网格模式
                                 LazyVStack(spacing: 16) {
-                                    ForEach(groupedColors, id: \.prefix) { group in
+                                    ForEach(grouped, id: \.prefix) { group in
                                         VStack(spacing: 8) {
-                                            // 分组标题
                                             GridGroupHeaderView(
                                                 prefix: group.prefix,
                                                 count: group.colors.count,
@@ -437,7 +458,6 @@ struct InventoryView: View {
                                             )
                                             .padding(.horizontal)
 
-                                            // 分组内容
                                             if !collapsedGroups.contains(group.prefix) {
                                                 LazyVGrid(columns: [
                                                     GridItem(.flexible()),
@@ -455,9 +475,9 @@ struct InventoryView: View {
                                                         ) {
                                                             ColorCardView(
                                                                 color: color,
-                                                                stock: stockDict[color.mardCode],
+                                                                stock: snapshot.stockDict[color.mardCode],
                                                                 sortOption: sortOption,
-                                                                lowStockThreshold: lowStockThreshold,
+                                                                lowStockThreshold: snapshot.lowStockThreshold,
                                                                 colorSystem: inventoryManager.currentColorSystem
                                                             )
                                                         }
@@ -470,13 +490,12 @@ struct InventoryView: View {
                                 }
                                 .padding(.bottom, 20)
                             } else {
-                                // 普通网格模式
                                 LazyVGrid(columns: [
                                     GridItem(.flexible()),
                                     GridItem(.flexible()),
                                     GridItem(.flexible())
                                 ], spacing: 12) {
-                                    ForEach(filteredColors) { color in
+                                    ForEach(filtered) { color in
                                         BISelectableCell(
                                             isActive: sel.isActive,
                                             isSelected: sel.contains(color.id),
@@ -487,9 +506,9 @@ struct InventoryView: View {
                                         ) {
                                             ColorCardView(
                                                 color: color,
-                                                stock: stockDict[color.mardCode],
+                                                stock: snapshot.stockDict[color.mardCode],
                                                 sortOption: sortOption,
-                                                lowStockThreshold: lowStockThreshold,
+                                                lowStockThreshold: snapshot.lowStockThreshold,
                                                 colorSystem: inventoryManager.currentColorSystem
                                             )
                                         }
@@ -500,11 +519,9 @@ struct InventoryView: View {
                             }
                         }
                     } else {
-                        // 列表模式
                         if groupByPrefix {
-                            // 分组模式
                             List {
-                                ForEach(groupedColors, id: \.prefix) { group in
+                                ForEach(grouped, id: \.prefix) { group in
                                     Section {
                                         if !collapsedGroups.contains(group.prefix) {
                                             ForEach(group.colors) { color in
@@ -517,9 +534,9 @@ struct InventoryView: View {
                                                 ) {
                                                     ColorRowView(
                                                         color: color,
-                                                        stock: stockDict[color.mardCode],
+                                                        stock: snapshot.stockDict[color.mardCode],
                                                         sortOption: sortOption,
-                                                        lowStockThreshold: lowStockThreshold,
+                                                        lowStockThreshold: snapshot.lowStockThreshold,
                                                         colorSystem: inventoryManager.currentColorSystem
                                                     )
                                                 }
@@ -546,9 +563,8 @@ struct InventoryView: View {
                             }
                             .listStyle(.plain)
                         } else {
-                            // 普通列表模式
                             List {
-                                ForEach(filteredColors) { color in
+                                ForEach(filtered) { color in
                                     BISelectableCell(
                                         isActive: sel.isActive,
                                         isSelected: sel.contains(color.id),
@@ -558,9 +574,9 @@ struct InventoryView: View {
                                     ) {
                                         ColorRowView(
                                             color: color,
-                                            stock: stockDict[color.mardCode],
+                                            stock: snapshot.stockDict[color.mardCode],
                                             sortOption: sortOption,
-                                            lowStockThreshold: lowStockThreshold,
+                                            lowStockThreshold: snapshot.lowStockThreshold,
                                             colorSystem: inventoryManager.currentColorSystem
                                         )
                                     }
@@ -571,7 +587,6 @@ struct InventoryView: View {
                         }
                     }
                 } else {
-                    // 没有品牌时的提示
                     EmptyStateView(
                         icon: "square.grid.3x3",
                         title: "请先创建品牌",
@@ -597,13 +612,13 @@ struct InventoryView: View {
                     if sel.isActive {
                         HStack(spacing: 12) {
                             Button {
-                                if sel.count == filteredColors.count {
+                                if sel.count == filtered.count {
                                     sel.clear()
                                 } else {
-                                    sel.selectAll(filteredColors.map { $0.id })
+                                    sel.selectAll(filtered.map { $0.id })
                                 }
                             } label: {
-                                Text(sel.count == filteredColors.count ? "取消全选" : "全选")
+                                Text(sel.count == filtered.count ? "取消全选" : "全选")
                             }
                             Button {
                                 withAnimation { sel.exit() }
@@ -636,13 +651,13 @@ struct InventoryView: View {
             .alert("隐藏选中的色号？", isPresented: $showBatchHideAlert) {
                 Button("取消", role: .cancel) {}
                 Button("隐藏 \(sel.count) 个", role: .destructive) {
-                    batchHideSelected()
+                    batchHideSelected(filtered: filtered)
                 }
             } message: {
                 Text("隐藏后可在品牌设置中恢复")
             }
             .sheet(item: $selectedColor) { color in
-                EditStockSheet(color: color, stock: stockDict[color.mardCode])
+                EditStockSheet(color: color, stock: snapshot.stockDict[color.mardCode])
             }
             .sheet(isPresented: $showingBrandSettings) {
                 NavigationStack {
@@ -654,17 +669,16 @@ struct InventoryView: View {
                     .environmentObject(inventoryManager)
             }
             .haptic(.success, trigger: lastSuccessAt)
-            // 向上层广播多选态，让 ContentView 可以隐藏 FAB 避免与 MultiSelectActionBar 重叠
             .preference(key: SelectModeActivePreferenceKey.self, value: sel.isActive)
         }
     }
 
-    /// 批量隐藏选中的色号（按当前品牌）
-    private func batchHideSelected() {
+    /// 批量隐藏选中的色号（按当前品牌）。
+    /// 由 body 把当前 filtered 列表传进来，避免再次触发派生数据重算。
+    private func batchHideSelected(filtered: [BeadColor]) {
         guard let brandId = inventoryManager.currentBrandId else { return }
-        // 收集对应的 mardCode 列表
         let idToCode: [UUID: String] = Dictionary(
-            uniqueKeysWithValues: filteredColors.map { ($0.id, $0.mardCode) }
+            uniqueKeysWithValues: filtered.map { ($0.id, $0.mardCode) }
         )
         for id in sel.selected {
             if let mardCode = idToCode[id] {

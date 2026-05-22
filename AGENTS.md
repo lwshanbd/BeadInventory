@@ -15,9 +15,10 @@
 
 ## Build, Test, and Development Commands
 
+- 模拟器目标：永远用 `iPhone 17 Pro Max`（详见 CLAUDE.md「Build & Run」）。
 - Open in Xcode: `open BeadInventory.xcodeproj`
-- Build (CLI): `xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 16' build`
-- Test (if/when test targets exist): `xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 16' test`
+- Build (CLI): `xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' build`
+- Test (if/when test targets exist): `xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' test`
 
 Requirements: iOS 17.0+, Xcode 15.0+.
 
