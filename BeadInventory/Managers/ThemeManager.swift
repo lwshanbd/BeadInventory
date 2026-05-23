@@ -221,7 +221,11 @@ final class ThemeManager {
     }
 
     private func flushPersistResolved() {
-        defaults.set(activeSchemeID?.uuidString, forKey: PrefsKey.activeSchemeID)
+        if let id = activeSchemeID {
+            defaults.set(id.uuidString, forKey: PrefsKey.activeSchemeID)
+        } else {
+            defaults.removeObject(forKey: PrefsKey.activeSchemeID)
+        }
         defaults.set(resolvedLight.bg,     forKey: PrefsKey.lightBgHex)
         defaults.set(resolvedLight.bgElev, forKey: PrefsKey.lightBgElevHex)
         defaults.set(resolvedDark.bg,      forKey: PrefsKey.darkBgHex)

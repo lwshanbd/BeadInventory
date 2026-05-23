@@ -116,7 +116,9 @@ final class ThemeManagerTests: XCTestCase {
     }
 
     func test_persistenceKeys_writeAndReadOverride() {
-        let defaults = UserDefaults(suiteName: "ThemeManagerTests-\(UUID())")!
+        let suiteName = "ThemeManagerTests-\(UUID())"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
         let mgr = ThemeManager.test_make(defaults: defaults)
         mgr.updateSwatch(.lightBg, hex: "ABCDEF")
         mgr.flushPersistenceForTests()
@@ -125,7 +127,9 @@ final class ThemeManagerTests: XCTestCase {
     }
 
     func test_loadFromPersistence_restoresOverride() {
-        let defaults = UserDefaults(suiteName: "ThemeManagerTests-\(UUID())")!
+        let suiteName = "ThemeManagerTests-\(UUID())"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set("ABCDEF", forKey: "theme.light.bgHex")
         defaults.set("FFDDCC", forKey: "theme.light.bgElevHex")
         defaults.set("001122", forKey: "theme.dark.bgHex")
