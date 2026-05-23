@@ -71,4 +71,29 @@ final class ThemeManager {
             return UIColor(themeHex: hex)
         }
     }
+
+    // MARK: - Apply
+
+    func apply(scheme: AppColorScheme, target: ApplyTarget) {
+        switch target {
+        case .both:
+            resolvedLight = scheme.light
+            resolvedDark  = scheme.dark
+            activeSchemeID = scheme.id
+        case .lightOnly:
+            resolvedLight = scheme.light
+            activeSchemeID = nil
+        case .darkOnly:
+            resolvedDark = scheme.dark
+            activeSchemeID = nil
+        }
+        if let draftValue = draft {
+            draft = ThemeDraft(
+                snapshotActiveSchemeID: draftValue.snapshotActiveSchemeID,
+                snapshotLight: draftValue.snapshotLight,
+                snapshotDark:  draftValue.snapshotDark,
+                isDirty: target == .both ? false : true
+            )
+        }
+    }
 }
