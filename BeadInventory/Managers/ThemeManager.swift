@@ -9,7 +9,6 @@
 import Foundation
 import SwiftUI
 import SwiftData  // for ModelContext in Task 9 (commitAsNewScheme), Task 12 (bootstrap), Task 20 (sync)
-import Combine   // for debounce in Task 9
 
 enum ApplyTarget {
     case both, lightOnly, darkOnly
@@ -38,14 +37,50 @@ final class ThemeManager {
 
     var isDirty: Bool { draft?.isDirty ?? false }
 
-    init(
+    // MARK: - Persistence
+
+    private let defaults: UserDefaults
+    @ObservationIgnored private var debounceTask: Task<Void, Never>?
+    private static let debounceMs: UInt64 = 250_000_000  // 250ms
+
+    enum PrefsKey {
+        static let activeSchemeID    = "theme.activeSchemeID"
+        static let lightBgHex        = "theme.light.bgHex"
+        static let lightBgElevHex    = "theme.light.bgElevHex"
+        static let darkBgHex         = "theme.dark.bgHex"
+        static let darkBgElevHex     = "theme.dark.bgElevHex"
+        static let pendingDraftJSON  = "theme.pendingDraftJSON"
+        static let builtinVersion    = "theme.builtinVersion"
+    }
+
+    // 测试入口
+    static func test_make(defaults: UserDefaults) -> ThemeManager {
+        ThemeManager(defaults: defaults)
+    }
+
+    private init(
+        defaults: UserDefaults,
         activeSchemeID: UUID? = nil,
         resolvedLight: ColorPalette = .defaultLight,
         resolvedDark:  ColorPalette = .defaultDark
     ) {
+        self.defaults = defaults
         self.activeSchemeID = activeSchemeID
         self.resolvedLight = resolvedLight
         self.resolvedDark = resolvedDark
+    }
+
+    convenience init(
+        activeSchemeID: UUID? = nil,
+        resolvedLight: ColorPalette = .defaultLight,
+        resolvedDark:  ColorPalette = .defaultDark
+    ) {
+        self.init(
+            defaults: .standard,
+            activeSchemeID: activeSchemeID,
+            resolvedLight: resolvedLight,
+            resolvedDark: resolvedDark
+        )
     }
 
     // MARK: - 给 Theme.ColorToken 用的 UIColor 工厂
@@ -95,6 +130,7 @@ final class ThemeManager {
                 isDirty: target != .both
             )
         }
+        schedulePersistResolved()
     }
 
     // MARK: - Swatch 编辑
@@ -112,6 +148,7 @@ final class ThemeManager {
             d.isDirty = true
             draft = d
         }
+        schedulePersistResolved()
     }
 
     private func normalizeHex(_ raw: String) -> String {
@@ -139,7 +176,7 @@ final class ThemeManager {
     }
 
     @discardableResult
-    func commitAsNewScheme(name: String) throws -> AppColorScheme {
+    func commitAsNewScheme(name: String, modelContext: ModelContext? = nil) throws -> AppColorScheme {
         let now = Date()
         let scheme = AppColorScheme(
             id: UUID(),
@@ -150,9 +187,49 @@ final class ThemeManager {
             createdAt: now,
             updatedAt: now
         )
+        if let ctx = modelContext {
+            let sd = SDColorScheme(from: scheme)
+            ctx.insert(sd)
+            try ctx.save()
+        }
         activeSchemeID = scheme.id
         draft = nil
-        // 写入 SwiftData 在 Task 9 的 persistence 中完成
+        schedulePersistResolved()
         return scheme
+    }
+
+    func loadOverridesFromDefaults() {
+        if let id = defaults.string(forKey: PrefsKey.activeSchemeID).flatMap(UUID.init) {
+            activeSchemeID = id
+        }
+        resolvedLight = ColorPalette(
+            bg: defaults.string(forKey: PrefsKey.lightBgHex) ?? ColorPalette.defaultLight.bg,
+            bgElev: defaults.string(forKey: PrefsKey.lightBgElevHex) ?? ColorPalette.defaultLight.bgElev
+        )
+        resolvedDark = ColorPalette(
+            bg: defaults.string(forKey: PrefsKey.darkBgHex) ?? ColorPalette.defaultDark.bg,
+            bgElev: defaults.string(forKey: PrefsKey.darkBgElevHex) ?? ColorPalette.defaultDark.bgElev
+        )
+    }
+
+    private func schedulePersistResolved() {
+        debounceTask?.cancel()
+        debounceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: ThemeManager.debounceMs)
+            await MainActor.run { [weak self] in self?.flushPersistResolved() }
+        }
+    }
+
+    private func flushPersistResolved() {
+        defaults.set(activeSchemeID?.uuidString, forKey: PrefsKey.activeSchemeID)
+        defaults.set(resolvedLight.bg,     forKey: PrefsKey.lightBgHex)
+        defaults.set(resolvedLight.bgElev, forKey: PrefsKey.lightBgElevHex)
+        defaults.set(resolvedDark.bg,      forKey: PrefsKey.darkBgHex)
+        defaults.set(resolvedDark.bgElev,  forKey: PrefsKey.darkBgElevHex)
+    }
+
+    func flushPersistenceForTests() {
+        debounceTask?.cancel()
+        flushPersistResolved()
     }
 }

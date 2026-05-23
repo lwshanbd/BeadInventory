@@ -106,12 +106,33 @@ final class ThemeManagerTests: XCTestCase {
                                resolvedLight: ColorPalette(bg: "AAAAAA", bgElev: "BBBBBB"),
                                resolvedDark:  ColorPalette(bg: "111111", bgElev: "222222"))
         mgr.beginDraft()
-        let scheme = try mgr.commitAsNewScheme(name: "我的咖啡")
+        let scheme = try mgr.commitAsNewScheme(name: "我的咖啡", modelContext: nil)
         XCTAssertEqual(scheme.name, "我的咖啡")
         XCTAssertEqual(scheme.light, ColorPalette(bg: "AAAAAA", bgElev: "BBBBBB"))
         XCTAssertEqual(scheme.dark,  ColorPalette(bg: "111111", bgElev: "222222"))
         XCTAssertFalse(scheme.isBuiltin)
         XCTAssertEqual(mgr.activeSchemeID, scheme.id)
         XCTAssertNil(mgr.draft)
+    }
+
+    func test_persistenceKeys_writeAndReadOverride() {
+        let defaults = UserDefaults(suiteName: "ThemeManagerTests-\(UUID())")!
+        let mgr = ThemeManager.test_make(defaults: defaults)
+        mgr.updateSwatch(.lightBg, hex: "ABCDEF")
+        mgr.flushPersistenceForTests()
+        XCTAssertEqual(defaults.string(forKey: "theme.light.bgHex"), "ABCDEF")
+        XCTAssertNil(defaults.string(forKey: "theme.activeSchemeID"))
+    }
+
+    func test_loadFromPersistence_restoresOverride() {
+        let defaults = UserDefaults(suiteName: "ThemeManagerTests-\(UUID())")!
+        defaults.set("ABCDEF", forKey: "theme.light.bgHex")
+        defaults.set("FFDDCC", forKey: "theme.light.bgElevHex")
+        defaults.set("001122", forKey: "theme.dark.bgHex")
+        defaults.set("334455", forKey: "theme.dark.bgElevHex")
+        let mgr = ThemeManager.test_make(defaults: defaults)
+        mgr.loadOverridesFromDefaults()
+        XCTAssertEqual(mgr.resolvedLight, ColorPalette(bg: "ABCDEF", bgElev: "FFDDCC"))
+        XCTAssertEqual(mgr.resolvedDark,  ColorPalette(bg: "001122", bgElev: "334455"))
     }
 }
