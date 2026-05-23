@@ -48,4 +48,25 @@ final class ThemeManagerTests: XCTestCase {
         XCTAssertEqual(mgr.resolvedLight, originalLight)
         XCTAssertNil(mgr.activeSchemeID)
     }
+
+    func test_updateSwatch_lightBg_changesLightBgAndClearsActiveID() {
+        let mgr = ThemeManager(activeSchemeID: UUID(),
+                               resolvedLight: .defaultLight,
+                               resolvedDark: .defaultDark)
+        mgr.updateSwatch(.lightBg, hex: "112233")
+        XCTAssertEqual(mgr.resolvedLight.bg, "112233")
+        XCTAssertEqual(mgr.resolvedLight.bgElev, ColorPalette.defaultLight.bgElev)
+        XCTAssertEqual(mgr.resolvedDark, .defaultDark)
+        XCTAssertNil(mgr.activeSchemeID)
+    }
+
+    func test_updateSwatch_darkElev_changesOnlyThat() {
+        let mgr = ThemeManager(activeSchemeID: UUID(),
+                               resolvedLight: .defaultLight,
+                               resolvedDark: .defaultDark)
+        mgr.updateSwatch(.darkElev, hex: "ABCDEF")
+        XCTAssertEqual(mgr.resolvedDark.bgElev, "ABCDEF")
+        XCTAssertEqual(mgr.resolvedDark.bg, ColorPalette.defaultDark.bg)
+        XCTAssertNil(mgr.activeSchemeID)
+    }
 }

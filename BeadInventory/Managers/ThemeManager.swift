@@ -96,4 +96,26 @@ final class ThemeManager {
             )
         }
     }
+
+    // MARK: - Swatch 编辑
+
+    func updateSwatch(_ slot: ThemeSlot, hex: String) {
+        let normalized = normalizeHex(hex)
+        switch slot {
+        case .lightBg:    resolvedLight.bg     = normalized
+        case .lightElev:  resolvedLight.bgElev = normalized
+        case .darkBg:     resolvedDark.bg      = normalized
+        case .darkElev:   resolvedDark.bgElev  = normalized
+        }
+        activeSchemeID = nil
+        if var d = draft {
+            d.isDirty = true
+            draft = d
+        }
+    }
+
+    private func normalizeHex(_ raw: String) -> String {
+        let trimmed = raw.hasPrefix("#") ? String(raw.dropFirst()) : raw
+        return trimmed.uppercased()
+    }
 }
