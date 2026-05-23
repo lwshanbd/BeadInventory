@@ -25,6 +25,7 @@ struct BeadInventoryApp: App {
     /// 深链接触发扫描的标志
     @State private var shouldOpenScan = false
     @State private var hasSeenInitialActivePhase = false
+    @State private var showingThemeRecoveryAlert = false
     /// 数据库初始化是否完全失败（用于向用户展示错误状态）
     @State private var modelContainerFatalError: String?
     /// init 中暂存的错误信息（用于传递到 @State）
@@ -208,6 +209,17 @@ struct BeadInventoryApp: App {
                     }
                     themeManager.loadOverridesFromDefaults()
                     themeManager.loadPendingDraftFromDefaults()
+                    if themeManager.isDirty {
+                        showingThemeRecoveryAlert = true
+                    }
+                }
+                .alert("color_mode.dialog.recover_title", isPresented: $showingThemeRecoveryAlert) {
+                    Button("color_mode.dialog.recover_keep") { /* keep draft state in memory */ }
+                    Button("color_mode.dialog.recover_discard", role: .destructive) {
+                        themeManager.discardDraft()
+                    }
+                } message: {
+                    Text("color_mode.dialog.recover_message")
                 }
                 .onOpenURL { url in
                     handleIncomingURL(url)
