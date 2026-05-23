@@ -92,7 +92,7 @@ final class ThemeManager {
                 snapshotActiveSchemeID: draftValue.snapshotActiveSchemeID,
                 snapshotLight: draftValue.snapshotLight,
                 snapshotDark:  draftValue.snapshotDark,
-                isDirty: target == .both ? false : true
+                isDirty: target != .both
             )
         }
     }
