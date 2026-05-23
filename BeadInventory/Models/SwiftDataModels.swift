@@ -303,6 +303,7 @@ final class SDHistoryRecord {
 // MARK: - 色彩主题模型
 @Model
 final class SDColorScheme {
+    // Unique constraint absent on SDCustomColor (pre-existing); added here intentionally.
     @Attribute(.unique) var id: UUID = UUID()
     var name: String = ""
     var lightBgHex:     String = "FAF5EC"
