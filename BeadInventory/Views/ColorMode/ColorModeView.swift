@@ -93,7 +93,40 @@ struct ColorModeView: View {
             onPick: { newHex in themeManager.updateSwatch(slot, hex: newHex) }
         )
     }
-    private var presetsSection: some View { Text("[presets - Task 16]") }
+    private var presetsSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            Text("color_mode.section.presets")
+                .font(Theme.Typography.sectionHeader)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: Theme.Spacing.md)],
+                      spacing: Theme.Spacing.md) {
+                ForEach(allSchemes.filter { $0.isBuiltin }) { sd in
+                    PresetCard(scheme: sd, isActive: sd.id == themeManager.activeSchemeID) {
+                        pendingPreset = sd.toStruct()
+                    }
+                }
+            }
+        }
+        .confirmationDialog(
+            Text("color_mode.preset.apply_target_prompt"),
+            isPresented: Binding(get: { pendingPreset != nil },
+                                 set: { if !$0 { pendingPreset = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("color_mode.preset.apply_both") {
+                if let s = pendingPreset { themeManager.apply(scheme: s, target: .both) }
+                pendingPreset = nil
+            }
+            Button("color_mode.preset.apply_light_only") {
+                if let s = pendingPreset { themeManager.apply(scheme: s, target: .lightOnly) }
+                pendingPreset = nil
+            }
+            Button("color_mode.preset.apply_dark_only") {
+                if let s = pendingPreset { themeManager.apply(scheme: s, target: .darkOnly) }
+                pendingPreset = nil
+            }
+            Button("common.cancel", role: .cancel) { pendingPreset = nil }
+        }
+    }
     private var mySchemesSection: some View { Text("[my schemes - Task 17]") }
 
     private func resetToDefault() { /* Task 18 */ }
@@ -156,6 +189,41 @@ private struct SwatchPickerSheet: View {
         .onChange(of: color) { _, newColor in
             onCommit(newColor.toThemeHex())
         }
+    }
+}
+
+private struct PresetCard: View {
+    let scheme: SDColorScheme
+    let isActive: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack {
+                HStack(spacing: 0) {
+                    Color(uiColor: UIColor(themeHex: scheme.lightBgHex))
+                    Color(uiColor: UIColor(themeHex: scheme.lightBgElevHex))
+                    Color(uiColor: UIColor(themeHex: scheme.darkBgHex))
+                    Color(uiColor: UIColor(themeHex: scheme.darkBgElevHex))
+                }
+                if isActive {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.white, Theme.ColorToken.Interactive.primaryFallback)
+                        .font(.title2)
+                }
+            }
+            .frame(height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+            )
+            Text(LocalizedStringKey(scheme.name))
+                .font(Theme.Typography.cardTitle)
+                .foregroundStyle(Theme.ColorToken.Text.primary)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
     }
 }
 
