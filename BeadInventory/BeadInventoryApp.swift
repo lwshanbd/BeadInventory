@@ -199,6 +199,16 @@ struct BeadInventoryApp: App {
                 .environmentObject(sharedImageManager)
                 .environmentObject(cloudSyncStatusManager)
                 .environment(themeManager)
+                .task {
+                    let ctx = ModelContext(modelContainer)
+                    do {
+                        try themeManager.bootstrapBuiltinPresets(modelContext: ctx)
+                    } catch {
+                        AppLogger.shared.error("Theme", "bootstrap_builtin_failed", metadata: ["error": "\(error)"])
+                    }
+                    themeManager.loadOverridesFromDefaults()
+                    themeManager.loadPendingDraftFromDefaults()
+                }
                 .onOpenURL { url in
                     handleIncomingURL(url)
                 }
