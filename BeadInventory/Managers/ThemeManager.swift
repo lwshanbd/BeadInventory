@@ -8,8 +8,8 @@
 
 import Foundation
 import SwiftUI
-import SwiftData
-import Combine
+import SwiftData  // for ModelContext in Task 9 (commitAsNewScheme), Task 12 (bootstrap), Task 20 (sync)
+import Combine   // for debounce in Task 9
 
 enum ApplyTarget {
     case both, lightOnly, darkOnly
@@ -55,17 +55,19 @@ final class ThemeManager {
     // 产生新的 Color(uiColor:) 实例。闭包本身只在系统 trait 变化时被 iOS 调用一次。
 
     var dynamicBg: UIColor {
-        UIColor { [weak self] trait in
-            guard let self else { return UIColor(themeHex: ColorPalette.defaultLight.bg) }
-            let hex = trait.userInterfaceStyle == .dark ? self.resolvedDark.bg : self.resolvedLight.bg
+        UIColor { trait in
+            let hex = trait.userInterfaceStyle == .dark
+                ? self.resolvedDark.bg
+                : self.resolvedLight.bg
             return UIColor(themeHex: hex)
         }
     }
 
     var dynamicBgElev: UIColor {
-        UIColor { [weak self] trait in
-            guard let self else { return UIColor(themeHex: ColorPalette.defaultLight.bgElev) }
-            let hex = trait.userInterfaceStyle == .dark ? self.resolvedDark.bgElev : self.resolvedLight.bgElev
+        UIColor { trait in
+            let hex = trait.userInterfaceStyle == .dark
+                ? self.resolvedDark.bgElev
+                : self.resolvedLight.bgElev
             return UIColor(themeHex: hex)
         }
     }
