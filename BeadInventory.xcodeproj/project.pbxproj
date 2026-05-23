@@ -93,6 +93,7 @@
 		DE0D1C01A0050001DEADBEEF /* DeductionItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0D1C01A0050002DEADBEEF /* DeductionItem.swift */; };
 		DE0D1C03A0050001DEADBEEF /* DeductionResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0D1C03A0050002DEADBEEF /* DeductionResolver.swift */; };
 		EE0B2C01A0070001DEADBEEF /* SimilarColorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0B2C01A0070002DEADBEEF /* SimilarColorSheet.swift */; };
+		CS0001A0000000000001BFIL /* ColorScheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS0001A0000000000001FILE /* ColorScheme.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -212,6 +213,7 @@
 		DE0D1C03A0050002DEADBEEF /* DeductionResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionResolver.swift; sourceTree = "<group>"; };
 		EE0B2C01A0070002DEADBEEF /* SimilarColorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimilarColorSheet.swift; sourceTree = "<group>"; };
 		EF254CDDEE254F02A6DD1202 /* TutorialContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialContent.swift; sourceTree = "<group>"; };
+		CS0001A0000000000001FILE /* ColorScheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorScheme.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -376,6 +378,7 @@
 				38B1A0012F01000100000021 /* HistoryRecord.swift */,
 				38B1A0012F01000100000019 /* SwiftDataModels.swift */,
 				38B1A0012F01000100000047 /* SwiftDataMigration.swift */,
+				CS0001A0000000000001FILE /* ColorScheme.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -685,6 +688,7 @@
 				3850010E2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift in Sources */,
 				385001102FB3A70D00F5DDE2 /* GridValidator.swift in Sources */,
 				385001122FB3A70D00F5DDE2 /* ValidationDiffSheet.swift in Sources */,
+				CS0001A0000000000001BFIL /* ColorScheme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
