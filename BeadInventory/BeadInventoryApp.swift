@@ -20,6 +20,8 @@ struct BeadInventoryApp: App {
     @StateObject private var sharedImageManager = SharedImageManager.shared
     @StateObject private var cloudSyncStatusManager: CloudSyncStatusManager
 
+    @State private var themeManager = ThemeManager.shared
+
     /// 深链接触发扫描的标志
     @State private var shouldOpenScan = false
     @State private var hasSeenInitialActivePhase = false
@@ -196,6 +198,7 @@ struct BeadInventoryApp: App {
                 .environmentObject(inventoryManager)
                 .environmentObject(sharedImageManager)
                 .environmentObject(cloudSyncStatusManager)
+                .environment(themeManager)
                 .onOpenURL { url in
                     handleIncomingURL(url)
                 }
