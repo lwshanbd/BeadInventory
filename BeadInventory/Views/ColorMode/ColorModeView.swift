@@ -52,6 +52,38 @@ struct ColorModeView: View {
         .preferredColorScheme(previewSchemeOverride)
         .background(Theme.ColorToken.Surface.background.ignoresSafeArea())
         .onAppear { themeManager.beginDraft() }
+        .navigationBarBackButtonHidden(themeManager.isDirty)
+        .toolbar {
+            if themeManager.isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showingLeaveDialog = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("common.back")
+                        }
+                    }
+                }
+            }
+        }
+        .confirmationDialog(
+            Text("color_mode.dialog.leave_title"),
+            isPresented: $showingLeaveDialog,
+            titleVisibility: .visible
+        ) {
+            Button("color_mode.button.save_as_new") {
+                showingLeaveDialog = false
+                newName = ""
+                showingSaveDialog = true
+            }
+            Button("color_mode.button.discard", role: .destructive) {
+                themeManager.discardDraft()
+                showingLeaveDialog = false
+                dismiss()
+            }
+            Button("common.cancel", role: .cancel) { showingLeaveDialog = false }
+        }
     }
 
     private var currentSchemeLabel: some View {
@@ -178,6 +210,7 @@ struct ColorModeView: View {
                 let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
                 _ = try? themeManager.commitAsNewScheme(name: trimmed, modelContext: modelContext)
+                dismiss()
             }
             Button("common.cancel", role: .cancel) {}
         }
@@ -196,7 +229,9 @@ struct ColorModeView: View {
         )
     }
 
-    private func resetToDefault() { /* Task 18 */ }
+    private func resetToDefault() {
+        themeManager.apply(scheme: defaultCreamLatteOrFallback(), target: .both)
+    }
 }
 
 private struct SwatchTile: View {
