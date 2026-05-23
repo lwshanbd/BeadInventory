@@ -127,7 +127,74 @@ struct ColorModeView: View {
             Button("common.cancel", role: .cancel) { pendingPreset = nil }
         }
     }
-    private var mySchemesSection: some View { Text("[my schemes - Task 17]") }
+    private var mySchemesSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            Text("color_mode.section.my_themes")
+                .font(Theme.Typography.sectionHeader)
+
+            Button {
+                newName = ""
+                showingSaveDialog = true
+            } label: {
+                Label("color_mode.button.save_as_new", systemImage: "plus.circle")
+            }
+            .buttonStyle(.bordered)
+            .disabled(!themeManager.isDirty)
+
+            let myThemes = allSchemes.filter { !$0.isBuiltin }
+            if myThemes.isEmpty {
+                Text("color_mode.empty.no_my_themes")
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: Theme.Spacing.md)],
+                          spacing: Theme.Spacing.md) {
+                    ForEach(myThemes) { sd in
+                        MyThemeCard(
+                            scheme: sd,
+                            isActive: sd.id == themeManager.activeSchemeID,
+                            onApply: { themeManager.apply(scheme: sd.toStruct(), target: .both) },
+                            onRename: { newName in
+                                sd.name = newName
+                                sd.updatedAt = Date()
+                                try? modelContext.save()
+                            },
+                            onDelete: {
+                                if themeManager.activeSchemeID == sd.id {
+                                    themeManager.apply(scheme: defaultCreamLatteOrFallback(), target: .both)
+                                }
+                                modelContext.delete(sd)
+                                try? modelContext.save()
+                            }
+                        )
+                    }
+                }
+            }
+        }
+        .alert("color_mode.dialog.save_title", isPresented: $showingSaveDialog) {
+            TextField("color_mode.dialog.save_placeholder", text: $newName)
+            Button("common.save") {
+                let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                _ = try? themeManager.commitAsNewScheme(name: trimmed, modelContext: modelContext)
+            }
+            Button("common.cancel", role: .cancel) {}
+        }
+    }
+
+    private func defaultCreamLatteOrFallback() -> AppColorScheme {
+        if let s = allSchemes.first(where: { $0.id == UUID(uuidString: "B1A5B100-0000-0000-0000-000000000001") }) {
+            return s.toStruct()
+        }
+        return AppColorScheme(
+            id: UUID(),
+            name: "color_mode.preset.cream_latte",
+            light: .defaultLight, dark: .defaultDark,
+            isBuiltin: true,
+            createdAt: Date(), updatedAt: Date()
+        )
+    }
 
     private func resetToDefault() { /* Task 18 */ }
 }
@@ -224,6 +291,70 @@ private struct PresetCard: View {
         }
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
+    }
+}
+
+private struct MyThemeCard: View {
+    let scheme: SDColorScheme
+    let isActive: Bool
+    let onApply: () -> Void
+    let onRename: (String) -> Void
+    let onDelete: () -> Void
+
+    @State private var showingRename = false
+    @State private var renameDraft = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 0) {
+                Color(uiColor: UIColor(themeHex: scheme.lightBgHex))
+                Color(uiColor: UIColor(themeHex: scheme.lightBgElevHex))
+                Color(uiColor: UIColor(themeHex: scheme.darkBgHex))
+                Color(uiColor: UIColor(themeHex: scheme.darkBgElevHex))
+            }
+            .frame(height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+            )
+
+            HStack {
+                Text(scheme.name)
+                    .font(Theme.Typography.cardTitle)
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                    .lineLimit(1)
+                Spacer()
+                Menu {
+                    Button("color_mode.menu.apply", action: onApply)
+                    Button("color_mode.menu.rename") {
+                        renameDraft = scheme.name
+                        showingRename = true
+                    }
+                    Button("color_mode.menu.delete", role: .destructive, action: onDelete)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                }
+            }
+        }
+        .contextMenu {
+            Button("color_mode.menu.apply", action: onApply)
+            Button("color_mode.menu.rename") {
+                renameDraft = scheme.name
+                showingRename = true
+            }
+            Button("color_mode.menu.delete", role: .destructive, action: onDelete)
+        }
+        .alert("color_mode.dialog.rename_title", isPresented: $showingRename) {
+            TextField("color_mode.dialog.rename_placeholder", text: $renameDraft)
+            Button("common.save") {
+                let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                onRename(trimmed)
+            }
+            Button("common.cancel", role: .cancel) {}
+        }
     }
 }
 
