@@ -69,4 +69,49 @@ final class ThemeManagerTests: XCTestCase {
         XCTAssertEqual(mgr.resolvedDark.bg, ColorPalette.defaultDark.bg)
         XCTAssertNil(mgr.activeSchemeID)
     }
+
+    func test_beginDraft_thenUpdate_thenDiscard_restoresSnapshot() {
+        let originalID = UUID()
+        let mgr = ThemeManager(activeSchemeID: originalID,
+                               resolvedLight: .defaultLight,
+                               resolvedDark: .defaultDark)
+        mgr.beginDraft()
+        mgr.updateSwatch(.lightBg, hex: "FF0000")
+        XCTAssertTrue(mgr.isDirty)
+        XCTAssertNil(mgr.activeSchemeID)
+        XCTAssertEqual(mgr.resolvedLight.bg, "FF0000")
+
+        mgr.discardDraft()
+        XCTAssertEqual(mgr.resolvedLight, .defaultLight)
+        XCTAssertEqual(mgr.activeSchemeID, originalID)
+        XCTAssertNil(mgr.draft)
+        XCTAssertFalse(mgr.isDirty)
+    }
+
+    func test_beginDraft_thenApplyFullPreset_marksClean() {
+        let mgr = ThemeManager(activeSchemeID: nil,
+                               resolvedLight: .defaultLight,
+                               resolvedDark: .defaultDark)
+        mgr.beginDraft()
+        mgr.updateSwatch(.lightBg, hex: "FF0000")
+        XCTAssertTrue(mgr.isDirty)
+
+        let preset = sampleScheme()
+        mgr.apply(scheme: preset, target: .both)
+        XCTAssertFalse(mgr.isDirty)   // 完整应用预设 = 干净
+    }
+
+    func test_commitAsNewScheme_producesSchemeWithCurrentColors() throws {
+        let mgr = ThemeManager(activeSchemeID: nil,
+                               resolvedLight: ColorPalette(bg: "AAAAAA", bgElev: "BBBBBB"),
+                               resolvedDark:  ColorPalette(bg: "111111", bgElev: "222222"))
+        mgr.beginDraft()
+        let scheme = try mgr.commitAsNewScheme(name: "我的咖啡")
+        XCTAssertEqual(scheme.name, "我的咖啡")
+        XCTAssertEqual(scheme.light, ColorPalette(bg: "AAAAAA", bgElev: "BBBBBB"))
+        XCTAssertEqual(scheme.dark,  ColorPalette(bg: "111111", bgElev: "222222"))
+        XCTAssertFalse(scheme.isBuiltin)
+        XCTAssertEqual(mgr.activeSchemeID, scheme.id)
+        XCTAssertNil(mgr.draft)
+    }
 }

@@ -118,4 +118,41 @@ final class ThemeManager {
         let trimmed = raw.hasPrefix("#") ? String(raw.dropFirst()) : raw
         return trimmed.uppercased()
     }
+
+    // MARK: - Draft lifecycle
+
+    func beginDraft() {
+        draft = ThemeDraft(
+            snapshotActiveSchemeID: activeSchemeID,
+            snapshotLight: resolvedLight,
+            snapshotDark:  resolvedDark,
+            isDirty: false
+        )
+    }
+
+    func discardDraft() {
+        guard let d = draft else { return }
+        resolvedLight = d.snapshotLight
+        resolvedDark  = d.snapshotDark
+        activeSchemeID = d.snapshotActiveSchemeID
+        draft = nil
+    }
+
+    @discardableResult
+    func commitAsNewScheme(name: String) throws -> AppColorScheme {
+        let now = Date()
+        let scheme = AppColorScheme(
+            id: UUID(),
+            name: name,
+            light: resolvedLight,
+            dark:  resolvedDark,
+            isBuiltin: false,
+            createdAt: now,
+            updatedAt: now
+        )
+        activeSchemeID = scheme.id
+        draft = nil
+        // 写入 SwiftData 在 Task 9 的 persistence 中完成
+        return scheme
+    }
 }
