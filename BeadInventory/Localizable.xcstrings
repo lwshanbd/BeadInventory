@@ -7,13 +7,34 @@
     " " : {
 
     },
-    "-" : {
+    " 件 · 共 " : {
+
+    },
+    " 体系下显示，切到卡卡时会隐藏。" : {
+
+    },
+    " 颗" : {
 
     },
     "-%lld" : {
 
     },
+    "—" : {
+
+    },
     "·" : {
+
+    },
+    "· %@" : {
+
+    },
+    "· %lld 色" : {
+
+    },
+    "· 完成 %lld 件" : {
+
+    },
+    "· 当前 %@" : {
 
     },
     "(%lld)" : {
@@ -49,9 +70,6 @@
         }
       }
     },
-    "&" : {
-
-    },
     "#" : {
 
     },
@@ -63,6 +81,49 @@
     },
     "% · 用量" : {
 
+    },
+    "%@" : {
+
+    },
+    "%@ · %lld 色 · %@ 创建" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$lld 色 · %3$@ 创建"
+          }
+        }
+      }
+    },
+    "%@ · 下单 · %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · 下单 · %2$@"
+          }
+        }
+      }
+    },
+    "%@ · 下单 %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · 下单 %2$@"
+          }
+        }
+      }
+    },
+    "%@ · 库存 %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · 库存 %2$lld"
+          }
+        }
+      }
     },
     "%@ 如果机型较老，建议优先使用云端识别。" : {
       "localizations" : {
@@ -85,6 +146,7 @@
       }
     },
     "%@ 的 API Key 通常以 \"sk-\" 开头，你当前填写的 Key 格式可能不正确，请确认。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -94,12 +156,39 @@
         }
       }
     },
+    "%@ 的 API Key 通常以 \"sk-\" 开头，请确认。" : {
+
+    },
     "%@ 设置" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ Settings"
+          }
+        }
+      }
+    },
+    "%@ 颗" : {
+
+    },
+    "%@库存 %lld → %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@库存 %2$lld → %3$lld"
+          }
+        }
+      }
+    },
+    "%@缺%lld颗 · 库存仅%lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@缺%2$lld颗 · 库存仅%3$lld"
           }
         }
       }
@@ -275,7 +364,7 @@
         }
       }
     },
-    "← 左滑任意一行可改品牌或删除" : {
+    "← 左滑任意一行可编辑、改品牌或删除" : {
 
     },
     "→" : {
@@ -291,6 +380,9 @@
     "→%lld" : {
 
     },
+    "+" : {
+
+    },
     "+/- 按钮每次增减的克数" : {
       "localizations" : {
         "en" : {
@@ -302,6 +394,7 @@
       }
     },
     "+%@ 颗" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -338,6 +431,22 @@
       }
     },
     "<%lld" : {
+
+    },
+    "⌘K" : {
+
+    },
+    "✓ %@ · 库存 %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "✓ %1$@ · 库存 %2$lld"
+          }
+        }
+      }
+    },
+    "✦ 试试搜这些" : {
 
     },
     "💡 如果这些项目是从旧版备份导入的计划，建议关闭「恢复库存」" : {
@@ -409,9 +518,6 @@
         }
       }
     },
-    "100" : {
-
-    },
     "120pt" : {
 
     },
@@ -448,9 +554,6 @@
     "1000" : {
 
     },
-    "2026" : {
-
-    },
     "A1,500" : {
 
     },
@@ -468,6 +571,7 @@
       }
     },
     "AI 提供商" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -491,6 +595,9 @@
     "API Key" : {
 
     },
+    "API Key 无效或已被吊销（401）" : {
+
+    },
     "API 地址" : {
       "localizations" : {
         "en" : {
@@ -501,7 +608,11 @@
         }
       }
     },
+    "API 地址无效" : {
+
+    },
     "API 配置" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -512,6 +623,7 @@
       }
     },
     "API 配置帮助" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -557,7 +669,7 @@
     "B1,800" : {
 
     },
-    "BD" : {
+    "Claude 系列 · 需要 API Key" : {
 
     },
     "CSV 文件为空" : {
@@ -600,13 +712,19 @@
         }
       }
     },
-    "FF0000" : {
+    "DNS 解析失败" : {
 
     },
-    "for" : {
+    "FF6B6B" : {
 
     },
     "g" : {
+
+    },
+    "Google Gemini · 需要 API Key" : {
+
+    },
+    "GPT 系列 · 需要 API Key" : {
 
     },
     "help.center.done" : {
@@ -2173,10 +2291,8 @@
         }
       }
     },
-    "HEX" : {
-
-    },
     "Hex 值" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2185,6 +2301,22 @@
           }
         }
       }
+    },
+    "HTTP %lld：%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "HTTP %1$lld：%2$@"
+          }
+        }
+      }
+    },
+    "HTTPS 证书验证失败" : {
+
+    },
+    "https://..." : {
+
     },
     "iCloud 同步已启用" : {
       "localizations" : {
@@ -2276,7 +2408,7 @@
         }
       }
     },
-    "Made with" : {
+    "MADE WITH LOVE FOR" : {
 
     },
     "MARD" : {
@@ -2285,7 +2417,7 @@
     "NEW" : {
 
     },
-    "Timea" : {
+    "sk-..." : {
 
     },
     "tip.apisetup.message" : {
@@ -2583,6 +2715,7 @@
       }
     },
     "下载 %@ · 占用约 %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2591,6 +2724,9 @@
           }
         }
       }
+    },
+    "下载中" : {
+
     },
     "下载中 %lld%%" : {
       "localizations" : {
@@ -2601,6 +2737,9 @@
           }
         }
       }
+    },
+    "下载并使用" : {
+
     },
     "不再显示" : {
       "localizations" : {
@@ -2633,7 +2772,16 @@
         }
       }
     },
+    "个" : {
+
+    },
     "个 · 共 %@ 颗" : {
+
+    },
+    "个匹配 · 跨" : {
+
+    },
+    "个品牌" : {
 
     },
     "为品牌" : {
@@ -2655,6 +2803,9 @@
           }
         }
       }
+    },
+    "云端" : {
+
     },
     "云端：品牌 %@ · 库存 %@ · 项目 %@ · 计划 %@ · 自定义 %@" : {
       "localizations" : {
@@ -2760,6 +2911,7 @@
       }
     },
     "仅在排查问题时导出给开发者" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2823,7 +2975,11 @@
         }
       }
     },
+    "从剪贴板粘贴订单" : {
+
+    },
     "从备份文件恢复全部数据" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2834,6 +2990,7 @@
       }
     },
     "从自动备份恢复数据" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2876,6 +3033,9 @@
         }
       }
     },
+    "件 · 共 %@ 颗" : {
+
+    },
     "低库存" : {
 
     },
@@ -2900,6 +3060,7 @@
       }
     },
     "低库存详情" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2967,6 +3128,9 @@
         }
       }
     },
+    "使用此模型" : {
+
+    },
     "使用统计" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2979,6 +3143,7 @@
       }
     },
     "例如: MY01" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2989,6 +3154,7 @@
       }
     },
     "例如: 珊瑚红" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3048,6 +3214,9 @@
         }
       }
     },
+    "保存更改" : {
+
+    },
     "保存记录" : {
       "localizations" : {
         "en" : {
@@ -3073,6 +3242,9 @@
           }
         }
       }
+    },
+    "修改 HEX 会同步到所有品牌" : {
+
     },
     "修改品牌" : {
       "localizations" : {
@@ -3137,6 +3309,9 @@
         }
       }
     },
+    "入库" : {
+
+    },
     "入库品牌:" : {
       "localizations" : {
         "en" : {
@@ -3196,6 +3371,9 @@
           }
         }
       }
+    },
+    "全部" : {
+
     },
     "全部取消" : {
       "localizations" : {
@@ -3280,6 +3458,9 @@
         }
       }
     },
+    "共有品牌" : {
+
+    },
     "共缺少 %lld 颗" : {
       "localizations" : {
         "en" : {
@@ -3291,6 +3472,7 @@
       }
     },
     "关于" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3380,6 +3562,9 @@
         }
       }
     },
+    "最近到货 · %@" : {
+
+    },
     "写入备份文件失败" : {
       "localizations" : {
         "en" : {
@@ -3459,6 +3644,7 @@
       }
     },
     "创建于 %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3489,6 +3675,7 @@
       }
     },
     "创建时间" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3585,6 +3772,7 @@
       }
     },
     "删除品牌将同时删除该品牌下的所有库存数据，此操作不可撤销。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3625,6 +3813,7 @@
       }
     },
     "删除此品牌" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3790,6 +3979,9 @@
         }
       }
     },
+    "单 · 共 %lld 颗" : {
+
+    },
     "卡卡" : {
       "localizations" : {
         "en" : {
@@ -3801,6 +3993,7 @@
       }
     },
     "危险操作" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3941,6 +4134,7 @@
       }
     },
     "只清空本机日志，不影响库存数据" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3951,6 +4145,7 @@
       }
     },
     "可用" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3961,6 +4156,7 @@
       }
     },
     "可用数量" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3980,7 +4176,17 @@
         }
       }
     },
-    "可补足" : {
+    "可补 %lld / %lld 颗" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "可补 %1$lld / %2$lld 颗"
+          }
+        }
+      }
+    },
+    "可补足 %lld 颗" : {
 
     },
     "各品牌单独库存" : {
@@ -4146,6 +4352,7 @@
       }
     },
     "品牌列表" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4166,6 +4373,7 @@
       }
     },
     "品牌管理" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4176,6 +4384,7 @@
       }
     },
     "品牌设置" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4199,6 +4408,7 @@
 
     },
     "啃宝" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4209,6 +4419,7 @@
       }
     },
     "啃豆小仓" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4218,7 +4429,7 @@
         }
       }
     },
-    "啃豆小仓 v3.0 · 慢慢拼，慢慢爱" : {
+    "啃豆小仓 v%@ · 慢慢拼，慢慢爱" : {
 
     },
     "啃豆小仓AI扫描使用教程（1）" : {
@@ -4242,6 +4453,7 @@
       }
     },
     "啃豆小仓与每一份拼豆图纸都凝聚着创作者的心血，请尊重原创" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4250,6 +4462,9 @@
           }
         }
       }
+    },
+    "啃豆小仓与每一份拼豆图纸都凝聚着创作者的心血。" : {
+
     },
     "四边形" : {
       "localizations" : {
@@ -4271,6 +4486,15 @@
         }
       }
     },
+    "国内可直连 · 内置 Key 可用" : {
+
+    },
+    "图片内容为空，请重新选择。" : {
+
+    },
+    "图片加载失败" : {
+
+    },
     "图片处理失败" : {
       "localizations" : {
         "en" : {
@@ -4280,6 +4504,9 @@
           }
         }
       }
+    },
+    "图片格式无法识别（仅支持 HEIC/JPG/PNG）。" : {
+
     },
     "图纸扫描" : {
       "extractionState" : "stale",
@@ -4303,6 +4530,7 @@
       }
     },
     "基本信息" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4364,6 +4592,7 @@
       }
     },
     "备份恢复" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4466,6 +4695,9 @@
         }
       }
     },
+    "失败：%@" : {
+
+    },
     "好的" : {
       "localizations" : {
         "en" : {
@@ -4475,6 +4707,12 @@
           }
         }
       }
+    },
+    "如 MY01" : {
+
+    },
+    "如 自配 · 杏色" : {
+
     },
     "子项目" : {
       "localizations" : {
@@ -4508,6 +4746,9 @@
           }
         }
       }
+    },
+    "完成 " : {
+
     },
     "完成日期" : {
       "localizations" : {
@@ -4550,6 +4791,7 @@
       }
     },
     "导入导出" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4581,6 +4823,7 @@
       }
     },
     "导入库存会累加到现有库存。重置库存会将所有颜色的库存设为指定数量并清零使用记录。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4631,6 +4874,7 @@
       }
     },
     "导出为 CSV 或 JSON 文件" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4661,6 +4905,7 @@
       }
     },
     "导出库存数据" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4711,6 +4956,7 @@
       }
     },
     "导出诊断日志" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4877,6 +5123,9 @@
     "将按时间倒序逐条撤回。不可撤回的记录会被跳过。" : {
 
     },
+    "将撤回" : {
+
+    },
     "将添加以下计划" : {
       "localizations" : {
         "en" : {
@@ -4981,6 +5230,7 @@
       }
     },
     "已下载" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5030,6 +5280,9 @@
         }
       }
     },
+    "已切换为" : {
+
+    },
     "已复制" : {
       "localizations" : {
         "en" : {
@@ -5071,6 +5324,7 @@
       }
     },
     "已有库存颜色" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5079,6 +5333,9 @@
           }
         }
       }
+    },
+    "已有色号" : {
+
     },
     "已添加到运输中" : {
       "localizations" : {
@@ -5119,6 +5376,19 @@
           }
         }
       }
+    },
+    "已补 %lld · 仍差 %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已补 %1$lld · 仍差 %2$lld"
+          }
+        }
+      }
+    },
+    "已补足 %lld 颗" : {
+
     },
     "已覆盖" : {
       "localizations" : {
@@ -5195,6 +5465,9 @@
         }
       }
     },
+    "已选 %lld 条" : {
+
+    },
     "已选择" : {
       "localizations" : {
         "en" : {
@@ -5234,6 +5507,9 @@
           }
         }
       }
+    },
+    "已配置" : {
+
     },
     "已隐藏的色号 (%lld)" : {
       "localizations" : {
@@ -5309,16 +5585,6 @@
         }
       }
     },
-    "库存 %lld → %lld" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "库存 %1$lld → %2$lld"
-          }
-        }
-      }
-    },
     "库存保持不变" : {
       "localizations" : {
         "en" : {
@@ -5340,6 +5606,7 @@
       }
     },
     "库存提醒" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5350,6 +5617,7 @@
       }
     },
     "库存操作" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5450,6 +5718,7 @@
       }
     },
     "应用数据" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5470,6 +5739,7 @@
       }
     },
     "开发者" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5518,6 +5788,9 @@
           }
         }
       }
+    },
+    "当前" : {
+
     },
     "当前为本地存储模式" : {
       "localizations" : {
@@ -5569,7 +5842,11 @@
         }
       }
     },
+    "当前已选" : {
+
+    },
     "当前状态" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5660,6 +5937,7 @@
       }
     },
     "当天没有成品图" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5670,6 +5948,7 @@
       }
     },
     "当库存低于此阈值时，会在库存列表中以红色标识提醒。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5678,6 +5957,9 @@
           }
         }
       }
+    },
+    "待到货" : {
+
     },
     "待到货的购买记录" : {
       "extractionState" : "stale",
@@ -5711,6 +5993,7 @@
       }
     },
     "快捷选择" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5831,6 +6114,7 @@
       }
     },
     "感谢两位猫猫的陪伴" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5849,6 +6133,9 @@
           }
         }
       }
+    },
+    "慢慢拼，慢慢爱，每一颗豆都是给你的" : {
+
     },
     "成功导入 %lld 种颜色的库存" : {
       "localizations" : {
@@ -5871,6 +6158,7 @@
       }
     },
     "成品日历" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5952,6 +6240,9 @@
           }
         }
       }
+    },
+    "扣减" : {
+
     },
     "扣减 %lld 颗" : {
 
@@ -6038,6 +6329,7 @@
       }
     },
     "扫描图纸后选择「创建计划」\n可在此处管理和执行" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6070,6 +6362,12 @@
     "批量撤回选中的记录？" : {
 
     },
+    "找不到服务器主机，请检查 API 地址" : {
+
+    },
+    "找到" : {
+
+    },
     "拍照" : {
       "localizations" : {
         "en" : {
@@ -6091,6 +6389,7 @@
       }
     },
     "按可用库存从少到多排序" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6161,6 +6460,9 @@
         }
       }
     },
+    "接口不存在（404），请检查 API 地址是否正确" : {
+
+    },
     "推荐 iPhone 14 及以上机型优先选择，门槛更低，下载更小。" : {
       "localizations" : {
         "en" : {
@@ -6195,6 +6497,9 @@
     "提示：iCloud 同步不是实时的，跨设备同步通常需要几秒到几分钟。" : {
 
     },
+    "搜索任意品牌色号 · A01 / M-001 …" : {
+
+    },
     "搜索色号" : {
       "localizations" : {
         "en" : {
@@ -6204,6 +6509,9 @@
           }
         }
       }
+    },
+    "搜索色号 / 名称 / HEX" : {
+
     },
     "搜索色号或名称" : {
       "localizations" : {
@@ -6236,6 +6544,7 @@
       }
     },
     "搜索颜色" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6258,6 +6567,9 @@
     "撤回 %lld 条" : {
 
     },
+    "撤回结果" : {
+
+    },
     "撤回选中" : {
 
     },
@@ -6273,6 +6585,7 @@
       }
     },
     "操作记录将在这里显示" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6281,6 +6594,9 @@
           }
         }
       }
+    },
+    "操作记录将在这里显示，并可在 7 天内撤回。" : {
+
     },
     "支持 JSON 和 CSV 格式，会自动识别" : {
       "localizations" : {
@@ -6293,6 +6609,7 @@
       }
     },
     "支持 MARD、COCO、漫漫、盼盼、咪小窝、卡卡 色号" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6302,7 +6619,11 @@
         }
       }
     },
+    "支持原创 · 拒绝抄袭" : {
+
+    },
     "支持原创，拒绝抄袭" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6358,6 +6679,18 @@
     "改品牌" : {
 
     },
+    "改回" : {
+
+    },
+    "改回主品牌" : {
+
+    },
+    "改用品牌" : {
+
+    },
+    "改用品牌 · %@" : {
+
+    },
     "放一张色号表给小豆吃" : {
 
     },
@@ -6390,6 +6723,7 @@
       }
     },
     "数据与备份" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6619,6 +6953,9 @@
         }
       }
     },
+    "无法连接到服务器，请检查 API 地址和网络" : {
+
+    },
     "无需补豆" : {
       "localizations" : {
         "en" : {
@@ -6738,6 +7075,7 @@
       }
     },
     "暂无计划项目" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6758,6 +7096,7 @@
       }
     },
     "暂无运输中的订单" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6817,6 +7156,9 @@
         }
       }
     },
+    "更多操作" : {
+
+    },
     "更换" : {
       "localizations" : {
         "en" : {
@@ -6837,6 +7179,19 @@
         }
       }
     },
+    "服务器返回无效响应" : {
+
+    },
+    "服务器错误（%lld）：%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "服务器错误（%1$lld）：%2$@"
+          }
+        }
+      }
+    },
     "未匹配" : {
       "localizations" : {
         "en" : {
@@ -6847,7 +7202,11 @@
         }
       }
     },
+    "未填写 API Key" : {
+
+    },
     "未找到匹配的色号" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6947,6 +7306,12 @@
         }
       }
     },
+    "未配置" : {
+
+    },
+    "本图需要 %lld 颗" : {
+
+    },
     "本地模型" : {
       "localizations" : {
         "en" : {
@@ -6968,6 +7333,18 @@
       }
     },
     "本月使用情况" : {
+
+    },
+    "本月完成" : {
+
+    },
+    "权限不足（403），请检查 API Key 是否有访问权限" : {
+
+    },
+    "条操作 · 可撤回 %lld 条" : {
+
+    },
+    "条记录" : {
 
     },
     "查找相似色" : {
@@ -7024,6 +7401,9 @@
         }
       }
     },
+    "标记为已到货 · 加入库存" : {
+
+    },
     "检查各品牌库存是否满足此计划需求" : {
       "localizations" : {
         "en" : {
@@ -7053,6 +7433,9 @@
           }
         }
       }
+    },
+    "模型未下载，请先下载" : {
+
     },
     "模型正在下载，暂时不能删除" : {
       "localizations" : {
@@ -7114,6 +7497,9 @@
         }
       }
     },
+    "此操作不支持撤回" : {
+
+    },
     "此操作无法撤销" : {
 
     },
@@ -7167,6 +7553,9 @@
         }
       }
     },
+    "没有匹配的自定义色号" : {
+
+    },
     "没有隐藏的色号" : {
       "localizations" : {
         "en" : {
@@ -7178,6 +7567,7 @@
       }
     },
     "涉及全量数据修改时，建议先导出库存数据留存。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7237,6 +7627,9 @@
           }
         }
       }
+    },
+    "添加后可在下方启用想用的品牌" : {
+
     },
     "添加和管理自己的色号" : {
       "extractionState" : "stale",
@@ -7465,6 +7858,7 @@
       }
     },
     "点击下方按钮添加购买记录" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7475,6 +7869,7 @@
       }
     },
     "点击右上角 + 添加你自己的颜色" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7485,6 +7880,7 @@
       }
     },
     "点击右上角添加你的第一个品牌" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7513,6 +7909,9 @@
           }
         }
       }
+    },
+    "点击日期查看当天完成的拼豆作品" : {
+
     },
     "点击裁切可调整，或上传新封面" : {
       "localizations" : {
@@ -7546,6 +7945,7 @@
       }
     },
     "特别感谢" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7728,6 +8128,7 @@
       }
     },
     "确定要删除自定义色号「%@」吗？\n删除后将无法恢复，且该颜色在所有品牌中的库存记录也将被删除。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7746,6 +8147,9 @@
           }
         }
       }
+    },
+    "确定要删除这个自定义色号吗？\n删除后将无法恢复，且该颜色在所有品牌中的库存记录也将被删除。" : {
+
     },
     "确定要删除这条购买记录吗？此操作不可撤销。" : {
       "localizations" : {
@@ -7766,6 +8170,19 @@
           }
         }
       }
+    },
+    "确定要撤回「%@: %@」吗？" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "确定要撤回「%1$@: %2$@」吗？"
+          }
+        }
+      }
+    },
+    "确定要撤回执行「%@」吗？\n\n库存将恢复，项目将变回计划状态。" : {
+
     },
     "确定要清空所有历史记录吗？此操作不可撤回。" : {
       "localizations" : {
@@ -7973,16 +8390,8 @@
         }
       }
     },
-    "米卡" : {
-
-    },
-    "米卡 +50" : {
-
-    },
-    "米卡 库存 %lld" : {
-
-    },
     "粘贴失败" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8102,6 +8511,9 @@
         }
       }
     },
+    "编辑名称" : {
+
+    },
     "编辑品牌" : {
       "localizations" : {
         "en" : {
@@ -8122,6 +8534,9 @@
           }
         }
       }
+    },
+    "编辑自定义色号" : {
+
     },
     "编辑计划" : {
       "localizations" : {
@@ -8159,16 +8574,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Short %lld"
-          }
-        }
-      }
-    },
-    "缺%lld颗 · 库存仅%lld" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "缺%1$lld颗 · 库存仅%2$lld"
           }
         }
       }
@@ -8236,6 +8641,9 @@
         }
       }
     },
+    "网络连接中断" : {
+
+    },
     "网络错误: %@" : {
       "localizations" : {
         "en" : {
@@ -8245,6 +8653,9 @@
           }
         }
       }
+    },
+    "网络错误：%@" : {
+
     },
     "自动保留最近 8 周的备份。向左滑动可删除备份。" : {
       "localizations" : {
@@ -8287,6 +8698,7 @@
       }
     },
     "自定义色号" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8296,7 +8708,11 @@
         }
       }
     },
+    "自定义色号仅在 " : {
+
+    },
     "自定义色号仅在 MARD 色号体系下生效" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8307,6 +8723,7 @@
       }
     },
     "自定义色号仅在 MARD 色号体系下生效，切换到卡卡体系时不会显示。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8317,6 +8734,7 @@
       }
     },
     "自定义色号已添加，默认在所有品牌中隐藏。\n\n如需使用，请前往对应品牌的「隐藏色号管理」中取消隐藏。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8325,6 +8743,9 @@
           }
         }
       }
+    },
+    "自定义色号已添加。\n如需在品牌中使用，请前往「启用品牌」打开对应开关。" : {
+
     },
     "自选颜色" : {
       "localizations" : {
@@ -8335,6 +8756,9 @@
           }
         }
       }
+    },
+    "色" : {
+
     },
     "色号" : {
       "localizations" : {
@@ -8388,6 +8812,7 @@
       }
     },
     "色号管理" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8408,6 +8833,7 @@
       }
     },
     "色号转换" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8622,6 +9048,12 @@
         }
       }
     },
+    "设备未连接到互联网" : {
+
+    },
+    "设备能力" : {
+
+    },
     "设置" : {
       "localizations" : {
         "en" : {
@@ -8674,6 +9106,7 @@
       }
     },
     "识别方式" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8694,7 +9127,11 @@
         }
       }
     },
+    "识别补豆建议 CSV，一键生成运输单" : {
+
+    },
     "识别设置" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8874,6 +9311,12 @@
         }
       }
     },
+    "请求失败：%@" : {
+
+    },
+    "请求被服务器拒绝（400），可能是模型名或参数不合法" : {
+
+    },
     "请求过于频繁，请稍后重试" : {
       "localizations" : {
         "en" : {
@@ -8883,6 +9326,9 @@
           }
         }
       }
+    },
+    "请求过于频繁或服务器忙（429）" : {
+
     },
     "请确认网格对齐，必要时手动微调" : {
       "localizations" : {
@@ -8948,6 +9394,9 @@
         }
       }
     },
+    "账户余额或额度不足（429）" : {
+
+    },
     "购买明细" : {
       "localizations" : {
         "en" : {
@@ -8969,6 +9418,7 @@
       }
     },
     "购买详情" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8977,6 +9427,9 @@
           }
         }
       }
+    },
+    "跨品牌等价" : {
+
     },
     "辅助线" : {
       "localizations" : {
@@ -8989,6 +9442,7 @@
       }
     },
     "输入任意品牌色号查询..." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9009,6 +9463,7 @@
       }
     },
     "输入色号查询转换" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9019,6 +9474,7 @@
       }
     },
     "运输中" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9027,6 +9483,9 @@
           }
         }
       }
+    },
+    "近 7 天" : {
+
     },
     "还差包邮" : {
       "localizations" : {
@@ -9069,6 +9528,7 @@
       }
     },
     "还没有品牌" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9079,6 +9539,7 @@
       }
     },
     "还没有自定义色号" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9107,6 +9568,12 @@
           }
         }
       }
+    },
+    "连接成功 · %lld ms" : {
+
+    },
+    "连接超时（8 秒）" : {
+
     },
     "退回为计划" : {
       "localizations" : {
@@ -9299,6 +9766,9 @@
         }
       }
     },
+    "配置云端 API 或下载本地模型用于扫描识别" : {
+
+    },
     "重复处理" : {
       "localizations" : {
         "en" : {
@@ -9373,6 +9843,7 @@
       }
     },
     "重置库存数量" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9422,6 +9893,12 @@
         }
       }
     },
+    "长按品牌卡或左滑可编辑、删除" : {
+
+    },
+    "阿里云通义千问 · 需要 API Key" : {
+
+    },
     "降序" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9447,6 +9924,7 @@
 
     },
     "隐藏不需要的色号，它们不会出现在库存列表和低库存提醒中。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9708,6 +10186,7 @@
       }
     },
     "颜色详情" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9718,6 +10197,7 @@
       }
     },
     "颜色选择" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

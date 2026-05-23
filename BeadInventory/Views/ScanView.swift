@@ -41,6 +41,12 @@ struct ScanView: View {
     @State private var deductionFailureMessage = ""
     @State private var deductSuccessAt: Date = .distantPast
 
+    /// 选图失败提示（PhotoPicker / loadTransferable / UIImage 解码任一阶段失败都走这里）。
+    /// 之前 handlePhotoItemChange 走 try?，错误全静默 —— 用户表现是转圈停了什么也没出现，
+    /// 报障没线索。改成 do/catch + alert + AppLogger.error。
+    @State private var showingPhotoLoadError = false
+    @State private var photoLoadErrorMessage = ""
+
     private let similarityService = ColorSimilarityService()
 
     // 缩略图相关
@@ -251,6 +257,11 @@ struct ScanView: View {
             } message: {
                 Text("将创建包含 \(totalBeads) 颗豆子（\(recognizedItems.count) 种颜色）的计划项目。执行时需要选择品牌。")
             }
+            .alert("图片加载失败", isPresented: $showingPhotoLoadError) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(photoLoadErrorMessage)
+            }
     }
 
     private func applyChangeHandlers<V: View>(_ view: V) -> some View {
@@ -268,6 +279,42 @@ struct ScanView: View {
             .onChange(of: externalImage) { _, newImage in
                 handleExternalImageChange(newImage)
             }
+            // 用户可能扫描完跑到 inventory tab 删品牌 / 改品牌色系 / 切扫描色系，
+            // 回来时 recognizedItems 里残留的 preferredBrandId 就成了 dangling UUID。
+            // 行视图本身没观察 inventoryManager（pass as let），不会自动清；这里在
+            // ScanView 顶层统一捕获 brands 和 scanColorSystem 的变化，把 dangling
+            // 的 preferredBrandId 清掉 + 写一条 warning 留 trace。
+            .onChange(of: inventoryManager.brands) { _, _ in
+                cleanupDanglingPreferredBrands()
+            }
+            .onChange(of: scanColorSystem) { _, _ in
+                cleanupDanglingPreferredBrands()
+            }
+    }
+
+    /// 把指向已删除品牌 / 色系已变 / 跟当前 scanColorSystem 不匹配的 preferredBrandId 清掉。
+    /// 在 inventoryManager.brands 或 scanColorSystem 变化时调用，让 UI 上的"已切换为 X"
+    /// 状态跟实际可用的 override 保持一致。每条丢弃落 AppLogger.warning，便于事后排查。
+    private func cleanupDanglingPreferredBrands() {
+        for index in recognizedItems.indices {
+            guard let preferred = recognizedItems[index].preferredBrandId else { continue }
+            guard let brand = inventoryManager.brands.first(where: { $0.id == preferred }) else {
+                AppLogger.shared.warning("Scan", "preferred_brand_self_healed_missing", metadata: [
+                    "preferredBrandId": preferred.uuidString,
+                    "mardCode": recognizedItems[index].colorCode
+                ])
+                recognizedItems[index].preferredBrandId = nil
+                continue
+            }
+            if brand.colorSystem != scanColorSystem {
+                AppLogger.shared.warning("Scan", "preferred_brand_self_healed_color_system_mismatch", metadata: [
+                    "preferredBrandId": preferred.uuidString,
+                    "brandColorSystem": "\(brand.colorSystem)",
+                    "scanColorSystem": "\(scanColorSystem)"
+                ])
+                recognizedItems[index].preferredBrandId = nil
+            }
+        }
     }
 
     private func applyHelpAndOnAppear<V: View>(_ view: V) -> some View {
@@ -294,18 +341,40 @@ struct ScanView: View {
     private func handlePhotoItemChange(_ newItem: PhotosPickerItem?) {
         guard let newItem = newItem else { return }
         isLoadingImage = true
+        // 三个可能失败的点都分开处理，避免之前 try? + UIImage(data:) ?? 全合并成一个 else
+        // 的静默失败。错误统一进 alert + log。
         Task {
-            if let data = try? await newItem.loadTransferable(type: Data.self),
-               let image = UIImage(data: data) {
+            do {
+                guard let data = try await newItem.loadTransferable(type: Data.self) else {
+                    AppLogger.shared.warning("Scan", "photo_load_empty_data", metadata: [:])
+                    await MainActor.run {
+                        isLoadingImage = false
+                        photoLoadErrorMessage = String(localized: "图片内容为空，请重新选择。")
+                        showingPhotoLoadError = true
+                    }
+                    return
+                }
+                guard let image = UIImage(data: data) else {
+                    AppLogger.shared.error("Scan", "photo_decode_failed", metadata: ["bytes": "\(data.count)"])
+                    await MainActor.run {
+                        isLoadingImage = false
+                        photoLoadErrorMessage = String(localized: "图片格式无法识别（仅支持 HEIC/JPG/PNG）。")
+                        showingPhotoLoadError = true
+                    }
+                    return
+                }
                 await MainActor.run {
                     selectedImage = image
                     originalImage = image
                     thumbnailImage = image
                     isLoadingImage = false
                 }
-            } else {
+            } catch {
+                AppLogger.shared.error("Scan", "photo_load_failed", metadata: ["error": "\(error)"])
                 await MainActor.run {
                     isLoadingImage = false
+                    photoLoadErrorMessage = error.localizedDescription
+                    showingPhotoLoadError = true
                 }
             }
         }
@@ -655,11 +724,15 @@ struct ScanView: View {
         // 把识别行上记下的 preferredBrandId 落到 resolver.overrideBrand(...)，
         // 让 ScanView 这一步选好的跨品牌方案直接传到下一页的扣减审核。
         //
-        // 选完之后到现在的窗口里，用户可能在别处把那个品牌删了 / 改了色系 / 把那颗色的
-        // BrandStock 清空了。这里在落到 resolver 之前重新校验四个条件，任何一条不满足就
-        // 丢弃这次 override（用户在下一页仍可以手动改）——比静默扣错品牌的豆好。
+        // 设计取向是「任意品牌」——用户哪怕选了 0 库存品牌，也要把 override 落到 resolver，
+        // 让下一页扣减审核明确显示缺多少颗，而不是静默回退到主品牌。所以这里只保留两条
+        // **数据完整性** guard（brand 不存在 / 色系不匹配），不再卡 stock>0：
+        // - brand 不存在：UUID 指向已删除品牌，无法 deduct，必须丢。
+        // - 色系不匹配：mardCode ↔ 品牌色号的映射会错位，是 cross-brand 扣减的硬约束。
+        // - stock=0 / stock 缺失：是 UX 状态，不是数据完整性问题。让 override 通过，
+        //   缺豆通过 DeductionReviewView 的常规缺豆 UI 展示。
         //
-        // 每个丢弃分支都走 AppLogger.warning，确保用户报"我选的品牌没生效"时有日志可查。
+        // 两条 guard 仍走 warning（数据漂移/异常），落 override 不再 log。
         for (idx, recognized) in recognizedItems.enumerated() {
             guard let preferred = recognized.preferredBrandId,
                   idx < resolver.items.count else { continue }
@@ -676,16 +749,6 @@ struct ScanView: View {
                     "preferredBrandId": preferred.uuidString,
                     "brandColorSystem": "\(brand.colorSystem)",
                     "scanColorSystem": "\(scanColorSystem)"
-                ])
-                continue
-            }
-            // 选中时 candidateBrand 要求 available > 0；这里同步要求，避免选完到 commit
-            // 间用户在别处把这颗色的库存用光了还硬扣（产生"已切换为 X·缺豆"的尴尬态）。
-            guard let stock = inventoryManager.getStock(brandId: preferred, mardCode: resolverItem.mardCode),
-                  stock.available > 0 else {
-                AppLogger.shared.warning("Scan", "preferred_brand_dropped_no_usable_stock", metadata: [
-                    "preferredBrandId": preferred.uuidString,
-                    "mardCode": resolverItem.mardCode
                 ])
                 continue
             }
@@ -1156,14 +1219,16 @@ struct RecognizedResultsSectionNew: View {
         return stock.available
     }
 
-    /// 该 item 当前在 *生效品牌*（preferred 优先，否则主品牌）下是否缺豆
+    /// 该 item 当前在 *生效品牌*（preferred 优先，否则主品牌）下是否缺豆。
+    ///
+    /// 缺 BrandStock 记录的颜色按 0 库存算 —— 这种状态通常是用户切了色系 / 删了
+    /// 品牌后还残留的 stale 数据，把它当"不缺豆"会让 shortage 筛选 / 缺豆 chip
+    /// 静默漏报。
     private func itemHasEffectiveShortage(_ item: ScanView.RecognizedItem) -> Bool {
         let effectiveBrandId = item.preferredBrandId ?? inventoryManager.currentBrandId
-        guard let brandId = effectiveBrandId,
-              let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode) else {
-            return false
-        }
-        return (stock.available - item.quantity) < 0
+        guard let brandId = effectiveBrandId else { return false }
+        let available = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode)?.available ?? 0
+        return (available - item.quantity) < 0
     }
 
     /// 缺豆项数量（按生效品牌算；切换后被解决的项不再算缺豆）
@@ -1315,7 +1380,7 @@ struct RecognizedResultsSectionNew: View {
 
             // 提示 pill
             HStack {
-                Text("← 左滑任意一行可编辑或删除")
+                Text("← 左滑任意一行可编辑、改品牌或删除")
                     .font(.caption2)
                     .foregroundStyle(Theme.ColorToken.Text.tertiary)
                 Spacer()
@@ -1348,8 +1413,9 @@ struct RecognizedItemRowNew: View {
     var colorSystem: ColorSystem = .mard
     let onUpdate: (String?, Int?) -> Void
     let onRemove: () -> Void
-    /// 用户点了缺豆建议行：传 brandId 表示「切换到推荐品牌」，
-    /// 传 nil 表示「撤销切换、改回主品牌」。
+    /// 设置该行的跨品牌偏好。传 brandId = 切到目标品牌；传 nil = 清除偏好回到主品牌。
+    /// 触发点：缺豆建议行的「试试用 X」/「改回」按钮、左滑「改品牌」的 confirmationDialog、
+    /// 长按 contextMenu 的「改用品牌」子菜单。
     var onApplyPreferredBrand: (UUID?) -> Void = { _ in }
 
     @Environment(\.tabFlavor) private var flavor
@@ -1357,6 +1423,7 @@ struct RecognizedItemRowNew: View {
     @State private var editCode: String = ""
     @State private var editQuantity: String = ""
     @State private var showQuantityError = false
+    @State private var showingBrandPicker = false
 
     var matchedColor: BeadColor? {
         // item.colorCode 在 recognizeImage 中已规范化为 mardCode（匹配成功时）或保留为原始品牌色号（未匹配时）。
@@ -1380,24 +1447,36 @@ struct RecognizedItemRowNew: View {
     // isInsufficient: 库存不足（负数）
     // isLowStock: 低库存预警（低于阈值但非负）
     var stockInfo: (current: Int, after: Int, isInsufficient: Bool, isLowStock: Bool)? {
-        guard let brandId = effectiveBrandId,
-              let stock = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode) else {
-            return nil
-        }
-        let current = stock.available
+        guard let brandId = effectiveBrandId else { return nil }
+        // BrandStock 记录缺失（用户改了色系 / 删了品牌 / 跨设备同步漂移）按 0 库存算。
+        // 之前直接 return nil 会让行不显示任何 stock 指示，看起来"没问题"但下一页扣减
+        // 直接缺豆，是典型的 missing-data masquerading as success。
+        let current = inventoryManager.getStock(brandId: brandId, mardCode: item.colorCode)?.available ?? 0
         let after = current - item.quantity
         let isInsufficient = after < 0
         let isLowStock = !isInsufficient && after < lowStockThreshold
         return (current, after, isInsufficient, isLowStock)
     }
 
-    /// 是否已通过缺豆建议切到了非主品牌
-    var isBrandOverridden: Bool { item.preferredBrandId != nil }
+    /// 是否已通过缺豆建议切到了非主品牌（live：要求被指向的品牌仍存在）。
+    /// 注意：直接看 `item.preferredBrandId != nil` 会把"指向已删除品牌"的 dangling
+    /// 状态也算成已 override —— 表现为橙色蜂蜜边框 + 没库存信息 + 没徽章 + 没
+    /// recommendation，用户摸不着头脑。通过看 overriddenBrand 来过滤 dangling，
+    /// ScanView 级的 cleanupDanglingPreferredBrands 会同步把 preferredBrandId 清掉。
+    var isBrandOverridden: Bool { overriddenBrand != nil }
 
     /// 已应用推荐品牌时，对应的 Brand
     var overriddenBrand: Brand? {
         guard let id = item.preferredBrandId else { return nil }
         return inventoryManager.brands.first(where: { $0.id == id })
+    }
+
+    /// 同色系下的所有可选品牌（含当前主品牌），按 sortOrder 排序。
+    /// 给 contextMenu 的「改用品牌」子菜单使用 —— 不限缺豆，用户可以任意切换。
+    var brandsForOverride: [Brand] {
+        inventoryManager.brands
+            .filter { $0.colorSystem == colorSystem }
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     /// 当前色系下、非当前主品牌中、对该 mardCode 仍有库存的最佳替补品牌。
@@ -1430,12 +1509,12 @@ struct RecognizedItemRowNew: View {
 
     /// 仅看主品牌的缺口（用于判断"是否需要展示跨品牌建议行"，
     /// 哪怕用户已经切换、原始缺豆问题依然存在所以建议行也应当持续可见以便撤销）。
+    /// 主品牌缺 BrandStock 记录按 0 库存算 —— 否则用户主品牌没库存数据但缺豆建议行
+    /// 完全不弹，会让人摸不着头脑。
     var primaryShortageDelta: Int? {
-        guard let primaryId = inventoryManager.currentBrandId,
-              let stock = inventoryManager.getStock(brandId: primaryId, mardCode: item.colorCode) else {
-            return nil
-        }
-        let after = stock.available - item.quantity
+        guard let primaryId = inventoryManager.currentBrandId else { return nil }
+        let available = inventoryManager.getStock(brandId: primaryId, mardCode: item.colorCode)?.available ?? 0
+        let after = available - item.quantity
         return after < 0 ? -after : nil
     }
 
@@ -1460,10 +1539,6 @@ struct RecognizedItemRowNew: View {
     var body: some View {
         SwipeActionRow(
             actions: [
-                // 注意：之前这一条挂了 "改品牌" 的标签，但代码逻辑只是进入色号/数量
-                // 的 inline 编辑，根本不切换品牌（这套字面意义上的"改品牌"由新增的
-                // 「试试用 X」推荐行承担）。这里跟 contextMenu 的"编辑"对齐，去掉
-                // 误导。
                 SwipeActionItem(
                     "编辑",
                     systemImage: "pencil",
@@ -1472,6 +1547,15 @@ struct RecognizedItemRowNew: View {
                     editCode = matchedColor?.displayCode(for: colorSystem) ?? item.colorCode
                     editQuantity = "\(item.quantity)"
                     isEditing = true
+                },
+                // 「改品牌」：不限缺豆场景，任何颜色都能切到同色系下的其他品牌。
+                // handler 只翻 state，真正的选择走下面的 confirmationDialog。
+                SwipeActionItem(
+                    "改品牌",
+                    systemImage: "arrow.left.arrow.right",
+                    tint: Theme.ColorToken.Morandi.honey
+                ) {
+                    showingBrandPicker = true
                 },
                 SwipeActionItem(
                     "删除",
@@ -1522,6 +1606,38 @@ struct RecognizedItemRowNew: View {
                 } label: {
                     Label("编辑", systemImage: "pencil")
                 }
+                // 任意颜色都能改品牌（不限缺豆场景）。子菜单列出同色系所有品牌 +
+                // 各自该色号的库存量，当前生效品牌前缀打勾。
+                // 选当前主品牌 = 清掉 override；选其他品牌 = 设 override。
+                Menu {
+                    if isBrandOverridden {
+                        Button {
+                            onApplyPreferredBrand(nil)
+                        } label: {
+                            Label("改回主品牌", systemImage: "arrow.uturn.backward")
+                        }
+                        Divider()
+                    }
+                    ForEach(brandsForOverride) { brand in
+                        let stock = inventoryManager.getStock(brandId: brand.id, mardCode: item.colorCode)?.available ?? 0
+                        let isCurrent = brand.id == (item.preferredBrandId ?? inventoryManager.currentBrandId)
+                        Button {
+                            if brand.id == inventoryManager.currentBrandId {
+                                onApplyPreferredBrand(nil)
+                            } else {
+                                onApplyPreferredBrand(brand.id)
+                            }
+                        } label: {
+                            if isCurrent {
+                                Label("\(brand.name) · 库存 \(stock)", systemImage: "checkmark")
+                            } else {
+                                Text("\(brand.name) · 库存 \(stock)")
+                            }
+                        }
+                    }
+                } label: {
+                    Label("改用品牌", systemImage: "arrow.left.arrow.right")
+                }
                 Button(role: .destructive) {
                     onRemove()
                 } label: {
@@ -1529,6 +1645,49 @@ struct RecognizedItemRowNew: View {
                 }
             }
         }
+        // 左滑的「改品牌」按钮触发的选择器。同色系所有品牌 + 各自该色号库存量。
+        // 用 confirmationDialog 是因为它原生支持「按钮列表 + 取消」这种半屏 UI，
+        // 而且自带 destructive/cancel 角色样式，不用自己撸 Sheet。
+        .confirmationDialog(
+            brandPickerTitle,
+            isPresented: $showingBrandPicker,
+            titleVisibility: .visible
+        ) {
+            ForEach(brandsForOverride) { brand in
+                let stock = inventoryManager.getStock(brandId: brand.id, mardCode: item.colorCode)?.available ?? 0
+                let isCurrent = brand.id == (item.preferredBrandId ?? inventoryManager.currentBrandId)
+                Button {
+                    if brand.id == inventoryManager.currentBrandId {
+                        onApplyPreferredBrand(nil)
+                    } else {
+                        onApplyPreferredBrand(brand.id)
+                    }
+                } label: {
+                    // confirmationDialog 的 Button label 在 iOS 上只取 Text，
+                    // 用 ✓ 前缀直观标出当前生效品牌。
+                    Text(isCurrent ? "✓ \(brand.name) · 库存 \(stock)" : "\(brand.name) · 库存 \(stock)")
+                }
+            }
+            if isBrandOverridden {
+                Button("改回主品牌", role: .destructive) {
+                    onApplyPreferredBrand(nil)
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text(brandPickerMessage)
+        }
+    }
+
+    /// confirmationDialog 标题：色号
+    private var brandPickerTitle: String {
+        let code = matchedColor?.displayCode(for: colorSystem) ?? item.colorCode
+        return String(localized: "改用品牌 · \(code)")
+    }
+
+    /// confirmationDialog 副标题：数量
+    private var brandPickerMessage: String {
+        String(localized: "本图需要 \(item.quantity) 颗")
     }
 
     @ViewBuilder

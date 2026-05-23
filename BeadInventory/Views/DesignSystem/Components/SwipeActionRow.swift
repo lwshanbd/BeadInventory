@@ -6,14 +6,26 @@
 //
 //  动机：SwiftUI 内置的 .swipeActions(edge:) 只能挂在 List 上。本项目里大多数
 //  列表是 ScrollView + LazyVStack（避免 "List 嵌在 ScrollView 中" 要手算高度的
-//  反模式），所以无法直接使用。该组件用 DragGesture 复刻同等交互，可放在任何
-//  容器里。
+//  反模式），所以无法直接使用。
 //
-//  关键点：
-//  - 仅在横向位移占主导（|dx| > |dy|）时认领手势，避免吞掉外层 ScrollView 的
-//    竖向滚动。simultaneousGesture 让父级 ScrollView 始终能收到事件。
+//  手势策略（关于竖滚被吃的折中）：
+//  - 想"绝对干净"地交给外层 ScrollView 处理竖滚，理想做法是用
+//    UIPanGestureRecognizer + UIGestureRecognizerDelegate.gestureRecognizerShouldBegin
+//    按初始 velocity 方向决定是否 begin。
+//  - 但这要求 pan 挂在 SwiftUI 内容的 UIKit 祖先节点上 —— .background / .overlay
+//    都是兄弟节点拿不到触摸；唯一可行的是 UIHostingController 包内容，而
+//    per-row UIHostingController 在 LazyVStack 里 sizing 完全崩盘（试过，
+//    所有行高度坍成一道横线）。
+//  - 折中：用 SwiftUI DragGesture，把 minimumDistance 拉到 28pt（明显大于
+//    UIScrollView 的 ~10pt pan 阈值，让 ScrollView 在竖向手势上先一步认领），
+//    并加横向 dominance 检查（|dx| > |dy| × 1.8）。极端边角情况下竖滚可能仍
+//    会被短暂吃住，但不会破坏布局，比 UIHostingController 路线安全得多。
+//
+//  视觉：
+//  - 按钮区单独 clipShape 出独立圆角矩形（左右都圆），不和 content 共享外层
+//    clip——否则单按钮场景下按钮左缘贴在行中间会是直角。
 //  - 揭示后再次 tap 内容会自动收起。
-//  - 通过 .accessibilityAction(named:) 暴露给 VoiceOver，无障碍可达。
+//  - 通过 .accessibilityAction(named:) 暴露给 VoiceOver。
 //
 
 import SwiftUI
@@ -58,8 +70,10 @@ struct SwipeActionRow<Content: View>: View {
 
     /// 每个按钮的宽度，参考 iOS 原生 swipeActions
     private let actionWidth: CGFloat = 76
-    /// 横向位移过此阈值才认领手势，避免误触
-    private let activationThreshold: CGFloat = 8
+    /// DragGesture 启动门槛，明显大于 UIScrollView 内部 pan 的触发阈值（~10pt）。
+    private let dragMinimumDistance: CGFloat = 28
+    /// 横向认领的强度要求：必须明显大于竖向位移（1.8×）才接管。
+    private let horizontalDominanceRatio: CGFloat = 1.8
     private var revealedWidth: CGFloat { actionWidth * CGFloat(actions.count) }
 
     @State private var offset: CGFloat = 0
@@ -71,7 +85,9 @@ struct SwipeActionRow<Content: View>: View {
             buttonsLayer
             contentLayer
         }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+        // 注意：这里不再统一 clipShape ——
+        // - content 的圆角由调用方在内容的 background 上自己画 RoundedRectangle 提供；
+        // - buttons 区域单独 clip，避免单按钮场景下「左缘贴在行中间」是直角。
         .simultaneousGesture(dragGesture)
         .modifier(SwipeAccessibilityActionsModifier(actions: actions))
     }
@@ -97,6 +113,9 @@ struct SwipeActionRow<Content: View>: View {
                 .buttonStyle(.plain)
             }
         }
+        // 单独 clip 出独立圆角，左右都圆。揭示宽度 = revealedWidth，
+        // 整个按钮组作为一个 pill 浮在 content 旁边。
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         // 收起状态下隐藏按钮（也禁用其点击）：避免按钮被覆盖时仍可被 hit-test
         .opacity(offset < 0 ? 1 : 0)
         .allowsHitTesting(offset < 0)
@@ -106,23 +125,48 @@ struct SwipeActionRow<Content: View>: View {
         content
             .offset(x: offset)
             .overlay {
-                // 已揭示时，覆盖一层透明视图吞掉内容上的点击，统一转为「先收起」
+                // 揭示状态下要让 buttonsLayer 能收到点击。
+                //
+                // 坑：SwiftUI 的 .offset() 只影响渲染，不影响 hit-test 区域 ——
+                // content 在 layout 里依然占满整行宽度。如果直接用 Color.clear
+                // 全覆盖 overlay，用户点按钮位置命中的是 content 上这层 overlay
+                // 触发 snapClosed()、按钮的 handler 根本不会跑。
+                //
+                // 解决：把 overlay 拆成左右两段。左段 (rowWidth - revealedWidth)
+                // 接管「点 content 区收起」，右段 (revealedWidth) 禁用 hit-testing
+                // 让点击穿透到 ZStack 后面的 buttonsLayer。
                 if offset < 0 {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { snapClosed() }
+                    HStack(spacing: 0) {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { snapClosed() }
+                        Color.clear
+                            .frame(width: revealedWidth)
+                            .allowsHitTesting(false)
+                    }
                 }
             }
     }
 
     private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: activationThreshold)
+        DragGesture(minimumDistance: dragMinimumDistance)
             .onChanged { value in
                 let dx = value.translation.width
                 let dy = value.translation.height
-                if !gestureActive {
-                    // 还没接管：只有横向位移占主导才认领，否则让外层 ScrollView 滚
-                    guard abs(dx) > abs(dy) else { return }
+                // 防 latching：SwiftUI DragGesture 没有 .onCancelled/.onInterrupted。
+                // 父 TabView 抢手势、contextMenu 长按竞争退出、LazyVStack 行重排、dialog
+                // 打断等场景下 onEnded 可能不发，gestureActive 卡在 true。表现：下一次
+                // 拖动 if !gestureActive 跳过、任意方向直接平移行，整个 dominance 检查作废。
+                //
+                // 修法：只要这次 onChanged 时行还没动过（offset 等于 dragStartOffset），
+                // 就强制重新走 dominance 检查 —— 即便上一次 gestureActive 残留 true，
+                // 也要在新 drag 的开头自我证明一遍方向。
+                let atRest = offset == dragStartOffset
+                if !gestureActive || atRest {
+                    guard abs(dx) > abs(dy) * horizontalDominanceRatio else {
+                        gestureActive = false
+                        return
+                    }
                     gestureActive = true
                 }
                 let candidate = dragStartOffset + dx
@@ -133,7 +177,7 @@ struct SwipeActionRow<Content: View>: View {
                 let wasActive = gestureActive
                 gestureActive = false
                 guard wasActive else { return }
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.62)) {
                     offset = offset < -revealedWidth / 2 ? -revealedWidth : 0
                     dragStartOffset = offset
                 }
@@ -145,7 +189,7 @@ struct SwipeActionRow<Content: View>: View {
         // 而不经过 onEnded，残留的 true 会让下一次 drag 跳过开头的横向占主导判断，
         // 任意方向的拖都直接平移行。
         gestureActive = false
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.62)) {
             offset = 0
             dragStartOffset = 0
         }
