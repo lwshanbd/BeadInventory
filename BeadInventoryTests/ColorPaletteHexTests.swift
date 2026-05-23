@@ -21,7 +21,25 @@ final class ColorPaletteHexTests: XCTestCase {
     func test_uiColorFromHex_acceptsLeadingHash() {
         let withHash = UIColor(themeHex: "#FAF5EC")
         let withoutHash = UIColor(themeHex: "FAF5EC")
-        XCTAssertEqual(withHash.cgColor, withoutHash.cgColor)
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0
+        withHash.getRed(&r1, green: &g1, blue: &b1, alpha: nil)
+        withoutHash.getRed(&r2, green: &g2, blue: &b2, alpha: nil)
+        XCTAssertEqual(r1, r2, accuracy: 0.001)
+        XCTAssertEqual(g1, g2, accuracy: 0.001)
+        XCTAssertEqual(b1, b2, accuracy: 0.001)
+    }
+
+    func test_uiColorFromHex_acceptsLowercase() {
+        let lower = UIColor(themeHex: "faf5ec")
+        let upper = UIColor(themeHex: "FAF5EC")
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0
+        lower.getRed(&r1, green: &g1, blue: &b1, alpha: nil)
+        upper.getRed(&r2, green: &g2, blue: &b2, alpha: nil)
+        XCTAssertEqual(r1, r2, accuracy: 0.001)
+        XCTAssertEqual(g1, g2, accuracy: 0.001)
+        XCTAssertEqual(b1, b2, accuracy: 0.001)
     }
 
     func test_colorPalette_codableRoundTrip() throws {

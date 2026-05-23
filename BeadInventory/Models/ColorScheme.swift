@@ -29,7 +29,8 @@ struct AppColorScheme: Identifiable, Codable, Equatable {
 extension UIColor {
     /// 从 "RRGGBB" / "#RRGGBB" 解析。非法值返回 fallback（默认 systemBackground）。
     convenience init(themeHex hex: String, fallback: UIColor = .systemBackground) {
-        let trimmed = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        let stripped = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        let trimmed = stripped.uppercased()
         guard trimmed.count == 6,
               let value = UInt32(trimmed, radix: 16) else {
             self.init(cgColor: fallback.cgColor)
