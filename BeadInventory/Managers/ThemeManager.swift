@@ -281,4 +281,68 @@ final class ThemeManager {
         resolvedDark  = payload.currentDark
         activeSchemeID = nil
     }
+
+    // MARK: - Builtin presets bootstrap
+
+    private struct BuiltinFile: Decodable {
+        let version: Int
+        let schemes: [BuiltinScheme]
+    }
+    private struct BuiltinScheme: Decodable {
+        let id: UUID
+        let name_key: String
+        let light: BuiltinPalette
+        let dark:  BuiltinPalette
+    }
+    private struct BuiltinPalette: Decodable {
+        let bg: String
+        let bg_elev: String
+    }
+
+    func bootstrapBuiltinPresets(modelContext: ModelContext) throws {
+        guard let url = Bundle.main.url(forResource: "built_in_color_schemes", withExtension: "json") else {
+            return
+        }
+        let data = try Data(contentsOf: url)
+        try bootstrapBuiltinPresets(jsonData: data, modelContext: modelContext)
+    }
+
+    func bootstrapBuiltinPresets(jsonData: Data, modelContext: ModelContext) throws {
+        let file = try JSONDecoder().decode(BuiltinFile.self, from: jsonData)
+        let stored = defaults.integer(forKey: PrefsKey.builtinVersion)
+        guard file.version > stored else { return }
+
+        let now = Date()
+        for s in file.schemes {
+            let predicateID = s.id
+            let descriptor = FetchDescriptor<SDColorScheme>(
+                predicate: #Predicate { $0.id == predicateID }
+            )
+            let existing = try modelContext.fetch(descriptor).first
+
+            if let existing {
+                existing.name = s.name_key
+                existing.lightBgHex     = s.light.bg.uppercased()
+                existing.lightBgElevHex = s.light.bg_elev.uppercased()
+                existing.darkBgHex      = s.dark.bg.uppercased()
+                existing.darkBgElevHex  = s.dark.bg_elev.uppercased()
+                existing.isBuiltin = true
+                existing.updatedAt = now
+            } else {
+                modelContext.insert(SDColorScheme(
+                    id: s.id,
+                    name: s.name_key,
+                    lightBgHex:     s.light.bg.uppercased(),
+                    lightBgElevHex: s.light.bg_elev.uppercased(),
+                    darkBgHex:      s.dark.bg.uppercased(),
+                    darkBgElevHex:  s.dark.bg_elev.uppercased(),
+                    isBuiltin: true,
+                    createdAt: now,
+                    updatedAt: now
+                ))
+            }
+        }
+        try modelContext.save()
+        defaults.set(file.version, forKey: PrefsKey.builtinVersion)
+    }
 }
