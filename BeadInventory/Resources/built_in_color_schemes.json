@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "schemes": [
+    {
+      "id": "B1A5B100-0000-0000-0000-000000000001",
+      "name_key": "color_mode.preset.cream_latte",
+      "light": { "bg": "FAF5EC", "bg_elev": "FFFDF8" },
+      "dark":  { "bg": "1B1714", "bg_elev": "25201B" }
+    },
+    {
+      "id": "B1A5B100-0000-0000-0000-000000000002",
+      "name_key": "color_mode.preset.mint_dawn",
+      "light": { "bg": "EEF6EE", "bg_elev": "FAFFFA" },
+      "dark":  { "bg": "0F1A12", "bg_elev": "1A2820" }
+    },
+    {
+      "id": "B1A5B100-0000-0000-0000-000000000003",
+      "name_key": "color_mode.preset.mist_coast",
+      "light": { "bg": "EAF1F6", "bg_elev": "F8FBFD" },
+      "dark":  { "bg": "0D1620", "bg_elev": "172331" }
+    },
+    {
+      "id": "B1A5B100-0000-0000-0000-000000000004",
+      "name_key": "color_mode.preset.dusk_rose",
+      "light": { "bg": "F6E8EC", "bg_elev": "FFF7F9" },
+      "dark":  { "bg": "1E1014", "bg_elev": "2C181F" }
+    },
+    {
+      "id": "B1A5B100-0000-0000-0000-000000000005",
+      "name_key": "color_mode.preset.black_gold",
+      "light": { "bg": "FBF6EC", "bg_elev": "FFFAF0" },
+      "dark":  { "bg": "0E0B07", "bg_elev": "1F1A12" }
+    }
+  ]
+}
