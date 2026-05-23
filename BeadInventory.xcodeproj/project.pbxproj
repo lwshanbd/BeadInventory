@@ -53,7 +53,6 @@
 		38B1A0012F01000100000050 /* ColorSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000051 /* ColorSystem.swift */; };
 		38B1A0012F01000100000053 /* colorwithkaka.csv in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000052 /* colorwithkaka.csv */; };
 		38B1A0012F01000100000055 /* allcolors.json in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000054 /* allcolors.json */; };
-		B1A5B10000000000000001BF /* built_in_color_schemes.json in Resources */ = {isa = PBXBuildFile; fileRef = B1A5B10000000000000001FI /* built_in_color_schemes.json */; };
 		38B1A0012F01000100000061 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000060 /* Localizable.xcstrings */; };
 		38FA2CDA2F2482A300912E02 /* ImportFullDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38FA2CD92F2482A300912E02 /* ImportFullDataView.swift */; };
 		38FA2CDD2F25B67200912E02 /* CustomColorEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38FA2CDB2F25B67200912E02 /* CustomColorEditView.swift */; };
@@ -84,8 +83,10 @@
 		A0123456000C /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456001C /* AIService.swift */; };
 		A0123456DR01 /* DeductionReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0123456DR02 /* DeductionReviewView.swift */; };
 		A1BA6000BAA242C797A1967F /* HelpCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5573A291D954C97BD8955A5 /* HelpCenterView.swift */; };
+		B1A5B10000000000000001BF /* Resources/built_in_color_schemes.json in Resources */ = {isa = PBXBuildFile; fileRef = B1A5B10000000000000001FI /* Resources/built_in_color_schemes.json */; };
 		BACDA9EDBD274C6A9923F797 /* FAQView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 101C8A44E38F4E17BB2A00F3 /* FAQView.swift */; };
 		CC510001A0050001DEADBEEF /* ColorSimilarityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC510001A0050002DEADBEEF /* ColorSimilarityService.swift */; };
+		CM0014A0000000000001BFIL /* ColorModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CM0014A0000000000001FILE /* ColorModeView.swift */; };
 		CS0001A0000000000001BFIL /* ColorScheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS0001A0000000000001FILE /* ColorScheme.swift */; };
 		D10000000000000000000001 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = D10000000000000000000021 /* MLXLMCommon */; };
 		D10000000000000000000002 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = D10000000000000000000022 /* MLXVLM */; };
@@ -177,7 +178,6 @@
 		38B1A0012F01000100000051 /* ColorSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorSystem.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000052 /* colorwithkaka.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = colorwithkaka.csv; sourceTree = "<group>"; };
 		38B1A0012F01000100000054 /* allcolors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = allcolors.json; sourceTree = "<group>"; };
-		B1A5B10000000000000001FI /* built_in_color_schemes.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "Resources/built_in_color_schemes.json"; sourceTree = "<group>"; };
 		38B1A0012F01000100000060 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		38FA2CD92F2482A300912E02 /* ImportFullDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportFullDataView.swift; sourceTree = "<group>"; };
 		38FA2CDB2F25B67200912E02 /* CustomColorEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomColorEditView.swift; sourceTree = "<group>"; };
@@ -209,8 +209,10 @@
 		A0123456001B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A0123456001C /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
 		A0123456DR02 /* DeductionReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionReviewView.swift; sourceTree = "<group>"; };
+		B1A5B10000000000000001FI /* Resources/built_in_color_schemes.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Resources/built_in_color_schemes.json; sourceTree = "<group>"; };
 		C5573A291D954C97BD8955A5 /* HelpCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpCenterView.swift; sourceTree = "<group>"; };
 		CC510001A0050002DEADBEEF /* ColorSimilarityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorSimilarityService.swift; sourceTree = "<group>"; };
+		CM0014A0000000000001FILE /* ColorModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorModeView.swift; path = BeadInventory/Views/ColorMode/ColorModeView.swift; sourceTree = SOURCE_ROOT; };
 		CS0001A0000000000001FILE /* ColorScheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorScheme.swift; sourceTree = "<group>"; };
 		DD0A1B01A0060002DEADBEEF /* DeductionItemRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionItemRow.swift; sourceTree = "<group>"; };
 		DE0D1C01A0050002DEADBEEF /* DeductionItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionItem.swift; sourceTree = "<group>"; };
@@ -289,6 +291,14 @@
 			name = "Recovered References";
 			sourceTree = "<group>";
 		};
+		CM0014A0000000000001GRUP /* ColorMode */ = {
+			isa = PBXGroup;
+			children = (
+				CM0014A0000000000001FILE /* ColorModeView.swift */,
+			);
+			path = ColorMode;
+			sourceTree = "<group>";
+		};
 		384001032FB3A70D00F5DDE2 /* PatternHighlight */ = {
 			isa = PBXGroup;
 			children = (
@@ -351,7 +361,7 @@
 				A01234560013 /* Assets.xcassets */,
 				38B1A0012F01000100000052 /* colorwithkaka.csv */,
 				38B1A0012F01000100000054 /* allcolors.json */,
-				B1A5B10000000000000001FI /* built_in_color_schemes.json */,
+				B1A5B10000000000000001FI /* Resources/built_in_color_schemes.json */,
 				38B1A0012F01000100000060 /* Localizable.xcstrings */,
 				5F0094000000000000005A40 /* Resources/Fonts/ZCOOLKuaiLe-Regular.ttf */,
 			);
@@ -416,6 +426,7 @@
 		A01234560035 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				CM0014A0000000000001GRUP /* ColorMode */,
 				384001032FB3A70D00F5DDE2 /* PatternHighlight */,
 				6B1D5F8205D74655AB3DB19B /* HelpCenter */,
 				386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */,
@@ -592,7 +603,7 @@
 				A01234560003 /* Assets.xcassets in Resources */,
 				38B1A0012F01000100000053 /* colorwithkaka.csv in Resources */,
 				38B1A0012F01000100000055 /* allcolors.json in Resources */,
-				B1A5B10000000000000001BF /* built_in_color_schemes.json in Resources */,
+				B1A5B10000000000000001BF /* Resources/built_in_color_schemes.json in Resources */,
 				5F0094000000000000005A41 /* Resources/Fonts/ZCOOLKuaiLe-Regular.ttf in Resources */,
 				38B1A0012F01000100000061 /* Localizable.xcstrings in Resources */,
 				3806E50E2F00FB4300187AA7 /* InfoPlist.strings in Resources */,
@@ -695,6 +706,7 @@
 				3850010E2FB3A70D00F5DDE2 /* ZoomablePatternCanvas.swift in Sources */,
 				385001102FB3A70D00F5DDE2 /* GridValidator.swift in Sources */,
 				385001122FB3A70D00F5DDE2 /* ValidationDiffSheet.swift in Sources */,
+				CM0014A0000000000001BFIL /* ColorModeView.swift in Sources */,
 				CS0001A0000000000001BFIL /* ColorScheme.swift in Sources */,
 				TM0001A0000000000001BFIL /* ThemeManager.swift in Sources */,
 			);

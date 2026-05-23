@@ -118,6 +118,24 @@ struct MoreView: View {
                     }
                     .padding(.bottom, 18)
 
+                    // Group 2.5 — 外观
+                    groupCard(title: "外观") {
+                        NavigationLink {
+                            ColorModeView()
+                        } label: {
+                            MoreCardRow(
+                                icon: "circle.lefthalf.filled",
+                                iconColor: Theme.ColorToken.Morandi.mauve,
+                                title: "色彩模式",
+                                subtitle: "自定义浅色 / 深色的页面与卡片底色",
+                                trailing: .chevron,
+                                isLast: true
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.bottom, 18)
+
                     // Group 3 — 数据 & 同步
                     groupCard(title: "数据 & 同步") {
                         cloudStatusRow
