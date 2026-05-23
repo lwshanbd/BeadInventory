@@ -94,6 +94,7 @@
 		DE0D1C03A0050001DEADBEEF /* DeductionResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0D1C03A0050002DEADBEEF /* DeductionResolver.swift */; };
 		EE0B2C01A0070001DEADBEEF /* SimilarColorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0B2C01A0070002DEADBEEF /* SimilarColorSheet.swift */; };
 		CS0001A0000000000001BFIL /* ColorScheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS0001A0000000000001FILE /* ColorScheme.swift */; };
+		TM0001A0000000000001BFIL /* ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = TM0001A0000000000001FILE /* ThemeManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -214,6 +215,7 @@
 		EE0B2C01A0070002DEADBEEF /* SimilarColorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimilarColorSheet.swift; sourceTree = "<group>"; };
 		EF254CDDEE254F02A6DD1202 /* TutorialContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialContent.swift; sourceTree = "<group>"; };
 		CS0001A0000000000001FILE /* ColorScheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorScheme.swift; sourceTree = "<group>"; };
+		TM0001A0000000000001FILE /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -403,6 +405,7 @@
 				38B1A0012F01000100000049 /* CSVImporter.swift */,
 				38B1A0012F01000100000013 /* DataMigration.swift */,
 				38B1A0012F01000100000022 /* HistoryManager.swift */,
+				TM0001A0000000000001FILE /* ThemeManager.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -689,6 +692,7 @@
 				385001102FB3A70D00F5DDE2 /* GridValidator.swift in Sources */,
 				385001122FB3A70D00F5DDE2 /* ValidationDiffSheet.swift in Sources */,
 				CS0001A0000000000001BFIL /* ColorScheme.swift in Sources */,
+				TM0001A0000000000001BFIL /* ThemeManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
