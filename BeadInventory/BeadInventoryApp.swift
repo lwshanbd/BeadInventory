@@ -284,6 +284,7 @@ struct BeadInventoryApp: App {
                 print("[App] 应用进入后台，保存数据...")
                 inventoryManager.saveData()
                 HistoryManager.shared.saveDataImmediately()
+                themeManager.flushPersistenceNow()
             case .inactive:
                 // .inactive 频繁出现（例如控制中心、系统弹窗），先取消待执行刷新；
                 // 若首次加载已完成，则补一次保守保存，降低系统在 .inactive 直接终止时的数据丢失风险。
@@ -293,6 +294,7 @@ struct BeadInventoryApp: App {
                     inventoryManager.saveData()
                     HistoryManager.shared.saveDataImmediately()
                 }
+                themeManager.flushPersistenceNow()
             case .active:
                 print("[App] 应用恢复活跃状态")
                 if hasSeenInitialActivePhase {

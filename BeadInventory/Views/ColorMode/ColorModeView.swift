@@ -20,6 +20,14 @@ struct ColorModeView: View {
     @State private var showingSaveDialog = false
     @State private var showingLeaveDialog = false
     @State private var newName: String = ""
+    @State private var operationError: ThemeOperationError?
+
+    /// 用户发起的色彩主题写操作错误，承载本地化标题 + 详情。
+    private struct ThemeOperationError: Identifiable {
+        let id = UUID()
+        let titleKey: LocalizedStringKey
+        let message: String
+    }
 
     var body: some View {
         ScrollView {
@@ -51,7 +59,12 @@ struct ColorModeView: View {
         }
         .preferredColorScheme(previewSchemeOverride)
         .background(Theme.ColorToken.Surface.background.ignoresSafeArea())
-        .onAppear { themeManager.beginDraft() }
+        .onAppear {
+            // 已有 draft（启动恢复未保存改动后）不要重新 snapshot，否则原始可回滚状态丢失。
+            if themeManager.draft == nil {
+                themeManager.beginDraft()
+            }
+        }
         .navigationBarBackButtonHidden(themeManager.isDirty)
         .toolbar {
             if themeManager.isDirty {
@@ -83,6 +96,18 @@ struct ColorModeView: View {
                 dismiss()
             }
             Button("common.cancel", role: .cancel) { showingLeaveDialog = false }
+        }
+        .alert(
+            operationError?.titleKey ?? "",
+            isPresented: Binding(
+                get: { operationError != nil },
+                set: { if !$0 { operationError = nil } }
+            ),
+            presenting: operationError
+        ) { _ in
+            Button("common.ok", role: .cancel) { operationError = nil }
+        } message: { err in
+            Text(err.message)
         }
     }
 
@@ -188,16 +213,45 @@ struct ColorModeView: View {
                             isActive: sd.id == themeManager.activeSchemeID,
                             onApply: { themeManager.apply(scheme: sd.toStruct(), target: .both) },
                             onRename: { newName in
+                                let oldName = sd.name
                                 sd.name = newName
                                 sd.updatedAt = Date()
-                                try? modelContext.save()
+                                do {
+                                    try modelContext.save()
+                                } catch {
+                                    sd.name = oldName    // 显式回滚，避免 UI 与持久化不一致
+                                    AppLogger.shared.error(
+                                        "Theme",
+                                        "rename_scheme_failed",
+                                        metadata: ["schemeID": sd.id.uuidString, "error": "\(error)"]
+                                    )
+                                    operationError = ThemeOperationError(
+                                        titleKey: "color_mode.error.rename_failed_title",
+                                        message: error.localizedDescription
+                                    )
+                                }
                             },
                             onDelete: {
-                                if themeManager.activeSchemeID == sd.id {
-                                    themeManager.apply(scheme: defaultCreamLatteOrFallback(), target: .both)
-                                }
+                                // save-first 顺序：先尝试 delete + save，成功后才动 ThemeManager。
+                                let wasActive = (themeManager.activeSchemeID == sd.id)
                                 modelContext.delete(sd)
-                                try? modelContext.save()
+                                do {
+                                    try modelContext.save()
+                                    if wasActive {
+                                        themeManager.apply(scheme: defaultCreamLatteOrFallback(), target: .both)
+                                    }
+                                } catch {
+                                    modelContext.rollback()
+                                    AppLogger.shared.error(
+                                        "Theme",
+                                        "delete_scheme_failed",
+                                        metadata: ["schemeID": sd.id.uuidString, "error": "\(error)"]
+                                    )
+                                    operationError = ThemeOperationError(
+                                        titleKey: "color_mode.error.delete_failed_title",
+                                        message: error.localizedDescription
+                                    )
+                                }
                             }
                         )
                     }
@@ -209,8 +263,20 @@ struct ColorModeView: View {
             Button("common.save") {
                 let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
-                _ = try? themeManager.commitAsNewScheme(name: trimmed, modelContext: modelContext)
-                dismiss()
+                do {
+                    _ = try themeManager.commitAsNewScheme(name: trimmed, modelContext: modelContext)
+                    dismiss()
+                } catch {
+                    AppLogger.shared.error(
+                        "Theme",
+                        "commit_as_new_scheme_failed",
+                        metadata: ["name": trimmed, "error": "\(error)"]
+                    )
+                    operationError = ThemeOperationError(
+                        titleKey: "color_mode.error.save_failed_title",
+                        message: error.localizedDescription
+                    )
+                }
             }
             Button("common.cancel", role: .cancel) {}
         }
@@ -394,13 +460,21 @@ private struct MyThemeCard: View {
 }
 
 extension Color {
+    /// 转 "RRGGBB" 大写 hex。先把 UIColor 显式转到 sRGB 色空间，
+    /// 避免在 P3 wide-gamut 设备上 getRed 直接返回 P3 分量导致 hex round-trip 失真。
     func toThemeHex() -> String {
         let ui = UIColor(self)
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        ui.getRed(&r, green: &g, blue: &b, alpha: &a)
-        let ri = Int((r * 255).rounded())
-        let gi = Int((g * 255).rounded())
-        let bi = Int((b * 255).rounded())
-        return String(format: "%02X%02X%02X", ri, gi, bi)
+        let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+        let cg = ui.cgColor.converted(to: srgb, intent: .defaultIntent, options: nil) ?? ui.cgColor
+        let comps = cg.components ?? [0, 0, 0, 1]
+        let r = comps.count > 0 ? max(0, min(1, comps[0])) : 0
+        let g = comps.count > 1 ? max(0, min(1, comps[1])) : 0
+        let b = comps.count > 2 ? max(0, min(1, comps[2])) : 0
+        return String(
+            format: "%02X%02X%02X",
+            Int((r * 255).rounded()),
+            Int((g * 255).rounded()),
+            Int((b * 255).rounded())
+        )
     }
 }

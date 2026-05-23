@@ -216,7 +216,11 @@ final class ThemeManager {
     private func schedulePersistResolved() {
         debounceTask?.cancel()
         debounceTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: ThemeManager.debounceMs)
+            do {
+                try await Task.sleep(nanoseconds: ThemeManager.debounceMs)
+            } catch {
+                return   // 取消即放弃这次 flush —— 下一次 schedule 会重新计时
+            }
             await MainActor.run { [weak self] in self?.flushPersistResolved() }
         }
     }
@@ -231,12 +235,18 @@ final class ThemeManager {
         defaults.set(resolvedLight.bgElev, forKey: PrefsKey.lightBgElevHex)
         defaults.set(resolvedDark.bg,      forKey: PrefsKey.darkBgHex)
         defaults.set(resolvedDark.bgElev,  forKey: PrefsKey.darkBgElevHex)
-        persistPendingDraft()   // <-- NEW
+        persistPendingDraft()
     }
 
-    func flushPersistenceForTests() {
+    /// 同步落盘当前状态，绕过 debounce。App 进后台 / 被杀前应调用，避免丢失最后一次编辑。
+    func flushPersistenceNow() {
         debounceTask?.cancel()
         flushPersistResolved()
+    }
+
+    /// 单测专用别名，保持向后兼容。
+    func flushPersistenceForTests() {
+        flushPersistenceNow()
     }
 
     // MARK: - Pending draft persistence

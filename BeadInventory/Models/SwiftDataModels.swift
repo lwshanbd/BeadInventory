@@ -303,8 +303,9 @@ final class SDHistoryRecord {
 // MARK: - 色彩主题模型
 @Model
 final class SDColorScheme {
-    // Unique constraint absent on SDCustomColor (pre-existing); added here intentionally.
-    @Attribute(.unique) var id: UUID = UUID()
+    // CloudKit does not support .unique; uniqueness is guaranteed by UUID()
+    // for user themes and by bootstrapBuiltinPresets' fetch-by-id upsert for builtins.
+    var id: UUID = UUID()
     var name: String = ""
     var lightBgHex:     String = "FAF5EC"
     var lightBgElevHex: String = "FFFDF8"

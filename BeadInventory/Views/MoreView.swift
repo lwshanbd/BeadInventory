@@ -119,15 +119,15 @@ struct MoreView: View {
                     .padding(.bottom, 18)
 
                     // Group 2.5 — 外观
-                    groupCard(title: "外观") {
+                    groupCard(title: String(localized: "color_mode.entry.group_title")) {
                         NavigationLink {
                             ColorModeView()
                         } label: {
                             MoreCardRow(
                                 icon: "circle.lefthalf.filled",
                                 iconColor: Theme.ColorToken.Morandi.mauve,
-                                title: "色彩模式",
-                                subtitle: "自定义浅色 / 深色的页面与卡片底色",
+                                title: String(localized: "color_mode.title"),
+                                subtitle: String(localized: "color_mode.entry.subtitle"),
                                 trailing: .chevron,
                                 isLast: true
                             )
