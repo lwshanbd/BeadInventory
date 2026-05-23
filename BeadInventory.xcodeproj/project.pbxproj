@@ -291,14 +291,6 @@
 			name = "Recovered References";
 			sourceTree = "<group>";
 		};
-		CM0014A0000000000001GRUP /* ColorMode */ = {
-			isa = PBXGroup;
-			children = (
-				CM0014A0000000000001FILE /* ColorModeView.swift */,
-			);
-			path = ColorMode;
-			sourceTree = "<group>";
-		};
 		384001032FB3A70D00F5DDE2 /* PatternHighlight */ = {
 			isa = PBXGroup;
 			children = (
@@ -459,6 +451,14 @@
 				6EC4A1187CBB489B83C6E6559E6BABBB /* LowStockDetailView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		CM0014A0000000000001GRUP /* ColorMode */ = {
+			isa = PBXGroup;
+			children = (
+				CM0014A0000000000001FILE /* ColorModeView.swift */,
+			);
+			path = ColorMode;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
