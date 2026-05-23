@@ -139,4 +139,34 @@ final class ThemeManagerTests: XCTestCase {
         XCTAssertEqual(mgr.resolvedLight, ColorPalette(bg: "ABCDEF", bgElev: "FFDDCC"))
         XCTAssertEqual(mgr.resolvedDark,  ColorPalette(bg: "001122", bgElev: "334455"))
     }
+
+    func test_persistPendingDraft_andRestore() {
+        let suiteName = "ThemeManagerTests-\(UUID())"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let mgr = ThemeManager.test_make(defaults: defaults)
+        mgr.beginDraft()
+        mgr.updateSwatch(.lightBg, hex: "FF0000")
+        mgr.flushPersistenceForTests()
+
+        let restored = ThemeManager.test_make(defaults: defaults)
+        restored.loadOverridesFromDefaults()
+        restored.loadPendingDraftFromDefaults()
+        XCTAssertTrue(restored.isDirty)
+        XCTAssertEqual(restored.resolvedLight.bg, "FF0000")
+        XCTAssertNotNil(restored.draft)
+    }
+
+    func test_discardDraft_clearsPersistedPendingDraft() {
+        let suiteName = "ThemeManagerTests-\(UUID())"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let mgr = ThemeManager.test_make(defaults: defaults)
+        mgr.beginDraft()
+        mgr.updateSwatch(.lightBg, hex: "FF0000")
+        mgr.flushPersistenceForTests()
+        mgr.discardDraft()
+        mgr.flushPersistenceForTests()
+        XCTAssertNil(defaults.data(forKey: "theme.pendingDraftJSON"))
+    }
 }

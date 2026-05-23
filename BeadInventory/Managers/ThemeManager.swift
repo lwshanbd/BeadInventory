@@ -173,6 +173,7 @@ final class ThemeManager {
         resolvedDark  = d.snapshotDark
         activeSchemeID = d.snapshotActiveSchemeID
         draft = nil
+        schedulePersistResolved()   // <-- NEW
     }
 
     @discardableResult
@@ -230,10 +231,54 @@ final class ThemeManager {
         defaults.set(resolvedLight.bgElev, forKey: PrefsKey.lightBgElevHex)
         defaults.set(resolvedDark.bg,      forKey: PrefsKey.darkBgHex)
         defaults.set(resolvedDark.bgElev,  forKey: PrefsKey.darkBgElevHex)
+        persistPendingDraft()   // <-- NEW
     }
 
     func flushPersistenceForTests() {
         debounceTask?.cancel()
         flushPersistResolved()
+    }
+
+    // MARK: - Pending draft persistence
+
+    private struct DraftPayload: Codable {
+        let snapshotActiveSchemeID: UUID?
+        let snapshotLight: ColorPalette
+        let snapshotDark: ColorPalette
+        let currentLight: ColorPalette
+        let currentDark: ColorPalette
+    }
+
+    private func persistPendingDraft() {
+        guard let d = draft, d.isDirty else {
+            defaults.removeObject(forKey: PrefsKey.pendingDraftJSON)
+            return
+        }
+        let payload = DraftPayload(
+            snapshotActiveSchemeID: d.snapshotActiveSchemeID,
+            snapshotLight: d.snapshotLight,
+            snapshotDark: d.snapshotDark,
+            currentLight: resolvedLight,
+            currentDark: resolvedDark
+        )
+        if let data = try? JSONEncoder().encode(payload) {
+            defaults.set(data, forKey: PrefsKey.pendingDraftJSON)
+        }
+    }
+
+    func loadPendingDraftFromDefaults() {
+        guard let data = defaults.data(forKey: PrefsKey.pendingDraftJSON),
+              let payload = try? JSONDecoder().decode(DraftPayload.self, from: data) else {
+            return
+        }
+        draft = ThemeDraft(
+            snapshotActiveSchemeID: payload.snapshotActiveSchemeID,
+            snapshotLight: payload.snapshotLight,
+            snapshotDark: payload.snapshotDark,
+            isDirty: true
+        )
+        resolvedLight = payload.currentLight
+        resolvedDark  = payload.currentDark
+        activeSchemeID = nil
     }
 }
