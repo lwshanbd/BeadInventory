@@ -25,6 +25,10 @@ struct PatternCalibrationView: View {
     @State private var corners: GridCorners = .initialQuad
     @State private var rows: Int = 29
     @State private var cols: Int = 29
+    /// 行/列 TextField 的焦点状态。`.keyboard` placement 的 toolbar 在 sheet 内
+    /// 反复 re-diff 时不稳定，用 FocusState 显式控制，"完成"按钮设 nil 即可收键盘。
+    @FocusState private var focusedField: GridDimField?
+    private enum GridDimField: Hashable { case rows, cols }
     @State private var rectMode: Bool = true             // 默认矩形（2 角）模式
     /// 锁定网格：所有红角/网格整体拖手势被禁用，1 指拖一律走"平移图片"。
     /// 默认 false（可以正常调网格）。放大查看图片细节时点锁切到 true。
@@ -91,15 +95,16 @@ struct PatternCalibrationView: View {
                     }
                     .accessibilityLabel(gridLocked ? "解锁网格" : "锁定网格（仅平移图片）")
                 }
-                // 行/列 TextField 用数字键盘，没有自带的"完成"按钮。
-                // 加一条 keyboard placement 的 toolbar，键盘弹起时显示"完成"按钮收键盘。
+            }
+            // 行/列 TextField 用数字键盘，没有自带的"完成"按钮。
+            // 单独挂一条 .keyboard placement toolbar：跟上方 top bar 解耦，
+            // 避免 rectMode/gridLocked 触发 top bar re-diff 时把 .keyboard accessory
+            // 一起丢掉（iOS 17/18 在 sheet 内的已知不稳定行为）。
+            .toolbar {
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("完成") {
-                        UIApplication.shared.sendAction(
-                            #selector(UIResponder.resignFirstResponder),
-                            to: nil, from: nil, for: nil
-                        )
+                        focusedField = nil
                     }
                 }
             }
@@ -248,8 +253,8 @@ struct PatternCalibrationView: View {
         VStack(spacing: 12) {
             // 行列数（用户可直接修改；后续 "对齐网格" 会用这两个值）
             HStack(spacing: 16) {
-                stepperCell(title: "行", value: $rows)
-                stepperCell(title: "列", value: $cols)
+                stepperCell(title: "行", value: $rows, field: .rows)
+                stepperCell(title: "列", value: $cols, field: .cols)
             }
 
             // 检测按钮 + 提示
@@ -310,7 +315,7 @@ struct PatternCalibrationView: View {
 
     /// 行/列输入单元：TextField 可直接打字 + 旁边 +/- 微调
     @ViewBuilder
-    private func stepperCell(title: String, value: Binding<Int>) -> some View {
+    private func stepperCell(title: String, value: Binding<Int>, field: GridDimField) -> some View {
         HStack(spacing: 6) {
             Text(title)
                 .font(.subheadline)
@@ -325,6 +330,7 @@ struct PatternCalibrationView: View {
 
             TextField("", value: value, format: .number)
                 .keyboardType(.numberPad)
+                .focused($focusedField, equals: field)
                 .multilineTextAlignment(.center)
                 .font(.title3.monospacedDigit().bold())
                 .frame(minWidth: 50, maxWidth: 70)
