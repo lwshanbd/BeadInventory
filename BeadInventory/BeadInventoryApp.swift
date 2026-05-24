@@ -20,9 +20,12 @@ struct BeadInventoryApp: App {
     @StateObject private var sharedImageManager = SharedImageManager.shared
     @StateObject private var cloudSyncStatusManager: CloudSyncStatusManager
 
+    @State private var themeManager = ThemeManager.shared
+
     /// 深链接触发扫描的标志
     @State private var shouldOpenScan = false
     @State private var hasSeenInitialActivePhase = false
+    @State private var showingThemeRecoveryAlert = false
     /// 数据库初始化是否完全失败（用于向用户展示错误状态）
     @State private var modelContainerFatalError: String?
     /// init 中暂存的错误信息（用于传递到 @State）
@@ -196,6 +199,28 @@ struct BeadInventoryApp: App {
                 .environmentObject(inventoryManager)
                 .environmentObject(sharedImageManager)
                 .environmentObject(cloudSyncStatusManager)
+                .environment(themeManager)
+                .task {
+                    let ctx = ModelContext(modelContainer)
+                    do {
+                        try themeManager.bootstrapBuiltinPresets(modelContext: ctx)
+                    } catch {
+                        AppLogger.shared.error("Theme", "bootstrap_builtin_failed", metadata: ["error": "\(error)"])
+                    }
+                    themeManager.loadOverridesFromDefaults()
+                    themeManager.loadPendingDraftFromDefaults()
+                    if themeManager.isDirty {
+                        showingThemeRecoveryAlert = true
+                    }
+                }
+                .alert("color_mode.dialog.recover_title", isPresented: $showingThemeRecoveryAlert) {
+                    Button("color_mode.dialog.recover_keep") { /* keep draft state in memory */ }
+                    Button("color_mode.dialog.recover_discard", role: .destructive) {
+                        themeManager.discardDraft()
+                    }
+                } message: {
+                    Text("color_mode.dialog.recover_message")
+                }
                 .onOpenURL { url in
                     handleIncomingURL(url)
                 }
@@ -259,6 +284,7 @@ struct BeadInventoryApp: App {
                 print("[App] 应用进入后台，保存数据...")
                 inventoryManager.saveData()
                 HistoryManager.shared.saveDataImmediately()
+                themeManager.flushPersistenceNow()
             case .inactive:
                 // .inactive 频繁出现（例如控制中心、系统弹窗），先取消待执行刷新；
                 // 若首次加载已完成，则补一次保守保存，降低系统在 .inactive 直接终止时的数据丢失风险。
@@ -268,6 +294,7 @@ struct BeadInventoryApp: App {
                     inventoryManager.saveData()
                     HistoryManager.shared.saveDataImmediately()
                 }
+                themeManager.flushPersistenceNow()
             case .active:
                 print("[App] 应用恢复活跃状态")
                 if hasSeenInitialActivePhase {

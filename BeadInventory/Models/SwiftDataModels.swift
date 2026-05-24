@@ -299,3 +299,67 @@ final class SDHistoryRecord {
         )
     }
 }
+
+// MARK: - 色彩主题模型
+@Model
+final class SDColorScheme {
+    // CloudKit does not support .unique; uniqueness is guaranteed by UUID()
+    // for user themes and by bootstrapBuiltinPresets' fetch-by-id upsert for builtins.
+    var id: UUID = UUID()
+    var name: String = ""
+    var lightBgHex:     String = "FAF5EC"
+    var lightBgElevHex: String = "FFFDF8"
+    var darkBgHex:      String = "1B1714"
+    var darkBgElevHex:  String = "25201B"
+    var isBuiltin: Bool = false
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        lightBgHex: String,
+        lightBgElevHex: String,
+        darkBgHex: String,
+        darkBgElevHex: String,
+        isBuiltin: Bool = false,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.name = name
+        self.lightBgHex = lightBgHex
+        self.lightBgElevHex = lightBgElevHex
+        self.darkBgHex = darkBgHex
+        self.darkBgElevHex = darkBgElevHex
+        self.isBuiltin = isBuiltin
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    convenience init(from scheme: AppColorScheme) {
+        self.init(
+            id: scheme.id,
+            name: scheme.name,
+            lightBgHex: scheme.light.bg,
+            lightBgElevHex: scheme.light.bgElev,
+            darkBgHex: scheme.dark.bg,
+            darkBgElevHex: scheme.dark.bgElev,
+            isBuiltin: scheme.isBuiltin,
+            createdAt: scheme.createdAt,
+            updatedAt: scheme.updatedAt
+        )
+    }
+
+    func toStruct() -> AppColorScheme {
+        AppColorScheme(
+            id: id,
+            name: name,
+            light: ColorPalette(bg: lightBgHex, bgElev: lightBgElevHex),
+            dark:  ColorPalette(bg: darkBgHex,  bgElev: darkBgElevHex),
+            isBuiltin: isBuiltin,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+}

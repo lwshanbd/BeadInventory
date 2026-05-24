@@ -79,9 +79,11 @@ enum Theme {
         }
 
         enum Surface {
-            static let background = Color("Palette/Bg")       // 米奶页面底
-            static let elevated   = Color("Palette/BgElev")   // 卡片底（偏纯白偏暖）
-            static let subtle     = Color("Palette/Neutral50")// chip / 二级 surface
+            /// 米奶页面底；运行时由 ThemeManager.shared 提供，自动跟随系统外观
+            static var background: Color { Color(uiColor: ThemeManager.shared.dynamicBg) }
+            /// 卡片底（偏纯白偏暖）；同上
+            static var elevated:   Color { Color(uiColor: ThemeManager.shared.dynamicBgElev) }
+            static let subtle     = Color("Palette/Neutral50") // chip / 二级 surface
             static let strong     = Color("Palette/SurfaceStrong") // 略深的中性
         }
 

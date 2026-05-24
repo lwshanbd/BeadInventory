@@ -15,7 +15,7 @@ import SwiftData
 
 /// 当前 Schema 版本
 enum CurrentSchema: VersionedSchema {
-    static var versionIdentifier = Schema.Version(1, 2, 0)  // 1.2.0: 添加自定义色号支持
+    static var versionIdentifier = Schema.Version(1, 3, 0)  // 1.3.0: 添加色彩主题支持
 
     static var models: [any PersistentModel.Type] {
         [
@@ -24,7 +24,8 @@ enum CurrentSchema: VersionedSchema {
             SDProjectRecord.self,
             SDBeadUsage.self,
             SDHistoryRecord.self,
-            SDCustomColor.self
+            SDCustomColor.self,
+            SDColorScheme.self
         ]
     }
 }
@@ -37,6 +38,7 @@ enum CurrentSchema: VersionedSchema {
 /// - 1.0.0: 初始版本
 /// - 1.1.0: SDHistoryRecord.entityName 重命名为 targetName（使用 originalName 属性自动迁移）
 /// - 1.2.0: 添加 SDCustomColor 模型支持自定义色号功能
+/// - 1.3.0: 添加 SDColorScheme 模型支持色彩主题功能
 enum BeadInventoryMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [CurrentSchema.self]
