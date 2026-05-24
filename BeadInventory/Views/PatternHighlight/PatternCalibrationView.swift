@@ -25,6 +25,14 @@ struct PatternCalibrationView: View {
     @State private var corners: GridCorners = .initialQuad
     @State private var rows: Int = 29
     @State private var cols: Int = 29
+    /// 是否任一行/列 TextField 当前有焦点。两个 TextField 都绑同一个
+    /// `.focused($fieldsFocused)`，焦点在它们之间切换时 Bool 保持 true，
+    /// 行末的收键盘按钮（`.opacity` + `.allowsHitTesting` 由 fieldsFocused 驱动）
+    /// 因此不会在切换瞬间闪烁。
+    /// 历史：先前试过 enum FocusState + `.toolbar(.keyboard)` accessory，
+    /// sheet + 多 TextField 焦点切换场景下 SwiftUI 会丢 accessory，改走
+    /// 纯 inline UI 路径。
+    @FocusState private var fieldsFocused: Bool
     @State private var rectMode: Bool = true             // 默认矩形（2 角）模式
     /// 锁定网格：所有红角/网格整体拖手势被禁用，1 指拖一律走"平移图片"。
     /// 默认 false（可以正常调网格）。放大查看图片细节时点锁切到 true。
@@ -55,7 +63,7 @@ struct PatternCalibrationView: View {
     }
 
     private var savingLabelText: String {
-        guard let phase = savingPhase else { return "完成" }
+        guard let phase = savingPhase else { return "开始标定" }
         if savingDisplayElapsed > 0 {
             return "\(phase) (\(savingDisplayElapsed)s)"
         }
@@ -90,17 +98,6 @@ struct PatternCalibrationView: View {
                             .foregroundStyle(gridLocked ? Theme.ColorToken.Status.warning : Color.secondary)
                     }
                     .accessibilityLabel(gridLocked ? "解锁网格" : "锁定网格（仅平移图片）")
-                }
-                // 行/列 TextField 用数字键盘，没有自带的"完成"按钮。
-                // 加一条 keyboard placement 的 toolbar，键盘弹起时显示"完成"按钮收键盘。
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("完成") {
-                        UIApplication.shared.sendAction(
-                            #selector(UIResponder.resignFirstResponder),
-                            to: nil, from: nil, for: nil
-                        )
-                    }
                 }
             }
             .task {
@@ -247,10 +244,29 @@ struct PatternCalibrationView: View {
     private var toolbar: some View {
         VStack(spacing: 12) {
             // 行列数（用户可直接修改；后续 "对齐网格" 会用这两个值）
+            // HStack 末尾常驻 44×44 的收键盘按钮（HIG tap target），不用 `if`
+            // 是为了避免行宽在聚焦/失焦时跳变；编辑时 opacity + allowsHitTesting
+            // 由 fieldsFocused 翻成可见可点。不走 .toolbar(.keyboard) 的背景见
+            // fieldsFocused 上方注释。
             HStack(spacing: 16) {
                 stepperCell(title: "行", value: $rows)
                 stepperCell(title: "列", value: $cols)
+                Button {
+                    fieldsFocused = false
+                } label: {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                        .font(.title2)
+                        .foregroundStyle(Color.accentColor)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .opacity(fieldsFocused ? 1 : 0)
+                .allowsHitTesting(fieldsFocused)
+                .accessibilityLabel("收起键盘")
+                .accessibilityHidden(!fieldsFocused)
             }
+            .animation(.easeInOut(duration: 0.15), value: fieldsFocused)
 
             // 检测按钮 + 提示
             VStack(spacing: 6) {
@@ -325,6 +341,7 @@ struct PatternCalibrationView: View {
 
             TextField("", value: value, format: .number)
                 .keyboardType(.numberPad)
+                .focused($fieldsFocused)
                 .multilineTextAlignment(.center)
                 .font(.title3.monospacedDigit().bold())
                 .frame(minWidth: 50, maxWidth: 70)
