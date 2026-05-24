@@ -25,10 +25,13 @@ struct PatternCalibrationView: View {
     @State private var corners: GridCorners = .initialQuad
     @State private var rows: Int = 29
     @State private var cols: Int = 29
-    /// 行/列 TextField 共用同一个 Bool 焦点。两个 TextField 都绑 `.focused($fieldsFocused)`，
-    /// 焦点在它们之间切换时 Bool 始终为 true —— SwiftUI 看不到 focus value 变化，
-    /// `.keyboard` toolbar accessory 不会被回收。用 enum + 多 case 的方案在
-    /// sheet 内焦点切换时会把 accessory 整个丢掉。
+    /// 是否任一行/列 TextField 当前有焦点。两个 TextField 都绑同一个
+    /// `.focused($fieldsFocused)`，焦点在它们之间切换时 Bool 保持 true，
+    /// 行末的收键盘按钮（`.opacity` + `.allowsHitTesting` 由 fieldsFocused 驱动）
+    /// 因此不会在切换瞬间闪烁。
+    /// 历史：先前试过 enum FocusState + `.toolbar(.keyboard)` accessory，
+    /// sheet + 多 TextField 焦点切换场景下 SwiftUI 会丢 accessory，改走
+    /// 纯 inline UI 路径。
     @FocusState private var fieldsFocused: Bool
     @State private var rectMode: Bool = true             // 默认矩形（2 角）模式
     /// 锁定网格：所有红角/网格整体拖手势被禁用，1 指拖一律走"平移图片"。
@@ -241,24 +244,27 @@ struct PatternCalibrationView: View {
     private var toolbar: some View {
         VStack(spacing: 12) {
             // 行列数（用户可直接修改；后续 "对齐网格" 会用这两个值）
-            // 末尾的收键盘按钮只在编辑时出现 —— numberPad 没自带"完成"，且 SwiftUI
-            // .toolbar(.keyboard) accessory 在 sheet + 多 TextField 焦点切换场景
-            // 不可靠（实测会丢），所以直接在 UI 里给一个 FocusState-driven 入口。
+            // HStack 末尾常驻 44×44 的收键盘按钮（HIG tap target），不用 `if`
+            // 是为了避免行宽在聚焦/失焦时跳变；编辑时 opacity + allowsHitTesting
+            // 由 fieldsFocused 翻成可见可点。不走 .toolbar(.keyboard) 的背景见
+            // fieldsFocused 上方注释。
             HStack(spacing: 16) {
                 stepperCell(title: "行", value: $rows)
                 stepperCell(title: "列", value: $cols)
-                if fieldsFocused {
-                    Button {
-                        fieldsFocused = false
-                    } label: {
-                        Image(systemName: "keyboard.chevron.compact.down")
-                            .font(.title2)
-                            .foregroundStyle(Color.accentColor)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("收起键盘")
-                    .transition(.opacity)
+                Button {
+                    fieldsFocused = false
+                } label: {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                        .font(.title2)
+                        .foregroundStyle(Color.accentColor)
                 }
+                .buttonStyle(.plain)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .opacity(fieldsFocused ? 1 : 0)
+                .allowsHitTesting(fieldsFocused)
+                .accessibilityLabel("收起键盘")
+                .accessibilityHidden(!fieldsFocused)
             }
             .animation(.easeInOut(duration: 0.15), value: fieldsFocused)
 
