@@ -25,8 +25,9 @@ struct PatternCalibrationView: View {
     @State private var corners: GridCorners = .initialQuad
     @State private var rows: Int = 29
     @State private var cols: Int = 29
-    /// 行/列 TextField 的焦点状态。`.keyboard` placement 的 toolbar 在 sheet 内
-    /// 反复 re-diff 时不稳定，用 FocusState 显式控制，"完成"按钮设 nil 即可收键盘。
+    /// 行/列 TextField 的焦点状态。旧实现用 `UIResponder.resignFirstResponder`
+    /// 收键盘，sheet 内 toolbar re-diff 后偶发收不掉。改成绑 FocusState，
+    /// "完成"按钮设 nil 即可可靠退出焦点。
     @FocusState private var focusedField: GridDimField?
     private enum GridDimField: Hashable { case rows, cols }
     @State private var rectMode: Bool = true             // 默认矩形（2 角）模式
@@ -97,9 +98,9 @@ struct PatternCalibrationView: View {
                 }
             }
             // 行/列 TextField 用数字键盘，没有自带的"完成"按钮。
-            // 单独挂一条 .keyboard placement toolbar：跟上方 top bar 解耦，
-            // 避免 rectMode/gridLocked 触发 top bar re-diff 时把 .keyboard accessory
-            // 一起丢掉（iOS 17/18 在 sheet 内的已知不稳定行为）。
+            // 实测在 sheet 内把 .keyboard 跟 top bar 的 ToolbarItem 合并在同一个
+            // .toolbar { } 里时，top bar 子项随 state 变化触发 re-diff 后，键盘
+            // accessory 偶发不渲染。拆成独立 .toolbar { } 跟 top bar 解耦后稳定。
             .toolbar {
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
