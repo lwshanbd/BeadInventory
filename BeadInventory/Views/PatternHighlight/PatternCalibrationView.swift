@@ -25,11 +25,11 @@ struct PatternCalibrationView: View {
     @State private var corners: GridCorners = .initialQuad
     @State private var rows: Int = 29
     @State private var cols: Int = 29
-    /// 行/列 TextField 的焦点状态。旧实现用 `UIResponder.resignFirstResponder`
-    /// 收键盘，sheet 内 toolbar re-diff 后偶发收不掉。改成绑 FocusState，
-    /// "完成"按钮设 nil 即可可靠退出焦点。
-    @FocusState private var focusedField: GridDimField?
-    private enum GridDimField: Hashable { case rows, cols }
+    /// 行/列 TextField 共用同一个 Bool 焦点。两个 TextField 都绑 `.focused($fieldsFocused)`，
+    /// 焦点在它们之间切换时 Bool 始终为 true —— SwiftUI 看不到 focus value 变化，
+    /// `.keyboard` toolbar accessory 不会被回收。用 enum + 多 case 的方案在
+    /// sheet 内焦点切换时会把 accessory 整个丢掉。
+    @FocusState private var fieldsFocused: Bool
     @State private var rectMode: Bool = true             // 默认矩形（2 角）模式
     /// 锁定网格：所有红角/网格整体拖手势被禁用，1 指拖一律走"平移图片"。
     /// 默认 false（可以正常调网格）。放大查看图片细节时点锁切到 true。
@@ -60,7 +60,7 @@ struct PatternCalibrationView: View {
     }
 
     private var savingLabelText: String {
-        guard let phase = savingPhase else { return "完成" }
+        guard let phase = savingPhase else { return "开始标定" }
         if savingDisplayElapsed > 0 {
             return "\(phase) (\(savingDisplayElapsed)s)"
         }
@@ -95,18 +95,6 @@ struct PatternCalibrationView: View {
                             .foregroundStyle(gridLocked ? Theme.ColorToken.Status.warning : Color.secondary)
                     }
                     .accessibilityLabel(gridLocked ? "解锁网格" : "锁定网格（仅平移图片）")
-                }
-            }
-            // 行/列 TextField 用数字键盘，没有自带的"完成"按钮。
-            // 实测在 sheet 内把 .keyboard 跟 top bar 的 ToolbarItem 合并在同一个
-            // .toolbar { } 里时，top bar 子项随 state 变化触发 re-diff 后，键盘
-            // accessory 偶发不渲染。拆成独立 .toolbar { } 跟 top bar 解耦后稳定。
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("完成") {
-                        focusedField = nil
-                    }
                 }
             }
             .task {
@@ -253,10 +241,26 @@ struct PatternCalibrationView: View {
     private var toolbar: some View {
         VStack(spacing: 12) {
             // 行列数（用户可直接修改；后续 "对齐网格" 会用这两个值）
+            // 末尾的收键盘按钮只在编辑时出现 —— numberPad 没自带"完成"，且 SwiftUI
+            // .toolbar(.keyboard) accessory 在 sheet + 多 TextField 焦点切换场景
+            // 不可靠（实测会丢），所以直接在 UI 里给一个 FocusState-driven 入口。
             HStack(spacing: 16) {
-                stepperCell(title: "行", value: $rows, field: .rows)
-                stepperCell(title: "列", value: $cols, field: .cols)
+                stepperCell(title: "行", value: $rows)
+                stepperCell(title: "列", value: $cols)
+                if fieldsFocused {
+                    Button {
+                        fieldsFocused = false
+                    } label: {
+                        Image(systemName: "keyboard.chevron.compact.down")
+                            .font(.title2)
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("收起键盘")
+                    .transition(.opacity)
+                }
             }
+            .animation(.easeInOut(duration: 0.15), value: fieldsFocused)
 
             // 检测按钮 + 提示
             VStack(spacing: 6) {
@@ -316,7 +320,7 @@ struct PatternCalibrationView: View {
 
     /// 行/列输入单元：TextField 可直接打字 + 旁边 +/- 微调
     @ViewBuilder
-    private func stepperCell(title: String, value: Binding<Int>, field: GridDimField) -> some View {
+    private func stepperCell(title: String, value: Binding<Int>) -> some View {
         HStack(spacing: 6) {
             Text(title)
                 .font(.subheadline)
@@ -331,7 +335,7 @@ struct PatternCalibrationView: View {
 
             TextField("", value: value, format: .number)
                 .keyboardType(.numberPad)
-                .focused($focusedField, equals: field)
+                .focused($fieldsFocused)
                 .multilineTextAlignment(.center)
                 .font(.title3.monospacedDigit().bold())
                 .frame(minWidth: 50, maxWidth: 70)
