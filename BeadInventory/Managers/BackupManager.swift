@@ -586,7 +586,7 @@ class BackupManager {
              patternGridData: nil as Data?,
              patternGridProvided: false)
         }
-        manager.restoreProjectBlobsFromBackup(entries)
+        let restoreResult = manager.restoreProjectBlobsFromBackup(entries)
 
         // 还原结束后从 manager.projects 卸掉 blob 副本，回到「缓存只存 metadata」的常态。
         // 否则 8MB+ 备份还原后会在内存里一直挂着这堆图。
@@ -598,7 +598,24 @@ class BackupManager {
             return stripped
         }
 
-        print("[BackupManager] 恢复成功: \(backup.fileName)")
+        // 区分完整恢复和部分恢复。partial failure 时 logError 已经在
+        // restoreProjectBlobsFromBackup 里写过（含失败 ID 采样），这里再打印一条
+        // 用户可见的文案 + 把数字塞进 logInfo 让 Sentry 能跟踪发生率。
+        if restoreResult.hasFailures {
+            print("[BackupManager] 恢复部分成功: \(backup.fileName) — \(restoreResult.succeeded)/\(entries.count) 项目图片写回，\(restoreResult.failedIDs.count) 项目失败（详见 logError: restore_blobs_partial_failure）")
+            AppLogger.shared.warning("BackupManager", "restore_completed_with_failures", metadata: [
+                "fileName": backup.fileName,
+                "succeeded": restoreResult.succeeded,
+                "failed": restoreResult.failedIDs.count,
+                "total": entries.count
+            ])
+        } else {
+            print("[BackupManager] 恢复成功: \(backup.fileName)")
+            AppLogger.shared.info("BackupManager", "restore_completed", metadata: [
+                "fileName": backup.fileName,
+                "projects": entries.count
+            ])
+        }
     }
 
     // MARK: - 删除备份

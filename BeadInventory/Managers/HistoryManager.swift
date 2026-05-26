@@ -169,6 +169,10 @@ class HistoryManager: ObservableObject {
             BeadUsageSnapshot(colorCode: $0.colorCode, brandId: $0.brandId, quantity: $0.quantity, isDeducted: $0.isDeducted)
         }
 
+        // patternGrid 编码：调用方（destructive 路径）会把 fetchProjectPatternGrid 取出来的
+        // OLD grid 写到 `project.patternGrid` 上；image-update 和其它路径 project.patternGrid
+        // 是 nil（来自 metadata-only cache），自然不会写进 snapshot —— 跟 capturesImages
+        // 一样的 opt-in 语义。
         let snapshot = ProjectSnapshot(
             id: project.id,
             name: project.name,
@@ -183,7 +187,9 @@ class HistoryManager: ObservableObject {
             thumbnail: project.thumbnail,
             finishedImage: project.finishedImage,
             colorSystem: project.colorSystem,
-            capturesImages: capturesImages
+            capturesImages: capturesImages,
+            patternGridData: SDProjectRecord.encodePatternGrid(project.patternGrid, projectId: project.id),
+            completedDate: project.completedDate
         )
 
         let snapshotData = try? JSONEncoder().encode(snapshot)
@@ -253,7 +259,9 @@ class HistoryManager: ObservableObject {
             beadUsages: beforeUsages,
             thumbnail: beforeProject.thumbnail,
             finishedImage: beforeProject.finishedImage,
-            colorSystem: beforeProject.colorSystem
+            colorSystem: beforeProject.colorSystem,
+            patternGridData: SDProjectRecord.encodePatternGrid(beforeProject.patternGrid, projectId: beforeProject.id),
+            completedDate: beforeProject.completedDate
         )
 
         // 执行后快照
@@ -273,7 +281,9 @@ class HistoryManager: ObservableObject {
             beadUsages: afterUsages,
             thumbnail: afterProject.thumbnail,
             finishedImage: afterProject.finishedImage,
-            colorSystem: afterProject.colorSystem
+            colorSystem: afterProject.colorSystem,
+            patternGridData: SDProjectRecord.encodePatternGrid(afterProject.patternGrid, projectId: afterProject.id),
+            completedDate: afterProject.completedDate
         )
 
         let beforeData = try? JSONEncoder().encode(beforeSnapshot)
@@ -322,7 +332,9 @@ class HistoryManager: ObservableObject {
                 beadUsages: usageSnapshots,
                 thumbnail: project.thumbnail,
                 finishedImage: project.finishedImage,
-                colorSystem: project.colorSystem
+                colorSystem: project.colorSystem,
+                patternGridData: SDProjectRecord.encodePatternGrid(project.patternGrid, projectId: project.id),
+                completedDate: project.completedDate
             )
         }
 
@@ -374,7 +386,9 @@ class HistoryManager: ObservableObject {
             beadUsages: projectUsages,
             thumbnail: project.thumbnail,
             finishedImage: project.finishedImage,
-            colorSystem: project.colorSystem
+            colorSystem: project.colorSystem,
+            patternGridData: SDProjectRecord.encodePatternGrid(project.patternGrid, projectId: project.id),
+            completedDate: project.completedDate
         )
 
         // 创建子项目快照
@@ -395,7 +409,9 @@ class HistoryManager: ObservableObject {
                 beadUsages: childUsages,
                 thumbnail: child.thumbnail,
                 finishedImage: child.finishedImage,
-                colorSystem: child.colorSystem
+                colorSystem: child.colorSystem,
+                patternGridData: SDProjectRecord.encodePatternGrid(child.patternGrid, projectId: child.id),
+                completedDate: child.completedDate
             )
         }
 
@@ -655,7 +671,7 @@ class HistoryManager: ObservableObject {
             return false
 
         case .projectUpdate:
-            // 撤回项目修改 = 恢复旧快照（目前主要是缩略图/成品图修改）
+            // 撤回项目修改 = 恢复旧快照
             if let beforeData = record.beforeSnapshot,
                let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: beforeData) {
                 // 自 v2.0.x 起 projects 缓存里 thumbnail / finishedImage 恒为 nil，
@@ -667,6 +683,17 @@ class HistoryManager: ObservableObject {
                 if shouldRestoreImages {
                     manager.updateProjectThumbnail(snapshot.id, thumbnail: snapshot.thumbnail)
                     manager.updateProjectFinishedImage(snapshot.id, finishedImage: snapshot.finishedImage)
+                }
+                // completedDate 撤销：新格式 snapshot 总是带 OLD 值（包括 OLD == nil），
+                // 写回当前值或 nil 都是预期行为；旧格式 snapshot 没有 completedDate 字段
+                // （`decodeIfPresent → nil`），不能盲写回 nil（会清掉用户当前的有效日期）。
+                // 用 `capturesImages` 是否非 nil 区分新旧：新格式 record 总会传 false / true，
+                // 旧格式 record decode 出来一律是 nil。
+                // 覆盖的关键场景：
+                //   - updateProjectFinishedImage 自动补的 completedDate 在 undo 时撤回
+                //   - updateProjectCompletedDate 自身的 undo（包括 `nil → date` 和 `date → nil` 双向）
+                if snapshot.capturesImages != nil {
+                    manager.updateProjectCompletedDate(snapshot.id, completedDate: snapshot.completedDate)
                 }
                 return true
             }
@@ -751,9 +778,20 @@ class HistoryManager: ObservableObject {
             return false
 
         case .planUpdate:
-            // 撤回修改 = 恢复旧名称
+            // 撤回修改 = 恢复旧名称 + 镜像 .projectUpdate 的图片撤销逻辑。
+            // 之前只 updatePlannedProjectName 是个半成品 —— updateProjectThumbnail
+            // 在 planned project 上记 .planUpdate 且带 capturesImages: true + OLD 图，
+            // 但这里不读 capturesImages → 计划项目封面编辑 undo 静默失效。
             if let beforeData = record.beforeSnapshot,
                let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: beforeData) {
+                let shouldRestoreImages = snapshot.capturesImages ?? (snapshot.thumbnail != nil || snapshot.finishedImage != nil)
+                if shouldRestoreImages {
+                    manager.updateProjectThumbnail(snapshot.id, thumbnail: snapshot.thumbnail)
+                    // 计划项目没有 finishedImage 的语义（updateProjectFinishedImage 会被 !isPlanned
+                    // guard 拦掉）—— 这里调一遍是 no-op，留着是为了和 .projectUpdate 路径同形，
+                    // 万一未来 planned project 也支持成品图就自动跟上。
+                    manager.updateProjectFinishedImage(snapshot.id, finishedImage: snapshot.finishedImage)
+                }
                 manager.updatePlannedProjectName(snapshot.id, newName: snapshot.name)
                 return true
             }
@@ -778,7 +816,11 @@ class HistoryManager: ObservableObject {
             executedDate: snapshot.executedDate,
             thumbnail: snapshot.thumbnail,
             finishedImage: snapshot.finishedImage,
-            colorSystem: snapshot.colorSystem
+            // ProjectRecord 这一份用于回灌到 addProject / addPlannedProject ——
+            // SDProjectRecord(from:) 会消费 completedDate + patternGrid 把它们一并写入新行。
+            completedDate: snapshot.completedDate,
+            colorSystem: snapshot.colorSystem,
+            patternGrid: SDProjectRecord.decodePatternGrid(snapshot.patternGridData, projectId: snapshot.id)
         )
     }
 
