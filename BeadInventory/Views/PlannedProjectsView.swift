@@ -696,12 +696,6 @@ struct PlannedProjectRow: View {
         inventoryManager.plannedChildProjects(of: project.id).count
     }
 
-    // 从 thumbnail Data 创建 UIImage
-    var thumbnailImage: UIImage? {
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
-    }
-
     var body: some View {
         if isSelectMode {
             // 选择模式：整行使用 onTapGesture，避免 Button 在搜索键盘弹出时被吞掉点击

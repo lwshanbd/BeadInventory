@@ -9,8 +9,14 @@
 //  是按需取图 + 解码的标准入口：
 //
 //    - .task(id: 复合 key 含 projectId + projectBlobsRevision) 触发取图
-//    - SwiftData fetch 单条 row + UIImage(data:) 解码尽量丢到 Task 里
+//    - SwiftData fetch 单条 row（InventoryManager 是 @MainActor —— 取图本身仍在主 actor 跑）
+//    - UIImage(data:) 创建实例（实际解码延迟到上屏 draw time）
 //    - 取图失败 / 还没取到时回落到调用方提供的 placeholder
+//
+//  关于"异步"的真相：本组件不是把 SwiftData fetch 真的搬到后台线程跑 —— fetch 仍在
+//  MainActor 上。`.task { }` 的好处是 (1) 让出当前 runloop tick，避免首屏 commit 和
+//  fetch 串在同一帧上挤碎窗口；(2) Task 可取消，row 切换 / view 销毁时不残留。
+//  真正想完全脱离主 actor 需要后台 ModelActor —— 留 follow-up。
 //
 //  调用方负责 frame / clipShape / 圆角等视觉装饰；本组件只负责图源管理。
 //
@@ -42,32 +48,47 @@ struct ProjectThumbnailImage<Placeholder: View, Content: View>: View {
 
     var body: some View {
         Group {
-            if let image {
+            // 用 loadedKey 守门 —— 只有 image 是为「当前 projectId + revision」加载的才显示。
+            // LazyVStack row reuse + revision 跳变都会让 key 变，旧图立刻被认为是过期。
+            if let image, loadedKey == currentKey {
                 content(image)
             } else {
                 placeholder()
             }
         }
-        // 复合 key：projectId 变 → 切换到另一个项目重取；revision 变 → 同项目缩略图被更新后重取。
-        .task(id: TaskKey(projectId: projectId, revision: inventoryManager.projectBlobsRevision)) {
-            await loadImage()
+        .task(id: currentKey) {
+            await loadImage(for: currentKey)
         }
     }
 
-    private func loadImage() async {
-        let id = projectId
-        // SwiftData fetch + UIImage 解码丢到默认优先级 Task —— 不阻塞主线程关键渲染。
-        let data = inventoryManager.fetchProjectThumbnailData(for: id)
+    private var currentKey: TaskKey {
+        TaskKey(projectId: projectId, revision: inventoryManager.projectBlobsRevision)
+    }
+
+    private func loadImage(for key: TaskKey) async {
+        // 先清旧图，再去取新图 —— 否则切到一个没图的项目时，旧 image 状态会让
+        // body 的 `if let image` 直接显示上一个项目的图。
+        // 注意：要清的是「不属于当前 key」的旧值。
+        if loadedKey != key {
+            self.image = nil
+            self.loadedKey = nil
+        }
+        // SwiftData fetch + UIImage 解码丢到默认优先级 Task —— 不阻塞 SwiftUI layout commit
+        // 的关键 runloop tick（InventoryManager 是 @MainActor，fetch 仍走主 actor）。
+        let data = inventoryManager.fetchProjectThumbnailData(for: key.projectId)
         let decoded = await decode(data: data)
-        // 任务可能在 view 切换期间被取消；async 边界上检查一下。
-        guard !Task.isCancelled, id == projectId else { return }
+        // 任务可能在 view 切换期间被取消；async 边界上重新校验 key。
+        guard !Task.isCancelled, currentKey == key else { return }
         self.image = decoded
+        self.loadedKey = key
     }
 
     private nonisolated func decode(data: Data?) async -> UIImage? {
         guard let data else { return nil }
         return UIImage(data: data)
     }
+
+    @State private var loadedKey: TaskKey?
 
     private struct TaskKey: Hashable {
         let projectId: UUID
@@ -85,26 +106,35 @@ struct ProjectFinishedImage<Placeholder: View, Content: View>: View {
 
     @EnvironmentObject private var inventoryManager: InventoryManager
     @State private var image: UIImage?
+    @State private var loadedKey: TaskKey?
 
     var body: some View {
         Group {
-            if let image {
+            if let image, loadedKey == currentKey {
                 content(image)
             } else {
                 placeholder()
             }
         }
-        .task(id: TaskKey(projectId: projectId, revision: inventoryManager.projectBlobsRevision)) {
-            await loadImage()
+        .task(id: currentKey) {
+            await loadImage(for: currentKey)
         }
     }
 
-    private func loadImage() async {
-        let id = projectId
-        let data = inventoryManager.fetchProjectFinishedImageData(for: id)
+    private var currentKey: TaskKey {
+        TaskKey(projectId: projectId, revision: inventoryManager.projectBlobsRevision)
+    }
+
+    private func loadImage(for key: TaskKey) async {
+        if loadedKey != key {
+            self.image = nil
+            self.loadedKey = nil
+        }
+        let data = inventoryManager.fetchProjectFinishedImageData(for: key.projectId)
         let decoded = await decode(data: data)
-        guard !Task.isCancelled, id == projectId else { return }
+        guard !Task.isCancelled, currentKey == key else { return }
         self.image = decoded
+        self.loadedKey = key
     }
 
     private nonisolated func decode(data: Data?) async -> UIImage? {

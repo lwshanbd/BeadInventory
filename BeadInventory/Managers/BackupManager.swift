@@ -572,19 +572,21 @@ class BackupManager {
         // 保存到持久化存储（写入 metadata，不含 blob）
         manager.saveData()
 
-        // 持久化项目图片 —— saveData 没处理，单独走直写 SwiftData 的接口。
-        // 一次循环只持有一张图的引用，写完释放，峰值内存可控。
-        for project in restoredProjects {
-            if let thumb = project.thumbnail {
-                manager.updateProjectThumbnail(project.id, thumbnail: thumb)
-            }
-            if let finished = project.finishedImage {
-                manager.updateProjectFinishedImage(project.id, finishedImage: finished)
-            }
-            if let grid = project.patternGrid {
-                manager.updateProjectPatternGrid(project.id, grid: grid)
-            }
+        // 持久化项目图片 —— 走 `restoreProjectBlobsFromBackup` 批量直写：
+        //   - 跳过 history 记录（restore 不应灌历史）
+        //   - 跳过 updateProjectFinishedImage 的 `!isPlanned` 守卫
+        //   - thumbnail / finishedImage 总是写（含 nil 清空：备份说没图就清旧图）
+        //   - patternGrid 仅在备份格式 round-trip 这个字段时写（v2.0.x 备份格式还没加，
+        //     先一律 `provided: false`，不动用户当前的网格标定。
+        //     S4 follow-up：把 patternGrid 加进备份导出 JSON）
+        let entries = restoredProjects.map { project in
+            (id: project.id,
+             thumbnail: project.thumbnail,
+             finishedImage: project.finishedImage,
+             patternGridData: nil as Data?,
+             patternGridProvided: false)
         }
+        manager.restoreProjectBlobsFromBackup(entries)
 
         // 还原结束后从 manager.projects 卸掉 blob 副本，回到「缓存只存 metadata」的常态。
         // 否则 8MB+ 备份还原后会在内存里一直挂着这堆图。

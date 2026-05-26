@@ -198,7 +198,10 @@ class HistoryManager: ObservableObject {
         case .projectDelete, .planDelete:
             beforeData = snapshotData
             afterData = nil
-        case .projectArchive, .projectUnarchive, .planUpdate:
+        case .projectArchive, .projectUnarchive, .planUpdate, .projectUpdate:
+            // .projectUpdate 之前漏在 default 里 —— 已执行项目的 thumbnail / finishedImage /
+            // completedDate 修改根本没写 beforeSnapshot，undo 完全是 no-op。
+            // 已执行项目和计划项目走同一套 update / undo 语义。
             beforeData = snapshotData
             afterData = snapshotData
         case .planExecute:

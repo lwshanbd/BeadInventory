@@ -154,7 +154,7 @@ final class SDProjectRecord {
 
     /// 轻量版转换：metadata + beadUsages，但**不读** thumbnail / finishedImage / patternGridData。
     /// 用于 InventoryManager.projects 全表缓存 —— 458 项目时把内存峰值从 ~200MB 砍到 ~MB 级。
-    /// 视图需要图片时走 InventoryManager.fetchProjectThumbnail / fetchProjectFinishedImage 按需取。
+    /// 视图需要图片时走 InventoryManager.fetchProjectThumbnailData / fetchProjectFinishedImageData 按需取。
     /// 注意：调用方在 saveData 路径上必须用对应的轻量 diff，避免把 nil blob 写回覆盖云端真数据。
     func toMetadataStruct() -> ProjectRecord {
         let usages = (beadUsages ?? []).map { $0.toStruct() }
