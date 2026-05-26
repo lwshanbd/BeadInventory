@@ -82,17 +82,22 @@ final class SDProjectRecord {
     var parentId: UUID?           // 父项目ID，nil表示顶级项目
     var isPlanned: Bool?          // 是否为计划项目（可选，nil视为false）
     var executedDate: Date?       // 执行日期
-    // 三个大 blob 字段一律走 externalStorage：实际上是 PNG（非注释里写的 JPEG），
-    // 单条可达 MB 级；当用户项目数到几百，整表 inline 存会让 fetch 阶段把
-    // 几百 MB 数据 fault 进 SQLite row 缓存，直接撞 jetsam。
-    // externalStorage 把 blob 落成 .store_blob 旁路文件，主表只留路径引用。
-    @Attribute(.externalStorage)
+    // 关于这三个大 blob 字段为什么暂时**不**加 @Attribute(.externalStorage)：
+    //
+    // 注释里说是 JPEG，实际是 PNG（ScanView.generateThumbnailData /
+    // ProjectDetailView 都存 PNG），单条可达 MB 级。理想形态是走 externalStorage
+    // 让 blob 落成 .store_blob 旁路文件，但 SwiftData 的 lightweight migration
+    // **不支持**「现存 inline BLOB → external file reference」自动迁移
+    // （已验证：会抛 "Unable to use inferred mapping to move external reference into
+    // store"，ModelContainer 初始化失败 → 全员升级即崩 → 退回本地模式丢 iCloud 同步）。
+    // 真正引发 458 项目用户 jetsam 的根因是 InventoryManager.projects 缓存把全部
+    // ProjectRecord 含 Data 物化进内存，本 PR 通过 toMetadataStruct + 按需取图已经
+    // 解决；externalStorage 只是次级优化（SQLite 主 store 小一点 / CloudKit CKAsset），
+    // 留作下一个 PR 配合 VersionedSchema + 显式 willMigrate/didMigrate 手工搬迁。
     var thumbnail: Data?          // 缩略图数据（PNG）
-    @Attribute(.externalStorage)
     var finishedImage: Data?      // 成品图数据（PNG，仅已执行项目使用）
     var completedDate: Date?      // 完成日期（用于日历展示）
     var colorSystemRaw: String?   // 色号体系，可选以兼容旧数据，默认为 MARD
-    @Attribute(.externalStorage)
     var patternGridData: Data?    // JSON 编码后的 BeadPatternGrid（拼图模式网格数据）
 
     @Relationship(deleteRule: .cascade, inverse: \SDBeadUsage.project)
@@ -301,12 +306,12 @@ final class SDHistoryRecord {
     var operationType: String = ""   // 存储 HistoryOperationType.rawValue
     @Attribute(originalName: "entityName")
     var targetName: String = ""      // 注意：避免使用 entityName（与 SwiftData 系统属性冲突），使用 originalName 保持数据兼容
-    // before / afterSnapshot 是 ProjectRecord (含图) 的 JSON 编码；
-    // 一旦每条操作都把 thumbnail / finishedImage 编进 JSON，单条 snapshot 可达数 MB。
-    // 走 externalStorage 避免历史表 inline 撑大主 store。
-    @Attribute(.externalStorage)
+    // before / afterSnapshot 是 ProjectRecord (含图) 的 JSON 编码；可达数 MB。
+    // 同样**不**加 @Attribute(.externalStorage) —— 升级路径上自动 lightweight migration
+    // 不支持把 inline BLOB 搬迁到外部存储（详见 SDProjectRecord.thumbnail 注释）。
+    // 真正的内存控制靠 capturesImages 标志 + image-update 路径才回填 OLD 图，
+    // metadata-only 操作的 snapshot JSON 不再带图，已经把单条 snapshot 大小压回 KB 级。
     var beforeSnapshot: Data?
-    @Attribute(.externalStorage)
     var afterSnapshot: Data?
     var isReverted: Bool = false
 
