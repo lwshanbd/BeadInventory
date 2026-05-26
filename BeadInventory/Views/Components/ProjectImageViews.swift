@@ -4,19 +4,19 @@
 //
 //  按需异步加载项目图片的 SwiftUI 组件。
 //
-//  背景：自 v2.0.x 起 `InventoryManager.projects` 不再持有 thumbnail / finishedImage
-//  两个大 Data blob，以免 458+ 项目级用户加载完即 ~200MB 撞 jetsam。这两个组件
-//  是按需取图 + 解码的标准入口：
+//  背景：自 v2.0.x 起 `InventoryManager.projects` 不再持有大 Data blob，以免 458+ 项目级
+//  用户加载完即 ~200MB 撞 jetsam。两个组件是按需取图 + 解码的标准入口。
 //
-//    - .task(id: 复合 key 含 projectId + projectBlobsRevision) 触发取图
-//    - SwiftData fetch 单条 row（InventoryManager 是 @MainActor —— 取图本身仍在主 actor 跑）
-//    - UIImage(data:) 创建实例（实际解码延迟到上屏 draw time）
-//    - 取图失败 / 还没取到时回落到调用方提供的 placeholder
+//  **`ProjectThumbnailImage` 的关键 jetsam 修复**：列表 row 用的缩略图视图**永远不**
+//  直接 `UIImage(data: raw_thumbnail)` —— raw thumbnail 是全分辨率 PNG，可达 5-10 MB，
+//  解码后 UIImage 占 30+ MB；10 个 LazyVStack row 同屏 = 300+ MB ⇒ jetsam。优先级：
 //
-//  关于"异步"的真相：本组件不是把 SwiftData fetch 真的搬到后台线程跑 —— fetch 仍在
-//  MainActor 上。`.task { }` 的好处是 (1) 让出当前 runloop tick，避免首屏 commit 和
-//  fetch 串在同一帧上挤碎窗口；(2) Task 可取消，row 切换 / view 销毁时不残留。
-//  真正想完全脱离主 actor 需要后台 ModelActor —— 留 follow-up。
+//    1. **`fetchProjectDisplayThumbnail`** —— 512px JPEG 0.85 小图，~50-100 KB，UIImage(data:) 安全
+//    2. **没有 displayThumbnail 则 `ImageDownsampler.downsampleToUIImage(thumbnail)`** ——
+//       CGImageSourceCreateThumbnailAtIndex 在 source 层就限制尺寸，内存峰值 KB 级
+//    3. 都失败 → placeholder
+//
+//  这样老用户的大图在迁移协调器还没跑完之前也安全（走路径 2），新数据直接走路径 1。
 //
 //  调用方负责 frame / clipShape / 圆角等视觉装饰；本组件只负责图源管理。
 //
@@ -68,24 +68,40 @@ struct ProjectThumbnailImage<Placeholder: View, Content: View>: View {
     private func loadImage(for key: TaskKey) async {
         // 先清旧图，再去取新图 —— 否则切到一个没图的项目时，旧 image 状态会让
         // body 的 `if let image` 直接显示上一个项目的图。
-        // 注意：要清的是「不属于当前 key」的旧值。
         if loadedKey != key {
             self.image = nil
             self.loadedKey = nil
         }
-        // SwiftData fetch + UIImage 解码丢到默认优先级 Task —— 不阻塞 SwiftUI layout commit
-        // 的关键 runloop tick（InventoryManager 是 @MainActor，fetch 仍走主 actor）。
-        let data = inventoryManager.fetchProjectThumbnailData(for: key.projectId)
-        let decoded = await decode(data: data)
-        // 任务可能在 view 切换期间被取消；async 边界上重新校验 key。
+
+        // **关键 jetsam 修复**：列表 row 优先读 displayThumbnail（小图），没有就 ImageDownsampler 现场降级。
+        // 永远不直接 UIImage(data: raw_thumbnail) —— raw 是 5-10 MB PNG，解码后 30+ MB × 10 row = jetsam。
+        let displayData = inventoryManager.fetchProjectDisplayThumbnail(for: key.projectId)
+        if let displayData {
+            let decoded = await decode(displayData: displayData)
+            guard !Task.isCancelled, currentKey == key else { return }
+            self.image = decoded
+            self.loadedKey = key
+            return
+        }
+
+        // 没有 displayThumbnail（老数据，迁移协调器还没跑到 / 跑失败）→ 现场降级原图。
+        // ImageDownsampler.downsampleToUIImage 用 CGImageSourceCreateThumbnailAtIndex 在 source 层
+        // 就限制尺寸，内存峰值 KB 级 —— 比 UIImage(data: raw_thumbnail) 安全得多。
+        let thumbData = inventoryManager.fetchProjectThumbnailData(for: key.projectId)
+        let decoded = await downsampleOnTheFly(rawData: thumbData)
         guard !Task.isCancelled, currentKey == key else { return }
         self.image = decoded
         self.loadedKey = key
     }
 
-    private nonisolated func decode(data: Data?) async -> UIImage? {
-        guard let data else { return nil }
-        return UIImage(data: data)
+    private nonisolated func decode(displayData: Data) async -> UIImage? {
+        // 50-100 KB 的 JPEG，UIImage(data:) 解码安全
+        return UIImage(data: displayData)
+    }
+
+    private nonisolated func downsampleOnTheFly(rawData: Data?) async -> UIImage? {
+        guard let rawData else { return nil }
+        return ImageDownsampler.downsampleToUIImage(rawData)
     }
 
     @State private var loadedKey: TaskKey?

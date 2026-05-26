@@ -285,6 +285,9 @@ struct BeadInventoryApp: App {
                 inventoryManager.saveData()
                 HistoryManager.shared.saveDataImmediately()
                 themeManager.flushPersistenceNow()
+                // 停掉 displayThumbnail 后台迁移协调器 —— 释放 CPU + 让 saveData 在干净 context 上完成。
+                // 协调器内部用 generation token 保证下次 .active start() 不会跟旧 task 抢资源。
+                ThumbnailMigrationCoordinator.shared.stop()
             case .inactive:
                 // .inactive 频繁出现（例如控制中心、系统弹窗），先取消待执行刷新；
                 // 若首次加载已完成，则补一次保守保存，降低系统在 .inactive 直接终止时的数据丢失风险。
@@ -295,6 +298,7 @@ struct BeadInventoryApp: App {
                     HistoryManager.shared.saveDataImmediately()
                 }
                 themeManager.flushPersistenceNow()
+                ThumbnailMigrationCoordinator.shared.stop()
             case .active:
                 print("[App] 应用恢复活跃状态")
                 if hasSeenInitialActivePhase {
@@ -315,6 +319,11 @@ struct BeadInventoryApp: App {
                     }
                 }
                 cloudSyncStatusManager.refreshAccountStatus()
+                // 启动 displayThumbnail 后台迁移协调器 —— 给老用户的大图后台 backfill 小图。
+                // 协调器内部 5s 延迟 + 重入安全（已在跑就跳过）+ 失败自愈（下次启动从余量继续）。
+                // **关键路径**：458 项目级用户在迁移完成前列表 fallback 现场降级，**已经**不会撞 jetsam，
+                // 迁移只是把列表加载从 fallback CGImageSource 升级到直接读小图 JPEG。
+                ThumbnailMigrationCoordinator.shared.start(inventoryManager: inventoryManager)
             @unknown default:
                 break
             }

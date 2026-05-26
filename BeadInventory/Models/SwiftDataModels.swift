@@ -82,23 +82,28 @@ final class SDProjectRecord {
     var parentId: UUID?           // 父项目ID，nil表示顶级项目
     var isPlanned: Bool?          // 是否为计划项目（可选，nil视为false）
     var executedDate: Date?       // 执行日期
-    // 关于这三个大 blob 字段为什么暂时**不**加 @Attribute(.externalStorage)：
+    // 关于这四个大 blob 字段为什么暂时**不**加 @Attribute(.externalStorage)：
     //
-    // 注释里说是 JPEG，实际是 PNG（ScanView.generateThumbnailData /
-    // ProjectDetailView 都存 PNG），单条可达 MB 级。理想形态是走 externalStorage
-    // 让 blob 落成 .store_blob 旁路文件，但 SwiftData 的 lightweight migration
-    // **不支持**「现存 inline BLOB → external file reference」自动迁移
-    // （已验证：会抛 "Unable to use inferred mapping to move external reference into
+    // 单条可达 MB 级。理想形态是走 externalStorage 让 blob 落成 .store_blob 旁路文件，但
+    // SwiftData 的 lightweight migration **不支持**「现存 inline BLOB → external file reference」
+    // 自动迁移（已验证：会抛 "Unable to use inferred mapping to move external reference into
     // store"，ModelContainer 初始化失败 → 全员升级即崩 → 退回本地模式丢 iCloud 同步）。
     // 真正引发 458 项目用户 jetsam 的根因是 InventoryManager.projects 缓存把全部
-    // ProjectRecord 含 Data 物化进内存，本 PR 通过 toMetadataStruct + 按需取图已经
-    // 解决；externalStorage 只是次级优化（SQLite 主 store 小一点 / CloudKit CKAsset），
-    // 留作下一个 PR 配合 VersionedSchema + 显式 willMigrate/didMigrate 手工搬迁。
-    var thumbnail: Data?          // 缩略图数据（PNG）
+    // ProjectRecord 含 Data 物化进内存 + 列表 row 解码原图 PNG 撑爆内存，本 PR 通过
+    //   1. toMetadataStruct() 让 projects 缓存只携带 metadata（不读 4 个 blob）
+    //   2. displayThumbnail 字段（512px JPEG 0.85，列表 row 专用 ~50-100 KB）
+    //   3. ThumbnailMigrationCoordinator 给老数据 backfill displayThumbnail
+    //   4. ProjectThumbnailImage 列表优先读 displayThumbnail，没有就 CGImageSource 现场降级（永不 UIImage(data: raw_thumbnail)）
+    // 一并解决。externalStorage 留作未来 PR 配合 VersionedSchema + 显式 willMigrate/didMigrate 手工搬迁。
+    var thumbnail: Data?          // 「原图」—— 全分辨率 PNG（拼图模式 / 详情大图用）。字段名保留为 thumbnail
+                                  // 是为了避免 SwiftData schema 迁移（CloudKit container 对字段重命名很敏感）。
     var finishedImage: Data?      // 成品图数据（PNG，仅已执行项目使用）
     var completedDate: Date?      // 完成日期（用于日历展示）
     var colorSystemRaw: String?   // 色号体系，可选以兼容旧数据，默认为 MARD
     var patternGridData: Data?    // JSON 编码后的 BeadPatternGrid（拼图模式网格数据）
+    var displayThumbnail: Data?   // 列表用小图（CGImageSourceCreateThumbnailAtIndex 出 512px JPEG 0.85）。
+                                  // 老数据 nil，由 ThumbnailMigrationCoordinator 后台 backfill；视图层在
+                                  // 它还是 nil 时降级用 ImageDownsampler.downsampleToUIImage(thumbnail) 现场降级。
 
     @Relationship(deleteRule: .cascade, inverse: \SDBeadUsage.project)
     var beadUsages: [SDBeadUsage]? = []
@@ -108,7 +113,7 @@ final class SDProjectRecord {
         isPlanned ?? false
     }
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), totalBeads: Int = 0, brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, finishedImage: Data? = nil, completedDate: Date? = nil, colorSystemRaw: String? = nil, patternGridData: Data? = nil, beadUsages: [SDBeadUsage] = []) {
+    init(id: UUID = UUID(), name: String, date: Date = Date(), totalBeads: Int = 0, brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, finishedImage: Data? = nil, completedDate: Date? = nil, colorSystemRaw: String? = nil, patternGridData: Data? = nil, displayThumbnail: Data? = nil, beadUsages: [SDBeadUsage] = []) {
         self.id = id
         self.name = name
         self.date = date
@@ -123,16 +128,17 @@ final class SDProjectRecord {
         self.completedDate = completedDate
         self.colorSystemRaw = colorSystemRaw
         self.patternGridData = patternGridData
+        self.displayThumbnail = displayThumbnail
         self.beadUsages = beadUsages
     }
 
     convenience init(from record: ProjectRecord) {
         let usages = record.beadUsage.map { SDBeadUsage(from: $0) }
         let gridData = SDProjectRecord.encodePatternGrid(record.patternGrid, projectId: record.id)
-        self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, parentId: record.parentId, isPlanned: record.isPlanned, executedDate: record.executedDate, thumbnail: record.thumbnail, finishedImage: record.finishedImage, completedDate: record.completedDate, colorSystemRaw: record.colorSystem.rawValue, patternGridData: gridData, beadUsages: usages)
+        self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, parentId: record.parentId, isPlanned: record.isPlanned, executedDate: record.executedDate, thumbnail: record.thumbnail, finishedImage: record.finishedImage, completedDate: record.completedDate, colorSystemRaw: record.colorSystem.rawValue, patternGridData: gridData, displayThumbnail: record.displayThumbnail, beadUsages: usages)
     }
 
-    /// 完整版转换：读取 thumbnail / finishedImage / patternGridData 三个大 blob 字段。
+    /// 完整版转换：读取 thumbnail / finishedImage / patternGridData / displayThumbnail 四个大 blob 字段。
     /// 仅用于一次性需要全数据的路径（备份导出、详情页全屏图、history 快照前快照存档等）。
     /// **不要**在 InventoryManager.projects 这种全表缓存里调用 —— 用 toMetadataStruct()。
     func toStruct() -> ProjectRecord {
@@ -153,13 +159,15 @@ final class SDProjectRecord {
             finishedImage: finishedImage,
             completedDate: completedDate,
             colorSystem: ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard,
-            patternGrid: grid
+            patternGrid: grid,
+            displayThumbnail: displayThumbnail
         )
     }
 
-    /// 轻量版转换：metadata + beadUsages，但**不读** thumbnail / finishedImage / patternGridData。
+    /// 轻量版转换：metadata + beadUsages，但**不读** 4 个 blob 字段
+    /// （thumbnail / finishedImage / patternGridData / displayThumbnail）。
     /// 用于 InventoryManager.projects 全表缓存 —— 458 项目时把内存峰值从 ~200MB 砍到 ~MB 级。
-    /// 视图需要图片时走 InventoryManager.fetchProjectThumbnailData / fetchProjectFinishedImageData 按需取。
+    /// 视图需要图片时走 InventoryManager.fetchProject*Data / fetchProjectDisplayThumbnail 按需取。
     /// 注意：调用方在 saveData 路径上必须用对应的轻量 diff，避免把 nil blob 写回覆盖云端真数据。
     func toMetadataStruct() -> ProjectRecord {
         let usages = (beadUsages ?? []).map { $0.toStruct() }
@@ -178,7 +186,8 @@ final class SDProjectRecord {
             finishedImage: nil,
             completedDate: completedDate,
             colorSystem: ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard,
-            patternGrid: nil
+            patternGrid: nil,
+            displayThumbnail: nil
         )
     }
 

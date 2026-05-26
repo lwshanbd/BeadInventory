@@ -205,6 +205,10 @@ struct ProjectSnapshot: Codable {
     /// 时还原不回去 + `updateProjectCompletedDate` 撤销整体 no-op。
     /// 旧 record 没这个字段；`decodeIfPresent → nil` 表示"撤销不动 completedDate"。
     let completedDate: Date?
+    /// `ProjectRecord.displayThumbnail` —— 列表用的小 JPEG。Destructive 撤销时一并还原，
+    /// 这样恢复的项目下次在列表里能立刻有小图（不用等迁移协调器重做）。旧 record 没这个字段；
+    /// `decodeIfPresent → nil` 表示"还原后让迁移协调器现场 backfill"。
+    let displayThumbnail: Data?
 
     // 自定义解码器，兼容旧数据
     init(from decoder: Decoder) throws {
@@ -227,13 +231,14 @@ struct ProjectSnapshot: Codable {
         // 但旧 record 里的 thumbnail/finishedImage 可能是真实捕获的数据（旧版本逻辑总是带图），
         // 所以旧 record 的 undo 仍然保持「有数据就还原」语义，靠 thumbnail != nil 兜底。
         capturesImages = try container.decodeIfPresent(Bool.self, forKey: .capturesImages)
-        // patternGridData / completedDate 是 v2.0.x review 第二轮新增字段。
+        // patternGridData / completedDate / displayThumbnail 都是新加字段。
         // 旧 record 没有 → 解为 nil → undo 时不写回这两个字段。
         patternGridData = try container.decodeIfPresent(Data.self, forKey: .patternGridData)
         completedDate = try container.decodeIfPresent(Date.self, forKey: .completedDate)
+        displayThumbnail = try container.decodeIfPresent(Data.self, forKey: .displayThumbnail)
     }
 
-    init(id: UUID, name: String, date: Date, totalBeads: Int, brandId: UUID?, isArchived: Bool, parentId: UUID?, isPlanned: Bool, executedDate: Date?, beadUsages: [BeadUsageSnapshot], thumbnail: Data? = nil, finishedImage: Data? = nil, colorSystem: ColorSystem = .mard, capturesImages: Bool? = nil, patternGridData: Data? = nil, completedDate: Date? = nil) {
+    init(id: UUID, name: String, date: Date, totalBeads: Int, brandId: UUID?, isArchived: Bool, parentId: UUID?, isPlanned: Bool, executedDate: Date?, beadUsages: [BeadUsageSnapshot], thumbnail: Data? = nil, finishedImage: Data? = nil, colorSystem: ColorSystem = .mard, capturesImages: Bool? = nil, patternGridData: Data? = nil, completedDate: Date? = nil, displayThumbnail: Data? = nil) {
         self.id = id
         self.name = name
         self.date = date
@@ -250,6 +255,7 @@ struct ProjectSnapshot: Codable {
         self.capturesImages = capturesImages
         self.patternGridData = patternGridData
         self.completedDate = completedDate
+        self.displayThumbnail = displayThumbnail
     }
 }
 

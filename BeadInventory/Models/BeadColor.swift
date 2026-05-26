@@ -115,11 +115,13 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
     var parentId: UUID?           // 父项目ID，nil表示顶级项目
     var isPlanned: Bool           // 是否为计划项目（true=计划中，false=已执行）
     var executedDate: Date?       // 执行日期（计划项目执行后记录）
-    var thumbnail: Data?          // 缩略图数据（可选，压缩后的JPEG）
-    var finishedImage: Data?      // 成品图数据（可选，压缩后的JPEG，仅已执行项目使用）
+    var thumbnail: Data?          // 「原图」—— 全分辨率 PNG。拼图模式 / 详情大图用。**列表 row 不要直接读**
+                                  // （读了就 jetsam）—— 走 displayThumbnail，没有就 ImageDownsampler 现场降级。
+    var finishedImage: Data?      // 成品图数据（PNG，仅已执行项目使用）
     var completedDate: Date?      // 完成日期（用于日历展示，用户可自定义选择）
     var colorSystem: ColorSystem  // 色号体系（MARD/卡卡等）
     var patternGrid: BeadPatternGrid?  // 拼图模式网格数据（nil = 未标定）
+    var displayThumbnail: Data?   // 列表用小图（512px JPEG 0.85 ~50-100 KB）。老数据 nil，由迁移协调器后台填。
 
     /// - Parameter totalBeads: 显式总数。为 `nil` 时从 `beadUsage` 求和（兼容旧调用方）。
     ///   注意：`SDProjectRecord.toStruct()` 应该传入 `totalBeads: sdProject.totalBeads`，
@@ -139,7 +141,8 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
         finishedImage: Data? = nil,
         completedDate: Date? = nil,
         colorSystem: ColorSystem = .mard,
-        patternGrid: BeadPatternGrid? = nil
+        patternGrid: BeadPatternGrid? = nil,
+        displayThumbnail: Data? = nil
     ) {
         self.id = id
         self.name = name
@@ -156,6 +159,7 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
         self.completedDate = completedDate
         self.colorSystem = colorSystem
         self.patternGrid = patternGrid
+        self.displayThumbnail = displayThumbnail
     }
 
     // 自定义解码器，兼容旧数据
@@ -182,6 +186,8 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
         colorSystem = try container.decodeIfPresent(ColorSystem.self, forKey: .colorSystem) ?? .mard
         // 向后兼容：旧数据没有 patternGrid 字段
         patternGrid = try container.decodeIfPresent(BeadPatternGrid.self, forKey: .patternGrid)
+        // 向后兼容：旧数据没有 displayThumbnail 字段（迁移协调器会后台 backfill）
+        displayThumbnail = try container.decodeIfPresent(Data.self, forKey: .displayThumbnail)
     }
 }
 

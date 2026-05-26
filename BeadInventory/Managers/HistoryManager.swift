@@ -189,7 +189,8 @@ class HistoryManager: ObservableObject {
             colorSystem: project.colorSystem,
             capturesImages: capturesImages,
             patternGridData: SDProjectRecord.encodePatternGrid(project.patternGrid, projectId: project.id),
-            completedDate: project.completedDate
+            completedDate: project.completedDate,
+            displayThumbnail: project.displayThumbnail
         )
 
         let snapshotData = try? JSONEncoder().encode(snapshot)
@@ -261,7 +262,8 @@ class HistoryManager: ObservableObject {
             finishedImage: beforeProject.finishedImage,
             colorSystem: beforeProject.colorSystem,
             patternGridData: SDProjectRecord.encodePatternGrid(beforeProject.patternGrid, projectId: beforeProject.id),
-            completedDate: beforeProject.completedDate
+            completedDate: beforeProject.completedDate,
+            displayThumbnail: beforeProject.displayThumbnail
         )
 
         // 执行后快照
@@ -283,7 +285,8 @@ class HistoryManager: ObservableObject {
             finishedImage: afterProject.finishedImage,
             colorSystem: afterProject.colorSystem,
             patternGridData: SDProjectRecord.encodePatternGrid(afterProject.patternGrid, projectId: afterProject.id),
-            completedDate: afterProject.completedDate
+            completedDate: afterProject.completedDate,
+            displayThumbnail: afterProject.displayThumbnail
         )
 
         let beforeData = try? JSONEncoder().encode(beforeSnapshot)
@@ -334,7 +337,8 @@ class HistoryManager: ObservableObject {
                 finishedImage: project.finishedImage,
                 colorSystem: project.colorSystem,
                 patternGridData: SDProjectRecord.encodePatternGrid(project.patternGrid, projectId: project.id),
-                completedDate: project.completedDate
+                completedDate: project.completedDate,
+                displayThumbnail: project.displayThumbnail
             )
         }
 
@@ -388,7 +392,8 @@ class HistoryManager: ObservableObject {
             finishedImage: project.finishedImage,
             colorSystem: project.colorSystem,
             patternGridData: SDProjectRecord.encodePatternGrid(project.patternGrid, projectId: project.id),
-            completedDate: project.completedDate
+            completedDate: project.completedDate,
+            displayThumbnail: project.displayThumbnail
         )
 
         // 创建子项目快照
@@ -411,7 +416,8 @@ class HistoryManager: ObservableObject {
                 finishedImage: child.finishedImage,
                 colorSystem: child.colorSystem,
                 patternGridData: SDProjectRecord.encodePatternGrid(child.patternGrid, projectId: child.id),
-                completedDate: child.completedDate
+                completedDate: child.completedDate,
+                displayThumbnail: child.displayThumbnail
             )
         }
 
@@ -817,10 +823,11 @@ class HistoryManager: ObservableObject {
             thumbnail: snapshot.thumbnail,
             finishedImage: snapshot.finishedImage,
             // ProjectRecord 这一份用于回灌到 addProject / addPlannedProject ——
-            // SDProjectRecord(from:) 会消费 completedDate + patternGrid 把它们一并写入新行。
+            // SDProjectRecord(from:) 会消费 completedDate / patternGrid / displayThumbnail 一并写入新行。
             completedDate: snapshot.completedDate,
             colorSystem: snapshot.colorSystem,
-            patternGrid: SDProjectRecord.decodePatternGrid(snapshot.patternGridData, projectId: snapshot.id)
+            patternGrid: SDProjectRecord.decodePatternGrid(snapshot.patternGridData, projectId: snapshot.id),
+            displayThumbnail: snapshot.displayThumbnail
         )
     }
 
