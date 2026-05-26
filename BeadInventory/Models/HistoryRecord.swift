@@ -187,6 +187,13 @@ struct ProjectSnapshot: Codable {
     let thumbnail: Data?
     let finishedImage: Data?
     let colorSystem: ColorSystem
+    /// 该 snapshot 是否「为图片操作专门捕获了 thumbnail/finishedImage」。
+    /// 自 v2.0.x 起 ProjectRecord 不再常驻这两个 Data 字段，普通的 metadata 改动（rename /
+    /// completedDate 等）不会主动把 OLD 图取出来写进 snapshot，thumbnail/finishedImage
+    /// 字段在新写入的 snapshot 里都是 nil。
+    /// undo 路径必须靠这个标志判断：true 才允许从 snapshot 还原图片（image-update 的 undo），
+    /// false / nil 一律跳过图片还原（避免把现存图清成 nil）。
+    let capturesImages: Bool?
 
     // 自定义解码器，兼容旧数据
     init(from decoder: Decoder) throws {
@@ -205,9 +212,13 @@ struct ProjectSnapshot: Codable {
         thumbnail = try container.decodeIfPresent(Data.self, forKey: .thumbnail)
         finishedImage = try container.decodeIfPresent(Data.self, forKey: .finishedImage)
         colorSystem = try container.decodeIfPresent(ColorSystem.self, forKey: .colorSystem) ?? .mard
+        // capturesImages 是 v2.0.x 新增字段；旧数据 = nil 视作 false。
+        // 但旧 record 里的 thumbnail/finishedImage 可能是真实捕获的数据（旧版本逻辑总是带图），
+        // 所以旧 record 的 undo 仍然保持「有数据就还原」语义，靠 thumbnail != nil 兜底。
+        capturesImages = try container.decodeIfPresent(Bool.self, forKey: .capturesImages)
     }
 
-    init(id: UUID, name: String, date: Date, totalBeads: Int, brandId: UUID?, isArchived: Bool, parentId: UUID?, isPlanned: Bool, executedDate: Date?, beadUsages: [BeadUsageSnapshot], thumbnail: Data? = nil, finishedImage: Data? = nil, colorSystem: ColorSystem = .mard) {
+    init(id: UUID, name: String, date: Date, totalBeads: Int, brandId: UUID?, isArchived: Bool, parentId: UUID?, isPlanned: Bool, executedDate: Date?, beadUsages: [BeadUsageSnapshot], thumbnail: Data? = nil, finishedImage: Data? = nil, colorSystem: ColorSystem = .mard, capturesImages: Bool? = nil) {
         self.id = id
         self.name = name
         self.date = date
@@ -221,6 +232,7 @@ struct ProjectSnapshot: Codable {
         self.thumbnail = thumbnail
         self.finishedImage = finishedImage
         self.colorSystem = colorSystem
+        self.capturesImages = capturesImages
     }
 }
 

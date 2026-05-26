@@ -19,9 +19,11 @@ struct PatternHighlightView: View {
     @State private var showingDiffSheet = false
     @State private var dismissedBanner = false
 
-    private var image: UIImage? {
-        project.thumbnail.flatMap { UIImage(data: $0) }
-    }
+    // thumbnail / patternGrid 改成按需异步加载（v2.0.x 之后 ProjectRecord 不再持有它们）。
+    @State private var loadedImage: UIImage?
+    @State private var loadedGrid: BeadPatternGrid?
+    /// 取图任务是否已经跑完一轮 —— 用于区分「正在加载」与「确定没有」。
+    @State private var didLoadOnce: Bool = false
 
     private var currentProject: ProjectRecord {
         inventoryManager.projects.first { $0.id == project.id } ?? project
@@ -30,7 +32,7 @@ struct PatternHighlightView: View {
     /// 在 cellColorCodes 出现但不在 beadUsage 的色号 + 出现次数。
     /// 典型场景：MARD 的 H2 用作空白格识别，但用户没把 H2 写进图例。
     private var extraCodes: [(code: String, count: Int)] {
-        guard let grid = currentProject.patternGrid else { return [] }
+        guard let grid = loadedGrid else { return [] }
         let legend = Set(currentProject.beadUsage.map { $0.colorCode })
         var counts: [String: Int] = [:]
         for row in grid.cellColorCodes {
@@ -47,7 +49,7 @@ struct PatternHighlightView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if let grid = currentProject.patternGrid {
+                if let grid = loadedGrid {
                     let mismatches = GridValidator.mismatches(grid: grid, beadUsage: currentProject.beadUsage)
                     if !mismatches.isEmpty && !dismissedBanner {
                         HStack(spacing: 8) {
@@ -70,7 +72,10 @@ struct PatternHighlightView: View {
                     }
                 }
 
-                if let img = image, let grid = currentProject.patternGrid {
+                if !didLoadOnce {
+                    ProgressView("加载中…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let img = loadedImage, let grid = loadedGrid {
                     ZoomablePatternCanvas(image: img) { rect in
                         PatternHighlightOverlay(
                             grid: grid,
@@ -84,9 +89,9 @@ struct PatternHighlightView: View {
                         Image(systemName: "questionmark.square.dashed")
                             .font(.system(size: 60))
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
-                        Text(image == nil ? "项目无图片" : "未标定网格")
+                        Text(loadedImage == nil ? "项目无图片" : "未标定网格")
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
-                        if image != nil && currentProject.patternGrid == nil {
+                        if loadedImage != nil && loadedGrid == nil {
                             Button("开始标定") {
                                 showingRecalibrate = true
                             }
@@ -146,7 +151,7 @@ struct PatternHighlightView: View {
                     .environmentObject(inventoryManager)
             }
             .sheet(isPresented: $showingDiffSheet) {
-                if let grid = currentProject.patternGrid {
+                if let grid = loadedGrid {
                     ValidationDiffSheet(
                         diffs: GridValidator.mismatches(grid: grid, beadUsage: currentProject.beadUsage),
                         onAdoptGridForCode: { code, gridCount in
@@ -154,6 +159,15 @@ struct PatternHighlightView: View {
                         }
                     )
                 }
+            }
+            .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
+                let id = project.id
+                let thumbData = inventoryManager.fetchProjectThumbnailData(for: id)
+                let grid = inventoryManager.fetchProjectPatternGrid(for: id)
+                guard !Task.isCancelled, id == project.id else { return }
+                self.loadedImage = thumbData.flatMap { UIImage(data: $0) }
+                self.loadedGrid = grid
+                self.didLoadOnce = true
             }
         }
     }

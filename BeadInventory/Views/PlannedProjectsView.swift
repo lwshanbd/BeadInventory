@@ -630,16 +630,18 @@ private struct PlanCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Theme.ColorToken.Surface.subtle)
 
-            if let data = project.thumbnail, let uiImage = UIImage(data: data) {
+            // 按需异步加载：不再让 LazyVStack 上下滚动时同步解 PNG 卡主线程，
+            // 也不再让 InventoryManager.projects 全表常驻 thumbnail Data。
+            ProjectThumbnailImage(projectId: project.id) {
+                Image(systemName: "photo")
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+            } content: { uiImage in
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
                     .frame(width: 64, height: 64)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
-            } else {
-                Image(systemName: "photo")
-                    .font(.system(size: 22, weight: .light))
-                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
             }
         }
         .frame(width: 64, height: 64)
@@ -709,8 +711,11 @@ struct PlannedProjectRow: View {
                     .font(.title2)
                     .frame(width: 44, height: 44)
 
-                if let image = thumbnailImage {
-                    Image(uiImage: image)
+                // 异步加载缩略图，没图时整块直接不渲染（保持原行为 —— 没图就没有 50×50 占位条）
+                ProjectThumbnailImage(projectId: project.id) {
+                    EmptyView()
+                } content: { uiImage in
+                    Image(uiImage: uiImage)
                         .resizable()
                         .scaledToFill()
                         .frame(width: 50, height: 50)
@@ -754,8 +759,11 @@ struct PlannedProjectRow: View {
                     .buttonStyle(.plain)
                 }
 
-                if let image = thumbnailImage {
-                    Image(uiImage: image)
+                // 异步加载缩略图，没图时整块直接不渲染（保持原行为 —— 没图就没有 50×50 占位条）
+                ProjectThumbnailImage(projectId: project.id) {
+                    EmptyView()
+                } content: { uiImage in
+                    Image(uiImage: uiImage)
                         .resizable()
                         .scaledToFill()
                         .frame(width: 50, height: 50)
@@ -859,21 +867,17 @@ struct PlannedProjectRow: View {
 struct PlannedChildProjectRow: View {
     let project: ProjectRecord
 
-    // 从 thumbnail Data 创建 UIImage
-    var thumbnailImage: UIImage? {
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
-    }
-
     var body: some View {
         HStack(spacing: 8) {
             Rectangle()
                 .fill(Color.clear)
                 .frame(width: 20)
 
-            // 缩略图（如果有）
-            if let image = thumbnailImage {
-                Image(uiImage: image)
+            // 缩略图（异步加载，没图时不渲染占位 —— 保持原行为）
+            ProjectThumbnailImage(projectId: project.id) {
+                EmptyView()
+            } content: { uiImage in
+                Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
                     .frame(width: 40, height: 40)
@@ -1412,9 +1416,11 @@ struct PlannedProjectDetailView: View {
     }
 
     private var patternHighlightButton: some View {
-        Button {
-            let p = currentProject ?? project
-            if p.patternGrid != nil {
+        let projectId = (currentProject ?? project).id
+        let hasThumbnail = inventoryManager.projectIDsWithThumbnail.contains(projectId)
+        let hasGrid = inventoryManager.projectIDsWithPatternGrid.contains(projectId)
+        return Button {
+            if hasGrid {
                 showPatternHighlight = true
             } else {
                 showPatternCalibration = true
@@ -1428,10 +1434,10 @@ struct PlannedProjectDetailView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding()
-            .background((currentProject ?? project).thumbnail == nil ? Theme.ColorToken.Border.default : Theme.ColorToken.Morandi.mauve)
+            .background(hasThumbnail ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default)
             .cornerRadius(Theme.Radius.md)
         }
-        .disabled((currentProject ?? project).thumbnail == nil)
+        .disabled(!hasThumbnail)
     }
 
     private var stockCheckButton: some View {
@@ -1594,12 +1600,15 @@ struct PlannedProjectDetailView: View {
     }
 
     private var thumbnailEditorSheet: some View {
-        ProjectImageEditorSheet(
-            projectId: project.id,
+        // Sheet 开打时按需从 SwiftData 取当前 thumbnail（单 row fetch，开销可忽略）。
+        let projectId = (currentProject ?? project).id
+        let data = inventoryManager.fetchProjectThumbnailData(for: projectId)
+        return ProjectImageEditorSheet(
+            projectId: projectId,
             title: "项目封面",
-            currentImage: (currentProject ?? project).thumbnail.flatMap { UIImage(data: $0) },
+            currentImage: data.flatMap { UIImage(data: $0) },
             onSave: { imageData in
-                inventoryManager.updateProjectThumbnail(project.id, thumbnail: imageData)
+                inventoryManager.updateProjectThumbnail(projectId, thumbnail: imageData)
             }
         )
         .environmentObject(inventoryManager)
@@ -1615,17 +1624,17 @@ struct PlannedProjectInfoCard: View {
     let childCount: Int
     var onEditThumbnail: (() -> Void)? = nil
 
-    // 从 thumbnail Data 创建 UIImage
-    var thumbnailImage: UIImage? {
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
-    }
+    @EnvironmentObject private var inventoryManager: InventoryManager
+    /// 异步加载的缩略图。nil 表示「还没加载完」或「确实没有图」——
+    /// UI 上把这两种情况等同处理：占位状态。加载完成后若仍为 nil，
+    /// onEditThumbnail 仍然走「添加封面」分支。
+    @State private var loadedThumbnail: UIImage?
 
     var body: some View {
         VStack(spacing: 16) {
             // 缩略图区域
             ZStack(alignment: .topTrailing) {
-                if let image = thumbnailImage {
+                if let image = loadedThumbnail {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
@@ -1655,8 +1664,8 @@ struct PlannedProjectInfoCard: View {
                         }
                 }
 
-                // 编辑按钮
-                if onEditThumbnail != nil && thumbnailImage != nil {
+                // 编辑按钮（图加载完成且有图时才显示）
+                if onEditThumbnail != nil && loadedThumbnail != nil {
                     Button {
                         onEditThumbnail?()
                     } label: {
@@ -1667,6 +1676,12 @@ struct PlannedProjectInfoCard: View {
                     }
                     .padding(8)
                 }
+            }
+            .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
+                let id = project.id
+                let data = inventoryManager.fetchProjectThumbnailData(for: id)
+                guard !Task.isCancelled, id == project.id else { return }
+                self.loadedThumbnail = data.flatMap { UIImage(data: $0) }
             }
 
             HStack {

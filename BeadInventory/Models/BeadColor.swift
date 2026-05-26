@@ -121,12 +121,31 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
     var colorSystem: ColorSystem  // 色号体系（MARD/卡卡等）
     var patternGrid: BeadPatternGrid?  // 拼图模式网格数据（nil = 未标定）
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, finishedImage: Data? = nil, completedDate: Date? = nil, colorSystem: ColorSystem = .mard, patternGrid: BeadPatternGrid? = nil) {
+    /// - Parameter totalBeads: 显式总数。为 `nil` 时从 `beadUsage` 求和（兼容旧调用方）。
+    ///   注意：`SDProjectRecord.toStruct()` 应该传入 `totalBeads: sdProject.totalBeads`，
+    ///   这样既复用持久层算好的总数，也不需要 fault 整个 `beadUsages` relationship 来求和。
+    init(
+        id: UUID = UUID(),
+        name: String,
+        date: Date = Date(),
+        beadUsage: [BeadUsage] = [],
+        totalBeads: Int? = nil,
+        brandId: UUID? = nil,
+        isArchived: Bool = false,
+        parentId: UUID? = nil,
+        isPlanned: Bool = false,
+        executedDate: Date? = nil,
+        thumbnail: Data? = nil,
+        finishedImage: Data? = nil,
+        completedDate: Date? = nil,
+        colorSystem: ColorSystem = .mard,
+        patternGrid: BeadPatternGrid? = nil
+    ) {
         self.id = id
         self.name = name
         self.date = date
         self.beadUsage = beadUsage
-        self.totalBeads = beadUsage.reduce(0) { $0 + $1.quantity }
+        self.totalBeads = totalBeads ?? beadUsage.reduce(0) { $0 + $1.quantity }
         self.brandId = brandId
         self.isArchived = isArchived
         self.parentId = parentId

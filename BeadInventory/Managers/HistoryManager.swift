@@ -153,9 +153,14 @@ class HistoryManager: ObservableObject {
     }
 
     /// 记录项目操作
+    /// - Parameter capturesImages: 调用方是否为「图片改动」操作主动把 OLD thumbnail /
+    ///   finishedImage 写进了 `project`。仅 updateProjectThumbnail / updateProjectFinishedImage
+    ///   应该传 true；其它 metadata 改动一律 false（默认）。
+    ///   undo 路径靠这个标志判断是否需要从 snapshot 还原图片，避免 metadata undo 把图清掉。
     func recordProject(
         type: HistoryOperationType,
-        project: ProjectRecord
+        project: ProjectRecord,
+        capturesImages: Bool = false
     ) {
         // 撤回操作时不记录新的历史
         guard !isReverting else { return }
@@ -177,7 +182,8 @@ class HistoryManager: ObservableObject {
             beadUsages: usageSnapshots,
             thumbnail: project.thumbnail,
             finishedImage: project.finishedImage,
-            colorSystem: project.colorSystem
+            colorSystem: project.colorSystem,
+            capturesImages: capturesImages
         )
 
         let snapshotData = try? JSONEncoder().encode(snapshot)
@@ -649,10 +655,16 @@ class HistoryManager: ObservableObject {
             // 撤回项目修改 = 恢复旧快照（目前主要是缩略图/成品图修改）
             if let beforeData = record.beforeSnapshot,
                let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: beforeData) {
-                // 恢复缩略图
-                manager.updateProjectThumbnail(snapshot.id, thumbnail: snapshot.thumbnail)
-                // 恢复成品图
-                manager.updateProjectFinishedImage(snapshot.id, finishedImage: snapshot.finishedImage)
+                // 自 v2.0.x 起 projects 缓存里 thumbnail / finishedImage 恒为 nil，
+                // 只有 update*Image 系列方法在 record 之前会主动把 OLD 图取出来写进 snapshot
+                // 并且把 `capturesImages` 标成 true。
+                // 旧版本 snapshot 没有这个字段（capturesImages == nil），但旧逻辑总是把图编进
+                // snapshot，所以兜底用 thumbnail/finishedImage 非空作存在性指标。
+                let shouldRestoreImages = snapshot.capturesImages ?? (snapshot.thumbnail != nil || snapshot.finishedImage != nil)
+                if shouldRestoreImages {
+                    manager.updateProjectThumbnail(snapshot.id, thumbnail: snapshot.thumbnail)
+                    manager.updateProjectFinishedImage(snapshot.id, finishedImage: snapshot.finishedImage)
+                }
                 return true
             }
             return false

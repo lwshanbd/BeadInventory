@@ -58,9 +58,8 @@ struct PatternCalibrationView: View {
     /// 拖动点在 displayRect 内的屏幕坐标
     @State private var draggingScreenPoint: CGPoint = .zero
 
-    private var image: UIImage? {
-        project.thumbnail.flatMap { UIImage(data: $0) }
-    }
+    /// thumbnail 改成异步加载（v2.0.x 之后 ProjectRecord 不再持有 thumbnail Data）。
+    @State private var image: UIImage?
 
     private var savingLabelText: String {
         guard let phase = savingPhase else { return "开始标定" }
@@ -101,7 +100,13 @@ struct PatternCalibrationView: View {
                 }
             }
             .task {
-                if let existing = project.patternGrid {
+                // 先把 thumbnail 和 patternGrid 从 SwiftData 取出来
+                let id = project.id
+                let thumbData = inventoryManager.fetchProjectThumbnailData(for: id)
+                let existing = inventoryManager.fetchProjectPatternGrid(for: id)
+                guard !Task.isCancelled else { return }
+                self.image = thumbData.flatMap { UIImage(data: $0) }
+                if let existing = existing {
                     corners = existing.corners
                     rows = existing.rows
                     cols = existing.cols

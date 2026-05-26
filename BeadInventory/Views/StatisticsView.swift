@@ -1532,15 +1532,8 @@ struct ProjectRowWithHierarchy: View {
         usage.brandId == brandId || (usage.brandId == nil && projectBrandId == brandId)
     }
 
-    // 从 finishedImage 或 thumbnail Data 创建 UIImage（优先使用成品图）
-    var thumbnailImage: UIImage? {
-        // 优先使用成品图，如果没有则使用原始缩略图
-        if let finishedData = project.finishedImage {
-            return UIImage(data: finishedData)
-        }
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
-    }
+    // 异步加载图片：优先用成品图，否则回退到缩略图。
+    @State private var loadedImage: UIImage?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1577,7 +1570,7 @@ struct ProjectRowWithHierarchy: View {
             }
 
             // 缩略图（如果有）
-            if let image = thumbnailImage {
+            if let image = loadedImage {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
@@ -1675,6 +1668,14 @@ struct ProjectRowWithHierarchy: View {
                 }
                 .padding(.vertical, 4)
             }
+        }
+        .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
+            // 优先用成品图，没成品图回落到缩略图。
+            let id = project.id
+            let finished = inventoryManager.fetchProjectFinishedImageData(for: id)
+            let data = finished ?? inventoryManager.fetchProjectThumbnailData(for: id)
+            guard !Task.isCancelled, id == project.id else { return }
+            self.loadedImage = data.flatMap { UIImage(data: $0) }
         }
     }
 }

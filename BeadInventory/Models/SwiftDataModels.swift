@@ -82,10 +82,17 @@ final class SDProjectRecord {
     var parentId: UUID?           // 父项目ID，nil表示顶级项目
     var isPlanned: Bool?          // 是否为计划项目（可选，nil视为false）
     var executedDate: Date?       // 执行日期
-    var thumbnail: Data?          // 缩略图数据（可选，压缩后的JPEG）
-    var finishedImage: Data?      // 成品图数据（可选，压缩后的JPEG，仅已执行项目使用）
+    // 三个大 blob 字段一律走 externalStorage：实际上是 PNG（非注释里写的 JPEG），
+    // 单条可达 MB 级；当用户项目数到几百，整表 inline 存会让 fetch 阶段把
+    // 几百 MB 数据 fault 进 SQLite row 缓存，直接撞 jetsam。
+    // externalStorage 把 blob 落成 .store_blob 旁路文件，主表只留路径引用。
+    @Attribute(.externalStorage)
+    var thumbnail: Data?          // 缩略图数据（PNG）
+    @Attribute(.externalStorage)
+    var finishedImage: Data?      // 成品图数据（PNG，仅已执行项目使用）
     var completedDate: Date?      // 完成日期（用于日历展示）
     var colorSystemRaw: String?   // 色号体系，可选以兼容旧数据，默认为 MARD
+    @Attribute(.externalStorage)
     var patternGridData: Data?    // JSON 编码后的 BeadPatternGrid（拼图模式网格数据）
 
     @Relationship(deleteRule: .cascade, inverse: \SDBeadUsage.project)
@@ -120,10 +127,54 @@ final class SDProjectRecord {
         self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, parentId: record.parentId, isPlanned: record.isPlanned, executedDate: record.executedDate, thumbnail: record.thumbnail, finishedImage: record.finishedImage, completedDate: record.completedDate, colorSystemRaw: record.colorSystem.rawValue, patternGridData: gridData, beadUsages: usages)
     }
 
+    /// 完整版转换：读取 thumbnail / finishedImage / patternGridData 三个大 blob 字段。
+    /// 仅用于一次性需要全数据的路径（备份导出、详情页全屏图、history 快照前快照存档等）。
+    /// **不要**在 InventoryManager.projects 这种全表缓存里调用 —— 用 toMetadataStruct()。
     func toStruct() -> ProjectRecord {
         let usages = (beadUsages ?? []).map { $0.toStruct() }
         let grid = SDProjectRecord.decodePatternGrid(patternGridData, projectId: id)
-        return ProjectRecord(id: id, name: name, date: date, beadUsage: usages, brandId: brandId, isArchived: isArchived, parentId: parentId, isPlanned: isPlannedValue, executedDate: executedDate, thumbnail: thumbnail, finishedImage: finishedImage, completedDate: completedDate, colorSystem: ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard, patternGrid: grid)
+        return ProjectRecord(
+            id: id,
+            name: name,
+            date: date,
+            beadUsage: usages,
+            totalBeads: totalBeads,
+            brandId: brandId,
+            isArchived: isArchived,
+            parentId: parentId,
+            isPlanned: isPlannedValue,
+            executedDate: executedDate,
+            thumbnail: thumbnail,
+            finishedImage: finishedImage,
+            completedDate: completedDate,
+            colorSystem: ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard,
+            patternGrid: grid
+        )
+    }
+
+    /// 轻量版转换：metadata + beadUsages，但**不读** thumbnail / finishedImage / patternGridData。
+    /// 用于 InventoryManager.projects 全表缓存 —— 458 项目时把内存峰值从 ~200MB 砍到 ~MB 级。
+    /// 视图需要图片时走 InventoryManager.fetchProjectThumbnail / fetchProjectFinishedImage 按需取。
+    /// 注意：调用方在 saveData 路径上必须用对应的轻量 diff，避免把 nil blob 写回覆盖云端真数据。
+    func toMetadataStruct() -> ProjectRecord {
+        let usages = (beadUsages ?? []).map { $0.toStruct() }
+        return ProjectRecord(
+            id: id,
+            name: name,
+            date: date,
+            beadUsage: usages,
+            totalBeads: totalBeads,
+            brandId: brandId,
+            isArchived: isArchived,
+            parentId: parentId,
+            isPlanned: isPlannedValue,
+            executedDate: executedDate,
+            thumbnail: nil,
+            finishedImage: nil,
+            completedDate: completedDate,
+            colorSystem: ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard,
+            patternGrid: nil
+        )
     }
 
     /// 把 BeadPatternGrid 编码成持久化用的 JSON Data。失败时返回 nil 并记日志，
@@ -250,7 +301,12 @@ final class SDHistoryRecord {
     var operationType: String = ""   // 存储 HistoryOperationType.rawValue
     @Attribute(originalName: "entityName")
     var targetName: String = ""      // 注意：避免使用 entityName（与 SwiftData 系统属性冲突），使用 originalName 保持数据兼容
+    // before / afterSnapshot 是 ProjectRecord (含图) 的 JSON 编码；
+    // 一旦每条操作都把 thumbnail / finishedImage 编进 JSON，单条 snapshot 可达数 MB。
+    // 走 externalStorage 避免历史表 inline 撑大主 store。
+    @Attribute(.externalStorage)
     var beforeSnapshot: Data?
+    @Attribute(.externalStorage)
     var afterSnapshot: Data?
     var isReverted: Bool = false
 

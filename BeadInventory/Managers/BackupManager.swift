@@ -34,7 +34,12 @@ class BackupManager {
 
     // MARK: - 周检查
 
-    /// 检查是否需要进行每周备份
+    /// 检查是否需要进行每周备份。
+    ///
+    /// 自 v2.0.x 起：备份阶段会从 SwiftData 把所有项目的 thumbnail / finishedImage 取出来 base64
+    /// 编进 JSON（v1.x 起就这样，只是以前在 InventoryManager.projects 里现成有图）。
+    /// 在 cold-start 的 onAppear 同步路径里跑这玩意儿可能撞 scene-create watchdog，
+    /// 所以把执行延后一帧 + 走 Task：让首屏先 commit，避免首帧渲染期间被卡。
     @MainActor func checkAndPerformWeeklyBackupIfNeeded(inventoryManager: InventoryManager) {
         let now = Date()
 
@@ -47,8 +52,12 @@ class BackupManager {
             }
         }
 
-        // 执行备份
-        performBackup(inventoryManager: inventoryManager)
+        // 推迟到下一次 runloop tick：让首屏 scene-create commit 先完成。
+        // 注意：备份仍然要在 MainActor 上跑（SwiftData mainContext 限定主线程），
+        // 但它不会再卡在第一帧 commit 里 —— iOS watchdog 不会因此再 0x8BADF00D。
+        Task { @MainActor in
+            performBackup(inventoryManager: inventoryManager)
+        }
     }
 
     // MARK: - 执行备份
@@ -126,6 +135,10 @@ class BackupManager {
         }
 
         // 项目数据
+        //
+        // 注意：自 v2.0.x 起 manager.projects 不再持有 thumbnail / finishedImage Data
+        // （为避免 458 项目级用户加载即 ~200MB 内存撞 jetsam）。备份阶段才把图按需取出来 base64。
+        // 一次只持有一张图的 Data，循环结束即释放，峰值内存 ≈ 单张最大图 + JSON 累积体积。
         data["projects"] = manager.projects.map { project in
             var projectData: [String: Any] = [
                 "id": project.id.uuidString,
@@ -148,11 +161,11 @@ class BackupManager {
             if let parentId = project.parentId {
                 projectData["parentId"] = parentId.uuidString
             }
-            // 缩略图和成品图保存为 Base64（仅在有数据时）
-            if let thumbnail = project.thumbnail {
+            // 按需从 SwiftData 取图（projects 缓存里已不含）。
+            if let thumbnail = manager.fetchProjectThumbnailData(for: project.id) {
                 projectData["thumbnail"] = thumbnail.base64EncodedString()
             }
-            if let finishedImage = project.finishedImage {
+            if let finishedImage = manager.fetchProjectFinishedImageData(for: project.id) {
                 projectData["finishedImage"] = finishedImage.base64EncodedString()
             }
             projectData["beadUsage"] = project.beadUsage.map { usage in
@@ -548,13 +561,40 @@ class BackupManager {
         // 应用恢复的数据
         manager.brands = restoredBrands
         manager.brandStocks = restoredStocks
+        // 注意：把含图的 restoredProjects 直接塞给 manager.projects 只是临时态 ——
+        // saveData 不会把 thumbnail/finishedImage 写回 SDProjectRecord（自 v2.0.x 起
+        // blob 字段走专门的 update* 直写接口）。所以下面会单独把图持久化。
         manager.projects = restoredProjects
         manager.customColors = restoredCustomColors
         manager.purchaseRecords = restoredPurchaseRecords
         manager.currentBrandId = restoredCurrentBrandId
 
-        // 保存到持久化存储
+        // 保存到持久化存储（写入 metadata，不含 blob）
         manager.saveData()
+
+        // 持久化项目图片 —— saveData 没处理，单独走直写 SwiftData 的接口。
+        // 一次循环只持有一张图的引用，写完释放，峰值内存可控。
+        for project in restoredProjects {
+            if let thumb = project.thumbnail {
+                manager.updateProjectThumbnail(project.id, thumbnail: thumb)
+            }
+            if let finished = project.finishedImage {
+                manager.updateProjectFinishedImage(project.id, finishedImage: finished)
+            }
+            if let grid = project.patternGrid {
+                manager.updateProjectPatternGrid(project.id, grid: grid)
+            }
+        }
+
+        // 还原结束后从 manager.projects 卸掉 blob 副本，回到「缓存只存 metadata」的常态。
+        // 否则 8MB+ 备份还原后会在内存里一直挂着这堆图。
+        manager.projects = restoredProjects.map { project in
+            var stripped = project
+            stripped.thumbnail = nil
+            stripped.finishedImage = nil
+            stripped.patternGrid = nil
+            return stripped
+        }
 
         print("[BackupManager] 恢复成功: \(backup.fileName)")
     }

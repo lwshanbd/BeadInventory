@@ -172,10 +172,12 @@ struct ProjectDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if (currentProject ?? project).isPlanned {
+                let projectId = (currentProject ?? project).id
+                let hasThumbnail = inventoryManager.projectIDsWithThumbnail.contains(projectId)
+                let hasGrid = inventoryManager.projectIDsWithPatternGrid.contains(projectId)
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        let p = currentProject ?? project
-                        if p.patternGrid != nil {
+                        if hasGrid {
                             showingPatternHighlight = true
                         } else {
                             showingPatternCalibration = true
@@ -183,7 +185,7 @@ struct ProjectDetailView: View {
                     } label: {
                         Label("拼图模式", systemImage: "square.grid.3x3.square")
                     }
-                    .disabled((currentProject ?? project).thumbnail == nil)
+                    .disabled(!hasThumbnail)
                 }
             }
         }
@@ -201,24 +203,28 @@ struct ProjectDetailView: View {
             }
         }
         .sheet(isPresented: $showingThumbnailEditor) {
+            let projectId = (currentProject ?? project).id
+            let data = inventoryManager.fetchProjectThumbnailData(for: projectId)
             ProjectImageEditorSheet(
-                projectId: project.id,
+                projectId: projectId,
                 title: "项目封面",
-                currentImage: (currentProject ?? project).thumbnail.flatMap { UIImage(data: $0) },
+                currentImage: data.flatMap { UIImage(data: $0) },
                 onSave: { imageData in
-                    inventoryManager.updateProjectThumbnail(project.id, thumbnail: imageData)
+                    inventoryManager.updateProjectThumbnail(projectId, thumbnail: imageData)
                 }
             )
             .environmentObject(inventoryManager)
         }
         .sheet(isPresented: $showingFinishedImageEditor) {
+            let projectId = (currentProject ?? project).id
+            let data = inventoryManager.fetchProjectFinishedImageData(for: projectId)
             ProjectImageEditorSheet(
-                projectId: project.id,
+                projectId: projectId,
                 title: "成品图",
-                currentImage: (currentProject ?? project).finishedImage.flatMap { UIImage(data: $0) },
+                currentImage: data.flatMap { UIImage(data: $0) },
                 maxImageSize: 400, // 成品图使用更大尺寸
                 onSave: { imageData in
-                    inventoryManager.updateProjectFinishedImage(project.id, finishedImage: imageData)
+                    inventoryManager.updateProjectFinishedImage(projectId, finishedImage: imageData)
                 }
             )
             .environmentObject(inventoryManager)
@@ -230,17 +236,13 @@ struct ProjectDetailView: View {
 struct ChildProjectRow: View {
     let project: ProjectRecord
 
-    // 从 thumbnail Data 创建 UIImage
-    var thumbnailImage: UIImage? {
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
-    }
-
     var body: some View {
         HStack(spacing: 12) {
-            // 缩略图（如果有）
-            if let image = thumbnailImage {
-                Image(uiImage: image)
+            // 缩略图（异步加载，没图时不渲染占位 —— 保持原行为）
+            ProjectThumbnailImage(projectId: project.id) {
+                EmptyView()
+            } content: { uiImage in
+                Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
                     .frame(width: 40, height: 40)
@@ -290,17 +292,13 @@ struct ChildProjectRowWithActions: View {
     let onDelete: () -> Void
     let onDetach: () -> Void
 
-    // 从 thumbnail Data 创建 UIImage
-    var thumbnailImage: UIImage? {
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
-    }
-
     var body: some View {
         HStack(spacing: 12) {
-            // 缩略图（如果有）
-            if let image = thumbnailImage {
-                Image(uiImage: image)
+            // 缩略图（异步加载，没图时不渲染占位）
+            ProjectThumbnailImage(projectId: project.id) {
+                EmptyView()
+            } content: { uiImage in
+                Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
                     .frame(width: 40, height: 40)
@@ -371,17 +369,14 @@ struct ProjectInfoCardEnhanced: View {
     let childCount: Int
     var onEditThumbnail: (() -> Void)? = nil
 
-    // 从 thumbnail Data 创建 UIImage
-    var thumbnailImage: UIImage? {
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
-    }
+    @EnvironmentObject private var inventoryManager: InventoryManager
+    @State private var loadedThumbnail: UIImage?
 
     var body: some View {
         VStack(spacing: 16) {
             // 缩略图区域
             ZStack(alignment: .topTrailing) {
-                if let image = thumbnailImage {
+                if let image = loadedThumbnail {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
@@ -412,7 +407,7 @@ struct ProjectInfoCardEnhanced: View {
                 }
 
                 // 编辑按钮
-                if onEditThumbnail != nil && thumbnailImage != nil {
+                if onEditThumbnail != nil && loadedThumbnail != nil {
                     Button {
                         onEditThumbnail?()
                     } label: {
@@ -423,6 +418,12 @@ struct ProjectInfoCardEnhanced: View {
                     }
                     .padding(8)
                 }
+            }
+            .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
+                let id = project.id
+                let data = inventoryManager.fetchProjectThumbnailData(for: id)
+                guard !Task.isCancelled, id == project.id else { return }
+                self.loadedThumbnail = data.flatMap { UIImage(data: $0) }
             }
 
             // 日期和状态
@@ -590,10 +591,11 @@ struct FinishedImageSection: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showingDatePicker = false
     @State private var selectedDate: Date = Date()
+    @State private var loadedFinishedImage: UIImage?
 
-    var finishedImage: UIImage? {
-        guard let data = project.finishedImage else { return nil }
-        return UIImage(data: data)
+    /// 用集合做存在性检查（不加载 Data）—— 决定按钮文案 / 占位还是图。
+    private var hasFinishedImage: Bool {
+        inventoryManager.projectIDsWithFinishedImage.contains(project.id)
     }
 
     var body: some View {
@@ -607,15 +609,15 @@ struct FinishedImageSection: View {
                     onEditFinishedImage()
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: finishedImage == nil ? "photo.badge.plus" : "pencil")
-                        Text(finishedImage == nil ? "上传成品图" : "修改")
+                        Image(systemName: hasFinishedImage ? "pencil" : "photo.badge.plus")
+                        Text(hasFinishedImage ? "修改" : "上传成品图")
                     }
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Morandi.latte)
                 }
             }
 
-            if let image = finishedImage {
+            if let image = loadedFinishedImage {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
@@ -681,6 +683,12 @@ struct FinishedImageSection: View {
         .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
+        .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
+            let id = project.id
+            let data = inventoryManager.fetchProjectFinishedImageData(for: id)
+            guard !Task.isCancelled, id == project.id else { return }
+            self.loadedFinishedImage = data.flatMap { UIImage(data: $0) }
+        }
         .sheet(isPresented: $showingDatePicker) {
             CompletedDatePickerSheet(
                 selectedDate: $selectedDate,
