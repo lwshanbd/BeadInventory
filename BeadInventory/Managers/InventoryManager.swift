@@ -47,7 +47,12 @@ class InventoryManager: ObservableObject {
     /// 持久层里有 displayThumbnail 的项目 ID 集合（不含 Data）。
     /// 老数据可能 nil（迁移协调器后台 backfill），视图层在 displayThumbnail 缺位时
     /// 走 ImageDownsampler 现场降级 raw thumbnail。
-    @Published private(set) var projectIDsWithDisplayThumbnail: Set<UUID> = []
+    ///
+    /// **故意不 @Published**：迁移协调器每写一个项目就 `.insert(id)` 一次；如果加
+    /// @Published，每次 insert 都触发 `objectWillChange.send()`，所有 @EnvironmentObject
+    /// 消费者（整个计划列表）都会重新 evaluate body —— 这正是 PR #48 闪烁回归的根因之一。
+    /// 视图层（`ProjectThumbnailImage`）不直接读本集合，不需要 SwiftUI 的响应式驱动。
+    private(set) var projectIDsWithDisplayThumbnail: Set<UUID> = []
 
     /// 项目 blob（thumbnail / finishedImage / patternGrid / displayThumbnail）的全局版本号。
     /// 每当任意项目的 blob 被改动就 ++。SwiftUI 中需要重新拉图的组件
