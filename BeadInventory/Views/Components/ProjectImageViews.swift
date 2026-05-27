@@ -1,0 +1,165 @@
+//
+//  ProjectImageViews.swift
+//  BeadInventory
+//
+//  按需异步加载项目图片的 SwiftUI 组件。
+//
+//  背景：自 v2.0.x 起 `InventoryManager.projects` 不再持有大 Data blob，以免 458+ 项目级
+//  用户加载完即 ~200MB 撞 jetsam。两个组件是按需取图 + 解码的标准入口。
+//
+//  **`ProjectThumbnailImage` 的关键 jetsam 修复**：列表 row 用的缩略图视图**永远不**
+//  直接 `UIImage(data: raw_thumbnail)` —— raw thumbnail 是全分辨率 PNG，可达 5-10 MB，
+//  解码后 UIImage 占 30+ MB；10 个 LazyVStack row 同屏 = 300+ MB ⇒ jetsam。优先级：
+//
+//    1. **`fetchProjectDisplayThumbnail`** —— 512px JPEG 0.85 小图，~50-100 KB，UIImage(data:) 安全
+//    2. **没有 displayThumbnail 则 `ImageDownsampler.downsampleToUIImage(thumbnail)`** ——
+//       CGImageSourceCreateThumbnailAtIndex 在 source 层就限制尺寸，内存峰值 KB 级
+//    3. 都失败 → placeholder
+//
+//  这样老用户的大图在迁移协调器还没跑完之前也安全（走路径 2），新数据直接走路径 1。
+//
+//  调用方负责 frame / clipShape / 圆角等视觉装饰；本组件只负责图源管理。
+//
+
+import SwiftUI
+
+// MARK: - 项目缩略图
+
+/// 异步加载项目缩略图。
+///
+/// 用法：
+/// ```swift
+/// ProjectThumbnailImage(projectId: project.id) {
+///     // 占位 / 空态
+///     Image(systemName: "photo")
+/// } content: { uiImage in
+///     Image(uiImage: uiImage)
+///         .resizable()
+///         .scaledToFill()
+/// }
+/// ```
+struct ProjectThumbnailImage<Placeholder: View, Content: View>: View {
+    let projectId: UUID
+    @ViewBuilder let placeholder: () -> Placeholder
+    @ViewBuilder let content: (UIImage) -> Content
+
+    @EnvironmentObject private var inventoryManager: InventoryManager
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            // 用 loadedKey 守门 —— 只有 image 是为「当前 projectId + revision」加载的才显示。
+            // LazyVStack row reuse + revision 跳变都会让 key 变，旧图立刻被认为是过期。
+            if let image, loadedKey == currentKey {
+                content(image)
+            } else {
+                placeholder()
+            }
+        }
+        .task(id: currentKey) {
+            await loadImage(for: currentKey)
+        }
+    }
+
+    private var currentKey: TaskKey {
+        TaskKey(projectId: projectId, revision: inventoryManager.projectBlobsRevision)
+    }
+
+    private func loadImage(for key: TaskKey) async {
+        // 先清旧图，再去取新图 —— 否则切到一个没图的项目时，旧 image 状态会让
+        // body 的 `if let image` 直接显示上一个项目的图。
+        if loadedKey != key {
+            self.image = nil
+            self.loadedKey = nil
+        }
+
+        // **关键 jetsam 修复**：列表 row 优先读 displayThumbnail（小图），没有就 ImageDownsampler 现场降级。
+        // 永远不直接 UIImage(data: raw_thumbnail) —— raw 是 5-10 MB PNG，解码后 30+ MB × 10 row = jetsam。
+        let displayData = inventoryManager.fetchProjectDisplayThumbnail(for: key.projectId)
+        if let displayData {
+            let decoded = await decode(displayData: displayData)
+            guard !Task.isCancelled, currentKey == key else { return }
+            self.image = decoded
+            self.loadedKey = key
+            return
+        }
+
+        // 没有 displayThumbnail（老数据，迁移协调器还没跑到 / 跑失败）→ 现场降级原图。
+        // ImageDownsampler.downsampleToUIImage 用 CGImageSourceCreateThumbnailAtIndex 在 source 层
+        // 就限制尺寸，内存峰值 KB 级 —— 比 UIImage(data: raw_thumbnail) 安全得多。
+        let thumbData = inventoryManager.fetchProjectThumbnailData(for: key.projectId)
+        let decoded = await downsampleOnTheFly(rawData: thumbData)
+        guard !Task.isCancelled, currentKey == key else { return }
+        self.image = decoded
+        self.loadedKey = key
+    }
+
+    private nonisolated func decode(displayData: Data) async -> UIImage? {
+        // 50-100 KB 的 JPEG，UIImage(data:) 解码安全
+        return UIImage(data: displayData)
+    }
+
+    private nonisolated func downsampleOnTheFly(rawData: Data?) async -> UIImage? {
+        guard let rawData else { return nil }
+        return ImageDownsampler.downsampleToUIImage(rawData)
+    }
+
+    @State private var loadedKey: TaskKey?
+
+    private struct TaskKey: Hashable {
+        let projectId: UUID
+        let revision: Int
+    }
+}
+
+// MARK: - 项目成品图
+
+/// 异步加载项目成品图（仅已执行项目使用）。
+struct ProjectFinishedImage<Placeholder: View, Content: View>: View {
+    let projectId: UUID
+    @ViewBuilder let placeholder: () -> Placeholder
+    @ViewBuilder let content: (UIImage) -> Content
+
+    @EnvironmentObject private var inventoryManager: InventoryManager
+    @State private var image: UIImage?
+    @State private var loadedKey: TaskKey?
+
+    var body: some View {
+        Group {
+            if let image, loadedKey == currentKey {
+                content(image)
+            } else {
+                placeholder()
+            }
+        }
+        .task(id: currentKey) {
+            await loadImage(for: currentKey)
+        }
+    }
+
+    private var currentKey: TaskKey {
+        TaskKey(projectId: projectId, revision: inventoryManager.projectBlobsRevision)
+    }
+
+    private func loadImage(for key: TaskKey) async {
+        if loadedKey != key {
+            self.image = nil
+            self.loadedKey = nil
+        }
+        let data = inventoryManager.fetchProjectFinishedImageData(for: key.projectId)
+        let decoded = await decode(data: data)
+        guard !Task.isCancelled, currentKey == key else { return }
+        self.image = decoded
+        self.loadedKey = key
+    }
+
+    private nonisolated func decode(data: Data?) async -> UIImage? {
+        guard let data else { return nil }
+        return UIImage(data: data)
+    }
+
+    private struct TaskKey: Hashable {
+        let projectId: UUID
+        let revision: Int
+    }
+}

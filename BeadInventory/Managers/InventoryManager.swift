@@ -12,12 +12,47 @@ import CryptoKit
 
 @MainActor
 class InventoryManager: ObservableObject {
-    @Published var beadColors: [BeadColor] = []
-    @Published var projects: [ProjectRecord] = []
+    @Published var beadColors: [BeadColor] = [] {
+        didSet { colorLookupIndexDirty = true }
+    }
+    @Published var projects: [ProjectRecord] = [] {
+        didSet { parentIdsCacheDirty = true }
+    }
     @Published var customColors: [CustomColor] = []  // 自定义色号
     @Published var purchaseRecords: [PurchaseRecord] = []  // 运输中的购买记录
     @Published private(set) var isInitialLoadInProgress = false
     @Published private(set) var initialLoadErrorMessage: String?
+
+    // MARK: - 项目图片 Blob 元数据
+    //
+    // 自 v2.0.x 起：`projects` 不再持有 thumbnail / finishedImage / patternGridData /
+    // displayThumbnail 四个大 Data blob（防止 458 项目级用户加载完 ~200MB 撞 jetsam）。
+    // 视图需要图片时走 fetchProject*Data / fetchProjectDisplayThumbnail 按需从
+    // SwiftData 取单条 row。**列表 row 优先读 displayThumbnail（小图 ~50-100 KB）**，
+    // 没有再走 ImageDownsampler 现场降级 raw thumbnail，**永远不**直接 UIImage(data: raw thumbnail)。
+    //
+    // 为了让 CalendarView 这类「我有没有成品图」的查询不需要加载实际 Data，
+    // 单独缓存一份 ID 集合：只查 `finishedImage != nil` 谓词，SQL 层就能完成不读 blob。
+    /// 持久层里有 finishedImage 的项目 ID 集合（不含 Data）。
+    /// 在 loadData 完成后 / updateProjectFinishedImage 后刷新。
+    @Published private(set) var projectIDsWithFinishedImage: Set<UUID> = []
+
+    /// 持久层里有 thumbnail 的项目 ID 集合（不含 Data）。
+    @Published private(set) var projectIDsWithThumbnail: Set<UUID> = []
+
+    /// 持久层里有 patternGridData 的项目 ID 集合（不含 Data）。
+    /// 用于 "拼图模式" 按钮判断是直接进 highlight 还是先 calibration。
+    @Published private(set) var projectIDsWithPatternGrid: Set<UUID> = []
+
+    /// 持久层里有 displayThumbnail 的项目 ID 集合（不含 Data）。
+    /// 老数据可能 nil（迁移协调器后台 backfill），视图层在 displayThumbnail 缺位时
+    /// 走 ImageDownsampler 现场降级 raw thumbnail。
+    @Published private(set) var projectIDsWithDisplayThumbnail: Set<UUID> = []
+
+    /// 项目 blob（thumbnail / finishedImage / patternGrid / displayThumbnail）的全局版本号。
+    /// 每当任意项目的 blob 被改动就 ++。SwiftUI 中需要重新拉图的组件
+    /// 可以把它带进 .task(id:) 的复合 key 里强制重新跑取图任务。
+    @Published private(set) var projectBlobsRevision: Int = 0
 
     // 品牌相关
     @Published var brands: [Brand] = []
@@ -46,8 +81,57 @@ class InventoryManager: ObservableObject {
         return _stockPositionIndex
     }
 
+    // 父项目 ID 缓存：让 isParentProject 从 O(N) projects.contains 变 O(1) Set.contains。
+    // 458 项目的 plan 页 PlannedProjectsView.shortageCount 之前是 458 × O(458) = O(N²) ≈ 210K 次比较，
+    // 这一改下来直接降到 O(N)。
+    private var _parentIdsCache: Set<UUID> = []
+    private var parentIdsCacheDirty = true
+    private var parentIds: Set<UUID> {
+        if parentIdsCacheDirty {
+            _parentIdsCache = Set(projects.compactMap { $0.parentId })
+            parentIdsCacheDirty = false
+        }
+        return _parentIdsCache
+    }
+
+    // findColor(byCode:) 字典缓存：把每种 BeadColor 的 mardCode / cocoCode / manmanCode /
+    // panpanCode / mixiaowoCode / kakaCode 都做成大写 key 进字典，O(1) 查替代原本的
+    // M 次线扫 + M × 5 次 .uppercased() 分配。MARD 优先，仅当主键未占用时插入其它品牌 code。
+    private var _colorLookupIndex: [String: BeadColor] = [:]
+    private var colorLookupIndexDirty = true
+    private var colorLookupIndex: [String: BeadColor] {
+        if colorLookupIndexDirty {
+            rebuildColorLookupIndex()
+            colorLookupIndexDirty = false
+        }
+        return _colorLookupIndex
+    }
+
+    private func rebuildColorLookupIndex() {
+        var dict: [String: BeadColor] = [:]
+        // 第一轮：MARD 主键优先
+        for color in beadColors {
+            let key = color.mardCode.uppercased()
+            if !key.isEmpty {
+                dict[key] = color
+            }
+        }
+        // 第二轮：其它品牌 code 兜底（已被 MARD 主键占用的不覆盖）
+        for color in beadColors {
+            let extras = [color.cocoCode, color.manmanCode, color.panpanCode, color.mixiaowoCode, color.kakaCode]
+            for code in extras where !code.isEmpty {
+                let key = code.uppercased()
+                if dict[key] == nil {
+                    dict[key] = color
+                }
+            }
+        }
+        _colorLookupIndex = dict
+    }
+
     // SwiftData ModelContext
-    private var modelContext: ModelContext?
+    // internal (而非 private)：ThumbnailMigrationCoordinator 需要直接读取 context 跑迁移谓词扫描
+    var modelContext: ModelContext?
 
     // 数据加载完成标志，防止在数据未加载时意外保存空数据
     private var isDataLoaded = false
@@ -1341,12 +1425,30 @@ class InventoryManager: ObservableObject {
             }
 
             // 从 SwiftData 加载项目记录
+            //
+            // 关键：用 toMetadataStruct() 而不是 toStruct() —— 不读 thumbnail / finishedImage /
+            // patternGridData 三个大 Data blob。458 项目级用户曾因为这三个字段全部 inline
+            // 物化进内存爆 ~200MB 被 jetsam。视图需要图片时按需走 fetchProjectThumbnailData /
+            // fetchProjectFinishedImageData / fetchProjectPatternGrid 取单条 row。
             do {
-                let projectDescriptor = FetchDescriptor<SDProjectRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+                // **round-11 review C1 sweep 最后一处**：跟 refreshProjectBlobMetadata /
+                // ThumbnailMigrationCoordinator 同型修复。`toMetadataStruct()` 只控**生成的 struct**
+                // 里 blob 字段为 nil —— **控不住 `context.fetch` 阶段** SwiftData 是否物化 inline
+                // BLOB 列。冷启动 458 项目用户场景：458 row × 5-10 MB raw thumbnail = 2-5 GB 瞬时
+                // 峰值，跟列表 jetsam 同型问题但发生在 loadData 路径上。
+                // propertiesToFetch 显式列出所有要用的 metadata 字段（toMetadataStruct 消费的就是
+                // 这些），让 SwiftData 跳过 thumbnail / finishedImage / patternGridData / displayThumbnail
+                // 4 个大 blob 字段的物化。
+                // 注：`beadUsages` 是 @Relationship，不是 inline blob，不受 propertiesToFetch 影响。
+                var projectDescriptor = FetchDescriptor<SDProjectRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+                projectDescriptor.propertiesToFetch = [
+                    \.id, \.name, \.date, \.totalBeads, \.brandId, \.isArchived,
+                    \.parentId, \.isPlanned, \.executedDate, \.completedDate, \.colorSystemRaw
+                ]
                 let sdProjects = try context.fetch(projectDescriptor)
-                loadedProjects = sdProjects.map { $0.toStruct() }
+                loadedProjects = sdProjects.map { $0.toMetadataStruct() }
                 projectsLoadedSuccessfully = true
-                print("[InventoryManager] 成功加载 \(loadedProjects.count) 个项目记录")
+                print("[InventoryManager] 成功加载 \(loadedProjects.count) 个项目记录 (metadata-only)")
                 logInfo("load_projects_success", metadata: ["count": loadedProjects.count])
             } catch {
                 print("[InventoryManager] ⚠️ 加载项目失败: \(error)")
@@ -1475,6 +1577,10 @@ class InventoryManager: ObservableObject {
                 if !allEmpty {
                     UserDefaults.standard.set(true, forKey: hasExistingDataKey)
                 }
+
+                // 刷新「持久层里有 finishedImage 的项目 ID 集合」—— CalendarView 类的
+                // 存在性过滤要靠它（projects 本身已经不带 finishedImage Data）。
+                refreshProjectBlobMetadata()
 
                 // 刷新保存基线：后续 saveData() 只写入本地真实改动
                 refreshBaselines()
@@ -1715,16 +1821,27 @@ class InventoryManager: ObservableObject {
 
                 if projectsLoadedSuccessfully {
                     var remoteProjectsToAppend: [ProjectRecord] = []
+                    var remoteAppendedIDs = Set<UUID>()
                     for sdProject in existingProjects where localProjectByID[sdProject.id] == nil {
                         if baselineProjectsByID[sdProject.id] != nil {
                             context.delete(sdProject)
                         } else {
-                            remoteProjectsToAppend.append(sdProject.toStruct())
+                            // 用 toMetadataStruct 而不是 toStruct —— 远端合并不要把 blob
+                            // 物化进 in-memory projects 缓存，否则 CloudKit 同步触发的合并
+                            // 会偷偷把内存峰值顶到 458 项目级用户被 jetsam 的水平。
+                            remoteProjectsToAppend.append(sdProject.toMetadataStruct())
+                            remoteAppendedIDs.insert(sdProject.id)
                         }
                     }
                     if !remoteProjectsToAppend.isEmpty {
                         projects.append(contentsOf: remoteProjectsToAppend)
                         projects.sort { $0.date > $1.date }
+                        // ID 集合也要刷 —— 远端拿过来的项目可能本身就带 blob，UI 立刻就要
+                        // 知道有没有图。这里只 fetch 一次（在 saveData 末尾再统一刷一次更稳，
+                        // 但本路径已经在做差分写回，独立刷一次代价可接受）。
+                        DispatchQueue.main.async { [weak self] in
+                            self?.refreshProjectBlobMetadata()
+                        }
                     }
                 }
 
@@ -1746,21 +1863,15 @@ class InventoryManager: ObservableObject {
                         existing.parentId = project.parentId
                         existing.isPlanned = project.isPlanned
                         existing.executedDate = project.executedDate
-                        existing.thumbnail = project.thumbnail
-                        existing.finishedImage = project.finishedImage
                         existing.completedDate = project.completedDate
                         existing.colorSystemRaw = project.colorSystem.rawValue
-                        // patternGrid 是同步关键数据。编码失败时**保留** existing.patternGridData
-                        // 不覆盖（防止把云端最新值用 nil 覆盖造成全设备数据丢失）。
-                        if let grid = project.patternGrid {
-                            if let data = SDProjectRecord.encodePatternGrid(grid, projectId: project.id) {
-                                existing.patternGridData = data
-                            }
-                            // else: 编码失败，logger 已记录，existing.patternGridData 保持不变
-                        } else {
-                            // 用户明确清空（patternGrid 为 nil），允许覆盖
-                            existing.patternGridData = nil
-                        }
+                        // ⚠️ 不再在 saveData 路径写 existing.thumbnail / existing.finishedImage /
+                        // existing.patternGridData / existing.displayThumbnail ——
+                        // 自 v2.0.x 起 `projects` 缓存里这四个字段恒为 nil（避免大 blob 物化进内存
+                        // 撞 jetsam），如果还沿用旧 diff 写回，等于每次保存都把云端真数据用 nil
+                        // 覆盖掉。这些字段改走 updateProjectThumbnail / updateProjectFinishedImage /
+                        // updateProjectPatternGrid / setProjectDisplayThumbnail 直接对 SDProjectRecord
+                        // 单 row 写入（带 blob 字段同步）。
 
                         // 仅在本地项目有改动时同步 beadUsages，避免误删远端新变更
                         let newUsageIDs = Set(project.beadUsage.map { $0.id })
@@ -2045,34 +2156,26 @@ class InventoryManager: ObservableObject {
 
     // MARK: - 搜索和查找
 
+    /// 按色号字符串查 BeadColor。
+    ///
+    /// 老版本是 M × 5 次线扫 + 每次循环每个 color 都 `.uppercased()` 分配新 String；
+    /// 458 项目 × 平均 30 usages × M ≈ 600 colors = ~14M 次比较 + 14M 次分配。
+    /// 现在走预建字典：MARD 主键优先、其它品牌 code 兜底、自定义色号兜底。O(1) lookup。
     func findColor(byCode code: String) -> BeadColor? {
-        let code = code.uppercased().trimmingCharacters(in: .whitespaces)
+        let key = code.uppercased().trimmingCharacters(in: .whitespaces)
 
-        // 优先精确匹配 MARD 色号（避免与其他品牌色号冲突）
-        if let mardMatch = beadColors.first(where: { $0.mardCode.uppercased() == code }) {
-            return mardMatch
+        if let match = colorLookupIndex[key] {
+            return match
         }
 
-        // 匹配其他品牌色号
-        if let brandMatch = beadColors.first(where: { color in
-            color.cocoCode.uppercased() == code ||
-            color.manmanCode.uppercased() == code ||
-            color.panpanCode.uppercased() == code ||
-            color.mixiaowoCode.uppercased() == code ||
-            color.kakaCode.uppercased() == code
-        }) {
-            return brandMatch
-        }
-
-        // 匹配自定义色号（包括 # 前缀、旧 C_ 前缀和不带前缀的色号）
+        // 自定义色号（包括 # 前缀、旧 C_ 前缀和不带前缀的色号）—— 数量小，保持线扫。
         if let customColor = customColors.first(where: { custom in
             let customMardCode = custom.mardCode.uppercased()
             let customColorCode = custom.colorCode.uppercased()
-            // 兼容旧的 C_ 前缀
             let oldMardCode = "C_\(customColorCode)"
-            return customMardCode == code ||
-                   customColorCode == code ||
-                   oldMardCode == code
+            return customMardCode == key ||
+                   customColorCode == key ||
+                   oldMardCode == key
         }) {
             return customColor.toBeadColor()
         }
@@ -2166,11 +2269,46 @@ class InventoryManager: ObservableObject {
     // MARK: - 项目管理
 
     func addProject(_ project: ProjectRecord) {
-        projects.insert(project, at: 0)
+        // 自动生成 displayThumbnail —— 调用方喂的 ProjectRecord 通常只设了 thumbnail（原图），
+        // displayThumbnail 留 nil。这里 downsample 一次落地，列表 row 第一次显示就走小图快路径
+        // （不用走实时 fallback downsample）。
+        // downsample 失败时**保持 displayThumbnail = nil** —— 不能用原 thumbnail 字节做 fallback：
+        // 原图常常是 5-10 MB PNG，UIImage(data:) 解码到 30+ MB；列表 row 视口同时显示 10 个就
+        // 直奔 jetsam（这正是本 PR 试图修的 458-项目崩溃根因）。让 ProjectThumbnailImage 的
+        // 第二优先级路径（CGImageSourceCreateThumbnailAtIndex 实时 downsample）兜底。
+        var enriched = project
+        if enriched.displayThumbnail == nil, let thumb = enriched.thumbnail {
+            if let downsampled = ImageDownsampler.downsample(thumb) {
+                enriched.displayThumbnail = downsampled
+            } else {
+                logError("display_thumbnail_downsample_failed_at_add", metadata: [
+                    "projectId": enriched.id.uuidString,
+                    "sourceBytes": thumb.count
+                ])
+            }
+        }
+        projects.insert(enriched, at: 0)
+        // saveData 通过 SDProjectRecord(from: project) 把 thumbnail / finishedImage /
+        // patternGridData / displayThumbnail 一并落地到 SwiftData。
         saveData()
 
-        // 记录历史
-        historyManager.recordProject(type: .projectAdd, project: project)
+        // 同步 ID 集合 —— 不能等下次 refreshProjectBlobMetadata 才更新，否则
+        // 「拼图模式」按钮、Calendar 等存在性判断在本次会话期间都看不到该项目。
+        if enriched.thumbnail != nil { projectIDsWithThumbnail.insert(enriched.id) }
+        if enriched.finishedImage != nil { projectIDsWithFinishedImage.insert(enriched.id) }
+        if enriched.patternGrid != nil { projectIDsWithPatternGrid.insert(enriched.id) }
+        if enriched.displayThumbnail != nil { projectIDsWithDisplayThumbnail.insert(enriched.id) }
+        projectBlobsRevision &+= 1
+
+        // 卸掉 in-memory blob 副本：blob 已经在 SwiftData 里了，缓存继续持有等于在内存里
+        // 多放一份。连续扫描多次时会重新堆出内存压力 —— 这就是引发 jetsam 的同型问题。
+        stripBlobFromInMemoryProject(enriched.id)
+
+        // 记录历史 —— 用刚 strip 过的 metadata-only 记录（add 撤回不需要图：
+        // undo 走 `deleteProject(id:)` 不读 snapshot 里的图）。
+        if let stripped = projects.first(where: { $0.id == enriched.id }) {
+            historyManager.recordProject(type: .projectAdd, project: stripped)
+        }
     }
 
     func deleteProject(at offsets: IndexSet) {
@@ -2183,13 +2321,59 @@ class InventoryManager: ObservableObject {
         if let index = projects.firstIndex(where: { $0.id == id }) {
             let project = projects[index]
 
-            // 记录历史（在删除前）
-            historyManager.recordProject(type: .projectDelete, project: project)
+            // 记录历史（在删除前）—— destructive 操作必须把 OLD 图也写进 snapshot，
+            // 否则原 SwiftData row 被删除后 undo 无法把图找回来。
+            // capturesImages: true 让 restoreProject 路径在重新创建项目后回写图。
+            var snapshotProject = project
+            snapshotProject.thumbnail = fetchProjectThumbnailData(for: id)
+            snapshotProject.finishedImage = fetchProjectFinishedImageData(for: id)
+            snapshotProject.patternGrid = fetchProjectPatternGrid(for: id)
+            snapshotProject.displayThumbnail = fetchProjectDisplayThumbnail(for: id)
+            logSnapshotCaptureGapsIfAny(
+                projectId: id,
+                operation: "deleteProject",
+                snapshot: snapshotProject
+            )
+            historyManager.recordProject(type: .projectDelete, project: snapshotProject, capturesImages: true)
 
             // 删除项目只从记录中移除，不回退库存
             projects.remove(at: index)
+            // 同步 ID 集合
+            projectIDsWithThumbnail.remove(id)
+            projectIDsWithFinishedImage.remove(id)
+            projectIDsWithPatternGrid.remove(id)
+            projectIDsWithDisplayThumbnail.remove(id)
+            projectBlobsRevision &+= 1
             saveData()
         }
+    }
+
+    /// 校验 destructive snapshot 是否完整：如果三个存在性 Set 里说"该项目应该有 blob"
+    /// 但 fetch 拿出来的对应字段是 nil，说明 fetch 出错被吞了（do/catch + logError + 返回 nil 的
+    /// cascade），undo 会写 nil 把现存数据清掉。这里**不阻断删除**（避免 transient SwiftData
+    /// 错误锁死用户），但写 logError 让 Sentry 能看到，未来这类"撤销不回原图"的用户反馈能溯源。
+    fileprivate func logSnapshotCaptureGapsIfAny(
+        projectId: UUID,
+        operation: String,
+        snapshot: ProjectRecord
+    ) {
+        var gaps: [String] = []
+        if projectIDsWithThumbnail.contains(projectId) && snapshot.thumbnail == nil {
+            gaps.append("thumbnail")
+        }
+        if projectIDsWithFinishedImage.contains(projectId) && snapshot.finishedImage == nil {
+            gaps.append("finishedImage")
+        }
+        if projectIDsWithPatternGrid.contains(projectId) && snapshot.patternGrid == nil {
+            gaps.append("patternGrid")
+        }
+        guard !gaps.isEmpty else { return }
+        logError("snapshot_capture_gap", metadata: [
+            "projectId": projectId.uuidString,
+            "operation": operation,
+            "missingFields": gaps.joined(separator: ","),
+            "note": "ID 集合记录该项目有 blob，但 fetch 返回 nil；undo 将无法还原这些字段"
+        ])
     }
 
     func archiveProject(id: UUID) {
@@ -2269,9 +2453,9 @@ class InventoryManager: ObservableObject {
         projects.contains { $0.parentId == parentId && !$0.isPlanned }
     }
 
-    /// 判断项目是否为父项目（有子项目）
+    /// 判断项目是否为父项目（有子项目）—— O(1) Set 查表。
     func isParentProject(_ projectId: UUID) -> Bool {
-        projects.contains { $0.parentId == projectId }
+        parentIds.contains(projectId)
     }
 
     /// 获取父项目的汇总 beadUsage（合并所有子项目）
@@ -2455,8 +2639,28 @@ class InventoryManager: ObservableObject {
             // 加上独立项目
             allChildrenProjects.append(contentsOf: independentProjects)
 
-            // 记录合并前的状态：所有子项目 + 所有父项目
-            let originalProjects = allChildrenProjects + parentProjects
+            // 记录合并前的状态：所有子项目 + 所有父项目。
+            //
+            // 父项目的 SwiftData 行接下来会被 `projects.removeAll { $0.id == parent.id }` 删掉，
+            // undo 时 revertProjectMerge 走 recreate 分支重新创建 SDProjectRecord —— 必须在删
+            // 之前把每个父项目的 thumbnail / finishedImage / patternGrid 都 fetch 出来塞进
+            // snapshot 副本，否则 undo 重建的行 blob 字段恒为 nil（→ 永久丢图丢校准）。
+            // 子项目和独立项目的 SwiftData 行 *不* 被删（只改 parentId），blob 在原行里继续在，
+            // 所以这里不需要为它们 fetch blob。
+            let parentSnapshots = parentProjects.map { parent -> ProjectRecord in
+                var snap = parent
+                snap.thumbnail = fetchProjectThumbnailData(for: parent.id)
+                snap.finishedImage = fetchProjectFinishedImageData(for: parent.id)
+                snap.patternGrid = fetchProjectPatternGrid(for: parent.id)
+                snap.displayThumbnail = fetchProjectDisplayThumbnail(for: parent.id)
+                logSnapshotCaptureGapsIfAny(
+                    projectId: parent.id,
+                    operation: "mergeProjects.parent",
+                    snapshot: snap
+                )
+                return snap
+            }
+            let originalProjects = allChildrenProjects + parentSnapshots
 
             // 创建新的父项目（继承第一个子项目的色号体系）
             let mergedColorSystem = allChildrenProjects.first?.colorSystem ?? .mard
@@ -2567,7 +2771,10 @@ class InventoryManager: ObservableObject {
                     // 恢复 parentId
                     projects[index].parentId = projectSnapshot.parentId
                 } else {
-                    // 项目不存在（可能是被删除的旧父项目），需要重新创建
+                    // 项目不存在（可能是被删除的旧父项目），需要重新创建。
+                    // 把 snapshot 里捕获的 thumbnail / finishedImage / patternGridData / completedDate
+                    // 一并塞进 ProjectRecord —— 后面 saveData 会走 insert 分支 `SDProjectRecord(from:)`，
+                    // 把这些字段一次性写到新 SwiftData 行里。
                     let usages = projectSnapshot.beadUsages.map {
                         BeadUsage(colorCode: $0.colorCode, brandId: $0.brandId, quantity: $0.quantity, isDeducted: $0.isDeducted)
                     }
@@ -2581,13 +2788,29 @@ class InventoryManager: ObservableObject {
                         parentId: projectSnapshot.parentId,
                         isPlanned: projectSnapshot.isPlanned,
                         executedDate: projectSnapshot.executedDate,
-                        colorSystem: projectSnapshot.colorSystem
+                        thumbnail: projectSnapshot.thumbnail,
+                        finishedImage: projectSnapshot.finishedImage,
+                        completedDate: projectSnapshot.completedDate,
+                        colorSystem: projectSnapshot.colorSystem,
+                        patternGrid: SDProjectRecord.decodePatternGrid(projectSnapshot.patternGridData, projectId: projectSnapshot.id),
+                        displayThumbnail: projectSnapshot.displayThumbnail
                     )
                     projects.append(restoredProject)
+                    // 同步 blob ID 集合（saveData 不更新这四个 Set）
+                    if restoredProject.thumbnail != nil { projectIDsWithThumbnail.insert(restoredProject.id) }
+                    if restoredProject.finishedImage != nil { projectIDsWithFinishedImage.insert(restoredProject.id) }
+                    if restoredProject.patternGrid != nil { projectIDsWithPatternGrid.insert(restoredProject.id) }
+                    if restoredProject.displayThumbnail != nil { projectIDsWithDisplayThumbnail.insert(restoredProject.id) }
+                    projectBlobsRevision &+= 1
                 }
             }
 
             saveData()
+            // 重建项目带 blob 副本残留在 manager.projects 里；持久化后 strip 回 metadata-only，
+            // 同 addProject / duplicate 的语义，避免内存峰值堆积。
+            for snap in mergeSnapshot.originalProjects {
+                stripBlobFromInMemoryProject(snap.id)
+            }
             print("[InventoryManager] 撤回复杂合并：恢复了 \(mergeSnapshot.originalProjects.count) 个项目")
             return true
         }
@@ -2703,11 +2926,33 @@ class InventoryManager: ObservableObject {
             BeadUsage(id: usage.id, colorCode: usage.colorCode, brandId: nil,
                       quantity: usage.quantity, isDeducted: false)
         }
+        // 自动生成 displayThumbnail —— 同 addProject，见那边注释
+        if plannedProject.displayThumbnail == nil, let thumb = plannedProject.thumbnail {
+            if let downsampled = ImageDownsampler.downsample(thumb) {
+                plannedProject.displayThumbnail = downsampled
+            } else {
+                logError("display_thumbnail_downsample_failed_at_addPlanned", metadata: [
+                    "projectId": plannedProject.id.uuidString,
+                    "sourceBytes": thumb.count
+                ])
+            }
+        }
         projects.insert(plannedProject, at: 0)
         saveData()
 
-        // 记录历史
-        historyManager.recordProject(type: .planAdd, project: plannedProject)
+        // 同步 ID 集合（同 addProject —— 见那边注释）
+        if plannedProject.thumbnail != nil { projectIDsWithThumbnail.insert(plannedProject.id) }
+        if plannedProject.finishedImage != nil { projectIDsWithFinishedImage.insert(plannedProject.id) }
+        if plannedProject.patternGrid != nil { projectIDsWithPatternGrid.insert(plannedProject.id) }
+        if plannedProject.displayThumbnail != nil { projectIDsWithDisplayThumbnail.insert(plannedProject.id) }
+        projectBlobsRevision &+= 1
+
+        stripBlobFromInMemoryProject(plannedProject.id)
+
+        // 记录历史 —— metadata-only（撤销 add 不需要图）
+        if let stripped = projects.first(where: { $0.id == plannedProject.id }) {
+            historyManager.recordProject(type: .planAdd, project: stripped)
+        }
     }
 
     /// 执行计划项目：选择品牌后一次性扣减库存
@@ -2876,18 +3121,60 @@ class InventoryManager: ObservableObject {
         // 查找子项目（如果有）
         let children = projects.filter { $0.parentId == projectId }
 
+        // destructive 路径：把父项目和子项目的 OLD 图都从 SwiftData 取出来回填，
+        // 否则原 SwiftData 行被删除后 undo 无法找回图。
+        var snapshotParent = project
+        snapshotParent.thumbnail = fetchProjectThumbnailData(for: projectId)
+        snapshotParent.finishedImage = fetchProjectFinishedImageData(for: projectId)
+        snapshotParent.patternGrid = fetchProjectPatternGrid(for: projectId)
+        snapshotParent.displayThumbnail = fetchProjectDisplayThumbnail(for: projectId)
+        let snapshotChildren = children.map { child -> ProjectRecord in
+            var snap = child
+            snap.thumbnail = fetchProjectThumbnailData(for: child.id)
+            snap.finishedImage = fetchProjectFinishedImageData(for: child.id)
+            snap.patternGrid = fetchProjectPatternGrid(for: child.id)
+            snap.displayThumbnail = fetchProjectDisplayThumbnail(for: child.id)
+            logSnapshotCaptureGapsIfAny(
+                projectId: child.id,
+                operation: "deletePlannedProject.child",
+                snapshot: snap
+            )
+            return snap
+        }
+        logSnapshotCaptureGapsIfAny(
+            projectId: projectId,
+            operation: "deletePlannedProject.parent",
+            snapshot: snapshotParent
+        )
         // 记录历史（在删除前），包含父项目和子项目
-        historyManager.recordPlanDelete(project: project, children: children)
+        historyManager.recordPlanDelete(project: snapshotParent, children: snapshotChildren)
 
         // 如果是父项目，也删除子项目
         if !children.isEmpty {
             projects.removeAll { $0.parentId == projectId }
         }
         projects.removeAll { $0.id == projectId }
+        // 同步 ID 集合（父 + 所有子）
+        projectIDsWithThumbnail.remove(projectId)
+        projectIDsWithFinishedImage.remove(projectId)
+        projectIDsWithPatternGrid.remove(projectId)
+        projectIDsWithDisplayThumbnail.remove(projectId)
+        for child in children {
+            projectIDsWithThumbnail.remove(child.id)
+            projectIDsWithFinishedImage.remove(child.id)
+            projectIDsWithPatternGrid.remove(child.id)
+            projectIDsWithDisplayThumbnail.remove(child.id)
+        }
+        projectBlobsRevision &+= 1
         saveData()
     }
 
-    /// 复制计划项目（支持文件夹完整复制）
+    /// 复制计划项目（支持文件夹完整复制）。
+    ///
+    /// blob 处理：源项目的 thumbnail / patternGrid 都在 SwiftData 里（in-memory 缓存只有
+    /// metadata），所以复制时要从 SwiftData 按需取出再喂给新项目；落地后通过
+    /// `_setProjectBlobsDirectly` 把 blob 写到新 row，同步 ID 集合。
+    /// finishedImage 不复制 —— 副本是新创建的计划项目，没有"成品"语义。
     @discardableResult
     func duplicatePlannedProject(_ projectId: UUID) -> UUID? {
         guard let index = projects.firstIndex(where: { $0.id == projectId && $0.isPlanned }) else {
@@ -2908,7 +3195,16 @@ class InventoryManager: ObservableObject {
             )
         }
 
-        // 创建副本项目
+        // 按需取源 blob —— 缓存只剩 metadata，必须直接读 SwiftData
+        let sourceThumbnail = fetchProjectThumbnailData(for: projectId)
+        let sourceGrid = fetchProjectPatternGrid(for: projectId)
+        let sourceGridData = sourceGrid.flatMap { SDProjectRecord.encodePatternGrid($0, projectId: newId) }
+        // 顺带复制源项目的 displayThumbnail；如果源没有就现场 downsample 源 thumbnail
+        let sourceDisplay = fetchProjectDisplayThumbnail(for: projectId)
+            ?? sourceThumbnail.flatMap { ImageDownsampler.downsample($0) }
+
+        // 创建副本项目（这一份会经由 saveData → SDProjectRecord(from:) 落地，所以这里
+        // 顺手把 blob 也喂进去 —— 一次 saveData 就把 blob 一并写入新 row）。
         let duplicatedProject = ProjectRecord(
             id: newId,
             name: project.name + " (副本)", // 持久化数据，不本地化以保证 iCloud 同步一致性
@@ -2919,14 +3215,17 @@ class InventoryManager: ObservableObject {
             parentId: nil,  // 副本总是顶级项目
             isPlanned: true,
             executedDate: nil,
-            thumbnail: project.thumbnail,
-            colorSystem: project.colorSystem
+            thumbnail: sourceThumbnail,
+            colorSystem: project.colorSystem,
+            patternGrid: sourceGrid,
+            displayThumbnail: sourceDisplay
         )
 
         // 插入到原项目后面
         projects.insert(duplicatedProject, at: index + 1)
 
-        // 如果是父项目，复制所有子项目
+        // 如果是父项目，复制所有子项目（每个子项目也单独取自己的 blob）
+        var childCopies: [(record: ProjectRecord, thumbnail: Data?, gridData: Data?, displayThumbnail: Data?)] = []
         if isParentProject(projectId) {
             let children = childProjects(of: projectId)
             for child in children {
@@ -2940,6 +3239,11 @@ class InventoryManager: ObservableObject {
                         isDeducted: false
                     )
                 }
+                let childThumb = fetchProjectThumbnailData(for: child.id)
+                let childGrid = fetchProjectPatternGrid(for: child.id)
+                let childGridData = childGrid.flatMap { SDProjectRecord.encodePatternGrid($0, projectId: newChildId) }
+                let childDisplay = fetchProjectDisplayThumbnail(for: child.id)
+                    ?? childThumb.flatMap { ImageDownsampler.downsample($0) }
                 let duplicatedChild = ProjectRecord(
                     id: newChildId,
                     name: child.name,
@@ -2950,17 +3254,36 @@ class InventoryManager: ObservableObject {
                     parentId: newId,  // 关联到新的父项目
                     isPlanned: true,
                     executedDate: nil,
-                    thumbnail: child.thumbnail,
-                    colorSystem: child.colorSystem
+                    thumbnail: childThumb,
+                    colorSystem: child.colorSystem,
+                    patternGrid: childGrid,
+                    displayThumbnail: childDisplay
                 )
                 projects.append(duplicatedChild)
+                childCopies.append((record: duplicatedChild, thumbnail: childThumb, gridData: childGridData, displayThumbnail: childDisplay))
             }
         }
 
         saveData()
 
-        // 记录历史
-        historyManager.recordProject(type: .planAdd, project: duplicatedProject)
+        // saveData 已经把 blob 持久化（SDProjectRecord(from:) 路径），但 ID 集合还没刷。
+        // 同时把内存里副本的 blob 卸掉，回到 metadata-only 常态。
+        if sourceThumbnail != nil { projectIDsWithThumbnail.insert(newId) }
+        if sourceGridData != nil { projectIDsWithPatternGrid.insert(newId) }
+        if sourceDisplay != nil { projectIDsWithDisplayThumbnail.insert(newId) }
+        stripBlobFromInMemoryProject(newId)
+        for child in childCopies {
+            if child.thumbnail != nil { projectIDsWithThumbnail.insert(child.record.id) }
+            if child.gridData != nil { projectIDsWithPatternGrid.insert(child.record.id) }
+            if child.displayThumbnail != nil { projectIDsWithDisplayThumbnail.insert(child.record.id) }
+            stripBlobFromInMemoryProject(child.record.id)
+        }
+        projectBlobsRevision &+= 1
+
+        // 记录历史 —— add 撤回不需要图（撤回 = 删行，源 SwiftData 行还在）
+        if let stripped = projects.first(where: { $0.id == newId }) {
+            historyManager.recordProject(type: .planAdd, project: stripped)
+        }
 
         return newId
     }
@@ -2985,6 +3308,13 @@ class InventoryManager: ObservableObject {
             )
         }
 
+        // 按需取源 blob —— 缓存只剩 metadata，必须直接读 SwiftData
+        let sourceThumbnail = fetchProjectThumbnailData(for: projectId)
+        let sourceGrid = fetchProjectPatternGrid(for: projectId)
+        let sourceGridData = sourceGrid.flatMap { SDProjectRecord.encodePatternGrid($0, projectId: newId) }
+        let sourceDisplay = fetchProjectDisplayThumbnail(for: projectId)
+            ?? sourceThumbnail.flatMap { ImageDownsampler.downsample($0) }
+
         // 创建副本项目
         let duplicatedProject = ProjectRecord(
             id: newId,
@@ -2996,14 +3326,17 @@ class InventoryManager: ObservableObject {
             parentId: nil,
             isPlanned: true,
             executedDate: nil,
-            thumbnail: project.thumbnail,
-            colorSystem: project.colorSystem
+            thumbnail: sourceThumbnail,
+            colorSystem: project.colorSystem,
+            patternGrid: sourceGrid,
+            displayThumbnail: sourceDisplay
         )
 
         // 插入到列表开头
         projects.insert(duplicatedProject, at: 0)
 
         // 如果是父项目，复制所有子项目
+        var childCopies: [(record: ProjectRecord, thumbnail: Data?, gridData: Data?, displayThumbnail: Data?)] = []
         if isParentProject(projectId) {
             let children = childProjects(of: projectId)
             for child in children {
@@ -3017,6 +3350,11 @@ class InventoryManager: ObservableObject {
                         isDeducted: false
                     )
                 }
+                let childThumb = fetchProjectThumbnailData(for: child.id)
+                let childGrid = fetchProjectPatternGrid(for: child.id)
+                let childGridData = childGrid.flatMap { SDProjectRecord.encodePatternGrid($0, projectId: newChildId) }
+                let childDisplay = fetchProjectDisplayThumbnail(for: child.id)
+                    ?? childThumb.flatMap { ImageDownsampler.downsample($0) }
                 let duplicatedChild = ProjectRecord(
                     id: newChildId,
                     name: child.name,
@@ -3027,17 +3365,35 @@ class InventoryManager: ObservableObject {
                     parentId: newId,  // 关联到新的父项目
                     isPlanned: true,
                     executedDate: nil,
-                    thumbnail: child.thumbnail,
-                    colorSystem: child.colorSystem
+                    thumbnail: childThumb,
+                    colorSystem: child.colorSystem,
+                    patternGrid: childGrid,
+                    displayThumbnail: childDisplay
                 )
                 projects.append(duplicatedChild)
+                childCopies.append((record: duplicatedChild, thumbnail: childThumb, gridData: childGridData, displayThumbnail: childDisplay))
             }
         }
 
         saveData()
 
+        // 同步 ID 集合 + 卸 in-memory blob 副本（同 duplicatePlannedProject —— 见那边注释）
+        if sourceThumbnail != nil { projectIDsWithThumbnail.insert(newId) }
+        if sourceGridData != nil { projectIDsWithPatternGrid.insert(newId) }
+        if sourceDisplay != nil { projectIDsWithDisplayThumbnail.insert(newId) }
+        stripBlobFromInMemoryProject(newId)
+        for child in childCopies {
+            if child.thumbnail != nil { projectIDsWithThumbnail.insert(child.record.id) }
+            if child.gridData != nil { projectIDsWithPatternGrid.insert(child.record.id) }
+            if child.displayThumbnail != nil { projectIDsWithDisplayThumbnail.insert(child.record.id) }
+            stripBlobFromInMemoryProject(child.record.id)
+        }
+        projectBlobsRevision &+= 1
+
         // 记录历史
-        historyManager.recordProject(type: .planAdd, project: duplicatedProject)
+        if let stripped = projects.first(where: { $0.id == newId }) {
+            historyManager.recordProject(type: .planAdd, project: stripped)
+        }
 
         return newId
     }
@@ -3118,44 +3474,508 @@ class InventoryManager: ObservableObject {
         }
     }
 
-    // MARK: - 项目图片管理
+    // MARK: - 项目图片管理（按需取图 / 直写持久层）
+    //
+    // 设计取舍：图片字段不再走 saveData 的 baseline-diff 路径。
+    // 原因：自 v2.0.x 起 `projects` 缓存里这些字段恒为 nil（避免 jetsam），
+    // 如果还沿用旧 diff 写回，会把云端真实数据用 nil 覆盖掉。
+    // 新规则：图片读 / 写都对单个 SDProjectRecord 直操作；metadata（名称 / 计划状态 /
+    // 总颗数 / beadUsage 等）仍走 saveData 的差分写回。
 
-    /// 更新项目缩略图（支持计划项目和已执行项目）
-    func updateProjectThumbnail(_ projectId: UUID, thumbnail: Data?) {
-        if let index = projects.firstIndex(where: { $0.id == projectId }) {
-            // 记录历史
-            historyManager.recordProject(type: projects[index].isPlanned ? .planUpdate : .projectUpdate, project: projects[index])
-
-            projects[index].thumbnail = thumbnail
-            saveData()
+    /// 同步取单个项目的 thumbnail Data。
+    ///
+    /// 注意：InventoryManager 是 @MainActor，本方法在主线程跑 SwiftData fetch。
+    /// `UIImage(data:)` 的真正解码 / 上屏由 UIKit 推迟到 draw time。
+    /// 我们用 `.task { }` 的好处是：(1) `await` 让出本帧调度窗口，让首屏 commit
+    /// 不在同一 runloop tick 里把 fetch 也吃掉；(2) Task 可取消，切走时不残留。
+    /// 真正想"完全脱离主 actor"需要后台 ModelActor —— 留 follow-up。
+    ///
+    /// 错误处理：把 SwiftData 抛错和「真的没图」区分开。前者写日志返回 nil（避免静默吞错让
+    /// store 损坏 / external storage sidecar 丢失看起来像无图）；后者直接返回 nil。
+    func fetchProjectThumbnailData(for projectId: UUID) -> Data? {
+        guard let context = modelContext else {
+            logError("fetch_thumbnail_no_context", metadata: ["projectId": projectId.uuidString])
+            return nil
+        }
+        let descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        do {
+            return try context.fetch(descriptor).first?.thumbnail
+        } catch {
+            logError("fetch_thumbnail_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return nil
         }
     }
 
-    /// 更新项目的拼图模式网格数据（包括四角、行列、色号矩阵）
-    func updateProjectPatternGrid(_ projectId: UUID, grid: BeadPatternGrid?) {
-        if let index = projects.firstIndex(where: { $0.id == projectId }) {
-            historyManager.recordProject(type: projects[index].isPlanned ? .planUpdate : .projectUpdate, project: projects[index])
-            projects[index].patternGrid = grid
-            saveData()
+    /// 同步取单个项目的 finishedImage Data。错误处理同 `fetchProjectThumbnailData`。
+    /// **round-10 review I1**：`propertiesToFetch = [\.finishedImage]` 限定单列 fetch —— 否则
+    /// SwiftData 会把同行的 raw `thumbnail`（可能 5-10 MB inline PNG）也一起物化。
+    func fetchProjectFinishedImageData(for projectId: UUID) -> Data? {
+        guard let context = modelContext else {
+            logError("fetch_finished_image_no_context", metadata: ["projectId": projectId.uuidString])
+            return nil
+        }
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        descriptor.fetchLimit = 1
+        descriptor.propertiesToFetch = [\.finishedImage]
+        do {
+            return try context.fetch(descriptor).first?.finishedImage
+        } catch {
+            logError("fetch_finished_image_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return nil
         }
     }
 
-    /// 更新项目成品图（仅已执行项目）
-    /// 如果是新增成品图且之前没有完成日期，自动设置为当天
-    func updateProjectFinishedImage(_ projectId: UUID, finishedImage: Data?) {
-        if let index = projects.firstIndex(where: { $0.id == projectId && !$0.isPlanned }) {
-            // 记录历史
-            historyManager.recordProject(type: .projectUpdate, project: projects[index])
+    /// 同步取单个项目的 BeadPatternGrid（拼图网格）。错误处理同上。
+    /// **round-10 review I1**：`propertiesToFetch = [\.patternGridData]` 限定单列。
+    func fetchProjectPatternGrid(for projectId: UUID) -> BeadPatternGrid? {
+        guard let context = modelContext else {
+            logError("fetch_pattern_grid_no_context", metadata: ["projectId": projectId.uuidString])
+            return nil
+        }
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        descriptor.fetchLimit = 1
+        descriptor.propertiesToFetch = [\.patternGridData]
+        do {
+            guard let sd = try context.fetch(descriptor).first else { return nil }
+            return SDProjectRecord.decodePatternGrid(sd.patternGridData, projectId: projectId)
+        } catch {
+            logError("fetch_pattern_grid_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return nil
+        }
+    }
 
-            projects[index].finishedImage = finishedImage
+    /// 同步取单个项目的 displayThumbnail（列表用小图）。错误处理同上。
+    /// **列表 view 主要走这条路径**：UIImage(data:) 这份 ~50-100 KB JPEG 不会撞 jetsam。
+    /// 老数据这里返 nil，view 层会降级到 `ImageDownsampler.downsampleToUIImage(thumbnail)` 现场降级原图。
+    /// **round-10 review I1**：`propertiesToFetch = [\.displayThumbnail]` 限定单列 —— 否则
+    /// 列表每滚一个 row 都会 fault 同行的 raw thumbnail（5-10 MB inline PNG）到内存。
+    func fetchProjectDisplayThumbnail(for projectId: UUID) -> Data? {
+        guard let context = modelContext else {
+            logError("fetch_display_thumbnail_no_context", metadata: ["projectId": projectId.uuidString])
+            return nil
+        }
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        descriptor.fetchLimit = 1
+        descriptor.propertiesToFetch = [\.displayThumbnail]
+        do {
+            return try context.fetch(descriptor).first?.displayThumbnail
+        } catch {
+            logError("fetch_display_thumbnail_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return nil
+        }
+    }
 
-            // 上传成品图时，如果没有完成日期，自动设置为当天
-            if finishedImage != nil && projects[index].completedDate == nil {
-                projects[index].completedDate = Date()
+    /// 直接写单个项目的 displayThumbnail —— 仅 ThumbnailMigrationCoordinator 用。
+    /// 不进 history（迁移不是用户操作），不写其它字段，**同步**做一次 context.save。
+    /// 返回 false 时迁移协调器记 .failed，下次 startup 重试。
+    func setProjectDisplayThumbnail(projectId: UUID, displayThumbnail: Data?) -> Bool {
+        guard let context = modelContext else {
+            logError("set_display_thumbnail_no_context", metadata: ["projectId": projectId.uuidString])
+            return false
+        }
+        let descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        do {
+            guard let sd = try context.fetch(descriptor).first else {
+                logWarning("set_display_thumbnail_no_sd_record", metadata: ["projectId": projectId.uuidString])
+                return false
             }
-
-            saveData()
+            sd.displayThumbnail = displayThumbnail
+            try context.save()
+            if displayThumbnail != nil {
+                projectIDsWithDisplayThumbnail.insert(projectId)
+            } else {
+                projectIDsWithDisplayThumbnail.remove(projectId)
+            }
+            projectBlobsRevision &+= 1
+            return true
+        } catch {
+            logError("set_display_thumbnail_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return false
         }
+    }
+
+    /// 单条 fetch 取裸 SDProjectRecord —— 仅供同文件内的 `_setProject*Direct` 直写路径用。
+    /// 不暴露 SwiftData 类型到外部接口。
+    /// 注意：返回 nil 有**两种**根因（context 缺失 / fetch 抛错 / 真没记录），都单独记
+    /// 不同 log 事件，避免 Sentry 把根因归错。
+    private func fetchSDProject(by projectId: UUID) -> SDProjectRecord? {
+        guard let context = modelContext else {
+            logError("fetch_sd_project_no_context", metadata: ["projectId": projectId.uuidString])
+            return nil
+        }
+        let descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        do {
+            return try context.fetch(descriptor).first
+        } catch {
+            logError("fetch_sd_project_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return nil
+        }
+    }
+
+    /// 刷新「持久层里有 thumbnail / finishedImage / patternGridData 的项目 ID 集合」缓存。
+    /// 谓词在 SQL 层完成 NULL 检查，不会把 blob 实际加载进内存
+    /// （externalStorage 列只存引用；非 externalStorage 的 BLOB 列也只是查 IS NOT NULL）。
+    ///
+    /// 在以下时机调用：load_data_completed、CloudKit 远程合并完成、backup restore 收尾。
+    /// 调用结束会 bump `projectBlobsRevision`，让视图 `.task(id:)` 复合 key 触发重取。
+    /// `internal` 访问层级是为了让 BeadInventoryTests 能在测试里调到（通过同 module
+    /// 的 @testable import 即可，不再需要 forTests 桥）。
+    func refreshProjectBlobMetadata() {
+        guard let context = modelContext else {
+            projectIDsWithFinishedImage = []
+            projectIDsWithThumbnail = []
+            projectIDsWithPatternGrid = []
+            projectIDsWithDisplayThumbnail = []
+            projectBlobsRevision &+= 1
+            return
+        }
+        do {
+            // **round-11 review C1 修复**：4 个 fetch 都加 `propertiesToFetch = [\.id]`
+            // 单列投影。之前 4 个 fetch 都返回完整 SDProjectRecord 数组，每条带 inline
+            // raw thumbnail / finishedImage / patternGridData / displayThumbnail Data ——
+            // 458 项目 × 5-10 MB raw thumbnail = 2-5 GB 瞬时内存峰值。这函数在
+            // loadData 完成 / 远程合并完成 / backup restore 完成都调用，跟 R10 修的
+            // 迁移协调器 fetch 是**同型 bug**：fetch 谓词只是过滤，**不**避免物化整行。
+            var finishedDesc = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.finishedImage != nil })
+            finishedDesc.propertiesToFetch = [\.id]
+            var thumbDesc = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.thumbnail != nil })
+            thumbDesc.propertiesToFetch = [\.id]
+            var gridDesc = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.patternGridData != nil })
+            gridDesc.propertiesToFetch = [\.id]
+            var displayDesc = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.displayThumbnail != nil })
+            displayDesc.propertiesToFetch = [\.id]
+            projectIDsWithFinishedImage = Set(try context.fetch(finishedDesc).map { $0.id })
+            projectIDsWithThumbnail = Set(try context.fetch(thumbDesc).map { $0.id })
+            projectIDsWithPatternGrid = Set(try context.fetch(gridDesc).map { $0.id })
+            projectIDsWithDisplayThumbnail = Set(try context.fetch(displayDesc).map { $0.id })
+        } catch {
+            logError("project_blob_meta_refresh_failed", metadata: ["error": "\(error)"])
+        }
+        // 即使 fetch 抛错也要 bump：调用方（loadData / restore / 远端合并）已经动过持久层，
+        // 视图缓存认定的 revision 必须前进一步，让 .task(id:) 重新跑取图，避免视图卡在
+        // 旧 revision 显示过期图。
+        projectBlobsRevision &+= 1
+    }
+
+    /// 内部直写：把单个项目的 4 个 blob 字段（thumbnail / finishedImage / patternGridData /
+    /// displayThumbnail）按需写到 SwiftData。**不**走 history 记录、**不**做 isPlanned 守卫。
+    /// 供以下路径用：
+    /// - public `updateProject*` 在调用方记完 history 后转发到这里
+    /// - duplicate 路径在 addProject 后回填源项目的真实 blob
+    /// - HistoryManager.restoreProject undo 删除时回填快照里的真实 blob
+    /// - BackupManager.restoreBackup 把备份里的 blob（含 nil 清空语义）写回新 store
+    ///
+    /// 参数语义：`nil` = 跳过该字段（不动），`.some(nil)` = 清空，`.some(data)` = 写入新值。
+    /// 用 `Data??` 而不是单层 optional + 单独 flag，是为了 call site 紧凑且类型即文档。
+    @discardableResult
+    fileprivate func _setProjectBlobsDirectly(
+        projectId: UUID,
+        thumbnail: Data?? = nil,
+        finishedImage: Data?? = nil,
+        patternGridData: Data?? = nil,
+        displayThumbnail: Data?? = nil
+    ) -> Bool {
+        guard let context = modelContext else {
+            logError("set_blobs_no_context", metadata: ["projectId": projectId.uuidString])
+            return false
+        }
+        guard let sd = fetchSDProject(by: projectId) else {
+            logWarning("set_blobs_no_sd_record", metadata: ["projectId": projectId.uuidString])
+            return false
+        }
+        if case .some(let newThumb) = thumbnail {
+            sd.thumbnail = newThumb
+        }
+        if case .some(let newFinished) = finishedImage {
+            sd.finishedImage = newFinished
+        }
+        if case .some(let newGrid) = patternGridData {
+            sd.patternGridData = newGrid
+        }
+        if case .some(let newDisplay) = displayThumbnail {
+            sd.displayThumbnail = newDisplay
+        }
+        do {
+            try context.save()
+        } catch {
+            logError("set_blobs_save_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return false
+        }
+        // 同步 ID 集合 —— 只对调用方明确写了的字段更新对应 Set。
+        if case .some(let newThumb) = thumbnail {
+            if newThumb != nil { projectIDsWithThumbnail.insert(projectId) } else { projectIDsWithThumbnail.remove(projectId) }
+        }
+        if case .some(let newFinished) = finishedImage {
+            if newFinished != nil { projectIDsWithFinishedImage.insert(projectId) } else { projectIDsWithFinishedImage.remove(projectId) }
+        }
+        if case .some(let newGrid) = patternGridData {
+            if newGrid != nil { projectIDsWithPatternGrid.insert(projectId) } else { projectIDsWithPatternGrid.remove(projectId) }
+        }
+        if case .some(let newDisplay) = displayThumbnail {
+            if newDisplay != nil { projectIDsWithDisplayThumbnail.insert(projectId) } else { projectIDsWithDisplayThumbnail.remove(projectId) }
+        }
+        projectBlobsRevision &+= 1
+        return true
+    }
+
+    /// 内部直写 + 给 finishedImage 上传自动补完成日期的便捷方法。
+    /// 仅 `updateProjectFinishedImage` 公开 API 走这里（注意：BackupManager.restoreBackup
+    /// **不**走这里，它走 `_setProjectBlobsDirectly` 不自动补 completedDate —— 因为备份
+    /// 还原本来就是回放原始状态，不应该再造新的"今天"完成日期）。
+    fileprivate func _setProjectFinishedImageDirectly(
+        projectId: UUID,
+        finishedImage: Data?,
+        autoFillCompletedDate: Bool
+    ) {
+        // 显式 guard context —— 之前用 `try modelContext?.save()`，nil context 时整个表达式
+        // 是 nil 不抛、不 log，但底下 ID 集合 + revision 还是 bump → 用户看到状态变了但
+        // SwiftData 里啥都没写。改成同 `_setProjectBlobsDirectly` 的结构：先 guard，
+        // 失败提前 return 不动 ID 集合。
+        guard let context = modelContext else {
+            logError("set_finished_image_no_context", metadata: ["projectId": projectId.uuidString])
+            return
+        }
+        guard let sd = fetchSDProject(by: projectId) else {
+            logWarning("set_finished_image_no_sd_record", metadata: ["projectId": projectId.uuidString])
+            return
+        }
+        sd.finishedImage = finishedImage
+        // 上传成品图时，如果没有完成日期，自动设置为当天。
+        if autoFillCompletedDate, finishedImage != nil, sd.completedDate == nil {
+            let now = Date()
+            sd.completedDate = now
+            // in-memory projects 也要同步
+            if let idx = projects.firstIndex(where: { $0.id == projectId }) {
+                projects[idx].completedDate = now
+            }
+        }
+        do {
+            try context.save()
+        } catch {
+            logError("set_finished_image_save_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return
+        }
+        if finishedImage != nil { projectIDsWithFinishedImage.insert(projectId) } else { projectIDsWithFinishedImage.remove(projectId) }
+        projectBlobsRevision &+= 1
+    }
+
+    /// 给某个 in-memory `ProjectRecord` 卸掉 thumbnail / finishedImage / patternGrid / displayThumbnail。
+    /// 用在 addProject / duplicate 这种「先把含 blob 的 record 暂存进 projects 数组以触发
+    /// SDProjectRecord(from:) 持久化」的路径上：持久化完成后立刻把内存里的 blob 删掉，
+    /// 否则连续 N 次扫描添加项目时 blob 会在内存里重新堆起来，重蹈 458 项目 jetsam 路。
+    fileprivate func stripBlobFromInMemoryProject(_ projectId: UUID) {
+        guard let idx = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        projects[idx].thumbnail = nil
+        projects[idx].finishedImage = nil
+        projects[idx].patternGrid = nil
+        projects[idx].displayThumbnail = nil
+    }
+
+    /// 备份还原专用的批量 blob 写入。
+    ///
+    /// 语义：每个项目的 thumbnail / finishedImage **总是**按备份里的值写回，包括用 nil 清空
+    /// （备份明确说该项目无图，store 上还残留旧图就该清）。patternGrid **只在备份提供时**写
+    /// （`patternGridProvided == true` 才覆盖；当前备份 JSON 还没 round-trip 这个字段，
+    /// 调用方一律传 false，避免清掉用户当前的网格标定）。
+    ///
+    /// 历史处理：本路径**完全不**记录 history（恢复备份不是用户的"操作"，不应该出现在
+    /// 撤销栈里，否则 458 项目级用户一次 restore 会灌进几百条 history entries）。
+    /// isPlanned 守卫：本路径**绕过** updateProjectFinishedImage 里的 `!isPlanned` 守卫
+    /// （restore 不区分计划/已执行；计划项目也可以从备份还原其 finishedImage 字段
+    /// —— 即使语义少见，也比静默丢数据强）。
+    ///
+    /// 调用方应在循环结束后由本方法内部统一调一次 `refreshProjectBlobMetadata()` 重建
+    /// 三个 ID 集合，避免逐条增量更新引入抖动。
+    ///
+    /// - Returns: `RestoreBlobsResult` — `succeeded` 是成功写入的条目数，`failedIDs`
+    ///   是 _setProjectBlobsDirectly 返回 false 的项目 ID 列表（context 缺失 / SD record
+    ///   不存在 / save 抛错）。调用方应检查返回值；至少打印失败计数让备份 UI
+    ///   能区分"完整恢复"和"部分恢复"。
+    @MainActor
+    @discardableResult
+    func restoreProjectBlobsFromBackup(
+        _ entries: [(id: UUID, thumbnail: Data?, finishedImage: Data?, patternGridData: Data?, patternGridProvided: Bool, displayThumbnail: Data?, displayThumbnailProvided: Bool)]
+    ) -> RestoreBlobsResult {
+        var failedIDs: [UUID] = []
+        for entry in entries {
+            // patternGrid 仅在备份显式带值时写入；否则保留 store 上的旧网格。
+            let gridArg: Data?? = entry.patternGridProvided ? .some(entry.patternGridData) : .none
+            // displayThumbnail：备份带就写（即使是 nil，也是显式声明"这条没有列表小图，
+            // 让迁移协调器后续 backfill"）；备份没这个字段（老备份）→ 不动 store 旧值。
+            let displayArg: Data?? = entry.displayThumbnailProvided ? .some(entry.displayThumbnail) : .none
+            let ok = _setProjectBlobsDirectly(
+                projectId: entry.id,
+                thumbnail: .some(entry.thumbnail),
+                finishedImage: .some(entry.finishedImage),
+                patternGridData: gridArg,
+                displayThumbnail: displayArg
+            )
+            if !ok { failedIDs.append(entry.id) }
+        }
+        // 内部 _setProjectBlobsDirectly 已经在增量更新四个 Set，但整批操作后
+        // 跑一次 refreshProjectBlobMetadata 更稳：能纠正任何中途 catch 漏更的状态，
+        // 同时再 bump 一次 revision 让所有视图 .task(id:) 重取。
+        refreshProjectBlobMetadata()
+        if !failedIDs.isEmpty {
+            logError("restore_blobs_partial_failure", metadata: [
+                "totalCount": entries.count,
+                "failedCount": failedIDs.count,
+                "sampleFailedIds": failedIDs.prefix(10).map { $0.uuidString }.joined(separator: ",")
+            ])
+        }
+        return RestoreBlobsResult(succeeded: entries.count - failedIDs.count, failedIDs: failedIDs)
+    }
+
+    /// `restoreProjectBlobsFromBackup` 的返回值；让 BackupManager 能区分"完整恢复"和
+    /// "部分恢复 N 项失败"。`failedIDs` 是 `_setProjectBlobsDirectly` 返回 false 的项目 ID。
+    struct RestoreBlobsResult {
+        let succeeded: Int
+        let failedIDs: [UUID]
+        var hasFailures: Bool { !failedIDs.isEmpty }
+    }
+
+    /// 更新项目缩略图（支持计划项目和已执行项目）—— 直写 SwiftData，不走 saveData diff。
+    ///
+    /// History 处理：本路径**同时**把 OLD thumbnail 和 OLD finishedImage 都回填到 snapshot，
+    /// 设 `capturesImages: true`。原因：`capturesImages` 在 ProjectSnapshot 里是单 Bool，
+    /// undo 路径会同时 `updateProjectThumbnail` 和 `updateProjectFinishedImage` 还原。
+    /// 如果只回填本次改动的那一字段，另一字段（finishedImage）就会被 undo 写 nil 清空。
+    /// 所以"任何 image 改动 → snapshot 同时带两张图"。
+    func updateProjectThumbnail(_ projectId: UUID, thumbnail: Data?) {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return }
+
+        var snapshotProject = projects[index]
+        snapshotProject.thumbnail = fetchProjectThumbnailData(for: projectId)
+        snapshotProject.finishedImage = fetchProjectFinishedImageData(for: projectId)
+        snapshotProject.displayThumbnail = fetchProjectDisplayThumbnail(for: projectId)
+        historyManager.recordProject(
+            type: projects[index].isPlanned ? .planUpdate : .projectUpdate,
+            project: snapshotProject,
+            capturesImages: true
+        )
+
+        // 同步生成 NEW displayThumbnail —— thumbnail == nil 时清空 displayThumbnail；
+        // 否则 downsample 一个新的。downsample 失败时清 displayThumbnail（保持跟 raw thumbnail
+        // 同步，列表 row 会走 fallback 实时降级路径）。
+        var newDisplayThumbnail: Data? = nil
+        if let data = thumbnail {
+            if let d = ImageDownsampler.downsample(data) {
+                newDisplayThumbnail = d
+            } else {
+                logError("display_thumbnail_downsample_failed_at_update", metadata: [
+                    "projectId": projectId.uuidString,
+                    "sourceBytes": data.count
+                ])
+            }
+        }
+        _setProjectBlobsDirectly(
+            projectId: projectId,
+            thumbnail: .some(thumbnail),
+            displayThumbnail: .some(newDisplayThumbnail)
+        )
+        logInfo("project_thumbnail_updated", metadata: [
+            "projectId": projectId.uuidString,
+            "hasData": thumbnail != nil
+        ])
+    }
+
+    /// 更新项目的拼图模式网格数据（四角 / 行列 / 色号矩阵）—— 直写 SwiftData。
+    ///
+    /// History 处理：**不**记录历史。`.projectUpdate` 的 undo 路径目前不会还原 patternGrid，
+    /// 加 history 会产生「dead undo」（用户以为可以撤回但其实无效）。
+    /// 网格是校准元数据而不是用户内容，未来如果要做 grid undo，需要扩展 ProjectSnapshot
+    /// 携带 patternGrid 字段并在 undo 分支里同时还原。
+    func updateProjectPatternGrid(_ projectId: UUID, grid: BeadPatternGrid?) {
+        guard projects.contains(where: { $0.id == projectId }) else { return }
+
+        // 编码失败时**保留**原 patternGridData 不覆盖（保持原 saveData 同义语：
+        // 防止把云端最新值用 nil 覆盖造成全设备数据丢失）。这里通过把 .none 传给
+        // `_setProjectBlobsDirectly` 实现"不动该字段"。
+        let newData: Data??
+        if let grid = grid {
+            if let encoded = SDProjectRecord.encodePatternGrid(grid, projectId: projectId) {
+                newData = .some(.some(encoded))
+            } else {
+                newData = .none // 编码失败，logger 已记录，保留旧值
+            }
+        } else {
+            newData = .some(nil) // 用户明确清空
+        }
+        if case .some = newData {
+            _setProjectBlobsDirectly(projectId: projectId, patternGridData: newData)
+        }
+        logInfo("project_pattern_grid_updated", metadata: [
+            "projectId": projectId.uuidString,
+            "hasGrid": grid != nil
+        ])
+    }
+
+    /// 更新项目成品图（仅已执行项目）—— 直写 SwiftData。
+    /// 如果是新增成品图且之前没有完成日期，自动设置为当天。
+    /// History 处理：同 `updateProjectThumbnail` —— 同时回填 OLD thumbnail + finishedImage。
+    func updateProjectFinishedImage(_ projectId: UUID, finishedImage: Data?) {
+        guard let index = projects.firstIndex(where: { $0.id == projectId && !$0.isPlanned }) else {
+            logWarning("update_finished_image_skipped_planned_or_missing", metadata: [
+                "projectId": projectId.uuidString
+            ])
+            return
+        }
+
+        var snapshotProject = projects[index]
+        snapshotProject.thumbnail = fetchProjectThumbnailData(for: projectId)
+        snapshotProject.finishedImage = fetchProjectFinishedImageData(for: projectId)
+        snapshotProject.displayThumbnail = fetchProjectDisplayThumbnail(for: projectId)
+        historyManager.recordProject(
+            type: .projectUpdate,
+            project: snapshotProject,
+            capturesImages: true
+        )
+
+        _setProjectFinishedImageDirectly(
+            projectId: projectId,
+            finishedImage: finishedImage,
+            autoFillCompletedDate: true
+        )
+        logInfo("project_finished_image_updated", metadata: [
+            "projectId": projectId.uuidString,
+            "hasData": finishedImage != nil
+        ])
     }
 
     /// 更新项目完成日期（仅已执行项目）

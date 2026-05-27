@@ -23,8 +23,14 @@ struct CalendarView: View {
     private let weekdays = ["一", "二", "三", "四", "五", "六", "日"]
 
     /// 完成日期 -> 项目
+    ///
+    /// 自 v2.0.x 起 `inventoryManager.projects` 不再持有 finishedImage Data，
+    /// 改用 `projectIDsWithFinishedImage` 集合做 SQL 层存在性查询的结果缓存。
     private var projectsByDate: [Date: [ProjectRecord]] {
-        let projects = inventoryManager.projects.filter { $0.finishedImage != nil && $0.completedDate != nil }
+        let hasImageIDs = inventoryManager.projectIDsWithFinishedImage
+        let projects = inventoryManager.projects.filter {
+            hasImageIDs.contains($0.id) && $0.completedDate != nil
+        }
         var grouped: [Date: [ProjectRecord]] = [:]
         for project in projects {
             if let completedDate = project.completedDate {
@@ -490,23 +496,26 @@ struct DayDetailSheet: View {
 
 private struct DayProjectCard: View {
     let project: ProjectRecord
+    @EnvironmentObject private var inventoryManager: InventoryManager
     @State private var showingFullImage = false
 
     var body: some View {
         HStack(spacing: 12) {
-            if let imageData = project.finishedImage,
-               let uiImage = UIImage(data: imageData) {
+            // 缩略图：异步从 SwiftData 按需取 finishedImage
+            ProjectFinishedImage(projectId: project.id) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Theme.ColorToken.Surface.subtle)
+                    .frame(width: 64, height: 64)
+            } content: { uiImage in
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
                     .frame(width: 64, height: 64)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .onTapGesture { showingFullImage = true }
-            } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Theme.ColorToken.Surface.subtle)
-                    .frame(width: 64, height: 64)
             }
+            .frame(width: 64, height: 64)
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .onTapGesture { showingFullImage = true }
             VStack(alignment: .leading, spacing: 4) {
                 Text(project.name)
                     .font(.system(size: 14, weight: .semibold))
@@ -535,7 +544,8 @@ private struct DayProjectCard: View {
                 .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
         )
         .fullScreenCover(isPresented: $showingFullImage) {
-            FullImageView(imageData: project.finishedImage)
+            // 全屏图按需取（点击才取，不预取）
+            FullImageView(imageData: inventoryManager.fetchProjectFinishedImageData(for: project.id))
         }
     }
 

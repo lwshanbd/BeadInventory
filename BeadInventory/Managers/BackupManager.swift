@@ -34,7 +34,12 @@ class BackupManager {
 
     // MARK: - 周检查
 
-    /// 检查是否需要进行每周备份
+    /// 检查是否需要进行每周备份。
+    ///
+    /// 自 v2.0.x 起：备份阶段会从 SwiftData 把所有项目的 thumbnail / finishedImage 取出来 base64
+    /// 编进 JSON（v1.x 起就这样，只是以前在 InventoryManager.projects 里现成有图）。
+    /// 在 cold-start 的 onAppear 同步路径里跑这玩意儿可能撞 scene-create watchdog，
+    /// 所以把执行延后一帧 + 走 Task：让首屏先 commit，避免首帧渲染期间被卡。
     @MainActor func checkAndPerformWeeklyBackupIfNeeded(inventoryManager: InventoryManager) {
         let now = Date()
 
@@ -47,8 +52,12 @@ class BackupManager {
             }
         }
 
-        // 执行备份
-        performBackup(inventoryManager: inventoryManager)
+        // 推迟到下一次 runloop tick：让首屏 scene-create commit 先完成。
+        // 注意：备份仍然要在 MainActor 上跑（SwiftData mainContext 限定主线程），
+        // 但它不会再卡在第一帧 commit 里 —— iOS watchdog 不会因此再 0x8BADF00D。
+        Task { @MainActor in
+            performBackup(inventoryManager: inventoryManager)
+        }
     }
 
     // MARK: - 执行备份
@@ -126,6 +135,10 @@ class BackupManager {
         }
 
         // 项目数据
+        //
+        // 注意：自 v2.0.x 起 manager.projects 不再持有 thumbnail / finishedImage Data
+        // （为避免 458 项目级用户加载即 ~200MB 内存撞 jetsam）。备份阶段才把图按需取出来 base64。
+        // 一次只持有一张图的 Data，循环结束即释放，峰值内存 ≈ 单张最大图 + JSON 累积体积。
         data["projects"] = manager.projects.map { project in
             var projectData: [String: Any] = [
                 "id": project.id.uuidString,
@@ -148,12 +161,18 @@ class BackupManager {
             if let parentId = project.parentId {
                 projectData["parentId"] = parentId.uuidString
             }
-            // 缩略图和成品图保存为 Base64（仅在有数据时）
-            if let thumbnail = project.thumbnail {
+            // 按需从 SwiftData 取图（projects 缓存里已不含）。
+            if let thumbnail = manager.fetchProjectThumbnailData(for: project.id) {
                 projectData["thumbnail"] = thumbnail.base64EncodedString()
             }
-            if let finishedImage = project.finishedImage {
+            if let finishedImage = manager.fetchProjectFinishedImageData(for: project.id) {
                 projectData["finishedImage"] = finishedImage.base64EncodedString()
+            }
+            // displayThumbnail：备份带就写小图，让 restore 直接拿来不用现场降级。
+            // displayThumbnailProvided 标志让 restore 区分"老备份没这个字段"和"新备份显式说没小图"。
+            projectData["displayThumbnailProvided"] = true
+            if let displayThumbnail = manager.fetchProjectDisplayThumbnail(for: project.id) {
+                projectData["displayThumbnail"] = displayThumbnail.base64EncodedString()
             }
             projectData["beadUsage"] = project.beadUsage.map { usage in
                 [
@@ -380,6 +399,9 @@ class BackupManager {
 
         // 解析项目
         var restoredProjects: [ProjectRecord] = []
+        // 备份对 displayThumbnail 是否提供过的标志（按 project.id 跟踪），让 restoreProjectBlobsFromBackup
+        // 知道老备份（field 不存在）跟新备份显式 nil 的区别。
+        var displayProvidedById: [UUID: Bool] = [:]
         if let projectsArray = json["projects"] as? [[String: Any]] {
             for projectDict in projectsArray {
                 guard let idString = projectDict["id"] as? String,
@@ -422,6 +444,13 @@ class BackupManager {
                 if let finishedImageBase64 = projectDict["finishedImage"] as? String {
                     finishedImage = Data(base64Encoded: finishedImageBase64)
                 }
+                // displayThumbnail：新备份会带 displayThumbnailProvided=true。老备份没这个字段，
+                // 视为"未提供" → restore 不动 store 旧的 displayThumbnail，让迁移协调器后续 backfill。
+                var displayThumbnail: Data?
+                let displayThumbnailProvided = projectDict["displayThumbnailProvided"] as? Bool ?? false
+                if let displayBase64 = projectDict["displayThumbnail"] as? String {
+                    displayThumbnail = Data(base64Encoded: displayBase64)
+                }
 
                 var beadUsage: [BeadUsage] = []
                 if let usageArray = projectDict["beadUsage"] as? [[String: Any]] {
@@ -456,8 +485,13 @@ class BackupManager {
                     thumbnail: thumbnail,
                     finishedImage: finishedImage,
                     completedDate: completedDate,
-                    colorSystem: colorSystem
+                    colorSystem: colorSystem,
+                    patternGrid: nil,
+                    displayThumbnail: displayThumbnail
                 )
+                // 把 displayThumbnailProvided 标志记到旁路 dict，让 restore 路径能区分
+                // "老备份没字段" vs "新备份显式说没小图"
+                displayProvidedById[project.id] = displayThumbnailProvided
                 restoredProjects.append(project)
             }
         }
@@ -548,15 +582,85 @@ class BackupManager {
         // 应用恢复的数据
         manager.brands = restoredBrands
         manager.brandStocks = restoredStocks
+        // 注意：把含图的 restoredProjects 直接塞给 manager.projects 只是临时态 ——
+        // saveData 不会把 thumbnail/finishedImage 写回 SDProjectRecord（自 v2.0.x 起
+        // blob 字段走专门的 update* 直写接口）。所以下面会单独把图持久化。
         manager.projects = restoredProjects
         manager.customColors = restoredCustomColors
         manager.purchaseRecords = restoredPurchaseRecords
         manager.currentBrandId = restoredCurrentBrandId
 
-        // 保存到持久化存储
+        // 保存到持久化存储（写入 metadata，不含 blob）
         manager.saveData()
 
-        print("[BackupManager] 恢复成功: \(backup.fileName)")
+        // 持久化项目图片 —— 走 `restoreProjectBlobsFromBackup` 批量直写：
+        //   - 跳过 history 记录（restore 不应灌历史）
+        //   - 跳过 updateProjectFinishedImage 的 `!isPlanned` 守卫
+        //   - thumbnail / finishedImage 总是写（含 nil 清空：备份说没图就清旧图）
+        //   - patternGrid 仅在备份格式 round-trip 这个字段时写（v2.0.x 备份格式还没加，
+        //     先一律 `provided: false`，不动用户当前的网格标定。
+        //     S4 follow-up：把 patternGrid 加进备份导出 JSON）
+        let entries = restoredProjects.map { project in
+            // displayThumbnail：
+            //   - 新备份显式带（provided=true）→ 用备份里的值，老备份的 stale displayThumbnail 会被清掉，
+            //     由迁移协调器现场 backfill（避免跟 raw thumbnail 不一致）
+            //   - 老备份没字段（provided=false）→ 不动 store 旧值
+            // 老备份强制 provided=true + value=nil 也是合理选择：让所有老备份恢复后都走迁移路径
+            // 重新生成 displayThumbnail，避免 stale 跟新 thumbnail 错位。
+            let providedFromBackup = displayProvidedById[project.id] ?? false
+            let effectiveProvided = true   // 老备份也强制让 store 清掉 displayThumbnail
+            let effectiveDisplay: Data? = providedFromBackup ? project.displayThumbnail : nil
+            return (id: project.id,
+                    thumbnail: project.thumbnail,
+                    finishedImage: project.finishedImage,
+                    patternGridData: nil as Data?,
+                    patternGridProvided: false,
+                    displayThumbnail: effectiveDisplay,
+                    displayThumbnailProvided: effectiveProvided)
+        }
+        let restoreResult = manager.restoreProjectBlobsFromBackup(entries)
+
+        // 还原结束后从 manager.projects 卸掉 blob 副本，回到「缓存只存 metadata」的常态。
+        // 否则 8MB+ 备份还原后会在内存里一直挂着这堆图。
+        manager.projects = restoredProjects.map { project in
+            var stripped = project
+            stripped.thumbnail = nil
+            stripped.finishedImage = nil
+            stripped.patternGrid = nil
+            stripped.displayThumbnail = nil
+            return stripped
+        }
+
+        // 区分完整恢复和部分恢复。partial failure 时 logError 已经在
+        // restoreProjectBlobsFromBackup 里写过（含失败 ID 采样），这里再打印一条
+        // 用户可见的文案 + 把数字塞进 logInfo 让 Sentry 能跟踪发生率。
+        if restoreResult.hasFailures {
+            print("[BackupManager] 恢复部分成功: \(backup.fileName) — \(restoreResult.succeeded)/\(entries.count) 项目图片写回，\(restoreResult.failedIDs.count) 项目失败（详见 logError: restore_blobs_partial_failure）")
+            AppLogger.shared.warning("BackupManager", "restore_completed_with_failures", metadata: [
+                "fileName": backup.fileName,
+                "succeeded": restoreResult.succeeded,
+                "failed": restoreResult.failedIDs.count,
+                "total": entries.count
+            ])
+        } else {
+            print("[BackupManager] 恢复成功: \(backup.fileName)")
+            AppLogger.shared.info("BackupManager", "restore_completed", metadata: [
+                "fileName": backup.fileName,
+                "projects": entries.count
+            ])
+        }
+
+        // **round-10 review I2**：restore 路径 force-clear 了老备份的 stale displayThumbnail
+        //（见 line ~615 effectiveProvided=true + effectiveDisplay=nil），但**不会**自动让
+        // 迁移协调器再扫一遍 —— 协调器只在 scenePhase .active transition 时 start。restore
+        // 是在前台 .active 状态下触发的，**不会**触发新 transition。
+        // 如果协调器已经跑完 + isRunning=false → restore 后清空的 displayThumbnail 要等下次
+        // 启动才 backfill，中间所有列表浏览走 fallback 现场降级（仍安全但更慢 + 显示 stale
+        // 直到下次启动）。
+        // 显式 stop + start：旧 task（如果还在跑）被取消、新 task 立刻起来扫 displayThumbnail
+        // == nil 的新候选集。是 idempotent 的。
+        ThumbnailMigrationCoordinator.shared.stop()
+        ThumbnailMigrationCoordinator.shared.start(inventoryManager: manager)
     }
 
     // MARK: - 删除备份
