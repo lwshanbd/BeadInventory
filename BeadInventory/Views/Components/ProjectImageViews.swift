@@ -48,9 +48,18 @@ struct ProjectThumbnailImage<Placeholder: View, Content: View>: View {
 
     var body: some View {
         Group {
-            // 用 loadedKey 守门 —— 只有 image 是为「当前 projectId + revision」加载的才显示。
-            // LazyVStack row reuse + revision 跳变都会让 key 变，旧图立刻被认为是过期。
-            if let image, loadedKey == currentKey {
+            // 显示守门：image 是给当前 projectId 加载的就显示。
+            // **修复闪烁（PR #48 上线后用户报告）**：之前这里是 `loadedKey == currentKey`，
+            // currentKey 含 projectBlobsRevision，迁移协调器每写一个 displayThumbnail
+            // 就 bump 一次 revision → 屏幕上每个 row 立刻被判定为"过期" → body 翻成
+            // placeholder（六色图）→ .task 重跑取图 → image 重新显示 → 下次 bump 又翻回
+            // placeholder。458 项目用户场景：迁移 ~10/sec × 10 row = ~100 翻转/秒，
+            // 视觉上就是六色图持续闪烁 + 卡顿。
+            //
+            // 修法：只要 image 是给当前 projectId 加载的就显示。revision bump 只触发
+            // .task 重跑（atomic 替换 image），body 不主动翻成 placeholder。
+            // LazyVStack row reuse（projectId 切换）仍会触发翻 placeholder —— 那是正确行为。
+            if let image, loadedKey?.projectId == projectId {
                 content(image)
             } else {
                 placeholder()
@@ -66,9 +75,9 @@ struct ProjectThumbnailImage<Placeholder: View, Content: View>: View {
     }
 
     private func loadImage(for key: TaskKey) async {
-        // 先清旧图，再去取新图 —— 否则切到一个没图的项目时，旧 image 状态会让
-        // body 的 `if let image` 直接显示上一个项目的图。
-        if loadedKey != key {
+        // 只在切换到**不同** projectId 时清旧图 —— revision bump（同 projectId）保留旧图
+        // 等新图加载完原子替换，避免闪烁（见 body 注释）。
+        if loadedKey?.projectId != key.projectId {
             self.image = nil
             self.loadedKey = nil
         }
@@ -126,7 +135,9 @@ struct ProjectFinishedImage<Placeholder: View, Content: View>: View {
 
     var body: some View {
         Group {
-            if let image, loadedKey == currentKey {
+            // 同 ProjectThumbnailImage：只看 projectId 是否匹配，不看 revision —— 否则
+            // 迁移协调器 / 编辑等 revision bump 会让所有 finished image 视图闪 placeholder。
+            if let image, loadedKey?.projectId == projectId {
                 content(image)
             } else {
                 placeholder()
@@ -142,7 +153,8 @@ struct ProjectFinishedImage<Placeholder: View, Content: View>: View {
     }
 
     private func loadImage(for key: TaskKey) async {
-        if loadedKey != key {
+        // 同 ProjectThumbnailImage：只在 projectId 切换时清旧图。
+        if loadedKey?.projectId != key.projectId {
             self.image = nil
             self.loadedKey = nil
         }

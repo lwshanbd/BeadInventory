@@ -47,7 +47,12 @@ class InventoryManager: ObservableObject {
     /// 持久层里有 displayThumbnail 的项目 ID 集合（不含 Data）。
     /// 老数据可能 nil（迁移协调器后台 backfill），视图层在 displayThumbnail 缺位时
     /// 走 ImageDownsampler 现场降级 raw thumbnail。
-    @Published private(set) var projectIDsWithDisplayThumbnail: Set<UUID> = []
+    ///
+    /// **故意不 @Published**：迁移协调器每写一个项目就 `.insert(id)` 一次；如果加
+    /// @Published，每次 insert 都触发 `objectWillChange.send()`，所有 @EnvironmentObject
+    /// 消费者（整个计划列表）都会重新 evaluate body —— 这正是 PR #48 闪烁回归的根因之一。
+    /// 视图层（`ProjectThumbnailImage`）不直接读本集合，不需要 SwiftUI 的响应式驱动。
+    private(set) var projectIDsWithDisplayThumbnail: Set<UUID> = []
 
     /// 项目 blob（thumbnail / finishedImage / patternGrid / displayThumbnail）的全局版本号。
     /// 每当任意项目的 blob 被改动就 ++。SwiftUI 中需要重新拉图的组件
@@ -3588,6 +3593,14 @@ class InventoryManager: ObservableObject {
     /// 直接写单个项目的 displayThumbnail —— 仅 ThumbnailMigrationCoordinator 用。
     /// 不进 history（迁移不是用户操作），不写其它字段，**同步**做一次 context.save。
     /// 返回 false 时迁移协调器记 .failed，下次 startup 重试。
+    ///
+    /// **不 bump `projectBlobsRevision`** —— 跟 update*Image 公开 API 关键差别：
+    /// 迁移协调器 458 项目用户场景下每秒 ~10 次调用。如果每次 bump revision，
+    /// 屏幕上所有列表 row 的 `.task(id:)` 都会 cancel + relaunch + fetch + decode
+    /// → 每秒 100 次无谓 churn → 滑动卡顿 + placeholder 闪烁（PR #48 上线后用户报告）。
+    /// 不 bump 之后：现有视图保持显示已加载的图（fallback CGImageSource 现场降级版本），
+    /// 等下次自然 re-render（row 滚出再滚入 / app 重启 / 用户编辑触发其它 bump）时拿到新
+    /// displayThumbnail —— 用户体验上是平滑过渡，下次启动列表更快。
     func setProjectDisplayThumbnail(projectId: UUID, displayThumbnail: Data?) -> Bool {
         guard let context = modelContext else {
             logError("set_display_thumbnail_no_context", metadata: ["projectId": projectId.uuidString])
@@ -3608,7 +3621,7 @@ class InventoryManager: ObservableObject {
             } else {
                 projectIDsWithDisplayThumbnail.remove(projectId)
             }
-            projectBlobsRevision &+= 1
+            // 故意**不** bump projectBlobsRevision —— 见函数级注释
             return true
         } catch {
             logError("set_display_thumbnail_failed", metadata: [

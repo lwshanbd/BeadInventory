@@ -316,7 +316,9 @@ final class ThumbnailMigrationCoordinator {
         }
 
         // 步骤 5：写回 displayThumbnail（直接走 InventoryManager 的 setter，
-        // 它会同步更新 projectIDsWithDisplayThumbnail + bump revision 让视图刷新）。
+        // 它会同步更新 projectIDsWithDisplayThumbnail；
+        // **不** bump revision —— 视图等下次自然 re-render 拿到新图（见 setProjectDisplayThumbnail 函数级注释）。
+        // 注意：故意不在这里手动 bump —— 否则会重蹈 PR #48 闪烁回归。
         let ok = inventoryManager.setProjectDisplayThumbnail(projectId: projectId, displayThumbnail: downsampled)
         if ok {
             AppLogger.shared.info("ThumbnailMigration", "migrated_one", metadata: [
