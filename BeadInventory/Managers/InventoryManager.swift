@@ -3588,6 +3588,14 @@ class InventoryManager: ObservableObject {
     /// 直接写单个项目的 displayThumbnail —— 仅 ThumbnailMigrationCoordinator 用。
     /// 不进 history（迁移不是用户操作），不写其它字段，**同步**做一次 context.save。
     /// 返回 false 时迁移协调器记 .failed，下次 startup 重试。
+    ///
+    /// **不 bump `projectBlobsRevision`** —— 跟 update*Image 公开 API 关键差别：
+    /// 迁移协调器 458 项目用户场景下每秒 ~10 次调用。如果每次 bump revision，
+    /// 屏幕上所有列表 row 的 `.task(id:)` 都会 cancel + relaunch + fetch + decode
+    /// → 每秒 100 次无谓 churn → 滑动卡顿 + placeholder 闪烁（PR #48 上线后用户报告）。
+    /// 不 bump 之后：现有视图保持显示已加载的图（fallback CGImageSource 现场降级版本），
+    /// 等下次自然 re-render（row 滚出再滚入 / app 重启 / 用户编辑触发其它 bump）时拿到新
+    /// displayThumbnail —— 用户体验上是平滑过渡，下次启动列表更快。
     func setProjectDisplayThumbnail(projectId: UUID, displayThumbnail: Data?) -> Bool {
         guard let context = modelContext else {
             logError("set_display_thumbnail_no_context", metadata: ["projectId": projectId.uuidString])
@@ -3608,7 +3616,7 @@ class InventoryManager: ObservableObject {
             } else {
                 projectIDsWithDisplayThumbnail.remove(projectId)
             }
-            projectBlobsRevision &+= 1
+            // 故意**不** bump projectBlobsRevision —— 见函数级注释
             return true
         } catch {
             logError("set_display_thumbnail_failed", metadata: [
