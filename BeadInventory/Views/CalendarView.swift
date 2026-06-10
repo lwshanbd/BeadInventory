@@ -24,7 +24,8 @@ struct CalendarView: View {
 
     /// 完成日期 -> 项目
     private var projectsByDate: [Date: [ProjectRecord]] {
-        let projects = inventoryManager.projects.filter { $0.finishedImage != nil && $0.completedDate != nil }
+        // 大图懒加载：用 hasFinishedImage 标志判断"有没有成品图"，不触发加载
+        let projects = inventoryManager.projects.filter { $0.hasFinishedImage && $0.completedDate != nil }
         var grouped: [Date: [ProjectRecord]] = [:]
         for project in projects {
             if let completedDate = project.completedDate {
@@ -490,11 +491,14 @@ struct DayDetailSheet: View {
 
 private struct DayProjectCard: View {
     let project: ProjectRecord
+    @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showingFullImage = false
+    /// 大图懒加载：成品图按需读入
+    @State private var finishedImageData: Data?
 
     var body: some View {
         HStack(spacing: 12) {
-            if let imageData = project.finishedImage,
+            if let imageData = finishedImageData,
                let uiImage = UIImage(data: imageData) {
                 Image(uiImage: uiImage)
                     .resizable()
@@ -534,8 +538,12 @@ private struct DayProjectCard: View {
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
         )
+        .task(id: project.id) {
+            finishedImageData = project.finishedImage
+                ?? (project.hasFinishedImage ? inventoryManager.loadFinishedImageData(projectId: project.id) : nil)
+        }
         .fullScreenCover(isPresented: $showingFullImage) {
-            FullImageView(imageData: project.finishedImage)
+            FullImageView(imageData: finishedImageData)
         }
     }
 

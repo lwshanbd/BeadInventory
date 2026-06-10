@@ -153,6 +153,29 @@ class HistoryManager: ObservableObject {
     }
 
     /// 记录项目操作
+    /// 取项目成品图用于写入撤销快照。
+    ///
+    /// 大图懒加载后，内存中的 ProjectRecord.finishedImage 可能为 nil（未加载）。
+    /// 若直接拿 nil 存进快照，撤销时就无法恢复成品图。这里在 hasFinishedImage==true
+    /// 但内存未加载时，按 id 从持久层补读，保证撤销仍能恢复成品图。
+    /// 调用方均在主线程（由 @MainActor 的 InventoryManager 驱动），故用 assumeIsolated。
+    private func hydratedFinishedImage(_ project: ProjectRecord) -> Data? {
+        if let image = project.finishedImage { return image }
+        guard project.hasFinishedImage else { return nil }
+        return MainActor.assumeIsolated {
+            inventoryManager?.loadFinishedImageData(projectId: project.id)
+        }
+    }
+
+    /// 同理补全缩略图（拼图原图），保证撤销能恢复封面图。
+    private func hydratedThumbnail(_ project: ProjectRecord) -> Data? {
+        if let image = project.thumbnail { return image }
+        guard project.hasThumbnail else { return nil }
+        return MainActor.assumeIsolated {
+            inventoryManager?.loadThumbnailData(projectId: project.id)
+        }
+    }
+
     func recordProject(
         type: HistoryOperationType,
         project: ProjectRecord
@@ -175,8 +198,8 @@ class HistoryManager: ObservableObject {
             isPlanned: project.isPlanned,
             executedDate: project.executedDate,
             beadUsages: usageSnapshots,
-            thumbnail: project.thumbnail,
-            finishedImage: project.finishedImage,
+            thumbnail: hydratedThumbnail(project),
+            finishedImage: hydratedFinishedImage(project),
             colorSystem: project.colorSystem
         )
 
@@ -242,8 +265,8 @@ class HistoryManager: ObservableObject {
             isPlanned: beforeProject.isPlanned,
             executedDate: beforeProject.executedDate,
             beadUsages: beforeUsages,
-            thumbnail: beforeProject.thumbnail,
-            finishedImage: beforeProject.finishedImage,
+            thumbnail: hydratedThumbnail(beforeProject),
+            finishedImage: hydratedFinishedImage(beforeProject),
             colorSystem: beforeProject.colorSystem
         )
 
@@ -262,8 +285,8 @@ class HistoryManager: ObservableObject {
             isPlanned: afterProject.isPlanned,
             executedDate: afterProject.executedDate,
             beadUsages: afterUsages,
-            thumbnail: afterProject.thumbnail,
-            finishedImage: afterProject.finishedImage,
+            thumbnail: hydratedThumbnail(afterProject),
+            finishedImage: hydratedFinishedImage(afterProject),
             colorSystem: afterProject.colorSystem
         )
 
@@ -311,8 +334,8 @@ class HistoryManager: ObservableObject {
                 isPlanned: project.isPlanned,
                 executedDate: project.executedDate,
                 beadUsages: usageSnapshots,
-                thumbnail: project.thumbnail,
-                finishedImage: project.finishedImage,
+                thumbnail: hydratedThumbnail(project),
+                finishedImage: hydratedFinishedImage(project),
                 colorSystem: project.colorSystem
             )
         }
@@ -363,8 +386,8 @@ class HistoryManager: ObservableObject {
             isPlanned: project.isPlanned,
             executedDate: project.executedDate,
             beadUsages: projectUsages,
-            thumbnail: project.thumbnail,
-            finishedImage: project.finishedImage,
+            thumbnail: hydratedThumbnail(project),
+            finishedImage: hydratedFinishedImage(project),
             colorSystem: project.colorSystem
         )
 
@@ -384,8 +407,8 @@ class HistoryManager: ObservableObject {
                 isPlanned: child.isPlanned,
                 executedDate: child.executedDate,
                 beadUsages: childUsages,
-                thumbnail: child.thumbnail,
-                finishedImage: child.finishedImage,
+                thumbnail: hydratedThumbnail(child),
+                finishedImage: hydratedFinishedImage(child),
                 colorSystem: child.colorSystem
             )
         }

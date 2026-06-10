@@ -175,7 +175,7 @@ struct ProjectDetailView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         let p = currentProject ?? project
-                        if p.patternGrid != nil {
+                        if p.hasPatternGrid {
                             showingPatternHighlight = true
                         } else {
                             showingPatternCalibration = true
@@ -183,7 +183,7 @@ struct ProjectDetailView: View {
                     } label: {
                         Label("拼图模式", systemImage: "square.grid.3x3.square")
                     }
-                    .disabled((currentProject ?? project).thumbnail == nil)
+                    .disabled(!(currentProject ?? project).hasThumbnail)
                 }
             }
         }
@@ -204,7 +204,7 @@ struct ProjectDetailView: View {
             ProjectImageEditorSheet(
                 projectId: project.id,
                 title: "项目封面",
-                currentImage: (currentProject ?? project).thumbnail.flatMap { UIImage(data: $0) },
+                currentImage: ((currentProject ?? project).thumbnail ?? inventoryManager.loadThumbnailData(projectId: project.id)).flatMap { UIImage(data: $0) },
                 onSave: { imageData in
                     inventoryManager.updateProjectThumbnail(project.id, thumbnail: imageData)
                 }
@@ -215,7 +215,7 @@ struct ProjectDetailView: View {
             ProjectImageEditorSheet(
                 projectId: project.id,
                 title: "成品图",
-                currentImage: (currentProject ?? project).finishedImage.flatMap { UIImage(data: $0) },
+                currentImage: ((currentProject ?? project).finishedImage ?? inventoryManager.loadFinishedImageData(projectId: project.id)).flatMap { UIImage(data: $0) },
                 maxImageSize: 400, // 成品图使用更大尺寸
                 onSave: { imageData in
                     inventoryManager.updateProjectFinishedImage(project.id, finishedImage: imageData)
@@ -229,11 +229,13 @@ struct ProjectDetailView: View {
 // MARK: - 子项目行
 struct ChildProjectRow: View {
     let project: ProjectRecord
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var lazyThumb: UIImage?
 
-    // 从 thumbnail Data 创建 UIImage
+    // 从 thumbnail Data 创建 UIImage（大图懒加载兜底）
     var thumbnailImage: UIImage? {
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
+        if let data = project.thumbnail { return UIImage(data: data) }
+        return lazyThumb
     }
 
     var body: some View {
@@ -281,6 +283,11 @@ struct ChildProjectRow: View {
         .padding()
         .background(Theme.ColorToken.Surface.subtle)
         .cornerRadius(Theme.Radius.sm)
+        .task(id: project.id) {
+            if project.thumbnail == nil, project.hasThumbnail {
+                lazyThumb = inventoryManager.loadThumbnailData(projectId: project.id).flatMap { UIImage(data: $0) }
+            }
+        }
     }
 }
 
@@ -289,11 +296,13 @@ struct ChildProjectRowWithActions: View {
     let project: ProjectRecord
     let onDelete: () -> Void
     let onDetach: () -> Void
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var lazyThumb: UIImage?
 
-    // 从 thumbnail Data 创建 UIImage
+    // 从 thumbnail Data 创建 UIImage（大图懒加载兜底）
     var thumbnailImage: UIImage? {
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
+        if let data = project.thumbnail { return UIImage(data: data) }
+        return lazyThumb
     }
 
     var body: some View {
@@ -358,6 +367,11 @@ struct ChildProjectRowWithActions: View {
         .padding()
         .background(Theme.ColorToken.Surface.subtle)
         .cornerRadius(Theme.Radius.sm)
+        .task(id: project.id) {
+            if project.thumbnail == nil, project.hasThumbnail {
+                lazyThumb = inventoryManager.loadThumbnailData(projectId: project.id).flatMap { UIImage(data: $0) }
+            }
+        }
     }
 }
 
@@ -370,11 +384,13 @@ struct ProjectInfoCardEnhanced: View {
     let totalBeads: Int
     let childCount: Int
     var onEditThumbnail: (() -> Void)? = nil
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var lazyThumb: UIImage?
 
-    // 从 thumbnail Data 创建 UIImage
+    // 从 thumbnail Data 创建 UIImage（大图懒加载兜底）
     var thumbnailImage: UIImage? {
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
+        if let data = project.thumbnail { return UIImage(data: data) }
+        return lazyThumb
     }
 
     var body: some View {
@@ -391,7 +407,7 @@ struct ProjectInfoCardEnhanced: View {
                             RoundedRectangle(cornerRadius: Theme.Radius.md)
                                 .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                         )
-                } else if onEditThumbnail != nil {
+                } else if onEditThumbnail != nil && !project.hasThumbnail {
                     // 无图片时的占位符
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
                         .fill(Theme.ColorToken.Surface.subtle)
@@ -412,7 +428,7 @@ struct ProjectInfoCardEnhanced: View {
                 }
 
                 // 编辑按钮
-                if onEditThumbnail != nil && thumbnailImage != nil {
+                if onEditThumbnail != nil && project.hasThumbnail {
                     Button {
                         onEditThumbnail?()
                     } label: {
@@ -507,6 +523,11 @@ struct ProjectInfoCardEnhanced: View {
         .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
+        .task(id: project.id) {
+            if project.thumbnail == nil, project.hasThumbnail {
+                lazyThumb = inventoryManager.loadThumbnailData(projectId: project.id).flatMap { UIImage(data: $0) }
+            }
+        }
     }
 }
 
@@ -590,10 +611,14 @@ struct FinishedImageSection: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @State private var showingDatePicker = false
     @State private var selectedDate: Date = Date()
+    /// 大图懒加载：成品图按需读入；内存已带图（刚编辑过）时直接用内存值。
+    @State private var lazyFinishedImage: UIImage?
 
-    var finishedImage: UIImage? {
-        guard let data = project.finishedImage else { return nil }
-        return UIImage(data: data)
+    var finishedImage: UIImage? { lazyFinishedImage }
+
+    /// 随 id / 是否有图 / 内存是否已带图变化而重新加载，覆盖上传、修改、删除三种切换。
+    private var finishedImageLoadKey: String {
+        "\(project.id.uuidString)-\(project.hasFinishedImage)-\(project.finishedImage != nil)"
     }
 
     var body: some View {
@@ -681,6 +706,16 @@ struct FinishedImageSection: View {
         .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
+        .task(id: finishedImageLoadKey) {
+            if let data = project.finishedImage {
+                lazyFinishedImage = UIImage(data: data)
+            } else if project.hasFinishedImage {
+                let data = inventoryManager.loadFinishedImageData(projectId: project.id)
+                lazyFinishedImage = data.flatMap { UIImage(data: $0) }
+            } else {
+                lazyFinishedImage = nil
+            }
+        }
         .sheet(isPresented: $showingDatePicker) {
             CompletedDatePickerSheet(
                 selectedDate: $selectedDate,

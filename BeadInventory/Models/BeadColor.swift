@@ -121,7 +121,24 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
     var colorSystem: ColorSystem  // 色号体系（MARD/卡卡等）
     var patternGrid: BeadPatternGrid?  // 拼图模式网格数据（nil = 未标定）
 
-    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, finishedImage: Data? = nil, completedDate: Date? = nil, colorSystem: ColorSystem = .mard, patternGrid: BeadPatternGrid? = nil) {
+    // MARK: - 大图懒加载标志
+    //
+    // finishedImage / patternGrid 是内联存储的大 blob。为避免每次全量 loadData
+    // 把所有项目的成品图/网格都读进内存（图越多越慢、越占内存），列表/统计阶段
+    // **不再加载** 这两个字段，仅在真正需要展示时按 id 按需加载。
+    //
+    // 这两个标志反映「持久层里到底有没有这张图」，独立于 finishedImage/patternGrid
+    // 当前是否已加载进内存：
+    //   - finishedImage == nil 且 hasFinishedImage == true  → 懒加载未读，**不是**没有图
+    //   - finishedImage == nil 且 hasFinishedImage == false → 确实没有图（或被用户清空）
+    // saveData() 依赖这个区分，避免把"未加载"误当成"被删除"而擦掉云端/本地的图。
+    var hasFinishedImage: Bool
+    var hasPatternGrid: Bool
+    /// 同理，thumbnail 实际存的是完整拼图原图（单张可达数 MB），列表/详情按需加载。
+    /// 区分「未加载」与「无图」，供 saveData() 防擦图。
+    var hasThumbnail: Bool
+
+    init(id: UUID = UUID(), name: String, date: Date = Date(), beadUsage: [BeadUsage] = [], brandId: UUID? = nil, isArchived: Bool = false, parentId: UUID? = nil, isPlanned: Bool = false, executedDate: Date? = nil, thumbnail: Data? = nil, finishedImage: Data? = nil, completedDate: Date? = nil, colorSystem: ColorSystem = .mard, patternGrid: BeadPatternGrid? = nil, hasFinishedImage: Bool? = nil, hasPatternGrid: Bool? = nil, hasThumbnail: Bool? = nil) {
         self.id = id
         self.name = name
         self.date = date
@@ -137,6 +154,11 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
         self.completedDate = completedDate
         self.colorSystem = colorSystem
         self.patternGrid = patternGrid
+        // 默认从内存值推断：常规构造（带真实图）的调用方无需关心标志位。
+        // 懒加载路径会显式传 true + 图为 nil。
+        self.hasFinishedImage = hasFinishedImage ?? (finishedImage != nil)
+        self.hasPatternGrid = hasPatternGrid ?? (patternGrid != nil)
+        self.hasThumbnail = hasThumbnail ?? (thumbnail != nil)
     }
 
     // 自定义解码器，兼容旧数据
@@ -163,6 +185,10 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
         colorSystem = try container.decodeIfPresent(ColorSystem.self, forKey: .colorSystem) ?? .mard
         // 向后兼容：旧数据没有 patternGrid 字段
         patternGrid = try container.decodeIfPresent(BeadPatternGrid.self, forKey: .patternGrid)
+        // 向后兼容：旧快照/备份没有这两个标志 → 按当前是否带图推断
+        hasFinishedImage = try container.decodeIfPresent(Bool.self, forKey: .hasFinishedImage) ?? (finishedImage != nil)
+        hasPatternGrid = try container.decodeIfPresent(Bool.self, forKey: .hasPatternGrid) ?? (patternGrid != nil)
+        hasThumbnail = try container.decodeIfPresent(Bool.self, forKey: .hasThumbnail) ?? (thumbnail != nil)
     }
 }
 

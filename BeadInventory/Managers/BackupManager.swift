@@ -149,10 +149,16 @@ class BackupManager {
                 projectData["parentId"] = parentId.uuidString
             }
             // 缩略图和成品图保存为 Base64（仅在有数据时）
-            if let thumbnail = project.thumbnail {
+            // 大图懒加载：缩略图也可能未加载进内存，按 id 从持久层补读，保证备份完整
+            let thumbnailData = project.thumbnail
+                ?? (project.hasThumbnail ? manager.loadThumbnailData(projectId: project.id) : nil)
+            if let thumbnail = thumbnailData {
                 projectData["thumbnail"] = thumbnail.base64EncodedString()
             }
-            if let finishedImage = project.finishedImage {
+            // 大图懒加载：成品图可能未加载进内存，按 id 从持久层补读，保证备份完整
+            let finishedImageData = project.finishedImage
+                ?? (project.hasFinishedImage ? manager.loadFinishedImageData(projectId: project.id) : nil)
+            if let finishedImage = finishedImageData {
                 projectData["finishedImage"] = finishedImage.base64EncodedString()
             }
             projectData["beadUsage"] = project.beadUsage.map { usage in

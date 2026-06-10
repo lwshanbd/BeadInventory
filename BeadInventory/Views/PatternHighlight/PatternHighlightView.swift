@@ -19,18 +19,27 @@ struct PatternHighlightView: View {
     @State private var showingDiffSheet = false
     @State private var dismissedBanner = false
 
+    /// 大图懒加载：拼图原图(thumbnail)按需读入
+    @State private var loadedThumb: UIImage?
     private var image: UIImage? {
-        project.thumbnail.flatMap { UIImage(data: $0) }
+        if let data = currentProject.thumbnail { return UIImage(data: data) }
+        return loadedThumb
     }
 
     private var currentProject: ProjectRecord {
         inventoryManager.projects.first { $0.id == project.id } ?? project
     }
 
+    /// 大图懒加载：网格按需读入；内存已带（刚标定过）时优先用内存值。
+    @State private var loadedGrid: BeadPatternGrid?
+    private var resolvedGrid: BeadPatternGrid? {
+        currentProject.patternGrid ?? loadedGrid
+    }
+
     /// 在 cellColorCodes 出现但不在 beadUsage 的色号 + 出现次数。
     /// 典型场景：MARD 的 H2 用作空白格识别，但用户没把 H2 写进图例。
     private var extraCodes: [(code: String, count: Int)] {
-        guard let grid = currentProject.patternGrid else { return [] }
+        guard let grid = resolvedGrid else { return [] }
         let legend = Set(currentProject.beadUsage.map { $0.colorCode })
         var counts: [String: Int] = [:]
         for row in grid.cellColorCodes {
@@ -47,7 +56,7 @@ struct PatternHighlightView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if let grid = currentProject.patternGrid {
+                if let grid = resolvedGrid {
                     let mismatches = GridValidator.mismatches(grid: grid, beadUsage: currentProject.beadUsage)
                     if !mismatches.isEmpty && !dismissedBanner {
                         HStack(spacing: 8) {
@@ -70,7 +79,7 @@ struct PatternHighlightView: View {
                     }
                 }
 
-                if let img = image, let grid = currentProject.patternGrid {
+                if let img = image, let grid = resolvedGrid {
                     ZoomablePatternCanvas(image: img) { rect in
                         PatternHighlightOverlay(
                             grid: grid,
@@ -86,7 +95,7 @@ struct PatternHighlightView: View {
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
                         Text(image == nil ? "项目无图片" : "未标定网格")
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
-                        if image != nil && currentProject.patternGrid == nil {
+                        if image != nil && resolvedGrid == nil {
                             Button("开始标定") {
                                 showingRecalibrate = true
                             }
@@ -146,13 +155,22 @@ struct PatternHighlightView: View {
                     .environmentObject(inventoryManager)
             }
             .sheet(isPresented: $showingDiffSheet) {
-                if let grid = currentProject.patternGrid {
+                if let grid = resolvedGrid {
                     ValidationDiffSheet(
                         diffs: GridValidator.mismatches(grid: grid, beadUsage: currentProject.beadUsage),
                         onAdoptGridForCode: { code, gridCount in
                             inventoryManager.updatePlannedProjectUsage(currentProject.id, colorCode: code, newQuantity: gridCount)
                         }
                     )
+                }
+            }
+            .task(id: project.id) {
+                // 内存未带（懒加载）时按需读入网格与拼图原图
+                if currentProject.patternGrid == nil {
+                    loadedGrid = inventoryManager.loadPatternGrid(projectId: project.id)
+                }
+                if currentProject.thumbnail == nil, currentProject.hasThumbnail {
+                    loadedThumb = inventoryManager.loadThumbnailData(projectId: project.id).flatMap { UIImage(data: $0) }
                 }
             }
         }

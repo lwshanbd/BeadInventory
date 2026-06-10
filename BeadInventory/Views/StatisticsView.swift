@@ -1475,6 +1475,8 @@ struct ProjectRowWithHierarchy: View {
     let onToggleSelect: () -> Void
 
     @EnvironmentObject var inventoryManager: InventoryManager
+    /// 大图懒加载：列表行按需加载缩略图/成品图（仅可见行触发）
+    @State private var lazyThumb: UIImage?
 
     var brandName: String? {
         guard let brandId = project.brandId else { return nil }
@@ -1532,14 +1534,27 @@ struct ProjectRowWithHierarchy: View {
         usage.brandId == brandId || (usage.brandId == nil && projectBrandId == brandId)
     }
 
-    // 从 finishedImage 或 thumbnail Data 创建 UIImage（优先使用成品图）
+    // 列表行用缩略图（小图）。成品图是内联大 blob，列表里**不主动加载**，
+    // 避免「项目多、图多」时整列表卡顿——这正是懒加载优化的关键。
+    // 内存已带成品图（刚在详情页编辑过）时兜底使用，避免编辑后列表不刷新。
     var thumbnailImage: UIImage? {
-        // 优先使用成品图，如果没有则使用原始缩略图
+        if let data = project.thumbnail {
+            return UIImage(data: data)
+        }
         if let finishedData = project.finishedImage {
             return UIImage(data: finishedData)
         }
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
+        return lazyThumb
+    }
+
+    /// 仅可见行触发：内存无图时按需读缩略图（优先）或成品图
+    private func loadLazyThumbIfNeeded() {
+        if project.thumbnail != nil || project.finishedImage != nil { return }
+        if project.hasThumbnail {
+            lazyThumb = inventoryManager.loadThumbnailData(projectId: project.id).flatMap { UIImage(data: $0) }
+        } else if project.hasFinishedImage {
+            lazyThumb = inventoryManager.loadFinishedImageData(projectId: project.id).flatMap { UIImage(data: $0) }
+        }
     }
 
     var body: some View {
@@ -1675,6 +1690,9 @@ struct ProjectRowWithHierarchy: View {
                 }
                 .padding(.vertical, 4)
             }
+        }
+        .task(id: project.id) {
+            loadLazyThumbIfNeeded()
         }
     }
 }

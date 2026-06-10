@@ -537,6 +537,8 @@ private struct PlanCard: View {
     let isSelected: Bool
     let selectionActive: Bool
     let inventoryManager: InventoryManager
+    /// 大图懒加载：拼图原图按需读入（仅可见卡片触发）
+    @State private var lazyThumb: UIImage?
 
     private var isParent: Bool {
         inventoryManager.isParentProject(project.id)
@@ -630,7 +632,7 @@ private struct PlanCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Theme.ColorToken.Surface.subtle)
 
-            if let data = project.thumbnail, let uiImage = UIImage(data: data) {
+            if let uiImage = (project.thumbnail.flatMap { UIImage(data: $0) }) ?? lazyThumb {
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
@@ -647,6 +649,11 @@ private struct PlanCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(Theme.ColorToken.Border.divider, lineWidth: 1)
         )
+        .task(id: project.id) {
+            if project.thumbnail == nil, project.hasThumbnail {
+                lazyThumb = inventoryManager.loadThumbnailData(projectId: project.id).flatMap { UIImage(data: $0) }
+            }
+        }
     }
 }
 
@@ -694,13 +701,24 @@ struct PlannedProjectRow: View {
         inventoryManager.plannedChildProjects(of: project.id).count
     }
 
-    // 从 thumbnail Data 创建 UIImage
+    // 从 thumbnail Data 创建 UIImage（大图懒加载兜底）
+    @State private var lazyThumb: UIImage?
     var thumbnailImage: UIImage? {
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
+        if let data = project.thumbnail { return UIImage(data: data) }
+        return lazyThumb
+    }
+    private func loadLazyThumbIfNeeded() {
+        if project.thumbnail == nil, project.hasThumbnail {
+            lazyThumb = inventoryManager.loadThumbnailData(projectId: project.id).flatMap { UIImage(data: $0) }
+        }
     }
 
     var body: some View {
+        rowBody.task(id: project.id) { loadLazyThumbIfNeeded() }
+    }
+
+    @ViewBuilder
+    private var rowBody: some View {
         if isSelectMode {
             // 选择模式：整行使用 onTapGesture，避免 Button 在搜索键盘弹出时被吞掉点击
             HStack(spacing: 8) {
@@ -858,11 +876,13 @@ struct PlannedProjectRow: View {
 // MARK: - 子项目行
 struct PlannedChildProjectRow: View {
     let project: ProjectRecord
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var lazyThumb: UIImage?
 
-    // 从 thumbnail Data 创建 UIImage
+    // 从 thumbnail Data 创建 UIImage（大图懒加载兜底）
     var thumbnailImage: UIImage? {
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
+        if let data = project.thumbnail { return UIImage(data: data) }
+        return lazyThumb
     }
 
     var body: some View {
@@ -918,6 +938,11 @@ struct PlannedChildProjectRow: View {
             }
         }
         .padding(.leading, 12)
+        .task(id: project.id) {
+            if project.thumbnail == nil, project.hasThumbnail {
+                lazyThumb = inventoryManager.loadThumbnailData(projectId: project.id).flatMap { UIImage(data: $0) }
+            }
+        }
     }
 }
 
@@ -1414,7 +1439,7 @@ struct PlannedProjectDetailView: View {
     private var patternHighlightButton: some View {
         Button {
             let p = currentProject ?? project
-            if p.patternGrid != nil {
+            if p.hasPatternGrid {
                 showPatternHighlight = true
             } else {
                 showPatternCalibration = true
@@ -1428,10 +1453,10 @@ struct PlannedProjectDetailView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding()
-            .background((currentProject ?? project).thumbnail == nil ? Theme.ColorToken.Border.default : Theme.ColorToken.Morandi.mauve)
+            .background(!(currentProject ?? project).hasThumbnail ? Theme.ColorToken.Border.default : Theme.ColorToken.Morandi.mauve)
             .cornerRadius(Theme.Radius.md)
         }
-        .disabled((currentProject ?? project).thumbnail == nil)
+        .disabled(!(currentProject ?? project).hasThumbnail)
     }
 
     private var stockCheckButton: some View {
@@ -1597,7 +1622,7 @@ struct PlannedProjectDetailView: View {
         ProjectImageEditorSheet(
             projectId: project.id,
             title: "项目封面",
-            currentImage: (currentProject ?? project).thumbnail.flatMap { UIImage(data: $0) },
+            currentImage: ((currentProject ?? project).thumbnail ?? inventoryManager.loadThumbnailData(projectId: project.id)).flatMap { UIImage(data: $0) },
             onSave: { imageData in
                 inventoryManager.updateProjectThumbnail(project.id, thumbnail: imageData)
             }
@@ -1614,11 +1639,13 @@ struct PlannedProjectInfoCard: View {
     let totalBeads: Int
     let childCount: Int
     var onEditThumbnail: (() -> Void)? = nil
+    @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var lazyThumb: UIImage?
 
-    // 从 thumbnail Data 创建 UIImage
+    // 从 thumbnail Data 创建 UIImage（大图懒加载兜底）
     var thumbnailImage: UIImage? {
-        guard let data = project.thumbnail else { return nil }
-        return UIImage(data: data)
+        if let data = project.thumbnail { return UIImage(data: data) }
+        return lazyThumb
     }
 
     var body: some View {
@@ -1635,7 +1662,7 @@ struct PlannedProjectInfoCard: View {
                             RoundedRectangle(cornerRadius: Theme.Radius.md)
                                 .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                         )
-                } else if onEditThumbnail != nil {
+                } else if onEditThumbnail != nil && !project.hasThumbnail {
                     // 无图片时的占位符
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
                         .fill(Theme.ColorToken.Surface.subtle)
@@ -1656,7 +1683,7 @@ struct PlannedProjectInfoCard: View {
                 }
 
                 // 编辑按钮
-                if onEditThumbnail != nil && thumbnailImage != nil {
+                if onEditThumbnail != nil && project.hasThumbnail {
                     Button {
                         onEditThumbnail?()
                     } label: {
@@ -1736,6 +1763,11 @@ struct PlannedProjectInfoCard: View {
         .background(Theme.ColorToken.Surface.elevated)
         .cornerRadius(Theme.Radius.md)
         .padding(.horizontal)
+        .task(id: project.id) {
+            if project.thumbnail == nil, project.hasThumbnail {
+                lazyThumb = inventoryManager.loadThumbnailData(projectId: project.id).flatMap { UIImage(data: $0) }
+            }
+        }
     }
 }
 

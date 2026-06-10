@@ -58,8 +58,11 @@ struct PatternCalibrationView: View {
     /// 拖动点在 displayRect 内的屏幕坐标
     @State private var draggingScreenPoint: CGPoint = .zero
 
+    /// 大图懒加载：拼图原图(thumbnail)按需读入
+    @State private var loadedThumb: UIImage?
     private var image: UIImage? {
-        project.thumbnail.flatMap { UIImage(data: $0) }
+        if let data = project.thumbnail { return UIImage(data: data) }
+        return loadedThumb
     }
 
     private var savingLabelText: String {
@@ -101,7 +104,13 @@ struct PatternCalibrationView: View {
                 }
             }
             .task {
-                if let existing = project.patternGrid {
+                // 大图懒加载：内存未带时按需读入拼图原图
+                if project.thumbnail == nil, project.hasThumbnail {
+                    loadedThumb = inventoryManager.loadThumbnailData(projectId: project.id).flatMap { UIImage(data: $0) }
+                }
+                // 内存未带网格时按需读入已有标定
+                let existing = project.patternGrid ?? inventoryManager.loadPatternGrid(projectId: project.id)
+                if let existing {
                     corners = existing.corners
                     rows = existing.rows
                     cols = existing.cols

@@ -126,6 +126,14 @@ final class SDProjectRecord {
         return ProjectRecord(id: id, name: name, date: date, beadUsage: usages, brandId: brandId, isArchived: isArchived, parentId: parentId, isPlanned: isPlannedValue, executedDate: executedDate, thumbnail: thumbnail, finishedImage: finishedImage, completedDate: completedDate, colorSystem: ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard, patternGrid: grid)
     }
 
+    /// 轻量转换：**不读取** finishedImage / patternGridData 两个大 blob，
+    /// 用于列表/统计等不需要大图的场景。是否有图由调用方通过标志位传入
+    /// （调用方应配合 `propertiesToFetch` 排除大 blob，避免把它们读进内存）。
+    func toStructLight(hasFinishedImage: Bool, hasPatternGrid: Bool, hasThumbnail: Bool) -> ProjectRecord {
+        let usages = (beadUsages ?? []).map { $0.toStruct() }
+        return ProjectRecord(id: id, name: name, date: date, beadUsage: usages, brandId: brandId, isArchived: isArchived, parentId: parentId, isPlanned: isPlannedValue, executedDate: executedDate, thumbnail: nil, finishedImage: nil, completedDate: completedDate, colorSystem: ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard, patternGrid: nil, hasFinishedImage: hasFinishedImage, hasPatternGrid: hasPatternGrid, hasThumbnail: hasThumbnail)
+    }
+
     /// 把 BeadPatternGrid 编码成持久化用的 JSON Data。失败时返回 nil 并记日志，
     /// 调用方应自行判断是否覆盖已有数据（iCloud 同步路径应保留 last-known-good）。
     static func encodePatternGrid(_ grid: BeadPatternGrid?, projectId: UUID) -> Data? {

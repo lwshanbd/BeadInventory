@@ -1341,13 +1341,55 @@ class InventoryManager: ObservableObject {
             }
 
             // 从 SwiftData 加载项目记录
+            //
+            // 大图懒加载：finishedImage / patternGridData 是内联大 blob，项目越多、图越多
+            // 全量读会越慢越占内存（还会被 CloudKit 刷新反复触发）。这里：
+            //   1) 用仅取 id 的谓词查询标记"哪些项目有成品图 / 网格"（SQL NULL 判断，不读 blob）；
+            //   2) 主查询用 propertiesToFetch 排除两个大 blob 列；
+            //   3) 用 toStructLight 构造（不读大图），列表/统计只拿轻量数据。
+            // 真正展示大图时再按 id 调 loadFinishedImageData(_:) / loadPatternGrid(_:) 按需读。
             do {
-                let projectDescriptor = FetchDescriptor<SDProjectRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+                var finishedIDsDescriptor = FetchDescriptor<SDProjectRecord>(
+                    predicate: #Predicate { $0.finishedImage != nil }
+                )
+                finishedIDsDescriptor.propertiesToFetch = [\.id]
+                let finishedImageIDs = Set(try context.fetch(finishedIDsDescriptor).map { $0.id })
+
+                var gridIDsDescriptor = FetchDescriptor<SDProjectRecord>(
+                    predicate: #Predicate { $0.patternGridData != nil }
+                )
+                gridIDsDescriptor.propertiesToFetch = [\.id]
+                let patternGridIDs = Set(try context.fetch(gridIDsDescriptor).map { $0.id })
+
+                var thumbIDsDescriptor = FetchDescriptor<SDProjectRecord>(
+                    predicate: #Predicate { $0.thumbnail != nil }
+                )
+                thumbIDsDescriptor.propertiesToFetch = [\.id]
+                let thumbnailIDs = Set(try context.fetch(thumbIDsDescriptor).map { $0.id })
+
+                var projectDescriptor = FetchDescriptor<SDProjectRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+                // 排除三个大 blob 列（thumbnail 实为拼图原图，是最大头）
+                projectDescriptor.propertiesToFetch = [
+                    \.id, \.name, \.date, \.totalBeads, \.brandId, \.isArchived,
+                    \.parentId, \.isPlanned, \.executedDate,
+                    \.completedDate, \.colorSystemRaw
+                ]
                 let sdProjects = try context.fetch(projectDescriptor)
-                loadedProjects = sdProjects.map { $0.toStruct() }
+                loadedProjects = sdProjects.map {
+                    $0.toStructLight(
+                        hasFinishedImage: finishedImageIDs.contains($0.id),
+                        hasPatternGrid: patternGridIDs.contains($0.id),
+                        hasThumbnail: thumbnailIDs.contains($0.id)
+                    )
+                }
                 projectsLoadedSuccessfully = true
-                print("[InventoryManager] 成功加载 \(loadedProjects.count) 个项目记录")
-                logInfo("load_projects_success", metadata: ["count": loadedProjects.count])
+                print("[InventoryManager] 成功加载 \(loadedProjects.count) 个项目记录（大图懒加载）")
+                logInfo("load_projects_success", metadata: [
+                    "count": loadedProjects.count,
+                    "withFinishedImage": finishedImageIDs.count,
+                    "withPatternGrid": patternGridIDs.count,
+                    "withThumbnail": thumbnailIDs.count
+                ])
             } catch {
                 print("[InventoryManager] ⚠️ 加载项目失败: \(error)")
                 logError("load_projects_failed", metadata: ["error": "\(error)"])
@@ -1746,19 +1788,32 @@ class InventoryManager: ObservableObject {
                         existing.parentId = project.parentId
                         existing.isPlanned = project.isPlanned
                         existing.executedDate = project.executedDate
-                        existing.thumbnail = project.thumbnail
-                        existing.finishedImage = project.finishedImage
                         existing.completedDate = project.completedDate
                         existing.colorSystemRaw = project.colorSystem.rawValue
-                        // patternGrid 是同步关键数据。编码失败时**保留** existing.patternGridData
+                        // thumbnail —— 大图懒加载安全写入（同 finishedImage 规则，防擦图）
+                        if let thumb = project.thumbnail {
+                            existing.thumbnail = thumb
+                        } else if !project.hasThumbnail {
+                            existing.thumbnail = nil
+                        }
+                        // finishedImage —— 大图懒加载安全写入（关键：绝不把"未加载"误当"已删除"）：
+                        //   - 内存有图              → 写入新图
+                        //   - 内存无图 + 标志=false → 用户确实清空，写 nil
+                        //   - 内存无图 + 标志=true  → 懒加载未读，保留 existing 不动（防擦图）
+                        if let img = project.finishedImage {
+                            existing.finishedImage = img
+                        } else if !project.hasFinishedImage {
+                            existing.finishedImage = nil
+                        }
+                        // patternGrid —— 同样懒加载安全；编码失败时**保留** existing.patternGridData
                         // 不覆盖（防止把云端最新值用 nil 覆盖造成全设备数据丢失）。
                         if let grid = project.patternGrid {
                             if let data = SDProjectRecord.encodePatternGrid(grid, projectId: project.id) {
                                 existing.patternGridData = data
                             }
                             // else: 编码失败，logger 已记录，existing.patternGridData 保持不变
-                        } else {
-                            // 用户明确清空（patternGrid 为 nil），允许覆盖
+                        } else if !project.hasPatternGrid {
+                            // 用户明确清空（标志=false），允许覆盖；懒加载未读（标志=true）则保留
                             existing.patternGridData = nil
                         }
 
@@ -2919,7 +2974,7 @@ class InventoryManager: ObservableObject {
             parentId: nil,  // 副本总是顶级项目
             isPlanned: true,
             executedDate: nil,
-            thumbnail: project.thumbnail,
+            thumbnail: project.thumbnail ?? loadThumbnailData(projectId: project.id),
             colorSystem: project.colorSystem
         )
 
@@ -2950,7 +3005,7 @@ class InventoryManager: ObservableObject {
                     parentId: newId,  // 关联到新的父项目
                     isPlanned: true,
                     executedDate: nil,
-                    thumbnail: child.thumbnail,
+                    thumbnail: child.thumbnail ?? loadThumbnailData(projectId: child.id),
                     colorSystem: child.colorSystem
                 )
                 projects.append(duplicatedChild)
@@ -2996,7 +3051,7 @@ class InventoryManager: ObservableObject {
             parentId: nil,
             isPlanned: true,
             executedDate: nil,
-            thumbnail: project.thumbnail,
+            thumbnail: project.thumbnail ?? loadThumbnailData(projectId: project.id),
             colorSystem: project.colorSystem
         )
 
@@ -3027,7 +3082,7 @@ class InventoryManager: ObservableObject {
                     parentId: newId,  // 关联到新的父项目
                     isPlanned: true,
                     executedDate: nil,
-                    thumbnail: child.thumbnail,
+                    thumbnail: child.thumbnail ?? loadThumbnailData(projectId: child.id),
                     colorSystem: child.colorSystem
                 )
                 projects.append(duplicatedChild)
@@ -3118,6 +3173,40 @@ class InventoryManager: ObservableObject {
         }
     }
 
+    // MARK: - 大图按需加载
+
+    /// 按需加载单个项目的成品图（大图懒加载，不进入内存数组）。
+    /// 视图在展示成品图时调用；返回 nil 表示该项目确实没有成品图。
+    func loadFinishedImageData(projectId: UUID) -> Data? {
+        guard let context = modelContext else { return nil }
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        descriptor.fetchLimit = 1
+        return (try? context.fetch(descriptor))?.first?.finishedImage
+    }
+
+    /// 按需加载单个项目的缩略图/拼图原图（大图懒加载，不进入内存数组）。
+    func loadThumbnailData(projectId: UUID) -> Data? {
+        guard let context = modelContext else { return nil }
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        descriptor.fetchLimit = 1
+        return (try? context.fetch(descriptor))?.first?.thumbnail
+    }
+
+    /// 按需加载单个项目的拼图网格（大图懒加载，不进入内存数组）。
+    func loadPatternGrid(projectId: UUID) -> BeadPatternGrid? {
+        guard let context = modelContext else { return nil }
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        descriptor.fetchLimit = 1
+        guard let sd = (try? context.fetch(descriptor))?.first else { return nil }
+        return SDProjectRecord.decodePatternGrid(sd.patternGridData, projectId: projectId)
+    }
+
     // MARK: - 项目图片管理
 
     /// 更新项目缩略图（支持计划项目和已执行项目）
@@ -3127,6 +3216,7 @@ class InventoryManager: ObservableObject {
             historyManager.recordProject(type: projects[index].isPlanned ? .planUpdate : .projectUpdate, project: projects[index])
 
             projects[index].thumbnail = thumbnail
+            projects[index].hasThumbnail = (thumbnail != nil)
             saveData()
         }
     }
@@ -3136,6 +3226,8 @@ class InventoryManager: ObservableObject {
         if let index = projects.firstIndex(where: { $0.id == projectId }) {
             historyManager.recordProject(type: projects[index].isPlanned ? .planUpdate : .projectUpdate, project: projects[index])
             projects[index].patternGrid = grid
+            // 维护懒加载标志：保证 saveData() 能区分"清空"与"未加载"
+            projects[index].hasPatternGrid = (grid != nil)
             saveData()
         }
     }
@@ -3148,6 +3240,8 @@ class InventoryManager: ObservableObject {
             historyManager.recordProject(type: .projectUpdate, project: projects[index])
 
             projects[index].finishedImage = finishedImage
+            // 维护懒加载标志：保证 saveData() 能区分"清空"与"未加载"
+            projects[index].hasFinishedImage = (finishedImage != nil)
 
             // 上传成品图时，如果没有完成日期，自动设置为当天
             if finishedImage != nil && projects[index].completedDate == nil {
