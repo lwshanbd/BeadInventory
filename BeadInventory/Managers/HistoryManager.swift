@@ -452,7 +452,17 @@ class HistoryManager: ObservableObject {
     @MainActor func canRevert(_ record: HistoryRecord) -> Bool {
         // records 常态 metadata-only，仅下面三个需要检查 snapshot 的分支按需取
         // （default 分支不读 snapshot，避免 HistoryView 整表 filter 时全量 hydrate）。
-        let record = needsSnapshotForRevertCheck(record.operationType) ? hydratedRecord(record) : record
+        var record = record
+        if needsSnapshotForRevertCheck(record.operationType) {
+            switch resolveSnapshots(for: record) {
+            case .transientFailure:
+                // 取快照失败是可重试的瞬时态，乐观放行；真正撤回时再校验，
+                // 不在列表态把它误判成「永久不可撤回」。
+                return true
+            case .ready(let hydrated):
+                record = hydrated
+            }
+        }
         switch record.operationType {
         case .stockReset:
             // 库存重置不支持撤回
@@ -514,7 +524,16 @@ class HistoryManager: ObservableObject {
 
     /// 获取不能撤回的原因
     @MainActor func revertDisabledReason(_ record: HistoryRecord) -> String? {
-        let record = needsSnapshotForRevertCheck(record.operationType) ? hydratedRecord(record) : record
+        var record = record
+        if needsSnapshotForRevertCheck(record.operationType) {
+            switch resolveSnapshots(for: record) {
+            case .transientFailure:
+                // 可重试失败：不展示「永久不可撤回」类原因（与 canRevert 乐观放行一致）。
+                return nil
+            case .ready(let hydrated):
+                record = hydrated
+            }
+        }
         switch record.operationType {
         case .stockReset:
             return String(localized: "库存重置影响范围太大，不支持撤回")
@@ -554,25 +573,45 @@ class HistoryManager: ObservableObject {
         }
     }
 
+    /// 撤回结果。`snapshotLoadFailed` 是可重试的瞬时态，调用方应提示「请重试」而非「数据已不可恢复」。
+    enum RevertOutcome {
+        case success
+        /// 撤回逻辑失败（快照确实缺失 / 项目状态不允许 / 记录已撤回等）—— 通常不可重试。
+        case failed
+        /// 按需加载快照失败（fetch 抛错等）—— 可重试。
+        case snapshotLoadFailed
+    }
+
     /// 撤回一个操作
     @discardableResult
-    @MainActor func revert(_ recordId: UUID) -> Bool {
+    @MainActor func revert(_ recordId: UUID) -> RevertOutcome {
         guard let index = records.firstIndex(where: { $0.id == recordId }) else {
             print("[History] 找不到记录: \(recordId)")
-            return false
+            return .failed
         }
 
-        // performRevert 各分支都要解码 snapshot，metadata-only 记录先按需补全
-        let record = hydratedRecord(records[index])
+        let baseRecord = records[index]
 
-        if record.isReverted {
-            print("[History] 记录已撤回: \(record.fullDescription)")
-            return false
+        if baseRecord.isReverted {
+            print("[History] 记录已撤回: \(baseRecord.fullDescription)")
+            return .failed
         }
 
         guard let manager = inventoryManager else {
             print("[History] InventoryManager 未设置")
-            return false
+            return .failed
+        }
+
+        // performRevert 各分支都要解码 snapshot，metadata-only 记录先按需补全。
+        // 区分「确实没有/已就绪」与「取数失败」：后者返回 .snapshotLoadFailed，
+        // 让 UI 提示可重试，而不是退化成 performRevert nil-快照 → 「数据已不可恢复」。
+        let record: HistoryRecord
+        switch resolveSnapshots(for: baseRecord) {
+        case .ready(let hydrated):
+            record = hydrated
+        case .transientFailure:
+            print("[History] 撤回前加载快照失败，可重试: \(baseRecord.fullDescription)")
+            return .snapshotLoadFailed
         }
 
         // 设置撤回标志，防止撤回操作被记录为新的历史
@@ -586,11 +625,11 @@ class HistoryManager: ObservableObject {
             snapshotCache.removeValue(forKey: record.id)
             saveData()
             print("[History] 撤回成功并删除记录: \(record.fullDescription)")
+            return .success
         } else {
             print("[History] 撤回失败: \(record.fullDescription)")
+            return .failed
         }
-
-        return success
     }
 
     @MainActor private func performRevert(record: HistoryRecord, manager: InventoryManager) -> Bool {
@@ -858,8 +897,13 @@ class HistoryManager: ObservableObject {
     }
 
     private func trimRecords() {
-        if records.count > maxRecords {
-            records = Array(records.prefix(maxRecords))
+        guard records.count > maxRecords else { return }
+        // 被裁掉的记录其 snapshot 缓存也一并清掉，避免 snapshotCache 无界增长，
+        // 长期把已不在列表里的大 blob 一直驻留在内存。
+        let droppedIDs = records[maxRecords...].map { $0.id }
+        records = Array(records.prefix(maxRecords))
+        for id in droppedIDs {
+            snapshotCache.removeValue(forKey: id)
         }
     }
 
@@ -903,21 +947,34 @@ class HistoryManager: ObservableObject {
     /// value 为 (before, after)，(nil, nil) 也是合法缓存值（该记录本来就没有 snapshot）。
     private var snapshotCache: [UUID: (before: Data?, after: Data?)] = [:]
 
-    /// 返回携带 snapshot 的 record 副本。
+    /// `resolveSnapshots(for:)` 的结果，关键在于把「确实没有 / 已加载」和「取数失败」分开。
+    ///
+    /// 旧实现里这三种情况都退化成「返回 metadata-only record（nil snapshot）」，
+    /// 调用方无法区分，于是把**可重试的取数失败**误判成「旧版本记录、永久不可撤回」，
+    /// 给用户展示了误导性的「数据已不可恢复」。
+    enum SnapshotResolution {
+        /// record 已带齐所需 snapshot（也可能确认为「本就没有」，此时仍是 ready）。
+        case ready(HistoryRecord)
+        /// 取数失败（modelContext 缺失 / fetch 抛错）—— 可重试，调用方不应判定为永久状态。
+        case transientFailure
+    }
+
+    /// 按需补全 record 的 snapshot，区分「就绪」与「可重试的失败」。
     ///
     /// 三级来源：① record 自带（刚由 record() 创建、尚未经过 metadata-only reload 的
     /// 在内存记录）；② snapshotCache；③ 按 id 单行 fetch SwiftData（整行物化，含 blob）。
-    /// 行不存在时（如 0.1s 防抖保存窗口内的新记录）原样返回。
-    func hydratedRecord(_ record: HistoryRecord) -> HistoryRecord {
+    /// 行不存在（如确无 snapshot 的记录）返回 `.ready(原 record)`；只有真正取数失败才回 `.transientFailure`。
+    @MainActor
+    func resolveSnapshots(for record: HistoryRecord) -> SnapshotResolution {
         if record.beforeSnapshot != nil || record.afterSnapshot != nil {
-            return record
+            return .ready(record)
         }
 
         let snapshots: (before: Data?, after: Data?)
         if let cached = snapshotCache[record.id] {
             snapshots = cached
         } else {
-            guard let context = modelContext else { return record }
+            guard let context = modelContext else { return .transientFailure }
             let recordId = record.id
             var descriptor = FetchDescriptor<SDHistoryRecord>(
                 predicate: #Predicate { $0.id == recordId }
@@ -925,18 +982,23 @@ class HistoryManager: ObservableObject {
             descriptor.fetchLimit = 1
             do {
                 guard let sdRecord = try context.fetch(descriptor).first else {
-                    return record
+                    // 行不在持久层：内存自带 snapshot 的路径上面已 return，
+                    // 走到这里说明该记录确实没有 snapshot，按「就绪」处理。
+                    return .ready(record)
                 }
                 snapshots = (sdRecord.beforeSnapshot, sdRecord.afterSnapshot)
                 snapshotCache[record.id] = snapshots
             } catch {
-                print("[History] 按需加载 snapshot 失败: \(error)")
-                return record
+                AppLogger.shared.error("History", "snapshot_hydrate_failed", metadata: [
+                    "id": record.id.uuidString,
+                    "error": "\(error)"
+                ])
+                return .transientFailure
             }
         }
 
-        guard snapshots.before != nil || snapshots.after != nil else { return record }
-        return HistoryRecord(
+        guard snapshots.before != nil || snapshots.after != nil else { return .ready(record) }
+        return .ready(HistoryRecord(
             id: record.id,
             timestamp: record.timestamp,
             operationType: record.operationType,
@@ -944,7 +1006,18 @@ class HistoryManager: ObservableObject {
             beforeSnapshot: snapshots.before,
             afterSnapshot: snapshots.after,
             isReverted: record.isReverted
-        )
+        ))
+    }
+
+    /// 便捷封装：取数失败时退回原 record（用于不需要区分失败/缺失的场景）。
+    @MainActor
+    func hydratedRecord(_ record: HistoryRecord) -> HistoryRecord {
+        switch resolveSnapshots(for: record) {
+        case .ready(let hydrated):
+            return hydrated
+        case .transientFailure:
+            return record
+        }
     }
 
     func saveData() {
