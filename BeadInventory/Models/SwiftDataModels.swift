@@ -320,6 +320,8 @@ final class SDHistoryRecord {
     // 不支持把 inline BLOB 搬迁到外部存储（详见 SDProjectRecord.thumbnail 注释）。
     // 真正的内存控制靠 capturesImages 标志 + image-update 路径才回填 OLD 图，
     // metadata-only 操作的 snapshot JSON 不再带图，已经把单条 snapshot 大小压回 KB 级。
+    // fetch 侧：HistoryManager.loadData / performSave 用 propertiesToFetch 跳过这两列
+    //（旧用户存量带图 snapshot 仍在库里，整表物化曾造成启动长白屏），撤回时按 id 单行取。
     var beforeSnapshot: Data?
     var afterSnapshot: Data?
     var isReverted: Bool = false
@@ -365,6 +367,24 @@ final class SDHistoryRecord {
             entityName: targetName,
             beforeSnapshot: beforeSnapshot,
             afterSnapshot: afterSnapshot,
+            isReverted: isReverted
+        )
+    }
+
+    /// metadata-only 版本：不读 beforeSnapshot / afterSnapshot 两个大 blob。
+    /// 配合 FetchDescriptor.propertiesToFetch 使用（跟 SDProjectRecord.toMetadataStruct 同型）——
+    /// 调用方需要 snapshot 时走 HistoryManager.hydratedRecord(_:) 按 id 单行取。
+    func toMetadataStruct() -> HistoryRecord? {
+        guard let opType = HistoryOperationType(rawValue: operationType) else {
+            return nil
+        }
+        return HistoryRecord(
+            id: id,
+            timestamp: timestamp,
+            operationType: opType,
+            entityName: targetName,
+            beforeSnapshot: nil,
+            afterSnapshot: nil,
             isReverted: isReverted
         )
     }

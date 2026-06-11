@@ -450,6 +450,9 @@ class HistoryManager: ObservableObject {
 
     /// 检查某个记录是否可以撤回
     @MainActor func canRevert(_ record: HistoryRecord) -> Bool {
+        // records 常态 metadata-only，仅下面三个需要检查 snapshot 的分支按需取
+        // （default 分支不读 snapshot，避免 HistoryView 整表 filter 时全量 hydrate）。
+        let record = needsSnapshotForRevertCheck(record.operationType) ? hydratedRecord(record) : record
         switch record.operationType {
         case .stockReset:
             // 库存重置不支持撤回
@@ -499,8 +502,19 @@ class HistoryManager: ObservableObject {
         }
     }
 
+    /// canRevert / revertDisabledReason 中需要检查 snapshot 内容的操作类型。
+    private func needsSnapshotForRevertCheck(_ type: HistoryOperationType) -> Bool {
+        switch type {
+        case .projectMerge, .planExecute, .planAdd:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// 获取不能撤回的原因
     @MainActor func revertDisabledReason(_ record: HistoryRecord) -> String? {
+        let record = needsSnapshotForRevertCheck(record.operationType) ? hydratedRecord(record) : record
         switch record.operationType {
         case .stockReset:
             return String(localized: "库存重置影响范围太大，不支持撤回")
@@ -548,7 +562,8 @@ class HistoryManager: ObservableObject {
             return false
         }
 
-        let record = records[index]
+        // performRevert 各分支都要解码 snapshot，metadata-only 记录先按需补全
+        let record = hydratedRecord(records[index])
 
         if record.isReverted {
             print("[History] 记录已撤回: \(record.fullDescription)")
@@ -568,6 +583,7 @@ class HistoryManager: ObservableObject {
         if success {
             // 撤回成功后直接删除该记录
             records.remove(at: index)
+            snapshotCache.removeValue(forKey: record.id)
             saveData()
             print("[History] 撤回成功并删除记录: \(record.fullDescription)")
         } else {
@@ -855,18 +871,80 @@ class HistoryManager: ObservableObject {
 
         AppBackgroundTaskManager.shared.perform(named: "HistoryLoad") {
             do {
-                let descriptor = FetchDescriptor<SDHistoryRecord>(
+                // **启动白屏根因修复**：本函数由 BeadInventoryApp.init() 同步调用，发生在首帧
+                // 渲染之前。beforeSnapshot / afterSnapshot 是 inline BLOB（旧版 snapshot 内嵌
+                // base64 图片，单条可达数 MB），不加 propertiesToFetch 时 SwiftData 在 fetch
+                // 阶段就把全部 blob 物化进内存 —— 重度用户（458 项目级）数百 MB 同步 I/O
+                // 压在主线程上 = 长时间白屏/黑屏。跟 InventoryManager.loadData 的项目表
+                // 修复（round-11 C1 sweep）同型：只取 metadata 列，snapshot 在 revert 时
+                // 走 hydratedRecord(_:) 按 id 单行取。
+                var descriptor = FetchDescriptor<SDHistoryRecord>(
                     sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
                 )
+                descriptor.propertiesToFetch = [
+                    \.id, \.timestamp, \.operationType, \.targetName, \.isReverted
+                ]
                 let sdRecords = try context.fetch(descriptor)
-                records = sdRecords.compactMap { $0.toStruct() }
+                records = sdRecords.compactMap { $0.toMetadataStruct() }
+                snapshotCache.removeAll()
                 isDataLoaded = true
                 refreshBaseline()
-                print("[History] 加载了 \(records.count) 条历史记录")
+                print("[History] 加载了 \(records.count) 条历史记录 (metadata-only)")
             } catch {
                 print("[History] 加载历史记录失败: \(error)")
             }
         }
+    }
+
+    // MARK: - Snapshot 按需加载
+
+    /// snapshot blob 的按需缓存：records 常态只携带 metadata（见 loadData），
+    /// canRevert / revert 需要 snapshot 时按 id 单行 fetch 并缓存，避免重复查询。
+    /// value 为 (before, after)，(nil, nil) 也是合法缓存值（该记录本来就没有 snapshot）。
+    private var snapshotCache: [UUID: (before: Data?, after: Data?)] = [:]
+
+    /// 返回携带 snapshot 的 record 副本。
+    ///
+    /// 三级来源：① record 自带（刚由 record() 创建、尚未经过 metadata-only reload 的
+    /// 在内存记录）；② snapshotCache；③ 按 id 单行 fetch SwiftData（整行物化，含 blob）。
+    /// 行不存在时（如 0.1s 防抖保存窗口内的新记录）原样返回。
+    func hydratedRecord(_ record: HistoryRecord) -> HistoryRecord {
+        if record.beforeSnapshot != nil || record.afterSnapshot != nil {
+            return record
+        }
+
+        let snapshots: (before: Data?, after: Data?)
+        if let cached = snapshotCache[record.id] {
+            snapshots = cached
+        } else {
+            guard let context = modelContext else { return record }
+            let recordId = record.id
+            var descriptor = FetchDescriptor<SDHistoryRecord>(
+                predicate: #Predicate { $0.id == recordId }
+            )
+            descriptor.fetchLimit = 1
+            do {
+                guard let sdRecord = try context.fetch(descriptor).first else {
+                    return record
+                }
+                snapshots = (sdRecord.beforeSnapshot, sdRecord.afterSnapshot)
+                snapshotCache[record.id] = snapshots
+            } catch {
+                print("[History] 按需加载 snapshot 失败: \(error)")
+                return record
+            }
+        }
+
+        guard snapshots.before != nil || snapshots.after != nil else { return record }
+        return HistoryRecord(
+            id: record.id,
+            timestamp: record.timestamp,
+            operationType: record.operationType,
+            entityName: record.entityName,
+            beforeSnapshot: snapshots.before,
+            afterSnapshot: snapshots.after,
+            isReverted: record.isReverted
+        )
     }
 
     func saveData() {
@@ -926,7 +1004,13 @@ class HistoryManager: ObservableObject {
 
         AppBackgroundTaskManager.shared.perform(named: "HistorySave") {
             do {
-                let existing = try context.fetch(FetchDescriptor<SDHistoryRecord>())
+                // metadata-only：跟 loadData 同理，diff 只需要 id（更新走对象引用），
+                // 不物化全表 snapshot blob —— 否则每次防抖保存都把数百 MB 拉进内存。
+                var existingDescriptor = FetchDescriptor<SDHistoryRecord>()
+                existingDescriptor.propertiesToFetch = [
+                    \.id, \.timestamp, \.operationType, \.targetName, \.isReverted
+                ]
+                let existing = try context.fetch(existingDescriptor)
                 let existingByID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                 let localByID = makeMapByID(records)
 
@@ -935,7 +1019,8 @@ class HistoryManager: ObservableObject {
                 for sdRecord in existing where localByID[sdRecord.id] == nil {
                     if baselineRecordsByID[sdRecord.id] != nil {
                         context.delete(sdRecord)
-                    } else if let remoteRecord = sdRecord.toStruct() {
+                    } else if let remoteRecord = sdRecord.toMetadataStruct() {
+                        // metadata-only 合并进内存即可：blob 留在库里，撤回时按需 hydrate
                         remoteRecordsToAppend.append(remoteRecord)
                     }
                 }
@@ -955,8 +1040,15 @@ class HistoryManager: ObservableObject {
                         existingRecord.timestamp = record.timestamp
                         existingRecord.operationType = record.operationType.rawValue
                         existingRecord.targetName = record.entityName
-                        existingRecord.beforeSnapshot = record.beforeSnapshot
-                        existingRecord.afterSnapshot = record.afterSnapshot
+                        // 仅在内存里真带 snapshot 时才写回：metadata-only 记录的 nil
+                        // 是「没加载」而不是「没有」，无条件赋值会把库里的 blob 清掉。
+                        // snapshot 创建后不可变，不存在合法的「写 nil 清空」场景。
+                        if record.beforeSnapshot != nil {
+                            existingRecord.beforeSnapshot = record.beforeSnapshot
+                        }
+                        if record.afterSnapshot != nil {
+                            existingRecord.afterSnapshot = record.afterSnapshot
+                        }
                         existingRecord.isReverted = record.isReverted
                     } else if changedLocally {
                         context.insert(SDHistoryRecord(from: record))
@@ -980,6 +1072,7 @@ class HistoryManager: ObservableObject {
     /// 清空所有历史记录
     func clearAll() {
         records.removeAll()
+        snapshotCache.removeAll()
         saveData()
     }
 
