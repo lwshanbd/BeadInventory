@@ -414,10 +414,14 @@ struct HistoryView: View {
     // MARK: - 撤回
 
     private func revertRecord(_ record: HistoryRecord) {
-        let success = historyManager.revert(record.id)
-        if success {
+        switch historyManager.revert(record.id) {
+        case .success:
             revertSuccessAt = Date()
-        } else {
+        case .snapshotLoadFailed:
+            // 可重试的瞬时失败：明确区分于「永久不可恢复」，引导用户重试。
+            revertErrorMessage = "快照加载失败，请稍后重试"
+            showingRevertError = true
+        case .failed:
             revertErrorMessage = "撤回失败，记录可能已不可恢复"
             showingRevertError = true
         }
@@ -432,9 +436,10 @@ struct HistoryView: View {
         var successCount = 0
         var failureCount = 0
         for record in toRevert {
-            if historyManager.revert(record.id) {
+            switch historyManager.revert(record.id) {
+            case .success:
                 successCount += 1
-            } else {
+            case .failed, .snapshotLoadFailed:
                 failureCount += 1
             }
         }
