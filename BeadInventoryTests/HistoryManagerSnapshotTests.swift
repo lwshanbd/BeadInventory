@@ -125,8 +125,9 @@ final class HistoryManagerSnapshotTests: XCTestCase {
     /// 仍为 false）新建的历史记录——即使其防抖保存在加载落定前先触发被跳过——最终也必须
     /// **落库**，不能因 `pendingSave` 被清而永久只留在内存里、退出即丢。
     ///
-    /// 该用例确定性地复现「保存先于加载落定触发」（直接调 saveDataImmediately，不依赖 0.1s 防抖），
-    /// 因此对 performSave 的 pendingSave 保留 + loadData 收尾补存这两处修复都有牙：去掉任一处都会挂。
+    /// 该用例确定性地复现「保存先于加载落定触发」（直接调 saveDataImmediately，不依赖 0.1s 防抖）。
+    /// 两处修复（performSave 的 pendingSave 保留 + loadData 收尾补存）互为兜底：**两处同时去掉**本
+    /// 用例才会挂（任一处单独保留都能让记录最终落库）。要给每处修复单独建回归，需各自只留一处。
     func test_recordCreatedDuringLoad_isPersistedAfterLoadCompletes() async throws {
         let ctx = try makeInMemoryHistoryContext()
         let persistedID = UUID()

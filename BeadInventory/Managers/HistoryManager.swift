@@ -32,6 +32,8 @@ class HistoryManager: ObservableObject {
     // 后台加载任务（测试可 await 它等加载完成）+ 代次令牌（忽略过期上下文迟到的完成）
     private(set) var loadTask: Task<Void, Never>?
     private var loadGeneration = 0
+    // 是否有加载正在进行：供 reloadIfNeeded 区分「加载中」与「加载已失败」，避免在途时重复触发。
+    private var isLoading = false
 
     // metadata-only 取数的列白名单：loadData 与 performSave 共用，避免两处各写一份漂移
     //（漏列某列会让该列在 fetch 阶段不被物化，"metadata-only" 语义就不成立）。
@@ -60,6 +62,16 @@ class HistoryManager: ObservableObject {
         baselineRecordsByID = [:]
         snapshotCache.removeAll()
         isDataLoaded = false
+        loadData()
+    }
+
+    /// 补偿重试：仅当上次加载未成功（isDataLoaded 仍 false）、当前没有加载在途、且已有 context 时，
+    /// 重新触发一次后台加载。供前台恢复（scenePhase.active）调用 —— 否则启动时加载失败会让
+    /// isDataLoaded 永远停在 false：整 session 历史只在内存、saveDataImmediately 也被守卫跳过、
+    /// 退出即丢。加载成功会顺带把这期间积压在内存、尚未落库的记录补存（见 loadData 的收尾补存）。
+    func reloadIfNeeded() {
+        guard !isDataLoaded, !isLoading, modelContext != nil else { return }
+        AppLogger.shared.info("History", "reload_if_needed_retry")
         loadData()
     }
 
@@ -948,12 +960,14 @@ class HistoryManager: ObservableObject {
         // 走 resolveSnapshots(for:)（hydratedRecord(_:) 是其便捷封装）按 id 单行取。
         loadGeneration += 1
         let generation = loadGeneration
+        isLoading = true
         let container = context.container
         let task = Task { @MainActor in
             let result = await Self.fetchHistoryMetadata(from: container)
             // 过期完成直接丢弃：await 期间又装了新上下文（如测试切库 / 重新加载），
-            // 避免旧库的结果覆盖新状态。
+            // 避免旧库的结果覆盖新状态。isLoading 归属最新一代，不在这里清。
             guard generation == self.loadGeneration else { return }
+            self.isLoading = false
             switch result {
             case .success(let loaded):
                 let loadedIDs = Set(loaded.map { $0.id })

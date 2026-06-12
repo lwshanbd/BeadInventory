@@ -326,6 +326,9 @@ struct BeadInventoryApp: App {
                     }
                 }
                 cloudSyncStatusManager.refreshAccountStatus()
+                // 历史记录若在启动时加载失败（isDataLoaded 仍 false），前台恢复时补一次重试 ——
+                // 否则失败后整 session 历史只在内存、saveDataImmediately 也被守卫跳过、退出即丢。
+                HistoryManager.shared.reloadIfNeeded()
                 // 启动 displayThumbnail 后台迁移协调器 —— 给老用户的大图后台 backfill 小图。
                 // 协调器内部 5s 延迟 + 重入安全（已在跑就跳过）+ 失败自愈（下次启动从余量继续）。
                 // **关键路径**：458 项目级用户在迁移完成前列表 fallback 现场降级，**已经**不会撞 jetsam，
