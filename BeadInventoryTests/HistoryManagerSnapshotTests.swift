@@ -23,7 +23,7 @@ final class HistoryManagerSnapshotTests: XCTestCase {
 
     /// 新默认加载路径的往返：带 blob 写入 → loadData 后内存只剩 metadata →
     /// hydratedRecord 必须能按 id 把原始 snapshot 字节取回来（含缓存命中路径）。
-    func test_hydratedRecord_afterMetadataOnlyReload_returnsOriginalSnapshotBytes() throws {
+    func test_hydratedRecord_afterMetadataOnlyReload_returnsOriginalSnapshotBytes() async throws {
         let ctx = try makeInMemoryHistoryContext()
         let before = Data("before-blob".utf8)
         let after = Data("after-blob".utf8)
@@ -40,7 +40,8 @@ final class HistoryManagerSnapshotTests: XCTestCase {
         try ctx.save()
 
         let mgr = HistoryManager.shared
-        mgr.setModelContext(ctx)   // → loadData()，records 变成 metadata-only
+        mgr.setModelContext(ctx)   // → loadData()（后台异步），records 变成 metadata-only
+        await mgr.loadTask?.value  // 等后台加载落定再断言
 
         guard let meta = mgr.records.first else {
             return XCTFail("loadData 后应有 1 条记录")
@@ -63,7 +64,7 @@ final class HistoryManagerSnapshotTests: XCTestCase {
     /// 回归守卫：metadata-only 记录（nil snapshot）进入 performSave 的「更新已存在行」
     /// 分支时，nil-guard 必须保证不会把库里的 blob 抹成 nil。若有人把 guard 改回
     /// 无条件赋值，本测试会失败。
-    func test_performSave_metadataOnlyRecord_doesNotWipeStoredBlob() throws {
+    func test_performSave_metadataOnlyRecord_doesNotWipeStoredBlob() async throws {
         let ctx = try makeInMemoryHistoryContext()
         let blob = Data("snapshot-blob".utf8)
         let id = UUID()
@@ -80,6 +81,7 @@ final class HistoryManagerSnapshotTests: XCTestCase {
 
         let mgr = HistoryManager.shared
         mgr.setModelContext(ctx)
+        await mgr.loadTask?.value  // 等后台加载落定再断言
         guard let meta = mgr.records.first else {
             return XCTFail("loadData 后应有 1 条记录")
         }
@@ -109,6 +111,41 @@ final class HistoryManagerSnapshotTests: XCTestCase {
             reFetched?.isReverted,
             true,
             "isReverted 这类纯 metadata 更新仍应正常写回"
+        )
+    }
+
+    /// 回归守卫（PR #52 双审 Codex Critical）：loadData 改异步后，加载窗口内（isDataLoaded
+    /// 仍为 false）新建的历史记录不能被随后落定的加载结果覆盖丢失。
+    func test_recordCreatedDuringLoad_isPreservedAfterLoadCompletes() async throws {
+        let ctx = try makeInMemoryHistoryContext()
+        let persistedID = UUID()
+        ctx.insert(SDHistoryRecord(
+            id: persistedID,
+            timestamp: Date(timeIntervalSince1970: 1_000),
+            operationType: HistoryOperationType.projectUpdate.rawValue,
+            targetName: "已持久化",
+            beforeSnapshot: nil,
+            afterSnapshot: nil,
+            isReverted: false
+        ))
+        try ctx.save()
+
+        let mgr = HistoryManager.shared
+        mgr.setModelContext(ctx)   // 踢出后台加载；执行到这里时尚未完成
+        // 加载窗口内新建一条：performSave 因 isDataLoaded=false 被守卫跳过，仅存在于内存
+        mgr.record(type: .projectUpdate, entityName: "加载期间新建")
+        let pendingID = mgr.records.first?.id
+        XCTAssertNotNil(pendingID, "新建后内存里应有这条")
+
+        await mgr.loadTask?.value   // 等加载落定 → 触发 pending 合并
+
+        XCTAssertTrue(
+            mgr.records.contains { $0.id == persistedID },
+            "已持久化记录应被加载进来"
+        )
+        XCTAssertTrue(
+            mgr.records.contains { $0.id == pendingID },
+            "加载期间新建的记录不应被加载结果覆盖丢失"
         )
     }
 }

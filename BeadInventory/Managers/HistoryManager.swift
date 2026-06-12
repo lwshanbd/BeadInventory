@@ -29,6 +29,16 @@ class HistoryManager: ObservableObject {
     // 数据加载完成标志
     private var isDataLoaded = false
 
+    // 后台加载任务（测试可 await 它等加载完成）+ 代次令牌（忽略过期上下文迟到的完成）
+    private(set) var loadTask: Task<Void, Never>?
+    private var loadGeneration = 0
+
+    // metadata-only 取数的列白名单：loadData 与 performSave 共用，避免两处各写一份漂移
+    //（漏列某列会让该列在 fetch 阶段不被物化，"metadata-only" 语义就不成立）。
+    private static let metadataProperties: [PartialKeyPath<SDHistoryRecord>] = [
+        \.id, \.timestamp, \.operationType, \.targetName, \.isReverted
+    ]
+
     // 防抖保存：避免频繁调用 saveData 导致 SwiftData 崩溃
     private var saveWorkItem: DispatchWorkItem?
     private var pendingSave = false
@@ -41,6 +51,15 @@ class HistoryManager: ObservableObject {
     // 设置 ModelContext
     func setModelContext(_ context: ModelContext) {
         self.modelContext = context
+        // 安装新上下文前清掉旧残留（生产仅启动调用一次、此时本为空；也避免单例在测试间串味），
+        // 并取消可能挂着的防抖保存，防止旧上下文的待保存落到新库上。
+        saveWorkItem?.cancel()
+        saveWorkItem = nil
+        pendingSave = false
+        records = []
+        baselineRecordsByID = [:]
+        snapshotCache.removeAll()
+        isDataLoaded = false
         loadData()
     }
 
@@ -907,10 +926,12 @@ class HistoryManager: ObservableObject {
         }
     }
 
-    func loadData() {
+    /// 触发一次后台加载。返回的 Task 可被测试 `await` 以等待加载完成；生产侧 fire-and-forget。
+    @discardableResult
+    func loadData() -> Task<Void, Never>? {
         guard let context = modelContext else {
             print("[History] ModelContext 未设置，无法加载数据")
-            return
+            return nil
         }
 
         // **启动白屏根因修复（二次）**：全 App 的第一次 SwiftData 取数会触发存储首次打开
@@ -924,35 +945,59 @@ class HistoryManager: ObservableObject {
         //
         // 仍保留 propertiesToFetch（只取 metadata 列）：beforeSnapshot / afterSnapshot 是
         // inline BLOB（单条可达数 MB），全表物化会再压数百 MB 进内存；snapshot 在 revert 时
-        // 走 hydratedRecord(_:) 按 id 单行取。
+        // 走 resolveSnapshots(for:)（hydratedRecord(_:) 是其便捷封装）按 id 单行取。
+        loadGeneration += 1
+        let generation = loadGeneration
         let container = context.container
-        Task { @MainActor in
-            let loaded = await Self.fetchHistoryMetadata(from: container)
-            self.records = loaded
-            self.snapshotCache.removeAll()
-            self.isDataLoaded = true
-            self.refreshBaseline()
-            print("[History] 加载了 \(self.records.count) 条历史记录 (metadata-only, off-main)")
+        let task = Task { @MainActor in
+            let result = await Self.fetchHistoryMetadata(from: container)
+            // 过期完成直接丢弃：await 期间又装了新上下文（如测试切库 / 重新加载），
+            // 避免旧库的结果覆盖新状态。
+            guard generation == self.loadGeneration else { return }
+            switch result {
+            case .success(let loaded):
+                let loadedIDs = Set(loaded.map { $0.id })
+                // 加载窗口内（isDataLoaded 仍为 false、performSave 被守卫跳过）新建、尚未持久化
+                // 的本地记录：合并保留，避免被加载结果直接覆盖丢失。
+                let pendingLocal = self.records.filter { !loadedIDs.contains($0.id) }
+                self.records = (loaded + pendingLocal).sorted { $0.timestamp > $1.timestamp }
+                self.snapshotCache.removeAll()
+                self.isDataLoaded = true
+                // baseline 只认已持久化集合：pendingLocal 不进 baseline → 下次 save 走 insert，
+                // 不会被 performSave 当成「本地已删」而误删。
+                self.baselineRecordsByID = self.makeMapByID(loaded)
+                AppLogger.shared.info("History", "loaded", metadata: [
+                    "count": self.records.count,
+                    "pendingMerged": pendingLocal.count
+                ])
+            case .failure(let error):
+                // 失败不置 isDataLoaded（performSave 仍被守卫跳过、可重试），保留内存现状，
+                // 并写入可导出诊断 —— 区别于「确实没有历史记录」。
+                AppLogger.shared.error("History", "load_failed", metadata: [
+                    "error": error.localizedDescription
+                ])
+            }
         }
+        loadTask = task
+        return task
     }
 
-    /// 在后台 ModelContext 上做 metadata-only 取数并转换成 Sendable 结构体。
+    /// 在后台 ModelContext 上做 metadata-only 取数并转换成 Sendable 结构体；失败以 `Result` 上抛，
+    /// 由调用方区分「取数失败」与「确实没有记录」（前者不应置 isDataLoaded、可重试）。
     /// 全程在单个 detached task 内同步执行（取数与转换之间无 await，ModelContext 不跨线程），
     /// 只把 `[HistoryRecord]`（值类型）交回调用方。
-    nonisolated private static func fetchHistoryMetadata(from container: ModelContainer) async -> [HistoryRecord] {
-        await Task.detached(priority: .userInitiated) {
+    nonisolated private static func fetchHistoryMetadata(from container: ModelContainer) async -> Result<[HistoryRecord], Error> {
+        let properties = metadataProperties
+        return await Task.detached(priority: .userInitiated) {
             let bgContext = ModelContext(container)
             var descriptor = FetchDescriptor<SDHistoryRecord>(
                 sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
             )
-            descriptor.propertiesToFetch = [
-                \.id, \.timestamp, \.operationType, \.targetName, \.isReverted
-            ]
+            descriptor.propertiesToFetch = properties
             do {
-                return try bgContext.fetch(descriptor).compactMap { $0.toMetadataStruct() }
+                return .success(try bgContext.fetch(descriptor).compactMap { $0.toMetadataStruct() })
             } catch {
-                print("[History] 加载历史记录失败: \(error)")
-                return []
+                return .failure(error)
             }
         }.value
     }
@@ -1097,9 +1142,7 @@ class HistoryManager: ObservableObject {
                 // metadata-only：跟 loadData 同理，diff 只需要 id（更新走对象引用），
                 // 不物化全表 snapshot blob —— 否则每次防抖保存都把数百 MB 拉进内存。
                 var existingDescriptor = FetchDescriptor<SDHistoryRecord>()
-                existingDescriptor.propertiesToFetch = [
-                    \.id, \.timestamp, \.operationType, \.targetName, \.isReverted
-                ]
+                existingDescriptor.propertiesToFetch = Self.metadataProperties
                 let existing = try context.fetch(existingDescriptor)
                 let existingByID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                 let localByID = makeMapByID(records)
