@@ -913,31 +913,48 @@ class HistoryManager: ObservableObject {
             return
         }
 
-        AppBackgroundTaskManager.shared.perform(named: "HistoryLoad") {
+        // **启动白屏根因修复（二次）**：全 App 的第一次 SwiftData 取数会触发存储首次打开
+        // —— SQLite + NSPersistentCloudKitContainer 初始化，冷启动实测同步阻塞约 1s。本函数
+        // 由 BeadInventoryApp.init() 调用，发生在首帧渲染之前；若用 mainContext 同步取数，
+        // 这 1s 直接压在首帧前 → ContentView 的加载态都来不及渲染 = 长时间白屏/黑屏。
+        //
+        // 改为在后台 ModelContext 上取数：开库开销落到后台线程，App.init 立即返回、加载态
+        // 立刻渲染；只把转换好的 metadata 结构体回主线程赋值。顺带把存储预热好，紧随其后的
+        // InventoryManager 主线程取数也走暖路径。
+        //
+        // 仍保留 propertiesToFetch（只取 metadata 列）：beforeSnapshot / afterSnapshot 是
+        // inline BLOB（单条可达数 MB），全表物化会再压数百 MB 进内存；snapshot 在 revert 时
+        // 走 hydratedRecord(_:) 按 id 单行取。
+        let container = context.container
+        Task { @MainActor in
+            let loaded = await Self.fetchHistoryMetadata(from: container)
+            self.records = loaded
+            self.snapshotCache.removeAll()
+            self.isDataLoaded = true
+            self.refreshBaseline()
+            print("[History] 加载了 \(self.records.count) 条历史记录 (metadata-only, off-main)")
+        }
+    }
+
+    /// 在后台 ModelContext 上做 metadata-only 取数并转换成 Sendable 结构体。
+    /// 全程在单个 detached task 内同步执行（取数与转换之间无 await，ModelContext 不跨线程），
+    /// 只把 `[HistoryRecord]`（值类型）交回调用方。
+    nonisolated private static func fetchHistoryMetadata(from container: ModelContainer) async -> [HistoryRecord] {
+        await Task.detached(priority: .userInitiated) {
+            let bgContext = ModelContext(container)
+            var descriptor = FetchDescriptor<SDHistoryRecord>(
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+            descriptor.propertiesToFetch = [
+                \.id, \.timestamp, \.operationType, \.targetName, \.isReverted
+            ]
             do {
-                // **启动白屏根因修复**：本函数由 BeadInventoryApp.init() 同步调用，发生在首帧
-                // 渲染之前。beforeSnapshot / afterSnapshot 是 inline BLOB（旧版 snapshot 内嵌
-                // base64 图片，单条可达数 MB），不加 propertiesToFetch 时 SwiftData 在 fetch
-                // 阶段就把全部 blob 物化进内存 —— 重度用户（458 项目级）数百 MB 同步 I/O
-                // 压在主线程上 = 长时间白屏/黑屏。跟 InventoryManager.loadData 的项目表
-                // 修复（round-11 C1 sweep）同型：只取 metadata 列，snapshot 在 revert 时
-                // 走 hydratedRecord(_:) 按 id 单行取。
-                var descriptor = FetchDescriptor<SDHistoryRecord>(
-                    sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-                )
-                descriptor.propertiesToFetch = [
-                    \.id, \.timestamp, \.operationType, \.targetName, \.isReverted
-                ]
-                let sdRecords = try context.fetch(descriptor)
-                records = sdRecords.compactMap { $0.toMetadataStruct() }
-                snapshotCache.removeAll()
-                isDataLoaded = true
-                refreshBaseline()
-                print("[History] 加载了 \(records.count) 条历史记录 (metadata-only)")
+                return try bgContext.fetch(descriptor).compactMap { $0.toMetadataStruct() }
             } catch {
                 print("[History] 加载历史记录失败: \(error)")
+                return []
             }
-        }
+        }.value
     }
 
     // MARK: - Snapshot 按需加载

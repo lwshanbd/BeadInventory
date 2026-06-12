@@ -237,6 +237,7 @@ class InventoryManager: ObservableObject {
         self.modelContext = modelContext
         logInfo("init_with_model_context")
         initializeDefaultColors()
+        logInfo("default_colors_loaded", metadata: ["count": beadColors.count])  // 启动耗时探针：色卡 JSON 解析完成
     }
 
     // 默认初始化器（用于 Preview）

@@ -179,6 +179,7 @@ struct BeadInventoryApp: App {
         // 初始化 HistoryManager
         HistoryManager.shared.setModelContext(container.mainContext)
         HistoryManager.shared.inventoryManager = manager
+        AppLogger.shared.info("App", "history_context_set")  // 启动耗时探针：HistoryManager 上下文就绪（取数已转后台，不再阻塞此处）
 
         self.initialFatalErrorMessage = fatalErrorMessage
 
@@ -191,6 +192,7 @@ struct BeadInventoryApp: App {
         } catch {
             AppLogger.shared.error("TipKit", "初始化失败: \(error.localizedDescription)")
         }
+        AppLogger.shared.info("App", "app_init_completed")  // 启动耗时探针：App.init 同步段结束（首帧前）
     }
 
     var body: some Scene {
