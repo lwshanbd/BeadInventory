@@ -179,18 +179,25 @@ struct BeadInventoryApp: App {
         // 初始化 HistoryManager
         HistoryManager.shared.setModelContext(container.mainContext)
         HistoryManager.shared.inventoryManager = manager
+        AppLogger.shared.info("App", "history_context_set")  // 启动耗时探针：HistoryManager 上下文就绪（取数已转后台，不再阻塞此处）
 
         self.initialFatalErrorMessage = fatalErrorMessage
 
-        // 初始化 TipKit
-        do {
-            try Tips.configure([
-                .displayFrequency(.daily),
-                .datastoreLocation(.applicationDefault)
-            ])
-        } catch {
-            AppLogger.shared.error("TipKit", "初始化失败: \(error.localizedDescription)")
+        // 初始化 TipKit —— 移出 App.init 同步路径。Tips.configure 冷启动要做 datastore 磁盘
+        // 初始化（实测可达数百 ms），但它跟首帧无关（tips 是后续在具体页面按交互才弹），放在
+        // 首帧前同步跑只会拖长白屏。改到后台 utility 队列异步配置；TipKit 仅要求 configure
+        // 先于任意 tip 使用，启动后几百毫秒内不会触达任何 tip，延迟一拍无影响。
+        Task.detached(priority: .utility) {
+            do {
+                try Tips.configure([
+                    .displayFrequency(.daily),
+                    .datastoreLocation(.applicationDefault)
+                ])
+            } catch {
+                AppLogger.shared.error("TipKit", "初始化失败: \(error.localizedDescription)")
+            }
         }
+        AppLogger.shared.info("App", "app_init_completed")  // 启动耗时探针：App.init 同步段结束（首帧前）
     }
 
     var body: some Scene {
@@ -319,6 +326,9 @@ struct BeadInventoryApp: App {
                     }
                 }
                 cloudSyncStatusManager.refreshAccountStatus()
+                // 历史记录若在启动时加载失败（isDataLoaded 仍 false），前台恢复时补一次重试 ——
+                // 否则失败后整 session 历史只在内存、saveDataImmediately 也被守卫跳过、退出即丢。
+                HistoryManager.shared.reloadIfNeeded()
                 // 启动 displayThumbnail 后台迁移协调器 —— 给老用户的大图后台 backfill 小图。
                 // 协调器内部 5s 延迟 + 重入安全（已在跑就跳过）+ 失败自愈（下次启动从余量继续）。
                 // **关键路径**：458 项目级用户在迁移完成前列表 fallback 现场降级，**已经**不会撞 jetsam，
@@ -412,7 +422,13 @@ class CloudSyncStatusManager: ObservableObject {
     @Published private(set) var cloudDataCheckedAt: Date?
     @Published private(set) var cloudDataErrorMessage: String?
 
-    private let container = CKContainer(identifier: "iCloud.com.beadinventory.app")
+    // 注意：不要在这里用 `let container = CKContainer(...)` 直接持有容器。
+    // 首次 `CKContainer(identifier:)` 会与 cloudd 守护进程做一次同步握手；
+    // CloudSyncStatusManager 是在 BeadInventoryApp.init() 的主线程上创建的，
+    // 冷启动（cloudd 连接尚未预热）时该握手会阻塞主线程数秒，导致首帧迟迟不出 → 长时间白屏
+    // （实测一次冷启动卡了约 8.5s）。改为按需在后台队列创建，确保启动路径零阻塞。
+    private let containerIdentifier = "iCloud.com.beadinventory.app"
+    private let cloudKitQueue = DispatchQueue(label: "com.beadinventory.cloudsync", qos: .utility)
     private var lastRefreshRequestedAt: Date?
     private var lastCloudDataRequestedAt: Date?
     private let cloudDataRefreshInterval: TimeInterval = 60
@@ -561,27 +577,32 @@ class CloudSyncStatusManager: ObservableObject {
         lastRefreshRequestedAt = Date()
         AppLogger.shared.info("CloudSync", "account_status_check_started", metadata: ["force": force])
 
-        container.accountStatus { [weak self] status, error in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.isCheckingAccount = false
-                self.lastCheckedAt = Date()
+        // 在后台队列创建 CKContainer 并发起查询，避免首次 cloudd 握手阻塞主线程。
+        let identifier = containerIdentifier
+        cloudKitQueue.async { [weak self] in
+            let container = CKContainer(identifier: identifier)
+            container.accountStatus { status, error in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.isCheckingAccount = false
+                    self.lastCheckedAt = Date()
 
-                if let error {
-                    self.accountStatus = .couldNotDetermine
-                    self.lastErrorMessage = error.localizedDescription
-                    AppLogger.shared.warning(
-                        "CloudSync",
-                        "account_status_check_failed",
-                        metadata: ["error": error.localizedDescription]
-                    )
+                    if let error {
+                        self.accountStatus = .couldNotDetermine
+                        self.lastErrorMessage = error.localizedDescription
+                        AppLogger.shared.warning(
+                            "CloudSync",
+                            "account_status_check_failed",
+                            metadata: ["error": error.localizedDescription]
+                        )
+                        self.clearCloudDataStatus()
+                        return
+                    }
+
+                    self.accountStatus = status
+                    AppLogger.shared.info("CloudSync", "account_status_updated", metadata: ["status": "\(status.rawValue)"])
                     self.clearCloudDataStatus()
-                    return
                 }
-
-                self.accountStatus = status
-                AppLogger.shared.info("CloudSync", "account_status_updated", metadata: ["status": "\(status.rawValue)"])
-                self.clearCloudDataStatus()
             }
         }
     }
@@ -605,7 +626,7 @@ class CloudSyncStatusManager: ObservableObject {
         cloudDataErrorMessage = nil
         lastCloudDataRequestedAt = Date()
 
-        let database = container.privateCloudDatabase
+        let identifier = containerIdentifier
         let recordTypes = cloudRecordTypes
         let plannedFields = plannedProjectFieldCandidates
         let preferredZoneIDs = cloudQueryZoneIDs
@@ -614,6 +635,8 @@ class CloudSyncStatusManager: ObservableObject {
 
         Task.detached(priority: .utility) {
             do {
+                // CKContainer 在后台任务里按需创建，避免主线程 cloudd 握手开销。
+                let database = CKContainer(identifier: identifier).privateCloudDatabase
                 let resolvedZoneIDs = await Self.resolveCloudQueryZoneIDs(
                     database: database,
                     preferredZoneIDs: preferredZoneIDs

@@ -29,6 +29,18 @@ class HistoryManager: ObservableObject {
     // 数据加载完成标志
     private var isDataLoaded = false
 
+    // 后台加载任务（测试可 await 它等加载完成）+ 代次令牌（忽略过期上下文迟到的完成）
+    private(set) var loadTask: Task<Void, Never>?
+    private var loadGeneration = 0
+    // 是否有加载正在进行：供 reloadIfNeeded 区分「加载中」与「加载已失败」，避免在途时重复触发。
+    private var isLoading = false
+
+    // metadata-only 取数的列白名单：loadData 与 performSave 共用，避免两处各写一份漂移
+    //（漏列某列会让该列在 fetch 阶段不被物化，"metadata-only" 语义就不成立）。
+    private static let metadataProperties: [PartialKeyPath<SDHistoryRecord>] = [
+        \.id, \.timestamp, \.operationType, \.targetName, \.isReverted
+    ]
+
     // 防抖保存：避免频繁调用 saveData 导致 SwiftData 崩溃
     private var saveWorkItem: DispatchWorkItem?
     private var pendingSave = false
@@ -41,6 +53,25 @@ class HistoryManager: ObservableObject {
     // 设置 ModelContext
     func setModelContext(_ context: ModelContext) {
         self.modelContext = context
+        // 安装新上下文前清掉旧残留（生产仅启动调用一次、此时本为空；也避免单例在测试间串味），
+        // 并取消可能挂着的防抖保存，防止旧上下文的待保存落到新库上。
+        saveWorkItem?.cancel()
+        saveWorkItem = nil
+        pendingSave = false
+        records = []
+        baselineRecordsByID = [:]
+        snapshotCache.removeAll()
+        isDataLoaded = false
+        loadData()
+    }
+
+    /// 补偿重试：仅当上次加载未成功（isDataLoaded 仍 false）、当前没有加载在途、且已有 context 时，
+    /// 重新触发一次后台加载。供前台恢复（scenePhase.active）调用 —— 否则启动时加载失败会让
+    /// isDataLoaded 永远停在 false：整 session 历史只在内存、saveDataImmediately 也被守卫跳过、
+    /// 退出即丢。加载成功会顺带把这期间积压在内存、尚未落库的记录补存（见 loadData 的收尾补存）。
+    func reloadIfNeeded() {
+        guard !isDataLoaded, !isLoading, modelContext != nil else { return }
+        AppLogger.shared.info("History", "reload_if_needed_retry")
         loadData()
     }
 
@@ -907,37 +938,87 @@ class HistoryManager: ObservableObject {
         }
     }
 
-    func loadData() {
+    /// 触发一次后台加载。返回的 Task 可被测试 `await` 以等待加载完成；生产侧 fire-and-forget。
+    @discardableResult
+    func loadData() -> Task<Void, Never>? {
         guard let context = modelContext else {
             print("[History] ModelContext 未设置，无法加载数据")
-            return
+            return nil
         }
 
-        AppBackgroundTaskManager.shared.perform(named: "HistoryLoad") {
-            do {
-                // **启动白屏根因修复**：本函数由 BeadInventoryApp.init() 同步调用，发生在首帧
-                // 渲染之前。beforeSnapshot / afterSnapshot 是 inline BLOB（旧版 snapshot 内嵌
-                // base64 图片，单条可达数 MB），不加 propertiesToFetch 时 SwiftData 在 fetch
-                // 阶段就把全部 blob 物化进内存 —— 重度用户（458 项目级）数百 MB 同步 I/O
-                // 压在主线程上 = 长时间白屏/黑屏。跟 InventoryManager.loadData 的项目表
-                // 修复（round-11 C1 sweep）同型：只取 metadata 列，snapshot 在 revert 时
-                // 走 hydratedRecord(_:) 按 id 单行取。
-                var descriptor = FetchDescriptor<SDHistoryRecord>(
-                    sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-                )
-                descriptor.propertiesToFetch = [
-                    \.id, \.timestamp, \.operationType, \.targetName, \.isReverted
-                ]
-                let sdRecords = try context.fetch(descriptor)
-                records = sdRecords.compactMap { $0.toMetadataStruct() }
-                snapshotCache.removeAll()
-                isDataLoaded = true
-                refreshBaseline()
-                print("[History] 加载了 \(records.count) 条历史记录 (metadata-only)")
-            } catch {
-                print("[History] 加载历史记录失败: \(error)")
+        // **启动白屏根因修复（二次）**：全 App 的第一次 SwiftData 取数会触发存储首次打开
+        // —— SQLite + NSPersistentCloudKitContainer 初始化，冷启动实测同步阻塞约 1s。本函数
+        // 由 BeadInventoryApp.init() 调用，发生在首帧渲染之前；若用 mainContext 同步取数，
+        // 这 1s 直接压在首帧前 → ContentView 的加载态都来不及渲染 = 长时间白屏/黑屏。
+        //
+        // 改为在后台 ModelContext 上取数：开库开销落到后台线程，App.init 立即返回、加载态
+        // 立刻渲染；只把转换好的 metadata 结构体回主线程赋值。顺带把存储预热好，紧随其后的
+        // InventoryManager 主线程取数也走暖路径。
+        //
+        // 仍保留 propertiesToFetch（只取 metadata 列）：beforeSnapshot / afterSnapshot 是
+        // inline BLOB（单条可达数 MB），全表物化会再压数百 MB 进内存；snapshot 在 revert 时
+        // 走 resolveSnapshots(for:)（hydratedRecord(_:) 是其便捷封装）按 id 单行取。
+        loadGeneration += 1
+        let generation = loadGeneration
+        isLoading = true
+        let container = context.container
+        let task = Task { @MainActor in
+            let result = await Self.fetchHistoryMetadata(from: container)
+            // 过期完成直接丢弃：await 期间又装了新上下文（如测试切库 / 重新加载），
+            // 避免旧库的结果覆盖新状态。isLoading 归属最新一代，不在这里清。
+            guard generation == self.loadGeneration else { return }
+            self.isLoading = false
+            switch result {
+            case .success(let loaded):
+                let loadedIDs = Set(loaded.map { $0.id })
+                // 加载窗口内（isDataLoaded 仍为 false、performSave 被守卫跳过）新建、尚未持久化
+                // 的本地记录：合并保留，避免被加载结果直接覆盖丢失。
+                let pendingLocal = self.records.filter { !loadedIDs.contains($0.id) }
+                self.records = (loaded + pendingLocal).sorted { $0.timestamp > $1.timestamp }
+                self.snapshotCache.removeAll()
+                self.isDataLoaded = true
+                // baseline 只认已持久化集合：pendingLocal 不进 baseline → 下次 save 走 insert，
+                // 不会被 performSave 当成「本地已删」而误删。
+                self.baselineRecordsByID = self.makeMapByID(loaded)
+                // 收尾补存：加载窗口内被守卫跳过的保存 / 合并进来的未持久化记录，此刻 isDataLoaded
+                // 已 true，补触发一次 saveData 把它们落库；否则它们只在内存里、退出即丢。
+                if self.pendingSave || !pendingLocal.isEmpty {
+                    self.saveData()
+                }
+                AppLogger.shared.info("History", "loaded", metadata: [
+                    "count": self.records.count,
+                    "pendingMerged": pendingLocal.count
+                ])
+            case .failure(let error):
+                // 失败不置 isDataLoaded（performSave 仍被守卫跳过、可重试），保留内存现状，
+                // 并写入可导出诊断 —— 区别于「确实没有历史记录」。
+                AppLogger.shared.error("History", "load_failed", metadata: [
+                    "error": error.localizedDescription
+                ])
             }
         }
+        loadTask = task
+        return task
+    }
+
+    /// 在后台 ModelContext 上做 metadata-only 取数并转换成 Sendable 结构体；失败以 `Result` 上抛，
+    /// 由调用方区分「取数失败」与「确实没有记录」（前者不应置 isDataLoaded、可重试）。
+    /// 全程在单个 detached task 内同步执行（取数与转换之间无 await，ModelContext 不跨线程），
+    /// 只把 `[HistoryRecord]`（值类型）交回调用方。
+    nonisolated private static func fetchHistoryMetadata(from container: ModelContainer) async -> Result<[HistoryRecord], Error> {
+        let properties = metadataProperties
+        return await Task.detached(priority: .userInitiated) {
+            let bgContext = ModelContext(container)
+            var descriptor = FetchDescriptor<SDHistoryRecord>(
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+            descriptor.propertiesToFetch = properties
+            do {
+                return .success(try bgContext.fetch(descriptor).compactMap { $0.toMetadataStruct() })
+            } catch {
+                return .failure(error)
+            }
+        }.value
     }
 
     // MARK: - Snapshot 按需加载
@@ -1054,18 +1135,20 @@ class HistoryManager: ObservableObject {
 
     @MainActor
     private func performSave() {
-        pendingSave = false
-
         guard let context = modelContext else {
             print("[History] ModelContext 未设置，无法保存数据")
             return
         }
 
-        // 防止在数据未加载完成时保存空数据
+        // 数据未加载完不保存空数据。**关键**：这里不清 pendingSave —— 加载窗口内被跳过的保存
+        // 必须保留待存标志，否则加载完成后这条（仅在内存的）记录永远不会落库（pendingSave 被清、
+        // saveDataImmediately 也不再 flush）。加载成功收尾时（见 loadData）会补触发一次保存。
         guard isDataLoaded else {
-            print("[History] 警告：数据尚未加载完成，跳过保存")
+            print("[History] 警告：数据尚未加载完成，跳过保存（保留 pendingSave 待加载后补存）")
             return
         }
+
+        pendingSave = false
 
         // 与 InventoryManager.saveData 同样的 fallback 守卫：用户主动放弃等待
         // iCloud 同步时（或 opt-out 重启前），baseline-diff 仍可能用过期内存覆盖
@@ -1080,9 +1163,7 @@ class HistoryManager: ObservableObject {
                 // metadata-only：跟 loadData 同理，diff 只需要 id（更新走对象引用），
                 // 不物化全表 snapshot blob —— 否则每次防抖保存都把数百 MB 拉进内存。
                 var existingDescriptor = FetchDescriptor<SDHistoryRecord>()
-                existingDescriptor.propertiesToFetch = [
-                    \.id, \.timestamp, \.operationType, \.targetName, \.isReverted
-                ]
+                existingDescriptor.propertiesToFetch = Self.metadataProperties
                 let existing = try context.fetch(existingDescriptor)
                 let existingByID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                 let localByID = makeMapByID(records)
