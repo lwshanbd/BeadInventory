@@ -966,6 +966,11 @@ class HistoryManager: ObservableObject {
                 // baseline 只认已持久化集合：pendingLocal 不进 baseline → 下次 save 走 insert，
                 // 不会被 performSave 当成「本地已删」而误删。
                 self.baselineRecordsByID = self.makeMapByID(loaded)
+                // 收尾补存：加载窗口内被守卫跳过的保存 / 合并进来的未持久化记录，此刻 isDataLoaded
+                // 已 true，补触发一次 saveData 把它们落库；否则它们只在内存里、退出即丢。
+                if self.pendingSave || !pendingLocal.isEmpty {
+                    self.saveData()
+                }
                 AppLogger.shared.info("History", "loaded", metadata: [
                     "count": self.records.count,
                     "pendingMerged": pendingLocal.count
@@ -1116,18 +1121,20 @@ class HistoryManager: ObservableObject {
 
     @MainActor
     private func performSave() {
-        pendingSave = false
-
         guard let context = modelContext else {
             print("[History] ModelContext 未设置，无法保存数据")
             return
         }
 
-        // 防止在数据未加载完成时保存空数据
+        // 数据未加载完不保存空数据。**关键**：这里不清 pendingSave —— 加载窗口内被跳过的保存
+        // 必须保留待存标志，否则加载完成后这条（仅在内存的）记录永远不会落库（pendingSave 被清、
+        // saveDataImmediately 也不再 flush）。加载成功收尾时（见 loadData）会补触发一次保存。
         guard isDataLoaded else {
-            print("[History] 警告：数据尚未加载完成，跳过保存")
+            print("[History] 警告：数据尚未加载完成，跳过保存（保留 pendingSave 待加载后补存）")
             return
         }
+
+        pendingSave = false
 
         // 与 InventoryManager.saveData 同样的 fallback 守卫：用户主动放弃等待
         // iCloud 同步时（或 opt-out 重启前），baseline-diff 仍可能用过期内存覆盖
