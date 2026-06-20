@@ -1,0 +1,205 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "a59194e15597",
+  "session_id": "e1005ac7-78eb-49c9-bbe3-ac30748a5bc6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-20T07:46:58.940516Z",
+  "branch": "feat/calendar-finished-image-cells",
+  "checkpoints_count": 7,
+  "save_step_count": 7,
+  "files_touched": [
+    "BeadInventory/Views/CalendarView.swift",
+    "BeadInventory/Views/Components/ProjectImageViews.swift"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "acfb88fbe7bd",
+  "token_usage": {
+    "input_tokens": 21581,
+    "cache_creation_tokens": 148048,
+    "cache_read_tokens": 6544567,
+    "output_tokens": 76267,
+    "api_call_count": 63
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01FnX3ACS1C43SZTQSS98QyC",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:brainstorming"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "acfb88fbe7bd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 29,
+        "end": 30,
+        "entry_ids": [
+          "7f4521cf-58aa-45de-accc-521815a3cf85"
+        ],
+        "tool_use_id": "toolu_01FnX3ACS1C43SZTQSS98QyC"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01FnX3ACS1C43SZTQSS98QyC"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:brainstorming",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_017AZETMX9pQyCKG75xKJjiY",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "ios-simulator-skill"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "acfb88fbe7bd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 126,
+        "end": 127,
+        "entry_ids": [
+          "e791c2c4-6bcf-44ee-a5b1-20017ce12e34"
+        ],
+        "tool_use_id": "toolu_017AZETMX9pQyCKG75xKJjiY"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_017AZETMX9pQyCKG75xKJjiY"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: ios-simulator-skill",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01Rh3CwV5nV3Sr91W4Bpmm2F",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:systematic-debugging"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "acfb88fbe7bd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 266,
+        "end": 267,
+        "entry_ids": [
+          "a15eb6e4-fa25-4b23-8e5c-8939d2713288"
+        ],
+        "tool_use_id": "toolu_01Rh3CwV5nV3Sr91W4Bpmm2F"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Rh3CwV5nV3Sr91W4Bpmm2F"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:systematic-debugging",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 7
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-20T07:46:58.921223Z",
+    "agent_lines": 125,
+    "agent_removed": 39,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 125,
+    "total_lines_changed": 164,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 130,
+      "user_lines_removed": 18,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/agents/entire-search.md": 25,
+        ".claude/settings.json": 84,
+        "BeadInventory.xcodeproj/project.pbxproj": 1,
+        "BeadInventory.xcodeproj/xcshareddata/xcschemes/BeadInventory.xcscheme": 1,
+        "BeadInventory/Localizable.xcstrings": 19
+      },
+      "user_removed_per_file": {
+        "BeadInventory.xcodeproj/project.pbxproj": 1,
+        "BeadInventory.xcodeproj/xcshareddata/xcschemes/BeadInventory.xcscheme": 1,
+        "BeadInventory/Localizable.xcstrings": 16
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 130,
+      "agent_lines_removed": 18
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 130,
+      "agent_lines_removed": 18
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 255,
+      "agent_lines_removed": 57
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 255,
+      "agent_lines_removed": 57
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 255,
+      "agent_lines_removed": 57
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 255,
+      "agent_lines_removed": 57
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 255,
+      "agent_lines_removed": 57
+    }
+  ]
+}
