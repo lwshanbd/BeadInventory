@@ -175,3 +175,65 @@ struct ProjectFinishedImage<Placeholder: View, Content: View>: View {
         let revision: Int
     }
 }
+
+// MARK: - 项目成品图缩略（网格用）
+
+/// 异步加载并**降级**项目成品图，专供日历 / 网格等"小尺寸、多格同屏"场景。
+///
+/// 与 `ProjectFinishedImage` 的关键差异：后者 `UIImage(data: finishedImage)` 全分辨率解码，
+/// 单张详情图安全；但**网格里几十格同屏会把内存峰值叠起来**（成品图存盘虽限 ~400px，旧数据 /
+/// 备份导入的可能更大）。本组件走 `ImageDownsampler.downsampleToUIImage(_:maxPixelSize:)`，
+/// 在 CGImageSource 层就限制输出边长，每格解码 KB 级 —— 这是 blob 网格的 jetsam-safe 入口。
+///
+/// 防闪烁 / revision 处理与 `ProjectThumbnailImage` 完全一致（见该处注释）。
+struct ProjectFinishedThumbnail<Placeholder: View, Content: View>: View {
+    let projectId: UUID
+    /// 降级后最大边长（px）。默认 160 适配 ~44pt @3x 的日历格。
+    var maxPixelSize: Int = 160
+    @ViewBuilder let placeholder: () -> Placeholder
+    @ViewBuilder let content: (UIImage) -> Content
+
+    @EnvironmentObject private var inventoryManager: InventoryManager
+    @State private var image: UIImage?
+    @State private var loadedKey: TaskKey?
+
+    var body: some View {
+        Group {
+            if let image, loadedKey?.projectId == projectId {
+                content(image)
+            } else {
+                placeholder()
+            }
+        }
+        .task(id: currentKey) {
+            await loadImage(for: currentKey)
+        }
+    }
+
+    private var currentKey: TaskKey {
+        TaskKey(projectId: projectId, revision: inventoryManager.projectBlobsRevision)
+    }
+
+    private func loadImage(for key: TaskKey) async {
+        // 只在切换到不同 projectId 时清旧图，revision bump 保留旧图等新图原子替换（防闪烁）。
+        if loadedKey?.projectId != key.projectId {
+            self.image = nil
+            self.loadedKey = nil
+        }
+        let data = inventoryManager.fetchProjectFinishedImageData(for: key.projectId)
+        let decoded = await downsample(data: data, maxPixelSize: maxPixelSize)
+        guard !Task.isCancelled, currentKey == key else { return }
+        self.image = decoded
+        self.loadedKey = key
+    }
+
+    private nonisolated func downsample(data: Data?, maxPixelSize: Int) async -> UIImage? {
+        guard let data else { return nil }
+        return ImageDownsampler.downsampleToUIImage(data, maxPixelSize: maxPixelSize)
+    }
+
+    private struct TaskKey: Hashable {
+        let projectId: UUID
+        let revision: Int
+    }
+}

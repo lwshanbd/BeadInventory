@@ -231,8 +231,7 @@ struct CalendarView: View {
                                 date: date,
                                 projects: projectsForDate(date),
                                 isToday: calendar.isDateInToday(date),
-                                isCurrentMonth: calendar.isDate(date, equalTo: currentMonth, toGranularity: .month),
-                                inventoryManager: inventoryManager
+                                isCurrentMonth: calendar.isDate(date, equalTo: currentMonth, toGranularity: .month)
                             )
                             .onTapGesture {
                                 let dayProjects = projectsForDate(date)
@@ -317,49 +316,39 @@ private struct DayCell: View {
     let projects: [ProjectRecord]
     let isToday: Bool
     let isCurrentMonth: Bool
-    let inventoryManager: InventoryManager
 
     private let calendar = Calendar.current
 
     private var dayNumber: Int { calendar.component(.day, from: date) }
     private var hasProjects: Bool { !projects.isEmpty }
 
-    /// 当天最多取 3 种代表色用作圆点
-    private var dotColors: [Color] {
-        var seen: Set<String> = []
-        var result: [Color] = []
-        for project in projects {
-            for usage in project.beadUsage {
-                if seen.contains(usage.colorCode) { continue }
-                seen.insert(usage.colorCode)
-                if let bc = inventoryManager.beadColors.first(where: { $0.mardCode == usage.colorCode }) {
-                    result.append(bc.color)
-                    if result.count >= 3 { return result }
-                }
-            }
-        }
-        return result
+    /// 代表作品 = 当天 completedDate 最新的那件，其成品图填满格子。
+    private var representativeProject: ProjectRecord? {
+        projects.max(by: { ($0.completedDate ?? .distantPast) < ($1.completedDate ?? .distantPast) })
     }
 
     var body: some View {
-        VStack(spacing: 3) {
-            Text("\(dayNumber)")
-                .font(.system(size: 13, weight: isToday ? .bold : .medium, design: .monospaced))
-                .foregroundStyle(numberColor)
-            if hasProjects {
-                HStack(spacing: 2) {
-                    ForEach(Array(dotColors.enumerated()), id: \.offset) { _, color in
-                        Circle()
-                            .fill(color)
-                            .frame(width: 5, height: 5)
-                            .overlay(
-                                Circle().strokeBorder(isToday ? Color.white.opacity(0.6) : Color.clear, lineWidth: 0.8)
-                            )
-                    }
+        ZStack {
+            if let project = representativeProject {
+                // 成品图填满格子（网格用 jetsam-safe 降级组件）。
+                ProjectFinishedThumbnail(projectId: project.id) {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Theme.ColorToken.Morandi.sage.opacity(0.10))
+                } content: { uiImage in
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFill()
                 }
-                .frame(height: 6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(alignment: .topLeading) { dayBadge }
+                .overlay(alignment: .bottomTrailing) {
+                    if projects.count > 1 { plusBadge }
+                }
             } else {
-                Spacer().frame(height: 6)
+                Text("\(dayNumber)")
+                    .font(.system(size: 13, weight: isToday ? .bold : .medium, design: .monospaced))
+                    .foregroundStyle(numberColor)
             }
         }
         .frame(maxWidth: .infinity)
@@ -370,25 +359,60 @@ private struct DayCell: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(cellStroke, lineWidth: hasProjects && !isToday ? 1 : 0)
+                .strokeBorder(cellStrokeColor, lineWidth: cellStrokeWidth)
         )
     }
 
+    /// 数字角标：白字 + 深色半透明底衬，压在任何照片上都可读。
+    private var dayBadge: some View {
+        Text("\(dayNumber)")
+            .font(.system(size: 11, weight: .bold, design: .monospaced))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1.5)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.black.opacity(0.45))
+            )
+            .padding(3)
+    }
+
+    /// 当天多件时右下角的 +N 角标。
+    private var plusBadge: some View {
+        Text("+\(projects.count - 1)")
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 3)
+            .padding(.vertical, 1)
+            .background(
+                Capsule().fill(Theme.ColorToken.Morandi.sage.opacity(0.92))
+            )
+            .padding(3)
+    }
+
+    /// 无图（无作品）时居中数字的颜色。
     private var numberColor: Color {
         if !isCurrentMonth { return Theme.ColorToken.Text.tertiary.opacity(0.55) }
         if isToday { return .white }
-        if hasProjects { return Theme.ColorToken.Text.primary }
         return Theme.ColorToken.Text.tertiary
     }
 
     private var cellFill: Color {
-        if isToday { return Theme.ColorToken.Morandi.sage }
-        if hasProjects { return Theme.ColorToken.Morandi.sage.opacity(0.10) }
+        // 有作品时背景被成品图覆盖；这里只对"今天且无作品"保留原本的实心 sage。
+        if isToday && !hasProjects { return Theme.ColorToken.Morandi.sage }
         return .clear
     }
 
-    private var cellStroke: Color {
-        hasProjects && !isToday ? Theme.ColorToken.Morandi.sage.opacity(0.4) : .clear
+    private var cellStrokeColor: Color {
+        if isToday { return Theme.ColorToken.Morandi.sage }
+        if hasProjects { return Theme.ColorToken.Morandi.sage.opacity(0.4) }
+        return .clear
+    }
+
+    private var cellStrokeWidth: CGFloat {
+        if isToday && hasProjects { return 2 } // 今天有图：sage 描边圈标记
+        if hasProjects { return 1 }
+        return 0 // 今天无图沿用实心填充，不另加圈
     }
 }
 
