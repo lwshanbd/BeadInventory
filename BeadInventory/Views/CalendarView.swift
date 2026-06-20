@@ -323,8 +323,12 @@ private struct DayCell: View {
     private var hasProjects: Bool { !projects.isEmpty }
 
     /// 代表作品 = 当天 completedDate 最新的那件，其成品图填满格子。
+    /// 以 (completedDate, id) 元组比较：同一秒完成（或都为 nil）时用 id 兜底，保证选谁稳定可复现。
     private var representativeProject: ProjectRecord? {
-        projects.max(by: { ($0.completedDate ?? .distantPast) < ($1.completedDate ?? .distantPast) })
+        projects.max(by: {
+            ($0.completedDate ?? .distantPast, $0.id.uuidString)
+                < ($1.completedDate ?? .distantPast, $1.id.uuidString)
+        })
     }
 
     var body: some View {

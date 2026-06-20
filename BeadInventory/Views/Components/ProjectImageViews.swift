@@ -178,17 +178,49 @@ struct ProjectFinishedImage<Placeholder: View, Content: View>: View {
 
 // MARK: - 项目成品图缩略（网格用）
 
+/// 极简异步信号量：把"取原图 blob + 降级"同时在飞的数量限制到 `limit` 个。
+///
+/// **非取消感知**：`wait()`/`signal()` 必须成对。调用方约定 —— `wait()` 之后到 `signal()`
+/// 之间无 throw、无早退（取消也照常走到 `signal()`），故不会漏还配额、也不会过度 `signal`。
+private actor ImageLoadGate {
+    private var available: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) { available = limit }
+
+    func wait() async {
+        if available > 0 { available -= 1; return }
+        await withCheckedContinuation { waiters.append($0) }   // 被 signal() 唤醒时即继承一个配额
+    }
+
+    func signal() {
+        if waiters.isEmpty { available += 1 }
+        else { waiters.removeFirst().resume() }                // 把配额直接转交给下一个等待者
+    }
+}
+
+/// 全局闸门：限制成品图网格"取原图 + 降级"的并发度。
+///
+/// 成品图当前是整张原分辨率 PNG 落盘，一张手机照片可达数 MB；整月若有十几二十张作品，
+/// `ProjectFinishedThumbnail` 的 `.task` 会几乎同时点火，原图 Data 在 fetch→downsample
+/// 窗口内全都进内存就会叠成尖峰。限到 4 路在飞，峰值内存只压住 ~4 张原图。
+private let finishedThumbnailLoadGate = ImageLoadGate(limit: 4)
+
 /// 异步加载并**降级**项目成品图，专供日历 / 网格等"小尺寸、多格同屏"场景。
 ///
 /// 与 `ProjectFinishedImage` 的关键差异：后者 `UIImage(data: finishedImage)` 全分辨率解码，
-/// 单张详情图安全；但**网格里几十格同屏会把内存峰值叠起来**（成品图存盘虽限 ~400px，旧数据 /
-/// 备份导入的可能更大）。本组件走 `ImageDownsampler.downsampleToUIImage(_:maxPixelSize:)`，
-/// 在 CGImageSource 层就限制输出边长，每格解码 KB 级 —— 这是 blob 网格的 jetsam-safe 入口。
+/// 单张详情图安全；但**网格里几十格同屏会把内存峰值叠起来**。注意成品图当前是**整张原分辨率
+/// PNG 落盘**（`ProjectImageEditorSheet.generateImageData` 直接 `pngData()`，`maxImageSize`
+/// 已失效），一张手机照片可达数 MB，所以网格降级是**必须的、不是可选优化**。本组件走
+/// `ImageDownsampler.downsampleToUIImage(_:maxPixelSize:)`，在 CGImageSource 层就限制输出边长，
+/// 每格解码 KB 级 —— 这是 blob 网格的 jetsam-safe 入口。原始 Data 仍会短暂进内存，故再叠一层
+/// `finishedThumbnailLoadGate` 限制并发取图数。
 ///
-/// 防闪烁 / revision 处理与 `ProjectThumbnailImage` 完全一致（见该处注释）。
+/// 防闪烁 / revision 处理与 `ProjectThumbnailImage` 完全一致（完整推导见该处注释，三处需同步改）。
 struct ProjectFinishedThumbnail<Placeholder: View, Content: View>: View {
     let projectId: UUID
-    /// 降级后最大边长（px）。默认 160 适配 ~44pt @3x 的日历格。
+    /// 降级后最大边长（px）。日历格约 44–52pt，3x 下约 130–160px；默认取上界 160 留点清晰度
+    /// 余量（`scaledToFill` 按较长边吃分辨率）。
     var maxPixelSize: Int = 160
     @ViewBuilder let placeholder: () -> Placeholder
     @ViewBuilder let content: (UIImage) -> Content
@@ -211,7 +243,7 @@ struct ProjectFinishedThumbnail<Placeholder: View, Content: View>: View {
     }
 
     private var currentKey: TaskKey {
-        TaskKey(projectId: projectId, revision: inventoryManager.projectBlobsRevision)
+        TaskKey(projectId: projectId, revision: inventoryManager.projectBlobsRevision, maxPixelSize: maxPixelSize)
     }
 
     private func loadImage(for key: TaskKey) async {
@@ -220,8 +252,24 @@ struct ProjectFinishedThumbnail<Placeholder: View, Content: View>: View {
             self.image = nil
             self.loadedKey = nil
         }
+
+        // 限流：整月几十格同时点火时，最多 4 路同时持有原图 Data。wait/signal 严格成对。
+        await finishedThumbnailLoadGate.wait()
+        // 等待期间被取消（如翻月）就别再取图，及时把配额还回去。
+        if Task.isCancelled { await finishedThumbnailLoadGate.signal(); return }
+
         let data = inventoryManager.fetchProjectFinishedImageData(for: key.projectId)
-        let decoded = await downsample(data: data, maxPixelSize: maxPixelSize)
+        if data == nil {
+            // 日历只为 projectIDsWithFinishedImage 里的项目渲染图片分支，这里 nil = set/DB 漂移
+            // （删除/合并/恢复竞态留下的陈旧成员）。别静默成空格子，留一条日志好排查
+            // —— 对齐 InventoryManager 里 snapshot_capture_gap 的可观测约定。
+            AppLogger.shared.error("ProjectFinishedThumbnail", "finished_image_expected_but_nil", metadata: [
+                "projectId": key.projectId.uuidString
+            ])
+        }
+        let decoded = await downsample(data: data, maxPixelSize: max(1, maxPixelSize))
+        await finishedThumbnailLoadGate.signal()
+
         guard !Task.isCancelled, currentKey == key else { return }
         self.image = decoded
         self.loadedKey = key
@@ -235,5 +283,6 @@ struct ProjectFinishedThumbnail<Placeholder: View, Content: View>: View {
     private struct TaskKey: Hashable {
         let projectId: UUID
         let revision: Int
+        let maxPixelSize: Int
     }
 }
