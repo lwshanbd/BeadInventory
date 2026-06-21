@@ -253,26 +253,37 @@ struct ProjectFinishedThumbnail<Placeholder: View, Content: View>: View {
             self.loadedKey = nil
         }
 
-        // 限流：整月几十格同时点火时，最多 4 路同时持有原图 Data。wait/signal 严格成对。
-        await finishedThumbnailLoadGate.wait()
-        // 等待期间被取消（如翻月）就别再取图，及时把配额还回去。
-        if Task.isCancelled { await finishedThumbnailLoadGate.signal(); return }
-
-        let data = inventoryManager.fetchProjectFinishedImageData(for: key.projectId)
-        if data == nil {
-            // 日历只为 projectIDsWithFinishedImage 里的项目渲染图片分支，这里 nil = set/DB 漂移
-            // （删除/合并/恢复竞态留下的陈旧成员）。别静默成空格子，留一条日志好排查
-            // —— 对齐 InventoryManager 里 snapshot_capture_gap 的可观测约定。
-            AppLogger.shared.error("ProjectFinishedThumbnail", "finished_image_expected_but_nil", metadata: [
-                "projectId": key.projectId.uuidString
-            ])
+        // 取图 + 降级在配额闸门内进行：withGatePermit 保证无论正常返回还是取消早退都归还配额。
+        let decoded = await withGatePermit {
+            // 等待配额期间被取消（如翻月）就别再取图，提前退出（配额由 withGatePermit 归还）。
+            if Task.isCancelled { return nil }
+            let data = inventoryManager.fetchProjectFinishedImageData(for: key.projectId)
+            if data == nil {
+                // 日历只为 projectIDsWithFinishedImage 里的项目渲染图片分支，这里 nil = set/DB 漂移
+                // （删除/合并/恢复竞态留下的陈旧成员）。别静默成空格子，留一条日志好排查
+                // —— 对齐 InventoryManager 里 snapshot_capture_gap 的可观测约定。
+                AppLogger.shared.error("ProjectFinishedThumbnail", "finished_image_expected_but_nil", metadata: [
+                    "projectId": key.projectId.uuidString
+                ])
+            }
+            return await downsample(data: data, maxPixelSize: max(1, maxPixelSize))
         }
-        let decoded = await downsample(data: data, maxPixelSize: max(1, maxPixelSize))
-        await finishedThumbnailLoadGate.signal()
 
         guard !Task.isCancelled, currentKey == key else { return }
         self.image = decoded
         self.loadedKey = key
+    }
+
+    /// 持有一个 `finishedThumbnailLoadGate` 配额跑 `body`，结束（正常返回 / 取消早退）一定
+    /// 归还配额 —— 把"`wait`/`signal` 之间不能漏 `signal`"从口头约定收进这一个地方，配平结构化。
+    ///
+    /// `body` 故意是**非抛出**的：闸门内若以后要做会抛错的活，编译器会在这里逼你先改签名
+    /// （顺手补 do/catch 归还配额），从而杜绝"中间加了个 throw 就静默漏配额 → 整网格卡死"。
+    private func withGatePermit(_ body: () async -> UIImage?) async -> UIImage? {
+        await finishedThumbnailLoadGate.wait()
+        let result = await body()
+        await finishedThumbnailLoadGate.signal()
+        return result
     }
 
     private nonisolated func downsample(data: Data?, maxPixelSize: Int) async -> UIImage? {
