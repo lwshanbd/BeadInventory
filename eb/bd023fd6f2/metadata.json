@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ebbd023fd6f2",
+  "strategy": "manual-commit",
+  "branch": "feat/finished-image-thumbnail-cache",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "BeadInventory/Views/Components/ProjectImageViews.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/eb/bd023fd6f2/0/metadata.json",
+      "transcript": "/eb/bd023fd6f2/0/full.jsonl",
+      "content_hash": "/eb/bd023fd6f2/0/content_hash.txt",
+      "prompt": "/eb/bd023fd6f2/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 37953,
+    "cache_creation_tokens": 1380561,
+    "cache_read_tokens": 28881635,
+    "output_tokens": 271214,
+    "api_call_count": 138
+  }
+}
