@@ -460,6 +460,9 @@ struct PatternCalibrationView: View {
                         rows = r.rows
                         cols = r.cols
                     }
+                    // 检测器低置信度兜底拟合可能返回 1（或越界值），夹回合法范围，
+                    // 别让非法行列数落进 State / 灌给 live 网格预览。
+                    normalizeRowsCols()
                     if rectMode { snapCornersToRect() }
                     detectionConfidence = r.confidence
                 } else {
@@ -769,9 +772,15 @@ private struct CalibrationGridOverlay: View {
     let displayRect: CGRect
 
     var body: some View {
-        Canvas { context, _ in
-            for c in 0...cols {
-                let u = CGFloat(c) / CGFloat(cols)
+        // 实时渲染：rows/cols 是可编辑 State，打字途中可能瞬时为 0/1（用户清空后
+        // 输 "0"）。这里是唯一的「live 消费者」，不走 normalizeRowsCols() 的失焦/
+        // 消费兜底，故在本视图内自夹下界 1——既避免 `CGFloat(c)/CGFloat(0)` 出 NaN
+        // 灌进 Canvas Path，也避免 cols<0 时 `0...cols` 直接崩。
+        let safeCols = max(cols, 1)
+        let safeRows = max(rows, 1)
+        return Canvas { context, _ in
+            for c in 0...safeCols {
+                let u = CGFloat(c) / CGFloat(safeCols)
                 let p1 = GridGeometry.bilinear(u: u, v: 0, corners: corners, in: displayRect)
                 let p2 = GridGeometry.bilinear(u: u, v: 1, corners: corners, in: displayRect)
                 var path = Path()
@@ -779,8 +788,8 @@ private struct CalibrationGridOverlay: View {
                 path.addLine(to: p2)
                 context.stroke(path, with: .color(.cyan.opacity(0.7)), lineWidth: 0.7)
             }
-            for r in 0...rows {
-                let v = CGFloat(r) / CGFloat(rows)
+            for r in 0...safeRows {
+                let v = CGFloat(r) / CGFloat(safeRows)
                 let p1 = GridGeometry.bilinear(u: 0, v: v, corners: corners, in: displayRect)
                 let p2 = GridGeometry.bilinear(u: 1, v: v, corners: corners, in: displayRect)
                 var path = Path()
