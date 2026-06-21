@@ -272,6 +272,11 @@ struct PatternCalibrationView: View {
                 .accessibilityHidden(!fieldsFocused)
             }
             .animation(.easeInOut(duration: 0.15), value: fieldsFocused)
+            // 结束编辑（收键盘/失焦）时把行列夹回 [2,300]，补上 onChange 里
+            // 故意不夹的下界——让用户打字途中可以自由出现瞬时的 "1"。
+            .onChange(of: fieldsFocused) { _, focused in
+                if !focused { normalizeRowsCols() }
+            }
 
             // 检测按钮 + 提示
             VStack(spacing: 6) {
@@ -329,6 +334,18 @@ struct PatternCalibrationView: View {
         )
     }
 
+    /// 行/列合法范围。下界 2（再小的网格没意义），上界 300。
+    private static let rowsColsRange = 2...300
+
+    /// 把 rows/cols 夹回合法范围。只在「结束编辑」（收键盘/失焦）和「消费前」
+    /// 调用——不要在 TextField 每次按键时夹下界，否则输 "1" 会被顶成 "2"
+    /// （详见 stepperCell 内 onChange 注释）。
+    private func normalizeRowsCols() {
+        let r = Self.rowsColsRange
+        rows = min(max(rows, r.lowerBound), r.upperBound)
+        cols = min(max(cols, r.lowerBound), r.upperBound)
+    }
+
     /// 行/列输入单元：TextField 可直接打字 + 旁边 +/- 微调
     @ViewBuilder
     private func stepperCell(title: String, value: Binding<Int>) -> some View {
@@ -337,7 +354,7 @@ struct PatternCalibrationView: View {
                 .font(.subheadline)
                 .foregroundStyle(Theme.ColorToken.Text.secondary)
             Button {
-                if value.wrappedValue > 2 { value.wrappedValue -= 1 }
+                if value.wrappedValue > Self.rowsColsRange.lowerBound { value.wrappedValue -= 1 }
             } label: {
                 Image(systemName: "minus.circle.fill")
                     .font(.title3)
@@ -358,12 +375,19 @@ struct PatternCalibrationView: View {
                         .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
                 )
                 .onChange(of: value.wrappedValue) { _, newValue in
-                    if newValue < 2 { value.wrappedValue = 2 }
-                    else if newValue > 300 { value.wrappedValue = 300 }
+                    // 打字途中只夹「上界」：输到第 4 位超 300 时回拉，不影响
+                    // 正常输入（建到 ≤300 的目标值中途不会越界）。
+                    // 「下界」(最小 2) 绝不在每次按键时夹——否则用户清空后想
+                    // 输 "1x"（如 12/19）时，中途出现的瞬时值 "1" 会被立刻
+                    // 顶成 "2"，表现为「输 1 出 2」。下界在结束编辑（收键盘/
+                    // 失焦）时由 normalizeRowsCols() 统一补齐，消费处亦兜底。
+                    if newValue > Self.rowsColsRange.upperBound {
+                        value.wrappedValue = Self.rowsColsRange.upperBound
+                    }
                 }
 
             Button {
-                if value.wrappedValue < 300 { value.wrappedValue += 1 }
+                if value.wrappedValue < Self.rowsColsRange.upperBound { value.wrappedValue += 1 }
             } label: {
                 Image(systemName: "plus.circle.fill")
                     .font(.title3)
@@ -381,6 +405,9 @@ struct PatternCalibrationView: View {
     /// 条等距线得分最高的 (offset, period) 组合。
     private func runSnapToROI() {
         guard let img = image else { return }
+        // 兜底：点按钮不会让 TextField 失焦，正在编辑的瞬时 "1" 可能还没被
+        // 失焦补夹，这里消费前先夹回合法范围。
+        normalizeRowsCols()
         detectionRunning = true
         let currentCorners = corners
         let rowsCopy = rows
@@ -433,6 +460,9 @@ struct PatternCalibrationView: View {
                         rows = r.rows
                         cols = r.cols
                     }
+                    // 检测器低置信度兜底拟合可能返回 1（或越界值），夹回合法范围，
+                    // 别让非法行列数落进 State / 灌给 live 网格预览。
+                    normalizeRowsCols()
                     if rectMode { snapCornersToRect() }
                     detectionConfidence = r.confidence
                 } else {
@@ -455,6 +485,8 @@ struct PatternCalibrationView: View {
 
     private func saveAndContinue() {
         guard let img = image else { return }
+        // 兜底：点保存不会让 TextField 失焦，消费前先把行列夹回合法范围。
+        normalizeRowsCols()
         saving = true
         savingPhase = "准备图像..."
         savingStartTime = Date()
@@ -740,9 +772,15 @@ private struct CalibrationGridOverlay: View {
     let displayRect: CGRect
 
     var body: some View {
-        Canvas { context, _ in
-            for c in 0...cols {
-                let u = CGFloat(c) / CGFloat(cols)
+        // 实时渲染：rows/cols 是可编辑 State，打字途中可能瞬时为 0/1（用户清空后
+        // 输 "0"）。这里是唯一的「live 消费者」，不走 normalizeRowsCols() 的失焦/
+        // 消费兜底，故在本视图内自夹下界 1——既避免 `CGFloat(c)/CGFloat(0)` 出 NaN
+        // 灌进 Canvas Path，也避免 cols<0 时 `0...cols` 直接崩。
+        let safeCols = max(cols, 1)
+        let safeRows = max(rows, 1)
+        return Canvas { context, _ in
+            for c in 0...safeCols {
+                let u = CGFloat(c) / CGFloat(safeCols)
                 let p1 = GridGeometry.bilinear(u: u, v: 0, corners: corners, in: displayRect)
                 let p2 = GridGeometry.bilinear(u: u, v: 1, corners: corners, in: displayRect)
                 var path = Path()
@@ -750,8 +788,8 @@ private struct CalibrationGridOverlay: View {
                 path.addLine(to: p2)
                 context.stroke(path, with: .color(.cyan.opacity(0.7)), lineWidth: 0.7)
             }
-            for r in 0...rows {
-                let v = CGFloat(r) / CGFloat(rows)
+            for r in 0...safeRows {
+                let v = CGFloat(r) / CGFloat(safeRows)
                 let p1 = GridGeometry.bilinear(u: 0, v: v, corners: corners, in: displayRect)
                 let p2 = GridGeometry.bilinear(u: 1, v: v, corners: corners, in: displayRect)
                 var path = Path()
