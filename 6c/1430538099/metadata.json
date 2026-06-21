@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "6c1430538099",
+  "strategy": "manual-commit",
+  "branch": "feat/calendar-finished-image-cells",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "BeadInventory/Views/Components/ProjectImageViews.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6c/1430538099/0/metadata.json",
+      "transcript": "/6c/1430538099/0/full.jsonl",
+      "content_hash": "/6c/1430538099/0/content_hash.txt",
+      "prompt": "/6c/1430538099/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 35539,
+    "cache_creation_tokens": 950988,
+    "cache_read_tokens": 14189473,
+    "output_tokens": 180989,
+    "api_call_count": 99
+  }
+}
