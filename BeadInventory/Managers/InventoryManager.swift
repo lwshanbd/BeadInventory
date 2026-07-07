@@ -1821,7 +1821,19 @@ class InventoryManager: ObservableObject {
                 }
 
                 // 3. 项目
-                let existingProjects = try context.fetch(FetchDescriptor<SDProjectRecord>())
+                //
+                // **跟 loadData / HistoryManager.performSave 同型**：saveData 自 v2.0.x 起不再读写
+                // blob 字段（见下方 1874 行注释），diff 只消费 metadata + beadUsages 关系。
+                // 不加 propertiesToFetch 的话，每次保存（进后台 / .inactive / 防抖保存）都会把全表
+                // 4 个 blob 列物化进内存 —— 458 项目级用户场景即数 GB 瞬时峰值，jetsam 同型事故。
+                // 后续对这些对象的属性更新 / context.delete 不受单列投影影响（SwiftData 按需 fault，
+                // HistoryManager.performSave 的 metadata-only fetch + 写回是同一模式的既有先例）。
+                var existingProjectsDescriptor = FetchDescriptor<SDProjectRecord>()
+                existingProjectsDescriptor.propertiesToFetch = [
+                    \.id, \.name, \.date, \.totalBeads, \.brandId, \.isArchived,
+                    \.parentId, \.isPlanned, \.executedDate, \.completedDate, \.colorSystemRaw
+                ]
+                let existingProjects = try context.fetch(existingProjectsDescriptor)
                 let existingProjectByID = Dictionary(existingProjects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                 let localProjectByID = makeMapByID(projects)
 
@@ -3503,9 +3515,14 @@ class InventoryManager: ObservableObject {
             logError("fetch_thumbnail_no_context", metadata: ["projectId": projectId.uuidString])
             return nil
         }
-        let descriptor = FetchDescriptor<SDProjectRecord>(
+        var descriptor = FetchDescriptor<SDProjectRecord>(
             predicate: #Predicate { $0.id == projectId }
         )
+        descriptor.fetchLimit = 1
+        // 跟 fetchProjectFinishedImageData / fetchProjectDisplayThumbnail 同型（round-10 review I1）：
+        // 不限定单列的话，同行 finishedImage / patternGridData / displayThumbnail 也会一起物化。
+        // 周备份路径逐项目调本方法，全行 fetch 会把峰值内存翻 3-4 倍。
+        descriptor.propertiesToFetch = [\.thumbnail]
         do {
             return try context.fetch(descriptor).first?.thumbnail
         } catch {

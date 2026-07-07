@@ -47,13 +47,42 @@ struct PlannedProjectsView: View {
         inventoryManager.plannedProjects()
     }
 
+    /// 单个 parent 的计划中子项目汇总（总颗数 + 按色号合并的用量）。
+    /// 由 `buildPlannedParentAggregates()` 一次全表遍历生成，替代对每个 parent 各调一次
+    /// `plannedAggregated*`（每次都全表 filter）的 O(计划数 × 项目数) 模式。
+    struct PlannedParentAggregate {
+        var totalBeads = 0
+        var usage: [String: Int] = [:]  // colorCode -> quantity
+        var colorCount: Int { usage.count }
+    }
+
+    /// 一次遍历所有项目，按 parentId 汇总计划中（isPlanned）子项目。
+    /// 语义与 plannedAggregatedTotalBeads / plannedAggregatedColorCount /
+    /// plannedAggregatedBeadUsage 一致（同样只统计 isPlanned 子项目）。
+    private func buildPlannedParentAggregates() -> [UUID: PlannedParentAggregate] {
+        var map: [UUID: PlannedParentAggregate] = [:]
+        for p in inventoryManager.projects where p.isPlanned {
+            guard let parentId = p.parentId else { continue }
+            var agg = map[parentId, default: PlannedParentAggregate()]
+            agg.totalBeads += p.totalBeads
+            for u in p.beadUsage {
+                agg.usage[u.colorCode, default: 0] += u.quantity
+            }
+            map[parentId] = agg
+        }
+        return map
+    }
+
     /// 项目库存是否充足（用于判定 ready/short）
     /// 跨所有同色系品牌汇总该色号库存，若任意颜色不足即为缺豆
-    private func shortageCount(for project: ProjectRecord) -> Int {
+    private func shortageCount(
+        for project: ProjectRecord,
+        aggregates: [UUID: PlannedParentAggregate]
+    ) -> Int {
         let isParent = inventoryManager.isParentProject(project.id)
-        let usages: [BeadUsage] = isParent
-            ? inventoryManager.plannedAggregatedBeadUsage(for: project.id)
-            : project.beadUsage
+        let usages: [(colorCode: String, quantity: Int)] = isParent
+            ? (aggregates[project.id]?.usage.map { ($0.key, $0.value) } ?? [])
+            : project.beadUsage.map { ($0.colorCode, $0.quantity) }
         let brandsInSystem = inventoryManager.brands.filter { $0.colorSystem == project.colorSystem }
         guard !brandsInSystem.isEmpty else { return 0 }
 
@@ -74,11 +103,14 @@ struct PlannedProjectsView: View {
     /// 对一组计划项目预计算一次 shortage（projectId → 缺豆色号数）。
     /// body 必须只调一次并把结果传给所有需要 shortage 的子视图，否则每个统计入口
     /// 都会各自 O(M × B × stocks) 重算（M=色号数 / B=同色系品牌数），body 越复杂越接近 O(N²)。
-    private func buildShortageMap(for projects: [ProjectRecord]) -> [UUID: Int] {
+    private func buildShortageMap(
+        for projects: [ProjectRecord],
+        aggregates: [UUID: PlannedParentAggregate]
+    ) -> [UUID: Int] {
         var map: [UUID: Int] = [:]
         map.reserveCapacity(projects.count)
         for p in projects {
-            map[p.id] = shortageCount(for: p)
+            map[p.id] = shortageCount(for: p, aggregates: aggregates)
         }
         return map
     }
@@ -96,7 +128,7 @@ struct PlannedProjectsView: View {
             "shortage_map_miss",
             metadata: ["projectId": "\(project.id)"]
         )
-        return shortageCount(for: project)
+        return shortageCount(for: project, aggregates: buildPlannedParentAggregates())
     }
 
     private func applyFilter(_ projects: [ProjectRecord], shortageMap: [UUID: Int]) -> [ProjectRecord] {
@@ -113,11 +145,12 @@ struct PlannedProjectsView: View {
     }
 
     /// 给定一组计划项目（含 parent / 子项目混合）汇总总颗数。
-    /// 由 body 把 plans 快照传进来，保证 overviewCard 看到的数字与 filter/planList 同帧一致。
-    private func totalBeads(in plans: [ProjectRecord]) -> Int {
+    /// 由 body 把 plans 快照 + parent 聚合字典传进来，保证 overviewCard 看到的数字
+    /// 与 filter/planList 同帧一致，且不再对每个 parent 重复全表 filter。
+    private func totalBeads(in plans: [ProjectRecord], aggregates: [UUID: PlannedParentAggregate]) -> Int {
         plans.reduce(0) { sum, p in
             let isParent = inventoryManager.isParentProject(p.id)
-            return sum + (isParent ? inventoryManager.plannedAggregatedTotalBeads(for: p.id) : p.totalBeads)
+            return sum + (isParent ? (aggregates[p.id]?.totalBeads ?? 0) : p.totalBeads)
         }
     }
 
@@ -131,7 +164,8 @@ struct PlannedProjectsView: View {
     var body: some View {
         // 一次 body 渲染期间，所有缺豆相关统计共享同一份计算结果。
         let plans = plannedProjects
-        let shortageMap = buildShortageMap(for: plans)
+        let aggregates = buildPlannedParentAggregates()
+        let shortageMap = buildShortageMap(for: plans, aggregates: aggregates)
         let filtered = applyFilter(plans, shortageMap: shortageMap)
         // 单次扫描同时算出 readyCount / totalShortageColors，避免 values 跑两遍。
         var readyCount = 0
@@ -153,7 +187,8 @@ struct PlannedProjectsView: View {
                             overviewCard(
                                 plans: plans,
                                 totalShortageColors: totalShortageColors,
-                                shortageMap: shortageMap
+                                shortageMap: shortageMap,
+                                aggregates: aggregates
                             )
                             searchField
                             filterChips(
@@ -162,7 +197,7 @@ struct PlannedProjectsView: View {
                                 readyCount: readyCount
                             )
                             tipsBlock(planCount: plans.count)
-                            planList(filtered: filtered, shortageMap: shortageMap)
+                            planList(filtered: filtered, shortageMap: shortageMap, aggregates: aggregates)
                         }
                         .padding(.bottom, 20)
                     }
@@ -312,7 +347,8 @@ struct PlannedProjectsView: View {
     private func overviewCard(
         plans: [ProjectRecord],
         totalShortageColors: Int,
-        shortageMap: [UUID: Int]
+        shortageMap: [UUID: Int],
+        aggregates: [UUID: PlannedParentAggregate]
     ) -> some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
@@ -323,7 +359,7 @@ struct PlannedProjectsView: View {
                     Text("\(plans.count)")
                         .font(.system(size: 26, weight: .semibold).monospacedDigit())
                         .foregroundStyle(Color.white)
-                    Text("个 · 共 \(formattedNumber(totalBeads(in: plans))) 颗")
+                    Text("个 · 共 \(formattedNumber(totalBeads(in: plans, aggregates: aggregates))) 颗")
                         .font(.caption2)
                         .foregroundStyle(Color.white.opacity(0.85))
                 }
@@ -461,11 +497,20 @@ struct PlannedProjectsView: View {
 
     // MARK: - Plan List
 
-    private func planList(filtered: [ProjectRecord], shortageMap: [UUID: Int]) -> some View {
+    private func planList(
+        filtered: [ProjectRecord],
+        shortageMap: [UUID: Int],
+        aggregates: [UUID: PlannedParentAggregate]
+    ) -> some View {
         VStack(spacing: 10) {
             ForEach(filtered) { project in
                 let isSelected = sel.contains(project.id)
                 let short = shortage(of: project, in: shortageMap)
+                // parent 的总颗数/颜色数从 body 级聚合字典取（O(1)），不再让每张卡
+                // 各自调 plannedAggregated*（每次全表 filter，N 卡 = O(N×M)）。
+                let isParent = inventoryManager.isParentProject(project.id)
+                let cardTotalBeads = isParent ? (aggregates[project.id]?.totalBeads ?? 0) : project.totalBeads
+                let cardColorCount = isParent ? (aggregates[project.id]?.colorCount ?? 0) : project.beadUsage.count
 
                 Group {
                     if sel.isActive {
@@ -478,6 +523,9 @@ struct PlannedProjectsView: View {
                                 shortageColors: short,
                                 isSelected: isSelected,
                                 selectionActive: true,
+                                isParent: isParent,
+                                totalBeads: cardTotalBeads,
+                                colorCount: cardColorCount,
                                 inventoryManager: inventoryManager
                             )
                         }
@@ -492,6 +540,9 @@ struct PlannedProjectsView: View {
                                 shortageColors: short,
                                 isSelected: false,
                                 selectionActive: false,
+                                isParent: isParent,
+                                totalBeads: cardTotalBeads,
+                                colorCount: cardColorCount,
                                 inventoryManager: inventoryManager
                             )
                         }
@@ -536,23 +587,12 @@ private struct PlanCard: View {
     let shortageColors: Int
     let isSelected: Bool
     let selectionActive: Bool
+    // isParent / totalBeads / colorCount 由 planList 从 body 级聚合字典注入（跟 shortageColors
+    // 一样），卡片自己不再调 plannedAggregated*——那是每卡两次全表 filter 的 O(N×M) 热点。
+    let isParent: Bool
+    let totalBeads: Int
+    let colorCount: Int
     let inventoryManager: InventoryManager
-
-    private var isParent: Bool {
-        inventoryManager.isParentProject(project.id)
-    }
-
-    private var totalBeads: Int {
-        isParent ? inventoryManager.plannedAggregatedTotalBeads(for: project.id) : project.totalBeads
-    }
-
-    private var colorCount: Int {
-        isParent ? inventoryManager.plannedAggregatedColorCount(for: project.id) : project.beadUsage.count
-    }
-
-    private var beadUsages: [BeadUsage] {
-        isParent ? inventoryManager.plannedAggregatedBeadUsage(for: project.id) : project.beadUsage
-    }
 
     private func formattedNumber(_ value: Int) -> String {
         let f = NumberFormatter()
@@ -3264,14 +3304,16 @@ struct ReplenishSuggestionSheet: View {
 
     // 初始化默认补豆数量
     func initializeDefaultQuantities() {
+        // replenishData 是重计算 computed property，先取一次快照再消费三个字段
+        let data = replenishData
         var quantities: [String: Int] = [:]
-        for item in replenishData.negativeStock {
+        for item in data.negativeStock {
             quantities[item.colorCode] = item.defaultAmount
         }
-        for item in replenishData.lowStock {
+        for item in data.lowStock {
             quantities[item.colorCode] = item.defaultAmount
         }
-        for item in replenishData.highUsage {
+        for item in data.highUsage {
             if quantities[item.colorCode] == nil {
                 quantities[item.colorCode] = 0
             }
@@ -3377,6 +3419,10 @@ struct ReplenishSuggestionSheet: View {
                     .padding(.horizontal)
 
                     if selectedBrand != nil {
+                        // body 级快照：replenishData 是重计算 computed property（内部含
+                        // aggregatedUsage 重算 + highUsageColors 全项目历史扫描），原来本分支
+                        // 里 isEmpty / items / processedCodes 逐处访问共重算 ~9 次/帧。
+                        let data = replenishData
                         // 步进单位 & 包邮额度
                         VStack(spacing: 12) {
                             // 步进单位选择（控制 +/- 按钮步长）
@@ -3468,13 +3514,13 @@ struct ReplenishSuggestionSheet: View {
                         .padding(.horizontal)
 
                         // 负库存区域
-                        if !replenishData.negativeStock.isEmpty {
+                        if !data.negativeStock.isEmpty {
                             ReplenishSectionView(
                                 title: "库存不足（需补豆）",
                                 subtitle: "扣减后库存为负",
                                 color: .red,
-                                items: replenishData.negativeStock,
-                                processedCodes: replenishData.processedCodes,
+                                items: data.negativeStock,
+                                processedCodes: data.processedCodes,
                                 quantities: $replenishQuantities,
                                 showWarning: false,
                                 colorSystem: selectedColorSystem,
@@ -3483,13 +3529,13 @@ struct ReplenishSuggestionSheet: View {
                         }
 
                         // 低库存区域
-                        if !replenishData.lowStock.isEmpty {
+                        if !data.lowStock.isEmpty {
                             ReplenishSectionView(
                                 title: "低库存预警（建议补豆）",
                                 subtitle: "扣减后库存低于\(lowStockThreshold)",
                                 color: Theme.ColorToken.Status.warning,
-                                items: replenishData.lowStock,
-                                processedCodes: replenishData.processedCodes,
+                                items: data.lowStock,
+                                processedCodes: data.processedCodes,
                                 quantities: $replenishQuantities,
                                 showWarning: false,
                                 colorSystem: selectedColorSystem,
@@ -3498,12 +3544,12 @@ struct ReplenishSuggestionSheet: View {
                         }
 
                         // 用量大区域
-                        if !replenishData.highUsage.isEmpty {
+                        if !data.highUsage.isEmpty {
                             HighUsageSectionView(
                                 title: "用量较大（供参考）",
                                 subtitle: "历史用量+选中计划，排名前20",
-                                items: replenishData.highUsage,
-                                processedCodes: replenishData.processedCodes,
+                                items: data.highUsage,
+                                processedCodes: data.processedCodes,
                                 quantities: $replenishQuantities,
                                 colorSystem: selectedColorSystem,
                                 unitGrams: unitGrams
@@ -3511,9 +3557,9 @@ struct ReplenishSuggestionSheet: View {
                         }
 
                         // 空状态
-                        if replenishData.negativeStock.isEmpty &&
-                           replenishData.lowStock.isEmpty &&
-                           replenishData.highUsage.isEmpty {
+                        if data.negativeStock.isEmpty &&
+                           data.lowStock.isEmpty &&
+                           data.highUsage.isEmpty {
                             VStack(spacing: 12) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .font(.largeTitle)

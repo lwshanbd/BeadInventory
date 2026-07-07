@@ -94,10 +94,6 @@ struct StatisticsOverviewView: View {
         return inventoryManager.totalAvailable(for: brandId)
     }
 
-    private var usagePct: Double {
-        guard totalStock > 0 else { return 0 }
-        return Double(totalUsed) / Double(totalStock) * 100
-    }
 
     /// 最近 14 天每日用量（基于已执行项目的 executedDate/completedDate/date）
     private var last14DayUsage: [(date: Date, value: Int)] {
@@ -188,10 +184,18 @@ struct StatisticsOverviewView: View {
             }
             .frame(maxHeight: .infinity)
         } else {
+            // body 级快照：totalStock/totalUsed/totalAvailable 每次访问都是一次 brandStocks
+            // 全量 filter+reduce，top5 是 filter+sort。原来 monthlyUsageCard 一次求值扫 7 遍、
+            // top5 被 isEmpty / rankingSection 内部访问 3 遍，这里各算一次再传下去。
+            let stock = totalStock
+            let used = totalUsed
+            let available = totalAvailable
+            let pct = stock > 0 ? Double(used) / Double(stock) * 100 : 0
+            let topItems = top5
             ScrollView {
                 VStack(spacing: 18) {
                     // 1) 本月使用情况卡片（环图 + 数据）
-                    monthlyUsageCard
+                    monthlyUsageCard(totalStock: stock, totalUsed: used, totalAvailable: available, usagePct: pct)
 
                     // 2) 14 日用量趋势
                     last14DaySection
@@ -200,8 +204,8 @@ struct StatisticsOverviewView: View {
                     hueDistributionSection
 
                     // 4) Top5 排行
-                    if !top5.isEmpty {
-                        rankingSection
+                    if !topItems.isEmpty {
+                        rankingSection(items: topItems)
                     }
                 }
                 .padding(.horizontal, 18)
@@ -212,7 +216,7 @@ struct StatisticsOverviewView: View {
 
     // MARK: - 本月使用情况卡片
 
-    private var monthlyUsageCard: some View {
+    private func monthlyUsageCard(totalStock: Int, totalUsed: Int, totalAvailable: Int, usagePct: Double) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 18) {
                 RingChart(percent: usagePct, color: Theme.ColorToken.Morandi.sage)
@@ -332,15 +336,15 @@ struct StatisticsOverviewView: View {
 
     // MARK: - Top 5 排行
 
-    private var rankingSection: some View {
+    private func rankingSection(items: [(color: BeadColor, stock: BrandStock)]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("使用排行 · TOP 5")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.ColorToken.Text.primary)
 
             VStack(spacing: 10) {
-                let maxUsed = top5.first?.stock.used ?? 1
-                ForEach(Array(top5.enumerated()), id: \.element.color.id) { idx, item in
+                let maxUsed = items.first?.stock.used ?? 1
+                ForEach(Array(items.enumerated()), id: \.element.color.id) { idx, item in
                     TopRankRow(
                         rank: idx + 1,
                         color: item.color,
@@ -700,10 +704,6 @@ struct UsageStatisticsView: View {
         }
     }
 
-    private var maxUsed: Int {
-        max(displayItems.map { $0.stock.used }.max() ?? 1, 1)
-    }
-
     private var lowStockThreshold: Int {
         guard let brandId = inventoryManager.currentBrandId else { return 100 }
         return inventoryManager.getLowStockThreshold(for: brandId)
@@ -721,6 +721,12 @@ struct UsageStatisticsView: View {
             }
             .frame(maxHeight: .infinity)
         } else {
+            // body 级快照（跟 InventoryView.body 同范式）：displayItems 是全量 filter+sort 的
+            // computed property，不 let 住的话本 body 里 count/isEmpty/ForEach 各触发一次，
+            // maxUsed 又在 ForEach **每行**重算一次（每行一次完整 filter+sort，50 行 ≈ 53 次）。
+            let items = displayItems
+            let maxUsedSnapshot = max(items.map { $0.stock.used }.max() ?? 1, 1)
+            let threshold = lowStockThreshold
             ScrollView {
                 VStack(spacing: 14) {
                     // 筛选 chip 行
@@ -741,20 +747,20 @@ struct UsageStatisticsView: View {
 
                         Spacer()
 
-                        Text("共 \(displayItems.count) 项")
+                        Text("共 \(items.count) 项")
                             .font(.caption2)
                             .foregroundStyle(Theme.ColorToken.Text.tertiary)
                     }
 
-                    if !displayItems.isEmpty {
+                    if !items.isEmpty {
                         VStack(spacing: 10) {
-                            ForEach(Array(displayItems.prefix(50).enumerated()), id: \.element.color.id) { index, item in
+                            ForEach(Array(items.prefix(50).enumerated()), id: \.element.color.id) { index, item in
                                 TopRankRow(
                                     rank: index + 1,
                                     color: item.color,
                                     stock: item.stock,
-                                    maxUsed: maxUsed,
-                                    isLowStock: item.stock.available < lowStockThreshold,
+                                    maxUsed: maxUsedSnapshot,
+                                    isLowStock: item.stock.available < threshold,
                                     colorSystem: inventoryManager.currentColorSystem
                                 )
                             }
@@ -854,6 +860,10 @@ struct ProjectHistoryView: View {
     }
 
     var body: some View {
+        // body 级快照：displayedProjects / archivedCount 都是 O(项目数²) 的 computed property
+        //（每个 parent 再全表 filter 子项目），不 let 住的话一次 body 里会被求值 2-4 次。
+        let projectsToShow = displayedProjects
+        let archivedProjectCount = archivedCount
         Group {
             if executedProjects.isEmpty {
                 VStack(spacing: 16) {
@@ -878,27 +888,27 @@ struct ProjectHistoryView: View {
                         // 编辑模式：显示全选/取消全选按钮
                         Button {
                             withAnimation {
-                                if selectedProjects.count == displayedProjects.count {
+                                if selectedProjects.count == projectsToShow.count {
                                     // 已全选，取消全选
                                     selectedProjects.removeAll()
                                 } else {
                                     // 全选所有显示的项目
-                                    selectedProjects = Set(displayedProjects.map { $0.id })
+                                    selectedProjects = Set(projectsToShow.map { $0.id })
                                 }
                             }
                         } label: {
-                            Text(selectedProjects.count == displayedProjects.count ? "取消全选" : "全选")
+                            Text(selectedProjects.count == projectsToShow.count ? "取消全选" : "全选")
                                 .font(.subheadline)
                         }
                     } else {
                         // 非编辑模式：显示归档按钮
-                        if archivedCount > 0 || showArchived {
+                        if archivedProjectCount > 0 || showArchived {
                             Button {
                                 withAnimation { showArchived.toggle() }
                             } label: {
                                 HStack {
                                     Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
-                                    Text(showArchived ? "隐藏归档" : "显示归档(\(archivedCount))")
+                                    Text(showArchived ? "隐藏归档" : "显示归档(\(archivedProjectCount))")
                                 }
                                 .font(.subheadline)
                             }
@@ -994,7 +1004,7 @@ struct ProjectHistoryView: View {
                 }
 
                 List {
-                    ForEach(displayedProjects) { project in
+                    ForEach(projectsToShow) { project in
                         let isParent = inventoryManager.isParentProject(project.id)
                         let isExpanded = expandedProjects.contains(project.id)
 
@@ -1481,29 +1491,24 @@ struct ProjectRowWithHierarchy: View {
         return inventoryManager.brands.first { $0.id == brandId }?.name
     }
 
-    var colorCount: Int {
+    /// childCount / colorCount / totalBeads 三个数字一次遍历算齐。
+    /// 原来是三个独立 computed property，body 里各访问一次 → 每行 3 次
+    /// `executedChildProjects`（全表 O(项目数) filter）；列表 N 行就是 3N 次全表扫描。
+    private var hierarchyStats: (childCount: Int, colorCount: Int, totalBeads: Int) {
         if isParent {
-            return filteredExecutedChildProjects
-                .flatMap { filteredBeadUsage(for: $0) }
-                .map(\.colorCode)
-                .reduce(into: Set<String>()) { $0.insert($1) }
-                .count
-        }
-        return filteredBeadUsage(for: project).count
-    }
-
-    var totalBeads: Int {
-        if isParent {
-            return filteredExecutedChildProjects
-                .reduce(0) { total, child in
-                    total + filteredBeadUsage(for: child).reduce(0) { $0 + $1.quantity }
+            let children = filteredExecutedChildProjects
+            var colorCodes = Set<String>()
+            var beads = 0
+            for child in children {
+                for usage in filteredBeadUsage(for: child) {
+                    colorCodes.insert(usage.colorCode)
+                    beads += usage.quantity
                 }
+            }
+            return (children.count, colorCodes.count, beads)
         }
-        return filteredBeadUsage(for: project).reduce(0) { $0 + $1.quantity }
-    }
-
-    var childCount: Int {
-        filteredExecutedChildProjects.count
+        let usages = filteredBeadUsage(for: project)
+        return (0, usages.count, usages.reduce(0) { $0 + $1.quantity })
     }
 
     private var filteredExecutedChildProjects: [ProjectRecord] {
@@ -1536,6 +1541,8 @@ struct ProjectRowWithHierarchy: View {
     @State private var loadedImage: UIImage?
 
     var body: some View {
+        // body 级快照：三个统计数字一次算齐，避免每个数字各触发一次全表子项目扫描
+        let stats = hierarchyStats
         HStack(spacing: 8) {
             // 选择模式复选框
             if isSelectMode && !isChild {
@@ -1621,7 +1628,7 @@ struct ProjectRowWithHierarchy: View {
                         }
 
                         if isParent {
-                            Text("\(childCount) 个子项目")
+                            Text("\(stats.childCount) 个子项目")
                                 .font(.caption)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
@@ -1630,13 +1637,13 @@ struct ProjectRowWithHierarchy: View {
                                 .cornerRadius(Theme.Radius.sm)
                         }
 
-                        Label("\(colorCount) 色", systemImage: "paintpalette")
+                        Label("\(stats.colorCount) 色", systemImage: "paintpalette")
                             .font(.caption)
                             .foregroundColor(.secondary)
 
                         Spacer()
 
-                        Label("\(totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
+                        Label("\(stats.totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
                             .font(.caption)
                             .foregroundColor(Theme.ColorToken.Morandi.latte)
                     }

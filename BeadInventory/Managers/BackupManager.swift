@@ -55,7 +55,12 @@ class BackupManager {
         // 推迟到下一次 runloop tick：让首屏 scene-create commit 先完成。
         // 注意：备份仍然要在 MainActor 上跑（SwiftData mainContext 限定主线程），
         // 但它不会再卡在第一帧 commit 里 —— iOS watchdog 不会因此再 0x8BADF00D。
+        //
+        // 再延后 5s：备份要逐项目从 SwiftData 取图 + base64（全程主线程），跟启动后紧接着的
+        // initial load / 首次用户交互挤在同一窗口会明显掉帧。晚 5s 做备份没有任何语义差别
+        //（本周备份标记在写盘成功后才更新；5s 内退出则下次启动重试）。
         Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
             performBackup(inventoryManager: inventoryManager)
         }
     }
