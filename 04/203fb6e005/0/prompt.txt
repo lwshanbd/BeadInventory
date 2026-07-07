@@ -1,0 +1,74 @@
+你是 Claude Code，当前仓库是 /Users/baodi/Documents/GitHub.nosync/BeadInventory。请以资深 iOS/SwiftUI/SwiftData 性能工程师身份，对这个项目做一次性能、稳定性和架构风险审计，并在证据充分后实现低风险优化。
+
+  硬性约束：
+  1. 先阅读 AGENTS.md 和 CLAUDE.md，遵守仓库规则。
+  2. 模拟器目标永远使用：
+     xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' build
+     xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' test
+  3. 不要 push，不要做大规模重写，不要改动无关 UI。
+  4. 不要扫描或编辑 .claude/worktrees 和 .entire，那里有重复 worktree/日志，容易误判。
+  5. 如果新增用户可见文案，必须同步 BeadInventory/en.lproj 和 BeadInventory/zh-Hans.lproj，或使用现有本地化机制。
+  6. 库存变更必须继续通过 HistoryManager 记录历史，不要破坏撤销/恢复逻辑。
+  7. 不要轻易改 AI provider 的模型 ID、API 行为或 SwiftData blob 存储策略，除非有明确证据和官方文档支持。
+
+  请先做只读审计，输出优先级列表，再开始小步实现。重点检查这些已知风险点：
+
+  A. MainActor / 启动性能
+  - InventoryManager 是 @MainActor，loadData/saveData 很多 SwiftData fetch/save 工作在主线程。
+  - AppBackgroundTaskManager.perform 只是 beginBackgroundTask，不会自动把工作移到后台线程。
+  - BeadInventoryApp 根 onAppear 里会触发 inventory initial load、share image check、weekly backup check、CloudKit status、announcement check，注意首屏后 jank。
+  - HistoryManager 已经用 background ModelContext + propertiesToFetch 做过优化，可作为参考。
+
+  B. SwiftData blob / 图片内存
+  - SDProjectRecord 内有 Data? blob：thumbnail、finishedImage、patternGridData、displayThumbnail。
+  - 不要破坏当前“项目列表只加载 metadata，图片按需 fetch”的抗 jetsam 设计。
+  - InventoryManager.fetchProjectThumbnailData(for:) 目前值得重点检查：它似乎没有 fetchLimit，也没有 propertiesToFetch = [\.thumbnail]，而 finishedImage/patternGrid/displayThumbnail 的 fetch 方法已经做了类似优化。
+  - 检查 saveData 是否在保存路径中无意 materialize 大 blob，尤其 SDProjectRecord fetch 是否取了完整行。
+
+  C. 视图 body 重算 / O(N²)
+  - PlannedProjectsView 很大，PlanCard/补货建议相关逻辑会频繁调用 parent/child/aggregate 计算。
+  - InventoryManager 里 childProjects、plannedChildProjects、executedChildProjects、aggregatedBeadUsage、plannedAggregatedTotalBeads、plannedAggregatedColorCount 等函数可能反复 filter projects。
+  - StatisticsView / ProjectHistoryView / UsageStatisticsView 有多个 computed properties 在 body 中重复扫描数组。
+  - 优先用快照、局部缓存、预计算 dictionary/map 解决，不要盲目引入复杂架构。
+
+  D. AI 图像处理主线程风险
+  - AIServiceManager 是 @MainActor。
+  - recognizeImage 里 preprocessImage、compressImageIfNeeded、jpegData/pngData/base64 等 CPU/内存重操作可能实际跑在主线程。
+  - ScanView 虽然用 Task 调用，但如果 service 是 MainActor，重活仍可能卡 UI。
+  - 请考虑把纯图像预处理/压缩/base64 编码拆到非 MainActor worker/actor/detached task，只把 UI 状态更新留在 MainActor。
+
+  E. Backup / Share Extension
+  - BackupManager.checkAndPerformWeeklyBackupIfNeeded 会在启动后触发自动备份，createBackupData 会遍历项目、读取图片 blob、base64，可能造成启动后卡顿或内存峰值。
+  - SharedImageManager.checkForPendingImage 使用 Data(contentsOf:) 和 UIImage(data:) 同步读图，注意大图主线程阻塞。
+  - ShareExtension 也会加载图片 Data/UIImage，检查是否有明显内存峰值风险。
+
+  建议流程：
+  1. 先运行：
+     git status --short
+     rg --files -g '*.swift' -g '! .claude/**' -g '! .entire/**'
+     rg -n "Data\\?|UIImage\\(|pngData\\(|jpegData\\(|Data\\(contentsOf|propertiesToFetch|@MainActor|DispatchQueue.main|\\.task\\(" BeadInventory ShareExtension
+  2. 建立性能假设清单，按 P0/P1/P2 排序，每条都要有文件和行号证据。
+  3. 先运行现有 build/test，记录失败原因，不要静默忽略。
+  4. 优先实现低风险、高收益改动，例如：
+     - 给缺失的单 blob fetch 补 fetchLimit/propertiesToFetch。
+     - 把纯 CPU 图片处理从 MainActor 移出。
+     - 对 body 中重复的大数组扫描做局部 snapshot/cache。
+     - 延后或拆分自动 backup，避免首屏后立即做大 blob/base64 工作。
+     - 大图读取/解码尽量异步和 downsample。
+  5. 每个改动都要解释为什么不会破坏 SwiftData、CloudKit、HistoryManager、ShareExtension。
+  6. 给 Manager 层优化补充 focused tests；UI 性能改动至少要能通过 build。
+  7. 最终运行：
+     xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' test
+     如果 test target 或模拟器失败，请给出完整失败摘要和下一步。
+  8. 最终产出一份简洁报告，包含：
+     - 改了哪些文件
+     - 发现的性能瓶颈和证据
+     - 已实现优化
+     - 测试/build 结果
+     - 剩余风险和建议后续 profiling 项目
+
+  请保持改动小而可审查。不要做 UI redesign、不要做全仓库格式化、不要改无关本地化、不要提交或 push。
+
+---
+
+tryagain

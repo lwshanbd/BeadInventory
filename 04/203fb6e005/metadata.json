@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "04203fb6e005",
+  "strategy": "manual-commit",
+  "branch": "perf/blob-fetch-mainactor-body-recompute",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "BeadInventory/Managers/AIService.swift",
+    "BeadInventory/Managers/BackupManager.swift",
+    "BeadInventory/Managers/InventoryManager.swift",
+    "BeadInventory/Views/CalendarView.swift",
+    "BeadInventory/Views/PlannedProjectsView.swift",
+    "BeadInventory/Views/StatisticsView.swift",
+    "BeadInventoryTests/InventoryManagerBlobFetchTests.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/04/203fb6e005/0/metadata.json",
+      "transcript": "/04/203fb6e005/0/full.jsonl",
+      "content_hash": "/04/203fb6e005/0/content_hash.txt",
+      "prompt": "/04/203fb6e005/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 26858,
+    "cache_creation_tokens": 214811,
+    "cache_read_tokens": 13436808,
+    "output_tokens": 73163,
+    "api_call_count": 86
+  }
+}
