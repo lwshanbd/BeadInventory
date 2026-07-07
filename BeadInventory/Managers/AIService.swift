@@ -1012,7 +1012,7 @@ class AIServiceManager: ObservableObject {
 
     /// 等比例缩放图片，使其编码后数据不超过指定大小。
     /// nonisolated：多轮 jpegData + UIGraphicsImageRenderer 是纯 CPU 重活（renderer 自 iOS 10 起线程安全），
-    /// 与 preprocessImage 一起放到后台线程执行。
+    /// 同样由 recognizeImage 放到后台线程执行。
     nonisolated private func compressImageIfNeeded(_ image: UIImage, maxBytes: Int = 10 * 1024 * 1024) throws -> UIImage {
         // 先检查 JPEG 大小，不超限就直接返回
         if let jpegData = image.jpegData(compressionQuality: 0.95), jpegData.count <= maxBytes {
@@ -1104,14 +1104,19 @@ class AIServiceManager: ObservableObject {
     // MARK: - 图像识别
 
     func recognizeImage(_ image: UIImage, mode: RecognitionMode = .table, colorSystem: ColorSystem = .mard) async throws -> [AIRecognizedItem] {
-        switch config.backend {
+        // 入口处快照 config（值类型拷贝），全程用快照：本方法自引入 Task.detached 后有多个
+        // await 挂起点，MainActor 重入可能让用户在识别中途改 provider/model/key/backend——
+        // 若继续读 self.config，实际请求可能用上一份**没有通过入口校验**的配置
+        //（例如 local 起步、中途切 cloud，图片被意外上传）。
+        let requestConfig = config
+        switch requestConfig.backend {
         case .cloud:
-            guard !config.apiKey.isEmpty else {
+            guard !requestConfig.apiKey.isEmpty else {
                 throw AIError.notConfigured
             }
         case .local:
-            guard LocalModelManager.shared.isDownloaded(config.localModel) else {
-                throw AIError.localModelNotDownloaded(config.localModel.displayName)
+            guard LocalModelManager.shared.isDownloaded(requestConfig.localModel) else {
+                throw AIError.localModelNotDownloaded(requestConfig.localModel.displayName)
             }
         }
 
@@ -1125,20 +1130,20 @@ class AIServiceManager: ObservableObject {
 
         // 打印 AI 配置信息
         print("[AI Debug] ========== AI 识别开始 ==========")
-        print("[AI Debug] 识别方式: \(config.backend.rawValue)")
-        if config.backend == .cloud {
-            print("[AI Debug] AI 提供商: \(config.provider.rawValue)")
-            print("[AI Debug] 模型: \(config.effectiveModel)")
-            print("[AI Debug] API 地址: \(config.effectiveBaseURL)")
+        print("[AI Debug] 识别方式: \(requestConfig.backend.rawValue)")
+        if requestConfig.backend == .cloud {
+            print("[AI Debug] AI 提供商: \(requestConfig.provider.rawValue)")
+            print("[AI Debug] 模型: \(requestConfig.effectiveModel)")
+            print("[AI Debug] API 地址: \(requestConfig.effectiveBaseURL)")
         } else {
-            print("[AI Debug] 本地模型: \(config.localModel.displayName)")
+            print("[AI Debug] 本地模型: \(requestConfig.localModel.displayName)")
         }
         print("[AI Debug] 原图尺寸: \(image.size), 处理后: \(processedImage.size)")
         print("[AI Debug] 识别模式: \(mode == .table ? "表格识别" : "图纸识别")")
         print("[AI Debug] 色号体系: \(colorSystem.rawValue)")
 
-        if config.backend == .local {
-            return try await recognizeWithLocalModel(image: processedImage, mode: mode, colorSystem: colorSystem)
+        if requestConfig.backend == .local {
+            return try await recognizeWithLocalModel(image: processedImage, mode: mode, colorSystem: colorSystem, using: requestConfig)
         }
 
         // 压缩 + 编码 + base64 同样是纯 CPU/内存重活，一并放后台线程执行。
@@ -1151,14 +1156,14 @@ class AIServiceManager: ObservableObject {
             return (base64, payload.mediaType)
         }.value
 
-        switch config.provider {
+        switch requestConfig.provider {
         case .kimi, .openai, .qwen:
             // Kimi、OpenAI、Qwen 使用相同的 API 格式（OpenAI 兼容）
-            return try await recognizeWithOpenAI(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem)
+            return try await recognizeWithOpenAI(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem, using: requestConfig)
         case .anthropic:
-            return try await recognizeWithAnthropic(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem)
+            return try await recognizeWithAnthropic(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem, using: requestConfig)
         case .gemini:
-            return try await recognizeWithGemini(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem)
+            return try await recognizeWithGemini(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem, using: requestConfig)
         }
     }
 
@@ -1457,11 +1462,11 @@ class AIServiceManager: ObservableObject {
         }
     }
 
-    private func recognizeWithLocalModel(image: UIImage, mode: RecognitionMode, colorSystem: ColorSystem) async throws -> [AIRecognizedItem] {
+    private func recognizeWithLocalModel(image: UIImage, mode: RecognitionMode, colorSystem: ColorSystem, using requestConfig: AIConfig) async throws -> [AIRecognizedItem] {
         let prompts = buildPrompts(mode: mode, colorSystem: colorSystem)
         let output = try await LocalModelManager.shared.recognize(
             image: image,
-            model: config.localModel,
+            model: requestConfig.localModel,
             systemPrompt: prompts.system,
             userPrompt: prompts.user
         )
@@ -1482,14 +1487,14 @@ class AIServiceManager: ObservableObject {
 
     // MARK: - OpenAI 实现
 
-    private func recognizeWithOpenAI(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard) async throws -> [AIRecognizedItem] {
-        guard let url = URL(string: "\(config.effectiveBaseURL)/chat/completions") else {
-            throw AIError.networkError("Invalid API URL: \(config.effectiveBaseURL)/chat/completions")
+    private func recognizeWithOpenAI(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard, using requestConfig: AIConfig) async throws -> [AIRecognizedItem] {
+        guard let url = URL(string: "\(requestConfig.effectiveBaseURL)/chat/completions") else {
+            throw AIError.networkError("Invalid API URL: \(requestConfig.effectiveBaseURL)/chat/completions")
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("Bearer \(config.effectiveAPIKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(requestConfig.effectiveAPIKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let prompts = buildPrompts(mode: mode, colorSystem: colorSystem)
@@ -1498,7 +1503,7 @@ class AIServiceManager: ObservableObject {
 
         // OpenAI 使用 max_completion_tokens，Kimi 使用 max_tokens
         var body: [String: Any] = [
-            "model": config.effectiveModel,
+            "model": requestConfig.effectiveModel,
             "messages": [
                 ["role": "system", "content": systemPrompt],
                 [
@@ -1521,7 +1526,7 @@ class AIServiceManager: ObservableObject {
 
         // 根据提供商设置不同的 token 限制参数
         // OpenAI 使用 max_completion_tokens，Kimi/Qwen 使用 max_tokens
-        if config.provider == .openai {
+        if requestConfig.provider == .openai {
             body["max_completion_tokens"] = 8192
         } else {
             body["max_tokens"] = 8192
@@ -1572,14 +1577,14 @@ class AIServiceManager: ObservableObject {
 
     // MARK: - Anthropic 实现
 
-    private func recognizeWithAnthropic(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard) async throws -> [AIRecognizedItem] {
-        guard let url = URL(string: "\(config.effectiveBaseURL)/v1/messages") else {
-            throw AIError.networkError("Invalid API URL: \(config.effectiveBaseURL)/v1/messages")
+    private func recognizeWithAnthropic(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard, using requestConfig: AIConfig) async throws -> [AIRecognizedItem] {
+        guard let url = URL(string: "\(requestConfig.effectiveBaseURL)/v1/messages") else {
+            throw AIError.networkError("Invalid API URL: \(requestConfig.effectiveBaseURL)/v1/messages")
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(requestConfig.apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -1588,7 +1593,7 @@ class AIServiceManager: ObservableObject {
         let userPrompt = prompts.user
 
         let body: [String: Any] = [
-            "model": config.model,
+            "model": requestConfig.model,
             "max_tokens": 8192,  // 设置足够大的输出限制，避免颜色多时被截断
             "system": systemPrompt,
             "messages": [
@@ -1654,8 +1659,8 @@ class AIServiceManager: ObservableObject {
 
     // MARK: - Gemini 实现
 
-    private func recognizeWithGemini(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard) async throws -> [AIRecognizedItem] {
-        guard let url = URL(string: "\(config.effectiveBaseURL)/models/\(config.effectiveModel):generateContent?key=\(config.effectiveAPIKey)") else {
+    private func recognizeWithGemini(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard, using requestConfig: AIConfig) async throws -> [AIRecognizedItem] {
+        guard let url = URL(string: "\(requestConfig.effectiveBaseURL)/models/\(requestConfig.effectiveModel):generateContent?key=\(requestConfig.effectiveAPIKey)") else {
             throw AIError.networkError("Invalid API URL for Gemini")
         }
 

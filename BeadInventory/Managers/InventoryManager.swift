@@ -1823,7 +1823,7 @@ class InventoryManager: ObservableObject {
                 // 3. 项目
                 //
                 // **跟 loadData / HistoryManager.performSave 同型**：saveData 自 v2.0.x 起不再读写
-                // blob 字段（见下方 1874 行注释），diff 只消费 metadata + beadUsages 关系。
+                // blob 字段（见下方项目写回循环里的 ⚠️ 注释），diff 只消费 metadata + beadUsages 关系。
                 // 不加 propertiesToFetch 的话，每次保存（进后台 / .inactive / 防抖保存）都会把全表
                 // 4 个 blob 列物化进内存 —— 458 项目级用户场景即数 GB 瞬时峰值，jetsam 同型事故。
                 // 后续对这些对象的属性更新 / context.delete 不受单列投影影响（SwiftData 按需 fault，
@@ -3504,8 +3504,9 @@ class InventoryManager: ObservableObject {
     ///
     /// 注意：InventoryManager 是 @MainActor，本方法在主线程跑 SwiftData fetch。
     /// `UIImage(data:)` 的真正解码 / 上屏由 UIKit 推迟到 draw time。
-    /// 我们用 `.task { }` 的好处是：(1) `await` 让出本帧调度窗口，让首屏 commit
+    /// **视图侧调用方**走 `.task { }` 的好处是：(1) `await` 让出本帧调度窗口，让首屏 commit
     /// 不在同一 runloop tick 里把 fetch 也吃掉；(2) Task 可取消，切走时不残留。
+    /// 周备份路径则是主线程同步循环调用（BackupManager.createBackupData），不在上述框架内。
     /// 真正想"完全脱离主 actor"需要后台 ModelActor —— 留 follow-up。
     ///
     /// 错误处理：把 SwiftData 抛错和「真的没图」区分开。前者写日志返回 nil（避免静默吞错让

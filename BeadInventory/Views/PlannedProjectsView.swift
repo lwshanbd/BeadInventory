@@ -50,7 +50,9 @@ struct PlannedProjectsView: View {
     /// 单个 parent 的计划中子项目汇总（总颗数 + 按色号合并的用量）。
     /// 由 `buildPlannedParentAggregates()` 一次全表遍历生成，替代对每个 parent 各调一次
     /// `plannedAggregated*`（每次都全表 filter）的 O(计划数 × 项目数) 模式。
-    struct PlannedParentAggregate {
+    /// 注意：totalBeads 是子项目 `totalBeads` 字段之和（与 plannedAggregatedTotalBeads 一致），
+    /// **不可**改成从 usage 求和推导——两者在数据不一致时语义不同。
+    private struct PlannedParentAggregate {
         var totalBeads = 0
         var usage: [String: Int] = [:]  // colorCode -> quantity
         var colorCount: Int { usage.count }
@@ -525,8 +527,7 @@ struct PlannedProjectsView: View {
                                 selectionActive: true,
                                 isParent: isParent,
                                 totalBeads: cardTotalBeads,
-                                colorCount: cardColorCount,
-                                inventoryManager: inventoryManager
+                                colorCount: cardColorCount
                             )
                         }
                         .buttonStyle(.plain)
@@ -542,8 +543,7 @@ struct PlannedProjectsView: View {
                                 selectionActive: false,
                                 isParent: isParent,
                                 totalBeads: cardTotalBeads,
-                                colorCount: cardColorCount,
-                                inventoryManager: inventoryManager
+                                colorCount: cardColorCount
                             )
                         }
                         .buttonStyle(.plain)
@@ -589,10 +589,10 @@ private struct PlanCard: View {
     let selectionActive: Bool
     // isParent / totalBeads / colorCount 由 planList 从 body 级聚合字典注入（跟 shortageColors
     // 一样），卡片自己不再调 plannedAggregated*——那是每卡两次全表 filter 的 O(N×M) 热点。
+    // 故意不持有 inventoryManager：卡片不做任何计算，防止后续改动悄悄退回每卡重算模式。
     let isParent: Bool
     let totalBeads: Int
     let colorCount: Int
-    let inventoryManager: InventoryManager
 
     private func formattedNumber(_ value: Int) -> String {
         let f = NumberFormatter()
