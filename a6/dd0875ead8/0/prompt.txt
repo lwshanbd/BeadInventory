@@ -1,0 +1,265 @@
+你是 Claude Code，当前仓库是 /Users/baodi/Documents/GitHub.nosync/BeadInventory。请以资深 iOS/SwiftUI/SwiftData 性能工程师身份，对这个项目做一次性能、稳定性和架构风险审计，并在证据充分后实现低风险优化。
+
+  硬性约束：
+  1. 先阅读 AGENTS.md 和 CLAUDE.md，遵守仓库规则。
+  2. 模拟器目标永远使用：
+     xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' build
+     xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' test
+  3. 不要 push，不要做大规模重写，不要改动无关 UI。
+  4. 不要扫描或编辑 .claude/worktrees 和 .entire，那里有重复 worktree/日志，容易误判。
+  5. 如果新增用户可见文案，必须同步 BeadInventory/en.lproj 和 BeadInventory/zh-Hans.lproj，或使用现有本地化机制。
+  6. 库存变更必须继续通过 HistoryManager 记录历史，不要破坏撤销/恢复逻辑。
+  7. 不要轻易改 AI provider 的模型 ID、API 行为或 SwiftData blob 存储策略，除非有明确证据和官方文档支持。
+
+  请先做只读审计，输出优先级列表，再开始小步实现。重点检查这些已知风险点：
+
+  A. MainActor / 启动性能
+  - InventoryManager 是 @MainActor，loadData/saveData 很多 SwiftData fetch/save 工作在主线程。
+  - AppBackgroundTaskManager.perform 只是 beginBackgroundTask，不会自动把工作移到后台线程。
+  - BeadInventoryApp 根 onAppear 里会触发 inventory initial load、share image check、weekly backup check、CloudKit status、announcement check，注意首屏后 jank。
+  - HistoryManager 已经用 background ModelContext + propertiesToFetch 做过优化，可作为参考。
+
+  B. SwiftData blob / 图片内存
+  - SDProjectRecord 内有 Data? blob：thumbnail、finishedImage、patternGridData、displayThumbnail。
+  - 不要破坏当前“项目列表只加载 metadata，图片按需 fetch”的抗 jetsam 设计。
+  - InventoryManager.fetchProjectThumbnailData(for:) 目前值得重点检查：它似乎没有 fetchLimit，也没有 propertiesToFetch = [\.thumbnail]，而 finishedImage/patternGrid/displayThumbnail 的 fetch 方法已经做了类似优化。
+  - 检查 saveData 是否在保存路径中无意 materialize 大 blob，尤其 SDProjectRecord fetch 是否取了完整行。
+
+  C. 视图 body 重算 / O(N²)
+  - PlannedProjectsView 很大，PlanCard/补货建议相关逻辑会频繁调用 parent/child/aggregate 计算。
+  - InventoryManager 里 childProjects、plannedChildProjects、executedChildProjects、aggregatedBeadUsage、plannedAggregatedTotalBeads、plannedAggregatedColorCount 等函数可能反复 filter projects。
+  - StatisticsView / ProjectHistoryView / UsageStatisticsView 有多个 computed properties 在 body 中重复扫描数组。
+  - 优先用快照、局部缓存、预计算 dictionary/map 解决，不要盲目引入复杂架构。
+
+  D. AI 图像处理主线程风险
+  - AIServiceManager 是 @MainActor。
+  - recognizeImage 里 preprocessImage、compressImageIfNeeded、jpegData/pngData/base64 等 CPU/内存重操作可能实际跑在主线程。
+  - ScanView 虽然用 Task 调用，但如果 service 是 MainActor，重活仍可能卡 UI。
+  - 请考虑把纯图像预处理/压缩/base64 编码拆到非 MainActor worker/actor/detached task，只把 UI 状态更新留在 MainActor。
+
+  E. Backup / Share Extension
+  - BackupManager.checkAndPerformWeeklyBackupIfNeeded 会在启动后触发自动备份，createBackupData 会遍历项目、读取图片 blob、base64，可能造成启动后卡顿或内存峰值。
+  - SharedImageManager.checkForPendingImage 使用 Data(contentsOf:) 和 UIImage(data:) 同步读图，注意大图主线程阻塞。
+  - ShareExtension 也会加载图片 Data/UIImage，检查是否有明显内存峰值风险。
+
+  建议流程：
+  1. 先运行：
+     git status --short
+     rg --files -g '*.swift' -g '! .claude/**' -g '! .entire/**'
+     rg -n "Data\\?|UIImage\\(|pngData\\(|jpegData\\(|Data\\(contentsOf|propertiesToFetch|@MainActor|DispatchQueue.main|\\.task\\(" BeadInventory ShareExtension
+  2. 建立性能假设清单，按 P0/P1/P2 排序，每条都要有文件和行号证据。
+  3. 先运行现有 build/test，记录失败原因，不要静默忽略。
+  4. 优先实现低风险、高收益改动，例如：
+     - 给缺失的单 blob fetch 补 fetchLimit/propertiesToFetch。
+     - 把纯 CPU 图片处理从 MainActor 移出。
+     - 对 body 中重复的大数组扫描做局部 snapshot/cache。
+     - 延后或拆分自动 backup，避免首屏后立即做大 blob/base64 工作。
+     - 大图读取/解码尽量异步和 downsample。
+  5. 每个改动都要解释为什么不会破坏 SwiftData、CloudKit、HistoryManager、ShareExtension。
+  6. 给 Manager 层优化补充 focused tests；UI 性能改动至少要能通过 build。
+  7. 最终运行：
+     xcodebuild -project BeadInventory.xcodeproj -scheme BeadInventory -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' test
+     如果 test target 或模拟器失败，请给出完整失败摘要和下一步。
+  8. 最终产出一份简洁报告，包含：
+     - 改了哪些文件
+     - 发现的性能瓶颈和证据
+     - 已实现优化
+     - 测试/build 结果
+     - 剩余风险和建议后续 profiling 项目
+
+  请保持改动小而可审查。不要做 UI redesign、不要做全仓库格式化、不要改无关本地化、不要提交或 push。
+
+---
+
+tryagain
+
+---
+
+请你commit, push and pr.
+
+---
+
+/pr-dual-review
+
+---
+
+<task-notification>
+<task-id>a984604e511ce2cff</task-id>
+<tool-use-id>toolu_01VAYSxcJAzdGs1znFsExWGG</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-baodi-Documents-GitHub-nosync-BeadInventory/9e78ff37-57c6-44e3-a9c7-f6acb9a2dbd7/tasks/a984604e511ce2cff.output</output-file>
+<status>completed</status>
+<summary>Agent "comment-analyzer 审查 PR #55" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All claims verified. Here is the comment analysis report.
+
+---
+
+## Comment Analysis — PR #55 (commit cddcb2e, `git diff main...HEAD`)
+
+### Summary
+
+Reviewed all added/modified comments across 6 source files + 1 new test file. The performance-rationale comments are unusually rigorous: nearly every quantitative claim I could cross-check against code turned out exactly right (the "扫 7 遍", "~46 次/帧", "53 次", "每卡两次全表 filter" counts all reproduce from the pre-PR code). One critical self-invalidating reference (a hardcoded line number that is already wrong), plus a handful of minor staleness/imprecision items.
+
+### Critical Issues
+
+1. **Hardcoded line-number reference is already stale** — `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/InventoryManager.swift:1826`
+   - Issue: `// blob 字段（见下方 1874 行注释）` points at line 1874, but the referenced `⚠️ 不再在 saveData 路径写 existing.thumbnail...` comment now sits at line 1886 — the PR's own ~12 inserted lines shifted it. The reference was wrong the moment the commit landed, and any future edit will drift it further.
+   - Suggestion: replace with a position-independent reference, e.g. `（见下方项目写回循环里的 ⚠️ 注释）` or name the anchor (`见「不再在 saveData 路径写 blob」注释`).
+
+### Improvement Opportunities
+
+2. **BackupManager method doc not updated for the 5s delay** — `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupManager.swift:41-42`
+   - Current state: the doc comment on `checkAndPerformWeeklyBackupIfNeeded` still says "所以把执行延后一帧 + 走 Task"; the PR changed the behavior to one runloop tick **+ 5 seconds**. The new inline comment (lines 59-61) explains the 5s correctly, but the function-level summary now understates the delay.
+   - Suggestion: update the doc line to "延后一个 tick + 5s 再走 Task"（或直接指向下方注释）。
+   - Note: the load-bearing claims in the new comment are accurate — `lastWeeklyBackupDate` is written only after `jsonData.write(to:)` succeeds (line 94, inside the `do` block; both failure paths return before it), so "本周备份标记在写盘成功后才更新；5s 内退出则下次启动重试" is correct.
+
+3. **"与 preprocessImage 一起放到后台线程执行" slightly overstates** — `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/AIService.swift:1015`
+   - `compressImageIfNeeded` runs in a **second, separate** `Task.detached` (line 1145), not the same one as `preprocessImage` (line 1122). "一起" reads as "same task". Trivial: "同样由 recognizeImage 放到后台线程执行" would be precise.
+
+4. **"原来 monthNavBar / monthStatsHero 各触发数次" — navBar was 1×, not 数次** — `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Views/CalendarView.swift:69-70`
+   - Verified against main: navBar triggered `projectsByDate` 1× (`monthProjects.count`), hero 3× (`count` / `monthTotalBeads` / `monthRepresentativeColors`), grid 42× (`generateDaysInMonth` always returns 42 non-nil dates). Total 46 — the headline "~46 次/帧" is exactly right; only the per-section attribution is loose. Low priority since it is framed as historical rationale.
+
+5. **"列表 N 行就是 3N 次全表扫描" assumes all rows are parents** — `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Views/StatisticsView.swift:1494-1496** (`hierarchyStats` doc)
+   - The 3× `executedChildProjects` scans per row only happened on the `isParent` branch; child/standalone rows did 0 full-table scans (only `filteredBeadUsage`). "3N" is the worst case. Consider "parent 行 3 次 → 最坏 3N".
+
+6. **`fetchProjectThumbnailData` doc's `.task {}` framing is now incomplete (pre-existing doc, question 3)** — `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/InventoryManager.swift:3503-3512`
+   - Not made *wrong* by this PR: view callers (e.g. `ProjectImageViews.swift:99`, `PlannedProjectsView.swift:1639`) do call it from async `.task` contexts, so "(1) await 让出本帧… (2) Task 可取消" still holds for them. But the PR's new inline comment (line 3524) highlights that the weekly-backup path calls this method **synchronously in a main-thread loop** — a caller the `.task` framing doesn't cover. Suggest qualifying: "视图侧调用方走 `.task {}` 的好处是…". No other stale doc found on this function; the sibling methods' docs (3537-3539, 3561-3562, 3585-3589) match their implementations.
+
+7. **"round-10 review I1" style references** — `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/InventoryManager.swift:3522`
+   - These cite a review thread that lives outside the repo. It follows an established codebase convention (round-10 I1/I2 already appear at 3538, 3562, 3588 and in BackupManager), so consistency argues for keeping it — but each one is opaque to a maintainer without the review transcript. The comments here fortunately restate the *reason* alongside the citation, which is what saves them; keep doing that.
+
+### Rot-Risk Assessment of Numeric Claims (question 2)
+
+All checked counts are framed safely and verified accurate:
+
+- **"~9 次/帧"** (`PlannedProjectsView.swift:3422-3425`): framed as "原来…" (historical). Actual old count is 6-12 depending on which sections render (9 section-body accesses + 1-3 short-circuited empty-state accesses); "~9" is a fair midpoint.
+- **"~46 次/帧"** (`CalendarView.swift:69-70`): historical framing; count verified exact (1+3+42).
+- **"50 行 ≈ 53 次"** (`StatisticsView.swift:720-722`): framed as counterfactual ("不 let 住的话…"), which stays true even as code evolves; count verified (count/isEmpty/ForEach = 3, plus old `maxUsed` per row × 50).
+- **"扫 7 遍"** (`StatisticsView.swift:185`): historical; verified exactly 7 on main (`usagePct` in RingChart → 2 scans, `usagePct` in Text → 2, three metric cells → 3).
+- **"458 项目级用户"**: an established scale anchor used 10+ times in pre-existing comments (`InventoryManager.swift:29,90,1436…`, `BeadInventoryApp.swift:334`) — consistent convention, not new rot.
+- **"每秒 ~10 次" / "数 GB" / "翻 3-4 倍"**: order-of-magnitude rationale, framed as counterfactual — acceptable.
+
+### Verified-Accurate Findings (question 1)
+
+- **saveData projection comment** (`InventoryManager.swift:1823-1830`): every claim checks out. `loadData` (lines 1443-1455) and `HistoryManager.performSave` (`HistoryManager.swift:38, 1166` — shared `metadataProperties` whitelist) are genuinely the same pattern; saveData's write-back (1876-1885) touches only the 11 listed metadata fields + `beadUsages`, and the ⚠️ comment confirming no blob writes matches the code; "4 个 blob 列" is correct (thumbnail / finishedImage / patternGridData / displayThumbnail). The partially-materialized write-back behavior is pinned by the new test.
+- **`fetchProjectThumbnailData` "同型" claim** (`InventoryManager.swift:3522-3525`): all three siblings (`fetchProjectFinishedImageData`:3540, `fetchProjectPatternGrid`:3563, `fetchProjectDisplayThumbnail`:3590) use identical `fetchLimit = 1` + single-column `propertiesToFetch`. The "周备份路径逐项目调本方法" claim matches `BackupManager.swift:170`.
+- **`buildPlannedParentAggregates` semantic-equivalence claim** (`PlannedProjectsView.swift:342-344`): verified — `plannedChildProjects` filters `parentId == X &amp;&amp; isPlanned` (`InventoryManager.swift:2455-2457`); the aggregate loop's `where p.isPlanned` + `guard parentId` is the same predicate, and totalBeads/colorCount/usage aggregation matches `plannedAggregated*` (2515-2544) exactly.
+- **PlanCard "每卡两次全表 filter" claim** (`PlannedProjectsView.swift:511-512`): verified against main — the old body read only `totalBeads` + `colorCount` (2 `plannedAggregated*` calls per parent card); the old `beadUsages` computed property was dead code and was correctly removed.
+- **AIService concurrency comments**: `AIServiceManager` is `@MainActor` (line 838) so "本方法余下部分仍在 MainActor" is correct; CIContext thread-safety is Apple-documented; `nonisolated` on the three helpers is compiler-enforced proof they touch no `@Published` state; `encodeImagePayload`'s "从 recognizeImage 的 detached task 里调用" matches its single call site (line 1148).
+- **StatisticsView snapshot comments**: "brandStocks 全量 filter+reduce" verified (`InventoryManager.swift:790-800`); "跟 InventoryView.body 同范式" verified (`InventoryView.swift:59-64` per-body-frame `InventorySnapshot`); `displayedProjects`/`archivedCount` O(N²) structure verified (`StatisticsView.swift:806-838`).
+- **Test file header** (`BeadInventoryTests/InventoryManagerBlobFetchTests.swift:5-11`): claims match the implementations they pin; all APIs used (`SDProjectRecord` init labels, `performInitialLoadIfNeeded`, `hasCompletedInitialLoad`) exist. One caveat worth knowing (test design, not comment accuracy): the tests use an in-memory store, and `propertiesToFetch` materialization behavior can differ from on-disk SQLite, so the "钉住" is partial — the comment slightly oversells the guarantee.
+
+### Recommended Removals
+
+None. Every new comment carries "why" content that the code alone doesn't express.</result>
+<usage><subagent_tokens>103402</subagent_tokens><tool_uses>35</tool_uses><duration_ms>680623</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a82e3e9c4f3358d5b</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-baodi-Documents-GitHub-nosync-BeadInventory/9e78ff37-57c6-44e3-a9c7-f6acb9a2dbd7/tasks/a82e3e9c4f3358d5b.output</output-file>
+<status>completed</status>
+<summary>Agent "silent-failure-hunter 审查 PR #55" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All investigation complete. Here is the final report.
+
+---
+
+# Silent-Failure Audit — PR #55 (`perf/blob-fetch-mainactor-body-recompute`, commit cddcb2e)
+
+Scope: `git diff main...HEAD`, 7 files. Dirty uncommitted files excluded as instructed.
+
+## Findings
+
+### 1. MEDIUM — `try? await Task.sleep` inverts cancellation semantics: cancellation would *run the backup immediately*, not skip it
+**Location:** `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupManager.swift:60-64`
+
+```swift
+Task { @MainActor in
+    try? await Task.sleep(nanoseconds: 5_000_000_000)
+    performBackup(inventoryManager: inventoryManager)
+}
+```
+
+If this Task is ever cancelled, `Task.sleep` throws `CancellationError` **immediately**, `try?` swallows it, and `performBackup` runs unconditionally — at t≈0, i.e. exactly inside the launch/first-interaction window the 5-second deferral was added to protect. So the failure mode is not "backup silently skipped"; it's worse: cancellation silently *defeats the deferral* and reintroduces the main-thread-heavy fetch+base64 work at the worst possible moment, with zero log trail.
+
+**Mitigating fact (why not HIGH):** the Task handle is dropped, and the only call site (`/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/BeadInventoryApp.swift:246`, root `onAppear`) never cancels it — so this path is unreachable today. It is a latent trap for the next person who stores the handle or moves this into a `.task` modifier (which cancels on disappear — and would then fire the backup precisely on view teardown).
+
+**Recommendation:** make cancellation mean "skip" — the code comment already argues skipping is safe (the weekly marker is written only after a successful disk write, so next launch retries):
+
+```swift
+Task { @MainActor in
+    do { try await Task.sleep(nanoseconds: 5_000_000_000) }
+    catch { return }  // 取消 = 跳过本次备份；标记未写，下次启动重试
+    performBackup(inventoryManager: inventoryManager)
+}
+```
+
+Secondary note (LOW): the "already backed up this week" check runs *before* the 5s sleep and is not re-checked after it, so two invocations within the window would both back up. Benign today (single call site per launch; same-day filename overwrites), but a re-check after the sleep would make the function idempotent.
+
+### 2. MEDIUM — New test's blob-preservation assertions are substantially vacuous (same-context fetch masks the exact failure mode being pinned)
+**Location:** `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventoryTests/InventoryManagerBlobFetchTests.swift:767-806` (also 730-744)
+
+Every verification fetch goes through the **same `ModelContext`** in which `record` was inserted and remains registered and fully materialized. Core Data/SwiftData fetches return the canonical registered instance with its current in-memory values. Consequences:
+
+- `test_saveData_metadata_projection_updates_metadata_and_preserves_blobs`: the `saved` object fetched at line ~798 is the very same instance as `record`. `XCTAssertEqual(saved.thumbnail, thumbBytes)` (lines 803-805) passes **even if the partial-materialization save had nulled the blob columns at the store layer** — which is precisely the regression the file header claims to pin ("不会把同行的 blob 列清掉"). The store-level write-back is never observed.
+- `test_fetchProjectThumbnailData_returns_thumbnail_column_only_row` (line 730): the `propertiesToFetch = [\.thumbnail]` projection is never exercised at the store level — the fetch returns the registered materialized object, so "returns thumbnail, not another blob column's bytes" passes regardless of whether the projection maps the right column.
+
+**Not vacuous (credit where due):** the metadata-update assertion (`saved.name == "改名后"` would genuinely fail if saveData aborted), the unknown-id/nil-thumbnail tests, and `XCTAssertNil(m.projects[idx].thumbnail)` (validates loadData takes the `toMetadataStruct` path). Also verified the file actually runs: `BeadInventoryTests` is a `PBXFileSystemSynchronizedRootGroup` on main, so the new file is auto-included in the target.
+
+**Recommendation:** after `m.saveData()`, verify through a **fresh** context on the same container (the in-memory store lives per-container, so a second context re-reads store rows instead of returning the registered instance):
+
+```swift
+let verifyCtx = ModelContext(ctx.container)
+let saved = try verifyCtx.fetch(descriptor).first
+```
+
+Same fix for the projection test. Without this, a real SwiftData regression in the exact combination this PR's memory-safety strategy depends on would sail through CI silently.
+
+### 3. Checked, OK — AIService `Task.detached` error propagation
+**Location:** `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/AIService.swift:1122-1124, 1145-1152`
+
+- The second detached closure is throwing; `try await Task.detached { ... }.value` rethrows `AIError.imageProcessingFailed` etc. into `recognizeImage`, and the caller (`/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Views/ScanView.swift:704-709`) catches it and sets `errorMessage` + `isRecognizing = false`. No error is swallowed.
+- LOW / latent: `Task.detached` does not inherit cancellation, and awaiting `.value` is not cancellation-responsive — if the enclosing task were cancelled, the CPU-heavy preprocess/compress runs to completion and recognition proceeds as if nothing happened. Today ScanView's Task (ScanView.swift:682) is unstructured with its handle dropped, so nothing can cancel it, and the pre-PR synchronous code was equally non-cancellable — behavior-preserving. But if cancellation is ever wired up (e.g. cancel button, `.task` modifier), it will be silently ignored; a `try Task.checkCancellation()` between the two detached hops would future-proof this.
+- Pre-existing, not introduced by this PR: `preprocessImage`'s failure branches (AIService.swift:951-1018) fall back to the original image with only `print("[AI Debug] ...")` — a degraded recognition with no `logError`. Unchanged here besides `nonisolated`; flagging for a follow-up, not against this PR.
+
+### 4. Checked, OK — `saveData` `propertiesToFetch` has no downstream silent-nil blob read
+**Location:** `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/InventoryManager.swift:1830-1840`
+
+Audited every consumer of the projection-fetched `existingProjects`: metadata property writes (lines ~1875-1885), the `beadUsages` relationship read/write (relationships fault independently of `propertiesToFetch`), `toMetadataStruct()` (`/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Models/SwiftDataModels.swift:172-192` — reads only fetched columns + the relationship, and hardcodes all four blob fields to `nil` by design), and `context.delete`. Zero blob-attribute reads exist on this path, and the explicit `existing.thumbnail = ...` write-back was already removed in v2.0.x (comment at ~1874). Additionally, SwiftData faults unfetched attributes in on access rather than returning nil, consistent with the `HistoryManager.performSave` precedent this comment cites — the risk would only be real if downstream code read a blob and got nil, and none does. The single-column `fetchProjectThumbnailData` change (lines 3515-3535) even distinguishes fetch-throw (logError) from genuinely-no-image — this is the error handling done right.
+
+### 5. Checked, OK — `aggregates[project.id]?.usage ?? []` fallback is an exact semantic match, not a masked inconsistency
+**Location:** `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Views/PlannedProjectsView.swift:85, 513-514`
+
+`buildPlannedParentAggregates()` (lines 64-76) filters `isPlanned &amp;&amp; parentId != nil` — the identical predicate as `plannedChildProjects(of:)` (InventoryManager.swift:2455). Therefore "parent absent from dict" ⟺ "zero planned children" ⟺ old `plannedAggregatedBeadUsage` returned `[]` / totals returned `0`. The fallbacks reproduce the old behavior bit-for-bit. Moreover, `plannedProjects()` (InventoryManager.swift:2912-2925) only lists parents with `hasPlannedChildren`, and dict + list are built from the same MainActor `projects` snapshot within one body pass, so a listed parent missing from the dict is impossible without mid-body mutation — and even that case is covered by the `shortage_map_miss` release fallback (lines 128-133), which correctly **logs before recomputing** via `shortageCount(for:aggregates:buildPlannedParentAggregates())`. The rebuilt aggregates make the fallback semantically identical to the hot path; the lost `sorted` order from the old API is irrelevant (results are only counted). The deleted `PlanCard.beadUsages` computed var was dead code on main (defined, never referenced). CalendarView/StatisticsView snapshot refactors are likewise pure hoists with identical semantics (verified `hierarchyStats` matches the three old computed vars, including `childCount == 0` for non-parents where it was only rendered under `isParent`).
+
+## Summary
+
+| # | Severity | File:Line | Issue |
+|---|----------|-----------|-------|
+| 1 | MEDIUM | BackupManager.swift:60-64 | `try?`-swallowed sleep cancellation would run backup immediately at t≈0 instead of skipping (latent — nothing cancels it today) |
+| 2 | MEDIUM | InventoryManagerBlobFetchTests.swift:767-806, 730-744 | Blob-preservation / single-column-projection assertions verify the registered in-memory instance, not the store — vacuous against the exact regression they claim to pin |
+| 3 | LOW | AIService.swift:1122, 1145 | Detached tasks ignore cancellation (behavior-preserving today; trap if cancellation is ever wired up) |
+| 4 | OK | InventoryManager.swift:1830 | No downstream blob read after metadata projection; verified full consumer set |
+| 5 | OK | PlannedProjectsView.swift:85, 513 | `?? []`/`?? 0` fallbacks are exact old-behavior matches; miss path logs before recomputing |
+
+No CRITICAL findings. The two MEDIUMs are both "the safety net has a hole" rather than live user-facing failures: fix #1 with a `guard`/`catch { return }`, fix #2 with a fresh-context verification fetch.</result>
+<usage><subagent_tokens>88539</subagent_tokens><tool_uses>7</tool_uses><duration_ms>229998</duration_ms></usage>
+</task-notification>
+
+---
+
+修改
+
+---
+
+<task-notification>
+<task-id>bbt99zrni</task-id>
+<tool-use-id>toolu_01UAUwaYwWUHdeE6BCV9tmGu</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-baodi-Documents-GitHub-nosync-BeadInventory/9e78ff37-57c6-44e3-a9c7-f6acb9a2dbd7/tasks/bbt99zrni.output</output-file>
+<status>completed</status>
+<summary>Background command "Build and run full test suite with review fixes" completed (exit code 0)</summary>
+</task-notification>
