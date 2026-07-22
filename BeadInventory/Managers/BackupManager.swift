@@ -34,28 +34,45 @@ class BackupManager {
 
     // MARK: - 周检查
 
+    /// 本周是否已完成过备份（标记在写盘成功后才更新，见 performBackup）。
+    private func hasBackedUpThisWeek(now: Date = Date()) -> Bool {
+        guard let lastBackupDate = UserDefaults.standard.object(forKey: lastBackupDateKey) as? Date else {
+            return false
+        }
+        return Calendar.current.isDate(now, equalTo: lastBackupDate, toGranularity: .weekOfYear)
+    }
+
     /// 检查是否需要进行每周备份。
     ///
     /// 自 v2.0.x 起：备份阶段会从 SwiftData 把所有项目的 thumbnail / finishedImage 取出来 base64
     /// 编进 JSON（v1.x 起就这样，只是以前在 InventoryManager.projects 里现成有图）。
     /// 在 cold-start 的 onAppear 同步路径里跑这玩意儿可能撞 scene-create watchdog，
-    /// 所以把执行延后一帧 + 走 Task：让首屏先 commit，避免首帧渲染期间被卡。
+    /// 所以把执行延后一个 tick + 5s、走 Task：让首屏先 commit，避免首帧渲染期间被卡。
     @MainActor func checkAndPerformWeeklyBackupIfNeeded(inventoryManager: InventoryManager) {
-        let now = Date()
-
-        // 获取上次备份日期
-        if let lastBackupDate = UserDefaults.standard.object(forKey: lastBackupDateKey) as? Date {
-            // 检查是否在同一周
-            if Calendar.current.isDate(now, equalTo: lastBackupDate, toGranularity: .weekOfYear) {
-                print("[BackupManager] 本周已备份，跳过")
-                return
-            }
+        if hasBackedUpThisWeek() {
+            print("[BackupManager] 本周已备份，跳过")
+            return
         }
 
         // 推迟到下一次 runloop tick：让首屏 scene-create commit 先完成。
         // 注意：备份仍然要在 MainActor 上跑（SwiftData mainContext 限定主线程），
         // 但它不会再卡在第一帧 commit 里 —— iOS watchdog 不会因此再 0x8BADF00D。
+        //
+        // 再延后 5s：备份要逐项目从 SwiftData 取图 + base64（全程主线程），跟启动后紧接着的
+        // initial load / 首次用户交互挤在同一窗口会明显掉帧。晚 5s 做备份没有任何语义差别
+        //（本周备份标记在写盘成功后才更新；5s 内退出则下次启动重试）。
         Task { @MainActor in
+            // 取消 = 跳过本次备份（标记未写，下次启动重试）。
+            // 不能用 try?：取消时 sleep 立即抛错，吞掉后 performBackup 会在 t≈0 无延迟执行，
+            // 恰好落回 5s 想避开的启动窗口 —— 取消语义整个反转。
+            do {
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+            } catch {
+                return
+            }
+            // sleep 后复查资格：同一窗口内的重复调用（如 onAppear 重入）串行到这里时，
+            // 第一个已完成备份并写了标记，后续直接跳过，保证幂等。
+            guard !hasBackedUpThisWeek() else { return }
             performBackup(inventoryManager: inventoryManager)
         }
     }

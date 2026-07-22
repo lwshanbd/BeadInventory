@@ -42,21 +42,17 @@ struct CalendarView: View {
     }
 
     /// 本月所有项目（用于月度统计 hero）
-    private var monthProjects: [ProjectRecord] {
-        projectsByDate.compactMap { (key, value) -> [ProjectRecord]? in
+    private func monthProjects(in byDate: [Date: [ProjectRecord]]) -> [ProjectRecord] {
+        byDate.compactMap { (key, value) -> [ProjectRecord]? in
             if calendar.isDate(key, equalTo: currentMonth, toGranularity: .month) { return value }
             return nil
         }.flatMap { $0 }
     }
 
-    private var monthTotalBeads: Int {
-        monthProjects.reduce(0) { $0 + $1.totalBeads }
-    }
-
-    private var monthRepresentativeColors: [Color] {
+    private func representativeColors(of projects: [ProjectRecord]) -> [Color] {
         var seen: Set<String> = []
         var result: [Color] = []
-        for project in monthProjects {
+        for project in projects {
             for usage in project.beadUsage {
                 if seen.contains(usage.colorCode) { continue }
                 seen.insert(usage.colorCode)
@@ -70,13 +66,17 @@ struct CalendarView: View {
     }
 
     var body: some View {
+        // body 级快照：projectsByDate 每次访问都全表 filter + 建字典。原来 monthNavBar /
+        // monthStatsHero 各触发数次，日历网格 42 个格子每格再各触发一次（~46 次/帧）。
+        let byDate = projectsByDate
+        let inMonth = monthProjects(in: byDate)
         VStack(spacing: 0) {
             BISecondaryNav(title: "成品日历")
             ScrollView {
                 VStack(spacing: 14) {
-                    monthNavBar
-                    monthStatsHero
-                    calendarBlock
+                    monthNavBar(monthProjectCount: inMonth.count)
+                    monthStatsHero(monthProjects: inMonth)
+                    calendarBlock(byDate: byDate)
                     tipPill
                 }
                 .padding(.bottom, 24)
@@ -91,7 +91,7 @@ struct CalendarView: View {
 
     // MARK: - Month nav
 
-    private var monthNavBar: some View {
+    private func monthNavBar(monthProjectCount: Int) -> some View {
         HStack {
             monthNavButton(systemImage: "chevron.left") {
                 withAnimation {
@@ -103,7 +103,7 @@ struct CalendarView: View {
                 Text(monthYearString(from: currentMonth))
                     .font(.system(size: 17, weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.ColorToken.Text.primary)
-                Text("· 完成 \(monthProjects.count) 件")
+                Text("· 完成 \(monthProjectCount) 件")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
             }
@@ -144,7 +144,7 @@ struct CalendarView: View {
 
     // MARK: - Monthly stats hero
 
-    private var monthStatsHero: some View {
+    private func monthStatsHero(monthProjects: [ProjectRecord]) -> some View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("本月完成")
@@ -154,13 +154,13 @@ struct CalendarView: View {
                     Text("\(monthProjects.count)")
                         .font(.system(size: 22, weight: .semibold).monospacedDigit())
                         .foregroundStyle(Theme.ColorToken.Morandi.sage)
-                    Text("件 · 共 \(monthTotalBeads.formatted(.number)) 颗")
+                    Text("件 · 共 \(monthProjects.reduce(0) { $0 + $1.totalBeads }.formatted(.number)) 颗")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.ColorToken.Text.secondary)
                 }
             }
             Spacer()
-            miniBeadCluster(colors: monthRepresentativeColors)
+            miniBeadCluster(colors: representativeColors(of: monthProjects))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -207,7 +207,7 @@ struct CalendarView: View {
 
     // MARK: - Calendar grid
 
-    private var calendarBlock: some View {
+    private func calendarBlock(byDate: [Date: [ProjectRecord]]) -> some View {
         VStack(spacing: 8) {
             // 周历头
             HStack(spacing: 4) {
@@ -227,14 +227,14 @@ struct CalendarView: View {
                 LazyVGrid(columns: columns, spacing: 4) {
                     ForEach(Array(generateDaysInMonth().enumerated()), id: \.offset) { _, date in
                         if let date {
+                            let dayProjects = byDate[calendar.startOfDay(for: date)] ?? []
                             DayCell(
                                 date: date,
-                                projects: projectsForDate(date),
+                                projects: dayProjects,
                                 isToday: calendar.isDateInToday(date),
                                 isCurrentMonth: calendar.isDate(date, equalTo: currentMonth, toGranularity: .month)
                             )
                             .onTapGesture {
-                                let dayProjects = projectsForDate(date)
                                 if !dayProjects.isEmpty {
                                     selectedDay = DaySelection(date: date, projects: dayProjects)
                                 }
@@ -304,9 +304,6 @@ struct CalendarView: View {
         return days
     }
 
-    private func projectsForDate(_ date: Date) -> [ProjectRecord] {
-        projectsByDate[calendar.startOfDay(for: date)] ?? []
-    }
 }
 
 // MARK: - Day cell

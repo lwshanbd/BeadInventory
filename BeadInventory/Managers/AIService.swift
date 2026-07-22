@@ -946,10 +946,13 @@ class AIServiceManager: ObservableObject {
 
     // MARK: - 图像预处理（减少水印影响）
 
-    private let ciContext = CIContext()
+    // CIContext 线程安全（Apple 文档明确），static let 让 nonisolated 的预处理函数可用。
+    private static let ciContext = CIContext()
 
-    /// 预处理图片以减少水印干扰
-    private func preprocessImage(_ image: UIImage) -> UIImage {
+    /// 预处理图片以减少水印干扰。
+    /// nonisolated：纯 CPU 图像操作（CIFilter 链 + createCGImage），不碰任何 @Published 状态。
+    /// 由 recognizeImage 通过 Task.detached 在后台线程执行，避免大图在主线程卡 UI 数百 ms~数秒。
+    nonisolated private func preprocessImage(_ image: UIImage) -> UIImage {
         guard let ciImage = CIImage(image: image) else {
             print("[AI Debug] 无法创建CIImage，使用原图")
             return image
@@ -998,7 +1001,7 @@ class AIServiceManager: ObservableObject {
         }
 
         // 转换回UIImage
-        guard let cgImage = ciContext.createCGImage(processedImage, from: processedImage.extent) else {
+        guard let cgImage = Self.ciContext.createCGImage(processedImage, from: processedImage.extent) else {
             print("[AI Debug] 无法创建CGImage，使用原图")
             return image
         }
@@ -1007,8 +1010,10 @@ class AIServiceManager: ObservableObject {
         return UIImage(cgImage: cgImage)
     }
 
-    /// 等比例缩放图片，使其编码后数据不超过指定大小
-    private func compressImageIfNeeded(_ image: UIImage, maxBytes: Int = 10 * 1024 * 1024) throws -> UIImage {
+    /// 等比例缩放图片，使其编码后数据不超过指定大小。
+    /// nonisolated：多轮 jpegData + UIGraphicsImageRenderer 是纯 CPU 重活（renderer 自 iOS 10 起线程安全），
+    /// 同样由 recognizeImage 放到后台线程执行。
+    nonisolated private func compressImageIfNeeded(_ image: UIImage, maxBytes: Int = 10 * 1024 * 1024) throws -> UIImage {
         // 先检查 JPEG 大小，不超限就直接返回
         if let jpegData = image.jpegData(compressionQuality: 0.95), jpegData.count <= maxBytes {
             return image
@@ -1050,6 +1055,28 @@ class AIServiceManager: ObservableObject {
         return result
     }
 
+    /// 把最终图片编码为上传 payload。优先使用 PNG 格式（无损），如果太大则使用高质量 JPEG。
+    /// PNG 对于表格文字识别效果更好，不会有 JPEG 压缩伪影。
+    /// nonisolated static：纯编码逻辑，从 recognizeImage 的 detached task 里调用。
+    nonisolated private static func encodeImagePayload(_ finalImage: UIImage) throws -> (data: Data, mediaType: String) {
+        if let pngData = finalImage.pngData() {
+            if pngData.count < 10 * 1024 * 1024 {
+                print("[AI Debug] 使用PNG格式，大小: \(pngData.count / 1024)KB")
+                return (pngData, "image/png")
+            }
+            guard let jpegData = finalImage.jpegData(compressionQuality: 0.95) else {
+                throw AIError.imageProcessingFailed
+            }
+            print("[AI Debug] PNG太大，使用JPEG格式，大小: \(jpegData.count / 1024)KB")
+            return (jpegData, "image/jpeg")
+        }
+        if let jpegData = finalImage.jpegData(compressionQuality: 0.95) {
+            print("[AI Debug] 使用JPEG格式，大小: \(jpegData.count / 1024)KB")
+            return (jpegData, "image/jpeg")
+        }
+        throw AIError.imageProcessingFailed
+    }
+
     /// 校验 HTTP 响应状态码，非 200 时抛出对应错误
     private func validateHTTPResponse(_ response: HTTPURLResponse, data: Data) throws {
         guard response.statusCode == 200 else {
@@ -1077,78 +1104,66 @@ class AIServiceManager: ObservableObject {
     // MARK: - 图像识别
 
     func recognizeImage(_ image: UIImage, mode: RecognitionMode = .table, colorSystem: ColorSystem = .mard) async throws -> [AIRecognizedItem] {
-        switch config.backend {
+        // 入口处快照 config（值类型拷贝），全程用快照：本方法自引入 Task.detached 后有多个
+        // await 挂起点，MainActor 重入可能让用户在识别中途改 provider/model/key/backend——
+        // 若继续读 self.config，实际请求可能用上一份**没有通过入口校验**的配置
+        //（例如 local 起步、中途切 cloud，图片被意外上传）。
+        let requestConfig = config
+        switch requestConfig.backend {
         case .cloud:
-            guard !config.apiKey.isEmpty else {
+            guard !requestConfig.apiKey.isEmpty else {
                 throw AIError.notConfigured
             }
         case .local:
-            guard LocalModelManager.shared.isDownloaded(config.localModel) else {
-                throw AIError.localModelNotDownloaded(config.localModel.displayName)
+            guard LocalModelManager.shared.isDownloaded(requestConfig.localModel) else {
+                throw AIError.localModelNotDownloaded(requestConfig.localModel.displayName)
             }
         }
 
-        // 预处理图片（减少水印影响）
-        let processedImage = preprocessImage(image)
+        // 预处理图片（减少水印影响）。
+        // Task.detached：AIServiceManager 是 @MainActor，直接调用会让 CIFilter 链 + createCGImage
+        // 的重活整段占住主线程（大图实测秒级），转圈动画和滚动全部冻结。detached 后仅 await 挂起，
+        // UI 状态更新仍在 MainActor（本方法余下部分）。
+        let processedImage = await Task.detached(priority: .userInitiated) {
+            self.preprocessImage(image)
+        }.value
 
         // 打印 AI 配置信息
         print("[AI Debug] ========== AI 识别开始 ==========")
-        print("[AI Debug] 识别方式: \(config.backend.rawValue)")
-        if config.backend == .cloud {
-            print("[AI Debug] AI 提供商: \(config.provider.rawValue)")
-            print("[AI Debug] 模型: \(config.effectiveModel)")
-            print("[AI Debug] API 地址: \(config.effectiveBaseURL)")
+        print("[AI Debug] 识别方式: \(requestConfig.backend.rawValue)")
+        if requestConfig.backend == .cloud {
+            print("[AI Debug] AI 提供商: \(requestConfig.provider.rawValue)")
+            print("[AI Debug] 模型: \(requestConfig.effectiveModel)")
+            print("[AI Debug] API 地址: \(requestConfig.effectiveBaseURL)")
         } else {
-            print("[AI Debug] 本地模型: \(config.localModel.displayName)")
+            print("[AI Debug] 本地模型: \(requestConfig.localModel.displayName)")
         }
         print("[AI Debug] 原图尺寸: \(image.size), 处理后: \(processedImage.size)")
         print("[AI Debug] 识别模式: \(mode == .table ? "表格识别" : "图纸识别")")
         print("[AI Debug] 色号体系: \(colorSystem.rawValue)")
 
-        if config.backend == .local {
-            return try await recognizeWithLocalModel(image: processedImage, mode: mode, colorSystem: colorSystem)
+        if requestConfig.backend == .local {
+            return try await recognizeWithLocalModel(image: processedImage, mode: mode, colorSystem: colorSystem, using: requestConfig)
         }
 
-        // 如果图片数据超过 10MB，先等比例缩放
-        let finalImage = try compressImageIfNeeded(processedImage)
+        // 压缩 + 编码 + base64 同样是纯 CPU/内存重活，一并放后台线程执行。
+        let (base64Image, mediaType) = try await Task.detached(priority: .userInitiated) {
+            // 如果图片数据超过 10MB，先等比例缩放
+            let finalImage = try self.compressImageIfNeeded(processedImage)
+            let payload = try Self.encodeImagePayload(finalImage)
+            let base64 = payload.data.base64EncodedString()
+            print("[AI Debug] Base64长度: \(base64.count)")
+            return (base64, payload.mediaType)
+        }.value
 
-        // 优先使用PNG格式（无损），如果太大则使用高质量JPEG
-        // PNG对于表格文字识别效果更好，不会有JPEG压缩伪影
-        let imageData: Data
-        let mediaType: String
-
-        if let pngData = finalImage.pngData() {
-            if pngData.count < 10 * 1024 * 1024 {
-                imageData = pngData
-                mediaType = "image/png"
-                print("[AI Debug] 使用PNG格式，大小: \(pngData.count / 1024)KB")
-            } else {
-                guard let jpegData = finalImage.jpegData(compressionQuality: 0.95) else {
-                    throw AIError.imageProcessingFailed
-                }
-                imageData = jpegData
-                mediaType = "image/jpeg"
-                print("[AI Debug] PNG太大，使用JPEG格式，大小: \(jpegData.count / 1024)KB")
-            }
-        } else if let jpegData = finalImage.jpegData(compressionQuality: 0.95) {
-            imageData = jpegData
-            mediaType = "image/jpeg"
-            print("[AI Debug] 使用JPEG格式，大小: \(jpegData.count / 1024)KB")
-        } else {
-            throw AIError.imageProcessingFailed
-        }
-
-        let base64Image = imageData.base64EncodedString()
-        print("[AI Debug] Base64长度: \(base64Image.count)")
-
-        switch config.provider {
+        switch requestConfig.provider {
         case .kimi, .openai, .qwen:
             // Kimi、OpenAI、Qwen 使用相同的 API 格式（OpenAI 兼容）
-            return try await recognizeWithOpenAI(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem)
+            return try await recognizeWithOpenAI(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem, using: requestConfig)
         case .anthropic:
-            return try await recognizeWithAnthropic(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem)
+            return try await recognizeWithAnthropic(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem, using: requestConfig)
         case .gemini:
-            return try await recognizeWithGemini(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem)
+            return try await recognizeWithGemini(base64Image: base64Image, mediaType: mediaType, mode: mode, colorSystem: colorSystem, using: requestConfig)
         }
     }
 
@@ -1447,11 +1462,11 @@ class AIServiceManager: ObservableObject {
         }
     }
 
-    private func recognizeWithLocalModel(image: UIImage, mode: RecognitionMode, colorSystem: ColorSystem) async throws -> [AIRecognizedItem] {
+    private func recognizeWithLocalModel(image: UIImage, mode: RecognitionMode, colorSystem: ColorSystem, using requestConfig: AIConfig) async throws -> [AIRecognizedItem] {
         let prompts = buildPrompts(mode: mode, colorSystem: colorSystem)
         let output = try await LocalModelManager.shared.recognize(
             image: image,
-            model: config.localModel,
+            model: requestConfig.localModel,
             systemPrompt: prompts.system,
             userPrompt: prompts.user
         )
@@ -1472,14 +1487,14 @@ class AIServiceManager: ObservableObject {
 
     // MARK: - OpenAI 实现
 
-    private func recognizeWithOpenAI(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard) async throws -> [AIRecognizedItem] {
-        guard let url = URL(string: "\(config.effectiveBaseURL)/chat/completions") else {
-            throw AIError.networkError("Invalid API URL: \(config.effectiveBaseURL)/chat/completions")
+    private func recognizeWithOpenAI(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard, using requestConfig: AIConfig) async throws -> [AIRecognizedItem] {
+        guard let url = URL(string: "\(requestConfig.effectiveBaseURL)/chat/completions") else {
+            throw AIError.networkError("Invalid API URL: \(requestConfig.effectiveBaseURL)/chat/completions")
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("Bearer \(config.effectiveAPIKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(requestConfig.effectiveAPIKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let prompts = buildPrompts(mode: mode, colorSystem: colorSystem)
@@ -1488,7 +1503,7 @@ class AIServiceManager: ObservableObject {
 
         // OpenAI 使用 max_completion_tokens，Kimi 使用 max_tokens
         var body: [String: Any] = [
-            "model": config.effectiveModel,
+            "model": requestConfig.effectiveModel,
             "messages": [
                 ["role": "system", "content": systemPrompt],
                 [
@@ -1511,7 +1526,7 @@ class AIServiceManager: ObservableObject {
 
         // 根据提供商设置不同的 token 限制参数
         // OpenAI 使用 max_completion_tokens，Kimi/Qwen 使用 max_tokens
-        if config.provider == .openai {
+        if requestConfig.provider == .openai {
             body["max_completion_tokens"] = 8192
         } else {
             body["max_tokens"] = 8192
@@ -1562,14 +1577,14 @@ class AIServiceManager: ObservableObject {
 
     // MARK: - Anthropic 实现
 
-    private func recognizeWithAnthropic(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard) async throws -> [AIRecognizedItem] {
-        guard let url = URL(string: "\(config.effectiveBaseURL)/v1/messages") else {
-            throw AIError.networkError("Invalid API URL: \(config.effectiveBaseURL)/v1/messages")
+    private func recognizeWithAnthropic(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard, using requestConfig: AIConfig) async throws -> [AIRecognizedItem] {
+        guard let url = URL(string: "\(requestConfig.effectiveBaseURL)/v1/messages") else {
+            throw AIError.networkError("Invalid API URL: \(requestConfig.effectiveBaseURL)/v1/messages")
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(requestConfig.apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -1578,7 +1593,7 @@ class AIServiceManager: ObservableObject {
         let userPrompt = prompts.user
 
         let body: [String: Any] = [
-            "model": config.model,
+            "model": requestConfig.model,
             "max_tokens": 8192,  // 设置足够大的输出限制，避免颜色多时被截断
             "system": systemPrompt,
             "messages": [
@@ -1644,8 +1659,8 @@ class AIServiceManager: ObservableObject {
 
     // MARK: - Gemini 实现
 
-    private func recognizeWithGemini(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard) async throws -> [AIRecognizedItem] {
-        guard let url = URL(string: "\(config.effectiveBaseURL)/models/\(config.effectiveModel):generateContent?key=\(config.effectiveAPIKey)") else {
+    private func recognizeWithGemini(base64Image: String, mediaType: String, mode: RecognitionMode, colorSystem: ColorSystem = .mard, using requestConfig: AIConfig) async throws -> [AIRecognizedItem] {
+        guard let url = URL(string: "\(requestConfig.effectiveBaseURL)/models/\(requestConfig.effectiveModel):generateContent?key=\(requestConfig.effectiveAPIKey)") else {
             throw AIError.networkError("Invalid API URL for Gemini")
         }
 
