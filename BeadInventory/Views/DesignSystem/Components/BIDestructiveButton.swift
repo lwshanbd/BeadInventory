@@ -29,7 +29,7 @@ struct BIDestructiveButton: View {
             .frame(height: 44)
             .foregroundStyle(.white)
             .background(
-                Theme.ColorToken.Status.error,
+                Theme.ColorToken.Fill.error,
                 in: RoundedRectangle(cornerRadius: Theme.Radius.md)
             )
         }

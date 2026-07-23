@@ -574,7 +574,7 @@ private struct ProviderRadioRow: View {
                             lineWidth: 2
                         )
                         .background(
-                            Circle().fill(isSelected ? Theme.ColorToken.Morandi.mauve : Color.clear)
+                            Circle().fill(isSelected ? Theme.ColorToken.Fill.mauve : Color.clear)
                         )
                         .frame(width: 22, height: 22)
                     if isSelected {
@@ -666,7 +666,7 @@ struct LocalModelOptionCard: View {
                                 lineWidth: 2
                             )
                             .background(
-                                Circle().fill(isSelected ? Theme.ColorToken.Morandi.mauve : Color.clear)
+                                Circle().fill(isSelected ? Theme.ColorToken.Fill.mauve : Color.clear)
                             )
                             .frame(width: 18, height: 18)
                         if isSelected {
@@ -750,7 +750,7 @@ struct LocalModelOptionCard: View {
                             .foregroundStyle(isSelected ? Theme.ColorToken.Text.tertiary : .white)
                             .background(
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(isSelected ? Theme.ColorToken.Surface.subtle : Theme.ColorToken.Morandi.mauve)
+                                    .fill(isSelected ? Theme.ColorToken.Surface.subtle : Theme.ColorToken.Fill.mauve)
                             )
                     }
                     .buttonStyle(.plain)
@@ -806,7 +806,7 @@ struct LocalModelOptionCard: View {
                         .foregroundStyle(.white)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Theme.ColorToken.Morandi.mauve)
+                                .fill(Theme.ColorToken.Fill.mauve)
                         )
                     }
                     .buttonStyle(.plain)

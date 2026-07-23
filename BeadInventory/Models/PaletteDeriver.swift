@@ -86,6 +86,20 @@ enum PaletteDeriver {
         )
     }
 
+    // MARK: - 深色强调填充
+
+    /// 深色模式下的强调「填充」色：保色相、压亮度、略提饱和。
+    ///
+    /// Asset 里 Morandi/Semantic 的 dark 变体是「提亮」的（彩色文字需要），
+    /// 但按钮/FAB/Hero 这类填充底如果也用提亮版，白字压上去对比不足、
+    /// 整块在近黑页面上像发光贴片。填充场景改用本函数的加深版。
+    static func darkAccentFill(fromLightHex hexString: ColorHex) -> ColorHex {
+        guard let c = hsb(fromHex: hexString) else { return hexString }
+        let s = min(c.s * 1.2, 0.75)
+        let b = min(max(c.b * 0.58, 0.38), 0.50)
+        return hex(fromH: c.h, s: s, b: b)
+    }
+
     // MARK: - 纯 HSB 数学（不依赖 UIKit，便于单测）
 
     struct HSB: Equatable {

@@ -23,6 +23,17 @@ enum TabFlavor: Int, CaseIterable {
         case .more:       return Color("Palette/Sky")      // mist
         }
     }
+
+    /// 填充版风味色：按钮 / FAB / 激活 chip 的底色用这个（深色自动加深，见 Theme.ColorToken.Fill）。
+    /// `color` 保留给彩色文字、图标、描边等前景场景。
+    var fill: Color {
+        switch self {
+        case .inventory:  return Theme.ColorToken.Fill.latte
+        case .workshop:   return Theme.ColorToken.Fill.mauve
+        case .statistics: return Theme.ColorToken.Fill.sage
+        case .more:       return Theme.ColorToken.Fill.mist
+        }
+    }
 }
 
 private struct TabFlavorKey: EnvironmentKey {

@@ -408,13 +408,13 @@ struct PlannedProjectsView: View {
         .padding(.vertical, 14)
         .background(
             LinearGradient(
-                colors: [Theme.ColorToken.Morandi.mauve, Theme.ColorToken.Morandi.latte],
+                colors: [Theme.ColorToken.Fill.mauve, Theme.ColorToken.Fill.latte],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         )
         .clipShape(RoundedRectangle(cornerRadius: 18))
-        .shadow(color: Theme.ColorToken.Morandi.mauve.opacity(0.25), radius: 8, x: 0, y: 4)
+        .shadow(color: Theme.ColorToken.Fill.mauve.opacity(0.25), radius: 8, x: 0, y: 4)
         .padding(.horizontal, 18)
         .padding(.top, 14)
         .padding(.bottom, 6)
@@ -466,14 +466,14 @@ struct PlannedProjectsView: View {
             Button {
                 withAnimation(.easeInOut(duration: 0.18)) { filter = .needsBeads }
             } label: {
-                BIChip("待补豆 · \(needsCount)", active: filter == .needsBeads, color: Theme.ColorToken.Morandi.rose, size: .sm)
+                BIChip("待补豆 · \(needsCount)", active: filter == .needsBeads, color: Theme.ColorToken.Fill.rose, size: .sm)
             }
             .buttonStyle(.plain)
 
             Button {
                 withAnimation(.easeInOut(duration: 0.18)) { filter = .ready }
             } label: {
-                BIChip("可执行 · \(readyCount)", active: filter == .ready, color: Theme.ColorToken.Morandi.sage, size: .sm)
+                BIChip("可执行 · \(readyCount)", active: filter == .ready, color: Theme.ColorToken.Fill.sage, size: .sm)
             }
             .buttonStyle(.plain)
 
@@ -491,8 +491,10 @@ struct PlannedProjectsView: View {
         VStack(spacing: 8) {
             if planCount >= 2 {
                 TipView(PlanMergeTip())
+                    .tipBackground(Theme.ColorToken.Surface.elevated)
             }
             TipView(ReplenishTip())
+                .tipBackground(Theme.ColorToken.Surface.elevated)
         }
         .padding(.horizontal, 18)
     }
@@ -616,9 +618,9 @@ private struct PlanCard: View {
                         .lineLimit(1)
 
                     if shortageColors > 0 {
-                        BIChip("缺 \(shortageColors) 色", active: true, color: Theme.ColorToken.Morandi.rose, size: .sm)
+                        BIChip("缺 \(shortageColors) 色", active: true, color: Theme.ColorToken.Fill.rose, size: .sm)
                     } else {
-                        BIChip("可执行", active: true, color: Theme.ColorToken.Morandi.sage, size: .sm)
+                        BIChip("可执行", active: true, color: Theme.ColorToken.Fill.sage, size: .sm)
                     }
 
                     Spacer(minLength: 0)
@@ -1468,7 +1470,7 @@ struct PlannedProjectDetailView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding()
-            .background(hasThumbnail ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default)
+            .background(hasThumbnail ? Theme.ColorToken.Fill.mauve : Theme.ColorToken.Border.default)
             .cornerRadius(Theme.Radius.md)
         }
         .disabled(!hasThumbnail)
@@ -2891,7 +2893,7 @@ struct AddColorToProjectSheet: View {
                         .padding()
                         .background(Theme.ColorToken.Surface.elevated)
                         .cornerRadius(Theme.Radius.md)
-                        .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
+                        .shadow(color: Theme.ColorToken.Shadow.medium, radius: 2, y: 1)
                     }
                     .padding(.horizontal)
                 }

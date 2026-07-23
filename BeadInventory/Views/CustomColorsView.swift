@@ -298,9 +298,9 @@ struct CustomColorsView: View {
                 .frame(width: 54, height: 54)
                 .background(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(flavor)
+                        .fill(Theme.ColorToken.Fill.mauve)
                 )
-                .shadow(color: flavor.opacity(0.35), radius: 12, x: 0, y: 6)
+                .shadow(color: Theme.ColorToken.Fill.mauve.opacity(0.35), radius: 12, x: 0, y: 6)
         }
         .buttonStyle(.plain)
     }

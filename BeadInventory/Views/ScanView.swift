@@ -122,9 +122,11 @@ struct ScanView: View {
                     ScrollView {
                         VStack(spacing: 20) {
                             TipView(ScanTip())
+                                .tipBackground(Theme.ColorToken.Surface.elevated)
                                 .padding(.horizontal)
                             if !aiService.isConfigured {
                                 TipView(APISetupTip())
+                                    .tipBackground(Theme.ColorToken.Surface.elevated)
                                     .padding(.horizontal)
                             }
                             // 图片选择区域（当未固定时显示）
@@ -419,8 +421,20 @@ struct ScanView: View {
                 .font(.caption)
             }
             .padding()
-            .background(Theme.ColorToken.Status.warning.opacity(0.1))
-            .cornerRadius(Theme.Radius.sm)
+            .background(
+                // 深色下纯 warning 10% 压在深底上发闷；先垫 elevated 再点 warning 色、
+                // 加同色描边，深浅两种模式都保有结构感。
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .fill(Theme.ColorToken.Surface.elevated)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .fill(Theme.ColorToken.Status.warning.opacity(0.1))
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .strokeBorder(Theme.ColorToken.Status.warning.opacity(0.3), lineWidth: 1)
+            )
             .padding(.horizontal)
         } else if aiService.config.backend == .local {
             HStack(alignment: .top) {
@@ -1041,7 +1055,7 @@ struct ImageSelectionSection: View {
                         .foregroundStyle(Theme.ColorToken.Text.onAccent)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .background(flavor.color, in: RoundedRectangle(cornerRadius: 12))
+                        .background(flavor.fill, in: RoundedRectangle(cornerRadius: 12))
                 }
 
                 // 拍照（outlined）
@@ -3125,9 +3139,9 @@ struct ScanBottomCTABar: View {
                 .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(canDeduct ? flavor.color : Theme.ColorToken.Border.default)
+                        .fill(canDeduct ? flavor.fill : Theme.ColorToken.Border.default)
                 )
-                .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
+                .shadow(color: Theme.ColorToken.Shadow.soft, radius: 4, x: 0, y: 2)
             }
             .disabled(!canDeduct)
         }

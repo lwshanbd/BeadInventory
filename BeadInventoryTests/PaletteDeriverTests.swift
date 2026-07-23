@@ -101,6 +101,39 @@ final class PaletteDeriverTests: XCTestCase {
         }
     }
 
+    // MARK: - 深色强调填充
+
+    func test_darkAccentFill_whiteTextContrast() {
+        // 所有 Fill 色的深色版必须能承载白字（WCAG AA 正文 4.5:1）
+        func luminance(_ hex: String) -> Double {
+            let v = UInt32(hex, radix: 16)!
+            func lin(_ c: Int) -> Double {
+                let s = Double(c) / 255.0
+                return s <= 0.03928 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * lin(Int((v >> 16) & 0xFF))
+                 + 0.7152 * lin(Int((v >> 8) & 0xFF))
+                 + 0.0722 * lin(Int(v & 0xFF))
+        }
+        for light in ["C8966E", "C9928E", "9FB089", "94A8B6", "B196AE", "D8B97A", "B86A60"] {
+            let dark = PaletteDeriver.darkAccentFill(fromLightHex: light)
+            let contrast = 1.05 / (luminance(dark) + 0.05)
+            XCTAssertGreaterThanOrEqual(contrast, 4.5, "white on \(dark) (from \(light)) contrast \(contrast)")
+        }
+    }
+
+    func test_darkAccentFill_preservesHue() {
+        for light in ["C8966E", "9FB089", "94A8B6", "B196AE"] {
+            let src = PaletteDeriver.hsb(fromHex: light)!
+            let out = PaletteDeriver.hsb(fromHex: PaletteDeriver.darkAccentFill(fromLightHex: light))!
+            XCTAssertEqual(out.h, src.h, accuracy: 3, "hue drifted for \(light)")
+        }
+    }
+
+    func test_darkAccentFill_invalidHex_passthrough() {
+        XCTAssertEqual(PaletteDeriver.darkAccentFill(fromLightHex: "oops"), "oops")
+    }
+
     // MARK: - HSB 往返
 
     func test_hsbRoundTrip() {

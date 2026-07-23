@@ -20,7 +20,7 @@ struct BIStepper: View {
                 stepDot(idx: idx, label: label)
                 if idx < steps.count - 1 {
                     Rectangle()
-                        .fill(idx < currentIndex ? flavor.color : Theme.ColorToken.Border.divider)
+                        .fill(idx < currentIndex ? flavor.fill : Theme.ColorToken.Border.divider)
                         .frame(height: 2)
                 }
             }
@@ -32,7 +32,7 @@ struct BIStepper: View {
         VStack(spacing: Theme.Spacing.xs) {
             ZStack {
                 Circle()
-                    .fill(idx <= currentIndex ? flavor.color : Theme.ColorToken.Surface.subtle)
+                    .fill(idx <= currentIndex ? flavor.fill : Theme.ColorToken.Surface.subtle)
                     .frame(width: 24, height: 24)
                 if idx < currentIndex {
                     Image(systemName: "checkmark")

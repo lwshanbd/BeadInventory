@@ -92,7 +92,7 @@ struct BIListRow: View {
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
                 .background(
-                    Capsule().fill(Theme.ColorToken.Status.warning)
+                    Capsule().fill(Theme.ColorToken.Fill.honey)
                 )
         case .toggle(let binding):
             Toggle("", isOn: binding)
@@ -109,7 +109,7 @@ struct BIListRow: View {
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
                 .background(
-                    Capsule().fill(Theme.ColorToken.Morandi.honey)
+                    Capsule().fill(Theme.ColorToken.Fill.honey)
                 )
         case .none:
             EmptyView()

@@ -387,7 +387,7 @@ struct InventoryView: View {
                         }
                     }
                 } label: {
-                    BIChip("分组", active: groupByPrefix, color: flavor.color)
+                    BIChip("分组", active: groupByPrefix, color: flavor.fill)
                 }
                 .buttonStyle(.plain)
 
@@ -864,9 +864,9 @@ struct ColorCardView: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .strokeBorder(Color.black.opacity(0.08), lineWidth: 1)
+                            .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
                     )
-                    .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+                    .shadow(color: Theme.ColorToken.Shadow.soft, radius: 2, x: 0, y: 1)
 
                 // 低库存红点（左上）
                 if isLowStock {
@@ -1182,9 +1182,9 @@ struct EditStockSheet: View {
                     .padding(.vertical, 14)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
-                            .fill(Theme.ColorToken.Morandi.latte)
+                            .fill(Theme.ColorToken.Fill.latte)
                     )
-                    .shadow(color: Theme.ColorToken.Morandi.latte.opacity(0.25), radius: 8, x: 0, y: 4)
+                    .shadow(color: Theme.ColorToken.Fill.latte.opacity(0.25), radius: 8, x: 0, y: 4)
             }
             .buttonStyle(.plain)
         }

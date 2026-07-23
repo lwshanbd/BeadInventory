@@ -62,7 +62,7 @@ struct ShippingView: View {
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 10)
                                     .background(
-                                        Theme.ColorToken.Morandi.latte,
+                                        Theme.ColorToken.Fill.latte,
                                         in: RoundedRectangle(cornerRadius: Theme.Radius.md)
                                     )
                                 }
@@ -163,13 +163,13 @@ struct ShippingView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [Theme.ColorToken.Morandi.latte, Theme.ColorToken.Morandi.honey],
+                        colors: [Theme.ColorToken.Fill.latte, Theme.ColorToken.Fill.honey],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
         )
-        .shadow(color: Theme.ColorToken.Morandi.latte.opacity(0.25), radius: 12, x: 0, y: 4)
+        .shadow(color: Theme.ColorToken.Fill.latte.opacity(0.25), radius: 12, x: 0, y: 4)
         .padding(.horizontal, 18)
         .padding(.top, 8)
     }
@@ -250,9 +250,9 @@ struct ShippingView: View {
                 .frame(width: 54, height: 54)
                 .background(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Theme.ColorToken.Morandi.latte)
+                        .fill(Theme.ColorToken.Fill.latte)
                 )
-                .shadow(color: Theme.ColorToken.Morandi.latte.opacity(0.4), radius: 14, x: 0, y: 6)
+                .shadow(color: Theme.ColorToken.Fill.latte.opacity(0.4), radius: 14, x: 0, y: 6)
         }
         .buttonStyle(.plain)
         .padding(.trailing, 18)
@@ -477,7 +477,7 @@ struct PasteReplenishSheet: View {
                             .foregroundColor(.white)
                             .padding(.horizontal, 32)
                             .padding(.vertical, 14)
-                            .background(Theme.ColorToken.Morandi.latte)
+                            .background(Theme.ColorToken.Fill.latte)
                             .cornerRadius(Theme.Radius.lg)
                         }
 
@@ -508,7 +508,7 @@ struct PasteReplenishSheet: View {
                                                     .font(.subheadline)
                                                     .padding(.horizontal, 16)
                                                     .padding(.vertical, 10)
-                                                    .background(selectedBrandId == brand.id ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Surface.subtle)
+                                                    .background(selectedBrandId == brand.id ? Theme.ColorToken.Fill.latte : Theme.ColorToken.Surface.subtle)
                                                     .foregroundColor(selectedBrandId == brand.id ? .white : Theme.ColorToken.Text.primary)
                                                     .cornerRadius(Theme.Radius.lg)
                                             }
@@ -586,7 +586,7 @@ struct PasteReplenishSheet: View {
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(canSave ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.tertiary)
+                                .background(canSave ? Theme.ColorToken.Fill.latte : Theme.ColorToken.Text.tertiary)
                                 .cornerRadius(Theme.Radius.md)
                         }
                         .disabled(!canSave)
@@ -835,7 +835,7 @@ struct PurchaseRecordDetailView: View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [Theme.ColorToken.Morandi.latte, Theme.ColorToken.Morandi.honey],
+                                colors: [Theme.ColorToken.Fill.latte, Theme.ColorToken.Fill.honey],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -970,7 +970,7 @@ struct PurchaseRecordDetailView: View {
                 .frame(height: 48)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .fill(Theme.ColorToken.Morandi.latte)
+                        .fill(Theme.ColorToken.Fill.latte)
                 )
             }
             .buttonStyle(.plain)
@@ -1329,7 +1329,7 @@ struct AddPurchaseRecordView: View {
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 24)
                                     .padding(.vertical, 12)
-                                    .background(canSave ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.tertiary)
+                                    .background(canSave ? Theme.ColorToken.Fill.latte : Theme.ColorToken.Text.tertiary)
                                     .cornerRadius(Theme.Radius.lg)
                             }
                             .disabled(!canSave)

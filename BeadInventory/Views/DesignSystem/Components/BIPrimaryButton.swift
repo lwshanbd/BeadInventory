@@ -32,7 +32,7 @@ struct BIPrimaryButton: View {
             .frame(height: 56)
             .foregroundStyle(.white)
             .background(
-                (isEnabled ? flavor.color : Theme.ColorToken.Text.tertiary),
+                (isEnabled ? flavor.fill : Theme.ColorToken.Text.tertiary),
                 in: RoundedRectangle(cornerRadius: Theme.Radius.md)
             )
         }

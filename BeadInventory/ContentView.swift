@@ -84,8 +84,8 @@ struct ContentView: View {
                                 .font(.title2.weight(.bold))
                                 .foregroundStyle(.white)
                                 .frame(width: 60, height: 60)
-                                .background(TabFlavor.inventory.color, in: Circle())
-                                .shadow(color: TabFlavor.inventory.color.opacity(0.4), radius: 8, x: 0, y: 4)
+                                .background(TabFlavor.inventory.fill, in: Circle())
+                                .shadow(color: TabFlavor.inventory.fill.opacity(0.4), radius: 8, x: 0, y: 4)
                         }
                         .padding(.trailing, 20)
                         .padding(.bottom, 80)

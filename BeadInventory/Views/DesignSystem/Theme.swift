@@ -127,6 +127,47 @@ enum Theme {
             static let mauve = Color("Palette/Lavender")   // 工作台锚 #B196AE
             static let honey = Color("Palette/Lemon")      // 高亮/计划 #D8B97A
         }
+
+        /// 强调「填充」色：按钮 / FAB / Hero 渐变 / 激活 chip 的底色。
+        ///
+        /// 与 Morandi（彩色文字、图标用，dark 提亮）不同，Fill 在深色下自动
+        /// 「加深」（PaletteDeriver.darkAccentFill），保证 onAccent 白字对比、
+        /// 且不会在近黑页面上形成刺眼的浅色块。填充场景一律用 Fill，不用 Morandi。
+        enum Fill {
+            private static func fill(_ lightHex: String) -> Color {
+                Color(uiColor: UIColor { trait in
+                    let hex = trait.userInterfaceStyle == .dark
+                        ? PaletteDeriver.darkAccentFill(fromLightHex: lightHex)
+                        : lightHex
+                    return UIColor(themeHex: hex)
+                })
+            }
+            static var latte: Color { fill("C8966E") }
+            static var rose:  Color { fill("C9928E") }
+            static var sage:  Color { fill("9FB089") }
+            static var mist:  Color { fill("94A8B6") }
+            static var mauve: Color { fill("B196AE") }
+            static var honey: Color { fill("D8B97A") }
+            /// 语义色的填充版（Semantic/* light 值，深色自动加深）
+            static var error:   Color { fill("B86A60") }
+            static var info:    Color { fill("748FA1") }
+            static var success: Color { fill("7A9B6A") }
+            static var warning: Color { fill("C99659") }
+        }
+
+        /// 投影色：深色模式下纯黑投影零可见度且让界面发脏，自动归零；
+        /// 深色的分层改由描边（Border）与 Surface 亮度差承担。
+        enum Shadow {
+            private static func shadow(_ lightOpacity: CGFloat) -> Color {
+                Color(uiColor: UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? .clear
+                        : UIColor.black.withAlphaComponent(lightOpacity)
+                })
+            }
+            static var soft:   Color { shadow(0.06) }
+            static var medium: Color { shadow(0.12) }
+        }
     }
 }
 
