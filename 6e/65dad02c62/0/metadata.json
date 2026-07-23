@@ -1,0 +1,58 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "6e65dad02c62",
+  "session_id": "554efeb6-77a2-4c68-abe1-c54d69e3c9a8",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-23T21:42:01.482519Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "BeadInventory/Models/PaletteDeriver.swift",
+    "BeadInventory/Views/DesignSystem/Theme.swift",
+    "BeadInventoryTests/PaletteDeriverTests.swift"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "f9250e63f24b",
+  "checkpoint_transcript_start": 450,
+  "transcript_lines_at_start": 450,
+  "token_usage": {
+    "input_tokens": 924,
+    "cache_creation_tokens": 122795,
+    "cache_read_tokens": 16233116,
+    "output_tokens": 52317,
+    "api_call_count": 66
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-23T21:42:01.136664Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 187,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 187,
+    "total_lines_changed": 245,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 129,
+      "agent_lines_removed": 17
+    }
+  ]
+}
