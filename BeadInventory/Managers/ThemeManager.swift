@@ -107,6 +107,28 @@ final class ThemeManager {
         }
     }
 
+    // MARK: - 派生中性阶（PaletteDeriver）
+    //
+    // 中性 token（chip 底 / 描边 / 文字灰阶）随主题 bg 派生，
+    // 消除「换主题只换背景、其余 UI 仍是固定暖米色」的混搭。
+
+    var derivedLightNeutrals: DerivedNeutrals {
+        PaletteDeriver.neutrals(forBg: resolvedLight.bg, isDark: false)
+    }
+
+    var derivedDarkNeutrals: DerivedNeutrals {
+        PaletteDeriver.neutrals(forBg: resolvedDark.bg, isDark: true)
+    }
+
+    func dynamicNeutral(_ keyPath: KeyPath<DerivedNeutrals, ColorHex>) -> UIColor {
+        UIColor { trait in
+            let neutrals = trait.userInterfaceStyle == .dark
+                ? self.derivedDarkNeutrals
+                : self.derivedLightNeutrals
+            return UIColor(themeHex: neutrals[keyPath: keyPath])
+        }
+    }
+
     // MARK: - Apply
 
     func apply(scheme: AppColorScheme, target: ApplyTarget) {

@@ -55,12 +55,14 @@ enum Theme {
             static let lemon    = Color("Palette/Lemon")
             static let rose     = Color("Palette/Rose")
 
-            static let n50  = Color("Palette/Neutral50")
-            static let n100 = Color("Palette/Neutral100")
-            static let n200 = Color("Palette/Neutral200")
-            static let n400 = Color("Palette/Neutral400")
-            static let n600 = Color("Palette/Neutral600")
-            static let n900 = Color("Palette/Neutral900")
+            // 中性阶不再取固定 Asset，而是随色彩模式的 bg 派生（PaletteDeriver），
+            // 保证任意主题下 chip/描边/文字灰阶与页面底色同色调。
+            static var n50:  Color { Color(uiColor: ThemeManager.shared.dynamicNeutral(\.n50)) }
+            static var n100: Color { Color(uiColor: ThemeManager.shared.dynamicNeutral(\.n100)) }
+            static var n200: Color { Color(uiColor: ThemeManager.shared.dynamicNeutral(\.n200)) }
+            static var n400: Color { Color(uiColor: ThemeManager.shared.dynamicNeutral(\.n400)) }
+            static var n600: Color { Color(uiColor: ThemeManager.shared.dynamicNeutral(\.n600)) }
+            static var n900: Color { Color(uiColor: ThemeManager.shared.dynamicNeutral(\.n900)) }
         }
 
         // Semantic tokens
@@ -72,9 +74,9 @@ enum Theme {
         }
 
         enum Text {
-            static let primary   = Palette.n900
-            static let secondary = Palette.n600
-            static let tertiary  = Palette.n400
+            static var primary:   Color { Palette.n900 }
+            static var secondary: Color { Palette.n600 }
+            static var tertiary:  Color { Palette.n400 }
             static let onAccent  = Color.white
         }
 
@@ -83,13 +85,13 @@ enum Theme {
             static var background: Color { Color(uiColor: ThemeManager.shared.dynamicBg) }
             /// 卡片底（偏纯白偏暖）；同上
             static var elevated:   Color { Color(uiColor: ThemeManager.shared.dynamicBgElev) }
-            static let subtle     = Color("Palette/Neutral50") // chip / 二级 surface
-            static let strong     = Color("Palette/SurfaceStrong") // 略深的中性
+            static var subtle: Color { Palette.n50 } // chip / 二级 surface
+            static var strong: Color { Color(uiColor: ThemeManager.shared.dynamicNeutral(\.surfaceStrong)) } // 略深的中性
         }
 
         enum Border {
-            static let `default` = Palette.n200
-            static let divider   = Palette.n100
+            static var `default`: Color { Palette.n200 }
+            static var divider:   Color { Palette.n100 }
             // emphasis 见文件底部 Theme.ColorToken.Border.emphasisFallback（深层 View 丢失环境时用）；环境感知版请用 @Environment(\.tabFlavor).color。
         }
 
@@ -136,7 +138,7 @@ enum Theme {
 
 extension Theme.ColorToken.Interactive {
     static var primaryFallback: Color { Color("Palette/Peach") }
-    static var secondary:       Color { Color("Palette/Neutral200") }
+    static var secondary:       Color { Color(uiColor: ThemeManager.shared.dynamicNeutral(\.n200)) }
 }
 
 extension Theme.ColorToken.Border {

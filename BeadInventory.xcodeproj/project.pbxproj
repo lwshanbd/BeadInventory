@@ -88,6 +88,7 @@
 		CC510001A0050001DEADBEEF /* ColorSimilarityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC510001A0050002DEADBEEF /* ColorSimilarityService.swift */; };
 		CM0014A0000000000001BFIL /* ColorModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CM0014A0000000000001FILE /* ColorModeView.swift */; };
 		CS0001A0000000000001BFIL /* ColorScheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS0001A0000000000001FILE /* ColorScheme.swift */; };
+		PD0001A0000000000001BFIL /* PaletteDeriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = PD0001A0000000000001FILE /* PaletteDeriver.swift */; };
 		D10000000000000000000001 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = D10000000000000000000021 /* MLXLMCommon */; };
 		D10000000000000000000002 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = D10000000000000000000022 /* MLXVLM */; };
 		D10000000000000000000003 /* Hub in Frameworks */ = {isa = PBXBuildFile; productRef = D10000000000000000000023 /* Hub */; };
@@ -217,14 +218,15 @@
 		CC510001A0050002DEADBEEF /* ColorSimilarityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorSimilarityService.swift; sourceTree = "<group>"; };
 		CM0014A0000000000001FILE /* ColorModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorModeView.swift; path = BeadInventory/Views/ColorMode/ColorModeView.swift; sourceTree = SOURCE_ROOT; };
 		CS0001A0000000000001FILE /* ColorScheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorScheme.swift; sourceTree = "<group>"; };
+		PD0001A0000000000001FILE /* PaletteDeriver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaletteDeriver.swift; sourceTree = "<group>"; };
 		DD0A1B01A0060002DEADBEEF /* DeductionItemRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionItemRow.swift; sourceTree = "<group>"; };
 		DE0D1C01A0050002DEADBEEF /* DeductionItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionItem.swift; sourceTree = "<group>"; };
 		DE0D1C03A0050002DEADBEEF /* DeductionResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeductionResolver.swift; sourceTree = "<group>"; };
 		EE0B2C01A0070002DEADBEEF /* SimilarColorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimilarColorSheet.swift; sourceTree = "<group>"; };
+		EF254CDDEE254F02A6DD1202 /* TutorialContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialContent.swift; sourceTree = "<group>"; };
 		FF0C3D01A0070002DEADBEEF /* ProjectImageViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectImageViews.swift; sourceTree = "<group>"; };
 		FF0C3F01A0090002DEADBEEF /* ImageDownsampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageDownsampler.swift; sourceTree = "<group>"; };
 		FF0C4001A00A0002DEADBEEF /* ThumbnailMigrationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailMigrationCoordinator.swift; sourceTree = "<group>"; };
-		EF254CDDEE254F02A6DD1202 /* TutorialContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialContent.swift; sourceTree = "<group>"; };
 		TM0001A0000000000001FILE /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -393,6 +395,7 @@
 				38B1A0012F01000100000019 /* SwiftDataModels.swift */,
 				38B1A0012F01000100000047 /* SwiftDataMigration.swift */,
 				CS0001A0000000000001FILE /* ColorScheme.swift */,
+				PD0001A0000000000001FILE /* PaletteDeriver.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -720,6 +723,7 @@
 				385001122FB3A70D00F5DDE2 /* ValidationDiffSheet.swift in Sources */,
 				CM0014A0000000000001BFIL /* ColorModeView.swift in Sources */,
 				CS0001A0000000000001BFIL /* ColorScheme.swift in Sources */,
+				PD0001A0000000000001BFIL /* PaletteDeriver.swift in Sources */,
 				TM0001A0000000000001BFIL /* ThemeManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
