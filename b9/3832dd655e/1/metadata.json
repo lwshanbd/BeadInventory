@@ -1,0 +1,98 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "b93832dd655e",
+  "session_id": "554efeb6-77a2-4c68-abe1-c54d69e3c9a8",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-24T02:43:44.828527Z",
+  "branch": "feat/theme-derived-palette-dark-fix",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "BeadInventory/Views/PlannedProjectsView.swift",
+    "BeadInventory/Views/ScanView.swift",
+    "BeadInventory/Views/ShippingView.swift",
+    "BeadInventory/Views/StatisticsView.swift"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "668a87c080f8",
+  "checkpoint_transcript_start": 1090,
+  "transcript_lines_at_start": 1090,
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-pr-dual-review-2026-07-24T01:14:18.208091Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "pr-dual-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "ee99c28d6d4e",
+      "timestamp": "2026-07-24T01:14:18.208091Z",
+      "native": {
+        "command": "/pr-dual-review"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/pr-dual-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01LHW141hv36rJ1LrSs3HHLu",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "pr-review-toolkit:review-pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "668a87c080f8",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 976,
+        "end": 977,
+        "entry_ids": [
+          "510895ac-3bf2-4eb0-8c4d-1fce1d04a880"
+        ],
+        "tool_use_id": "toolu_01LHW141hv36rJ1LrSs3HHLu"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01LHW141hv36rJ1LrSs3HHLu"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: pr-review-toolkit:review-pr",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 7
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-24T02:43:44.445696Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 10,
+    "human_modified": 12,
+    "human_removed": 0,
+    "total_committed": 10,
+    "total_lines_changed": 32,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
