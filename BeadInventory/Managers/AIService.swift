@@ -192,7 +192,8 @@ struct AIConfig: Codable, Equatable {
     static let anthropicModels = ["claude-sonnet-5", "claude-fable-5", "claude-opus-4-8", "claude-haiku-4-5"]
     // Qwen：3.6/3.7 主线原生多模态（3.6-flash/plus 为官方推荐默认）；VL 专线仍可用
     static let qwenModels = ["qwen3.6-flash", "qwen3.6-plus", "qwen3.7-plus", "qwen3-vl-flash", "qwen3-vl-plus"]
-    static let geminiModels = ["gemini-3-flash", "gemini-3.1-pro", "gemini-3.1-flash-lite"]
+    // Gemini：3.6-flash 为最新稳定版；3.5-flash/-lite 稳定多模态；3.1-pro 仍是 preview ID
+    static let geminiModels = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview"]
 
     static func defaultModel(for provider: AIProvider) -> String {
         switch provider {
@@ -205,7 +206,7 @@ struct AIConfig: Codable, Equatable {
         case .qwen:
             return "qwen3.6-flash"
         case .gemini:
-            return "gemini-3-flash"
+            return "gemini-3.6-flash"
         }
     }
 
