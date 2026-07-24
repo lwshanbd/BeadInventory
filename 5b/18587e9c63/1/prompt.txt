@@ -1,0 +1,350 @@
+你能再切到深色模式看一下吗？我觉得深色模式现在整个都很丑，你看看怎么调整一下比较好。
+
+我希望你去各个功能和页面都看一下。我建议是连代码和 App 实际操作都看一下，去确认一下究竟是怎么样的，比如每个地方的颜色是不是合理、对比度如何、对用户的体验是不是好。
+
+---
+
+<create-pr-command>
+## Overview
+
+Create a pull request for the changes in this session.
+
+## Steps
+
+1. Check for uncommitted changes. If any exist, stage and commit them with a message that describes what changed and why.
+2. Push the branch to the remote.
+3. Open a PR with `gh pr create`. Write a title that summarizes the change and a body that covers what changed, why, and anything a reviewer should know. If the repo has a PR template, follow it.
+4. Report the PR URL when done. Wrap the URL in a `<pr-created>` tag on its own line so the UI can render a live status card, like this: `<pr-created>https://github.com/owner/repo/pull/123</pr-created>`
+
+If a PR already exists for this branch, push any new commits and report the existing URL wrapped in the same `<pr-created>` tag instead of creating a duplicate.
+
+## Target
+
+Repository: lwshanbd/BeadInventory
+Branch: main
+Working directory: /Users/baodi/Documents/GitHub.nosync/BeadInventory
+</create-pr-command>
+
+---
+
+/pr-dual-review https://github.com/lwshanbd/BeadInventory/pull/56
+
+---
+
+<task-notification>
+<task-id>ab4fd8c19bf3e7893</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-baodi-Documents-GitHub-nosync-BeadInventory/554efeb6-77a2-4c68-abe1-c54d69e3c9a8/tasks/ab4fd8c19bf3e7893.output</output-file>
+<status>completed</status>
+<summary>Agent "pr-test-analyzer 审查 PR56" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Report on PR #56 test coverage. Analysis based on the full diff and existing test suite (`ThemeTests` / `ThemeManagerTests` / `ColorPaletteHexTests`).
+
+## Summary
+
+`PaletteDeriverTests` 的 12 个用例对纯数学层（派生阶梯、暗色填充、HSB 转换）的行为覆盖质量高：断言的是不变量（恒等还原、保序、hue 跟随、对比度阈值）而非中间实现，边界（非法 hex、无饱和、高饱和夹取、黑/白往返）齐全。真正的缺口不在数学层，而在**数学层与 token 层之间的胶水**：`dynamicNeutral` 的 trait 分派、`Fill` 硬编码 hex 与测试硬编码 hex 的双份漂移风险。没有 9-10 级的 critical gap。
+
+## Critical Gaps（8-10）
+
+无。派生数学有恒等还原卡住无视觉回归，暗色对比有 4.5:1 阈值测试，最坏的回归路径已被覆盖。
+
+## Important Gaps（5-7）
+
+**1. `test_darkAccentFill_whiteTextContrast` 只测了 10 个 Fill 色中的 7 个 — 评分 7**
+测试硬编码列表缺 `info`（748FA1）、`success`（7A9B6A）、`warning`（C99659）。我手算了这三个色的派生结果，对比度约 6.4-6.5，今天会通过——但整个 Commit 2 的核心承诺是"**所有**填充色白字 ≥4.5"，而这个保证只对列表里的 7 个成立。更深的问题是双份硬编码：`Theme.swift` 的 `Fill` 枚举（/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Views/DesignSystem/Theme.swift 约 567-577 行）和测试各维护一份 hex 列表，未来任何人往 `Fill` 加新色或改值，测试不会失败。防的回归：新增一个偏亮低饱和的 Fill 色（如浅黄），`darkAccentFill` 的 b 下限 0.38 + s 上限 0.75 未必能兜住 4.5:1。建议把 Fill 的 light hex 抽成 `PaletteDeriver` 或 `Theme` 上可枚举的常量数组，测试遍历它（含 4 个语义色）。
+
+**2. `ThemeManager.dynamicNeutral` 的 trait 分派无测试 — 评分 7**
+12 个用例全部绕过 `ThemeManager`（/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/ThemeManager.swift 114-131 行新增段）。`dynamicNeutral` 里的 keypath 取值、`userInterfaceStyle == .dark` 分支、`UIColor(themeHex:)` 转换整条链没有任何断言——如果 light/dark 判断写反或 keypath 传错，纯数学测试全绿但全 App 深色模式坏掉。这在单测里可测：构造注入 `resolvedLight`/`resolvedDark` 的 `ThemeManager` 实例（`ThemeManagerTests` 已有此模式），对返回的 `UIColor` 调 `resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark/.light))`，断言 RGB 等于 `PaletteDeriver.neutrals(forBg:isDark:)` 对应档位。顺带覆盖第二个行为：`updateSwatch(.lightBg)` 之后 `derivedLightNeutrals` 应随之变化（派生是 computed、非缓存，这条现在能过，但若将来有人加缓存忘了失效，这个测试是唯一防线）。`dynamicBg`/`dynamicBgElev` 是本 PR 之前就有的代码，其无测试属存量债务，不算本 PR 缺口，但上述测试顺手就能带上。
+
+**3. Fill light 值与 Asset Catalog 的漂移 — 评分 5**
+"浅色模式 Fill 即原值，像素级不变"这一承诺无测试。`Fill.latte` 硬编码 "C8966E"，而 `Morandi.latte` 走 `Color("Palette/Latte")` Asset——两者今天相等，改了 Asset 忘了改字面量就悄悄分叉（浅色下按钮底和彩色文字不同色）。`ThemeTests` 已在 bundle 里解析 Asset，可加一条：`UIColor(named: "Palette/Latte")` light-resolved RGB == `themeHex("C8966E")`，6 个莫兰迪 + 4 个语义各一行。
+
+## Suggestions（1-4）
+
+- **hue 环绕（评分 4）**：`derive` 里 hue 偏移的负数回绕逻辑（`if h &lt; 0 { h += 360 }`）没有专门用例——现有测试的 bg hue 都在 30-210° 中段。加一个 hue≈5°（偏红）bg 的保序+hue 跟随测试即可覆盖 0/360 环绕。
+- **`darkAccentFill` 退化输入契约（评分 3）**：对纯白/无饱和输入，b 夹到 0.50 得到 808080，白字对比只有 ~3.9，不满足 4.5。当前调用方都是中饱和莫兰迪色所以无实害，但函数是 public 的，值得一个测试把"仅对中饱和中亮度输入保证 AA"的契约钉下来，或在夹取参数改动时报警。
+- **dark 阶梯测试跳过 n100（评分 3）**：`test_darkPreset_preservesContrastLadder` 的梯子是 `[n50, n200, n400, n600, n900]`，静默跳过了 n100——因为 darkRef 里 n50(2D2722) 与 n100(2E281F) 亮度只差 1/255，派生取整后可能持平或反转。可接受，但建议在测试里留一行注释说明是刻意跳过，免得将来被"补全"后变成 flaky。
+- **bgElev 不参与派生 — 不建议加测试（评分 2）**：断言"neutrals 与 bgElev 无关"是在测实现细节而非行为；`neutrals(forBg:)` 的签名本身已经表达了这个设计（只收一个 bg）。若担心将来有人改成双输入，代码注释比回归测试更合适。加了反而会在合理重构（比如真要让 elev 参与微调）时误报。
+- **UI 层不可单测——可接受**：BISegmented 描边、BeadView 高光/内圈、TipView 背景属视觉快照范畴，PR 已做 6 组（3 主题 × 明暗）实机截图验证，单测强行断言 SwiftUI view 内部结构只会产出脆测试。真正的风险是 PR 描述里自己点名的设计约定（"填充用 Fill、彩色前景用 Morandi"）无法被编译器或测试强制——这是 review 纪律问题，不是测试缺口。
+
+## 现有用例脆性评价
+
+- **tolerance=2 合理**。误差来源是单次 hex→HSB→hex 往返的 Double 取整，理论上每通道 ≤1-2；恒等路径 satRatio 精确为 1、hue 偏移精确抵消，不存在累积误差。设成 2 既不会漏掉真回归（参考值改 3/255 以上必挂），也不会因浮点抖动 flaky。
+- **hue accuracy=25 偏宽但恰当**——参考阶梯各档本身相对 bg 有 ±10° 级微差，收紧到 10 会把"保留微差"这个特性误报成 bug。
+- **保序测试是全套里最有价值的**：它测的是任意主题下的行为不变量，重构派生公式（比如换成 OKLCH）时依然成立，符合"测行为不测实现"。
+- 唯一的结构性脆点即 Important #1 所述的**测试内硬编码 hex 列表与生产代码不共享数据源**——恒等测试里 pin 参考阶梯是合理的（那就是契约），但 Fill 列表的双份维护是漂移温床。
+
+**结论**：可合并质量的测试覆盖。建议补 Important #1（遍历真实 Fill 列表）和 #2（`dynamicNeutral` trait 分派），两者合计约 40 行测试代码，堵住的是"数学全对但接线错"这类纯数学测试永远抓不到的回归。
+
+Key files: /Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Models/PaletteDeriver.swift, /Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/ThemeManager.swift, /Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Views/DesignSystem/Theme.swift, /Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventoryTests/PaletteDeriverTests.swift</result>
+<usage><subagent_tokens>55582</subagent_tokens><tool_uses>8</tool_uses><duration_ms>149794</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad0351cf507cfec7b</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-baodi-Documents-GitHub-nosync-BeadInventory/554efeb6-77a2-4c68-abe1-c54d69e3c9a8/tasks/ad0351cf507cfec7b.output</output-file>
+<status>completed</status>
+<summary>Agent "silent-failure-hunter 审查 PR56" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Audit complete. Here is the error-handling / silent-failure review of PR #56 ("色彩模式全 token 化"). Report only — no code changed, no GitHub comments posted.
+
+# Error Handling Audit — PR #56
+
+## Critical
+
+### C1. Contrast collapse on extreme user-picked bg — no floor, no warning, entire UI text can become invisible
+`/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Models/PaletteDeriver.swift:74`
+
+`derive()` shifts every step's brightness by `(themeBg.b - refBg.b)` and clamps to `[0, 1]`. The light reference bg has `b ≈ 0.98`. If the user picks a dark color for the *light* bg slot (nothing stops them — `SwatchPickerSheet` at `ColorModeView.swift:342-365` is an unrestricted `ColorPicker`, applied live via `updateSwatch`), the entire ladder shifts down and clamps: `n900` (light ref b ≈ 0.18) goes to b = 0 — **black text on a black background**. The mirror case (near-white picked as dark bg) yields white-on-white. Because this PR routes `Text.primary/secondary/tertiary`, `Border.*`, and `Surface.subtle/strong` through this ladder (`Theme.swift:60-65, 84-90`), the failure is total: every label, chip, and divider in the app loses contrast simultaneously, including the "reset to default" UI the user would need to escape. Saturation gets a clamp (`min(..., 0.9)` at line 73, with a comment justifying it); brightness deltas get no analogous guard.
+
+- **Hidden failure**: not an exception — a semantic silent failure. The deriver "succeeds" and returns a valid but unusable palette.
+- **User impact**: one careless drag in the color picker can make the app unreadable, with recovery only via the system-drawn picker or reinstall. No log, no clamp, no warning.
+- **Recommendation**: enforce a minimum brightness distance between each derived step and the target bg (or clamp `themeBg.b` into a sane band per mode before deriving, e.g. light bg b ≥ ~0.7, dark bg b ≤ ~0.35), and `logError`/assert when input falls outside it. The existing test `test_mistCoastLight_preservesContrastLadder` only checks *ordering* for a well-behaved preset — add a test with a black light-bg asserting `|n900.b − bg.b|` stays above a threshold.
+
+## Important
+
+### I1. Invalid stored bg hex triggers two *divergent* silent fallbacks — mismatched UI, zero logging, corruption never surfaced or repaired
+`/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Models/PaletteDeriver.swift:61` and `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Models/ColorScheme.swift:31-37`
+
+When `resolvedLight.bg` is not valid 6-digit hex:
+- `dynamicBg` (`ThemeManager.swift:92-99`) → `UIColor(themeHex:)` → falls back to **`.systemBackground`** (pure white / pure black system color).
+- `neutrals(forBg:)` → `hsb(fromHex:) ?? refBg` → falls back to the **cream-latte reference ladder**.
+
+So one bad value produces a stark white system background wearing warm beige text/chips/borders — precisely the "换主题只换背景、其余 UI 混搭" look this PR exists to eliminate — and **neither path logs anything**. The project has a `logError` convention (`InventoryManager.swift:260`) and an explicit no-silent-failure rule; this PR adds a second, deeper consumer of bg validity without adding a single diagnostic. Six months from now, a user screenshot of this mongrel UI would be undebuggable: no Sentry event, no console line, and the corrupt value persists forever because nothing repairs it.
+
+- **How invalid data gets in**: `normalizeHex` (`ThemeManager.swift:176-179`) only strips `#` and uppercases — it validates nothing. `loadOverridesFromDefaults` (`ThemeManager.swift:228-235`) trusts raw UserDefaults strings. `SDColorScheme` hex fields ride CloudKit sync (per the Task 20 comment), so a future/older client writing e.g. 8-digit `RRGGBBAA` silently degrades every synced device.
+- **Recommendation**: validate at ingestion (make `normalizeHex` reject/repair to the default palette + `logError("theme_bg_hex_invalid", metadata: [hex])` once), and keep the deriver fallback as defense-in-depth — but make both fallbacks agree (fall back to the reference *bg + ladder together*, not systemBackground for one and cream for the other).
+
+### I2. `darkAccentFill` invalid-hex passthrough returns the worst possible value for its stated purpose — and the test canonizes it
+`/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Models/PaletteDeriver.swift:96-101`
+
+`guard let c = hsb(fromHex: hexString) else { return hexString }` — on parse failure it returns the **light** hex unchanged, so in dark mode the caller renders exactly the "刺眼的浅色块 / 发光贴片" the doc comment says this function exists to prevent, with failed white-text contrast. Today every call site is a hardcoded literal in `Theme.swift:145-155` (all valid, so this branch is dead in production), which is precisely why it needs an `assertionFailure` + `logError`: the moment a future caller feeds it a user-supplied or synced hex, the failure will be silent and purely visual. Worse, `test_darkAccentFill_invalid_passthrough` (`PaletteDeriverTests.swift:132-134`) enshrines the passthrough as *intended* behavior, so a future fix now reads as a test regression.
+
+- **Recommendation**: `assertionFailure` in debug, `logError` in release, and return a safe neutral dark fill rather than the input. Update the test to assert the safe behavior.
+
+### I3. `dynamicNeutral` trait closure: unmemoized full derivation + mutable-state read outside any observation/actor guarantee
+`/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/ThemeManager.swift:123-130`
+
+Two distinct issues in the trait provider closure:
+
+1. **Recompute per resolution**: the closure calls `derivedLightNeutrals`/`derivedDarkNeutrals`, which run the full 7-step HSB derivation. Every access of `Theme.ColorToken.Text.primary` (Theme.swift:75) mints a fresh `UIColor` whose provider re-derives the ladder on each trait resolution. Text/border tokens are the hottest colors in the app; given this repo's perf history (PR #51/#52/#55 were all "hidden main-thread work" fixes), the derivation should be cached keyed on `(bg, isDark)` and invalidated in `apply`/`updateSwatch`.
+2. **Read context is unspecified**: the closure reads `self.resolvedLight/resolvedDark` (mutable, non-`@MainActor`, mutated by `updateSwatch` during live picker drags) from whatever context UIKit resolves dynamic colors in. The existing comment on `dynamicBg` (lines 86-90) documents the *observation* story, but nothing documents or enforces the *threading* story; a torn read wouldn't crash here but the pattern is fragile, and the new code silently inherits it for seven more tokens. Also note the closure captures the singleton strongly — fine for `.shared`, but any `test_make` instance whose colors leak into cached UIKit state will be kept alive; worth a comment.
+
+## Suggestions
+
+### S1. Force-unwraps on "constant" reference hexes are un-audited crash grenades
+`/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Models/PaletteDeriver.swift:60, 68`
+
+`hsb(fromHex: ref.bg)!` and `hsb(fromHex: stepHex)!` are safe today because the ladder is a private literal, and line 60 documents this. But nothing *verifies* it: a one-character typo in a future ladder tweak (`"3A328"`) becomes a runtime crash in the theme path on every device, in both light and dark. Cheap fix: one unit test that round-trips every field of `lightRef`/`darkRef` through `hsb(fromHex:)`, so the invariant the `!` relies on is enforced at CI time.
+
+### S2. Latent NaN: `satRatio` divides by `refBg.s` with no assertion
+`/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Models/PaletteDeriver.swift:65`
+
+The comment says "参考 bg 有固定饱和度，分母安全" — true now, but if a future ladder edit makes the reference bg achromatic *and* the theme bg is also achromatic, `0/0 = NaN` flows through `min(NaN, 2.5)` into `hex(fromH:s:b:)`, where `Int((NaN * 255).rounded())` traps. An `assert(refBg.s &gt; 0)` (or folding into the S1 test) turns a delayed production crash into an immediate development failure.
+
+### S3. Test helpers force-unwrap the value under test — regressions crash instead of failing
+`/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventoryTests/PaletteDeriverTests.swift:11, 109`
+
+`UInt32(hex, radix: 16)!` inside `assertHexEqual` and `luminance` parses the *actual output* of the code under test. If a regression makes `derive()`/`darkAccentFill` emit malformed hex (the very failure class these tests guard), the suite crashes mid-run with a bare unwrap trap instead of reporting which assertion failed with which value. Use `try XCTUnwrap(UInt32(hex, radix: 16), "malformed hex: \(hex)")`.
+
+### S4. `UIColor(themeHex:)` fallback is background-appropriate but now serves text tokens
+`/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Models/ColorScheme.swift:31` used at `ThemeManager.swift:128`
+
+The default fallback is `.systemBackground`. Unreachable for derived neutrals today (the deriver always emits valid hex), but if it ever fires for `n900` via `dynamicNeutral`, primary text becomes background-colored — invisible. Pass an explicit per-usage fallback (e.g. `.label` for text tokens) or assert on the parse failure so the "impossible" branch is at least loud.
+
+### S5. What's done well (worth keeping)
+
+- `test_invalidBg_fallsBackToReferenceLadder` explicitly pins the neutral-fallback behavior — the fallback is deterministic and tested, which is far better than an unpinned one (it just needs the logging from I1).
+- The identity test (`test_creamLatteLight/Dark_matchesAssetLadder`) locks "default theme == old Asset values", eliminating a whole class of silent visual regressions.
+- The `currentSchemeLabel` localization change (`ColorModeView.swift:113-116`) correctly relies on `String(localized:)` returning the key verbatim for custom names, and — unusually — documents both branches of the fallback in a comment.
+
+## Summary
+
+No crashes or data loss in the happy path, and the deriver's math is well-tested for preset inputs. The systemic problem: this PR makes the *entire* app chrome a pure function of one user/sync-controlled string (`resolvedLight/Dark.bg`) while adding **zero** validation, **zero** logging, and two mutually inconsistent silent fallbacks around it. The two fixes with the highest payoff are a brightness guard in `derive()` (C1) and ingestion-time validation + `logError` in `normalizeHex`/`loadOverridesFromDefaults` (I1); everything else hardens edges around those.</result>
+<usage><subagent_tokens>85931</subagent_tokens><tool_uses>9</tool_uses><duration_ms>182855</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a99a90580c9d2d2db</task-id>
+<tool-use-id>toolu_012gQ2H3RHMjRdxL2mnQ9QVG</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-baodi-Documents-GitHub-nosync-BeadInventory/554efeb6-77a2-4c68-abe1-c54d69e3c9a8/tasks/a99a90580c9d2d2db.output</output-file>
+<status>completed</status>
+<summary>Agent "type-design-analyzer 审查 PR56" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Analysis complete. Here is the type-design review of PR #56 (feat(theme): 色彩模式全 token 化).
+
+Files reviewed: `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Models/PaletteDeriver.swift`, `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Views/DesignSystem/Theme.swift`, `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Views/DesignSystem/TabFlavor.swift`, `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/ThemeManager.swift`, `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Models/ColorScheme.swift`, `/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventoryTests/PaletteDeriverTests.swift`, plus the Asset colorset JSONs.
+
+---
+
+## Type: DerivedNeutrals (PaletteDeriver.swift:16-24)
+
+### Invariants Identified
+- All 7 fields are valid `"RRGGBB"` uppercase hex (stated only in the doc comment "hex 均为 'RRGGBB' 大写")
+- Brightness ladder ordering: light mode n50 &gt; n100 &gt; n200 &gt; n400 &gt; n600 &gt; n900; dark mode reversed. This is the invariant every consumer (Text.primary/secondary/tertiary, Border, Surface) implicitly relies on for contrast
+- Hue coherence: all steps share the theme bg's hue family
+
+### Ratings
+- **Encapsulation**: 4/10 — 7 public `var` fields with the implicit memberwise init; any code can construct an out-of-order ladder or put `"purple"` in `n900`. Mitigated in practice: the only producer is `PaletteDeriver.neutrals`, and consumption goes through `ThemeManager.dynamicNeutral(_ keyPath:)`, which is a nice narrow read surface.
+- **Invariant Expression**: 5/10 — field names express the ladder concept well; the ordering invariant and hex-validity invariant exist only in comments and tests, not in the type.
+- **Invariant Usefulness**: 8/10 — grouping the ladder into one value (instead of 7 loose strings) is the right call; the `KeyPath&lt;DerivedNeutrals, ColorHex&gt;` accessor pattern in ThemeManager.swift:123 is genuinely elegant and prevents typo'd token names.
+- **Invariant Enforcement**: 3/10 — nothing at construction. The ladder-ordering invariant is enforced only by `test_mistCoastLight_preservesContrastLadder` / `test_darkPreset_preservesContrastLadder`, and the dark test skips n100 (the dark reference n50 `2D2722` vs n100 `2E281F` are nearly equal — the reference ladder itself is only barely monotonic there).
+
+### Strengths
+Single producer, keypath-based consumer, `Equatable` for testability. For a value that is derived-only and never persisted, heavyweight validation would be overkill.
+
+### Concerns
+- The ordering invariant is load-bearing (text contrast) but lives entirely in two tests over two sample bgs. A pathological custom bg could produce an inverted or collapsed ladder and nothing in the type would notice.
+
+### Recommended Improvements
+- Change fields to `let` and mark the init `fileprivate` (or move `DerivedNeutrals` inside `PaletteDeriver`) so `neutrals(forBg:isDark:)` is the only constructor. Zero complexity cost, closes the front door.
+- Add a cheap `assert`/debug check (or a property-style test over many random bgs) that the ladder stays monotonic in brightness for arbitrary valid bg inputs, since users can enter arbitrary hex.
+- Add an `allSteps: [ColorHex]` or `Sequence` helper so tests stop hand-listing fields (the dark test's missing n100 is exactly the bug that pattern invites).
+
+---
+
+## Type: PaletteDeriver (enum namespace + neutrals/darkAccentFill/hsb/hex)
+
+### Invariants Identified
+- Identity property: deriving from the reference bg reproduces the Asset ladder (no visual regression) — tested
+- Saturation clamps: satRatio ≤ 2.5, per-step s ≤ 0.9; brightness clamped to [0,1]
+- Hue preservation: per-step hue offset relative to reference bg is carried over, normalized to [0,360)
+- Invalid bg → fall back to reference ladder (documented and tested)
+- `darkAccentFill`: hue preserved, b forced into [0.38, 0.50], s ≤ 0.75 → white-text AA contrast (tested)
+- Internal force-unwraps (`hsb(fromHex: ref.bg)!`, `hsb(fromHex: stepHex)!`) assume reference constants are valid hex
+
+### Ratings
+- **Encapsulation**: 8/10 — caseless enum (uninstantiable), no state, `ReferenceLadder` and both reference constants private. Exactly right for a pure-function module.
+- **Invariant Expression**: 7/10 — fallback semantics, clamp rationale, and the hue-offset subtlety are documented at the point they matter; the "不依赖 UIKit 便于单测" separation is expressed structurally. Docked because `hsb`/`hex` are public pure functions whose domain contracts (s,b in 0...1; h in 0..&lt;360) are comment-only.
+- **Invariant Usefulness**: 9/10 — the identity property plus clamps prevent the two real bug classes here: visual regression on the default theme, and neon-tinted text on high-saturation custom bgs. Both are directly tested.
+- **Invariant Enforcement**: 6/10 — runtime clamps and fallbacks are comprehensive at the `neutrals` entry point. But `hex(fromH:s:b:)` accepts any Double: a negative `h` yields a negative `hPrime` that silently falls into the `..&lt;1` branch and produces a wrong-hue (not crashed, just wrong) color; `s &gt; 1` produces out-of-gamut intermediate values rescued only by the final channel clamp. Internal callers always pre-normalize, so this is latent, not live.
+
+### Strengths
+This is the best-designed type in the PR. The reference-ladder-as-data approach makes the "default theme unchanged" invariant checkable, and the test suite (identity, ladder order, achromatic, clamping, invalid input, round-trip, WCAG contrast) is the strongest invariant enforcement in the codebase even though it's external to the type.
+
+### Concerns
+- `darkAccentFill` invalid-hex passthrough (line 97: `return hexString`) returns the garbage input, which downstream becomes `UIColor(themeHex:)`'s `.systemBackground` fallback — a background color used as an accent fill. Currently unreachable (all callers pass compile-time literals), but the fallback semantics are wrong for the accent role.
+- `test_darkAccentFill_whiteTextContrast` covers 7 light hexes but `Fill` uses 10 — `748FA1` (info), `7A9B6A` (success), `C99659` (warning) are not in the contrast test list. The b-clamp makes them almost certainly pass, but the test's claim "所有 Fill 色" is currently false.
+- The `h` normalization dance (`truncatingRemainder` + `if h &lt; 0`) is duplicated at line 71-72 versus the missing normalization inside `hex(fromH:)` — normalizing once inside `hex` would remove the negative-hue trap entirely.
+
+### Recommended Improvements
+- Normalize `h` (and clamp s/b) inside `hex(fromH:s:b:)`; it costs three lines and makes the public function total.
+- Add the three missing semantic hexes to the contrast test.
+
+---
+
+## Type: PaletteDeriver.HSB (lines 105-109)
+
+### Invariants Identified
+- h in 0..&lt;360 (comment), s,b in 0...1 (comment), h meaningless when s == 0 (comment, "置 0")
+
+### Ratings
+- **Encapsulation**: 3/10 — bare mutable fields, memberwise init, all invariants violable.
+- **Invariant Expression**: 5/10 — ranges documented inline, which is honest, but comment-only.
+- **Invariant Usefulness**: 7/10 — the s==0 ⇒ h=0 convention matters for `Equatable` (two grays with different "hues" would compare unequal) and `hsb(fromHex:)` does honor it.
+- **Invariant Enforcement**: 2/10 — none; only `hsb(fromHex:)` produces normalized values.
+
+### Assessment
+For a file-local math value carrier used by tests, this is a pragmatic 80% solution — I would not add a validating init here; the maintenance cost outweighs the risk while the type stays inside `PaletteDeriver`. Making the fields `let` is the one free improvement. If it ever escapes this file, revisit.
+
+---
+
+## Type: Theme.ColorToken.Fill (Theme.swift:136-156)
+
+### Invariants Identified
+- Every Fill color: light = the design's accent light value, dark = `darkAccentFill(light)` — i.e. "dark fill is always the darkened derivation, never the Asset's lightened dark variant"
+- Fill light values must equal the corresponding Asset colorset light values (Morandi.latte light == Fill.latte light)
+
+### Ratings
+- **Encapsulation**: 7/10 — the `private static func fill(_:)` helper is the right shape: the light/dark policy exists in exactly one place, and callers can't get a half-derived color.
+- **Invariant Expression**: 6/10 — the doc comment explaining Fill-vs-Morandi (发光贴片 problem) is genuinely good and tells consumers *when* to use which. But the second invariant — "these literals mirror the Asset light values" — is expressed nowhere; a reader can't tell `"C8966E"` is a copy of `Palette/Peach`'s light component.
+- **Invariant Usefulness**: 9/10 — this token solves a real, observed bug (white-on-lightened-accent contrast failure in dark mode) and view adoption is broad (ShippingView, StatisticsView, SettingsView, etc.).
+- **Invariant Enforcement**: 3/10 — the Asset-mirror invariant is enforced by nothing. I verified today the 10 literals match the colorsets exactly (Peach C8966E, Coral C9928E, Mint 9FB089, Sky 94A8B6, Lavender B196AE, Lemon D8B97A; Semantic Error B86A60, Info 748FA1, Success 7A9B6A, Warning C99659). But the value now lives in **three** unlinked places: the colorset JSON, the `Fill` literals, and the test's hardcoded list. Retune any accent in the Asset catalog and light-mode `Morandi.latte` changes while light-mode `Fill.latte` silently keeps the old hue — a mixed-hue UI that no test catches.
+
+### Concerns
+This is the drift risk the task asked about, and it is real. It also propagates into `TabFlavor`: `.color` reads the Asset, `.fill` reads the literal — the "color and fill are the same hue family" invariant of TabFlavor depends on this unenforced mirror.
+
+### Recommended Improvements
+Pick the cheapest single-source-of-truth fix; two options, either is enough:
+1. Read the light value from the Asset at runtime: resolve `UIColor(named: "Palette/Peach")` under a forced light trait, convert to hex, feed `darkAccentFill`. Removes the literals entirely; small runtime cost, cached easily.
+2. Keep the literals but make them the only copy: a private `enum AccentHex { static let latte = "C8966E" ... }` referenced by `Fill`, by the test (via `@testable`), and asserted against the Asset in a unit test (`XCTAssertEqual(hexOf(UIColor(named:"Palette/Peach"), light), AccentHex.latte)`). That converts drift from silent to test-failure.
+
+Option 2 is less invasive and I'd recommend it.
+
+---
+
+## Type: Theme.ColorToken.Shadow (Theme.swift:160-170)
+
+### Invariants Identified
+- Dark mode ⇒ shadow is `.clear` (opacity policy centralized in one private helper)
+
+### Ratings
+- **Encapsulation**: 8/10 — private helper, only two curated opacities exposed.
+- **Invariant Expression**: 8/10 — the doc comment states both the rule and the compensating mechanism (borders + surface contrast take over in dark).
+- **Invariant Usefulness**: 8/10 — kills a whole class of "dirty dark UI" bugs at the token layer instead of per-view.
+- **Invariant Enforcement**: 6/10 — the trait closure enforces it wherever the token is used; but nothing stops a view from writing `.shadow(color: .black.opacity(0.1))` directly. Note ShippingView.swift:172 etc. use `Fill.latte.opacity(0.25)` as shadow color — colored glows bypass `Shadow` entirely and will still render in dark mode. If the "no shadows in dark" invariant is meant globally, those are leaks; if colored glows are intentionally exempt, say so in the Shadow doc comment.
+
+---
+
+## Type: TabFlavor.fill (TabFlavor.swift:29-36)
+
+### Invariants Identified
+- Case-wise pairing: `fill` must be the fill-variant of the same hue as `color` (inventory↔latte, workshop↔mauve, statistics↔sage, more↔mist)
+- Role separation documented: `color` for foreground (text/icon/stroke), `fill` for backgrounds
+
+### Ratings
+- **Encapsulation**: 6/10 — enum with computed properties is fine; but `color` bypasses the supposedly-encapsulated palette with raw `Color("Palette/Peach")` string literals (see below).
+- **Invariant Expression**: 7/10 — the doc comment on `fill` clearly states the role split and points to `Fill`. The pairing itself is expressed as two parallel switches, which the compiler exhaustiveness-checks per-case but cannot cross-check for hue agreement.
+- **Invariant Usefulness**: 8/10 — exactly the API views need; keeps the "which variant do I use on a button" decision out of every call site.
+- **Invariant Enforcement**: 4/10 — pairing is convention; a future case added with mismatched color/fill compiles fine. And as noted, the pairing transitively depends on the unenforced Fill↔Asset mirror.
+
+### Recommended Improvement
+Collapse the two switches into one: `private var accent: (color: Color, fill: Color)` returning both per case, or a single `switch` mapping each case to a Morandi name that both `color` and `fill` derive from. One switch = pairing enforced structurally.
+
+---
+
+## Cross-cutting: `ColorHex = String` typealias (ColorScheme.swift:12)
+
+Pre-existing, but this PR triples the number of APIs trafficking in it, so it's worth a verdict.
+
+- The "RRGGBB 大写无前缀" invariant is comment-only. Nothing prevents `"#faf5ec"`, `"FAF5"`, or `"not-a-hex"` from flowing through — and all three parse layers each re-defend independently: `UIColor(themeHex:)` falls back to `.systemBackground`, `PaletteDeriver.hsb` returns nil, `neutrals` falls back to the reference ladder, `darkAccentFill` passes through.
+- Concrete inconsistency this enables today: `ThemeManager.updateSwatch` → `normalizeHex` (ThemeManager.swift:176) only strips `#` and uppercases — it does **not** validate 6 hex digits. A garbage swatch persists to UserDefaults; on next launch the bg renders as `.systemBackground` (white/near-black) while the neutrals derive from the *cream-latte reference ladder*. Two different fallback policies fire for the same bad input, producing a warm-gray-on-system-white mismatch — precisely the混搭 this PR set out to eliminate. Reachable only if the color-picker path can ever emit a non-6-digit string, but the type system offers no proof it can't.
+- Ratings for `ColorHex` as a type: Encapsulation 1/10, Expression 3/10 (name documents intent, guarantees nothing), Usefulness 5/10 (readability only), Enforcement 1/10.
+
+**Recommendation (pragmatic, non-breaking-ish):** don't retrofit a full `struct ColorHex` across the codebase in this PR. Two cheaper moves:
+1. Make `normalizeHex` validating (reject/clamp to previous value on non-6-hex input) — that closes the only real user-controlled entry point, and then every internal `ColorHex` is valid by construction of the pipeline.
+2. If you later want the compile-time guarantee, a `struct ColorHex { let raw: String; init?(_ raw: String) }` with `Codable` conformance would let `ColorPalette`, `DerivedNeutrals`, and the deriver drop all four scattered fallback paths — a good follow-up, poor fit for this already-large diff.
+
+---
+
+## Cross-cutting: `fileprivate Palette` (Theme.swift:49)
+
+The access modifier still compiles and still does its literal job — no code outside Theme.swift references `Palette.*`. But the encapsulation is now largely **nominal**: the actual protected resource is the asset-name strings, and those are used raw in four other places in the same file (`Decorative.latte`, `Morandi.*`, `Interactive.primaryFallback`, `Border.emphasisFallback` all say `Color("Palette/Peach")` instead of `Palette.peach`) and in TabFlavor.swift (4 more). So the fence stands while the gate is open. Meanwhile the *new* members (`n50…n900` routing through `ThemeManager.dynamicNeutral`) are the part where `fileprivate` genuinely earns its keep — Text/Surface/Border consume them and business code cannot shortcut to a stale static neutral. Verdict: keep `fileprivate`, but route the same-file string literals through `Palette.*`, and either give TabFlavor a sanctioned accessor (e.g. expose the four flavor colors from `ColorToken`) or accept and document that TabFlavor is part of the design-system boundary.
+
+---
+
+## Summary scores
+
+| Type | Encapsulation | Expression | Usefulness | Enforcement |
+|---|---|---|---|---|
+| DerivedNeutrals | 4 | 5 | 8 | 3 |
+| PaletteDeriver | 8 | 7 | 9 | 6 |
+| PaletteDeriver.HSB | 3 | 5 | 7 | 2 |
+| ColorToken.Fill | 7 | 6 | 9 | 3 |
+| ColorToken.Shadow | 8 | 8 | 8 | 6 |
+| TabFlavor.fill | 6 | 7 | 8 | 4 |
+| ColorHex (typealias) | 1 | 3 | 5 | 1 |
+
+**Top three actions by value-per-cost:**
+1. Kill the Fill↔Asset drift: single-source the 10 accent hexes and add an Asset-agreement unit test (also fixes the 3 hexes missing from the WCAG test).
+2. Make `ThemeManager.normalizeHex` validating — closes the one path where an invalid `ColorHex` can enter and persist, and with it the mismatched-fallback bug.
+3. `let` fields + non-public init on `DerivedNeutrals` (and `let` on HSB) — free immutability, single-producer guarantee.
+
+The overall design direction is sound: pure derivation with an identity property and a real test suite is a big step up from scattered hex literals, and the weaknesses are concentrated in string-typed hex and duplicated constants rather than in the derivation architecture itself.</result>
+<usage><subagent_tokens>65129</subagent_tokens><tool_uses>13</tool_uses><duration_ms>190549</duration_ms></usage>
+</task-notification>
