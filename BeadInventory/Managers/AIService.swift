@@ -183,22 +183,27 @@ struct AIConfig: Codable, Equatable {
     static let defaultQwenURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     static let defaultGeminiURL = "https://generativelanguage.googleapis.com/v1beta"
 
-    static let kimiModels = ["kimi-k2.5", "kimi-k2.6"]
-    static let openAIModels = ["gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.4", "gpt-5.5"]
-    static let anthropicModels = ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"]
-    static let qwenModels = ["qwen3-vl-flash", "qwen3-vl-plus", "qwen3.5-plus"]
+    // 2026-07 更新。均需支持图像输入（识别用）。
+    // Kimi：K3（2026-07-16 发布，原生视觉）；K2.5/2.6 平台 8/31 落日，仅存量用户可用
+    static let kimiModels = ["kimi-k3", "kimi-k2.6", "kimi-k2.5"]
+    // OpenAI：GPT-5.6 家族（2026-07-09）：luna 入门 / terra 中档 / sol 旗舰
+    static let openAIModels = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"]
+    // Anthropic：Claude 5 家族（fable 5 = 最新旗舰）+ Opus 4.8 / Haiku 4.5
+    static let anthropicModels = ["claude-sonnet-5", "claude-fable-5", "claude-opus-4-8", "claude-haiku-4-5"]
+    // Qwen：3.6/3.7 主线原生多模态（3.6-flash/plus 为官方推荐默认）；VL 专线仍可用
+    static let qwenModels = ["qwen3.6-flash", "qwen3.6-plus", "qwen3.7-plus", "qwen3-vl-flash", "qwen3-vl-plus"]
     static let geminiModels = ["gemini-3-flash", "gemini-3.1-pro", "gemini-3.1-flash-lite"]
 
     static func defaultModel(for provider: AIProvider) -> String {
         switch provider {
         case .kimi:
-            return "kimi-k2.5"
+            return "kimi-k3"
         case .openai:
-            return "gpt-5.4-mini"
+            return "gpt-5.6-luna"
         case .anthropic:
-            return "claude-sonnet-4-6"
+            return "claude-sonnet-5"
         case .qwen:
-            return "qwen3-vl-flash"
+            return "qwen3.6-flash"
         case .gemini:
             return "gemini-3-flash"
         }
