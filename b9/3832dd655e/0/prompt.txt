@@ -60,3 +60,7 @@ The PR's "Reviewer 注意" frames the split as a going-forward convention, so th
 **Bottom line:** No Critical issues — the pbxproj wiring, HSB math, test target inclusion, and light-mode fidelity of the migrated tokens all check out. The two things I'd fix before merge are the `InventoryView:858` white-gloss miss (same-block inconsistency this PR introduced) and the `BIListRow:95` `Status.warning`→`Fill.honey` light-mode hue change. The broader un-migrated fill inventory (finding 3) is legitimately staged, but should land as a tracked follow-up so the dark-mode work isn't mistaken for complete.</result>
 <usage><subagent_tokens>107045</subagent_tokens><tool_uses>21</tool_uses><duration_ms>404095</duration_ms></usage>
 </task-notification>
+
+---
+
+push
