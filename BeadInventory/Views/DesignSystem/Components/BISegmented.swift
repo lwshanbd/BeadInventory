@@ -2,7 +2,7 @@
 //  BISegmented.swift
 //  BeadInventory
 //
-//  跑道型分段控件：选中项用浅色卡片+柔和投影，未选中透明。
+//  跑道型分段控件：选中项用 elevated 底 + 描边（浅色另有柔和投影，深色投影归零），未选中透明。
 //
 
 import SwiftUI

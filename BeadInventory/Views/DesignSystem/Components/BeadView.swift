@@ -60,7 +60,8 @@ struct BeadView: View {
         .shadow(color: Theme.ColorToken.Shadow.medium, radius: 1.5, x: 0, y: 1)
     }
 
-    private static let highlight = Color(uiColor: UIColor { trait in
+    /// 深浅感知的白高光（深色减弱），InventoryView 网格色块等同类高光复用
+    static let highlight = Color(uiColor: UIColor { trait in
         UIColor.white.withAlphaComponent(trait.userInterfaceStyle == .dark ? 0.32 : 0.55)
     })
 

@@ -855,7 +855,7 @@ struct ColorCardView: View {
                         RoundedRectangle(cornerRadius: 12)
                             .fill(
                                 RadialGradient(
-                                    colors: [Color.white.opacity(0.55), .clear],
+                                    colors: [BeadView.highlight, .clear],
                                     center: UnitPoint(x: 0.32, y: 0.28),
                                     startRadius: 0,
                                     endRadius: 50

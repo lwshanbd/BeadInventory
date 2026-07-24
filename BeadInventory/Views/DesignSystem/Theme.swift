@@ -81,9 +81,9 @@ enum Theme {
         }
 
         enum Surface {
-            /// 米奶页面底；运行时由 ThemeManager.shared 提供，自动跟随系统外观
+            /// 页面底；随色彩模式（默认奶油拿铁为米奶暖调），自动跟随系统外观
             static var background: Color { Color(uiColor: ThemeManager.shared.dynamicBg) }
-            /// 卡片底（偏纯白偏暖）；同上
+            /// 卡片底；随色彩模式（默认为偏纯白偏暖），同上
             static var elevated:   Color { Color(uiColor: ThemeManager.shared.dynamicBgElev) }
             static var subtle: Color { Palette.n50 } // chip / 二级 surface
             static var strong: Color { Color(uiColor: ThemeManager.shared.dynamicNeutral(\.surfaceStrong)) } // 略深的中性
@@ -96,7 +96,8 @@ enum Theme {
         }
 
         enum Interactive {
-            // primary 走 @Environment(\.tabFlavor).color；secondary 与 primaryFallback 见文件底部扩展。
+            // primary：填充底用 @Environment(\.tabFlavor).fill（深色自动加深），
+            // 彩色前景才用 .color。secondary 与 primaryFallback 见文件底部扩展。
             static let destructive = Status.error
         }
 
@@ -118,7 +119,8 @@ enum Theme {
         }
 
         /// 奶油拿铁 / 莫兰迪 6 色 · 与设计稿 tokens.css 对齐
-        /// 通过现有 Palette/*.colorset 别名，dark mode 自动跟随
+        /// 通过现有 Palette/*.colorset 别名；dark 变体是「提亮」版，为彩色文字/
+        /// 图标/描边设计——**禁止当填充底压白字**，填充场景一律用 Fill。
         enum Morandi {
             static let latte = Color("Palette/Peach")      // 库存锚 #C8966E
             static let rose  = Color("Palette/Coral")      // 警示/编辑 #C9928E
@@ -131,8 +133,9 @@ enum Theme {
         /// 强调「填充」色：按钮 / FAB / Hero 渐变 / 激活 chip 的底色。
         ///
         /// 与 Morandi（彩色文字、图标用，dark 提亮）不同，Fill 在深色下自动
-        /// 「加深」（PaletteDeriver.darkAccentFill），保证 onAccent 白字对比、
-        /// 且不会在近黑页面上形成刺眼的浅色块。填充场景一律用 Fill，不用 Morandi。
+        /// 「加深」（PaletteDeriver.darkAccentFill）。当前色板的白字对比 ≥4.5
+        /// 由 PaletteDeriverTests 单测卡住（非函数级保证——新增 Fill 色必须
+        /// 同步加进那条单测）。填充场景一律用 Fill，不用 Morandi。
         enum Fill {
             private static func fill(_ lightHex: String) -> Color {
                 Color(uiColor: UIColor { trait in
@@ -142,17 +145,42 @@ enum Theme {
                     return UIColor(themeHex: hex)
                 })
             }
-            static var latte: Color { fill("C8966E") }
-            static var rose:  Color { fill("C9928E") }
-            static var sage:  Color { fill("9FB089") }
-            static var mist:  Color { fill("94A8B6") }
-            static var mauve: Color { fill("B196AE") }
-            static var honey: Color { fill("D8B97A") }
+            static var latte: Color { fill(AccentHex.latte) }
+            static var rose:  Color { fill(AccentHex.rose) }
+            static var sage:  Color { fill(AccentHex.sage) }
+            static var mist:  Color { fill(AccentHex.mist) }
+            static var mauve: Color { fill(AccentHex.mauve) }
+            static var honey: Color { fill(AccentHex.honey) }
             /// 语义色的填充版（Semantic/* light 值，深色自动加深）
-            static var error:   Color { fill("B86A60") }
-            static var info:    Color { fill("748FA1") }
-            static var success: Color { fill("7A9B6A") }
-            static var warning: Color { fill("C99659") }
+            static var error:   Color { fill(AccentHex.error) }
+            static var info:    Color { fill(AccentHex.info) }
+            static var success: Color { fill(AccentHex.success) }
+            static var warning: Color { fill(AccentHex.warning) }
+        }
+
+        /// Fill 的 light 值 = 对应 Asset colorset 的 light 分量（手动镜像）。
+        /// 单一数据源：Fill 与单测都引用这里；与 Asset 的一致性由
+        /// ThemeAccentHexTests 卡住，设计师改 colorset 时测试会失败提醒同步。
+        enum AccentHex {
+            static let latte   = "C8966E"   // Palette/Peach
+            static let rose    = "C9928E"   // Palette/Coral
+            static let sage    = "9FB089"   // Palette/Mint
+            static let mist    = "94A8B6"   // Palette/Sky
+            static let mauve   = "B196AE"   // Palette/Lavender
+            static let honey   = "D8B97A"   // Palette/Lemon
+            static let error   = "B86A60"   // Semantic/Error
+            static let info    = "748FA1"   // Semantic/Info
+            static let success = "7A9B6A"   // Semantic/Success
+            static let warning = "C99659"   // Semantic/Warning
+
+            /// (hex, Asset 名) 对照表——一致性单测与对比度单测都遍历它
+            static let assetPairs: [(hex: String, assetName: String)] = [
+                (latte, "Palette/Peach"), (rose, "Palette/Coral"),
+                (sage, "Palette/Mint"), (mist, "Palette/Sky"),
+                (mauve, "Palette/Lavender"), (honey, "Palette/Lemon"),
+                (error, "Semantic/Error"), (info, "Semantic/Info"),
+                (success, "Semantic/Success"), (warning, "Semantic/Warning"),
+            ]
         }
 
         /// 投影色：深色模式下纯黑投影零可见度且让界面发脏，自动归零；
@@ -174,10 +202,12 @@ enum Theme {
 // MARK: - 环境感知颜色访问
 //
 // SwiftUI 的 ShapeStyle 扩展不能直接读环境；业务代码请用
-// `@Environment(\.tabFlavor) var flavor` 自行读取后再 `.color`。
+// `@Environment(\.tabFlavor) var flavor` 自行读取——填充底用 `.fill`，
+// 彩色前景（文字/图标/描边）才用 `.color`。
 // 这里只暴露非环境感知的 fallback 色，深层 push 视图意外丢失环境时用。
 
 extension Theme.ColorToken.Interactive {
+    /// 仅限前景/描边场景；填充底请用 Theme.ColorToken.Fill.latte
     static var primaryFallback: Color { Color("Palette/Peach") }
     static var secondary:       Color { Color(uiColor: ThemeManager.shared.dynamicNeutral(\.n200)) }
 }
