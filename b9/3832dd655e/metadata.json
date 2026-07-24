@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "b93832dd655e",
+  "strategy": "manual-commit",
+  "branch": "feat/theme-derived-palette-dark-fix",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "BeadInventory/Views/PlannedProjectsView.swift",
+    "BeadInventory/Views/ScanView.swift",
+    "BeadInventory/Views/ShippingView.swift",
+    "BeadInventory/Views/StatisticsView.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b9/3832dd655e/0/metadata.json",
+      "transcript": "/b9/3832dd655e/0/full.jsonl",
+      "content_hash": "/b9/3832dd655e/0/content_hash.txt",
+      "prompt": "/b9/3832dd655e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1206,
+    "cache_creation_tokens": 1239754,
+    "cache_read_tokens": 48675494,
+    "output_tokens": 166376,
+    "api_call_count": 210
+  }
+}
