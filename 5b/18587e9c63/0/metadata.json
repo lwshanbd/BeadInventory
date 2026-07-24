@@ -1,0 +1,106 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "5b18587e9c63",
+  "session_id": "1766ebd3-b992-4730-be73-2e0491ef24a0",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-24T01:50:30.996368Z",
+  "branch": "feat/theme-derived-palette-dark-fix",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "BeadInventory/Managers/ThemeManager.swift",
+    "BeadInventory/Models/PaletteDeriver.swift",
+    "BeadInventory/Views/ColorMode/ColorModeView.swift",
+    "BeadInventory/Views/DesignSystem/Components/BIListRow.swift",
+    "BeadInventory/Views/DesignSystem/Components/BISegmented.swift",
+    "BeadInventory/Views/DesignSystem/Components/BeadView.swift",
+    "BeadInventory/Views/DesignSystem/Theme.swift",
+    "BeadInventory/Views/InventoryView.swift",
+    "BeadInventoryTests/PaletteDeriverTests.swift"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "69e88ac28731",
+  "token_usage": {
+    "input_tokens": 1176,
+    "cache_creation_tokens": 1216237,
+    "cache_read_tokens": 41925970,
+    "output_tokens": 156299,
+    "api_call_count": 195
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01LHW141hv36rJ1LrSs3HHLu",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "pr-review-toolkit:review-pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "69e88ac28731",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 647,
+        "end": 648,
+        "entry_ids": [
+          "510895ac-3bf2-4eb0-8c4d-1fce1d04a880"
+        ],
+        "tool_use_id": "toolu_01LHW141hv36rJ1LrSs3HHLu"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01LHW141hv36rJ1LrSs3HHLu"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: pr-review-toolkit:review-pr",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-24T01:50:30.628032Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 332,
+    "human_modified": 65,
+    "human_removed": 0,
+    "total_committed": 332,
+    "total_lines_changed": 397,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 129,
+      "user_lines_removed": 17,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/agents/entire-search.md": 25,
+        ".claude/settings.json": 84,
+        "BeadInventory.xcodeproj/xcshareddata/xcschemes/BeadInventory.xcscheme": 1,
+        "BeadInventory/Localizable.xcstrings": 19
+      },
+      "user_removed_per_file": {
+        "BeadInventory.xcodeproj/xcshareddata/xcschemes/BeadInventory.xcscheme": 1,
+        "BeadInventory/Localizable.xcstrings": 16
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 129,
+      "agent_lines_removed": 17
+    }
+  ]
+}
