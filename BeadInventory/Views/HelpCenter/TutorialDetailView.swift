@@ -83,7 +83,7 @@ struct StepCardView: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(width: 24, height: 24)
-                    .background(Theme.ColorToken.Morandi.latte)
+                    .background(Theme.ColorToken.Fill.latte)
                     .cornerRadius(Theme.Radius.md)
 
                 VStack(alignment: .leading, spacing: 6) {

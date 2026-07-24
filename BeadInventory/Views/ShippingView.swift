@@ -1877,7 +1877,7 @@ struct AddColorToRecordSheet: View {
                                     .foregroundColor(.white)
                                     .frame(maxWidth: .infinity)
                                     .padding()
-                                    .background(Theme.ColorToken.Morandi.latte)
+                                    .background(Theme.ColorToken.Fill.latte)
                                     .cornerRadius(Theme.Radius.md)
                             }
                         }

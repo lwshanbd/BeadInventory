@@ -414,7 +414,7 @@ struct ProjectInfoCardEnhanced: View {
                         Image(systemName: "pencil.circle.fill")
                             .font(.title2)
                             .foregroundColor(.white)
-                            .background(Circle().fill(Theme.ColorToken.Morandi.latte))
+                            .background(Circle().fill(Theme.ColorToken.Fill.latte))
                     }
                     .padding(8)
                 }
@@ -818,7 +818,7 @@ struct ProjectImageEditorSheet: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Theme.ColorToken.Morandi.latte)
+                            .background(Theme.ColorToken.Fill.latte)
                             .foregroundColor(.white)
                             .cornerRadius(Theme.Radius.md)
                         }
@@ -834,7 +834,7 @@ struct ProjectImageEditorSheet: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Theme.ColorToken.Status.success)
+                            .background(Theme.ColorToken.Fill.success)
                             .foregroundColor(.white)
                             .cornerRadius(Theme.Radius.md)
                         }

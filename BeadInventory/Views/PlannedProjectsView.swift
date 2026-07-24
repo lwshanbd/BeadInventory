@@ -1488,7 +1488,7 @@ struct PlannedProjectDetailView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding()
-            .background(Theme.ColorToken.Status.info)
+            .background(Theme.ColorToken.Fill.info)
             .cornerRadius(Theme.Radius.md)
         }
     }
@@ -1505,7 +1505,7 @@ struct PlannedProjectDetailView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding()
-            .background(Theme.ColorToken.Status.success)
+            .background(Theme.ColorToken.Fill.success)
             .cornerRadius(Theme.Radius.md)
         }
     }
@@ -1708,7 +1708,7 @@ struct PlannedProjectInfoCard: View {
                         Image(systemName: "pencil.circle.fill")
                             .font(.title2)
                             .foregroundColor(.white)
-                            .background(Circle().fill(Theme.ColorToken.Morandi.mauve))
+                            .background(Circle().fill(Theme.ColorToken.Fill.mauve))
                     }
                     .padding(8)
                 }

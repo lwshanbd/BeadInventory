@@ -133,7 +133,7 @@ struct ImportStockView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(Theme.ColorToken.Morandi.mist)
+                .background(Theme.ColorToken.Fill.mist)
                 .foregroundColor(.white)
                 .cornerRadius(Theme.Radius.md)
             }

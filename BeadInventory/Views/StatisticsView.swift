@@ -1458,7 +1458,7 @@ struct RevertToPlanSheet: View {
                         Text("确认退回")
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Theme.ColorToken.Status.warning)
+                            .background(Theme.ColorToken.Fill.warning)
                             .foregroundColor(.white)
                             .cornerRadius(Theme.Radius.md)
                     }
