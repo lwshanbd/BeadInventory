@@ -2,7 +2,7 @@
 //  BISegmented.swift
 //  BeadInventory
 //
-//  跑道型分段控件：选中项用浅色卡片+柔和投影，未选中透明。
+//  跑道型分段控件：选中项用 elevated 底 + 描边（浅色另有柔和投影，深色投影归零），未选中透明。
 //
 
 import SwiftUI
@@ -48,9 +48,12 @@ struct BISegmented<T: Hashable>: View {
                 .background(
                     Group {
                         if isSelected {
+                            // 深色下 elevated 与轨道底几乎同亮度、黑投影又不可见，
+                            // 补一圈描边保证选中态可辨。
                             Capsule()
                                 .fill(Theme.ColorToken.Surface.elevated)
-                                .shadow(color: Color.black.opacity(0.06), radius: 1, x: 0, y: 1)
+                                .overlay(Capsule().strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1))
+                                .shadow(color: Theme.ColorToken.Shadow.soft, radius: 1, x: 0, y: 1)
                         } else {
                             Color.clear
                         }

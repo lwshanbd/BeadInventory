@@ -113,7 +113,13 @@ struct ColorModeView: View {
 
     private var currentSchemeLabel: some View {
         let activeID = themeManager.activeSchemeID
-        let activeName = activeID.flatMap { id in allSchemes.first { $0.id == id }?.name } ?? ""
+        // 内建预设 name 存的是本地化 key（如 color_mode.preset.mist_coast），需解析；
+        // 自定义主题只按原名显示——若也过 String(localized:)，用户起的名字恰好
+        // 撞上某个本地化 key 时会被意外翻译掉。
+        let activeScheme = activeID.flatMap { id in allSchemes.first { $0.id == id } }
+        let activeName = activeScheme.map {
+            $0.isBuiltin ? String(localized: String.LocalizationValue($0.name)) : $0.name
+        } ?? ""
         return HStack {
             Text("color_mode.label.current_scheme")
                 .foregroundStyle(Theme.ColorToken.Text.secondary)

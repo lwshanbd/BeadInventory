@@ -35,7 +35,7 @@ struct BIChip<Leading: View>: View {
     }
 
     private var resolvedActiveColor: Color {
-        color ?? flavor.color
+        color ?? flavor.fill
     }
 
     private var background: Color {

@@ -92,7 +92,8 @@ struct BIListRow: View {
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
                 .background(
-                    Capsule().fill(Theme.ColorToken.Status.warning)
+                    // Fill.warning 的浅色值 = 原 Status.warning light 值，浅色像素级不变
+                    Capsule().fill(Theme.ColorToken.Fill.warning)
                 )
         case .toggle(let binding):
             Toggle("", isOn: binding)
@@ -109,7 +110,7 @@ struct BIListRow: View {
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
                 .background(
-                    Capsule().fill(Theme.ColorToken.Morandi.honey)
+                    Capsule().fill(Theme.ColorToken.Fill.honey)
                 )
         case .none:
             EmptyView()

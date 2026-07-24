@@ -621,7 +621,7 @@ private struct TopRankRow: View {
                 ZStack {
                     Circle()
                         .fill(isTopThree
-                              ? Theme.ColorToken.Morandi.latte
+                              ? Theme.ColorToken.Fill.latte
                               : Theme.ColorToken.Surface.strong)
                         .frame(width: 22, height: 22)
                     Text("\(rank)")
@@ -949,7 +949,7 @@ struct ProjectHistoryView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(selectedProjects.count >= 2 ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Border.default)
+                            .background(selectedProjects.count >= 2 ? Theme.ColorToken.Fill.latte : Theme.ColorToken.Border.default)
                             .foregroundColor(selectedProjects.count >= 2 ? .white : .secondary)
                             .cornerRadius(Theme.Radius.md)
                         }
@@ -971,7 +971,7 @@ struct ProjectHistoryView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Theme.ColorToken.Status.info)
+                            .background(Theme.ColorToken.Fill.info)
                             .foregroundColor(.white)
                             .cornerRadius(Theme.Radius.md)
                         }
@@ -988,7 +988,7 @@ struct ProjectHistoryView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Theme.ColorToken.Status.info)
+                            .background(Theme.ColorToken.Fill.info)
                             .foregroundColor(.white)
                             .cornerRadius(Theme.Radius.md)
                         }
@@ -1458,7 +1458,7 @@ struct RevertToPlanSheet: View {
                         Text("确认退回")
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Theme.ColorToken.Status.warning)
+                            .background(Theme.ColorToken.Fill.warning)
                             .foregroundColor(.white)
                             .cornerRadius(Theme.Radius.md)
                     }

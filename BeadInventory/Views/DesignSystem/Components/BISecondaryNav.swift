@@ -87,7 +87,7 @@ struct BINavIconButton: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(
-                            Capsule().fill(Theme.ColorToken.Morandi.rose)
+                            Capsule().fill(Theme.ColorToken.Fill.rose)
                         )
                         .offset(x: 3, y: -3)
                 }

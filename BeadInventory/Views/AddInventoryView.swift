@@ -416,7 +416,7 @@ struct QuantityControl: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .frame(width: 28, height: 28)
-                    .background(Theme.ColorToken.Morandi.latte)
+                    .background(Theme.ColorToken.Fill.latte)
                     .cornerRadius(Theme.Radius.md)
             }
             .buttonStyle(PlainButtonStyle())
@@ -475,7 +475,7 @@ struct ConfirmBar: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 12)
-                        .background(Theme.ColorToken.Morandi.latte)
+                        .background(Theme.ColorToken.Fill.latte)
                         .cornerRadius(Theme.Radius.lg)
                 }
             }

@@ -85,9 +85,12 @@ final class ThemeManager {
 
     // MARK: - 给 Theme.ColorToken 用的 UIColor 工厂
     //
-    // 闭包内部读 self.resolvedLight/Dark；@Observable 在 View body 评估期间
-    // 读取 .shared.resolvedLight 时建立依赖订阅，色值变化触发整树 re-evaluate body，
-    // 产生新的 Color(uiColor:) 实例。闭包本身只在系统 trait 变化时被 iOS 调用一次。
+    // 注意语义：闭包内部读 self.resolvedLight/Dark 发生在 UIKit 解析动态色时，
+    // **不在** SwiftUI body 求值期间——所以 @Observable 并不会为此建立依赖订阅。
+    // 系统深浅切换靠 trait 机制天然生效；主题编辑期间的实时刷新依赖 ColorModeView
+    // 自身观察 resolvedLight/Dark 触发整树重建。只消费中性 token 且不另行观察
+    // ThemeManager 的视图，在主题编辑时可能延迟到下次重建才更新（已知取舍）。
+    // 另：dynamic provider 闭包每次颜色解析都会被调用（不止 trait 变化时一次）。
 
     var dynamicBg: UIColor {
         UIColor { trait in
@@ -104,6 +107,45 @@ final class ThemeManager {
                 ? self.resolvedDark.bgElev
                 : self.resolvedLight.bgElev
             return UIColor(themeHex: hex)
+        }
+    }
+
+    // MARK: - 派生中性阶（PaletteDeriver）
+    //
+    // 中性 token（chip 底 / 描边 / 文字灰阶）随主题 bg 派生，
+    // 消除「换主题只换背景、其余 UI 仍是固定暖米色」的混搭。
+
+    // 派生缓存：dynamic provider 每次颜色解析都会调用（文字/描边是最热的色），
+    // 7 档 HSB 派生 + 对比度护栏不便宜。键含 bg/elev/isDark，加锁因为
+    // UIKit 可能在非主线程解析动态色。
+    @ObservationIgnored private var neutralsCache: [String: DerivedNeutrals] = [:]
+    @ObservationIgnored private let neutralsCacheLock = NSLock()
+
+    private func cachedNeutrals(bg: ColorHex, elev: ColorHex, isDark: Bool) -> DerivedNeutrals {
+        let key = "\(bg)|\(elev)|\(isDark)"
+        neutralsCacheLock.lock()
+        defer { neutralsCacheLock.unlock() }
+        if let hit = neutralsCache[key] { return hit }
+        let derived = PaletteDeriver.neutrals(forBg: bg, elevHex: elev, isDark: isDark)
+        if neutralsCache.count > 32 { neutralsCache.removeAll() }   // 正常只会有个位数条目
+        neutralsCache[key] = derived
+        return derived
+    }
+
+    var derivedLightNeutrals: DerivedNeutrals {
+        cachedNeutrals(bg: resolvedLight.bg, elev: resolvedLight.bgElev, isDark: false)
+    }
+
+    var derivedDarkNeutrals: DerivedNeutrals {
+        cachedNeutrals(bg: resolvedDark.bg, elev: resolvedDark.bgElev, isDark: true)
+    }
+
+    func dynamicNeutral(_ keyPath: KeyPath<DerivedNeutrals, ColorHex>) -> UIColor {
+        UIColor { trait in
+            let neutrals = trait.userInterfaceStyle == .dark
+                ? self.derivedDarkNeutrals
+                : self.derivedLightNeutrals
+            return UIColor(themeHex: neutrals[keyPath: keyPath])
         }
     }
 
@@ -136,7 +178,14 @@ final class ThemeManager {
     // MARK: - Swatch 编辑
 
     func updateSwatch(_ slot: ThemeSlot, hex: String) {
-        let normalized = normalizeHex(hex)
+        // 非法 hex 直接拒绝（保留旧值）：一旦落盘，dynamicBg 会退到 systemBackground、
+        // 派生阶梯却退到奶油拿铁参考阶梯——两条 fallback 互相矛盾，且经 CloudKit
+        // 同步会污染所有设备。
+        guard let normalized = normalizeHex(hex) else {
+            AppLogger.shared.error("ThemeManager", "update_swatch_invalid_hex",
+                                   metadata: ["slot": "\(slot)", "hex": hex])
+            return
+        }
         switch slot {
         case .lightBg:    resolvedLight.bg     = normalized
         case .lightElev:  resolvedLight.bgElev = normalized
@@ -151,9 +200,23 @@ final class ThemeManager {
         schedulePersistResolved()
     }
 
-    private func normalizeHex(_ raw: String) -> String {
+    /// 归一化并校验：仅接受 6 位 hex（可带 #）。返回 nil 表示非法。
+    private func normalizeHex(_ raw: String) -> String? {
         let trimmed = raw.hasPrefix("#") ? String(raw.dropFirst()) : raw
-        return trimmed.uppercased()
+        let upper = trimmed.uppercased()
+        guard upper.count == 6, upper.allSatisfy(\.isHexDigit) else { return nil }
+        return upper
+    }
+
+    /// UserDefaults / 同步来源的 hex 入口校验：非法时退回给定默认值并记日志。
+    private func validatedHex(_ raw: String?, fallback: ColorHex, key: String) -> ColorHex {
+        guard let raw else { return fallback }
+        guard let normalized = normalizeHex(raw) else {
+            AppLogger.shared.error("ThemeManager", "stored_hex_invalid",
+                                   metadata: ["key": key, "hex": raw])
+            return fallback
+        }
+        return normalized
     }
 
     // MARK: - Draft lifecycle
@@ -204,12 +267,16 @@ final class ThemeManager {
             activeSchemeID = id
         }
         resolvedLight = ColorPalette(
-            bg: defaults.string(forKey: PrefsKey.lightBgHex) ?? ColorPalette.defaultLight.bg,
-            bgElev: defaults.string(forKey: PrefsKey.lightBgElevHex) ?? ColorPalette.defaultLight.bgElev
+            bg: validatedHex(defaults.string(forKey: PrefsKey.lightBgHex),
+                             fallback: ColorPalette.defaultLight.bg, key: PrefsKey.lightBgHex),
+            bgElev: validatedHex(defaults.string(forKey: PrefsKey.lightBgElevHex),
+                                 fallback: ColorPalette.defaultLight.bgElev, key: PrefsKey.lightBgElevHex)
         )
         resolvedDark = ColorPalette(
-            bg: defaults.string(forKey: PrefsKey.darkBgHex) ?? ColorPalette.defaultDark.bg,
-            bgElev: defaults.string(forKey: PrefsKey.darkBgElevHex) ?? ColorPalette.defaultDark.bgElev
+            bg: validatedHex(defaults.string(forKey: PrefsKey.darkBgHex),
+                             fallback: ColorPalette.defaultDark.bg, key: PrefsKey.darkBgHex),
+            bgElev: validatedHex(defaults.string(forKey: PrefsKey.darkBgElevHex),
+                                 fallback: ColorPalette.defaultDark.bgElev, key: PrefsKey.darkBgElevHex)
         )
     }
 

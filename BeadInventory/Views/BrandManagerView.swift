@@ -273,10 +273,10 @@ struct BrandManagerView: View {
                 .frame(width: 54, height: 54)
                 .background(
                     RoundedRectangle(cornerRadius: 18)
-                        .fill(flavor)
+                        .fill(Theme.ColorToken.Fill.rose)
                 )
-                .shadow(color: flavor.opacity(0.35), radius: 12, x: 0, y: 6)
-                .shadow(color: Color.black.opacity(0.08), radius: 3, x: 0, y: 2)
+                .shadow(color: Theme.ColorToken.Fill.rose.opacity(0.35), radius: 12, x: 0, y: 6)
+                .shadow(color: Theme.ColorToken.Shadow.soft, radius: 3, x: 0, y: 2)
         }
         .buttonStyle(.plain)
         .padding(.trailing, 18)

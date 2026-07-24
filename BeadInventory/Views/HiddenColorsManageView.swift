@@ -125,7 +125,7 @@ struct HiddenColorsManageView: View {
                     .foregroundColor(.white)
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Theme.ColorToken.Status.success)
+                    .background(Theme.ColorToken.Fill.success)
                     .cornerRadius(Theme.Radius.md)
                 }
                 .padding()
