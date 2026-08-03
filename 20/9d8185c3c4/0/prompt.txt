@@ -66,3 +66,7 @@ This all runs synchronously on the main thread/MainActor.
 3. As a secondary/defense-in-depth fix per the "unfinished business" note: move `InventoryManager.loadData` off the main `ModelContext` (mirroring the `HistoryManager.loadData` background-context pattern in PR #52), since it can also be re-triggered around scenePhase transitions (`scheduleRefreshFromPersistentStore` on `.active`, remote-change notifications) and currently blocks the main thread for its (metadata-only, but still synchronous) SQL fetches — this doesn't match this specific blob-fault crash signature, but it's a related, real gap the memory note already identifies and worth closing in the same pass.</result>
 <usage><subagent_tokens>142403</subagent_tokens><tool_uses>21</tool_uses><duration_ms>283841</duration_ms></usage>
 </task-notification>
+
+---
+
+build 180构建日期是Jun 12, 2026 at 6:22 PM。 请你修一下。请你确保你真的修好了，完整的修好了！
