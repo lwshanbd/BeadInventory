@@ -17,18 +17,30 @@
 //  - 详情大图 / 拼图模式继续读原 thumbnail（行为不变）
 //
 //  设计要点：
+//  - **主线程零 SwiftData I/O（TestFlight build 180 watchdog 崩溃修复，2026-07-26）**：
+//    迁移的全部数据库访问（分页扫描、单行取 blob、TOCTOU 复核、写回 save）都跑在
+//    `nonisolated` 后台函数里的独立 `ModelContext(container)` 上。此前 migrateOne 在
+//    MainActor 上裸单行 fetch（无 propertiesToFetch）再读 `.thumbnail`，对主 context 里
+//    已被 metadata 投影注册过的对象触发 Core Data deferred-fault 补全 = **主线程同步读盘**
+//    （崩溃栈：`_PF_FulfillDeferredFault → sqlite3_step → pread`）。热限流（Thermal
+//    Level 4）下这次读盘拖过切后台的 5s 宽限期 → 看门狗 0x8BADF00D SIGKILL。
+//    修复后主线程只剩纯内存 bookkeeping（`noteProjectDisplayThumbnailMigrated`），
+//    切后台瞬间主线程永远是空闲的，随时能应答 suspend。
 //  - **不阻塞 UI**：每个 batch 之间 sleep 让出 runloop
-//  - **detached downsample**：在 utility 优先级后台 Task 跑 ImageDownsampler，释放 MainActor
 //  - **幂等可中断**：下一次启动从 displayThumbnail == nil 的余量继续
 //  - **不进 history**：迁移不是用户操作
 //  - **不进 iCloud 优先级队列**：一次 save 一个，CloudKit 按需要慢慢同步上传
 //  - **失败容忍**：单个项目 downsample / save 失败仅 logError，不阻断其它项目
-//  - **TOCTOU 校验**：detached downsample 期间用户可能改 thumbnail，写回前重新验证字节匹配
+//  - **TOCTOU 校验**：downsample 期间用户可能改 thumbnail，写回前用**全新** ModelContext
+//    重新验证字节匹配（新 context 才能看到并发 commit，同 context 复用 registered 对象会
+//    拿到 stale 值使校验空转）
 //
 //  触发时机：BeadInventoryApp 在 scenePhase .active 时调用一次 start（idempotent —— 已在
 //  跑则跳过）。scenePhase .background 时调 stop()，理由：
-//    (a) 释放后台 CPU（detached downsample 在 app 被 suspend 之前还会跑，浪费电量 + watchdog 风险）
-//    (b) 让接下来的 manager.saveData() 在没有并发 SwiftData 写入的稳定 context 上完成最终 flush
+//    (a) 释放后台 CPU（downsample 在 app 被 suspend 之前还会跑，浪费电量）
+//    (b) 让接下来的 manager.saveData() 在没有并发 SwiftData 写入的稳定 store 上完成最终 flush
+//  注意 stop() 只是尽快收尾 —— 即使某次后台 fetch/save 正在飞行中，它也不在主线程上，
+//  不影响系统对 suspend 的 5s 应答窗口。
 
 import Foundation
 import SwiftUI
@@ -57,13 +69,14 @@ final class ThumbnailMigrationCoordinator {
     private init() {}
 
     /// 启动迁移。重入安全 —— 已经在跑就直接返回。
+    /// priority .utility：迁移是空闲任务，CPU 重活（downsample）与 I/O 都不该抢用户交互资源。
     func start(inventoryManager: InventoryManager) {
         guard !isRunning else { return }
         guard task == nil else { return }
         currentGeneration &+= 1
         let myGeneration = currentGeneration
         isRunning = true
-        task = Task { @MainActor [weak self, weak inventoryManager] in
+        task = Task(priority: .utility) { @MainActor [weak self, weak inventoryManager] in
             defer {
                 if let self, self.currentGeneration == myGeneration {
                     self.isRunning = false
@@ -94,7 +107,7 @@ final class ThumbnailMigrationCoordinator {
         }
         guard !Task.isCancelled else { return }
 
-        guard let context = inventoryManager.modelContext else {
+        guard let container = inventoryManager.modelContext?.container else {
             AppLogger.shared.warning("ThumbnailMigration", "no_model_context_skipping", metadata: [:])
             return
         }
@@ -142,13 +155,12 @@ final class ThumbnailMigrationCoordinator {
 
             let pageIDs: [UUID]
             do {
-                var descriptor = FetchDescriptor<SDProjectRecord>(
-                    predicate: #Predicate { $0.thumbnail != nil && $0.displayThumbnail == nil }
+                // 后台 context 扫 candidate —— 即使是 id 单列投影，也不给主线程留同步 I/O。
+                pageIDs = try await Self.fetchCandidatePage(
+                    container: container,
+                    offset: fetchOffset,
+                    limit: Self.batchSize
                 )
-                descriptor.fetchLimit = Self.batchSize
-                descriptor.fetchOffset = fetchOffset     // 跳过本 run 已经失败过的 row
-                descriptor.propertiesToFetch = [\.id]    // 只取 id 列，不物化 blob
-                pageIDs = try context.fetch(descriptor).map { $0.id }
             } catch {
                 AppLogger.shared.error("ThumbnailMigration", "fetch_candidates_failed", metadata: [
                     "error": "\(error)",
@@ -175,10 +187,12 @@ final class ThumbnailMigrationCoordinator {
                     ])
                     return
                 }
-                let outcome = await migrateOne(projectId: projectId, inventoryManager: inventoryManager)
+                let outcome = await Self.migrateOne(projectId: projectId, container: container)
                 switch outcome {
                 case .migrated:
                     migrated += 1
+                    // 主线程侧只做纯内存 bookkeeping（Set insert），零 SwiftData I/O。
+                    inventoryManager.noteProjectDisplayThumbnailMigrated(projectId: projectId)
                     // 成功 → 谓词集合缩小，offset 不前进，下次 fetch 自然拿到新的
                 case .raceSkipped:
                     raceSkipped += 1
@@ -217,7 +231,7 @@ final class ThumbnailMigrationCoordinator {
         ])
     }
 
-    private enum MigrationOutcome {
+    enum MigrationOutcome {
         case migrated
         case raceSkipped       // row 不存在 / thumbnail 已是 nil（candidate 列表后被并发改动）
         case alreadyDone       // displayThumbnail 已经有值（被 updateProjectThumbnail 抢先填了）
@@ -225,27 +239,49 @@ final class ThumbnailMigrationCoordinator {
         case cancelled         // 上层 stop() / scene background 触发 —— 不计 failures
     }
 
-    /// 单个项目的迁移：
-    /// 1. 取 thumbnail 字节（MainActor，从 SwiftData 单 row fetch）
-    /// 2. 检查 displayThumbnail 是否已被并发填充 → 跳过避免冗余 CloudKit 上传
-    /// 3. downsample（**detached Task**，让出 MainActor —— CGImageSource 解码原图可能上百 ms）
-    /// 4. 回到 MainActor，**重新 fetch 验证 thumbnail 字节没变 + displayThumbnail 仍 nil**
-    /// 5. 写回 displayThumbnail + save
+    /// 分页扫描 candidate id —— `nonisolated`：Swift 5 语言模式下（SE-0338）脱离 MainActor
+    /// 在 generic executor 上执行；用独立后台 ModelContext，主线程零 I/O。
+    /// 结构化调用（非 detached）保证 Task.isCancelled / 取消传播仍随外层 run task。
+    private nonisolated static func fetchCandidatePage(
+        container: ModelContainer,
+        offset: Int,
+        limit: Int
+    ) async throws -> [UUID] {
+        let bg = ModelContext(container)
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.thumbnail != nil && $0.displayThumbnail == nil }
+        )
+        descriptor.fetchLimit = limit
+        descriptor.fetchOffset = offset          // 跳过本 run 已经失败过的 row
+        descriptor.propertiesToFetch = [\.id]    // 只取 id 列，不物化 blob
+        return try bg.fetch(descriptor).map { $0.id }
+    }
+
+    /// 单个项目的迁移（**全程后台执行，禁止改回 @MainActor** —— build 180 watchdog 崩溃根因）：
+    /// 1. 后台 ModelContext 单行投影取 thumbnail + displayThumbnail 现状
+    /// 2. displayThumbnail 已被并发填充 → 跳过避免冗余 CloudKit 上传
+    /// 3. downsample（已在后台 executor，直接同步调用，无需再 detached hop）
+    /// 4. **全新** ModelContext 重新 fetch 验证 thumbnail 字节没变 + displayThumbnail 仍 nil
+    ///    （TOCTOU；必须新 context —— 复用步骤 1 的 context 会命中 registered 对象的 stale
+    ///    快照，看不到 downsample 期间主 context 的并发 commit，校验就成了空转）
+    /// 5. 同一个新 context 上写回 displayThumbnail + save
     ///
     /// 总是 downsample —— 不再因 "原字节 < 200KB" 直接复用，因为一张 199KB 的 4000×4000 PNG
     /// 解码到 UIImage 仍能爆 60MB（重蹈 jetsam 根因）。
-    private func migrateOne(projectId: UUID, inventoryManager: InventoryManager) async -> MigrationOutcome {
-        guard let context = inventoryManager.modelContext else {
-            return .failed
-        }
-
-        // 步骤 1+2：单 row fetch 拿 thumbnail + 检查 displayThumbnail 现状
+    ///
+    /// `internal` 而非 private：ThumbnailMigrationCoordinatorTests 直接钉迁移语义。
+    nonisolated static func migrateOne(projectId: UUID, container: ModelContainer) async -> MigrationOutcome {
+        // 步骤 1+2：后台单行投影 fetch —— 只物化 thumbnail + displayThumbnail 两列，
+        // 不碰同行的 finishedImage / patternGridData。
         let thumbnailData: Data
         do {
-            let descriptor = FetchDescriptor<SDProjectRecord>(
+            var descriptor = FetchDescriptor<SDProjectRecord>(
                 predicate: #Predicate { $0.id == projectId }
             )
-            guard let sd = try context.fetch(descriptor).first else {
+            descriptor.fetchLimit = 1
+            descriptor.propertiesToFetch = [\.thumbnail, \.displayThumbnail]
+            let bg = ModelContext(container)
+            guard let sd = try bg.fetch(descriptor).first else {
                 return .raceSkipped  // row 被删
             }
             guard let thumb = sd.thumbnail else {
@@ -263,32 +299,30 @@ final class ThumbnailMigrationCoordinator {
             return .failed
         }
 
-        // 在启动 detached downsample **之前**先 check cancellation —— 避免 stop() 之后
-        // 还跑一个 CPU-burning detached downsample。
+        // downsample 前 check cancellation —— 避免 stop() 之后还烧一轮 CPU。
         guard !Task.isCancelled else { return .cancelled }
 
-        // 步骤 3：downsample 走 detached Task —— 释放 MainActor，避免大图编码阻塞 UI
-        let downsampled: Data? = await Task.detached(priority: .utility) {
-            ImageDownsampler.downsample(thumbnailData)
-        }.value
-        guard !Task.isCancelled else { return .cancelled }
-        guard let downsampled else {
+        // 步骤 3：downsample —— 本函数已在后台 executor，直接同步跑。
+        guard let downsampled = ImageDownsampler.downsample(thumbnailData) else {
             AppLogger.shared.error("ThumbnailMigration", "downsample_failed", metadata: [
                 "projectId": projectId.uuidString,
                 "sourceBytes": thumbnailData.count
             ])
             return .failed
         }
+        guard !Task.isCancelled else { return .cancelled }
 
-        // 步骤 4：**TOCTOU 校验** —— detached downsample 期间用户可能修改了 thumbnail
-        // （甚至清成 nil），或者另一个路径已经写过 displayThumbnail。重新 fetch 一次，
-        // 验证：(a) thumbnail 字节没变 (b) displayThumbnail 仍 nil。
-        let currentThumb: Data
+        // 步骤 4+5：TOCTOU 校验 + 写回，同一个**全新** context 完成，保证「校验通过的
+        // 就是被写的那一行状态」。投影仍只取两列；对部分物化对象写 displayThumbnail 不清
+        // 其它 blob 列（InventoryManagerBlobFetchTests 已钉住该组合语义）。
         do {
-            let descriptor = FetchDescriptor<SDProjectRecord>(
+            var descriptor = FetchDescriptor<SDProjectRecord>(
                 predicate: #Predicate { $0.id == projectId }
             )
-            guard let sd = try context.fetch(descriptor).first else {
+            descriptor.fetchLimit = 1
+            descriptor.propertiesToFetch = [\.thumbnail, \.displayThumbnail]
+            let bg = ModelContext(container)
+            guard let sd = try bg.fetch(descriptor).first else {
                 return .raceSkipped
             }
             guard let thumb = sd.thumbnail else {
@@ -297,38 +331,33 @@ final class ThumbnailMigrationCoordinator {
             if sd.displayThumbnail != nil {
                 return .alreadyDone
             }
-            currentThumb = thumb
+            if thumb != thumbnailData {
+                // thumbnail 在 downsample 期间被替换 —— 我们的 downsampled 对应的是 OLD thumbnail
+                AppLogger.shared.info("ThumbnailMigration", "race_thumbnail_changed_skip", metadata: [
+                    "projectId": projectId.uuidString,
+                    "oldBytes": thumbnailData.count,
+                    "newBytes": thumb.count
+                ])
+                return .raceSkipped
+            }
+
+            // 写回。不进 history（迁移不是用户操作）；revision bump 的取舍见
+            // InventoryManager.noteProjectDisplayThumbnailMigrated 注释。
+            sd.displayThumbnail = downsampled
+            try bg.save()
         } catch {
-            AppLogger.shared.error("ThumbnailMigration", "revalidate_fetch_failed", metadata: [
+            AppLogger.shared.error("ThumbnailMigration", "save_failed", metadata: [
                 "projectId": projectId.uuidString,
                 "error": "\(error)"
             ])
             return .failed
         }
-        if currentThumb != thumbnailData {
-            // thumbnail 在 downsample 期间被替换 —— 我们的 downsampled 对应的是 OLD thumbnail
-            AppLogger.shared.info("ThumbnailMigration", "race_thumbnail_changed_skip", metadata: [
-                "projectId": projectId.uuidString,
-                "oldBytes": thumbnailData.count,
-                "newBytes": currentThumb.count
-            ])
-            return .raceSkipped
-        }
 
-        // 步骤 5：写回 displayThumbnail（直接走 InventoryManager 的 setter，
-        // 它会同步更新 projectIDsWithDisplayThumbnail；
-        // **不** bump revision —— 视图等下次自然 re-render 拿到新图（见 setProjectDisplayThumbnail 函数级注释）。
-        // 注意：故意不在这里手动 bump —— 否则会重蹈 PR #48 闪烁回归。
-        let ok = inventoryManager.setProjectDisplayThumbnail(projectId: projectId, displayThumbnail: downsampled)
-        if ok {
-            AppLogger.shared.info("ThumbnailMigration", "migrated_one", metadata: [
-                "projectId": projectId.uuidString,
-                "sourceBytes": thumbnailData.count,
-                "downsampledBytes": downsampled.count
-            ])
-            return .migrated
-        } else {
-            return .failed
-        }
+        AppLogger.shared.info("ThumbnailMigration", "migrated_one", metadata: [
+            "projectId": projectId.uuidString,
+            "sourceBytes": thumbnailData.count,
+            "downsampledBytes": downsampled.count
+        ])
+        return .migrated
     }
 }

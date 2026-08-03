@@ -292,8 +292,10 @@ struct BeadInventoryApp: App {
                 inventoryManager.saveData()
                 HistoryManager.shared.saveDataImmediately()
                 themeManager.flushPersistenceNow()
-                // 停掉 displayThumbnail 后台迁移协调器 —— 释放 CPU + 让 saveData 在干净 context 上完成。
+                // 停掉 displayThumbnail 后台迁移协调器 —— 释放 CPU + 让 saveData 在干净 store 上完成。
                 // 协调器内部用 generation token 保证下次 .active start() 不会跟旧 task 抢资源。
+                // 注：协调器的 SwiftData I/O 全部在后台 ModelContext（build 180 watchdog 修复），
+                // 即使 stop() 时仍有一次 fetch/save 在飞行中，也不占主线程、不影响 5s suspend 应答。
                 ThumbnailMigrationCoordinator.shared.stop()
             case .inactive:
                 // .inactive 频繁出现（例如控制中心、系统弹窗），先取消待执行刷新；

@@ -135,7 +135,8 @@ class InventoryManager: ObservableObject {
     }
 
     // SwiftData ModelContext
-    // internal (而非 private)：ThumbnailMigrationCoordinator 需要直接读取 context 跑迁移谓词扫描
+    // internal (而非 private)：ThumbnailMigrationCoordinator 需要经 `modelContext?.container`
+    // 拿 ModelContainer 派生后台 context 跑迁移（迁移的 SwiftData I/O 全部离主线程）
     var modelContext: ModelContext?
 
     // 数据加载完成标志，防止在数据未加载时意外保存空数据
@@ -2464,8 +2465,9 @@ class InventoryManager: ObservableObject {
                         // 自 v2.0.x 起 `projects` 缓存里这四个字段恒为 nil（避免大 blob 物化进内存
                         // 撞 jetsam），如果还沿用旧 diff 写回，等于每次保存都把云端真数据用 nil
                         // 覆盖掉。这些字段改走 updateProjectThumbnail / updateProjectFinishedImage /
-                        // updateProjectPatternGrid / setProjectDisplayThumbnail 直接对 SDProjectRecord
-                        // 单 row 写入（带 blob 字段同步）。
+                        // updateProjectPatternGrid 直接对 SDProjectRecord 单 row 写入（带 blob 字段
+                        // 同步）；displayThumbnail 迁移写回由 ThumbnailMigrationCoordinator 在后台
+                        // ModelContext 上完成。
 
                         // 仅在本地项目有改动时同步 beadUsages，避免误删远端新变更
                         let newUsageIDs = Set(project.beadUsage.map { $0.id })
@@ -4185,9 +4187,11 @@ class InventoryManager: ObservableObject {
         }
     }
 
-    /// 直接写单个项目的 displayThumbnail —— 仅 ThumbnailMigrationCoordinator 用。
-    /// 不进 history（迁移不是用户操作），不写其它字段，**同步**做一次 context.save。
-    /// 返回 false 时迁移协调器记 .failed，下次 startup 重试。
+    /// ThumbnailMigrationCoordinator 后台迁移成功一个项目后的**纯内存 bookkeeping**。
+    /// 只更新 `projectIDsWithDisplayThumbnail`（列表 row 用它决定走 displayThumbnail 还是
+    /// fallback 降级路径），**不做任何 SwiftData I/O** —— SwiftData 写回已由协调器在
+    /// 后台 ModelContext 上完成。主线程保持零 I/O 是 build 180 watchdog 崩溃修复的核心
+    /// 不变量，别在这里加 fetch/save。
     ///
     /// **不 bump `projectBlobsRevision`** —— 跟 update*Image 公开 API 关键差别：
     /// 迁移协调器 458 项目用户场景下每秒 ~10 次调用。如果每次 bump revision，
@@ -4196,35 +4200,9 @@ class InventoryManager: ObservableObject {
     /// 不 bump 之后：现有视图保持显示已加载的图（fallback CGImageSource 现场降级版本），
     /// 等下次自然 re-render（row 滚出再滚入 / app 重启 / 用户编辑触发其它 bump）时拿到新
     /// displayThumbnail —— 用户体验上是平滑过渡，下次启动列表更快。
-    func setProjectDisplayThumbnail(projectId: UUID, displayThumbnail: Data?) -> Bool {
-        guard let context = modelContext else {
-            logError("set_display_thumbnail_no_context", metadata: ["projectId": projectId.uuidString])
-            return false
-        }
-        let descriptor = FetchDescriptor<SDProjectRecord>(
-            predicate: #Predicate { $0.id == projectId }
-        )
-        do {
-            guard let sd = try context.fetch(descriptor).first else {
-                logWarning("set_display_thumbnail_no_sd_record", metadata: ["projectId": projectId.uuidString])
-                return false
-            }
-            sd.displayThumbnail = displayThumbnail
-            try context.save()
-            if displayThumbnail != nil {
-                projectIDsWithDisplayThumbnail.insert(projectId)
-            } else {
-                projectIDsWithDisplayThumbnail.remove(projectId)
-            }
-            // 故意**不** bump projectBlobsRevision —— 见函数级注释
-            return true
-        } catch {
-            logError("set_display_thumbnail_failed", metadata: [
-                "projectId": projectId.uuidString,
-                "error": "\(error)"
-            ])
-            return false
-        }
+    func noteProjectDisplayThumbnailMigrated(projectId: UUID) {
+        projectIDsWithDisplayThumbnail.insert(projectId)
+        // 故意**不** bump projectBlobsRevision —— 见函数级注释
     }
 
     /// 单条 fetch 取裸 SDProjectRecord —— 仅供同文件内的 `_setProject*Direct` 直写路径用。
