@@ -1,0 +1,72 @@
+@"/Users/baodi/Downloads/BeadInventory-2026-07-26-190106.ips"
+看看为啥崩溃
+
+---
+
+用汉语回答我……
+
+---
+
+那你说的这个错误修过了吗？
+
+---
+
+不是，用户反馈的时候用的是老的那个包。不是比较新的那个包
+
+---
+
+<task-notification>
+<task-id>ad76b6be6cae6264f</task-id>
+<tool-use-id>toolu_01HmwinEyZv41ECvuXSYihiU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-baodi-Documents-GitHub-nosync-BeadInventory/cde7236e-998f-41db-8e92-485ab79807ab/tasks/ad76b6be6cae6264f.output</output-file>
+<status>completed</status>
+<summary>Agent "Find main-thread SwiftData blob fault trigger" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Investigation Summary
+
+I traced the background-transition path in `BeadInventoryApp.swift` and both data managers, then cross-referenced against `SDProjectRecord`/`SDHistoryRecord`'s blob columns. The most likely root cause is **`ThumbnailMigrationCoordinator.migrateOne(projectId:inventoryManager:)`**, not `InventoryManager.loadData`/`saveData` or `HistoryManager`, which turned out to already be carefully guarded.
+
+### Background-transition entry point
+`/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/BeadInventoryApp.swift:285-340` — `.onChange(of: scenePhase)`:
+```swift
+case .background:
+    inventoryManager.cancelScheduledRefresh(reason: "scenePhase.background")
+    inventoryManager.saveData()
+    HistoryManager.shared.saveDataImmediately()
+    themeManager.flushPersistenceNow()
+    ThumbnailMigrationCoordinator.shared.stop()   // line 297
+```
+This all runs synchronously on the main thread/MainActor.
+
+### What I ruled out
+- `InventoryManager.loadData` (lines 1359-1488) and `saveData` (lines 1654-1920) **do** already use `propertiesToFetch` on `SDProjectRecord` (`InventoryManager.swift:1449-1454`, `1831-1836`) and only write metadata fields on the model object (`existing.name = ...` etc.) — never `existing.thumbnail`/`finishedImage`/`patternGridData`/`displayThumbnail`. `loadData` is still on the main `ModelContext` (confirmed — `AppBackgroundTaskManager.perform` at `AppBackgroundTaskManager.swift:20-38` runs its closure inline, no queue hop), but it doesn't touch blob properties, so it's a plain (relatively fast) main-thread SQL read, not the fault-fulfillment pattern in the crash.
+- `HistoryManager.performSave` (`HistoryManager.swift:1136-1223`) similarly fetches with `propertiesToFetch = Self.metadataProperties` and only ever *writes* `existingRecord.beforeSnapshot`/`afterSnapshot` from values already held in memory (`HistoryManager.swift:1200-1204`) — never reads the blob off the model object. `resolveSnapshots(for:)` (`HistoryManager.swift:1049-1090`) also only accesses `.beforeSnapshot`/`.afterSnapshot` on the plain `HistoryRecord` struct, not the SwiftData object. `HistoryManager.loadData()` genuinely already runs on a detached background `ModelContext` (`HistoryManager.swift:1010-1021`), matching PR #52.
+
+### The actual match: `ThumbnailMigrationCoordinator`
+`/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/ThumbnailMigrationCoordinator.swift`
+
+- The coordinator is `@MainActor` (line 37) and runs a continuous loop (`run()`, started from `scenePhase.active`, line 336 in `BeadInventoryApp.swift`) that pages through `SDProjectRecord` rows needing `displayThumbnail` backfill, sleeping 1s between batches (lines 134-209).
+- The **per-row work happens in `migrateOne` (lines 237-333)**, entirely on MainActor:
+  - Lines 242-264: `context.fetch(descriptor)` with **no `propertiesToFetch`**, then directly reads `sd.thumbnail` (line 251) and `sd.displayThumbnail` (line 254) off the live `SDProjectRecord` model object.
+  - Lines 283-307: after the `await Task.detached` downsample, it re-fetches the **same row** and again reads `sd.thumbnail` (line 294) / `sd.displayThumbnail` (line 297), synchronously on MainActor, with no `await` in between.
+- Because `InventoryManager.loadData`/`refreshProjectBlobMetadata` constantly re-register these same `SDProjectRecord` objects in the **same shared `mainContext`** via `propertiesToFetch`-restricted descriptors (`InventoryManager.swift:1449-1454`, `3695-3712`), those objects sit in the context with `thumbnail`/`displayThumbnail` left as **deferred/unfaulted properties**. When `migrateOne` then touches `sd.thumbnail`/`sd.displayThumbnail` on that same registered object, Core Data has to issue a fresh single-column SQL fetch to fulfill just that deferred property — this is exactly the `_PF_FulfillDeferredFault → _pvfk_header → _PF_Handler_Public_GetProperty → newFetchedRowsForFetchPlan_MT → sqlite3_step → pread` chain in the crash report, and per the code's own comments the raw `thumbnail` column can be "5-10 MB" per row (`ThumbnailMigrationCoordinator.swift:8`).
+
+### Why this lines up with the specific crash
+- The code's own comment already flags a watchdog concern here, but only for the wrong half of the problem:
+  `ThumbnailMigrationCoordinator.swift:29-31`: *"scenePhase .background 时调 stop()，理由：(a) 释放后台 CPU（detached downsample 在 app 被 suspend 之前还会跑，浪费电量 + watchdog 风险）"* — i.e. they mitigated the CPU-burning **detached downsample Task**, not the synchronous main-thread blob **fetch**.
+- `Task.isCancelled` is only checked *between* synchronous operations (lines 135, 171, 268, 274), never *during* an in-flight `context.fetch()`. So if `scenePhase` flips to `.background` while `migrateOne` is mid-`context.fetch`/mid-property-access reading a multi‑MB blob, `ThumbnailMigrationCoordinator.shared.stop()` (called from the very same main thread/MainActor) cannot preempt it — it can only run after the blocking fetch returns.
+- Under thermal throttling (Level 4/serious, as in this crash), disk I/O and CPU are both degraded, so this normally-fast single-row `pread` can balloon well past what it would take in a healthy state, and it's happening on the main thread at the exact moment the system needs the main thread free to acknowledge suspension — hence the 5s watchdog `0x8BADF00D` kill.
+- This is highly reachable/likely during backgrounding specifically because the coordinator is the app's only continuously-looping background-ish task (started on every `.active`, sleeping 1s between 10-row batches), so there's a large window of overlap with a user backgrounding the app mid-migration, especially for the "458 项目级用户" cohort explicitly called out in the code comments as the group this class exists to protect.
+
+### Recommended fix
+1. In `migrateOne` (`ThumbnailMigrationCoordinator.swift:237-333`), don't do the blob-materializing `context.fetch`/property reads on the main `ModelContext`. Either:
+   - Run the whole migration loop (fetch + `.thumbnail` read + downsample + revalidate + save) on a **separate background `ModelContext(container)`**, only hopping to MainActor to call the thin `InventoryManager.setProjectDisplayThumbnail`/or an equivalent background-context write, similar to how `HistoryManager.fetchHistoryMetadata` already does it (`HistoryManager.swift:1008-1022`); or
+   - At minimum, insert an explicit `Task.isCancelled` check immediately before each `context.fetch` in `migrateOne`, and have `AppBackgroundTaskManager`/`stop()` set a `@MainActor` flag that `migrateOne` checks right before issuing the blocking fetch, so a fetch already in flight can't be prevented but at least no *new* one is started once backgrounding begins.
+2. Independently, wrap `ThumbnailMigrationCoordinator`'s per-row work in `AppBackgroundTaskManager.shared.perform` (it currently isn't), so if a fetch is genuinely in-flight when backgrounding starts, iOS at least grants extra background execution time via `beginBackgroundTask` rather than relying solely on the 5s foreground-suspend watchdog window.
+3. As a secondary/defense-in-depth fix per the "unfinished business" note: move `InventoryManager.loadData` off the main `ModelContext` (mirroring the `HistoryManager.loadData` background-context pattern in PR #52), since it can also be re-triggered around scenePhase transitions (`scheduleRefreshFromPersistentStore` on `.active`, remote-change notifications) and currently blocks the main thread for its (metadata-only, but still synchronous) SQL fetches — this doesn't match this specific blob-fault crash signature, but it's a related, real gap the memory note already identifies and worth closing in the same pass.</result>
+<usage><subagent_tokens>142403</subagent_tokens><tool_uses>21</tool_uses><duration_ms>283841</duration_ms></usage>
+</task-notification>
+
+---
+
+build 180构建日期是Jun 12, 2026 at 6:22 PM。 请你修一下。请你确保你真的修好了，完整的修好了！
