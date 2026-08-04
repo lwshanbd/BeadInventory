@@ -152,6 +152,9 @@ class InventoryManager: ObservableObject {
 
     // 防止重复触发持久层全量读取
     private var isLoadingPersistentStore = false
+    /// 首次持久层读取必须离开 MainActor，否则 SwiftData 首次开库、关系 fault 和大表扫描
+    /// 会发生在首帧之前，用户只能看到系统白色启动画面。
+    private var initialLoadTask: Task<Void, Never>?
     private var hasCompletedInitialPersistentLoad = false
     private var initialLoadAttemptCount = 0
     private let maxAutomaticInitialLoadAttempts = 3
@@ -199,6 +202,27 @@ class InventoryManager: ObservableObject {
         let stocksLoadedSuccessfully: Bool
         let projectsLoadedSuccessfully: Bool
         let customColorsLoadedSuccessfully: Bool
+    }
+
+    /// 后台 ModelContext 只把纯值类型结果交回 MainActor；SwiftData @Model 实例绝不跨线程。
+    /// 这些业务模型均由 Foundation 值组成，但尚未逐个声明 Sendable，因此在这里集中标注。
+    private struct InitialPersistentLoadResult: @unchecked Sendable {
+        var brands: [Brand]? = nil
+        var brandStocks: [BrandStock]? = nil
+        var projects: [ProjectRecord]? = nil
+        var customColors: [CustomColor]? = nil
+        var projectIDsWithFinishedImage: Set<UUID>? = nil
+        var projectIDsWithThumbnail: Set<UUID>? = nil
+        var projectIDsWithPatternGrid: Set<UUID>? = nil
+        var projectIDsWithDisplayThumbnail: Set<UUID>? = nil
+        var errors: [String: String] = [:]
+    }
+
+    private struct LegacyMigrationKeys: Sendable {
+        let brands: String
+        let stocks: String
+        let projects: String
+        let completed: String
     }
 
     // 历史记录管理器
@@ -1033,7 +1057,15 @@ class InventoryManager: ObservableObject {
             return
         }
         guard hasCompletedInitialPersistentLoad else {
-            performInitialLoadIfNeeded(reason: reason)
+            if isLoadingPersistentStore {
+                deferRefreshUntilLoadFinishes(
+                    reason: reason,
+                    preserveInMemoryOnFailure: preserveInMemoryOnFailure
+                )
+                logInfo("refresh_deferred_during_initial_load", metadata: ["reason": reason])
+            } else {
+                performInitialLoadIfNeeded(reason: reason)
+            }
             return
         }
         guard !isSaving else {
@@ -1109,7 +1141,19 @@ class InventoryManager: ObservableObject {
             return
         }
         guard hasCompletedInitialPersistentLoad else {
-            performInitialLoadIfNeeded(reason: reason)
+            if isLoadingPersistentStore {
+                deferRefreshUntilLoadFinishes(
+                    reason: reason,
+                    preserveInMemoryOnFailure: true,
+                    debounceSeconds: debounceSeconds
+                )
+                logInfo("schedule_refresh_deferred_during_initial_load", metadata: [
+                    "reason": reason,
+                    "retryCount": retryCount
+                ])
+            } else {
+                performInitialLoadIfNeeded(reason: reason)
+            }
             return
         }
         guard !isLoadingPersistentStore else {
@@ -1356,6 +1400,387 @@ class InventoryManager: ObservableObject {
 
     // MARK: - 数据持久化 (SwiftData)
 
+    /// 首次启动专用：在独立 ModelContext 上读取持久层，只在完成后回 MainActor 原子提交。
+    /// 后台任务返回的只有 struct / Set 等值类型，不会把 SwiftData @Model 实例跨线程传递。
+    private func startInitialPersistentLoad(
+        from container: ModelContainer,
+        preserveInMemoryOnFailure: Bool
+    ) {
+        let fallbackSnapshot = preserveInMemoryOnFailure ? makeInMemorySnapshot() : nil
+        let loadedBeadColors = loadAllColorsFromJSON()
+        var loadedCurrentBrandId = currentBrandId
+        if let idString = UserDefaults.standard.string(forKey: currentBrandIdKey),
+           let id = UUID(uuidString: idString) {
+            loadedCurrentBrandId = id
+        }
+        var loadedPurchaseRecords = purchaseRecords
+        if let data = UserDefaults.standard.data(forKey: purchaseRecordsKey),
+           let decoded = try? JSONDecoder().decode([PurchaseRecord].self, from: data) {
+            loadedPurchaseRecords = decoded
+        }
+
+        isDataLoaded = false
+        brandsLoadedSuccessfully = false
+        stocksLoadedSuccessfully = false
+        projectsLoadedSuccessfully = false
+        customColorsLoadedSuccessfully = false
+
+        let needsMigration = !UserDefaults.standard.bool(forKey: migrationCompletedKey)
+        let migrationKeys = LegacyMigrationKeys(
+            brands: brandsKey,
+            stocks: brandStocksKey,
+            projects: projectsKey,
+            completed: migrationCompletedKey
+        )
+        logInfo("load_data_started", metadata: [
+            "preserveInMemoryOnFailure": preserveInMemoryOnFailure,
+            "execution": "background"
+        ])
+
+        initialLoadTask = Task { @MainActor [weak self] in
+            let result = await Self.fetchInitialPersistentData(
+                from: container,
+                needsMigration: needsMigration,
+                migrationKeys: migrationKeys
+            )
+            guard let self else { return }
+            defer {
+                self.initialLoadTask = nil
+                self.isLoadingPersistentStore = false
+                self.replayDeferredRefreshIfNeeded()
+            }
+            self.applyInitialPersistentLoad(
+                result,
+                fallbackSnapshot: fallbackSnapshot,
+                loadedBeadColors: loadedBeadColors,
+                loadedCurrentBrandId: loadedCurrentBrandId,
+                loadedPurchaseRecords: loadedPurchaseRecords
+            )
+        }
+    }
+
+    nonisolated private static func fetchInitialPersistentData(
+        from container: ModelContainer,
+        needsMigration: Bool,
+        migrationKeys: LegacyMigrationKeys
+    ) async -> InitialPersistentLoadResult {
+        await Task.detached(priority: .userInitiated) {
+            let startedAt = Date()
+            let context = ModelContext(container)
+            var result = InitialPersistentLoadResult()
+
+            if needsMigration {
+                migrateLegacyUserDefaults(into: context, keys: migrationKeys)
+            }
+
+            do {
+                let descriptor = FetchDescriptor<SDBrand>(
+                    sortBy: [SortDescriptor(\.sortOrder)]
+                )
+                let loaded = try context.fetch(descriptor).map { $0.toStruct() }
+                result.brands = loaded
+                AppLogger.shared.info("InventoryManager", "load_brands_success", metadata: [
+                    "count": loaded.count,
+                    "execution": "background"
+                ])
+            } catch {
+                result.errors["brands"] = "\(error)"
+                AppLogger.shared.error("InventoryManager", "load_brands_failed", metadata: [
+                    "error": "\(error)",
+                    "execution": "background"
+                ])
+            }
+
+            do {
+                let descriptor = FetchDescriptor<SDBrandStock>()
+                let loaded = try context.fetch(descriptor).map { $0.toStruct() }
+                result.brandStocks = loaded
+                AppLogger.shared.info("InventoryManager", "load_stocks_success", metadata: [
+                    "count": loaded.count,
+                    "execution": "background"
+                ])
+            } catch {
+                result.errors["stocks"] = "\(error)"
+                AppLogger.shared.error("InventoryManager", "load_stocks_failed", metadata: [
+                    "error": "\(error)",
+                    "execution": "background"
+                ])
+            }
+
+            do {
+                // 只投影 metadata 列；beadUsages relationship 会在这个后台 context 上 fault。
+                var descriptor = FetchDescriptor<SDProjectRecord>(
+                    sortBy: [SortDescriptor(\.date, order: .reverse)]
+                )
+                descriptor.propertiesToFetch = [
+                    \.id, \.name, \.date, \.totalBeads, \.brandId, \.isArchived,
+                    \.parentId, \.isPlanned, \.executedDate, \.completedDate, \.colorSystemRaw
+                ]
+                let loaded = try context.fetch(descriptor).map { $0.toMetadataStruct() }
+                result.projects = loaded
+                AppLogger.shared.info("InventoryManager", "load_projects_success", metadata: [
+                    "count": loaded.count,
+                    "execution": "background"
+                ])
+            } catch {
+                result.errors["projects"] = "\(error)"
+                AppLogger.shared.error("InventoryManager", "load_projects_failed", metadata: [
+                    "error": "\(error)",
+                    "execution": "background"
+                ])
+            }
+
+            do {
+                let descriptor = FetchDescriptor<SDCustomColor>(
+                    sortBy: [SortDescriptor(\.createdAt)]
+                )
+                let loaded = try context.fetch(descriptor).map { $0.toStruct() }
+                result.customColors = loaded
+                AppLogger.shared.info("InventoryManager", "load_custom_colors_success", metadata: [
+                    "count": loaded.count,
+                    "execution": "background"
+                ])
+            } catch {
+                result.errors["customColors"] = "\(error)"
+                AppLogger.shared.error("InventoryManager", "load_custom_colors_failed", metadata: [
+                    "error": "\(error)",
+                    "execution": "background"
+                ])
+            }
+
+            // 四个存在性查询也必须留在后台。它们虽然只投影 id，不会物化 blob，
+            // 但在大库上仍会扫描表，放回 MainActor 会把 loading overlay 冻住。
+            if result.brands != nil, result.brandStocks != nil, result.projects != nil {
+                do {
+                    var finished = FetchDescriptor<SDProjectRecord>(
+                        predicate: #Predicate { $0.finishedImage != nil }
+                    )
+                    finished.propertiesToFetch = [\.id]
+                    var thumbnail = FetchDescriptor<SDProjectRecord>(
+                        predicate: #Predicate { $0.thumbnail != nil }
+                    )
+                    thumbnail.propertiesToFetch = [\.id]
+                    var patternGrid = FetchDescriptor<SDProjectRecord>(
+                        predicate: #Predicate { $0.patternGridData != nil }
+                    )
+                    patternGrid.propertiesToFetch = [\.id]
+                    var displayThumbnail = FetchDescriptor<SDProjectRecord>(
+                        predicate: #Predicate { $0.displayThumbnail != nil }
+                    )
+                    displayThumbnail.propertiesToFetch = [\.id]
+
+                    result.projectIDsWithFinishedImage = Set(
+                        try context.fetch(finished).map { $0.id }
+                    )
+                    result.projectIDsWithThumbnail = Set(
+                        try context.fetch(thumbnail).map { $0.id }
+                    )
+                    result.projectIDsWithPatternGrid = Set(
+                        try context.fetch(patternGrid).map { $0.id }
+                    )
+                    result.projectIDsWithDisplayThumbnail = Set(
+                        try context.fetch(displayThumbnail).map { $0.id }
+                    )
+                } catch {
+                    result.errors["projectBlobMetadata"] = "\(error)"
+                    AppLogger.shared.error(
+                        "InventoryManager",
+                        "project_blob_meta_refresh_failed",
+                        metadata: ["error": "\(error)", "execution": "background"]
+                    )
+                }
+            }
+
+            AppLogger.shared.info("InventoryManager", "load_data_fetch_completed", metadata: [
+                "durationMs": Int(Date().timeIntervalSince(startedAt) * 1_000),
+                "execution": "background",
+                "errorCount": result.errors.count
+            ])
+            return result
+        }.value
+    }
+
+    nonisolated private static func migrateLegacyUserDefaults(
+        into context: ModelContext,
+        keys: LegacyMigrationKeys
+    ) {
+        let defaults = UserDefaults.standard
+        var migratedBrands = 0
+        var migratedStocks = 0
+        var migratedProjects = 0
+
+        if let data = defaults.data(forKey: keys.brands),
+           let decoded = try? JSONDecoder().decode([Brand].self, from: data) {
+            migratedBrands = decoded.count
+            for brand in decoded {
+                context.insert(SDBrand(from: brand))
+            }
+        }
+        if let data = defaults.data(forKey: keys.stocks),
+           let decoded = try? JSONDecoder().decode([BrandStock].self, from: data) {
+            migratedStocks = decoded.count
+            for stock in decoded {
+                context.insert(SDBrandStock(from: stock))
+            }
+        }
+        if let data = defaults.data(forKey: keys.projects),
+           let decoded = try? JSONDecoder().decode([ProjectRecord].self, from: data) {
+            migratedProjects = decoded.count
+            for project in decoded {
+                context.insert(SDProjectRecord(from: project))
+            }
+        }
+
+        do {
+            try context.save()
+            defaults.set(true, forKey: keys.completed)
+            AppLogger.shared.info("InventoryManager", "legacy_migration_completed", metadata: [
+                "brands": migratedBrands,
+                "stocks": migratedStocks,
+                "projects": migratedProjects,
+                "execution": "background"
+            ])
+        } catch {
+            context.rollback()
+            AppLogger.shared.error("InventoryManager", "legacy_migration_failed", metadata: [
+                "error": "\(error)",
+                "execution": "background"
+            ])
+        }
+    }
+
+    private func applyInitialPersistentLoad(
+        _ result: InitialPersistentLoadResult,
+        fallbackSnapshot: InMemorySnapshot?,
+        loadedBeadColors: [BeadColor],
+        loadedCurrentBrandId initialCurrentBrandId: UUID?,
+        loadedPurchaseRecords: [PurchaseRecord]
+    ) {
+        brandsLoadedSuccessfully = result.brands != nil
+        stocksLoadedSuccessfully = result.brandStocks != nil
+        projectsLoadedSuccessfully = result.projects != nil
+        customColorsLoadedSuccessfully = result.customColors != nil
+
+        let loadedBrands = result.brands ?? brands
+        let loadedBrandStocks = result.brandStocks ?? brandStocks
+        let loadedProjects = result.projects ?? projects
+        let loadedCustomColors = result.customColors ?? customColors
+        var loadedCurrentBrandId = initialCurrentBrandId
+
+        let allLoaded = brandsLoadedSuccessfully
+            && stocksLoadedSuccessfully
+            && projectsLoadedSuccessfully
+        guard allLoaded else {
+            logError("load_data_partial_failure", metadata: [
+                "brandsLoaded": brandsLoadedSuccessfully,
+                "stocksLoaded": stocksLoadedSuccessfully,
+                "projectsLoaded": projectsLoadedSuccessfully,
+                "customColorsLoaded": customColorsLoadedSuccessfully,
+                "execution": "background"
+            ])
+            if let fallbackSnapshot {
+                restoreInMemorySnapshot(fallbackSnapshot)
+            } else {
+                beadColors = loadedBeadColors
+            }
+            finishInitialLoadFailure(
+                userMessage: String(localized: "部分数据加载失败，请点击重试。"),
+                metadata: [
+                    "failure": "partialLoad",
+                    "brandsLoaded": brandsLoadedSuccessfully,
+                    "stocksLoaded": stocksLoadedSuccessfully,
+                    "projectsLoaded": projectsLoadedSuccessfully,
+                    "customColorsLoaded": customColorsLoadedSuccessfully,
+                    "errors": result.errors
+                ]
+            )
+            return
+        }
+
+        let allEmpty = loadedBrands.isEmpty
+            && loadedBrandStocks.isEmpty
+            && loadedProjects.isEmpty
+            && loadedCustomColors.isEmpty
+        let hadDataBefore = UserDefaults.standard.bool(forKey: hasExistingDataKey)
+
+        if let snapshot = fallbackSnapshot {
+            let suspiciousBrandDrop = snapshot.brands.count >= 3
+                && !loadedBrands.isEmpty
+                && loadedBrands.count * 2 < snapshot.brands.count
+            let suspiciousStockDrop = snapshot.brandStocks.count >= 200
+                && !loadedBrandStocks.isEmpty
+                && loadedBrandStocks.count * 2 < snapshot.brandStocks.count
+            if suspiciousBrandDrop || suspiciousStockDrop {
+                restoreInMemorySnapshot(snapshot)
+                finishInitialLoadFailure(
+                    userMessage: String(localized: "云端数据仍在同步中，请稍后重试。"),
+                    metadata: [
+                        "failure": "suspiciousDrop",
+                        "previousBrands": snapshot.brands.count,
+                        "loadedBrands": loadedBrands.count,
+                        "previousStocks": snapshot.brandStocks.count,
+                        "loadedStocks": loadedBrandStocks.count
+                    ]
+                )
+                return
+            }
+        }
+
+        if allEmpty && hadDataBefore {
+            if let fallbackSnapshot {
+                restoreInMemorySnapshot(fallbackSnapshot)
+            }
+            finishInitialLoadFailure(
+                userMessage: String(localized: "暂时无法确认已有数据，请稍后重试。"),
+                metadata: ["failure": "unexpectedAllEmpty"]
+            )
+            return
+        }
+
+        if let selectedBrandId = loadedCurrentBrandId,
+           !loadedBrands.contains(where: { $0.id == selectedBrandId }) {
+            loadedCurrentBrandId = loadedBrands.first?.id
+        }
+
+        brands = loadedBrands
+        brandStocks = loadedBrandStocks
+        projects = loadedProjects
+        customColors = loadedCustomColors
+        currentBrandId = loadedCurrentBrandId
+        purchaseRecords = loadedPurchaseRecords
+        beadColors = loadedBeadColors
+
+        if let ids = result.projectIDsWithFinishedImage {
+            projectIDsWithFinishedImage = ids
+        }
+        if let ids = result.projectIDsWithThumbnail {
+            projectIDsWithThumbnail = ids
+        }
+        if let ids = result.projectIDsWithPatternGrid {
+            projectIDsWithPatternGrid = ids
+        }
+        if let ids = result.projectIDsWithDisplayThumbnail {
+            projectIDsWithDisplayThumbnail = ids
+        }
+        projectBlobsRevision &+= 1
+
+        isDataLoaded = true
+        finishInitialLoadSuccess()
+        hasCompletedInitialPersistentLoad = true
+        if !allEmpty {
+            UserDefaults.standard.set(true, forKey: hasExistingDataKey)
+        }
+        refreshBaselines()
+        fixProjectConsistency()
+        logInfo("load_data_completed", metadata: [
+            "brands": brands.count,
+            "stocks": brandStocks.count,
+            "projects": projects.count,
+            "customColors": customColors.count,
+            "execution": "background"
+        ])
+    }
+
     func loadData(preserveInMemoryOnFailure: Bool = false) {
         guard !isLoadingPersistentStore else {
             logWarning("load_data_skipped_already_loading", metadata: [
@@ -1365,6 +1790,19 @@ class InventoryManager: ObservableObject {
         }
 
         isLoadingPersistentStore = true
+
+        // 首次读取发生在 rootView.onAppear。此时若继续使用 mainContext 同步 fetch，
+        // SwiftUI 还没有机会提交首帧，任何 SQLite / CloudKit 首次开库或 relationship fault
+        // 都会直接表现成白屏。后续 refresh 仍保留原来的同步语义，避免用户正在编辑时
+        // 后台结果覆盖内存中的新改动；首次加载期间 UI 被 loading overlay 保护，不存在该竞态。
+        if !hasCompletedInitialPersistentLoad, let context = modelContext {
+            startInitialPersistentLoad(
+                from: context.container,
+                preserveInMemoryOnFailure: preserveInMemoryOnFailure
+            )
+            return
+        }
+
         defer {
             isLoadingPersistentStore = false
             replayDeferredRefreshIfNeeded()
