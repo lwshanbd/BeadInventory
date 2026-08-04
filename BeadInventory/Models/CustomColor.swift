@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 
 /// 自定义色号模型
-struct CustomColor: Identifiable, Codable, Hashable {
+struct CustomColor: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     var colorCode: String       // 用户定义的色号（如 "MY01"）
     var colorHex: String        // 颜色十六进制值（如 "FF5733"）

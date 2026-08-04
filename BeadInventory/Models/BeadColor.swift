@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 
 // MARK: - 豆子颜色模型
-struct BeadColor: Identifiable, Codable, Hashable {
+struct BeadColor: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     let colorHex: String           // 颜色十六进制值
     let mardCode: String           // MARD色号
@@ -104,7 +104,7 @@ struct BeadColor: Identifiable, Codable, Hashable {
 }
 
 // MARK: - 图纸记录模型
-struct ProjectRecord: Identifiable, Codable, Equatable {
+struct ProjectRecord: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     var name: String
     var date: Date
@@ -192,7 +192,7 @@ struct ProjectRecord: Identifiable, Codable, Equatable {
 }
 
 // MARK: - 单色用量
-struct BeadUsage: Identifiable, Codable, Hashable {
+struct BeadUsage: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     let colorCode: String          // 色号（MARD为主）
     let brandId: UUID?             // 关联的品牌 ID
@@ -219,7 +219,7 @@ struct BeadUsage: Identifiable, Codable, Hashable {
 }
 
 // MARK: - 购买记录（运输中）
-struct PurchaseRecord: Identifiable, Codable, Equatable {
+struct PurchaseRecord: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     var name: String                    // 购买记录名称（如"淘宝订单xxx"）
     let date: Date                      // 创建日期

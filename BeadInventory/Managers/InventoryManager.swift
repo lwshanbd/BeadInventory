@@ -154,7 +154,28 @@ class InventoryManager: ObservableObject {
     private var isLoadingPersistentStore = false
     /// 首次持久层读取必须离开 MainActor，否则 SwiftData 首次开库、关系 fault 和大表扫描
     /// 会发生在首帧之前，用户只能看到系统白色启动画面。
-    private var initialLoadTask: Task<Void, Never>?
+    ///
+    /// `private(set)`：测试需要 `await manager.initialLoadTask?.value` 做确定性等待，
+    /// 跟 `HistoryManager.loadTask` 同一约定，避免测试退化成轮询 sleep。
+    private(set) var initialLoadTask: Task<Void, Never>?
+    /// 在途首次读取的代次。每次「重新发起 / 超时作废 / 用户改走本地模式」都会 +1，
+    /// 后台任务回到 MainActor 时代次对不上就整份丢弃。
+    ///
+    /// 这是把读取改成异步之后必须补的一道闸：同步版本里「在途」窗口是 0，
+    /// 现在这个窗口有几百毫秒到数秒，期间用户完全可能已经点了「以本地模式继续」
+    /// 并开始改数据 —— 过期结果绝不允许覆盖内存。
+    private var initialLoadGeneration: UInt64 = 0
+    /// 首次读取的超时看门狗。SwiftData 首次开库 / CloudKit 首次握手卡死时，
+    /// `await` 不会自己返回，UI 会永远停在转圈且没有任何出口按钮。
+    private var initialLoadTimeoutTask: Task<Void, Never>?
+    /// 超过这个时间仍未拿到结果，就把这次读取判为失败，放出「重试 / 本地模式 / 关闭 iCloud」出口。
+    /// 取值偏保守：正常冷启动实测约 220ms，首次 CloudKit 同步慢也很少超过 10s。
+    ///
+    /// 非 `let` 仅仅是为了让测试能调到几十毫秒去覆盖超时分支 —— 生产代码不要改它。
+    var initialLoadTimeout: TimeInterval = 20
+    /// 老版本 UserDefaults → SwiftData 迁移每次启动最多尝试一次。
+    /// 迁移是**无去重的裸 insert**，超时作废 + 自动重试叠加时若跑第二遍会直接把品牌/库存翻倍。
+    private static var hasAttemptedLegacyMigrationThisLaunch = false
     private var hasCompletedInitialPersistentLoad = false
     private var initialLoadAttemptCount = 0
     private let maxAutomaticInitialLoadAttempts = 3
@@ -205,8 +226,10 @@ class InventoryManager: ObservableObject {
     }
 
     /// 后台 ModelContext 只把纯值类型结果交回 MainActor；SwiftData @Model 实例绝不跨线程。
-    /// 这些业务模型均由 Foundation 值组成，但尚未逐个声明 Sendable，因此在这里集中标注。
-    private struct InitialPersistentLoadResult: @unchecked Sendable {
+    /// 这里刻意用**编译器检查的** `Sendable`（而不是 `@unchecked`）—— 成员模型都已显式声明
+    /// `Sendable`，将来谁往 `Brand` / `ProjectRecord` 里塞了引用类型（UIImage、闭包……），
+    /// 编译器会直接在那个模型上报错，而不是让它悄悄跨 `Task.detached` 边界。
+    private struct InitialPersistentLoadResult: Sendable {
         var brands: [Brand]? = nil
         var brandStocks: [BrandStock]? = nil
         var projects: [ProjectRecord]? = nil
@@ -294,7 +317,26 @@ class InventoryManager: ObservableObject {
         pendingAutomaticRetryWorkItem = nil
         initialLoadAttemptCount = 0
         initialLoadErrorMessage = nil
+        // 作废可能还在途的上一轮后台读取，并把旗子交还给新一轮，
+        // 否则 `loadData` 会被 `isLoadingPersistentStore` 挡住，用户点「重试」毫无反应。
+        discardInFlightInitialLoad(reason: reason)
         performInitialLoadIfNeeded(reason: reason, force: true)
+    }
+
+    /// 让在途的首次后台读取作废：代次 +1 之后，它回到 MainActor 时会自行丢弃结果。
+    ///
+    /// 无法真正取消 —— SwiftData 的 `context.fetch` 不响应 Task 取消，只能让结果失效。
+    private func discardInFlightInitialLoad(reason: String) {
+        initialLoadTimeoutTask?.cancel()
+        initialLoadTimeoutTask = nil
+        guard isLoadingPersistentStore || initialLoadTask != nil else { return }
+        initialLoadGeneration &+= 1
+        initialLoadTask = nil
+        isLoadingPersistentStore = false
+        logWarning("initial_load_in_flight_discarded", metadata: [
+            "reason": reason,
+            "generation": initialLoadGeneration
+        ])
     }
 
     /// 用户主动放弃等待 iCloud 同步，进入"只读浏览"模式。
@@ -311,6 +353,10 @@ class InventoryManager: ObservableObject {
     func continueInLocalFallbackMode(reason: String = "userOptedOutOfWaiting") {
         pendingAutomaticRetryWorkItem?.cancel()
         pendingAutomaticRetryWorkItem = nil
+        // 关键：解除 UI 屏蔽之前先让在途读取作废。用户从这一刻起就能编辑内存里的数据，
+        // 若干秒后后台读取才返回 —— 不作废的话它会直接把用户刚改的内容整份盖掉。
+        // 同步版本里这个窗口是 0，所以原来不需要这道闸。
+        discardInFlightInitialLoad(reason: reason)
         isInitialLoadInProgress = false
         initialLoadErrorMessage = nil
         isUsingLocalFallbackMode = true
@@ -1425,30 +1471,63 @@ class InventoryManager: ObservableObject {
         projectsLoadedSuccessfully = false
         customColorsLoadedSuccessfully = false
 
+        // 迁移每次启动只允许尝试一次：超时作废后会自动重试，而 migrateLegacyUserDefaults
+        // 是裸 insert 没有去重，跑第二遍等于把老用户的品牌/库存/项目全部翻倍。
+        // 失败不置 completed 标志，下次启动仍会重试。
         let needsMigration = !UserDefaults.standard.bool(forKey: migrationCompletedKey)
+            && !Self.hasAttemptedLegacyMigrationThisLaunch
+        if needsMigration {
+            Self.hasAttemptedLegacyMigrationThisLaunch = true
+        }
         let migrationKeys = LegacyMigrationKeys(
             brands: brandsKey,
             stocks: brandStocksKey,
             projects: projectsKey,
             completed: migrationCompletedKey
         )
+
+        initialLoadGeneration &+= 1
+        let generation = initialLoadGeneration
         logInfo("load_data_started", metadata: [
             "preserveInMemoryOnFailure": preserveInMemoryOnFailure,
-            "execution": "background"
+            "execution": "background",
+            "generation": generation,
+            "needsMigration": needsMigration
         ])
 
+        startInitialLoadTimeoutWatchdog(
+            generation: generation,
+            fallbackSnapshot: fallbackSnapshot,
+            loadedBeadColors: loadedBeadColors
+        )
+
         initialLoadTask = Task { @MainActor [weak self] in
-            let result = await Self.fetchInitialPersistentData(
-                from: container,
-                needsMigration: needsMigration,
-                migrationKeys: migrationKeys
-            )
+            // 迁移写入必须带后台任务断言：这条路径是老用户升级后第一次启动才会走的一次性
+            // 写库，用户此时把 App 切后台，进程被挂起会让 save 半途而废。
+            let result = await AppBackgroundTaskManager.shared.performAsync(named: "InventoryInitialLoad") {
+                await Self.fetchInitialPersistentData(
+                    from: container,
+                    needsMigration: needsMigration,
+                    migrationKeys: migrationKeys
+                )
+            }
             guard let self else { return }
+            // 代次对不上 = 这次读取已经被超时作废 / 被用户的重试或本地模式取代。
+            // 直接丢弃，且**不要**碰 isLoadingPersistentStore —— 那面旗子已经属于新一轮读取。
+            guard generation == self.initialLoadGeneration else {
+                self.logWarning("initial_load_result_discarded_stale", metadata: [
+                    "resultGeneration": generation,
+                    "currentGeneration": self.initialLoadGeneration
+                ])
+                return
+            }
             defer {
                 self.initialLoadTask = nil
                 self.isLoadingPersistentStore = false
                 self.replayDeferredRefreshIfNeeded()
             }
+            self.initialLoadTimeoutTask?.cancel()
+            self.initialLoadTimeoutTask = nil
             self.applyInitialPersistentLoad(
                 result,
                 fallbackSnapshot: fallbackSnapshot,
@@ -1456,6 +1535,56 @@ class InventoryManager: ObservableObject {
                 loadedCurrentBrandId: loadedCurrentBrandId,
                 loadedPurchaseRecords: loadedPurchaseRecords
             )
+        }
+    }
+
+    /// 首次读取的超时看门狗。
+    ///
+    /// 改成异步之后新增的失败模式：SwiftData 首次开库或 CloudKit 首次握手如果卡死，
+    /// `await` 永远不返回 —— 旧的同步实现至少还会被系统看门狗杀掉，异步版本则是
+    /// 一个永远转圈、连「以本地模式继续」按钮都不出现的软死锁（出口按钮只在
+    /// `initialLoadErrorMessage != nil` 时渲染）。这里到点就把在途读取判负，
+    /// 交回既有失败机制去放出口。
+    private func startInitialLoadTimeoutWatchdog(
+        generation: UInt64,
+        fallbackSnapshot: InMemorySnapshot?,
+        loadedBeadColors: [BeadColor]
+    ) {
+        initialLoadTimeoutTask?.cancel()
+        let timeout = initialLoadTimeout
+        initialLoadTimeoutTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            guard generation == self.initialLoadGeneration else { return }
+            guard !self.hasCompletedInitialPersistentLoad else { return }
+
+            // 让在途结果作废（它回来时代次已经变了，会自行丢弃），把旗子交还给失败机制。
+            self.initialLoadGeneration &+= 1
+            self.initialLoadTask = nil
+            self.initialLoadTimeoutTask = nil
+            self.isLoadingPersistentStore = false
+
+            self.logError("initial_load_timed_out", metadata: [
+                "timeoutSeconds": timeout,
+                "generation": generation
+            ])
+            if let fallbackSnapshot {
+                self.restoreInMemorySnapshot(fallbackSnapshot)
+            } else if self.beadColors.isEmpty {
+                self.beadColors = loadedBeadColors
+            }
+            // 超时不再走自动重试阶梯：卡住的库重试一轮还是会卡满 timeout，三轮下来用户要
+            // 盯着转圈将近一分钟才等到出口。把尝试次数打满，让错误 UI（重试 / 以本地模式继续 /
+            // 关闭 iCloud 同步）立刻出来，把选择权交回用户。
+            self.initialLoadAttemptCount = self.maxAutomaticInitialLoadAttempts
+            self.finishInitialLoadFailure(
+                userMessage: String(localized: "云端数据仍在同步中，请稍后重试。"),
+                metadata: [
+                    "failure": "timeout",
+                    "timeoutSeconds": timeout
+                ]
+            )
+            self.replayDeferredRefreshIfNeeded()
         }
     }
 
@@ -1740,6 +1869,15 @@ class InventoryManager: ObservableObject {
         if let selectedBrandId = loadedCurrentBrandId,
            !loadedBrands.contains(where: { $0.id == selectedBrandId }) {
             loadedCurrentBrandId = loadedBrands.first?.id
+        }
+
+        // 跟同步路径保持一致：真实数据接管 UI 是严格更优的状态，但用户并不知道，
+        // 明确记一条日志，便于排查 "fallback 期间的写入丢失" 类问题。
+        // （正常情况下走不到这里 —— `continueInLocalFallbackMode` 已经把在途读取作废了；
+        //   留着是为了兜住将来新增的、不经过那条路径的 fallback 入口。）
+        if isUsingLocalFallbackMode {
+            logInfo("local_fallback_exited_on_successful_load", metadata: ["execution": "background"])
+            isUsingLocalFallbackMode = false
         }
 
         brands = loadedBrands

@@ -121,11 +121,10 @@ final class InventoryManagerBlobFetchTests: XCTestCase {
         XCTAssertTrue(m.isInitialLoadInProgress)
         XCTAssertFalse(m.hasCompletedInitialLoad)
 
-        let deadline = Date().addingTimeInterval(5)
-        while !m.hasCompletedInitialLoad && Date() < deadline {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
-        XCTAssertTrue(m.hasCompletedInitialLoad, "后台 loadData 应在超时前成功完成")
+        // 确定性等待，不用轮询 sleep：`initialLoadTask` 是 `private(set)`，
+        // 跟 `HistoryManager.loadTask` 同一约定。
+        await m.initialLoadTask?.value
+        XCTAssertTrue(m.hasCompletedInitialLoad, "后台 loadData 应成功完成")
         XCTAssertTrue(m.projectIDsWithThumbnail.contains(projectId))
         XCTAssertTrue(m.projectIDsWithFinishedImage.contains(projectId))
 

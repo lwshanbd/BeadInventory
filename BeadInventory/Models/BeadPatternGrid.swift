@@ -10,7 +10,7 @@ import CoreGraphics
 
 /// 网格 4 个角点，归一化坐标 (0~1)，相对源图片左上角。
 /// 支持四边形（梯形）以容忍轻微透视，不强制矩形。
-struct GridCorners: Codable, Equatable {
+struct GridCorners: Codable, Equatable, Sendable {
     var topLeft: CGPoint
     var topRight: CGPoint
     var bottomLeft: CGPoint
@@ -19,7 +19,7 @@ struct GridCorners: Codable, Equatable {
 
 /// 拼图模式中一张图纸的完整网格描述。
 /// 与 ProjectRecord 一对一，存在 ProjectRecord.patternGrid 字段。
-struct BeadPatternGrid: Codable, Equatable {
+struct BeadPatternGrid: Codable, Equatable, Sendable {
     /// 4 个归一化角点
     var corners: GridCorners
 
