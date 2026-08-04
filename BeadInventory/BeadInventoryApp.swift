@@ -167,6 +167,10 @@ struct BeadInventoryApp: App {
         }
 
         self.modelContainer = container
+        #if DEBUG
+        BeadInventoryApp.cleanupChaosStressDataIfRequested(container: container)
+        BeadInventoryApp.seedChaosStressDataIfRequested(container: container)
+        #endif
         // 创建 InventoryManager 并传入 ModelContext
         let manager = InventoryManager(modelContext: container.mainContext)
         self._inventoryManager = StateObject(wrappedValue: manager)
@@ -292,8 +296,10 @@ struct BeadInventoryApp: App {
                 inventoryManager.saveData()
                 HistoryManager.shared.saveDataImmediately()
                 themeManager.flushPersistenceNow()
-                // 停掉 displayThumbnail 后台迁移协调器 —— 释放 CPU + 让 saveData 在干净 context 上完成。
+                // 停掉 displayThumbnail 后台迁移协调器 —— 释放 CPU + 让 saveData 在干净 store 上完成。
                 // 协调器内部用 generation token 保证下次 .active start() 不会跟旧 task 抢资源。
+                // 注：协调器的 SwiftData I/O 全部在后台 ModelContext（build 180 watchdog 修复），
+                // 即使 stop() 时仍有一次 fetch/save 在飞行中，也不占主线程、不影响 5s suspend 应答。
                 ThumbnailMigrationCoordinator.shared.stop()
             case .inactive:
                 // .inactive 频繁出现（例如控制中心、系统弹窗），先取消待执行刷新；
@@ -1141,3 +1147,113 @@ class CloudSyncStatusManager: ObservableObject {
         return ordered
     }
 }
+
+#if DEBUG
+// MARK: - Chaos 压测灌数据（DEBUG-only，仅在启动参数带 -StressSeedThumbnails 时触发）
+//
+// Release / TestFlight 构建整个 extension 不参与编译；不带该参数的日常调试启动
+// 行为完全不变。用于真机模拟器对抗测试 ThumbnailMigrationCoordinator 的修复
+//（build 180 watchdog 崩溃，详见 ThumbnailMigrationCoordinator.swift 顶部注释）——
+// 灌大量待迁移的大 blob 项目，配合外部脚本高频切后台/杀进程，观察真实 App 进程
+// 会不会崩，而不只是 XCTest 里量化主线程停摆。
+//
+// 用法：
+//   xcrun simctl launch <udid> com.beadinventory.app \
+//     -StressSeedThumbnails -StressSeedCount 300
+//
+// 清理（把上面灌的 ChaosSeed-* 项目连同 CloudKit 同步痕迹一起删掉）：
+//   xcrun simctl launch <udid> com.beadinventory.app -StressSeedCleanup
+// 走正常的 ModelContext.delete + save（不是绕过 Core Data 直接改 sqlite），
+// 保证 CloudKit 镜像能正确把删除操作同步传播出去。
+extension BeadInventoryApp {
+    static func cleanupChaosStressDataIfRequested(container: ModelContainer) {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-StressSeedCleanup") else { return }
+
+        let ctx = ModelContext(container)
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.name.starts(with: "ChaosSeed-") }
+        )
+        // 只投影 id 列——delete 不需要物化 thumbnail/displayThumbnail 这些 blob，
+        // 几百条 × ~1.6MB 裸 fetch 会在主线程一次性拉几百 MB 进内存，没必要。
+        descriptor.propertiesToFetch = [\.id]
+        do {
+            let toDelete = try ctx.fetch(descriptor)
+            AppLogger.shared.info("ChaosStress", "cleanup_started", metadata: ["count": toDelete.count])
+            for record in toDelete {
+                ctx.delete(record)
+            }
+            try ctx.save()
+            AppLogger.shared.info("ChaosStress", "cleanup_completed", metadata: ["count": toDelete.count])
+        } catch {
+            AppLogger.shared.error("ChaosStress", "cleanup_failed", metadata: ["error": "\(error)"])
+        }
+    }
+
+    static func seedChaosStressDataIfRequested(container: ModelContainer) {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-StressSeedThumbnails") else { return }
+
+        let count = chaosStressCountArgument(args) ?? 300
+        AppLogger.shared.info("ChaosStress", "seed_started", metadata: ["count": count])
+
+        let ctx = ModelContext(container)
+        // 每条项目独立生成噪声图（而不是共用同一份字节）——对抗测试要覆盖"内容各不相同、
+        // 无法被磁盘/文件系统层面偷懒去重"的真实场景。
+        for i in 0..<count {
+            let png = makeChaosNoisyPNG(width: 900, height: 600)
+            let record = SDProjectRecord(
+                name: "ChaosSeed-\(i)",
+                totalBeads: 0,
+                thumbnail: png,
+                finishedImage: nil,
+                displayThumbnail: nil,
+                beadUsages: []
+            )
+            ctx.insert(record)
+        }
+        do {
+            try ctx.save()
+            AppLogger.shared.info("ChaosStress", "seed_completed", metadata: ["count": count])
+        } catch {
+            AppLogger.shared.error("ChaosStress", "seed_failed", metadata: ["error": "\(error)"])
+        }
+    }
+
+    private static func chaosStressCountArgument(_ args: [String]) -> Int? {
+        guard let idx = args.firstIndex(of: "-StressSeedCount"), idx + 1 < args.count else {
+            return nil
+        }
+        return Int(args[idx + 1])
+    }
+
+    /// 逐像素随机字节 —— PNG 基本不可压缩，文件大小逼近原始像素数据，
+    /// 模拟老项目"全分辨率照片直接存 blob"的真实体量（~1.6MB/张）。
+    private static func makeChaosNoisyPNG(width: Int, height: Int) -> Data {
+        var buffer = Data(count: width * height * 4)
+        buffer.withUnsafeMutableBytes { raw in
+            arc4random_buf(raw.baseAddress, raw.count)
+        }
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue
+        guard let provider = CGDataProvider(data: buffer as CFData),
+              let cgImage = CGImage(
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bitsPerPixel: 32,
+                bytesPerRow: width * 4,
+                space: colorSpace,
+                bitmapInfo: CGBitmapInfo(rawValue: bitmapInfo),
+                provider: provider,
+                decode: nil,
+                shouldInterpolate: false,
+                intent: .defaultIntent
+              ),
+              let png = UIImage(cgImage: cgImage).pngData() else {
+            return Data(count: 1_600_000)  // 极端兜底，不让种子生成本身崩测试
+        }
+        return png
+    }
+}
+#endif
