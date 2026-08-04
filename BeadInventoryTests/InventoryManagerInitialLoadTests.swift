@@ -242,6 +242,70 @@ final class InventoryManagerInitialLoadTests: XCTestCase {
         )
     }
 
+    // MARK: - 启动链路整体守卫（给「下一次白屏」用的网）
+
+    /// 复刻真实启动顺序，量整条链路对主线程的占用。
+    ///
+    /// **这条用例不是为了验证某一个修复，是为了兜住下一个。**
+    /// 白屏已经修过三轮，每轮都是同一个形状：某个东西在首帧前同步跑 ——
+    ///   #51/#52: `CKContainer` 首次握手、`Tips.configure`、history 整表物化 snapshot blob
+    ///   #57(本 PR): `InventoryManager` 首次 SwiftData 全表 fetch
+    /// 每次都靠用户报障才发现。这条用例把「启动链路必须让出主线程」变成可自动回归的断言：
+    /// 以后谁往 `App.init` 或 `RootView.onAppear` 里加了同步重活，这里直接红。
+    ///
+    /// 两条断言分别对应白屏的两种成因：
+    ///   1. `tickCount > 0` —— 整条链路**从不让出主线程**，SwiftUI 连一帧都提交不了。
+    ///      这正是 #51/#52 时期 `App.init` 同步开库 1s 的形状。
+    ///   2. `maxGap` 有上限 —— 让出了，但中间有长时间停摆，同样画不出加载态。
+    ///
+    /// 注意这条**故意不预热 store**（跟上面那条主线程停摆用例相反）：它量的就是用户真实
+    /// 感受到的冷启动，包含 SwiftData 首次开库的固有成本。所以阈值比上面那条宽。
+    func test_launch_sequence_yields_main_actor_and_never_stalls() async throws {
+        let container = try makeFileBackedContainer()
+        try seedLargeStore(
+            in: container,
+            brandCount: 10,
+            stocksPerBrand: 200,
+            projectCount: 200,
+            blob: makeNoisyPNG(width: 900, height: 520)
+        )
+
+        let ticker = MainThreadTicker()
+        async let tickerRun: Void = ticker.run(intervalNanos: 5_000_000)
+
+        // ---- 复刻 BeadInventoryApp.init 的同步段 ----
+        let manager = InventoryManager(modelContext: ModelContext(container))
+        HistoryManager.shared.setModelContext(container.mainContext)
+        HistoryManager.shared.inventoryManager = manager
+
+        // ---- 复刻 RootView.onAppear ----
+        manager.performInitialLoadIfNeeded(reason: "unitTest.launchSequence")
+
+        // 两条后台链路都收敛后才算启动完成。
+        await manager.initialLoadTask?.value
+        await HistoryManager.shared.loadTask?.value
+
+        ticker.stop()
+        _ = await tickerRun
+
+        XCTAssertGreaterThan(
+            ticker.tickCount, 0,
+            "整条启动链路一次都没让出主线程 —— SwiftUI 连第一帧都提交不了，用户看到的就是白屏。"
+            + "检查是不是往 App.init / RootView.onAppear 里加了同步的持久层或磁盘操作。"
+        )
+        XCTAssertTrue(manager.hasCompletedInitialLoad, "启动后库存应加载完成")
+
+        // 阈值 1000ms：iOS 看门狗是 5s，但用户对「点开 App 一片空白」的忍耐远低于此。
+        // 本用例含 SwiftData 首次开库（实测约 210ms，见上方另一条用例的对照数据），
+        // 所以留了较宽余量；真出现「又有人往首帧前塞了同步重活」时，量级是几百 ms 到秒级。
+        let maxGapMillis = Double(ticker.maxGapNanos) / 1_000_000
+        XCTAssertLessThan(
+            maxGapMillis, 1000,
+            "启动链路上主线程出现 \(maxGapMillis)ms 停摆 —— 这是白屏的直接成因。"
+            + "对照上面 test_initial_load_never_stalls_main_thread 的分解数据定位是哪一段。"
+        )
+    }
+
     // MARK: - 异步化之后新增的竞态闸门
 
     /// 用户在读取在途时点「以本地模式继续」，随后的后台结果不得覆盖内存。
