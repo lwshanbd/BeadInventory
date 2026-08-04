@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum ColorSystem: String, Codable, CaseIterable, Identifiable {
+enum ColorSystem: String, Codable, CaseIterable, Identifiable, Sendable {
     case mard = "MARD"
     case coco = "COCO"
     case manman = "漫漫"

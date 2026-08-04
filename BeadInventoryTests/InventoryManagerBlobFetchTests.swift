@@ -103,7 +103,7 @@ final class InventoryManagerBlobFetchTests: XCTestCase {
 
     // MARK: - saveData metadata 投影写回
 
-    func test_saveData_metadata_projection_updates_metadata_and_preserves_blobs_and_usages() throws {
+    func test_saveData_metadata_projection_updates_metadata_and_preserves_blobs_and_usages() async throws {
         let container = try makeContainer()
         let projectId = try seedProject(
             in: container,
@@ -117,7 +117,16 @@ final class InventoryManagerBlobFetchTests: XCTestCase {
 
         let m = InventoryManager(modelContext: ModelContext(container))
         m.performInitialLoadIfNeeded(reason: "unitTest")
-        XCTAssertTrue(m.hasCompletedInitialLoad, "loadData 应成功完成")
+        // 首次读取必须异步返回，给 SwiftUI 提交首帧和绘制 loading overlay 的机会。
+        XCTAssertTrue(m.isInitialLoadInProgress)
+        XCTAssertFalse(m.hasCompletedInitialLoad)
+
+        // 确定性等待，不用轮询 sleep：`initialLoadTask` 是 `private(set)`，
+        // 跟 `HistoryManager.loadTask` 同一约定。
+        await m.initialLoadTask?.value
+        XCTAssertTrue(m.hasCompletedInitialLoad, "后台 loadData 应成功完成")
+        XCTAssertTrue(m.projectIDsWithThumbnail.contains(projectId))
+        XCTAssertTrue(m.projectIDsWithFinishedImage.contains(projectId))
 
         guard let idx = m.projects.firstIndex(where: { $0.id == projectId }) else {
             return XCTFail("loadData 后应能在内存缓存中找到项目")

@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct BrandStock: Identifiable, Codable, Hashable {
+struct BrandStock: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     let brandId: UUID          // 关联的品牌 ID
     let mardCode: String       // 使用 MARD 色号作为颜色的唯一标识

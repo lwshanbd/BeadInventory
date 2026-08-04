@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct Brand: Identifiable, Codable, Hashable {
+struct Brand: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     var name: String           // 品牌/供应商名称（如 "AB", "C"）
     var sortOrder: Int         // 排序顺序
