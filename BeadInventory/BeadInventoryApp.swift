@@ -36,11 +36,16 @@ struct BeadInventoryApp: App {
 
     init() {
         AppLogger.shared.info("App", "bootstrap_started")
+        // 必须是 init 里的第一件事：后面任何一步卡死被看门狗杀掉，都要留下痕迹。
+        LaunchIntegritySentinel.noteLaunchStarted()
 
         // 设置 SwiftData ModelContainer（使用版本化 Schema 支持数据迁移）
         let schema = Schema(versionedSchema: CurrentSchema.self)
         // 主动触发 bootValue 求值，确保设置页能用它判断"是否需要重启"。
-        let userOptedOutOfCloudKit = CloudSyncPreferences.bootValue
+        // 安全模式下强制按「已关闭同步」处理：CloudKit 初始化（PFCloudKitMetadataModelMigrator
+        // 的 schema 检查 + WAL checkpoint + vacuum）是启动期最重的一块 I/O，也是 157 崩溃栈里
+        // 占着 SQLite 队列、把主线程 fetch 堵到看门狗超时的那条线程。
+        let userOptedOutOfCloudKit = CloudSyncPreferences.bootValue || LaunchIntegritySentinel.isSafeModeActive
         if userOptedOutOfCloudKit {
             AppLogger.shared.info("App", "cloud_sync_user_opted_out")
         }
@@ -244,6 +249,8 @@ struct BeadInventoryApp: App {
                         modelContainerFatalError = msg
                     }
 
+                    // 首帧已经画出来了 —— 本次启动没被看门狗杀掉，清零失败计数。
+                    LaunchIntegritySentinel.noteFirstFrameRendered()
                     inventoryManager.performInitialLoadIfNeeded(reason: "rootView.onAppear")
                     AppLogger.shared.info("App", "root_view_appeared")
                     // App 启动时检查是否有待处理的共享图片
@@ -342,7 +349,11 @@ struct BeadInventoryApp: App {
                 // 协调器内部 5s 延迟 + 重入安全（已在跑就跳过）+ 失败自愈（下次启动从余量继续）。
                 // **关键路径**：458 项目级用户在迁移完成前列表 fallback 现场降级，**已经**不会撞 jetsam，
                 // 迁移只是把列表加载从 fallback CGImageSource 升级到直接读小图 JPEG。
-                ThumbnailMigrationCoordinator.shared.start(inventoryManager: inventoryManager)
+                // 安全模式下不跑迁移：这台设备刚连续启动失败，先保证能打开，
+                // 别再往 SQLite 队列上压任何后台 I/O。
+                if !LaunchIntegritySentinel.isSafeModeActive {
+                    ThumbnailMigrationCoordinator.shared.start(inventoryManager: inventoryManager)
+                }
             @unknown default:
                 break
             }
@@ -384,6 +395,58 @@ enum CloudSyncPreferences {
     static var userOptedOut: Bool {
         get { UserDefaults.standard.bool(forKey: userOptedOutKey) }
         set { UserDefaults.standard.set(newValue, forKey: userOptedOutKey) }
+    }
+}
+
+/// 启动完整性哨兵 —— 连续启动失败时自动降级，给「完全打不开」的用户一条出路。
+///
+/// ## 为什么需要
+///
+/// 2026-08-05 用户报告：App Store 1.8.0(157) 与 TestFlight 2.0.0(183) 均**每次启动即闪退**，
+/// 重启手机 / 更新系统 / 卸载重装（iOS 的「卸载」保留数据容器，等于数据条件没变）全部无效。
+/// 崩溃日志是 `scene-create watchdog 0x8BADF00D`：首帧没能在 2.06s 内画出来。
+///
+/// 这类故障的致命之处在于**用户完全没有自救手段** —— 设置页里的「以本地模式继续」「关闭
+/// iCloud 同步」两个逃生按钮都在 App 内部，而 App 根本打不开。
+///
+/// ## 机制
+///
+/// `App.init` 一开始就把「本次启动尚未完成」写进 UserDefaults 并**立即同步落盘**；首帧真正
+/// 画出来之后清零。于是被看门狗杀掉的启动会留下痕迹，连续两次没画出首帧就判定为启动崩溃循环，
+/// 下一次启动自动进安全模式：关 CloudKit、跳过一切后台任务，只求先打开。
+///
+/// 阈值取 2 而不是 1：偶发的一次超时（设备发烫、系统繁忙）不该把用户踢进降级模式。
+enum LaunchIntegritySentinel {
+    private static let pendingCountKey = "launchPendingFailureCount"
+    private static let safeModeThreshold = 2
+
+    /// 本次启动是否处于安全模式。`App.init` 读一次后全程用这个快照。
+    static let isSafeModeActive: Bool = {
+        UserDefaults.standard.integer(forKey: pendingCountKey) >= safeModeThreshold
+    }()
+
+    /// App.init 最开始调用：标记「启动进行中」。
+    /// 必须 `synchronize()` —— 被 SIGKILL 的进程没有机会走正常的 UserDefaults 落盘时机，
+    /// 不强制同步就检测不到这次失败。
+    static func noteLaunchStarted() {
+        let defaults = UserDefaults.standard
+        let next = defaults.integer(forKey: pendingCountKey) + 1
+        defaults.set(next, forKey: pendingCountKey)
+        defaults.synchronize()
+        if next >= safeModeThreshold {
+            AppLogger.shared.error("LaunchSentinel", "safe_mode_engaged", metadata: [
+                "consecutiveFailures": next
+            ])
+        }
+    }
+
+    /// 首帧真正画出来之后调用：本次启动算成功，清零。
+    static func noteFirstFrameRendered() {
+        let defaults = UserDefaults.standard
+        guard defaults.integer(forKey: pendingCountKey) != 0 else { return }
+        defaults.set(0, forKey: pendingCountKey)
+        defaults.synchronize()
+        AppLogger.shared.info("LaunchSentinel", "first_frame_ok_counter_reset")
     }
 }
 

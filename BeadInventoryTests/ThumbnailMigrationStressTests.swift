@@ -54,9 +54,13 @@ final class ThumbnailMigrationStressTests: XCTestCase {
         storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("thumbnail-stress-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: storeDir, withIntermediateDirectories: true)
+        // 迁移现在把图片搬进 ProjectImageStore；不隔离的话这 240MB 会写进真实
+        // Application Support 目录并在用例之间累积，拖垮整个测试进程。
+        ProjectImageStore.rootOverrideForTesting = storeDir.appendingPathComponent("images", isDirectory: true)
     }
 
     override func tearDownWithError() throws {
+        ProjectImageStore.rootOverrideForTesting = nil
         try? FileManager.default.removeItem(at: storeDir)
     }
 

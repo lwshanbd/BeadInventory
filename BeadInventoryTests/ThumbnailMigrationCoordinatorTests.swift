@@ -73,7 +73,10 @@ final class ThumbnailMigrationCoordinatorTests: XCTestCase {
 
     // MARK: - 迁移语义
 
-    func test_migrateOne_generates_displayThumbnail_and_preserves_original() async throws {
+    /// 迁移后：原图字节一字不动地搬到文件、小图生成到文件、数据库两列清空。
+    /// 清空列是核心 —— 行只要还留着 13MB blob，之后任何一次写入都会重写整行
+    /// （TestFlight build 183 实测 63 分钟 68.72GB 写放大的根因）。
+    func test_migrateOne_moves_original_to_file_and_clears_columns() async throws {
         let container = try makeContainer()
         let png = makePNG()
         let id = try await seedProject(in: container, thumbnail: png)
@@ -82,22 +85,24 @@ final class ThumbnailMigrationCoordinatorTests: XCTestCase {
         XCTAssertEqual(outcome, .migrated)
 
         let row = try await fetchRow(id, in: container)
-        XCTAssertEqual(row?.thumbnail, png, "原 thumbnail 字节必须一字不动")
-        let display = row?.displayThumbnail
-        XCTAssertNotNil(display, "迁移后 displayThumbnail 应已生成")
-        XCTAssertNotEqual(display, png, "displayThumbnail 应是 downsample 产物而不是原字节")
+        XCTAssertNil(row?.thumbnail, "原图应已搬走并清空数据库列")
+        XCTAssertNil(row?.displayThumbnail, "小图改存文件，不再写数据库列")
+
+        XCTAssertEqual(ProjectImageStore.read(projectId: id, kind: .thumbnail), png, "原图字节必须一字不动")
+        let display = ProjectImageStore.read(projectId: id, kind: .displayThumbnail)
+        XCTAssertNotNil(display, "迁移后应生成小图文件")
+        XCTAssertNotEqual(display, png, "小图应是 downsample 产物而不是原字节")
     }
 
-    func test_migrateOne_alreadyDone_does_not_overwrite() async throws {
+    /// 已经搬完的行（三列全空）再跑一次必须是 alreadyDone 且不产生写入 ——
+    /// 否则迁移会在同一批行上无限重跑，正是写放大的来源。
+    func test_migrateOne_already_migrated_row_is_noop() async throws {
         let container = try makeContainer()
-        let existing = Data([0xAA, 0xBB])
-        let id = try await seedProject(in: container, thumbnail: makePNG(), displayThumbnail: existing)
+        let id = try await seedProject(in: container, thumbnail: makePNG())
+        _ = await ThumbnailMigrationCoordinator.migrateOne(projectId: id, container: container)
 
-        let outcome = await ThumbnailMigrationCoordinator.migrateOne(projectId: id, container: container)
-        XCTAssertEqual(outcome, .alreadyDone)
-
-        let row = try await fetchRow(id, in: container)
-        XCTAssertEqual(row?.displayThumbnail, existing, "已有 displayThumbnail 不得被覆盖")
+        let second = await ThumbnailMigrationCoordinator.migrateOne(projectId: id, container: container)
+        XCTAssertEqual(second, .alreadyDone, "搬完的行必须自然掉出候选")
     }
 
     func test_migrateOne_missing_row_raceSkipped() async throws {
@@ -106,11 +111,13 @@ final class ThumbnailMigrationCoordinatorTests: XCTestCase {
         XCTAssertEqual(outcome, .raceSkipped)
     }
 
-    func test_migrateOne_nil_thumbnail_raceSkipped() async throws {
+    /// 完全没有图的行：无事可做，报 alreadyDone（区别于「行被删」的 raceSkipped，
+    /// 让线上计数能分辨"迁移完成了多少"与"多少行中途消失"）。
+    func test_migrateOne_row_without_any_image_is_alreadyDone() async throws {
         let container = try makeContainer()
         let id = try await seedProject(in: container, thumbnail: nil)
         let outcome = await ThumbnailMigrationCoordinator.migrateOne(projectId: id, container: container)
-        XCTAssertEqual(outcome, .raceSkipped)
+        XCTAssertEqual(outcome, .alreadyDone)
     }
 
     func test_migrateOne_corrupt_bytes_failed_and_writes_nothing() async throws {

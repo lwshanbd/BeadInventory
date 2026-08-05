@@ -239,6 +239,45 @@ final class ThumbnailMigrationCoordinator {
         case cancelled         // 上层 stop() / scene background 触发 —— 不计 failures
     }
 
+    /// 行里没有原图、但仍留着 finishedImage 或残留 displayThumbnail 时的搬运路径。
+    /// 不需要 downsample，直接把字节挪到文件再清列 —— 同样是**先落文件后清列**。
+    private nonisolated static func moveRemainingBlobsOnly(
+        projectId: UUID,
+        container: ModelContainer
+    ) -> MigrationOutcome {
+        do {
+            var descriptor = FetchDescriptor<SDProjectRecord>(
+                predicate: #Predicate { $0.id == projectId }
+            )
+            descriptor.fetchLimit = 1
+            descriptor.propertiesToFetch = [\.thumbnail, \.displayThumbnail, \.finishedImage]
+            let bg = ModelContext(container)
+            guard let sd = try bg.fetch(descriptor).first else { return .raceSkipped }
+
+            if let finished = sd.finishedImage {
+                guard ProjectImageStore.write(finished, projectId: projectId, kind: .finishedImage),
+                      ProjectImageStore.byteSize(projectId: projectId, kind: .finishedImage) == finished.count else {
+                    return .failed
+                }
+            }
+            if let display = sd.displayThumbnail {
+                guard ProjectImageStore.write(display, projectId: projectId, kind: .displayThumbnail) else {
+                    return .failed
+                }
+            }
+            guard sd.finishedImage != nil || sd.displayThumbnail != nil else { return .alreadyDone }
+            sd.finishedImage = nil
+            sd.displayThumbnail = nil
+            try bg.save()
+            return .migrated
+        } catch {
+            AppLogger.shared.error("ThumbnailMigration", "move_remaining_failed", metadata: [
+                "projectId": projectId.uuidString, "error": "\(error)"
+            ])
+            return .failed
+        }
+    }
+
     /// 分页扫描 candidate id —— `nonisolated`：Swift 5 语言模式下（SE-0338）脱离 MainActor
     /// 在 generic executor 上执行；用独立后台 ModelContext，主线程零 I/O。
     /// 结构化调用（非 detached）保证 Task.isCancelled / 取消传播仍随外层 run task。
@@ -249,7 +288,9 @@ final class ThumbnailMigrationCoordinator {
     ) async throws -> [UUID] {
         let bg = ModelContext(container)
         var descriptor = FetchDescriptor<SDProjectRecord>(
-            predicate: #Predicate { $0.thumbnail != nil && $0.displayThumbnail == nil }
+            // 凡是库里还留着大图的行都是候选（不再看 displayThumbnail —— 小图已改存文件）。
+            // 搬完 thumbnail 置 nil，行自然掉出谓词，天然幂等。
+            predicate: #Predicate { $0.thumbnail != nil || $0.displayThumbnail != nil || $0.finishedImage != nil }
         )
         descriptor.fetchLimit = limit
         descriptor.fetchOffset = offset          // 跳过本 run 已经失败过的 row
@@ -279,16 +320,19 @@ final class ThumbnailMigrationCoordinator {
                 predicate: #Predicate { $0.id == projectId }
             )
             descriptor.fetchLimit = 1
-            descriptor.propertiesToFetch = [\.thumbnail, \.displayThumbnail]
+            descriptor.propertiesToFetch = [\.thumbnail, \.displayThumbnail, \.finishedImage]
             let bg = ModelContext(container)
             guard let sd = try bg.fetch(descriptor).first else {
                 return .raceSkipped  // row 被删
             }
-            guard let thumb = sd.thumbnail else {
-                return .raceSkipped  // thumbnail 被清
+            // 三列全空 = 这行的图已经搬完（或本来就没图）。区分于「行被删」的 raceSkipped，
+            // 让 Sentry 上的计数能分辨"迁移到底完成了多少"和"多少行在中途消失了"。
+            if sd.thumbnail == nil && sd.displayThumbnail == nil && sd.finishedImage == nil {
+                return .alreadyDone
             }
-            if sd.displayThumbnail != nil {
-                return .alreadyDone  // 已被并发填
+            guard let thumb = sd.thumbnail else {
+                // 没有原图但还有 finishedImage / 残留小图：只搬这些，不需要 downsample。
+                return moveRemainingBlobsOnly(projectId: projectId, container: container)
             }
             thumbnailData = thumb
         } catch {
@@ -320,7 +364,7 @@ final class ThumbnailMigrationCoordinator {
                 predicate: #Predicate { $0.id == projectId }
             )
             descriptor.fetchLimit = 1
-            descriptor.propertiesToFetch = [\.thumbnail, \.displayThumbnail]
+            descriptor.propertiesToFetch = [\.thumbnail, \.displayThumbnail, \.finishedImage]
             let bg = ModelContext(container)
             guard let sd = try bg.fetch(descriptor).first else {
                 return .raceSkipped
@@ -328,7 +372,8 @@ final class ThumbnailMigrationCoordinator {
             guard let thumb = sd.thumbnail else {
                 return .raceSkipped
             }
-            if sd.displayThumbnail != nil {
+            // 库列已经全清 = 这行搬完了（小图是否存在看文件，不看库列）
+            if sd.thumbnail == nil && sd.displayThumbnail == nil && sd.finishedImage == nil {
                 return .alreadyDone
             }
             if thumb != thumbnailData {
@@ -341,9 +386,35 @@ final class ThumbnailMigrationCoordinator {
                 return .raceSkipped
             }
 
-            // 写回。不进 history（迁移不是用户操作）；revision bump 的取舍见
-            // InventoryManager.noteProjectDisplayThumbnailMigrated 注释。
-            sd.displayThumbnail = downsampled
+            // 搬运，顺序不可颠倒：**先把字节落到文件并校验，再清空数据库列**。
+            // 中途被杀（这条路径正是被看门狗杀过的）最坏情况是文件已写好、库列还没清 ——
+            // 读取路径文件优先，用户看到的图是对的，下一轮迁移把清列补上。反过来先清列
+            // 再写文件，一旦断电就是**永久丢图**。
+            guard ProjectImageStore.write(thumb, projectId: projectId, kind: .thumbnail),
+                  ProjectImageStore.byteSize(projectId: projectId, kind: .thumbnail) == thumb.count else {
+                AppLogger.shared.error("ThumbnailMigration", "original_file_write_failed", metadata: [
+                    "projectId": projectId.uuidString, "bytes": thumb.count
+                ])
+                return .failed
+            }
+            guard ProjectImageStore.write(downsampled, projectId: projectId, kind: .displayThumbnail) else {
+                return .failed
+            }
+            if let finished = sd.finishedImage {
+                guard ProjectImageStore.write(finished, projectId: projectId, kind: .finishedImage),
+                      ProjectImageStore.byteSize(projectId: projectId, kind: .finishedImage) == finished.count else {
+                    AppLogger.shared.error("ThumbnailMigration", "finished_file_write_failed", metadata: [
+                        "projectId": projectId.uuidString, "bytes": finished.count
+                    ])
+                    return .failed
+                }
+            }
+
+            // 字节已安全落盘，现在清列。这一次 save 仍会重写整行（~13MB），但**只此一次** ——
+            // 之后这行只剩几百字节 metadata，往后所有写入都廉价。
+            sd.thumbnail = nil
+            sd.displayThumbnail = nil
+            sd.finishedImage = nil
             try bg.save()
         } catch {
             AppLogger.shared.error("ThumbnailMigration", "save_failed", metadata: [
@@ -355,7 +426,7 @@ final class ThumbnailMigrationCoordinator {
 
         AppLogger.shared.info("ThumbnailMigration", "migrated_one", metadata: [
             "projectId": projectId.uuidString,
-            "sourceBytes": thumbnailData.count,
+            "movedToFileBytes": thumbnailData.count,
             "downsampledBytes": downsampled.count
         ])
         return .migrated

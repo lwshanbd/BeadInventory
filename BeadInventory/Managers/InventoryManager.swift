@@ -1705,12 +1705,21 @@ class InventoryManager: ObservableObject {
             // 扫描器返回 nil（in-memory 测试库、未来 schema 变更）时回退旧 SwiftData 查询：
             // 行为与旧版一致（小库无害，大库退回高内存 —— 记 error 让监控看得见）。
             if result.brands != nil, result.brandStocks != nil, result.projects != nil {
+                // 文件存储里的 ∪ 数据库存量里的。迁移完成后数据库侧会全空，
+                // 但迁移期间两边都可能有，必须取并集否则列表会短暂丢图。
+                //
+                // 文件侧再与「本库真实存在的项目」取交集：项目被删除时文件通常会一并清掉，
+                // 但断电 / 从备份恢复 / 换库都可能留下孤儿目录，它们不该出现在存在性集合里。
+                let knownIDs = Set((result.projects ?? []).map(\.id))
+                let fileThumbs = ProjectImageStore.projectIDs(with: .thumbnail).intersection(knownIDs)
+                let fileFinished = ProjectImageStore.projectIDs(with: .finishedImage).intersection(knownIDs)
+                let fileDisplay = ProjectImageStore.projectIDs(with: .displayThumbnail).intersection(knownIDs)
                 if let storeURL = container.configurations.first?.url,
                    let existence = ProjectBlobExistenceScanner.scan(storeURL: storeURL) {
-                    result.projectIDsWithFinishedImage = existence.finishedImage
-                    result.projectIDsWithThumbnail = existence.thumbnail
+                    result.projectIDsWithFinishedImage = existence.finishedImage.union(fileFinished)
+                    result.projectIDsWithThumbnail = existence.thumbnail.union(fileThumbs)
                     result.projectIDsWithPatternGrid = existence.patternGrid
-                    result.projectIDsWithDisplayThumbnail = existence.displayThumbnail
+                    result.projectIDsWithDisplayThumbnail = existence.displayThumbnail.union(fileDisplay)
                 } else {
                     AppLogger.shared.error(
                         "InventoryManager",
@@ -1719,10 +1728,10 @@ class InventoryManager: ObservableObject {
                     )
                     do {
                         let existence = try Self.legacyBlobExistenceFetch(context: context)
-                        result.projectIDsWithFinishedImage = existence.finishedImage
-                        result.projectIDsWithThumbnail = existence.thumbnail
+                        result.projectIDsWithFinishedImage = existence.finishedImage.union(fileFinished)
+                        result.projectIDsWithThumbnail = existence.thumbnail.union(fileThumbs)
                         result.projectIDsWithPatternGrid = existence.patternGrid
-                        result.projectIDsWithDisplayThumbnail = existence.displayThumbnail
+                        result.projectIDsWithDisplayThumbnail = existence.displayThumbnail.union(fileDisplay)
                     } catch {
                         result.errors["projectBlobMetadata"] = "\(error)"
                         AppLogger.shared.error(
@@ -2810,6 +2819,9 @@ class InventoryManager: ObservableObject {
 
             // 删除项目只从记录中移除，不回退库存
             projects.remove(at: index)
+            // 图片文件跟着删 —— 上面的 snapshot 已把字节读进历史记录，undo 走 restoreProject
+            // 的回写路径重新落盘，所以这里删掉不影响撤销。
+            ProjectImageStore.deleteAll(projectId: id)
             // 同步 ID 集合
             projectIDsWithThumbnail.remove(id)
             projectIDsWithFinishedImage.remove(id)
@@ -3966,6 +3978,11 @@ class InventoryManager: ObservableObject {
     /// 错误处理：把 SwiftData 抛错和「真的没图」区分开。前者写日志返回 nil（避免静默吞错让
     /// store 损坏 / external storage sidecar 丢失看起来像无图）；后者直接返回 nil。
     func fetchProjectThumbnailData(for projectId: UUID) -> Data? {
+        // 文件优先：迁移后的图都在文件系统，命中就完全不碰 SQLite。
+        if let fromFile = ProjectImageStore.read(projectId: projectId, kind: .thumbnail) {
+            return fromFile
+        }
+        // 兜底：尚未迁移的存量数据仍在数据库列里。
         guard let context = modelContext else {
             logError("fetch_thumbnail_no_context", metadata: ["projectId": projectId.uuidString])
             return nil
@@ -3974,9 +3991,6 @@ class InventoryManager: ObservableObject {
             predicate: #Predicate { $0.id == projectId }
         )
         descriptor.fetchLimit = 1
-        // 跟 fetchProjectFinishedImageData / fetchProjectDisplayThumbnail 同型（round-10 review I1）：
-        // 不限定单列的话，同行 finishedImage / patternGridData / displayThumbnail 也会一起物化。
-        // 周备份路径逐项目调本方法，全行 fetch 会把峰值内存翻 3-4 倍。
         descriptor.propertiesToFetch = [\.thumbnail]
         do {
             return try context.fetch(descriptor).first?.thumbnail
@@ -3993,6 +4007,11 @@ class InventoryManager: ObservableObject {
     /// **round-10 review I1**：`propertiesToFetch = [\.finishedImage]` 限定单列 fetch —— 否则
     /// SwiftData 会把同行的 raw `thumbnail`（可能 5-10 MB inline PNG）也一起物化。
     func fetchProjectFinishedImageData(for projectId: UUID) -> Data? {
+        // 文件优先：迁移后的图都在文件系统，命中就完全不碰 SQLite。
+        if let fromFile = ProjectImageStore.read(projectId: projectId, kind: .finishedImage) {
+            return fromFile
+        }
+        // 兜底：尚未迁移的存量数据仍在数据库列里。
         guard let context = modelContext else {
             logError("fetch_finished_image_no_context", metadata: ["projectId": projectId.uuidString])
             return nil
@@ -4043,6 +4062,11 @@ class InventoryManager: ObservableObject {
     /// **round-10 review I1**：`propertiesToFetch = [\.displayThumbnail]` 限定单列 —— 否则
     /// 列表每滚一个 row 都会 fault 同行的 raw thumbnail（5-10 MB inline PNG）到内存。
     func fetchProjectDisplayThumbnail(for projectId: UUID) -> Data? {
+        // 文件优先：迁移后的图都在文件系统，命中就完全不碰 SQLite。
+        if let fromFile = ProjectImageStore.read(projectId: projectId, kind: .displayThumbnail) {
+            return fromFile
+        }
+        // 兜底：尚未迁移的存量数据仍在数据库列里。
         guard let context = modelContext else {
             logError("fetch_display_thumbnail_no_context", metadata: ["projectId": projectId.uuidString])
             return nil
@@ -4144,10 +4168,15 @@ class InventoryManager: ObservableObject {
             }.value
             guard let self else { return }
             if let existence {
+                // 文件侧与已知项目取交集，理由同 fetchInitialPersistentData 里的注释。
+                let knownIDs = Set(self.projects.map(\.id))
                 self.projectIDsWithFinishedImage = existence.finishedImage
+                    .union(ProjectImageStore.projectIDs(with: .finishedImage).intersection(knownIDs))
                 self.projectIDsWithThumbnail = existence.thumbnail
+                    .union(ProjectImageStore.projectIDs(with: .thumbnail).intersection(knownIDs))
                 self.projectIDsWithPatternGrid = existence.patternGrid
                 self.projectIDsWithDisplayThumbnail = existence.displayThumbnail
+                    .union(ProjectImageStore.projectIDs(with: .displayThumbnail).intersection(knownIDs))
             } else {
                 self.logError("project_blob_meta_refresh_failed", metadata: [:])
             }
@@ -4184,20 +4213,28 @@ class InventoryManager: ObservableObject {
             logWarning("set_blobs_no_sd_record", metadata: ["projectId": projectId.uuidString])
             return false
         }
+        // 三个大图一律写文件，并把数据库列置 nil —— 这是让 SQLite 行永久变小的关键：
+        // 行里只要还留着 13MB blob，之后任何一次列更新都会重写整行（见 ProjectImageStore
+        // 顶部注释里 68.72GB 的实测）。patternGridData 是 ~100KB 的 JSON，留在库里无妨。
         if case .some(let newThumb) = thumbnail {
-            sd.thumbnail = newThumb
+            ProjectImageStore.write(newThumb, projectId: projectId, kind: .thumbnail)
+            if sd.thumbnail != nil { sd.thumbnail = nil }
         }
         if case .some(let newFinished) = finishedImage {
-            sd.finishedImage = newFinished
+            ProjectImageStore.write(newFinished, projectId: projectId, kind: .finishedImage)
+            if sd.finishedImage != nil { sd.finishedImage = nil }
         }
         if case .some(let newGrid) = patternGridData {
             sd.patternGridData = newGrid
         }
         if case .some(let newDisplay) = displayThumbnail {
-            sd.displayThumbnail = newDisplay
+            ProjectImageStore.write(newDisplay, projectId: projectId, kind: .displayThumbnail)
+            if sd.displayThumbnail != nil { sd.displayThumbnail = nil }
         }
         do {
-            try context.save()
+            // context.hasChanges 为 false 时（图片全落文件、库里本就没有存量列要清）
+            // 跳过 save，避免无谓的 WAL 写入与 CloudKit 变更通知。
+            if context.hasChanges { try context.save() }
         } catch {
             logError("set_blobs_save_failed", metadata: [
                 "projectId": projectId.uuidString,
@@ -4765,3 +4802,159 @@ enum ProjectBlobExistenceScanner {
         return result
     }
 }
+
+// MARK: - 项目图片文件存储
+
+/// 把项目的三个大图从 SwiftData 行里搬到文件系统。
+///
+/// ## 为什么必须这么做（2026-08-05，两份用户报告实证）
+///
+/// `SDProjectRecord` 的 thumbnail / finishedImage / displayThumbnail 是 **inline BLOB**
+/// —— 直接躺在 SQLite 的数据行里，单条原图可达 13MB。SQLite 更新**任何一列都会重写整行**，
+/// 于是：
+///
+/// - 缩略图迁移只写 110KB 的 displayThumbnail，实际写盘 13MB（整行重写）
+/// - 458 个项目跑一遍 ≈ 6GB；再算 WAL 先写后 checkpoint（×2）、CoreData 的
+///   `_performPostSaveTasks:andForceFullVacuum:` 全库重整 —— TestFlight build 183
+///   实测 **63 分钟写入 68.72 GB**（18MB/s 持续），触发系统磁盘写入超限报告
+/// - SQLite 队列被写入打满 → 主线程一个 fetch 排队 >2s → scene-create 看门狗
+///   `0x8BADF00D` 杀进程（App Store build 157 崩溃栈证实：主线程 CPU 仅 18%，
+///   是在**等队列**不是在算）
+/// - 每次行重写还让 CloudKit 认为记录变了，把 13MB 原图重新上传一遍 → 正反馈
+///
+/// **换线程救不了**：所有 ModelContext 共用同一个 store 和 SQLite 队列，队列堵了
+/// 后台 fetch 一样等。前四轮修复（#51/#52/#57/#59）都在换线程，所以都没解决。
+///
+/// 图片改存文件后，行只剩几百字节的 metadata：写小图不再重写 13MB、CloudKit 不再同步
+/// GB 级 blob、vacuum 变廉价、存在性判断退化成列目录。
+///
+/// ## 位置与备份
+///
+/// `Application Support/ProjectImages/<projectId>/<kind>` —— **不**设
+/// `isExcludedFromBackup`：原图按用户要求不走 iCloud **同步**，但仍应包含在设备备份里，
+/// 换机才不丢图。
+enum ProjectImageStore {
+    enum Kind: String, CaseIterable, Sendable {
+        case thumbnail          // 全分辨率原图（拼图模式 / 详情大图）
+        case finishedImage      // 成品图
+        case displayThumbnail   // 列表小图（派生缓存，丢了可重建）
+    }
+
+    /// 目录名沿用固定字符串；改名会让存量文件全部失联。
+    private static let rootDirectoryName = "ProjectImages"
+
+    /// 仅供测试重定向到临时目录。
+    ///
+    /// 存在的理由：`projectIDs(with:)` 是列目录，而目录在进程内是全局的 —— 不隔离的话
+    /// 不同测试类写进去的项目会互相污染彼此的存在性断言（实测：期望 100 张图断言到 106 张）。
+    /// 生产代码永远不碰它，值恒为 nil。
+    nonisolated(unsafe) static var rootOverrideForTesting: URL?
+
+    static var rootURL: URL {
+        if let rootOverrideForTesting { return rootOverrideForTesting }
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent(rootDirectoryName, isDirectory: true)
+    }
+
+    static func directoryURL(for projectId: UUID) -> URL {
+        rootURL.appendingPathComponent(projectId.uuidString, isDirectory: true)
+    }
+
+    static func fileURL(for projectId: UUID, kind: Kind) -> URL {
+        directoryURL(for: projectId).appendingPathComponent(kind.rawValue)
+    }
+
+    // MARK: 读
+
+    /// 读一张图。不存在返回 nil —— 调用方据此回退到数据库列（迁移完成前的存量数据）。
+    static func read(projectId: UUID, kind: Kind) -> Data? {
+        let url = fileURL(for: projectId, kind: kind)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        do {
+            // .mappedIfSafe：大图按需分页映射，不一次性把 13MB 拷进堆
+            return try Data(contentsOf: url, options: .mappedIfSafe)
+        } catch {
+            AppLogger.shared.error("ProjectImageStore", "read_failed", metadata: [
+                "projectId": projectId.uuidString, "kind": kind.rawValue, "error": "\(error)"
+            ])
+            return nil
+        }
+    }
+
+    /// 文件字节数，不存在返回 nil。**读属性不读内容** —— 迁移写回后的校验必须用它，
+    /// 用 `read()?.count` 会把 13MB 整张图重新读进内存，压测场景下直接把进程压垮。
+    static func byteSize(projectId: UUID, kind: Kind) -> Int? {
+        let url = fileURL(for: projectId, kind: kind)
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else { return nil }
+        return attrs[.size] as? Int
+    }
+
+    static func exists(projectId: UUID, kind: Kind) -> Bool {
+        FileManager.default.fileExists(atPath: fileURL(for: projectId, kind: kind).path)
+    }
+
+    /// 列出某类图已落文件的全部项目 id —— 取代对 SQLite 的 `WHERE 列 IS NOT NULL` 扫描。
+    static func projectIDs(with kind: Kind) -> Set<UUID> {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(
+            at: rootURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+        ) else { return [] }
+        var ids = Set<UUID>()
+        for dir in entries {
+            guard let id = UUID(uuidString: dir.lastPathComponent) else { continue }
+            if fm.fileExists(atPath: dir.appendingPathComponent(kind.rawValue).path) {
+                ids.insert(id)
+            }
+        }
+        return ids
+    }
+
+    // MARK: 写
+
+    /// 写入或删除（`nil` = 删除）。
+    ///
+    /// 写入走「临时文件 + 原子替换」：中途被杀不会留下半张图 —— 这条路径的调用方
+    /// 正是被看门狗杀过的启动/迁移流程，必须假设随时会断电。
+    @discardableResult
+    static func write(_ data: Data?, projectId: UUID, kind: Kind) -> Bool {
+        let fm = FileManager.default
+        let url = fileURL(for: projectId, kind: kind)
+        guard let data else {
+            do {
+                if fm.fileExists(atPath: url.path) { try fm.removeItem(at: url) }
+                return true
+            } catch {
+                AppLogger.shared.error("ProjectImageStore", "delete_failed", metadata: [
+                    "projectId": projectId.uuidString, "kind": kind.rawValue, "error": "\(error)"
+                ])
+                return false
+            }
+        }
+        do {
+            try fm.createDirectory(at: directoryURL(for: projectId), withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+            return true
+        } catch {
+            AppLogger.shared.error("ProjectImageStore", "write_failed", metadata: [
+                "projectId": projectId.uuidString, "kind": kind.rawValue,
+                "bytes": data.count, "error": "\(error)"
+            ])
+            return false
+        }
+    }
+
+    /// 项目被删除时清掉整个目录。
+    static func deleteAll(projectId: UUID) {
+        let dir = directoryURL(for: projectId)
+        guard FileManager.default.fileExists(atPath: dir.path) else { return }
+        do {
+            try FileManager.default.removeItem(at: dir)
+        } catch {
+            AppLogger.shared.error("ProjectImageStore", "delete_dir_failed", metadata: [
+                "projectId": projectId.uuidString, "error": "\(error)"
+            ])
+        }
+    }
+}
+
