@@ -38,6 +38,8 @@ struct ScanView: View {
 
     @State private var deductionResolver: DeductionResolver?
     @State private var showingDeductionFailure = false
+    /// 图片编码失败。必须可见 —— 静默失败会让用户拿到一个永远没有图的项目。
+    @State private var imageEncodeFailed = false
     @State private var deductionFailureMessage = ""
     @State private var deductSuccessAt: Date = .distantPast
 
@@ -246,6 +248,12 @@ struct ScanView: View {
         view
             .haptic(.success, trigger: deductSuccessAt)
             .haptic(.error, trigger: showingDeductionFailure)
+            .haptic(.error, trigger: imageEncodeFailed)
+            .alert("图片处理失败", isPresented: $imageEncodeFailed) {
+                Button("好", role: .cancel) { }
+            } message: {
+                Text("这张图片无法处理，项目未创建。请重试或换一张图片。")
+            }
             .alert("部分颜色扣减失败", isPresented: $showingDeductionFailure) {
                 Button("知道了") { }
             } message: {
@@ -772,10 +780,18 @@ struct ScanView: View {
     }
 
     func applyToInventoryWithResolver(_ resolver: DeductionResolver) {
-        // 先执行扣减（不保存），确认结果后再创建项目记录
-        let failedItems = resolver.executeDeductions(shouldSave: false)
+        // **先编码再扣减。** 编码失败必须能干净中止，而扣减一旦执行就动了库存。
+        // 早期写法是「扣减 → 编码（不检查 nil）→ 建项目 → clearState() → 放成功震动」：
+        // 编码失败时用户会得到一个永久没有图、拼图模式永久不可用的项目，
+        // 而 clearState() 已经把内存里那张图丢了，除了重扫一遍无法挽回 —— 却看到成功反馈。
+        guard let thumbnailData = generateThumbnailData() else {
+            AppLogger.shared.error("Scan", "thumbnail_encode_failed_aborting_project", metadata: [:])
+            imageEncodeFailed = true
+            return   // 扣减走的是 shouldSave: false，此时尚未落盘，直接返回即可
+        }
 
-        let thumbnailData = generateThumbnailData()
+        // 确认图能编码之后再执行扣减
+        let failedItems = resolver.executeDeductions(shouldSave: false)
         // 标记失败项为未扣减
         let beadUsages = resolver.items.map { item in
             BeadUsage(
@@ -827,8 +843,12 @@ struct ScanView: View {
     }
 
     func createPlannedProject() {
-        // 生成压缩的缩略图数据
-        let thumbnailData = generateThumbnailData()
+        // 同 applyToInventoryWithResolver：编码失败不建项目、不清状态，让用户能重试。
+        guard let thumbnailData = generateThumbnailData() else {
+            AppLogger.shared.error("Scan", "thumbnail_encode_failed_aborting_plan", metadata: [:])
+            imageEncodeFailed = true
+            return
+        }
 
         // 创建计划项目（不扣减库存）
         let beadUsages = recognizedItems.map { item in

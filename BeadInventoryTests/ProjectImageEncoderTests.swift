@@ -236,6 +236,83 @@ final class ProjectImageEncoderTests: XCTestCase {
                                  CGFloat(ProjectImageEncoder.maxPixelSize) + 1)
     }
 
+    // MARK: - 1b. 方向 / alpha（双审 C1：会让整个修复对相机照片失效）
+
+    /// **回归钉。** 早期实现里 `renderToCGImage` 硬编码 `format.opaque = false`，
+    /// 产物一律带 alpha 通道，而带 alpha 就禁用 JPEG 分支 —— 于是**任何 orientation
+    /// 不是 `.up` 的图都只剩 PNG 阶梯**，永远进不了预算。
+    ///
+    /// iPhone 相机照片的 orientation 就是 `.right`，也就是说最常见的输入路径产出的东西
+    /// 比修复前更糟：同样的无损 PNG 体积 + 额外掉到 1600px。实测 4,318,567B vs 1,429,323B。
+    /// 更要命的是 4.3MB 高于 `compactionThresholdBytes`，这类行**永远不收敛**。
+    func test_rotated_photo_is_not_forced_down_the_lossless_path() throws {
+        let (palette, _) = makePalette()
+        let upright = makeNoisyPatternImage(longEdge: 2400, rows: 100, cols: 100, palette: palette)
+        let cg = try XCTUnwrap(upright.cgImage)
+
+        let uprightResult = try XCTUnwrap(ProjectImageEncoder.encodeResult(upright))
+
+        for orientation: UIImage.Orientation in [.right, .left, .down, .upMirrored] {
+            let rotated = UIImage(cgImage: cg, scale: 1, orientation: orientation)
+            let result = try XCTUnwrap(ProjectImageEncoder.encodeResult(rotated))
+
+            XCTAssertFalse(
+                result.usedLossless,
+                "orientation=\(orientation.rawValue) 被逼进无损分支 —— 相机照片就是 .right，"
+                + "这条一旦回归，修复对大多数用户直接失效"
+            )
+            XCTAssertLessThan(
+                result.data.count, ProjectImageEncoder.compactionThresholdBytes,
+                "orientation=\(orientation.rawValue) 输出 \(result.data.count)B 高于扫描阈值 → 迁移不收敛"
+            )
+            // 跟正立版本应该在同一个量级（±50%），不该出现数倍差异
+            XCTAssertLessThan(
+                Double(result.data.count), Double(uprightResult.data.count) * 1.5,
+                "orientation=\(orientation.rawValue) 比正立版本大太多：\(result.data.count) vs \(uprightResult.data.count)"
+            )
+        }
+    }
+
+    /// 裁剪路径同样中招：`ImageCropView.normalizeImageOrientation` 用
+    /// `UIGraphicsBeginImageContextWithOptions(size, false, scale)`（`opaque: false`），
+    /// 产物带 alpha 通道但没有真正的透明度。
+    func test_cropped_opaque_image_still_takes_the_lossy_path() throws {
+        let (palette, _) = makePalette()
+        let source = makeNoisyPatternImage(longEdge: 2400, rows: 100, cols: 100, palette: palette)
+
+        // 复刻裁剪路径的产物形态：opaque=false 的 renderer 输出
+        let format = UIGraphicsImageRendererFormat.preferred()
+        format.scale = 1
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: source.size, format: format)
+        let cropped = renderer.image { _ in
+            source.draw(in: CGRect(origin: .zero, size: source.size))
+        }
+        XCTAssertTrue(
+            cropped.cgImage.map { img -> Bool in
+                let a = img.alphaInfo
+                return a == .premultipliedFirst || a == .premultipliedLast || a == .first || a == .last
+            } ?? false,
+            "夹具前提：裁剪产物确实带 alpha 通道，否则这个测试没在测该测的东西"
+        )
+
+        let result = try XCTUnwrap(ProjectImageEncoder.encodeResult(cropped))
+        XCTAssertLessThan(
+            result.data.count, ProjectImageEncoder.compactionThresholdBytes,
+            "裁剪过的不透明照片没能压到阈值下方（\(result.data.count)B），迁移不收敛"
+        )
+    }
+
+    /// 反向守卫：**真的**有透明像素的图必须仍然走无损分支，不能被压平成白底。
+    /// 上面两条是「别把不透明图误判成透明」，这条防止修过头。
+    func test_genuinely_transparent_image_still_uses_lossless() throws {
+        let (palette, _) = makePalette()
+        let image = makePatternImage(longEdge: 1200, rows: 20, cols: 20,
+                                     palette: palette, hasAlpha: true)
+        let result = try XCTUnwrap(ProjectImageEncoder.encodeResult(image))
+        XCTAssertTrue(result.usedLossless, "真带透明度的图纸必须保持无损，不能压平成白底")
+    }
+
     // MARK: - 2. 拼图模式保真（方案选型里唯一真有风险的假设）
 
     func test_grid_sampling_is_unchanged_after_recompression() throws {

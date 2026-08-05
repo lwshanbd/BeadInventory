@@ -765,6 +765,8 @@ struct ProjectImageEditorSheet: View {
     @State private var showingCamera = false
     @State private var pendingCropAfterCamera = false  // 相机关闭后需要打开裁切
     @State private var saveSuccessAt: Date = .distantPast
+    /// 编码失败时置位。失败必须可见 —— 静默失败会让用户以为图存上了。
+    @State private var encodeFailed = false
 
     var displayImage: UIImage? {
         editedImage ?? currentImage
@@ -908,7 +910,22 @@ struct ProjectImageEditorSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("保存") {
                         if let image = displayImage {
-                            let imageData = generateImageData(from: image)
+                            // **编码失败绝不能落到 onSave**。`onSave` 的参数是 `Data?`，而
+                            // `nil` 已经被上面的「移除图片」按钮占用了含义（`onSave(nil)`
+                            // → `_setProjectBlobsDirectly(.some(nil))` → `sd.thumbnail = nil`）。
+                            // 也就是说「编码失败」和「用户要求删图」在这条链路上无法区分：
+                            // 用户给一个已有照片的项目换图、编码失败 → 现存照片被清空，
+                            // 而下一行还会放成功反馈。用户看到「已保存」，照片没了。
+                            //
+                            // 这正是归档分支被双审否掉的那个形状（写入层知道自己失败了，
+                            // 上面每一层硬编码成功），所以这里必须挡住。
+                            guard let imageData = generateImageData(from: image) else {
+                                AppLogger.shared.error("ProjectImageEditor", "encode_failed_keeping_existing", metadata: [
+                                    "pixelSize": "\(image.size)"
+                                ])
+                                encodeFailed = true
+                                return   // 不写库、不放成功反馈、不关闭 sheet
+                            }
                             onSave(imageData)
                             saveSuccessAt = Date()
                         }
@@ -983,6 +1000,11 @@ struct ProjectImageEditorSheet: View {
             }
         }
         .haptic(.success, trigger: saveSuccessAt)
+        .alert("图片处理失败", isPresented: $encodeFailed) {
+            Button("好", role: .cancel) { }
+        } message: {
+            Text("这张图片无法处理，原有图片已保留。请重试或换一张图片。")
+        }
         .presentationDetents([.medium, .large])
     }
 

@@ -146,6 +146,51 @@ final class ThumbnailMigrationCoordinator {
         return values.volumeAvailableCapacityForImportantUsage
     }
 
+    // MARK: - 后台扫描包装
+
+    /// 把同步扫描器挪出主线程。
+    ///
+    /// `run()` / `runHistoryPhase()` 是 `@MainActor` 类的实例方法，**直接调这两个同步
+    /// 扫描器就是在主线程上开 SQLite 连接、跑全表扫描**，而扫描器设了
+    /// `sqlite3_busy_timeout(db, 2_000)` —— 库被 CloudKit 的 vacuum 持锁时，
+    /// 每一批都可能把主线程钉住 2 秒。
+    ///
+    /// 也就是说：专治主线程 store I/O 的这个 PR，自己在主线程上放了一条带 2 秒超时的
+    /// 同步 SQLite 路径，形状和它要修的看门狗崩溃一模一样。`compactOne` 是
+    /// `nonisolated static async` 所以本来就在后台，唯独扫描漏了。
+    ///
+    /// 用 `Task.detached` 而不是 `nonisolated func`：后者在 Swift 5 语言模式下仍可能
+    /// 在调用方的 executor 上同步跑完，detached 保证换线程。
+    private nonisolated static func scanCandidatesOffMain(
+        storeURL: URL,
+        limit: Int,
+        excluding: Set<UUID>
+    ) async -> Result<[UUID], StoreScanFailure> {
+        await Task.detached(priority: .utility) {
+            ProjectImageCompactionScanner.scanCandidates(
+                storeURL: storeURL,
+                thresholdBytes: ProjectImageEncoder.compactionThresholdBytes,
+                limit: limit,
+                excluding: excluding
+            )
+        }.value
+    }
+
+    private nonisolated static func scanHistoryCandidatesOffMain(
+        storeURL: URL,
+        limit: Int,
+        excluding: Set<UUID>
+    ) async -> Result<[UUID], StoreScanFailure> {
+        await Task.detached(priority: .utility) {
+            ProjectImageCompactionScanner.scanHistoryCandidates(
+                storeURL: storeURL,
+                thresholdBytes: ProjectImageEncoder.compactionThresholdBytes,
+                limit: limit,
+                excluding: excluding
+            )
+        }.value
+    }
+
     // MARK: - stubborn 记账
 
     nonisolated static func loadStubbornIDs() -> Set<UUID> {
@@ -287,9 +332,8 @@ final class ThumbnailMigrationCoordinator {
             consecutiveThrottles = 0
 
             let pageIDs: [UUID]
-            switch ProjectImageCompactionScanner.scanCandidates(
+            switch await Self.scanCandidatesOffMain(
                 storeURL: storeURL,
-                thresholdBytes: ProjectImageEncoder.compactionThresholdBytes,
                 limit: Self.batchSize,
                 excluding: excluded
             ) {
@@ -396,9 +440,8 @@ final class ThumbnailMigrationCoordinator {
             }
 
             let ids: [UUID]
-            switch ProjectImageCompactionScanner.scanHistoryCandidates(
+            switch await Self.scanHistoryCandidatesOffMain(
                 storeURL: storeURL,
-                thresholdBytes: ProjectImageEncoder.compactionThresholdBytes,
                 limit: Self.batchSize,
                 excluding: excluded
             ) {

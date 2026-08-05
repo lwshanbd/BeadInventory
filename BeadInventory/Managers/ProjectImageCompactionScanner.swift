@@ -43,6 +43,26 @@ import SQLite3
 enum StoreScanFailure: Error, Equatable {
     case unsupportedStore
     case transient
+
+    /// 按 SQLite 的结果码分类，**不要按「哪一次调用失败了」分类**。
+    ///
+    /// 踩过的坑：schema 探测那步原本把所有失败一律记成 `.unsupportedStore`，而那恰恰是
+    /// 唯一会回退到 SwiftData BLOB 谓词（实测 +1.26 GB）的分支。库被 CloudKit 的
+    /// vacuum 持锁时 `PRAGMA table_info` 会 `SQLITE_BUSY`（busy_timeout 只有 2 秒），
+    /// 于是「瞬时忙」被判成「永久不支持」→ 在最不该吃内存的时刻物化 120×13 MB。
+    /// 分类法自己的盲区把它本来要防的失败模式放了进来。
+    static func classify(_ db: OpaquePointer?) -> StoreScanFailure {
+        guard let db else { return .transient }
+        switch sqlite3_extended_errcode(db) & 0xFF {
+        case SQLITE_BUSY, SQLITE_LOCKED, SQLITE_IOERR, SQLITE_CANTOPEN,
+             SQLITE_PROTOCOL, SQLITE_NOMEM, SQLITE_INTERRUPT:
+            return .transient
+        default:
+            // SQLITE_ERROR（SQL/schema 不匹配）、SQLITE_CORRUPT、SQLITE_NOTADB 等
+            // 都是换个时间重试也一样的 —— 让调用方走永久回退。
+            return .unsupportedStore
+        }
+    }
 }
 
 enum ProjectImageCompactionScanner {
@@ -104,8 +124,9 @@ enum ProjectImageCompactionScanner {
 
         var db: OpaquePointer?
         guard sqlite3_open_v2(storeURL.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
+            let failure = StoreScanFailure.classify(db)
             if db != nil { sqlite3_close(db) }
-            return .failure(.transient)
+            return .failure(failure)
         }
         defer { sqlite3_close(db) }
         sqlite3_busy_timeout(db, 2_000)
@@ -115,13 +136,21 @@ enum ProjectImageCompactionScanner {
         do {
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &stmt, nil) == SQLITE_OK else {
-                return .failure(.unsupportedStore)
+                return .failure(StoreScanFailure.classify(db))
             }
             defer { sqlite3_finalize(stmt) }
-            while sqlite3_step(stmt) == SQLITE_ROW {
+            var rc = sqlite3_step(stmt)
+            while rc == SQLITE_ROW {
                 if let name = sqlite3_column_text(stmt, 1) {
                     existingColumns.insert(String(cString: name).uppercased())
                 }
+                rc = sqlite3_step(stmt)
+            }
+            // **终止码必须检查。** 原来写的是 `while sqlite3_step(...) == SQLITE_ROW`，
+            // 中途 SQLITE_BUSY 会安静地退出循环，留下一份**残缺**的列名集合，
+            // 下面的 allSatisfy 随即失败 → 又是一次「瞬时忙被判成永久不支持」。
+            guard rc == SQLITE_DONE else {
+                return .failure(StoreScanFailure.classify(db))
             }
         }
         guard ([idColumn] + requiredColumns).allSatisfy({ existingColumns.contains($0) }) else {
@@ -134,7 +163,7 @@ enum ProjectImageCompactionScanner {
 
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            return .failure(.transient)
+            return .failure(StoreScanFailure.classify(db))
         }
         defer { sqlite3_finalize(stmt) }
         sqlite3_bind_int64(stmt, 1, Int64(thresholdBytes))
@@ -146,7 +175,8 @@ enum ProjectImageCompactionScanner {
             let uuid: UUID
             switch sqlite3_column_type(stmt, 0) {
             case SQLITE_BLOB where sqlite3_column_bytes(stmt, 0) == 16:
-                guard let raw = sqlite3_column_blob(stmt, 0) else { return .failure(.transient) }
+                // 声称 16 字节却取不到指针 = 行本身坏了，永久
+                guard let raw = sqlite3_column_blob(stmt, 0) else { return .failure(.unsupportedStore) }
                 uuid = UUID(uuid: raw.load(as: uuid_t.self))
             case SQLITE_TEXT:
                 guard let c = sqlite3_column_text(stmt, 0),
@@ -165,7 +195,7 @@ enum ProjectImageCompactionScanner {
             rc = sqlite3_step(stmt)
         }
         guard rc == SQLITE_ROW || rc == SQLITE_DONE else {
-            return .failure(.transient)
+            return .failure(StoreScanFailure.classify(db))
         }
         return .success(ids)
     }

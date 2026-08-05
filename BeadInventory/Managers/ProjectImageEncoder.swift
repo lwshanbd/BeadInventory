@@ -13,8 +13,9 @@
 //      分辨率  200×200      →  全分辨率      ← 对的，拼图模式确实需要（200px 采样不了 100×100 网格）
 //      编码    JPEG 0.6     →  PNG 无损      ← 纯浪费
 //
-//  同一张 2400px 图，PNG ≈ 13 MB，JPEG 0.92 ≈ 0.8 MB —— 分辨率一个像素没少。
-//  1300 倍膨胀里约 9-16 倍是白给的，而这 9-16 倍正是把 SQLite 库撑到 GB 级的原因：
+//  **照片型** 2400px 图，PNG ≈ 13 MB，重编码后 ≈ 1.5 MB —— 分辨率一个像素没少
+//  （真机实测 12,975,516 B → 1,560,605 B）。纯色块图纸相反，PNG 本来就小，见下面「编码策略」。
+//  这一个数量级正是把 SQLite 库撑到 GB 级的原因：
 //
 //    - `thumbnail` / `finishedImage` / `displayThumbnail` 都是 **inline BLOB**。
 //      SQLite 改任何一列都要重写整条记录（含全部 overflow page）。往一条内联着 13 MB
@@ -30,9 +31,10 @@
 //
 //  - `BeadPatternGrid.corners` 是**归一化 0-1** 坐标（见 `GridGeometry.denormalize`），
 //    只要宽高比不变，重编码后现有网格标定完全不受影响，不需要任何坐标迁移。
-//  - `GridCellSampler` 每格取 8 个采样点（0.2/0.5/0.8 三档，**避开格边和中心文字**）后
-//    求平均再做 ΔE 匹配，阈值 30。JPEG 的 ringing 集中在色块边界，正是被 8 点布局避开的位置，
-//    且平均进一步压制残余噪声。
+//  - `GridCellSampler` 每格取 8 个采样点（0.2/0.5/0.8 三档，**避开格边和中心文字**），
+//    **每点各自做 ΔE ≤ 30 匹配再投票，需 ≥2 票才判定色号**。JPEG 的 ringing 集中在色块
+//    边界，正是被 8 点布局避开的位置；即使个别点被污染，2/8 的投票门槛也会把它吸收掉。
+//    （平均 Lab 只喂 near-white 预过滤，不参与色号判定 —— 别把它当成抗噪机制。）
 //  - `GridCellSampler` 里 near-white 预过滤的注释本来就写着「图纸背景常带轻微色偏
 //    （JPEG 压缩、屏幕色温等）」—— 采样链路本就是按「输入带 JPEG 色偏」设计的。
 //
@@ -40,12 +42,16 @@
 //
 //  1. 超过 `maxPixelSize` 的图先降到 `maxPixelSize`（防御 8000px 这种病态输入；
 //     用户实测数据是 2400px 左右，绝大多数图走不到这一步，分辨率原样保留）。
-//  2. **带 alpha → PNG**。带 alpha 的基本都是截图类合成图纸，PNG 对纯色块压缩率极高，
-//     通常几百 KB 就够。不转 JPEG 是因为 JPEG 无 alpha，压平到白底会在深色模式下露馅。
-//  3. **不带 alpha → JPEG**，质量从 0.92 起。
-//  4. 结果超 `targetByteBudget` 就沿 `qualitySteps` / `pixelSizeSteps` 逐档退让，
+//  2. **PNG 永远先试**。进预算就用 PNG —— 纯色块合成图纸（拼豆图纸最常见的形态）
+//     PNG 压得极好，2400px 的 100×100 色块图只有 228 KB，而同一张 JPEG 0.92 反而要
+//     1.05 MB（DCT 最不擅长锐利色块边界）。无脑上 JPEG 会把这批用户的图放大 4-5 倍。
+//  3. PNG 超预算且**真的没有透明像素** → 再试 JPEG，质量 0.92 起。
+//     注意判据是「有没有透明**像素**」而不是「有没有 alpha 通道」——
+//     裁剪 / 方向归一化的渲染产物几乎总是带 alpha 通道但完全不透明，
+//     早期实现在这里判错，让相机照片全部退化成 PNG-only（见 `containsTransparency`）。
+//  4. 仍超预算就沿 `pixelSizeSteps`（外层）× `qualitySteps`（内层）逐档退让，
 //     直到进预算或触底（`minPixelSize`）。触底仍超预算就接受 —— 宁可留一张大图，
-//     也不把用户的图纸糊到不能用。调用方（迁移器）靠 `didReachBudget` 记账避免反复重试。
+//     也不把用户的图纸糊到不能用。
 //
 //  ## 线程
 //
@@ -61,8 +67,9 @@ enum ProjectImageEncoder {
     /// 常规图片走不到这条线，分辨率原样保留；只有病态大图（8000px 扫描件）才会被降。
     static let maxPixelSize: Int = 3072
 
-    /// 单张图的目标字节预算。JPEG 0.92 @ 2400px 实测 ~0.8 MB，1.2 MB 留出细节丰富图的余量。
-    /// 458 项目 × 1.2 MB 上限 = 550 MB，对比现状 6 GB。
+    /// 单张图的目标字节预算。照片型 2400px 图重编码实测落在 1.4-1.6 MB（噪声越强 DCT 越压不动），
+    /// 纯色块图纸则远低于此。**预算是 best-effort 目标，不是保证** —— 触底仍超预算会被接受，
+    /// 真正的硬约束是 `compactionThresholdBytes`。
     static let targetByteBudget: Int = 1_200_000
 
     /// 退让的下限 —— 再小就影响拼图模式网格识别了（100×100 网格 @ 1600px = 16px/格，
@@ -70,15 +77,23 @@ enum ProjectImageEncoder {
     static let minPixelSize: Int = 1600
 
     /// 超过这个字节数就认为「这张图该被重编码」。迁移扫描器用它筛选候选行。
-    /// 取 `targetByteBudget` 的 ~1.7 倍：正常编码结果稳定落在阈值下方，
-    /// 保证迁移**收敛**（重编码过的行不会被下一轮重新选中）。
+    ///
+    /// 取 `targetByteBudget` 的 ~1.7 倍，让正常编码结果稳定落在阈值下方，绝大多数行一轮收敛。
+    /// **但这不是结构性保证** —— `encodeCGImage` 在触底仍超预算时照样返回结果，
+    /// `recompressInner` 只要比源小就接受。真正兜底终止的是两层记账：
+    /// 本轮靠协调器的 `excluded` 集合，跨启动靠 `.stubborn` 落盘（见
+    /// `ThumbnailMigrationCoordinator`）。
     static let compactionThresholdBytes: Int = 2_000_000
 
     private static let qualitySteps: [CGFloat] = [0.92, 0.85, 0.78]
     private static let pixelSizeSteps: [Int] = [maxPixelSize, 2400, 2000, minPixelSize]
 
-    /// 编码结果。`didReachBudget == false` 表示触底后仍超预算 —— 调用方应记账，
-    /// 不要指望下次重试能变小（同样的输入会得到同样的结果，重试只是白烧 CPU + 写盘）。
+    /// 编码结果。
+    ///
+    /// `didReachBudget` / `usedLossless` / `pixelSize` 三个字段**仅供诊断与测试**，
+    /// 不要拿它们做控制流：`didReachBudget` 量的是 `targetByteBudget`（1.2 MB），
+    /// 而迁移器关心的收敛问题量的是 `compactionThresholdBytes`（2 MB），两者不是一回事。
+    /// 迁移器判断「还要不要再管这一行」应该直接比 `data.count` 与阈值。
     struct EncodeResult: Sendable {
         let data: Data
         let didReachBudget: Bool
@@ -98,14 +113,31 @@ enum ProjectImageEncoder {
         guard let cg = image.cgImage else {
             // CIImage-backed UIImage（滤镜产物）没有 cgImage。走 renderer 兜底：
             // 按原尺寸渲一遍拿到位图，再进正常流程。
-            guard let rendered = renderToCGImage(image, maxPixelSize: maxPixelSize) else {
+            // 源信息全丢了，只能保守当作带 alpha。
+            guard let rendered = renderToCGImage(image, maxPixelSize: maxPixelSize, hasAlpha: true) else {
                 AppLogger.shared.error("ProjectImageEncoder", "no_cgimage", metadata: [
                     "size": "\(image.size)"
                 ])
                 return nil
             }
-            return encodeCGImage(rendered, hasAlpha: cgImageHasAlpha(rendered))
+            return encodeCGImage(rendered, hasAlpha: containsTransparency(rendered))
         }
+
+        // **alpha 必须取自源图，不能取自渲染产物。**
+        //
+        // 这里踩过一个会让整个修复失效的坑：`renderToCGImage` 原本硬编码
+        // `format.opaque = false`，产物一律带 alpha 通道（premultipliedFirst）。而
+        // `attempt` 里带 alpha 就禁用 JPEG 分支（JPEG 无 alpha），于是**任何 orientation
+        // 不是 .up 的图都只剩 PNG 阶梯，永远进不了预算**。
+        //
+        // 而 iPhone 相机照片的 orientation 就是 `.right` —— 也就是最常见的输入路径。
+        // 实测同一张 2400px 噪声图：
+        //     .up      → 1,429,323 B (JPEG)
+        //     .right   → 4,318,567 B (PNG)   ← 3 倍大，且高于 compactionThresholdBytes
+        // 高于扫描阈值意味着这类行**永远不收敛**，迁移器每轮都会重新选中它。
+        // 裁剪路径同理（`ImageCropView.normalizeImageOrientation` 也是 opaque: false）。
+        let sourceHasAlpha = containsTransparency(cg)
+
         // UIImage 的 orientation 必须在这里烘进位图 —— 否则 JPEG 靠 EXIF 记方向，
         // 而 `GridCellSampler` 直接吃 `UIImage.cgImage` 的裸像素（不看 orientation），
         // 拼图模式的网格会跟图对不上。
@@ -113,10 +145,18 @@ enum ProjectImageEncoder {
         if image.imageOrientation == .up {
             oriented = cg
         } else {
-            guard let r = renderToCGImage(image, maxPixelSize: maxPixelSize) else { return nil }
+            guard let r = renderToCGImage(image, maxPixelSize: maxPixelSize, hasAlpha: sourceHasAlpha) else {
+                // 这条路径以前静默返 nil —— 而调用方把 nil 当成「用户要删图」，
+                // 会把现存照片清掉（见 ProjectDetailView 的 guard）。至少要可观测。
+                AppLogger.shared.error("ProjectImageEncoder", "orientation_render_failed", metadata: [
+                    "size": "\(image.size)",
+                    "orientation": "\(image.imageOrientation.rawValue)"
+                ])
+                return nil
+            }
             oriented = r
         }
-        return encodeCGImage(oriented, hasAlpha: cgImageHasAlpha(oriented))
+        return encodeCGImage(oriented, hasAlpha: sourceHasAlpha)
     }
 
     // MARK: - 迁移路径（Data → Data）
@@ -159,14 +199,6 @@ enum ProjectImageEncoder {
             return nil
         }
 
-        // alpha 判定走 properties，只读文件头，不解码。
-        let hasAlpha: Bool
-        if let props = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any] {
-            hasAlpha = (props[kCGImagePropertyHasAlpha] as? Bool) ?? false
-        } else {
-            hasAlpha = false
-        }
-
         let thumbnailOptions: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,   // 烘进 EXIF 方向，理由同 encodeResult
@@ -180,7 +212,10 @@ enum ProjectImageEncoder {
             return nil
         }
 
-        guard let result = encodeCGImage(decoded, hasAlpha: hasAlpha) else { return nil }
+        // 透明度以**解码出来的位图**为准，不看 `kCGImagePropertyHasAlpha` ——
+        // 那个属性报的同样是「有没有 alpha 通道」，对我们自己早期版本落盘的
+        // RGBA PNG 一律为 true，会把整批老数据锁死在 PNG-only 路径上。
+        guard let result = encodeCGImage(decoded, hasAlpha: containsTransparency(decoded)) else { return nil }
 
         // 重编码后反而更大（源本来就是高效编码的小图，只是像素多）—— 保持原样更好。
         guard result.data.count < source.count else {
@@ -291,15 +326,55 @@ enum ProjectImageEncoder {
         return b.data.count < a.data.count ? b : a
     }
 
-    private static nonisolated func cgImageHasAlpha(_ image: CGImage) -> Bool {
+    /// 图里**是否真的有透明像素** —— 不是「有没有 alpha 通道」。
+    ///
+    /// 这个区分是 C1 的核心。带 alpha 通道的图绝大多数是完全不透明的：
+    /// `UIGraphicsImageRenderer` 只要 `opaque == false` 就输出 `premultipliedFirst`，
+    /// 而裁剪（`ImageCropView.normalizeImageOrientation`）和方向归一化都走它。
+    /// 早期实现拿「有 alpha 通道」当「有透明度」来禁用 JPEG，结果是**裁剪过或旋转过的
+    /// 照片全部退化成 PNG-only**，压不到阈值下方、迁移永不收敛 —— 实测一张裁剪过的
+    /// 2400px 照片输出 5,840,831 B。
+    ///
+    /// 判定成本：先看 alphaInfo 快速否定（没通道就不可能透明）；有通道时才把 alpha
+    /// 通道单独渲染出来扫一遍。渲染上限压到 1024px（~1 MB 缓冲）—— 真正的透明图纸
+    /// 都是大片透明区域，降采样后依然可见；代价是可能漏掉零星几个像素的透明度，
+    /// 那种情况压平成白底在视觉上也无差别。
+    ///
+    /// 任何一步失败都保守返回 `true`（走无损），宁可图大一点也不能把用户的透明图压平。
+    private static nonisolated func containsTransparency(_ image: CGImage) -> Bool {
         switch image.alphaInfo {
-        case .first, .last, .premultipliedFirst, .premultipliedLast:
-            return true
-        case .none, .noneSkipFirst, .noneSkipLast, .alphaOnly:
-            return false
+        case .none, .noneSkipFirst, .noneSkipLast:
+            return false                      // 没有 alpha 通道，不可能有透明像素
+        case .first, .last, .premultipliedFirst, .premultipliedLast, .alphaOnly:
+            break                             // 有通道，得看实际像素
         @unknown default:
-            return false
+            return true                       // 不认识的形态，保守
         }
+
+        let maxScanEdge = 1024
+        let longest = max(image.width, image.height)
+        let scale = longest > maxScanEdge ? Double(maxScanEdge) / Double(longest) : 1
+        let w = max(1, Int((Double(image.width) * scale).rounded()))
+        let h = max(1, Int((Double(image.height) * scale).rounded()))
+
+        var buffer = [UInt8](repeating: 255, count: w * h)
+        let rendered = buffer.withUnsafeMutableBytes { raw -> Bool in
+            guard let ctx = CGContext(
+                data: raw.baseAddress, width: w, height: h,
+                bitsPerComponent: 8, bytesPerRow: w,
+                space: CGColorSpaceCreateDeviceGray(),
+                bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue
+            ) else { return false }
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard rendered else {
+            AppLogger.shared.error("ProjectImageEncoder", "alpha_scan_failed", metadata: [
+                "width": image.width, "height": image.height
+            ])
+            return true
+        }
+        return buffer.contains { $0 < 255 }
     }
 
     private static nonisolated func resize(_ image: CGImage, maxPixelSize: Int) -> CGImage? {
@@ -310,7 +385,7 @@ enum ProjectImageEncoder {
                             height: (CGFloat(image.height) * scale).rounded())
         let format = UIGraphicsImageRendererFormat.preferred()
         format.scale = 1            // 按像素画，不要乘设备 scale
-        format.opaque = !cgImageHasAlpha(image)
+        format.opaque = !containsTransparency(image)
         let renderer = UIGraphicsImageRenderer(size: target, format: format)
         let ui = renderer.image { _ in
             UIImage(cgImage: image).draw(in: CGRect(origin: .zero, size: target))
@@ -319,7 +394,15 @@ enum ProjectImageEncoder {
     }
 
     /// UIImage → 已应用 orientation 的 CGImage（顺带做上限降采样）。
-    private static nonisolated func renderToCGImage(_ image: UIImage, maxPixelSize: Int) -> CGImage? {
+    ///
+    /// `hasAlpha` 必须由调用方按**源图**传入：渲染器的 `opaque` 决定产物有没有 alpha 通道，
+    /// 而下游拿 alpha 通道当「有透明度」用来禁用 JPEG。硬编码 false 会让所有旋转过的
+    /// 照片（相机图就是 `.right`）退化成 PNG-only，见 `encodeResult` 里的详细说明。
+    private static nonisolated func renderToCGImage(
+        _ image: UIImage,
+        maxPixelSize: Int,
+        hasAlpha: Bool
+    ) -> CGImage? {
         let longestEdge = max(image.size.width, image.size.height)
         guard longestEdge > 0 else { return nil }
         let scale = min(CGFloat(maxPixelSize) / longestEdge, 1.0)
@@ -327,7 +410,7 @@ enum ProjectImageEncoder {
                             height: (image.size.height * scale).rounded())
         let format = UIGraphicsImageRendererFormat.preferred()
         format.scale = 1
-        format.opaque = false
+        format.opaque = !hasAlpha
         let renderer = UIGraphicsImageRenderer(size: target, format: format)
         // renderer.image 内部 draw 会应用 UIImage.imageOrientation
         return renderer.image { _ in
