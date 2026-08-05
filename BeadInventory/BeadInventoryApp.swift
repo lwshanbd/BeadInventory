@@ -168,7 +168,10 @@ struct BeadInventoryApp: App {
 
         self.modelContainer = container
         #if DEBUG
-        BeadInventoryApp.cleanupChaosStressDataIfRequested(container: container)
+        // 清理统一走 WhiteScreenReproSeeder 的分批版本：两者共用 "ChaosSeed-" 前缀，
+        // 但原来那版是一次性 delete 全部再 save —— 拼图模式种子每条带 ~10MB 原图，
+        // 200 条一个事务会把 2GB 挂在 context 里，清理本身就先 OOM 了。
+        WhiteScreenReproSeeder.runIfRequested(container: container, cloudKitEnabled: isCloudSyncEnabled)
         BeadInventoryApp.seedChaosStressDataIfRequested(container: container)
         #endif
         // 创建 InventoryManager 并传入 ModelContext
@@ -1254,6 +1257,238 @@ extension BeadInventoryApp {
             return Data(count: 1_600_000)  // 极端兜底，不让种子生成本身崩测试
         }
         return png
+    }
+}
+#endif
+
+//
+//  WhiteScreenReproSeeder.swift
+//  BeadInventory
+//
+//  DEBUG-only：为「打开 App 长时间白屏」造可复现的数据集。
+//
+//  ## 为什么需要它
+//
+//  白屏已经修过三轮（#51 CKContainer/TipKit、#52 history 开库、#57 InventoryManager 首次
+//  fetch），每轮都是「读代码找到一个主线程阻塞点 → 移走 → 宣布修好」，但用户仍然报障。
+//  根本问题是**从来没有人真正复现过它** —— 所有结论都建立在「这段代码看起来会阻塞」上，
+//  而不是「这就是白屏的原因」。这个文件的唯一目的就是把猜测换成可复现的现场。
+//
+//  ## 造什么数据
+//
+//  重点是**拼图模式**的数据形态，因为它是唯一会用到「全分辨率原图」的场景：
+//  `SDProjectRecord.thumbnail` 存的是原图 PNG（字段名是历史遗留），单条可达 5–25MB，
+//  而且这 4 个 blob 字段**是 inline BLOB 不是 externalStorage**（见 SwiftDataModels.swift
+//  的长注释：SwiftData 不支持 inline→external 的自动迁移），也就是说它们**就躺在 SQLite
+//  的数据行里**。任何不带 propertiesToFetch 的整表扫描都会把它们物化进内存。
+//
+//  每条种子记录带：
+//   - `thumbnail`：全分辨率噪声 PNG（默认长边 2400px，约 8–12MB，对标真实手机拍的图纸）
+//   - `patternGridData`：真实形态的 BeadPatternGrid（默认 100×100 = 1 万格色号矩阵）
+//   - `displayThumbnail`：**一半留 nil** —— 这是「老数据」形态，会触发
+//     ThumbnailMigrationCoordinator 的 backfill，也会让列表走现场降级路径
+//   - 计划 / 已执行 混合，覆盖工作台和项目两条列表
+//
+//  ## 用法
+//
+//      xcrun simctl launch <udid> com.beadinventory.app \
+//        -StressSeedPatternMode -StressSeedCount 200 -StressSeedImageLongEdge 2400
+//
+//  清理（按 name 前缀，走正常 ModelContext.delete + save，CloudKit 能正确传播删除）：
+//
+//      xcrun simctl launch <udid> com.beadinventory.app -StressSeedCleanup
+//
+//  ## CloudKit 安全闸
+//
+//  没关 iCloud 同步时容器是 `cloudKitDatabase: .automatic`，灌 200 × 10MB 等于往用户
+//  iCloud 里推 ~2GB，可能撑爆配额、拖垮真实数据的同步、并让其它设备下载同样体量。
+//  所以默认**拒绝**在 CloudKit 开启时灌数据，必须显式加 `-StressSeedAllowCloudKit` 放行。
+//  模拟器通常没登录 iCloud，不受影响。
+//
+
+#if DEBUG
+enum WhiteScreenReproSeeder {
+
+    /// 种子记录统一前缀，cleanup 靠它识别。改名会导致旧种子清理不掉。
+    static let namePrefix = "ChaosSeed-"
+
+    // MARK: - 入口
+
+    static func runIfRequested(container: ModelContainer, cloudKitEnabled: Bool) {
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("-StressSeedCleanup") {
+            cleanup(container: container)
+        }
+        if args.contains("-StressSeedPatternMode") {
+            seed(container: container, args: args, cloudKitEnabled: cloudKitEnabled)
+        }
+    }
+
+    // MARK: - 灌数据
+
+    private static func seed(container: ModelContainer, args: [String], cloudKitEnabled: Bool) {
+        let count = intArgument(args, key: "-StressSeedCount") ?? 200
+        let longEdge = intArgument(args, key: "-StressSeedImageLongEdge") ?? 2400
+
+        if cloudKitEnabled && !args.contains("-StressSeedAllowCloudKit") {
+            AppLogger.shared.error("ReproSeeder", "seed_refused_cloudkit_on", metadata: [
+                "reason": "CloudKit 同步开启时灌大 blob 会把数 GB 图片推上 iCloud。"
+                    + "确认要这么做请加 -StressSeedAllowCloudKit；或先在「更多 → 数据与同步」关闭同步。",
+                "count": count
+            ])
+            return
+        }
+
+        let startedAt = Date()
+        AppLogger.shared.info("ReproSeeder", "seed_started", metadata: [
+            "count": count,
+            "longEdge": longEdge,
+            "cloudKitEnabled": cloudKitEnabled
+        ])
+
+        // 全分辨率噪声 PNG 编码很慢（2400px 长边约 1–2s/张），逐条生成 200 张要几分钟。
+        // 这里生成一小组不同的底图循环用：我们要复现的是**体量导致的物化开销**，
+        // 不是「字节完全不重复」——SQLite 也不会对 BLOB 做去重。
+        let basePool = (0..<min(count, 6)).map { _ in
+            makeNoisePNG(longEdge: longEdge)
+        }
+        guard let firstSize = basePool.first?.count else { return }
+        AppLogger.shared.info("ReproSeeder", "base_images_ready", metadata: [
+            "poolSize": basePool.count,
+            "bytesEach": firstSize,
+            "elapsedMs": Int(Date().timeIntervalSince(startedAt) * 1000)
+        ])
+
+        let ctx = ModelContext(container)
+        for i in 0..<count {
+            let png = basePool[i % basePool.count]
+            let grid = makePatternGrid(rows: 100, cols: 100)
+            let gridData = try? JSONEncoder().encode(grid)
+
+            let record = SDProjectRecord(
+                name: "\(namePrefix)\(i)",
+                date: Date().addingTimeInterval(-Double(i) * 3600),
+                totalBeads: 10_000,
+                isPlanned: i % 3 == 0,                       // 三分之一进「计划」列表
+                executedDate: i % 3 == 0 ? nil : Date(),
+                thumbnail: png,                              // 原图：拼图模式用
+                finishedImage: i % 5 == 0 ? png : nil,
+                patternGridData: gridData,
+                // 一半留 nil = 老数据形态，触发迁移 backfill + 列表现场降级路径
+                displayThumbnail: i % 2 == 0 ? nil : makeNoisePNG(longEdge: 512),
+                beadUsages: []
+            )
+            ctx.insert(record)
+
+            // 分批 save：一次性 insert 200 条 × 10MB 会让 context 把 2GB 全挂在内存里。
+            if i % 20 == 19 {
+                flush(ctx, at: i)
+            }
+        }
+        flush(ctx, at: count - 1)
+
+        AppLogger.shared.info("ReproSeeder", "seed_completed", metadata: [
+            "count": count,
+            "approxTotalMB": count * firstSize / 1_048_576,
+            "elapsedMs": Int(Date().timeIntervalSince(startedAt) * 1000)
+        ])
+    }
+
+    private static func flush(_ ctx: ModelContext, at index: Int) {
+        do {
+            try ctx.save()
+        } catch {
+            AppLogger.shared.error("ReproSeeder", "seed_batch_save_failed", metadata: [
+                "index": index, "error": "\(error)"
+            ])
+        }
+    }
+
+    // MARK: - 清理
+
+    private static func cleanup(container: ModelContainer) {
+        let ctx = ModelContext(container)
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.name.starts(with: "ChaosSeed-") }
+        )
+        // 只投影 id：delete 不需要物化 blob，几百条 × 10MB 裸 fetch 会一次拉几 GB 进内存。
+        descriptor.propertiesToFetch = [\.id]
+        do {
+            let toDelete = try ctx.fetch(descriptor)
+            AppLogger.shared.info("ReproSeeder", "cleanup_started", metadata: ["count": toDelete.count])
+            // 分批删 + save，理由同灌数据：一次性 delete 几百条大行会把 undo/pending 全挂内存。
+            for (i, record) in toDelete.enumerated() {
+                ctx.delete(record)
+                if i % 20 == 19 { flush(ctx, at: i) }
+            }
+            try ctx.save()
+            AppLogger.shared.info("ReproSeeder", "cleanup_completed", metadata: ["count": toDelete.count])
+        } catch {
+            AppLogger.shared.error("ReproSeeder", "cleanup_failed", metadata: ["error": "\(error)"])
+        }
+    }
+
+    // MARK: - 造数据
+
+    /// 真实形态的拼图网格：100×100 = 1 万格色号矩阵，JSON 编码后约 100KB。
+    private static func makePatternGrid(rows: Int, cols: Int) -> BeadPatternGrid {
+        let palette = ["H01", "H02", "A4", "A5", "B7", "C12", "D3"]
+        let cells: [[String?]] = (0..<rows).map { r in
+            (0..<cols).map { c in
+                // 留一部分空格，跟真实图纸一样不是满格
+                (r + c) % 7 == 0 ? nil : palette[(r &* 31 &+ c) % palette.count]
+            }
+        }
+        return BeadPatternGrid(
+            corners: GridCorners(
+                topLeft: CGPoint(x: 0.05, y: 0.05),
+                topRight: CGPoint(x: 0.95, y: 0.05),
+                bottomLeft: CGPoint(x: 0.05, y: 0.95),
+                bottomRight: CGPoint(x: 0.95, y: 0.95)
+            ),
+            rows: rows,
+            cols: cols,
+            cellColorCodes: cells,
+            lastCalibratedAt: Date(),
+            sourceImageSize: CGSize(width: 2400, height: 1800),
+            colorSystem: .mard
+        )
+    }
+
+    /// 随机噪声 PNG：逐像素随机让 DEFLATE 基本失效，文件大小逼近原始像素数据，
+    /// 逼近真实「手机直接拍的图纸原图」体量（纯色图会被压到几 KB，测不出东西）。
+    private static func makeNoisePNG(longEdge: Int) -> Data {
+        let width = longEdge
+        let height = Int(Double(longEdge) * 0.75)   // 4:3
+        var buffer = Data(count: width * height * 4)
+        buffer.withUnsafeMutableBytes { raw in
+            arc4random_buf(raw.baseAddress, raw.count)
+        }
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let provider = CGDataProvider(data: buffer as CFData),
+              let cgImage = CGImage(
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bitsPerPixel: 32,
+                bytesPerRow: width * 4,
+                space: colorSpace,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                provider: provider,
+                decode: nil,
+                shouldInterpolate: false,
+                intent: .defaultIntent
+              ),
+              let png = UIImage(cgImage: cgImage).pngData() else {
+            AppLogger.shared.error("ReproSeeder", "noise_png_failed", metadata: ["longEdge": longEdge])
+            return Data()
+        }
+        return png
+    }
+
+    private static func intArgument(_ args: [String], key: String) -> Int? {
+        guard let idx = args.firstIndex(of: key), idx + 1 < args.count else { return nil }
+        return Int(args[idx + 1])
     }
 }
 #endif
