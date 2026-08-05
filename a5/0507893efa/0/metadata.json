@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "a50507893efa",
+  "session_id": "7450e00e-9e75-4781-920f-9fcf4802c975",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-05T20:40:11.131802Z",
+  "branch": "fix/image-storage-compaction",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "BeadInventory/Managers/ProjectImageCompactionScanner.swift",
+    "BeadInventory/Managers/ThumbnailMigrationCoordinator.swift",
+    "BeadInventoryTests/ThumbnailMigrationCoordinatorTests.swift",
+    "BeadInventoryTests/InventoryManagerInitialLoadTests.swift",
+    "BeadInventoryTests/ProjectImageCompactionScannerTests.swift"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "c57d57162d5f",
+  "checkpoint_transcript_start": 369,
+  "transcript_lines_at_start": 369,
+  "token_usage": {
+    "input_tokens": 74,
+    "cache_creation_tokens": 67710,
+    "cache_read_tokens": 10868658,
+    "output_tokens": 41964,
+    "api_call_count": 37
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-05T20:40:11.111773Z",
+    "agent_lines": 833,
+    "agent_removed": 159,
+    "human_added": 26,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 859,
+    "total_lines_changed": 1037,
+    "agent_percentage": 95.66055930568949,
+    "metric_version": 2
+  }
+}
