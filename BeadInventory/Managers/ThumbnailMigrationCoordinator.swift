@@ -8,13 +8,27 @@
 //  "thumbnail" 但实际存的是原图），单条可达 5-10 MB。计划列表滑动时即使懒加载 + LazyVStack，
 //  row 解码全分辨率 PNG → UIImage 也会瞬时撑爆内存（5MB PNG → 30+MB UIImage × 10 row ≈ jetsam）。
 //
-//  本协调器的工作：在 App 启动后空闲阶段，分批把**所有** `thumbnail != nil &&
-//  displayThumbnail == nil` 的项目走 `ImageDownsampler.downsample` 生成 displayThumbnail 写回。
-//  原 thumbnail 字段**完全不动**（拼图模式仍读全分辨率原图，数据零损失）。
+//  本协调器现在做**两件事**（原本只做第 2 件）：
 //
-//  迁移完成后：
+//    1. **瘦身**：把超过 `ProjectImageEncoder.compactionThresholdBytes` 的 `thumbnail` /
+//       `finishedImage` 走 `ProjectImageEncoder.recompress` 重编码（分辨率原样保留，
+//       只撤回无损 PNG）。
+//    2. **回填**：给缺 `displayThumbnail` 的行生成列表小图。
+//
+//  **两件事必须合并成同一次 `save()`** —— 这是本轮改动的核心，不是顺手优化：
+//
+//  三个图片字段都是 inline BLOB，SQLite 改行内任何一列都要重写整条记录（含全部
+//  overflow page）。原实现只做第 2 件，往一条内联着 13 MB 原图的行里写 100 KB 的
+//  displayThumbnail —— 实际写盘 13 MB，而且写完这行**还是 13 MB**。458 项目 ≈ 6 GB，
+//  加 WAL + checkpoint = 用户 IPS 里那 68.72 GB dirty writes。
+//  合并之后：胖行一生只被重写一次，且**写完就瘦了**，下一轮扫描不会再选中它。
+//
+//  瘦身完成后：
 //  - 列表 row 直接读 displayThumbnail（~50-100 KB JPEG，UIImage 解码内存峰值 MB 级）
-//  - 详情大图 / 拼图模式继续读原 thumbnail（行为不变）
+//  - 详情大图 / 拼图模式继续读 thumbnail —— 分辨率没变，拼图模式网格标定是归一化
+//    0-1 坐标（`GridGeometry.denormalize`），不受重编码影响
+//  - 库从 GB 级回到百 MB 级 → CoreData+CloudKit 的 vacuum / WAL checkpoint 不再持
+//    EXCLUSIVE 锁数十秒 → 首屏那次 fetch 不再被拖过 scene-create 看门狗的 2.06s
 //
 //  设计要点：
 //  - **主线程零 SwiftData I/O（TestFlight build 180 watchdog 崩溃修复，2026-07-26）**：
@@ -59,6 +73,30 @@ final class ThumbnailMigrationCoordinator {
     /// 批与批之间的 sleep（纳秒）。
     private static let batchSleepNanos: UInt64 = 1_000_000_000
 
+    /// 被闸门挡住时的重试间隔 —— 比批间 sleep 长得多，避免在发热 / 低电量时空转唤醒。
+    private static let throttledRetryNanos: UInt64 = 30_000_000_000
+
+    /// 连续被闸门挡住多少次就收工（等下次 scenePhase .active 再来）。
+    /// 30s × 10 = 5 分钟；再耗下去不如把 CPU 还给用户。
+    private static let maxConsecutiveThrottles: Int = 10
+
+    /// 单次 run 的写入预算。瘦身一条 ≈ 一次行重写（重编码后的字节数，通常 < 1 MB），
+    /// 300 MB 够覆盖几百条；超了就收工，下次启动接着跑。
+    /// 存在的意义是**兜底**：万一某个假设错了（比如某类图重编码后反而变大），
+    /// 预算保证单次启动的写入量有上限，不会重演 68 GB。
+    private static let writeBudgetBytesPerRun: Int = 300 * 1024 * 1024
+
+    /// 剩余磁盘低于此值就不跑 —— 瘦身过程中 WAL 会临时涨，盘满时写失败会让
+    /// 本来好好的行进入半吊子状态。这批用户刚被写了 68 GB，盘紧不是小概率事件。
+    private static let minFreeDiskBytes: Int64 = 500 * 1024 * 1024
+
+    /// 「试过但压不下去」的项目 —— 每轮扫描要排除它们，否则同一行每轮都被选中重写。
+    ///
+    /// 典型成因：一张本来就编码高效的大图（比如 3 MB 的纯色块 PNG），
+    /// `recompress` 判定「重编码后反而更大」返回 nil，但它的字节数仍在扫描阈值之上。
+    /// 这类行留在库里是可以接受的（3 MB ≪ 13 MB），但绝不能让它把迁移器拖进死循环。
+    private static let stubbornDefaultsKey = "ProjectImageCompaction.stubbornProjectIDs"
+
     /// 当前活跃 task 的 generation token。每次 start() bump，旧 task 的 defer 块拿着
     /// 自己的旧 generation 跟当前值比对：相等才允许清空状态。修复了 stop()+start() 之间
     /// 旧 task 误清新 task 状态的 race。
@@ -67,6 +105,64 @@ final class ThumbnailMigrationCoordinator {
     private var task: Task<Void, Never>?
 
     private init() {}
+
+    // MARK: - 暂停闸门
+
+    /// 为什么要有闸门：瘦身是纯后台的空闲任务，一条也不做用户不会有任何感知
+    /// （列表读 displayThumbnail，没有就走现场降级），但它做得太猛会烧 CPU / 写盘 /
+    /// 发热，而**发热正是用户那份 IPS 的现场条件**（`Thermal Level: 3 / serious`）。
+    /// 在已经过热的机器上继续跑重编码，等于往看门狗手里递刀。
+    enum ThrottleReason: String {
+        case thermal            // 机器已经烫了
+        case lowPower           // 用户开了低电量模式，明确表达了「省着点用」
+        case lowDisk            // 盘紧，WAL 涨不动
+        case writeBudget        // 本轮写够了，下次启动接着来
+    }
+
+    /// 返回非 nil 表示「现在不该干活」。
+    /// `nonisolated` —— 在后台 executor 上直接调，不回主线程。
+    nonisolated static func throttleReason(bytesWrittenThisRun: Int) -> ThrottleReason? {
+        if bytesWrittenThisRun >= writeBudgetBytesPerRun { return .writeBudget }
+
+        let info = ProcessInfo.processInfo
+        switch info.thermalState {
+        case .serious, .critical: return .thermal
+        case .nominal, .fair: break
+        @unknown default: break
+        }
+        if info.isLowPowerModeEnabled { return .lowPower }
+
+        if let free = freeDiskBytes(), free < minFreeDiskBytes { return .lowDisk }
+        return nil
+    }
+
+    /// 取值失败返回 nil —— 此时**不**拦（宁可跑也不要因为读不到容量就永久停摆，
+    /// 真写不进去时 save 会自己失败并记 log）。
+    private nonisolated static func freeDiskBytes() -> Int64? {
+        let url = URL.applicationSupportDirectory
+        guard let values = try? url.resourceValues(
+            forKeys: [.volumeAvailableCapacityForImportantUsageKey]
+        ) else { return nil }
+        return values.volumeAvailableCapacityForImportantUsage
+    }
+
+    // MARK: - stubborn 记账
+
+    nonisolated static func loadStubbornIDs() -> Set<UUID> {
+        let raw = UserDefaults.standard.stringArray(forKey: stubbornDefaultsKey) ?? []
+        return Set(raw.compactMap(UUID.init(uuidString:)))
+    }
+
+    nonisolated static func noteStubborn(_ id: UUID) {
+        var ids = loadStubbornIDs()
+        guard ids.insert(id).inserted else { return }
+        UserDefaults.standard.set(ids.map(\.uuidString), forKey: stubbornDefaultsKey)
+    }
+
+    /// 测试用 —— 清掉记账，让下一轮重新考虑所有行。
+    nonisolated static func resetStubbornIDsForTesting() {
+        UserDefaults.standard.removeObject(forKey: stubbornDefaultsKey)
+    }
 
     /// 启动迁移。重入安全 —— 已经在跑就直接返回。
     /// priority .utility：迁移是空闲任务，CPU 重活（downsample）与 I/O 都不该抢用户交互资源。
@@ -114,105 +210,135 @@ final class ThumbnailMigrationCoordinator {
 
         AppLogger.shared.info("ThumbnailMigration", "started", metadata: [:])
 
+        guard let storeURL = container.configurations.first?.url else {
+            AppLogger.shared.warning("ThumbnailMigration", "no_store_url_skipping", metadata: [:])
+            return
+        }
+
         var migrated = 0
         var raceSkipped = 0
         var alreadyDone = 0
         var failures = 0
         var pagesFetched = 0
+        var bytesWritten = 0
+        var consecutiveThrottles = 0
 
-        // **关键 jetsam 防护（round-10 review C1 修复 + round-11 review I1 starvation 修复）**：
-        // 分页 fetch，**单次只取 `batchSize` 个 ID**。之前一次 `context.fetch` 把所有
-        // `thumbnail != nil && displayThumbnail == nil` 的 SDProjectRecord 整 row 拉出来
-        //（含 inline raw thumbnail Data），458 项目用户 × 5-10 MB = 2-5 GB 瞬时内存峰值
-        // —— **修 jetsam 的协调器自己撞 jetsam**。
+        // **候选发现走 raw SQLite，不走 SwiftData 谓词。**
         //
-        // 修法三点：
-        //   1. `fetchLimit = batchSize`：单次只 fetch 10 个 row
-        //   2. `propertiesToFetch = [\.id]`：单列投影，**只取 id 列**，不物化
-        //      thumbnail / finishedImage / patternGridData 等 inline blob 字段
-        //   3. **`fetchOffset = failedCarry`**：成功的 row 自然从谓词掉出，下一次 fetch
-        //      offset=0 就跳过它们；**失败的 row 仍在谓词里**，offset 必须前进过它们才能
-        //      访问后面的 candidate。否则 first page 全失败 → 下次 fetch 又返回同一批
-        //      → page_no_progress_breaking break → 后面的几百个 valid candidate 永远
-        //      不被试到（round-11 review I1 starvation）。
+        // 原实现用 `#Predicate { thumbnail != nil && displayThumbnail == nil }` +
+        // `propertiesToFetch = [\.id]`，看起来只取 id —— 实测（InitialLoadMemoryDiagnosticTests）
+        // SwiftData 仍会把命中行的 blob 内容 SELECT 进内存（120 条 × 13 MB → +1.26 GB）。
+        // 投影只控制生成对象的字段，不控制 SELECT 出来的列。分页 limit=10 只是把
+        // 单次峰值压到 ~130 MB，没有消除问题。
         //
-        // offset 增量 = 本页失败数：因为成功 row 从谓词集合掉出，索引不变；失败 row 仍占位，
-        // 下次 fetch offset=failedCarry 正好跳过它们。
+        // `ProjectImageCompactionScanner` 用只读连接跑
+        // `WHERE length(ZTHUMBNAIL) > ?`，SQLite 对「length() 实参是直接列引用」有专门
+        // 优化（OPFLAG_LENGTHARG），只读记录头的 serial type，不追 overflow page 链。
         //
-        // 终止：fetch 返空 = 已过完所有 candidate。失败的 row 留到下次 scenePhase .active
-        // 时再重试（reset failedCarry）—— Sentry 上 downsample_failed / save_failed
-        // 事件已能 triage 哪些是持久故障。
-        var fetchOffset = 0
+        // **本轮已处理的行一律排除**，不管结果是什么。
+        //
+        // 这条不是优化，是终止条件：扫描是「按当前库状态重新查」而不是游标翻页，
+        // 所以只要有一行处理完之后仍然符合扫描条件，下一轮就会原样再查到它 —— 死循环。
+        // 会落到这种情况的至少有两类：字节坏掉导致 downsample 失败的行、
+        // 以及并发被改动而跳过的行。原实现靠 `fetchOffset += pageFailures` 打补丁，
+        // 「本轮处理过的就不再考虑」是同一件事更直接的表达，且对所有 outcome 一致成立。
+        //
+        // 只有 `.stubborn`（试过但压不下去）会**落盘**跨启动排除；其余的下次启动重新给机会。
+        let stubborn = Self.loadStubbornIDs()
+        var excluded = stubborn
 
         while true {
             guard !Task.isCancelled else {
                 AppLogger.shared.info("ThumbnailMigration", "cancelled_mid_run", metadata: [
-                    "migrated": migrated,
-                    "pagesFetched": pagesFetched
+                    "migrated": migrated, "pagesFetched": pagesFetched, "bytesWritten": bytesWritten
                 ])
                 return
             }
+
+            // 闸门：发热 / 低电量 / 盘紧 / 写够了 —— 任何一条命中就先歇着。
+            // 用户那份 IPS 的现场条件就是 `Thermal Level: 3 / serious`，
+            // 在已经烫的机器上继续跑重编码等于往看门狗手里递刀。
+            if let reason = Self.throttleReason(bytesWrittenThisRun: bytesWritten) {
+                consecutiveThrottles += 1
+                AppLogger.shared.info("ThumbnailMigration", "throttled", metadata: [
+                    "reason": reason.rawValue,
+                    "consecutive": consecutiveThrottles,
+                    "migrated": migrated,
+                    "bytesWritten": bytesWritten
+                ])
+                // 写预算用尽是本次 run 的终点，不是等一等就能好的 —— 直接收工。
+                if reason == .writeBudget || consecutiveThrottles >= Self.maxConsecutiveThrottles {
+                    break
+                }
+                do {
+                    try await Task.sleep(nanoseconds: Self.throttledRetryNanos)
+                } catch {
+                    return  // cancelled
+                }
+                continue
+            }
+            consecutiveThrottles = 0
 
             let pageIDs: [UUID]
-            do {
-                // 后台 context 扫 candidate —— 即使是 id 单列投影，也不给主线程留同步 I/O。
-                pageIDs = try await Self.fetchCandidatePage(
-                    container: container,
-                    offset: fetchOffset,
-                    limit: Self.batchSize
-                )
-            } catch {
-                AppLogger.shared.error("ThumbnailMigration", "fetch_candidates_failed", metadata: [
-                    "error": "\(error)",
-                    "migrated": migrated,
-                    "pagesFetched": pagesFetched,
-                    "fetchOffset": fetchOffset
+            switch ProjectImageCompactionScanner.scanCandidates(
+                storeURL: storeURL,
+                thresholdBytes: ProjectImageEncoder.compactionThresholdBytes,
+                limit: Self.batchSize,
+                excluding: excluded
+            ) {
+            case .success(let ids):
+                pageIDs = ids
+            case .failure(let failure):
+                // 这里**不回退 SwiftData BLOB 谓词** —— 那条路径实测 +1.26 GB，
+                // 而扫描失败最可能的时机（store 正忙）恰恰是最不该吃内存的时候。
+                // 瘦身是空闲任务，晚一次启动做完没有任何代价。
+                AppLogger.shared.warning("ThumbnailMigration", "scan_candidates_failed", metadata: [
+                    "failure": "\(failure)", "migrated": migrated, "pagesFetched": pagesFetched
                 ])
                 return
             }
 
-            if pageIDs.isEmpty {
-                // 所有候选都试过了（成功 / 失败 / race-skip / already-done）—— 完成本 run
-                break
-            }
+            if pageIDs.isEmpty { break }   // 全库已经没有胖行 / 缺小图的行了
 
             pagesFetched += 1
-            var pageFailures = 0
 
             for projectId in pageIDs {
                 guard !Task.isCancelled else {
                     AppLogger.shared.info("ThumbnailMigration", "cancelled_mid_page", metadata: [
-                        "migrated": migrated,
-                        "pagesFetched": pagesFetched
+                        "migrated": migrated, "pagesFetched": pagesFetched
                     ])
                     return
                 }
-                let outcome = await Self.migrateOne(projectId: projectId, container: container)
+                let outcome = await Self.compactOne(projectId: projectId, container: container)
+                // 无条件排除 —— 见上面 `excluded` 的注释，这是本轮的终止条件。
+                // 放在 switch 之前，保证任何新增 outcome 分支都不会漏掉它。
+                if outcome != .cancelled { excluded.insert(projectId) }
+
                 switch outcome {
-                case .migrated:
+                case .migrated(let written, let filledDisplayThumbnail):
                     migrated += 1
-                    // 主线程侧只做纯内存 bookkeeping（Set insert），零 SwiftData I/O。
-                    inventoryManager.noteProjectDisplayThumbnailMigrated(projectId: projectId)
-                    // 成功 → 谓词集合缩小，offset 不前进，下次 fetch 自然拿到新的
+                    bytesWritten += written
+                    if filledDisplayThumbnail {
+                        // 主线程侧只做纯内存 bookkeeping（Set insert），零 SwiftData I/O。
+                        inventoryManager.noteProjectDisplayThumbnailMigrated(projectId: projectId)
+                    }
                 case .raceSkipped:
                     raceSkipped += 1
-                    // .raceSkipped 通常意味着 thumbnail 被并发清掉 → row 不再符合谓词 → 同 .migrated
                 case .alreadyDone:
                     alreadyDone += 1
-                    // displayThumbnail 被并发填充 → row 不再符合谓词 → 同 .migrated
+                case .stubborn:
+                    // 压不下去（比如本来就编码高效的大 PNG）。**落盘**跨启动排除，
+                    // 否则每次启动都要把它重新解码一遍才发现压不动，纯烧电。
+                    Self.noteStubborn(projectId)
                 case .failed:
                     failures += 1
-                    pageFailures += 1   // **关键**：offset 前进过这些 row，才能访问后面 candidate
                 case .cancelled:
-                    AppLogger.shared.info("ThumbnailMigration", "cancelled_during_migrate_one", metadata: [
-                        "projectId": projectId.uuidString,
-                        "migrated": migrated
+                    AppLogger.shared.info("ThumbnailMigration", "cancelled_during_compact_one", metadata: [
+                        "projectId": projectId.uuidString, "migrated": migrated
                     ])
                     return
                 }
             }
-
-            fetchOffset += pageFailures
 
             // 页间 sleep —— 让出 UI，让 CloudKit 慢慢上传
             do {
@@ -227,70 +353,67 @@ final class ThumbnailMigrationCoordinator {
             "raceSkipped": raceSkipped,
             "alreadyDone": alreadyDone,
             "failures": failures,
-            "pagesFetched": pagesFetched
+            "pagesFetched": pagesFetched,
+            "bytesWritten": bytesWritten
         ])
     }
 
-    enum MigrationOutcome {
-        case migrated
-        case raceSkipped       // row 不存在 / thumbnail 已是 nil（candidate 列表后被并发改动）
-        case alreadyDone       // displayThumbnail 已经有值（被 updateProjectThumbnail 抢先填了）
-        case failed            // fetch / downsample / save 失败 —— 留给下次重试
+    enum MigrationOutcome: Equatable {
+        /// 成功写回。`bytesWritten` 是本行新写入的图片字节总量（写预算记账用）；
+        /// `filledDisplayThumbnail` 表示本次是否补上了列表小图（决定要不要通知主线程更新集合）。
+        case migrated(bytesWritten: Int, filledDisplayThumbnail: Bool)
+        case raceSkipped       // row 不存在 / thumbnail 已是 nil（候选列表之后被并发改动）
+        case alreadyDone       // 已经够瘦且小图齐全（被 updateProjectThumbnail 抢先做了）
+        case stubborn          // 试过了但压不下去 —— 落盘记账，以后不再考虑
+        case failed            // fetch / 编码 / save 失败 —— 下次启动重试
         case cancelled         // 上层 stop() / scene background 触发 —— 不计 failures
+
+        /// 断言便利 —— 调用方通常只关心「成没成」，不关心写了多少字节。
+        var isMigrated: Bool {
+            if case .migrated = self { return true }
+            return false
+        }
     }
 
-    /// 分页扫描 candidate id —— `nonisolated`：Swift 5 语言模式下（SE-0338）脱离 MainActor
-    /// 在 generic executor 上执行；用独立后台 ModelContext，主线程零 I/O。
-    /// 结构化调用（非 detached）保证 Task.isCancelled / 取消传播仍随外层 run task。
-    private nonisolated static func fetchCandidatePage(
-        container: ModelContainer,
-        offset: Int,
-        limit: Int
-    ) async throws -> [UUID] {
-        let bg = ModelContext(container)
-        var descriptor = FetchDescriptor<SDProjectRecord>(
-            predicate: #Predicate { $0.thumbnail != nil && $0.displayThumbnail == nil }
-        )
-        descriptor.fetchLimit = limit
-        descriptor.fetchOffset = offset          // 跳过本 run 已经失败过的 row
-        descriptor.propertiesToFetch = [\.id]    // 只取 id 列，不物化 blob
-        return try bg.fetch(descriptor).map { $0.id }
-    }
-
-    /// 单个项目的迁移（**全程后台执行，禁止改回 @MainActor** —— build 180 watchdog 崩溃根因）：
-    /// 1. 后台 ModelContext 单行投影取 thumbnail + displayThumbnail 现状
-    /// 2. displayThumbnail 已被并发填充 → 跳过避免冗余 CloudKit 上传
-    /// 3. downsample（已在后台 executor，直接同步调用，无需再 detached hop）
-    /// 4. **全新** ModelContext 重新 fetch 验证 thumbnail 字节没变 + displayThumbnail 仍 nil
-    ///    （TOCTOU；必须新 context —— 复用步骤 1 的 context 会命中 registered 对象的 stale
-    ///    快照，看不到 downsample 期间主 context 的并发 commit，校验就成了空转）
-    /// 5. 同一个新 context 上写回 displayThumbnail + save
+    /// 单个项目的瘦身 + 回填（**全程后台执行，禁止改回 @MainActor** —— build 180 watchdog 崩溃根因）。
     ///
-    /// 总是 downsample —— 不再因 "原字节 < 200KB" 直接复用，因为一张 199KB 的 4000×4000 PNG
-    /// 解码到 UIImage 仍能爆 60MB（重蹈 jetsam 根因）。
+    /// 1. 后台 ModelContext 单行投影取 thumbnail / finishedImage / displayThumbnail 现状
+    /// 2. 三件事各自决定要不要做：
+    ///    - thumbnail 超阈值 → `ProjectImageEncoder.recompress`
+    ///    - finishedImage 超阈值 → 同上
+    ///    - displayThumbnail 为 nil → `ImageDownsampler.downsample`（用**重编码后**的字节，
+    ///      省一次大图解码）
+    /// 3. 一件都不用做 → `.alreadyDone`；该做的都做了但一个都没成功变小 → `.stubborn`
+    /// 4. **全新** ModelContext 重新 fetch 做 TOCTOU 校验（必须新 context —— 复用步骤 1 的
+    ///    context 会命中 registered 对象的 stale 快照，看不到编码期间主 context 的并发 commit，
+    ///    校验就成了空转）
+    /// 5. 同一个新 context 上**一次性**写回全部改动 + 一次 save
     ///
-    /// `internal` 而非 private：ThumbnailMigrationCoordinatorTests 直接钉迁移语义。
-    nonisolated static func migrateOne(projectId: UUID, container: ModelContainer) async -> MigrationOutcome {
-        // 步骤 1+2：后台单行投影 fetch —— 只物化 thumbnail + displayThumbnail 两列，
-        // 不碰同行的 finishedImage / patternGridData。
-        let thumbnailData: Data
+    /// 第 5 步的「一次 save」是整轮修复的核心：三个图片字段都是 inline BLOB，SQLite 改行内
+    /// 任何一列都要重写整条记录（含 overflow page）。分两次写就是把 13 MB 的行重写两遍。
+    /// 合并之后胖行一生只被重写一次，且**写完就瘦了**。
+    ///
+    /// `internal` 而非 private：ThumbnailMigrationCoordinatorTests 直接钉语义。
+    nonisolated static func compactOne(projectId: UUID, container: ModelContainer) async -> MigrationOutcome {
+        // 步骤 1：后台单行投影 fetch。
+        // 三列一起取（峰值 = thumbnail + finishedImage），因为它们要合并成同一次 save；
+        // 分开取会变成两次行重写，正是本轮要消灭的东西。patternGridData 不碰。
+        let originalThumbnail: Data?
+        let originalFinished: Data?
+        let hasDisplayThumbnail: Bool
         do {
             var descriptor = FetchDescriptor<SDProjectRecord>(
                 predicate: #Predicate { $0.id == projectId }
             )
             descriptor.fetchLimit = 1
-            descriptor.propertiesToFetch = [\.thumbnail, \.displayThumbnail]
+            descriptor.propertiesToFetch = [\.thumbnail, \.finishedImage, \.displayThumbnail]
             let bg = ModelContext(container)
             guard let sd = try bg.fetch(descriptor).first else {
                 return .raceSkipped  // row 被删
             }
-            guard let thumb = sd.thumbnail else {
-                return .raceSkipped  // thumbnail 被清
-            }
-            if sd.displayThumbnail != nil {
-                return .alreadyDone  // 已被并发填
-            }
-            thumbnailData = thumb
+            originalThumbnail = sd.thumbnail
+            originalFinished = sd.finishedImage
+            hasDisplayThumbnail = sd.displayThumbnail != nil
         } catch {
             AppLogger.shared.error("ThumbnailMigration", "fetch_failed", metadata: [
                 "projectId": projectId.uuidString,
@@ -299,51 +422,114 @@ final class ThumbnailMigrationCoordinator {
             return .failed
         }
 
-        // downsample 前 check cancellation —— 避免 stop() 之后还烧一轮 CPU。
         guard !Task.isCancelled else { return .cancelled }
 
-        // 步骤 3：downsample —— 本函数已在后台 executor，直接同步跑。
-        guard let downsampled = ImageDownsampler.downsample(thumbnailData) else {
-            AppLogger.shared.error("ThumbnailMigration", "downsample_failed", metadata: [
-                "projectId": projectId.uuidString,
-                "sourceBytes": thumbnailData.count
-            ])
-            return .failed
+        // 步骤 2：算出这一行要写什么。nil = 该字段不动。
+        var newThumbnail: Data?
+        var newFinished: Data?
+        var newDisplayThumbnail: Data?
+
+        if let thumb = originalThumbnail {
+            newThumbnail = ProjectImageEncoder.recompress(thumb)?.data
         }
         guard !Task.isCancelled else { return .cancelled }
 
-        // 步骤 4+5：TOCTOU 校验 + 写回，同一个**全新** context 完成，保证「校验通过的
-        // 就是被写的那一行状态」。投影仍只取两列；对部分物化对象写 displayThumbnail 不清
-        // 其它 blob 列（InventoryManagerBlobFetchTests 已钉住该组合语义）。
+        if let finished = originalFinished {
+            newFinished = ProjectImageEncoder.recompress(finished)?.data
+        }
+        guard !Task.isCancelled else { return .cancelled }
+
+        // 列表小图：用重编码后的字节生成（更小 → 解码更快），没重编码就用原字节。
+        var displayThumbnailFailed = false
+        if !hasDisplayThumbnail, let source = newThumbnail ?? originalThumbnail {
+            newDisplayThumbnail = ImageDownsampler.downsample(source)
+            if newDisplayThumbnail == nil {
+                // 字节坏掉 / 格式解不开。**不**阻断瘦身 —— 瘦身才是修崩溃的那一半，
+                // 而且列表本来就有现场降级兜底。但要保留失败信号，见下面 return 分支。
+                displayThumbnailFailed = true
+                AppLogger.shared.error("ThumbnailMigration", "downsample_failed", metadata: [
+                    "projectId": projectId.uuidString,
+                    "sourceBytes": source.count
+                ])
+            }
+        }
+
+        guard newThumbnail != nil || newFinished != nil || newDisplayThumbnail != nil else {
+            // 一件都没做成。三种情况要分开报，否则监控上无从 triage：
+            let stillOversized =
+                (originalThumbnail?.count ?? 0) > ProjectImageEncoder.compactionThresholdBytes
+                || (originalFinished?.count ?? 0) > ProjectImageEncoder.compactionThresholdBytes
+
+            if displayThumbnailFailed {
+                // 想生成小图但字节解不开，且没有任何别的改动可写 —— 这是真失败。
+                // （若重编码那半成功了则不会走到这里，那属于部分进展，算 .migrated。）
+                return .failed
+            }
+            if stillOversized {
+                // 行仍然超阈值，但 recompress 判定「压不下去」（比如本来就编码高效的大 PNG）。
+                // 落盘排除，否则下一轮扫描又会选中它，每次启动白解码一遍。
+                AppLogger.shared.info("ThumbnailMigration", "stubborn_row", metadata: [
+                    "projectId": projectId.uuidString,
+                    "thumbnailBytes": originalThumbnail?.count ?? 0,
+                    "finishedBytes": originalFinished?.count ?? 0
+                ])
+                return .stubborn
+            }
+            // 行本来就是干净的：够瘦 + 小图齐全（或压根没有 thumbnail 可降）。
+            return .alreadyDone
+        }
+
+        guard !Task.isCancelled else { return .cancelled }
+
+        // 步骤 4+5：TOCTOU 校验 + 一次性写回，同一个**全新** context 完成，
+        // 保证「校验通过的就是被写的那一行状态」。
+        var writtenBytes = 0
         do {
             var descriptor = FetchDescriptor<SDProjectRecord>(
                 predicate: #Predicate { $0.id == projectId }
             )
             descriptor.fetchLimit = 1
-            descriptor.propertiesToFetch = [\.thumbnail, \.displayThumbnail]
+            descriptor.propertiesToFetch = [\.thumbnail, \.finishedImage, \.displayThumbnail]
             let bg = ModelContext(container)
             guard let sd = try bg.fetch(descriptor).first else {
                 return .raceSkipped
             }
-            guard let thumb = sd.thumbnail else {
-                return .raceSkipped
+
+            // 每个字段**独立**校验：用户在编码期间只换了封面图的话，成品图那半的工作
+            // 仍然有效，不该一起丢掉。
+            if let newThumbnail {
+                guard sd.thumbnail == originalThumbnail else {
+                    AppLogger.shared.info("ThumbnailMigration", "race_thumbnail_changed_skip", metadata: [
+                        "projectId": projectId.uuidString,
+                        "oldBytes": originalThumbnail?.count ?? 0,
+                        "newBytes": sd.thumbnail?.count ?? 0
+                    ])
+                    return .raceSkipped
+                }
+                sd.thumbnail = newThumbnail
+                writtenBytes += newThumbnail.count
             }
-            if sd.displayThumbnail != nil {
-                return .alreadyDone
+            if let newFinished {
+                guard sd.finishedImage == originalFinished else {
+                    AppLogger.shared.info("ThumbnailMigration", "race_finished_changed_skip", metadata: [
+                        "projectId": projectId.uuidString
+                    ])
+                    return .raceSkipped
+                }
+                sd.finishedImage = newFinished
+                writtenBytes += newFinished.count
             }
-            if thumb != thumbnailData {
-                // thumbnail 在 downsample 期间被替换 —— 我们的 downsampled 对应的是 OLD thumbnail
-                AppLogger.shared.info("ThumbnailMigration", "race_thumbnail_changed_skip", metadata: [
-                    "projectId": projectId.uuidString,
-                    "oldBytes": thumbnailData.count,
-                    "newBytes": thumb.count
-                ])
-                return .raceSkipped
+            if let newDisplayThumbnail {
+                // 小图被并发填了就不覆盖 —— 对方（updateProjectThumbnail）拿的是更新的原图。
+                if sd.displayThumbnail == nil {
+                    sd.displayThumbnail = newDisplayThumbnail
+                    writtenBytes += newDisplayThumbnail.count
+                }
             }
 
-            // 写回。不进 history（迁移不是用户操作）；revision bump 的取舍见
+            guard bg.hasChanges else { return .alreadyDone }
+            // 不进 history（迁移不是用户操作）；revision bump 的取舍见
             // InventoryManager.noteProjectDisplayThumbnailMigrated 注释。
-            sd.displayThumbnail = downsampled
             try bg.save()
         } catch {
             AppLogger.shared.error("ThumbnailMigration", "save_failed", metadata: [
@@ -353,11 +539,14 @@ final class ThumbnailMigrationCoordinator {
             return .failed
         }
 
-        AppLogger.shared.info("ThumbnailMigration", "migrated_one", metadata: [
+        AppLogger.shared.info("ThumbnailMigration", "compacted_one", metadata: [
             "projectId": projectId.uuidString,
-            "sourceBytes": thumbnailData.count,
-            "downsampledBytes": downsampled.count
+            "thumbnailBefore": originalThumbnail?.count ?? 0,
+            "thumbnailAfter": newThumbnail?.count ?? originalThumbnail?.count ?? 0,
+            "finishedBefore": originalFinished?.count ?? 0,
+            "finishedAfter": newFinished?.count ?? originalFinished?.count ?? 0,
+            "displayThumbnailFilled": newDisplayThumbnail != nil
         ])
-        return .migrated
+        return .migrated(bytesWritten: writtenBytes, filledDisplayThumbnail: newDisplayThumbnail != nil)
     }
 }

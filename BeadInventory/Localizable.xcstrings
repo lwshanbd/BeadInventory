@@ -864,6 +864,22 @@
         }
       }
     },
+    "color_mode.empty.no_my_themes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save a tweak as a new theme to see it here."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调出喜欢的配色后，点击「保存为新主题」可加入此处"
+          }
+        }
+      }
+    },
     "color_mode.entry.group_title" : {
       "localizations" : {
         "en" : {
@@ -940,22 +956,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "主题保存失败"
-          }
-        }
-      }
-    },
-    "color_mode.empty.no_my_themes" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save a tweak as a new theme to see it here."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "调出喜欢的配色后，点击「保存为新主题」可加入此处"
           }
         }
       }
@@ -4636,6 +4636,9 @@
           }
         }
       }
+    },
+    "加载中…" : {
+
     },
     "加载图片中..." : {
       "localizations" : {

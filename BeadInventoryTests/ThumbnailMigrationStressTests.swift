@@ -136,7 +136,7 @@ final class ThumbnailMigrationStressTests: XCTestCase {
         var outcomes: [ThumbnailMigrationCoordinator.MigrationOutcome] = []
         outcomes.reserveCapacity(projectCount)
         for id in ids {
-            let outcome = await ThumbnailMigrationCoordinator.migrateOne(projectId: id, container: container)
+            let outcome = await ThumbnailMigrationCoordinator.compactOne(projectId: id, container: container)
             outcomes.append(outcome)
         }
 
@@ -144,7 +144,7 @@ final class ThumbnailMigrationStressTests: XCTestCase {
         _ = await tickerRun
 
         // 正确性：120 个全新种子项目应当全部迁移成功（无 race / 无失败）。
-        XCTAssertEqual(outcomes, Array(repeating: .migrated, count: projectCount))
+        XCTAssertEqual(outcomes.filter(\.isMigrated).count, projectCount, "120 个全新种子项目应全部瘦身成功，实际 \(outcomes.filter { !$0.isMigrated })")
 
         let tickCount = await ticker.tickCount
         let maxGapMillis = await Double(ticker.maxGapNanos) / 1_000_000

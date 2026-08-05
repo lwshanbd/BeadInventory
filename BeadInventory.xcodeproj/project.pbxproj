@@ -101,6 +101,7 @@
 		FF0C3F01A0090001DEADBEEF /* ImageDownsampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0C3F01A0090002DEADBEEF /* ImageDownsampler.swift */; };
 		FF0C4001A00A0001DEADBEEF /* ThumbnailMigrationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0C4001A00A0002DEADBEEF /* ThumbnailMigrationCoordinator.swift */; };
 		FF0C4101A00B0001DEADBEEF /* ProjectImageEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0C4101A00B0002DEADBEEF /* ProjectImageEncoder.swift */; };
+		FF0C4201A00C0001DEADBEEF /* ProjectImageCompactionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0C4201A00C0002DEADBEEF /* ProjectImageCompactionScanner.swift */; };
 		TM0001A0000000000001BFIL /* ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = TM0001A0000000000001FILE /* ThemeManager.swift */; };
 /* End PBXBuildFile section */
 
@@ -229,6 +230,7 @@
 		FF0C3F01A0090002DEADBEEF /* ImageDownsampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageDownsampler.swift; sourceTree = "<group>"; };
 		FF0C4001A00A0002DEADBEEF /* ThumbnailMigrationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailMigrationCoordinator.swift; sourceTree = "<group>"; };
 		FF0C4101A00B0002DEADBEEF /* ProjectImageEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectImageEncoder.swift; sourceTree = "<group>"; };
+		FF0C4201A00C0002DEADBEEF /* ProjectImageCompactionScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectImageCompactionScanner.swift; sourceTree = "<group>"; };
 		TM0001A0000000000001FILE /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -414,6 +416,7 @@
 				FF0C3F01A0090002DEADBEEF /* ImageDownsampler.swift */,
 				FF0C4001A00A0002DEADBEEF /* ThumbnailMigrationCoordinator.swift */,
 				FF0C4101A00B0002DEADBEEF /* ProjectImageEncoder.swift */,
+				FF0C4201A00C0002DEADBEEF /* ProjectImageCompactionScanner.swift */,
 				A01234560016 /* OCRManager.swift */,
 				385001032FB3A70D00F5DDE2 /* GridDetectionService.swift */,
 				385001052FB3A70D00F5DDE2 /* GridCellSampler.swift */,
@@ -665,6 +668,7 @@
 				A01234560005 /* InventoryManager.swift in Sources */,
 				FF0C3F01A0090001DEADBEEF /* ImageDownsampler.swift in Sources */,
 				FF0C4101A00B0001DEADBEEF /* ProjectImageEncoder.swift in Sources */,
+				FF0C4201A00C0001DEADBEEF /* ProjectImageCompactionScanner.swift in Sources */,
 				FF0C4001A00A0001DEADBEEF /* ThumbnailMigrationCoordinator.swift in Sources */,
 				39AA00012F5000010099AA01 /* AppLogger.swift in Sources */,
 				39AA00032F5000010099AA01 /* AppBackgroundTaskManager.swift in Sources */,
