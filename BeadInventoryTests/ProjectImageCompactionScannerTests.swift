@@ -119,7 +119,11 @@ final class ProjectImageCompactionScannerTests: XCTestCase {
         guard case .success(let ids) = result else {
             return XCTFail("扫描失败：\(result)")
         }
-        XCTAssertEqual(Set(ids), fatIDs, "应当且仅当命中超阈值的行")
+        XCTAssertEqual(Set(ids.map(\.id)), fatIDs, "应当且仅当命中超阈值的行")
+        XCTAssertTrue(
+            ids.allSatisfy { $0.bytes >= fatBytes },
+            "候选必须带上当时的字节数（stubborn 记账靠它按内容键控，而不是按 ID 永久拉黑）"
+        )
 
         XCTAssertLessThan(
             delta, 100,
@@ -157,7 +161,7 @@ final class ProjectImageCompactionScannerTests: XCTestCase {
             excluding: []
         )
         guard case .success(let ids) = result else { return XCTFail("扫描失败：\(result)") }
-        XCTAssertEqual(ids, [needsBackfill.id])
+        XCTAssertEqual(ids.map(\.id), [needsBackfill.id])
     }
 
     func test_scan_honours_exclusions_and_limit() throws {
@@ -174,7 +178,7 @@ final class ProjectImageCompactionScannerTests: XCTestCase {
             excluding: excluded
         )
         guard case .success(let ids) = result else { return XCTFail("扫描失败：\(result)") }
-        XCTAssertEqual(Set(ids), fatIDs.subtracting(excluded),
+        XCTAssertEqual(Set(ids.map(\.id)), fatIDs.subtracting(excluded),
                        "排除集合必须生效 —— 否则 stubborn 行每轮都被重新选中，死循环重写")
 
         // limit 生效，且**排除项不占 limit 名额**（实现里多取 excluding.count 行再过滤）
@@ -186,7 +190,7 @@ final class ProjectImageCompactionScannerTests: XCTestCase {
         )
         guard case .success(let limitedIDs) = limited else { return XCTFail("扫描失败：\(limited)") }
         XCTAssertEqual(limitedIDs.count, 2)
-        XCTAssertTrue(Set(limitedIDs).isDisjoint(with: excluded))
+        XCTAssertTrue(Set(limitedIDs.map(\.id)).isDisjoint(with: excluded))
     }
 
     /// 库文件不存在（in-memory 测试库就是这种）必须报 `.unsupportedStore` 而不是 `.transient` ——

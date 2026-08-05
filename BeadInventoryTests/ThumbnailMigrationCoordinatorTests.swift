@@ -238,16 +238,142 @@ final class ThumbnailMigrationCoordinatorTests: XCTestCase {
 
     // MARK: - off-main 保证（崩溃修复的核心不变量）
 
+    /// **真正的 off-main 断言。**
+    ///
+    /// 旧版断言的是测试体自己所在的线程（在调用 `compactOne` 之前），那是在测 XCTest
+    /// 怎么调度异步测试。变异测试证实旧版形同虚设：把 `compactOne` 改回 MainActor
+    /// 隔离，它照样绿。现在读的是 `compactOne` **从函数体内部**写下的观测值。
+    @MainActor
     func test_compactOne_never_touches_main_thread() async throws {
-        let container = try makeContainer()
-        let id = try await seedProject(in: container, thumbnail: makePNG())
+        ThumbnailMigrationCoordinator.resetTestSeams()
+        defer { ThumbnailMigrationCoordinator.resetTestSeams() }
 
-        // 从非主 executor 发起（本测试类无 @MainActor，async 测试跑在 cooperative pool），
-        // compactOne 是 nonisolated —— 不得 hop 回 MainActor。
-        // 用 MainActor 占位任务探测：迁移期间主线程若被 compactOne 占用做同步 I/O，
-        // 这里无法直接断言；退而钉住「compactOne 自身不在主线程执行」。
-        XCTAssertFalse(Thread.isMainThread, "async 测试本体应在 cooperative pool")
+        let container = try makeContainer()
+        let id = try seedProject(in: container, thumbnail: makePNG(), displayThumbnail: nil)
+
+        XCTAssertTrue(Thread.isMainThread, "测试体本身应在主线程，否则这条断言没有对照意义")
+        _ = await ThumbnailMigrationCoordinator.compactOne(projectId: id, container: container)
+
+        let ranOnMain = try XCTUnwrap(
+            ThumbnailMigrationCoordinator.lastCompactRanOnMainThreadForTesting,
+            "compactOne 没有记录执行线程 —— 接缝坏了，这条测试失去意义"
+        )
+        XCTAssertFalse(
+            ranOnMain,
+            "compactOne 在主线程上执行了。这是 build-180 看门狗崩溃的根因形状："
+            + "迁移的 SwiftData I/O 必须全程在后台 ModelContext 上。"
+        )
+    }
+
+    // MARK: - TOCTOU（双审 + 变异测试：删掉守卫全绿）
+
+    /// 用接缝在「编码完成」和「写回校验」之间插入并发换图，构造真竞态。
+    ///
+    /// 旧测试在**调用之前**改库，两次 fetch 读到相同字节，校验空转 —— 它自己的注释
+    /// 也承认了（「所以要验证的是校验存在」）。变异测试确认：删掉两个逐字段守卫，
+    /// 整个套件仍然全绿。后果是把旧图的重编码版覆盖到用户刚换的封面上。
+    @MainActor
+    func test_compactOne_discards_stale_result_when_user_replaces_image_mid_encode() async throws {
+        ThumbnailMigrationCoordinator.resetTestSeams()
+        defer { ThumbnailMigrationCoordinator.resetTestSeams() }
+
+        let container = try makeContainer()
+        let original = makeFatPhotoPNG()
+        let id = try seedProject(in: container, thumbnail: original, displayThumbnail: nil)
+
+        // 用户在编码窗口内换了一张完全不同的图
+        let replacement = makePNG(side: 96)
+        ThumbnailMigrationCoordinator.didFinishEncodingForTesting = { @Sendable changedId in
+            await MainActor.run {
+                let ctx = ModelContext(container)
+                var d = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.id == changedId })
+                d.fetchLimit = 1
+                if let row = try? ctx.fetch(d).first {
+                    row.thumbnail = replacement
+                    try? ctx.save()
+                }
+            }
+        }
+
         let outcome = await ThumbnailMigrationCoordinator.compactOne(projectId: id, container: container)
-        XCTAssertTrue(outcome.isMigrated, "期望瘦身+回填成功，实际 \(outcome)")
+        XCTAssertEqual(outcome, .raceSkipped, "源字节在编码期间变了，结果必须整条作废")
+
+        let final = try XCTUnwrap(fetchRow(id, in: container)?.thumbnail)
+        XCTAssertEqual(
+            final, replacement,
+            "用户刚换上的图被旧图的重编码版覆盖了 —— 这是静默的用户数据丢失"
+        )
+    }
+
+    /// 纯回填路径（原图本来就够小，只缺列表小图）同样要校验源还在。
+    /// 这条路径上 `newThumbnail == nil`，早期实现完全没有对 `sd.thumbnail` 的校验，
+    /// 于是用户删掉封面后，我们会把**已删除那张图**的小图写进去，且不自愈。
+    @MainActor
+    func test_compactOne_does_not_write_display_thumbnail_for_deleted_cover() async throws {
+        ThumbnailMigrationCoordinator.resetTestSeams()
+        defer { ThumbnailMigrationCoordinator.resetTestSeams() }
+
+        let container = try makeContainer()
+        // 小图缺失但原图够小 → 只会触发回填分支，不触发重编码
+        let id = try seedProject(in: container, thumbnail: makePNG(side: 64), displayThumbnail: nil)
+
+        ThumbnailMigrationCoordinator.didFinishEncodingForTesting = { @Sendable changedId in
+            await MainActor.run {
+                let ctx = ModelContext(container)
+                var d = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.id == changedId })
+                d.fetchLimit = 1
+                if let row = try? ctx.fetch(d).first {
+                    row.thumbnail = nil          // 用户删掉了封面
+                    try? ctx.save()
+                }
+            }
+        }
+
+        _ = await ThumbnailMigrationCoordinator.compactOne(projectId: id, container: container)
+
+        let row = try fetchRow(id, in: container)
+        XCTAssertNil(row?.thumbnail, "前提：封面确实被删掉了")
+        XCTAssertNil(
+            row?.displayThumbnail,
+            "封面已删除，却写进了它的列表小图 —— 列表会永远显示一张删掉的图，且不自愈"
+        )
+    }
+
+    // MARK: - stubborn 记账按内容键控
+
+    @MainActor
+    func test_stubborn_ledger_is_keyed_by_content_not_just_id() throws {
+        ThumbnailMigrationCoordinator.resetStubbornIDsForTesting()
+        defer { ThumbnailMigrationCoordinator.resetStubbornIDsForTesting() }
+
+        let id = UUID()
+        ThumbnailMigrationCoordinator.noteStubborn(id, bytes: 5_000_000)
+
+        XCTAssertTrue(ThumbnailMigrationCoordinator.isStubborn(id, bytes: 5_000_000),
+                      "同样的内容应当被排除")
+        XCTAssertFalse(
+            ThumbnailMigrationCoordinator.isStubborn(id, bytes: 7_000_000),
+            "字节数变了说明用户换了图 / 备份恢复 / CloudKit 同步来了新内容，必须重新考虑"
+        )
+        // 同一个 ID 的旧记录要被替换掉，不能无限堆积
+        ThumbnailMigrationCoordinator.noteStubborn(id, bytes: 7_000_000)
+        XCTAssertFalse(ThumbnailMigrationCoordinator.isStubborn(id, bytes: 5_000_000))
+        XCTAssertTrue(ThumbnailMigrationCoordinator.isStubborn(id, bytes: 7_000_000))
+    }
+
+    // MARK: - 闸门
+
+    func test_throttle_reason_write_budget_is_terminal() {
+        XCTAssertNil(ThumbnailMigrationCoordinator.throttleReason(bytesWrittenThisRun: 0))
+        let over = ThumbnailMigrationCoordinator.throttleReason(bytesWrittenThisRun: 400 * 1024 * 1024)
+        XCTAssertEqual(over, .writeBudget)
+        XCTAssertTrue(
+            ThumbnailMigrationCoordinator.ThrottleReason.writeBudget.endsThisRun,
+            "写预算用尽是本轮终点，等一等不会变好"
+        )
+        XCTAssertFalse(
+            ThumbnailMigrationCoordinator.ThrottleReason.thermal.endsThisRun,
+            "发热是等一等就能好的，不该把整轮掐掉"
+        )
     }
 }

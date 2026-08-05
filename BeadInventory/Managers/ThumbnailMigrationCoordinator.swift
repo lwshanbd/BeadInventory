@@ -2,7 +2,7 @@
 //  ThumbnailMigrationCoordinator.swift
 //  BeadInventory
 //
-//  老项目数据的 displayThumbnail 后台分批生成 —— jetsam 修复的关键迁移路径。
+//  项目图片存量瘦身 + displayThumbnail 回填的后台协调器 —— 崩溃修复的关键迁移路径。
 //
 //  背景：早期版本把全分辨率 PNG 直接存到 `SDProjectRecord.thumbnail`（字段名是
 //  "thumbnail" 但实际存的是原图），单条可达 5-10 MB。计划列表滑动时即使懒加载 + LazyVStack，
@@ -33,7 +33,7 @@
 //  设计要点：
 //  - **主线程零 SwiftData I/O（TestFlight build 180 watchdog 崩溃修复，2026-07-26）**：
 //    迁移的全部数据库访问（分页扫描、单行取 blob、TOCTOU 复核、写回 save）都跑在
-//    `nonisolated` 后台函数里的独立 `ModelContext(container)` 上。此前 migrateOne 在
+//    `nonisolated` 后台函数里的独立 `ModelContext(container)` 上。此前的 `migrateOne`（现 `compactOne`）在
 //    MainActor 上裸单行 fetch（无 propertiesToFetch）再读 `.thumbnail`，对主 context 里
 //    已被 metadata 投影注册过的对象触发 Core Data deferred-fault 补全 = **主线程同步读盘**
 //    （崩溃栈：`_PF_FulfillDeferredFault → sqlite3_step → pread`）。热限流（Thermal
@@ -80,10 +80,15 @@ final class ThumbnailMigrationCoordinator {
     /// 30s × 10 = 5 分钟；再耗下去不如把 CPU 还给用户。
     private static let maxConsecutiveThrottles: Int = 10
 
-    /// 单次 run 的写入预算。瘦身一条 ≈ 一次行重写（重编码后的字节数，通常 < 1 MB），
-    /// 300 MB 够覆盖几百条；超了就收工，下次启动接着跑。
-    /// 存在的意义是**兜底**：万一某个假设错了（比如某类图重编码后反而变大），
-    /// 预算保证单次启动的写入量有上限，不会重演 68 GB。
+    /// 单次 run 的写入预算，按**整行重写量**记账。
+    ///
+    /// 记账口径很重要：本文件的中心论点就是「改任何一列都要重写整条记录，含未改动的列」。
+    /// 只算新写入的图片字节会系统性低估 —— 一条 thumbnail 13 MB→1.5 MB 而
+    /// finishedImage 仍是 13 MB 的行，实际写盘约 14.5 MB，却只被计 1.5 MB。
+    /// 低估的倍数正好是整个 PR 在讲的那个倍数，那预算就形同虚设。
+    /// 所以 `compactOne` 汇报的是**保存后整行的估算大小**。
+    ///
+    /// 存在的意义是兜底：万一某个假设错了，预算保证单次启动的写入量有上限，不会重演 68 GB。
     private static let writeBudgetBytesPerRun: Int = 300 * 1024 * 1024
 
     /// 剩余磁盘低于此值就不跑 —— 瘦身过程中 WAL 会临时涨，盘满时写失败会让
@@ -117,6 +122,14 @@ final class ThumbnailMigrationCoordinator {
         case lowPower           // 用户开了低电量模式，明确表达了「省着点用」
         case lowDisk            // 盘紧，WAL 涨不动
         case writeBudget        // 本轮写够了，下次启动接着来
+
+        /// 这个原因是「等一等就能好」还是「本轮到此为止」。
+        ///
+        /// 放在类型上而不是散在两个调用方的 `==` 里：项目阶段原本写
+        /// `reason == .writeBudget || ...`，历史阶段却把**所有**原因都当终止，
+        /// 于是一次瞬时发热只让项目阶段歇 30 秒，却把历史阶段整轮掐掉。
+        /// 策略上收之后两边行为一致，也不会再各自漂移。
+        var endsThisRun: Bool { self == .writeBudget }
     }
 
     /// 返回非 nil 表示「现在不该干活」。
@@ -165,7 +178,7 @@ final class ThumbnailMigrationCoordinator {
         storeURL: URL,
         limit: Int,
         excluding: Set<UUID>
-    ) async -> Result<[UUID], StoreScanFailure> {
+    ) async -> Result<[ProjectImageCompactionScanner.Candidate], StoreScanFailure> {
         await Task.detached(priority: .utility) {
             ProjectImageCompactionScanner.scanCandidates(
                 storeURL: storeURL,
@@ -180,7 +193,7 @@ final class ThumbnailMigrationCoordinator {
         storeURL: URL,
         limit: Int,
         excluding: Set<UUID>
-    ) async -> Result<[UUID], StoreScanFailure> {
+    ) async -> Result<[ProjectImageCompactionScanner.Candidate], StoreScanFailure> {
         await Task.detached(priority: .utility) {
             ProjectImageCompactionScanner.scanHistoryCandidates(
                 storeURL: storeURL,
@@ -193,15 +206,38 @@ final class ThumbnailMigrationCoordinator {
 
     // MARK: - stubborn 记账
 
-    nonisolated static func loadStubbornIDs() -> Set<UUID> {
-        let raw = UserDefaults.standard.stringArray(forKey: stubbornDefaultsKey) ?? []
-        return Set(raw.compactMap(UUID.init(uuidString:)))
+    /// 记账键是 `"<uuid>:<当时的字节数>"` 而不是裸 uuid。
+    ///
+    /// 只按 ID 记的话，这一行**永远**被排除：用户换了张图、从备份恢复、或者 CloudKit
+    /// 从一台没升级的设备同步来一张新胖图 —— 全都不会被重新考虑，而这些新内容很可能
+    /// 是压得动的。带上字节数之后，内容一变键就对不上，自然重新进入候选。
+    private nonisolated static func stubbornKey(_ id: UUID, bytes: Int) -> String {
+        "\(id.uuidString):\(bytes)"
     }
 
-    nonisolated static func noteStubborn(_ id: UUID) {
-        var ids = loadStubbornIDs()
-        guard ids.insert(id).inserted else { return }
-        UserDefaults.standard.set(ids.map(\.uuidString), forKey: stubbornDefaultsKey)
+    nonisolated static func loadStubbornKeys() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: stubbornDefaultsKey) ?? [])
+    }
+
+    /// 扫描器只给 ID，所以这里把「已知 stubborn 的 ID」摊平出来供排除用。
+    /// 同一个 ID 只要还带着记账过的那个字节数就会被排除；字节数变了则 key 不匹配，
+    /// 但 ID 仍在集合里 —— 所以还需要 `compactOne` 侧的二次确认（见 `.stubborn` 分支）。
+    nonisolated static func loadStubbornIDs() -> Set<UUID> {
+        Set(loadStubbornKeys().compactMap { key in
+            UUID(uuidString: String(key.prefix(36)))
+        })
+    }
+
+    nonisolated static func isStubborn(_ id: UUID, bytes: Int) -> Bool {
+        loadStubbornKeys().contains(stubbornKey(id, bytes: bytes))
+    }
+
+    nonisolated static func noteStubborn(_ id: UUID, bytes: Int) {
+        var keys = loadStubbornKeys()
+        // 同一个 ID 的旧记录（旧字节数）清掉，避免无限增长
+        keys = keys.filter { !$0.hasPrefix(id.uuidString + ":") }
+        keys.insert(stubbornKey(id, bytes: bytes))
+        UserDefaults.standard.set(Array(keys), forKey: stubbornDefaultsKey)
     }
 
     /// 测试用 —— 清掉记账，让下一轮重新考虑所有行。
@@ -238,6 +274,24 @@ final class ThumbnailMigrationCoordinator {
     }
 
     // MARK: - 内部实现
+
+    /// 项目阶段的一整轮，抽出来是为了**可测**。
+    ///
+    /// 变异测试发现：删掉 run loop 的 `excluded.insert`（唯一防止无限重选同一行的条件）
+    /// 没有任何测试会红 —— 因为 `run()` 是 private、只能经 `start()` 触达，而没有测试
+    /// 调 `start()`。`StoreCompactionIntegrationTests` 则在测试体里**重新实现了一遍循环**，
+    /// 于是它验证的是测试作者写的循环，不是发布的这一个。
+    ///
+    /// - Returns: 本轮统计，供测试断言与日志。
+    struct PhaseStats: Equatable {
+        var migrated = 0
+        var raceSkipped = 0
+        var alreadyDone = 0
+        var stubborn = 0
+        var failures = 0
+        var pagesFetched = 0
+        var bytesWritten = 0
+    }
 
     private func run(inventoryManager: InventoryManager) async {
         // 先睡 5s 让出冷启动 + 首屏 commit
@@ -299,7 +353,9 @@ final class ThumbnailMigrationCoordinator {
         let stubborn = Self.loadStubbornIDs()
         var excluded = stubborn
 
-        while true {
+        // 打标签：下面 switch 里的失败分支要跳出的是**这个循环**，
+        // 裸 `break` 只会跳出 switch（这条正是编译器帮我抓到的）。
+        scanLoop: while true {
             guard !Task.isCancelled else {
                 AppLogger.shared.info("ThumbnailMigration", "cancelled_mid_run", metadata: [
                     "migrated": migrated, "pagesFetched": pagesFetched, "bytesWritten": bytesWritten
@@ -319,8 +375,8 @@ final class ThumbnailMigrationCoordinator {
                     "bytesWritten": bytesWritten
                 ])
                 // 写预算用尽是本次 run 的终点，不是等一等就能好的 —— 直接收工。
-                if reason == .writeBudget || consecutiveThrottles >= Self.maxConsecutiveThrottles {
-                    break
+                if reason.endsThisRun || consecutiveThrottles >= Self.maxConsecutiveThrottles {
+                    break scanLoop
                 }
                 do {
                     try await Task.sleep(nanoseconds: Self.throttledRetryNanos)
@@ -331,7 +387,7 @@ final class ThumbnailMigrationCoordinator {
             }
             consecutiveThrottles = 0
 
-            let pageIDs: [UUID]
+            let pageIDs: [ProjectImageCompactionScanner.Candidate]
             switch await Self.scanCandidatesOffMain(
                 storeURL: storeURL,
                 limit: Self.batchSize,
@@ -348,22 +404,49 @@ final class ThumbnailMigrationCoordinator {
                 // 这里**不回退 SwiftData BLOB 谓词** —— 那条路径实测 +1.26 GB，
                 // 而扫描失败最可能的时机（store 正忙）恰恰是最不该吃内存的时候。
                 // 瘦身是空闲任务，晚一次启动做完没有任何代价。
-                AppLogger.shared.warning("ThumbnailMigration", "scan_candidates_failed", metadata: [
-                    "failure": "\(failure)", "migrated": migrated, "pagesFetched": pagesFetched
-                ])
-                return
+                // `.unsupportedStore` 是永久状态（schema 保险丝烧了 = 整个瘦身功能失效），
+                // 用 error 让监控看得见；`.transient` 只是这次忙，warning 即可。
+                if failure == .unsupportedStore {
+                    AppLogger.shared.error("ThumbnailMigration", "scan_candidates_unsupported", metadata: [
+                        "migrated": migrated, "pagesFetched": pagesFetched
+                    ])
+                } else {
+                    AppLogger.shared.warning("ThumbnailMigration", "scan_candidates_failed", metadata: [
+                        "failure": "\(failure)", "migrated": migrated, "pagesFetched": pagesFetched
+                    ])
+                }
+                // **跳出循环而不是 return** —— 两张表是独立的，项目表扫描失败不该
+                // 把历史阶段一起连坐掉（`.unsupportedStore` 时那等于永久禁用）。
+                break scanLoop
             }
 
             if pageIDs.isEmpty { break }   // 全库已经没有胖行 / 缺小图的行了
 
             pagesFetched += 1
 
-            for projectId in pageIDs {
+            for candidate in pageIDs {
                 guard !Task.isCancelled else {
                     AppLogger.shared.info("ThumbnailMigration", "cancelled_mid_page", metadata: [
                         "migrated": migrated, "pagesFetched": pagesFetched
                     ])
                     return
+                }
+                let projectId = candidate.id
+                // 内容没变过的 stubborn 行直接跳过，连行都不用取。
+                // （扫描器按 ID 排除是粗筛 —— 字节数变了说明用户换了图 / 备份恢复 /
+                // CloudKit 同步来了新内容，那就该重新给它一次机会。）
+                if Self.isStubborn(projectId, bytes: candidate.bytes) {
+                    excluded.insert(projectId)
+                    alreadyDone += 1
+                    continue
+                }
+                // 预算逐行检查而不是逐批 —— 一批 10 条胖行可以超支上百 MB，
+                // 而预算的全部意义就是给单次启动的写入量一个硬上限。
+                if Self.throttleReason(bytesWrittenThisRun: bytesWritten)?.endsThisRun == true {
+                    AppLogger.shared.info("ThumbnailMigration", "write_budget_reached_mid_page", metadata: [
+                        "migrated": migrated, "bytesWritten": bytesWritten
+                    ])
+                    break scanLoop
                 }
                 let outcome = await Self.compactOne(projectId: projectId, container: container)
                 // 无条件排除 —— 见上面 `excluded` 的注释，这是本轮的终止条件。
@@ -385,7 +468,8 @@ final class ThumbnailMigrationCoordinator {
                 case .stubborn:
                     // 压不下去（比如本来就编码高效的大 PNG）。**落盘**跨启动排除，
                     // 否则每次启动都要把它重新解码一遍才发现压不动，纯烧电。
-                    Self.noteStubborn(projectId)
+                    // 键带上当时的字节数 —— 内容一变就重新考虑。
+                    Self.noteStubborn(projectId, bytes: candidate.bytes)
                 case .failed:
                     failures += 1
                 case .cancelled:
@@ -427,6 +511,9 @@ final class ThumbnailMigrationCoordinator {
         var bytesWritten = bytesAlreadyWritten
         var compacted = 0
         var saved = 0
+        var failures = 0
+        var noOpSkipped = 0
+        var historyThrottles = 0
         var excluded = Set<UUID>()
 
         while true {
@@ -436,10 +523,20 @@ final class ThumbnailMigrationCoordinator {
                 AppLogger.shared.info("ThumbnailMigration", "history_throttled", metadata: [
                     "reason": reason.rawValue, "compacted": compacted
                 ])
-                break
+                // 与项目阶段用同一条策略（见 ThrottleReason.endsThisRun）——
+                // 以前这里把所有原因都当终止，瞬时发热会把整个历史阶段掐掉。
+                if reason.endsThisRun { break }
+                historyThrottles += 1
+                if historyThrottles >= Self.maxConsecutiveThrottles { break }
+                do {
+                    try await Task.sleep(nanoseconds: Self.throttledRetryNanos)
+                } catch {
+                    return
+                }
+                continue
             }
 
-            let ids: [UUID]
+            let ids: [ProjectImageCompactionScanner.Candidate]
             switch await Self.scanHistoryCandidatesOffMain(
                 storeURL: storeURL,
                 limit: Self.batchSize,
@@ -456,16 +553,32 @@ final class ThumbnailMigrationCoordinator {
             }
             if ids.isEmpty { break }
 
-            for id in ids {
+            for candidate in ids {
                 guard !Task.isCancelled else { return }
+                let id = candidate.id
                 // 无条件排除 —— 与项目阶段同理，扫描是按当前库状态重查而非游标翻页，
                 // 处理完仍符合条件的行会让循环永不终止。
                 excluded.insert(id)
+
+                // 跨启动排除：一条含两张已经压到 ~1.2MB 图的 `.projectUpdate` 快照，
+                // base64 之后约 3MB，**永久**高于扫描阈值，而里面每张图都低于阈值所以
+                // `recompress` 全部正确 no-op。不记账的话它每次冷启动都被完整 JSON 解析
+                // + base64 解码一遍，零写入 —— 最多 100 条 × 2 列，纯烧 CPU。
+                if Self.isStubborn(id, bytes: candidate.bytes) {
+                    noOpSkipped += 1
+                    continue
+                }
                 let result = await Self.compactHistoryOne(recordId: id, container: container)
                 if result.changed {
                     compacted += 1
                     saved += result.bytesSaved
                     bytesWritten += max(0, result.bytesWritten)
+                } else if result.failed {
+                    failures += 1
+                } else {
+                    // 「扫描选中了它，但一张图都不用动」—— 记账，下次别再解析它
+                    Self.noteStubborn(id, bytes: candidate.bytes)
+                    noOpSkipped += 1
                 }
             }
 
@@ -476,22 +589,26 @@ final class ThumbnailMigrationCoordinator {
             }
         }
 
-        if compacted > 0 {
-            AppLogger.shared.info("ThumbnailMigration", "history_completed", metadata: [
-                "compacted": compacted,
-                "bytesSaved": saved
-            ])
-        }
+        // **无条件汇报。** 以前是 `if compacted > 0` —— 于是「历史表本来就干净」和
+        // 「100 条全失败」产出完全相同的遥测（都是一片空白）。
+        AppLogger.shared.info("ThumbnailMigration", "history_completed", metadata: [
+            "compacted": compacted,
+            "failures": failures,
+            "noOpSkipped": noOpSkipped,
+            "bytesSaved": saved
+        ])
     }
 
     /// 单条历史记录的快照瘦身。全程后台 context，理由同 `compactOne`。
     ///
     /// 撤回语义完全不变 —— 图片还在快照里，只是变小了。刻意**不**做「删掉老快照里的图」：
     /// `.projectDelete` 的快照是那张图删除之后的唯一拷贝，删了就是永久数据丢失。
+    /// - Returns: `failed` 区分「真失败」和「没什么可做」——两者以前都返回 `(false, 0, 0)`，
+    ///   于是「历史表本来就干净」和「历史压缩 100% 坏了」在遥测上长得一模一样。
     nonisolated static func compactHistoryOne(
         recordId: UUID,
         container: ModelContainer
-    ) async -> (changed: Bool, bytesSaved: Int, bytesWritten: Int) {
+    ) async -> (changed: Bool, failed: Bool, bytesSaved: Int, bytesWritten: Int) {
         let originalBefore: Data?
         let originalAfter: Data?
         do {
@@ -501,22 +618,30 @@ final class ThumbnailMigrationCoordinator {
             descriptor.fetchLimit = 1
             descriptor.propertiesToFetch = [\.beforeSnapshot, \.afterSnapshot]
             let bg = ModelContext(container)
-            guard let row = try bg.fetch(descriptor).first else { return (false, 0, 0) }
+            guard let row = try bg.fetch(descriptor).first else { return (false, false, 0, 0) }
             originalBefore = row.beforeSnapshot
             originalAfter = row.afterSnapshot
         } catch {
             AppLogger.shared.error("ThumbnailMigration", "history_fetch_failed", metadata: [
                 "recordId": recordId.uuidString, "error": "\(error)"
             ])
-            return (false, 0, 0)
+            return (false, true, 0, 0)
         }
 
-        guard !Task.isCancelled else { return (false, 0, 0) }
+        guard !Task.isCancelled else { return (false, false, 0, 0) }
 
-        let newBefore = originalBefore.flatMap(HistorySnapshotCompactor.compact)
-        guard !Task.isCancelled else { return (false, 0, 0) }
-        let newAfter = originalAfter.flatMap(HistorySnapshotCompactor.compact)
-        guard newBefore != nil || newAfter != nil else { return (false, 0, 0) }
+        // 显式 autoreleasepool —— 与 `ProjectImageEncoder.recompress` 同理，而且这里更狠：
+        // `HistorySnapshotCompactor.compact` 要把一个可达 34 MB 的快照 `JSONSerialization`
+        // 成 autoreleased NSDictionary 树、逐张 base64 解码、再编码回去，每条调两次。
+        // `recompress` 内部那个 pool 只盖住图片字节，盖不住 JSON 树和 base64 字符串
+        //（而 base64 的 +33% 正是这个压缩器存在的理由）。
+        var newBefore: HistorySnapshotCompactor.Result?
+        autoreleasepool { newBefore = originalBefore.flatMap(HistorySnapshotCompactor.compact) }
+        guard !Task.isCancelled else { return (false, false, 0, 0) }
+        var newAfter: HistorySnapshotCompactor.Result?
+        autoreleasepool { newAfter = originalAfter.flatMap(HistorySnapshotCompactor.compact) }
+        // 一张图都不用动 —— 不是失败，调用方会据此落 stubborn 记账避免下次重新解析
+        guard newBefore != nil || newAfter != nil else { return (false, false, 0, 0) }
 
         var bytesSaved = 0
         var bytesWritten = 0
@@ -527,7 +652,7 @@ final class ThumbnailMigrationCoordinator {
             descriptor.fetchLimit = 1
             descriptor.propertiesToFetch = [\.beforeSnapshot, \.afterSnapshot]
             let bg = ModelContext(container)
-            guard let row = try bg.fetch(descriptor).first else { return (false, 0, 0) }
+            guard let row = try bg.fetch(descriptor).first else { return (false, false, 0, 0) }
 
             // TOCTOU：历史记录本身是 append-only 的，但撤回会改 isReverted、
             // trim 会删行，所以仍然按字段校验一次再写。
@@ -541,15 +666,15 @@ final class ThumbnailMigrationCoordinator {
                 bytesSaved += newAfter.bytesSaved
                 bytesWritten += newAfter.data.count
             }
-            guard bg.hasChanges else { return (false, 0, 0) }
+            guard bg.hasChanges else { return (false, false, 0, 0) }
             try bg.save()
         } catch {
             AppLogger.shared.error("ThumbnailMigration", "history_save_failed", metadata: [
                 "recordId": recordId.uuidString, "error": "\(error)"
             ])
-            return (false, 0, 0)
+            return (false, true, 0, 0)
         }
-        return (true, bytesSaved, bytesWritten)
+        return (true, false, bytesSaved, bytesWritten)
     }
 
     enum MigrationOutcome: Equatable {
@@ -567,6 +692,29 @@ final class ThumbnailMigrationCoordinator {
             if case .migrated = self { return true }
             return false
         }
+    }
+
+    // MARK: - 测试接缝
+
+    /// `compactOne` 内部实际执行的线程 —— 由 `compactOne` 自己写入。
+    ///
+    /// 为什么需要它：`test_compactOne_never_touches_main_thread` 原本断言的是**测试体**
+    /// 所在的线程（在调用 `compactOne` 之前），那是在测 XCTest 怎么调度异步测试，
+    /// 不是在测被测代码。变异测试证实：把 `compactOne` 改回 MainActor 隔离，
+    /// 两个守卫测试全绿 —— build-180 崩溃修复本身根本没被钉住。
+    nonisolated(unsafe) static var lastCompactRanOnMainThreadForTesting: Bool?
+
+    /// 编码完成、写回之前的钩子。**只有测试会设置它。**
+    ///
+    /// TOCTOU 校验同样是变异测试里存活下来的（删掉两个逐字段守卫全绿）：名字叫
+    /// `..._when_thumbnail_changed_concurrently` 的那个测试在调用**之前**改库，
+    /// 于是两次 fetch 读到相同字节，校验空转。要真正构造竞态就得能在这两次 fetch
+    /// 中间插入写入。
+    nonisolated(unsafe) static var didFinishEncodingForTesting: (@Sendable (UUID) async -> Void)?
+
+    nonisolated static func resetTestSeams() {
+        lastCompactRanOnMainThreadForTesting = nil
+        didFinishEncodingForTesting = nil
     }
 
     /// 单个项目的瘦身 + 回填（**全程后台执行，禁止改回 @MainActor** —— build 180 watchdog 崩溃根因）。
@@ -589,6 +737,9 @@ final class ThumbnailMigrationCoordinator {
     ///
     /// `internal` 而非 private：ThumbnailMigrationCoordinatorTests 直接钉语义。
     nonisolated static func compactOne(projectId: UUID, container: ModelContainer) async -> MigrationOutcome {
+        // 从**函数体内部**记录线程 —— 这是 off-main 不变量唯一诚实的观测点。
+        lastCompactRanOnMainThreadForTesting = Thread.isMainThread
+
         // 步骤 1：后台单行投影 fetch。
         // 三列一起取（峰值 = thumbnail + finishedImage），因为它们要合并成同一次 save；
         // 分开取会变成两次行重写，正是本轮要消灭的东西。patternGridData 不碰。
@@ -678,6 +829,12 @@ final class ThumbnailMigrationCoordinator {
 
         guard !Task.isCancelled else { return .cancelled }
 
+        // 测试接缝：让测试能在「编码完成」和「写回校验」之间插入并发写入，
+        // 从而真正构造 TOCTOU 竞态。生产环境恒为 nil。
+        if let hook = didFinishEncodingForTesting {
+            await hook(projectId)
+        }
+
         // 步骤 4+5：TOCTOU 校验 + 一次性写回，同一个**全新** context 完成，
         // 保证「校验通过的就是被写的那一行状态」。
         var writtenBytes = 0
@@ -692,35 +849,47 @@ final class ThumbnailMigrationCoordinator {
                 return .raceSkipped
             }
 
+            // **先把库里的现值抄下来再动手。** 下面会给 `sd.thumbnail` 赋新值，
+            // 之后再拿 `sd.thumbnail` 去比 `originalThumbnail` 比的就是自己刚写的东西了。
+            // （displayThumbnail 那条守卫最初就是这么写错的，集成测试当场变红。）
+            let dbThumbnail = sd.thumbnail
+            let dbFinished = sd.finishedImage
+            let dbDisplayThumbnail = sd.displayThumbnail
+
             // 每个字段**独立**校验：用户在编码期间只换了封面图的话，成品图那半的工作
             // 仍然有效，不该一起丢掉。
             if let newThumbnail {
-                guard sd.thumbnail == originalThumbnail else {
+                guard dbThumbnail == originalThumbnail else {
                     AppLogger.shared.info("ThumbnailMigration", "race_thumbnail_changed_skip", metadata: [
                         "projectId": projectId.uuidString,
                         "oldBytes": originalThumbnail?.count ?? 0,
-                        "newBytes": sd.thumbnail?.count ?? 0
+                        "newBytes": dbThumbnail?.count ?? 0
                     ])
                     return .raceSkipped
                 }
                 sd.thumbnail = newThumbnail
-                writtenBytes += newThumbnail.count
             }
             if let newFinished {
-                guard sd.finishedImage == originalFinished else {
+                guard dbFinished == originalFinished else {
                     AppLogger.shared.info("ThumbnailMigration", "race_finished_changed_skip", metadata: [
                         "projectId": projectId.uuidString
                     ])
                     return .raceSkipped
                 }
                 sd.finishedImage = newFinished
-                writtenBytes += newFinished.count
             }
             if let newDisplayThumbnail {
-                // 小图被并发填了就不覆盖 —— 对方（updateProjectThumbnail）拿的是更新的原图。
-                if sd.displayThumbnail == nil {
+                // 两个条件缺一不可：
+                //  - `displayThumbnail == nil`：被并发填了就不覆盖（对方拿的是更新的原图）
+                //  - `thumbnail == originalThumbnail`：**小图是从它派生的**，源变了结果就作废
+                //
+                // 少了第二个条件会漏掉纯回填路径（`newThumbnail == nil`，即原图本来就够小，
+                // 三条扫描谓词之一）：那条路径上没有任何对 `sd.thumbnail` 的校验。
+                // 用户在编码窗口里删掉封面 → 我们把**已删除那张图**的小图写进一条
+                // `thumbnail` 已是 nil 的行 → 列表永远显示删掉的封面，而且不自愈
+                //（小图非 nil 了，扫描不再选它）。
+                if dbDisplayThumbnail == nil, dbThumbnail == originalThumbnail {
                     sd.displayThumbnail = newDisplayThumbnail
-                    writtenBytes += newDisplayThumbnail.count
                 }
             }
 
@@ -728,6 +897,12 @@ final class ThumbnailMigrationCoordinator {
             // 不进 history（迁移不是用户操作）；revision bump 的取舍见
             // InventoryManager.noteProjectDisplayThumbnailMigrated 注释。
             try bg.save()
+
+            // 写入记账按**整行**算，不是按「新写进去的那几个字段」。
+            // SQLite 重写整条记录（含没改动的列），只算新字节会低估到预算失效。
+            writtenBytes = (sd.thumbnail?.count ?? 0)
+                + (sd.finishedImage?.count ?? 0)
+                + (sd.displayThumbnail?.count ?? 0)
         } catch {
             AppLogger.shared.error("ThumbnailMigration", "save_failed", metadata: [
                 "projectId": projectId.uuidString,

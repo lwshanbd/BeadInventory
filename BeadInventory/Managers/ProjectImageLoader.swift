@@ -85,6 +85,8 @@ actor ProjectImageLoader {
     /// 返回 UIImage 而不是 Data：省掉一次 JPEG encode/decode 往返，也让「原图字节」
     /// 不会流出这个 actor（调用方拿不到就不可能不小心把它存起来）。
     func downsampledRawThumbnail(for projectId: UUID) -> UIImage? {
+        enter()
+        defer { leave() }
         guard let raw = fetchColumn(projectId: projectId, keyPath: \.thumbnail, event: "raw_thumbnail_fallback") else {
             return nil
         }
@@ -104,10 +106,20 @@ actor ProjectImageLoader {
         for projectId: UUID,
         maxPixelSize: Int
     ) -> (bytesFound: Bool, image: UIImage?) {
+        enter()
+        defer { leave() }
         guard let data = fetchColumn(projectId: projectId, keyPath: \.finishedImage, event: "finished_image_thumbnail") else {
             return (false, nil)
         }
-        return (true, ImageDownsampler.downsampleToUIImage(data, maxPixelSize: max(1, maxPixelSize)))
+        let image = ImageDownsampler.downsampleToUIImage(data, maxPixelSize: max(1, maxPixelSize))
+        if image == nil {
+            // 有字节但解不开 = 真正的损坏信号，而调用方只对 bytesFound == false 记日志，
+            // 于是这一格会渲染成空白且零遥测。补一条。
+            AppLogger.shared.error("ProjectImageLoader", "finished_image_undecodable", metadata: [
+                "projectId": projectId.uuidString, "bytes": data.count
+            ])
+        }
+        return (true, image)
     }
 
     // MARK: - 测试探针
@@ -116,8 +128,12 @@ actor ProjectImageLoader {
     /// 一旦有人把本类改回 `@MainActor`（或把 fetch 挪回 `InventoryManager`），测试会红。
     func isCurrentlyOnMainThreadForTesting() -> Bool { Thread.isMainThread }
 
-    /// 观测到的最大并发数。actor 隔离下恒为 1 —— 老数据兜底路径靠它保证
-    /// 同一时刻只有一份原图在内存里。
+    /// 观测到的最大并发数。
+    ///
+    /// 窗口刻意盖住**整个公开方法**（含 `ImageDownsampler` 那半），而不只是 fetch：
+    /// 原来只包 `fetchColumn`，而 fetch 是同步的 actor 方法，actor 隔离下并发数
+    /// 结构上不可能大于 1 —— 断言恒真，是个自证命题。真正有内存代价、也真正可能
+    /// 被未来某次「加个 await」破坏的是「读原图 + 降级」这一整段。
     private(set) var peakConcurrencyForTesting = 0
     private var inFlight = 0
 
@@ -133,6 +149,13 @@ actor ProjectImageLoader {
     ///
     /// `propertiesToFetch` 限定单列是必须的：不限定的话，同行的其它 blob
     /// （raw thumbnail 可能是 MB 级）会跟着一起物化 —— 列表每滚一个 row 都要付这份代价。
+    ///
+    /// 早期写法是 `switch keyPath { ... default: break }`，而 `propertiesToFetch` 的默认值
+    /// 是 `[]` = **不投影** = SELECT 全列。也就是说将来加一个 blob 列 + 一个忘记加 case 的
+    /// 取值方法，就会静默物化整行 —— 正是本文件存在要防的那个回归，且无编译错误、
+    /// 无测试失败、无日志。现在直接把 keyPath 传给 `propertiesToFetch`
+    ///（它要的是 `[PartialKeyPath<T>]`，`KeyPath<_, Data?>` 可以直接上转），
+    /// 少一个 switch 也就少一处可以漏的地方。
     private func fetchColumn(
         projectId: UUID,
         keyPath: KeyPath<SDProjectRecord, Data?>,
@@ -142,16 +165,7 @@ actor ProjectImageLoader {
             predicate: #Predicate { $0.id == projectId }
         )
         descriptor.fetchLimit = 1
-        // propertiesToFetch 要的是 PartialKeyPath，这里按调用点传进来的具体列构造
-        switch keyPath {
-        case \SDProjectRecord.displayThumbnail: descriptor.propertiesToFetch = [\.displayThumbnail]
-        case \SDProjectRecord.finishedImage:    descriptor.propertiesToFetch = [\.finishedImage]
-        case \SDProjectRecord.thumbnail:        descriptor.propertiesToFetch = [\.thumbnail]
-        case \SDProjectRecord.patternGridData:  descriptor.propertiesToFetch = [\.patternGridData]
-        default:                                break
-        }
-        enter()
-        defer { leave() }
+        descriptor.propertiesToFetch = [keyPath]
         do {
             let context = ModelContext(container)
             return try context.fetch(descriptor).first?[keyPath: keyPath]

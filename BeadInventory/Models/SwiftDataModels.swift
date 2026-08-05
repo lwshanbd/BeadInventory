@@ -95,9 +95,10 @@ final class SDProjectRecord {
     //   3. ThumbnailMigrationCoordinator 给老数据 backfill displayThumbnail
     //   4. ProjectThumbnailImage 列表优先读 displayThumbnail，没有就 CGImageSource 现场降级（永不 UIImage(data: raw_thumbnail)）
     // 一并解决。externalStorage 留作未来 PR 配合 VersionedSchema + 显式 willMigrate/didMigrate 手工搬迁。
-    var thumbnail: Data?          // 「原图」—— 全分辨率 PNG（拼图模式 / 详情大图用）。字段名保留为 thumbnail
+    var thumbnail: Data?          // 「原图」—— 全分辨率（拼图模式 / 详情大图用）。编码由 ProjectImageEncoder
+                                  // 决定：PNG / JPEG 取小的那个，分辨率不动。字段名保留为 thumbnail
                                   // 是为了避免 SwiftData schema 迁移（CloudKit container 对字段重命名很敏感）。
-    var finishedImage: Data?      // 成品图数据（PNG，仅已执行项目使用）
+    var finishedImage: Data?      // 成品图数据（编码同 thumbnail，仅已执行项目使用）
     var completedDate: Date?      // 完成日期（用于日历展示）
     var colorSystemRaw: String?   // 色号体系，可选以兼容旧数据，默认为 MARD
     var patternGridData: Data?    // JSON 编码后的 BeadPatternGrid（拼图模式网格数据）

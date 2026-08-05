@@ -28,7 +28,8 @@ class InventoryManager: ObservableObject {
     //
     // 自 v2.0.x 起：`projects` 不再持有 thumbnail / finishedImage / patternGridData /
     // displayThumbnail 四个大 Data blob（防止 458 项目级用户加载完 ~200MB 撞 jetsam）。
-    // 视图需要图片时走 fetchProject*Data / fetchProjectDisplayThumbnail 按需从
+    // **视图层走 `imageLoader`（后台 actor）**，不是下面这些 @MainActor 同步方法 ——
+    // 后者只剩备份导出 / history 快照捕获等主线程调用方。按需从
     // SwiftData 取单条 row。**列表 row 优先读 displayThumbnail（小图 ~50-100 KB）**，
     // 没有再走 ImageDownsampler 现场降级 raw thumbnail，**永远不**直接 UIImage(data: raw thumbnail)。
     //
@@ -4083,8 +4084,8 @@ class InventoryManager: ObservableObject {
     }
 
     /// 同步取单个项目的 displayThumbnail（列表用小图）。错误处理同上。
-    /// **列表 view 主要走这条路径**：UIImage(data:) 这份 ~50-100 KB JPEG 不会撞 jetsam。
-    /// 老数据这里返 nil，view 层会降级到 `ImageDownsampler.downsampleToUIImage(thumbnail)` 现场降级原图。
+    /// **注意：视图层已不再走这里**，改走 `ProjectImageLoader.displayThumbnail(for:)`（后台 actor）。
+    /// 本方法只剩备份导出 / history 快照捕获等主线程调用方。
     /// **round-10 review I1**：`propertiesToFetch = [\.displayThumbnail]` 限定单列 —— 否则
     /// 列表每滚一个 row 都会 fault 同行的 raw thumbnail（5-10 MB inline PNG）到内存。
     func fetchProjectDisplayThumbnail(for projectId: UUID) -> Data? {

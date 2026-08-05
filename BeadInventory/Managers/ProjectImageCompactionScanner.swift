@@ -87,10 +87,11 @@ enum ProjectImageCompactionScanner {
         thresholdBytes: Int,
         limit: Int,
         excluding: Set<UUID>
-    ) -> Result<[UUID], ScanFailure> {
+    ) -> Result<[Candidate], ScanFailure> {
         scanIDs(
             storeURL: storeURL,
             table: table,
+            sizeExpression: "max(coalesce(length(\(thumbnailColumn)), 0), coalesce(length(\(finishedImageColumn)), 0))",
             where: """
             length(\(thumbnailColumn)) > ?1 \
             OR length(\(finishedImageColumn)) > ?1 \
@@ -109,15 +110,25 @@ enum ProjectImageCompactionScanner {
     /// 谓词一律写成 `length(<直接列引用>)` 的形态 —— SQLite 只对这种形态启用
     /// `OPFLAG_LENGTHARG`（只读记录头的 serial type，不追 overflow page 链）。
     /// 套一层表达式（`length(coalesce(x, ''))` 之类）就会退化成真的把 blob 读出来。
+    /// 一条候选：ID + 当时命中列的最大字节数。
+    ///
+    /// 带上字节数是为了让协调器的 stubborn 记账能**按内容键控**而不是按 ID 永久拉黑 ——
+    /// 用户换图 / 备份恢复 / CloudKit 从未升级设备同步来新图之后，字节数变了就该重新考虑。
+    struct Candidate: Equatable, Sendable {
+        let id: UUID
+        let bytes: Int
+    }
+
     private static func scanIDs(
         storeURL: URL,
         table: String,
+        sizeExpression: String,
         where whereClause: String,
         requiredColumns: [String],
         thresholdBytes: Int,
         limit: Int,
         excluding: Set<UUID>
-    ) -> Result<[UUID], ScanFailure> {
+    ) -> Result<[Candidate], ScanFailure> {
         guard FileManager.default.fileExists(atPath: storeURL.path) else {
             return .failure(.unsupportedStore)
         }
@@ -159,7 +170,10 @@ enum ProjectImageCompactionScanner {
 
         // `excluding` 在 Swift 侧过滤而不是塞进 SQL：集合通常是空或个位数，
         // 拼 IN (...) 反而要处理绑定上限。多取一些行再过滤即可。
-        let sql = "SELECT \(idColumn) FROM \(table) WHERE \(whereClause) LIMIT ?2"
+        // `sizeExpression` 里每个 length() 的实参仍是**裸列引用**，OPFLAG_LENGTHARG
+        // 优化按 length() 逐个判定，套在 max()/coalesce() 外层不影响它。
+        // （ProjectImageCompactionScannerTests 的 footprint 断言仍然钉着这条。）
+        let sql = "SELECT \(idColumn), \(sizeExpression) FROM \(table) WHERE \(whereClause) LIMIT ?2"
 
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
@@ -169,7 +183,7 @@ enum ProjectImageCompactionScanner {
         sqlite3_bind_int64(stmt, 1, Int64(thresholdBytes))
         sqlite3_bind_int64(stmt, 2, Int64(limit + excluding.count))
 
-        var ids: [UUID] = []
+        var ids: [Candidate] = []
         var rc = sqlite3_step(stmt)
         while rc == SQLITE_ROW {
             let uuid: UUID
@@ -189,7 +203,7 @@ enum ProjectImageCompactionScanner {
                 return .failure(.unsupportedStore)
             }
             if !excluding.contains(uuid) {
-                ids.append(uuid)
+                ids.append(Candidate(id: uuid, bytes: Int(sqlite3_column_int64(stmt, 1))))
                 if ids.count >= limit { break }
             }
             rc = sqlite3_step(stmt)
@@ -214,10 +228,11 @@ enum ProjectImageCompactionScanner {
         thresholdBytes: Int,
         limit: Int,
         excluding: Set<UUID>
-    ) -> Result<[UUID], ScanFailure> {
+    ) -> Result<[Candidate], ScanFailure> {
         scanIDs(
             storeURL: storeURL,
             table: historyTable,
+            sizeExpression: "max(coalesce(length(\(historyBeforeColumn)), 0), coalesce(length(\(historyAfterColumn)), 0))",
             where: "length(\(historyBeforeColumn)) > ?1 OR length(\(historyAfterColumn)) > ?1",
             requiredColumns: [historyBeforeColumn, historyAfterColumn],
             thresholdBytes: thresholdBytes,

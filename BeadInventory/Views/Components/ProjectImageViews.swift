@@ -8,10 +8,10 @@
 //  用户加载完即 ~200MB 撞 jetsam。两个组件是按需取图 + 解码的标准入口。
 //
 //  **`ProjectThumbnailImage` 的关键 jetsam 修复**：列表 row 用的缩略图视图**永远不**
-//  直接 `UIImage(data: raw_thumbnail)` —— raw thumbnail 是全分辨率 PNG，可达 5-10 MB，
+//  直接 `UIImage(data: raw_thumbnail)` —— raw thumbnail 是全分辨率原图（老数据无损 PNG 可达 13 MB；瘦身后 ~1.5 MB），
 //  解码后 UIImage 占 30+ MB；10 个 LazyVStack row 同屏 = 300+ MB ⇒ jetsam。优先级：
 //
-//    1. **`fetchProjectDisplayThumbnail`** —— 512px JPEG 0.85 小图，~50-100 KB，UIImage(data:) 安全
+//    1. **`ProjectImageLoader.displayThumbnail(for:)`** —— 512px JPEG 0.85 小图，~50-100 KB，UIImage(data:) 安全
 //    2. **没有 displayThumbnail 则 `ImageDownsampler.downsampleToUIImage(thumbnail)`** ——
 //       CGImageSourceCreateThumbnailAtIndex 在 source 层就限制尺寸，内存峰值 KB 级
 //    3. 都失败 → placeholder
@@ -202,11 +202,12 @@ private actor ImageLoadGate {
     }
 }
 
-/// 全局闸门：限制成品图网格"取原图 + 降级"的并发度。
+/// 全局闸门：限制成品图网格取图任务的并发度。
 ///
-/// 成品图当前是整张原分辨率 PNG 落盘，一张手机照片可达数 MB；整月若有十几二十张作品，
-/// `ProjectFinishedThumbnail` 的 `.task` 会几乎同时点火，原图 Data 在 fetch→downsample
-/// 窗口内全都进内存就会叠成尖峰。限到 4 路在飞，峰值内存只压住 ~4 张原图。
+/// 注意它现在管的**不再是内存尖峰** —— 取字节和降级都在 `ProjectImageLoader` 这个 actor
+/// 内部完成、天然串行，原图 Data 也不流出 actor。它管的是另一件事：整月十几二十张作品时
+/// `ProjectFinishedThumbnail` 的 `.task` 会几乎同时点火，限到 4 路在飞可以让快速翻月时的
+/// 取消更早生效，不至于在 actor 前排起长队。
 private let finishedThumbnailLoadGate = ImageLoadGate(limit: 4)
 
 /// 异步加载并**降级**项目成品图，专供日历 / 网格等"小尺寸、多格同屏"场景。

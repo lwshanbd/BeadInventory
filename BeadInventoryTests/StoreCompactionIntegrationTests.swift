@@ -144,14 +144,14 @@ final class StoreCompactionIntegrationTests: XCTestCase {
                 limit: 10,
                 excluding: excluded
             )
-            guard case .success(let ids) = scan else { return XCTFail("扫描失败：\(scan)") }
-            if ids.isEmpty { break }
-            for id in ids {
-                excluded.insert(id)
+            guard case .success(let candidates) = scan else { return XCTFail("扫描失败：\(scan)") }
+            if candidates.isEmpty { break }
+            for candidate in candidates {
+                excluded.insert(candidate.id)
                 let outcome = await ThumbnailMigrationCoordinator.compactOne(
-                    projectId: id, container: container
+                    projectId: candidate.id, container: container
                 )
-                XCTAssertTrue(outcome.isMigrated, "项目 \(id) 瘦身失败：\(outcome)")
+                XCTAssertTrue(outcome.isMigrated, "项目 \(candidate.id) 瘦身失败：\(outcome)")
                 processed += 1
             }
         }
