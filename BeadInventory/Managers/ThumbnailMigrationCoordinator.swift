@@ -356,6 +356,145 @@ final class ThumbnailMigrationCoordinator {
             "pagesFetched": pagesFetched,
             "bytesWritten": bytesWritten
         ])
+
+        // 第二阶段：历史表。项目表瘦完了如果不管它，库照样是 GB 级 ——
+        // 快照走 JSONEncoder，`Data` 被编成 base64（+33%），`.projectUpdate` 还会把
+        // 同一份快照同时写进 before / after 两列，单条可达 ~34MB。
+        await runHistoryPhase(storeURL: storeURL, container: container, bytesAlreadyWritten: bytesWritten)
+    }
+
+    private func runHistoryPhase(
+        storeURL: URL,
+        container: ModelContainer,
+        bytesAlreadyWritten: Int
+    ) async {
+        var bytesWritten = bytesAlreadyWritten
+        var compacted = 0
+        var saved = 0
+        var excluded = Set<UUID>()
+
+        while true {
+            guard !Task.isCancelled else { return }
+            // 闸门与项目阶段共用同一份写预算 —— 两个阶段加起来不超过单次 run 的上限。
+            if let reason = Self.throttleReason(bytesWrittenThisRun: bytesWritten) {
+                AppLogger.shared.info("ThumbnailMigration", "history_throttled", metadata: [
+                    "reason": reason.rawValue, "compacted": compacted
+                ])
+                break
+            }
+
+            let ids: [UUID]
+            switch ProjectImageCompactionScanner.scanHistoryCandidates(
+                storeURL: storeURL,
+                thresholdBytes: ProjectImageEncoder.compactionThresholdBytes,
+                limit: Self.batchSize,
+                excluding: excluded
+            ) {
+            case .success(let scanned):
+                ids = scanned
+            case .failure(let failure):
+                // 同项目阶段：**不**回退 SwiftData BLOB 查询。
+                AppLogger.shared.warning("ThumbnailMigration", "history_scan_failed", metadata: [
+                    "failure": "\(failure)", "compacted": compacted
+                ])
+                return
+            }
+            if ids.isEmpty { break }
+
+            for id in ids {
+                guard !Task.isCancelled else { return }
+                // 无条件排除 —— 与项目阶段同理，扫描是按当前库状态重查而非游标翻页，
+                // 处理完仍符合条件的行会让循环永不终止。
+                excluded.insert(id)
+                let result = await Self.compactHistoryOne(recordId: id, container: container)
+                if result.changed {
+                    compacted += 1
+                    saved += result.bytesSaved
+                    bytesWritten += max(0, result.bytesWritten)
+                }
+            }
+
+            do {
+                try await Task.sleep(nanoseconds: Self.batchSleepNanos)
+            } catch {
+                return
+            }
+        }
+
+        if compacted > 0 {
+            AppLogger.shared.info("ThumbnailMigration", "history_completed", metadata: [
+                "compacted": compacted,
+                "bytesSaved": saved
+            ])
+        }
+    }
+
+    /// 单条历史记录的快照瘦身。全程后台 context，理由同 `compactOne`。
+    ///
+    /// 撤回语义完全不变 —— 图片还在快照里，只是变小了。刻意**不**做「删掉老快照里的图」：
+    /// `.projectDelete` 的快照是那张图删除之后的唯一拷贝，删了就是永久数据丢失。
+    nonisolated static func compactHistoryOne(
+        recordId: UUID,
+        container: ModelContainer
+    ) async -> (changed: Bool, bytesSaved: Int, bytesWritten: Int) {
+        let originalBefore: Data?
+        let originalAfter: Data?
+        do {
+            var descriptor = FetchDescriptor<SDHistoryRecord>(
+                predicate: #Predicate { $0.id == recordId }
+            )
+            descriptor.fetchLimit = 1
+            descriptor.propertiesToFetch = [\.beforeSnapshot, \.afterSnapshot]
+            let bg = ModelContext(container)
+            guard let row = try bg.fetch(descriptor).first else { return (false, 0, 0) }
+            originalBefore = row.beforeSnapshot
+            originalAfter = row.afterSnapshot
+        } catch {
+            AppLogger.shared.error("ThumbnailMigration", "history_fetch_failed", metadata: [
+                "recordId": recordId.uuidString, "error": "\(error)"
+            ])
+            return (false, 0, 0)
+        }
+
+        guard !Task.isCancelled else { return (false, 0, 0) }
+
+        let newBefore = originalBefore.flatMap(HistorySnapshotCompactor.compact)
+        guard !Task.isCancelled else { return (false, 0, 0) }
+        let newAfter = originalAfter.flatMap(HistorySnapshotCompactor.compact)
+        guard newBefore != nil || newAfter != nil else { return (false, 0, 0) }
+
+        var bytesSaved = 0
+        var bytesWritten = 0
+        do {
+            var descriptor = FetchDescriptor<SDHistoryRecord>(
+                predicate: #Predicate { $0.id == recordId }
+            )
+            descriptor.fetchLimit = 1
+            descriptor.propertiesToFetch = [\.beforeSnapshot, \.afterSnapshot]
+            let bg = ModelContext(container)
+            guard let row = try bg.fetch(descriptor).first else { return (false, 0, 0) }
+
+            // TOCTOU：历史记录本身是 append-only 的，但撤回会改 isReverted、
+            // trim 会删行，所以仍然按字段校验一次再写。
+            if let newBefore, row.beforeSnapshot == originalBefore {
+                row.beforeSnapshot = newBefore.data
+                bytesSaved += newBefore.bytesSaved
+                bytesWritten += newBefore.data.count
+            }
+            if let newAfter, row.afterSnapshot == originalAfter {
+                row.afterSnapshot = newAfter.data
+                bytesSaved += newAfter.bytesSaved
+                bytesWritten += newAfter.data.count
+            }
+            guard bg.hasChanges else { return (false, 0, 0) }
+            try bg.save()
+        } catch {
+            AppLogger.shared.error("ThumbnailMigration", "history_save_failed", metadata: [
+                "recordId": recordId.uuidString, "error": "\(error)"
+            ])
+            return (false, 0, 0)
+        }
+        return (true, bytesSaved, bytesWritten)
     }
 
     enum MigrationOutcome: Equatable {

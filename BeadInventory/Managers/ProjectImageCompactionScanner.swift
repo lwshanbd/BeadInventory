@@ -68,6 +68,36 @@ enum ProjectImageCompactionScanner {
         limit: Int,
         excluding: Set<UUID>
     ) -> Result<[UUID], ScanFailure> {
+        scanIDs(
+            storeURL: storeURL,
+            table: table,
+            where: """
+            length(\(thumbnailColumn)) > ?1 \
+            OR length(\(finishedImageColumn)) > ?1 \
+            OR (\(thumbnailColumn) IS NOT NULL AND \(displayThumbnailColumn) IS NULL)
+            """,
+            requiredColumns: [thumbnailColumn, finishedImageColumn, displayThumbnailColumn],
+            thresholdBytes: thresholdBytes,
+            limit: limit,
+            excluding: excluding
+        )
+    }
+
+    /// 两张表共用的实现：只读连接 + schema 保险丝 + 取 ZID。
+    ///
+    /// `whereClause` 里的 `?1` 绑定 `thresholdBytes`，`?2` 绑定 limit。
+    /// 谓词一律写成 `length(<直接列引用>)` 的形态 —— SQLite 只对这种形态启用
+    /// `OPFLAG_LENGTHARG`（只读记录头的 serial type，不追 overflow page 链）。
+    /// 套一层表达式（`length(coalesce(x, ''))` 之类）就会退化成真的把 blob 读出来。
+    private static func scanIDs(
+        storeURL: URL,
+        table: String,
+        where whereClause: String,
+        requiredColumns: [String],
+        thresholdBytes: Int,
+        limit: Int,
+        excluding: Set<UUID>
+    ) -> Result<[UUID], ScanFailure> {
         guard FileManager.default.fileExists(atPath: storeURL.path) else {
             return .failure(.unsupportedStore)
         }
@@ -94,22 +124,13 @@ enum ProjectImageCompactionScanner {
                 }
             }
         }
-        let required = [idColumn, thumbnailColumn, finishedImageColumn, displayThumbnailColumn]
-        guard required.allSatisfy({ existingColumns.contains($0) }) else {
+        guard ([idColumn] + requiredColumns).allSatisfy({ existingColumns.contains($0) }) else {
             return .failure(.unsupportedStore)
         }
 
         // `excluding` 在 Swift 侧过滤而不是塞进 SQL：集合通常是空或个位数，
         // 拼 IN (...) 反而要处理绑定上限。多取一些行再过滤即可。
-        let fetchLimit = limit + excluding.count
-
-        let sql = """
-        SELECT \(idColumn) FROM \(table) \
-        WHERE length(\(thumbnailColumn)) > ?1 \
-           OR length(\(finishedImageColumn)) > ?1 \
-           OR (\(thumbnailColumn) IS NOT NULL AND \(displayThumbnailColumn) IS NULL) \
-        LIMIT ?2
-        """
+        let sql = "SELECT \(idColumn) FROM \(table) WHERE \(whereClause) LIMIT ?2"
 
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
@@ -117,7 +138,7 @@ enum ProjectImageCompactionScanner {
         }
         defer { sqlite3_finalize(stmt) }
         sqlite3_bind_int64(stmt, 1, Int64(thresholdBytes))
-        sqlite3_bind_int64(stmt, 2, Int64(fetchLimit))
+        sqlite3_bind_int64(stmt, 2, Int64(limit + excluding.count))
 
         var ids: [UUID] = []
         var rc = sqlite3_step(stmt)
@@ -147,5 +168,31 @@ enum ProjectImageCompactionScanner {
             return .failure(.transient)
         }
         return .success(ids)
+    }
+
+    // MARK: - 历史表
+
+    private static let historyTable = "ZSDHISTORYRECORD"
+    private static let historyBeforeColumn = "ZBEFORESNAPSHOT"
+    private static let historyAfterColumn = "ZAFTERSNAPSHOT"
+
+    /// 找出快照过大的历史记录 ID。理由同项目行 —— 见 `HistorySnapshotCompactor` 头注释：
+    /// 快照走 JSONEncoder，`Data` 被编成 base64（+33%），单条可达 34 MB，
+    /// `maxRecords = 100` 时历史表单独可达 GB 级。
+    static func scanHistoryCandidates(
+        storeURL: URL,
+        thresholdBytes: Int,
+        limit: Int,
+        excluding: Set<UUID>
+    ) -> Result<[UUID], ScanFailure> {
+        scanIDs(
+            storeURL: storeURL,
+            table: historyTable,
+            where: "length(\(historyBeforeColumn)) > ?1 OR length(\(historyAfterColumn)) > ?1",
+            requiredColumns: [historyBeforeColumn, historyAfterColumn],
+            thresholdBytes: thresholdBytes,
+            limit: limit,
+            excluding: excluding
+        )
     }
 }
