@@ -159,8 +159,8 @@ class InventoryManager: ObservableObject {
     /// `private(set)`：测试需要 `await manager.initialLoadTask?.value` 做确定性等待，
     /// 跟 `HistoryManager.loadTask` 同一约定，避免测试退化成轮询 sleep。
     private(set) var initialLoadTask: Task<Void, Never>?
-    /// 在途首次读取的代次。每次「重新发起 / 超时作废 / 用户改走本地模式」都会 +1，
-    /// 后台任务回到 MainActor 时代次对不上就整份丢弃。
+    /// 在途持久层读取（首次加载 **和** 后台 refresh 共用）的代次。每次「重新发起 /
+    /// 超时作废 / 用户改走本地模式」都会 +1，后台任务回到 MainActor 时代次对不上就整份丢弃。
     ///
     /// 这是把读取改成异步之后必须补的一道闸：同步版本里「在途」窗口是 0，
     /// 现在这个窗口有几百毫秒到数秒，期间用户完全可能已经点了「以本地模式继续」
@@ -177,6 +177,18 @@ class InventoryManager: ObservableObject {
     /// 老版本 UserDefaults → SwiftData 迁移每次启动最多尝试一次。
     /// 迁移是**无去重的裸 insert**，超时作废 + 自动重试叠加时若跑第二遍会直接把品牌/库存翻倍。
     private static var hasAttemptedLegacyMigrationThisLaunch = false
+    /// 首次加载完成后、由变更通知/回前台触发的后台全量刷新的在途任务。
+    /// 跟 `initialLoadTask` 分开管：refresh 没有 loading 遮罩，失败/过期一律静默丢弃，
+    /// 不进入错误重试 UI。`private(set)` 供测试 `await refreshTask?.value` 确定性等待。
+    private(set) var refreshTask: Task<Void, Never>?
+    private var refreshTimeoutTask: Task<Void, Never>?
+    /// refresh 超时上限。卡死的 refresh 不影响可见 UI，但会让 `isLoadingPersistentStore`
+    /// 永远为 true —— 后续所有 refresh 都被 defer 吞掉，数据从此不再刷新。到点作废回收旗子。
+    /// 非 `let` 仅为测试能调小覆盖超时分支 —— 生产代码不要改它。
+    var refreshTimeout: TimeInterval = 30
+    /// 主存储写入代次：saveData 每次成功落盘 +1。后台 refresh 在 fetch 启动时记下当前值，
+    /// apply 时对不上说明 fetch 期间发生过写入 —— 那份结果已过期，必须丢弃重排。
+    private var persistentWriteGeneration: UInt64 = 0
     private var hasCompletedInitialPersistentLoad = false
     private var initialLoadAttemptCount = 0
     private let maxAutomaticInitialLoadAttempts = 3
@@ -330,9 +342,12 @@ class InventoryManager: ObservableObject {
     private func discardInFlightInitialLoad(reason: String) {
         initialLoadTimeoutTask?.cancel()
         initialLoadTimeoutTask = nil
-        guard isLoadingPersistentStore || initialLoadTask != nil else { return }
+        refreshTimeoutTask?.cancel()
+        refreshTimeoutTask = nil
+        guard isLoadingPersistentStore || initialLoadTask != nil || refreshTask != nil else { return }
         initialLoadGeneration &+= 1
         initialLoadTask = nil
+        refreshTask = nil
         isLoadingPersistentStore = false
         logWarning("initial_load_in_flight_discarded", metadata: [
             "reason": reason,
@@ -1928,13 +1943,17 @@ class InventoryManager: ObservableObject {
             return
         }
 
+        guard let context = modelContext else {
+            // Preview / 无持久层模式：数据在 UserDefaults，量小，同步读取无碍。
+            logWarning("load_data_use_user_defaults_mode")
+            loadDataFromUserDefaults()
+            return
+        }
+
         isLoadingPersistentStore = true
 
-        // 首次读取发生在 rootView.onAppear。此时若继续使用 mainContext 同步 fetch，
-        // SwiftUI 还没有机会提交首帧，任何 SQLite / CloudKit 首次开库或 relationship fault
-        // 都会直接表现成白屏。后续 refresh 仍保留原来的同步语义，避免用户正在编辑时
-        // 后台结果覆盖内存中的新改动；首次加载期间 UI 被 loading overlay 保护，不存在该竞态。
-        if !hasCompletedInitialPersistentLoad, let context = modelContext {
+        // 首次读取发生在 rootView.onAppear。同步 fetch 会挡住 SwiftUI 提交首帧 —— 白屏（PR #57）。
+        if !hasCompletedInitialPersistentLoad {
             startInitialPersistentLoad(
                 from: context.container,
                 preserveInMemoryOnFailure: preserveInMemoryOnFailure
@@ -1942,264 +1961,135 @@ class InventoryManager: ObservableObject {
             return
         }
 
-        defer {
-            isLoadingPersistentStore = false
-            replayDeferredRefreshIfNeeded()
+        // 后续 refresh 同样必须离开主线程 —— 2026-08-05 用 2.4GB 拼图模式种子库实测：
+        // CloudKit / 跨 context 保存触发的变更通知走到这条路径的旧同步实现，每次堵主线程
+        // 2.0-2.7s，冷启动后 30s 内连发 4 次（共 ~9.7s）。此时 loading 遮罩早已消失，
+        // 用户看到的是整个 App 冻住 —— 这正是 #51/#52/#57 三轮修完仍在报的「白屏」真凶。
+        //
+        // 旧实现保持同步的理由是「防止后台结果覆盖用户正在编辑的数据」；这个职责改由
+        // apply 前的写入代次 + 基线脏检查闸门承担（见 startBackgroundRefresh）。
+        startBackgroundRefresh(
+            from: context.container,
+            preserveInMemoryOnFailure: preserveInMemoryOnFailure
+        )
+    }
+
+    /// 首次加载完成后的后台全量刷新。与 startInitialPersistentLoad 的关键差别：
+    /// - 没有 loading 遮罩保护，失败/过期一律**静默丢弃**，绝不弹错误 UI；
+    /// - apply 前多两道闸：写入代次（fetch 期间 saveData 落过盘 → 结果过期）和基线脏检查
+    ///   （内存里有未保存编辑 → 一应用就整份盖掉）。命中任何一道就丢弃本次结果并延后重排，
+    ///   等 auto-save 落盘、基线干净之后再刷；
+    /// - 超时只回收 `isLoadingPersistentStore` 旗子，不打扰用户。
+    private func startBackgroundRefresh(
+        from container: ModelContainer,
+        preserveInMemoryOnFailure: Bool
+    ) {
+        let fallbackSnapshot = preserveInMemoryOnFailure ? makeInMemorySnapshot() : nil
+        let loadedBeadColors = loadAllColorsFromJSON()
+        var loadedCurrentBrandId = currentBrandId
+        if let idString = UserDefaults.standard.string(forKey: currentBrandIdKey),
+           let id = UUID(uuidString: idString) {
+            loadedCurrentBrandId = id
+        }
+        var loadedPurchaseRecords = purchaseRecords
+        if let data = UserDefaults.standard.data(forKey: purchaseRecordsKey),
+           let decoded = try? JSONDecoder().decode([PurchaseRecord].self, from: data) {
+            loadedPurchaseRecords = decoded
         }
 
-        AppBackgroundTaskManager.shared.perform(named: "InventoryLoad") {
-            let fallbackSnapshot = preserveInMemoryOnFailure ? makeInMemorySnapshot() : nil
-            logInfo("load_data_started", metadata: [
-                "preserveInMemoryOnFailure": preserveInMemoryOnFailure
-            ])
+        initialLoadGeneration &+= 1
+        let generation = initialLoadGeneration
+        let writeGenerationAtStart = persistentWriteGeneration
+        // refresh 永不做 legacy 迁移（首次加载已处理），keys 仅为复用同一个 fetch 函数。
+        let migrationKeys = LegacyMigrationKeys(
+            brands: brandsKey,
+            stocks: brandStocksKey,
+            projects: projectsKey,
+            completed: migrationCompletedKey
+        )
+        logInfo("load_data_started", metadata: [
+            "preserveInMemoryOnFailure": preserveInMemoryOnFailure,
+            "execution": "background",
+            "kind": "refresh",
+            "generation": generation
+        ])
 
-            guard let context = modelContext else {
-                logWarning("load_data_use_user_defaults_mode")
-                loadDataFromUserDefaults()
+        startRefreshTimeoutWatchdog(generation: generation)
+
+        refreshTask = Task { @MainActor [weak self] in
+            let result = await AppBackgroundTaskManager.shared.performAsync(named: "InventoryRefresh") {
+                await Self.fetchInitialPersistentData(
+                    from: container,
+                    needsMigration: false,
+                    migrationKeys: migrationKeys
+                )
+            }
+            guard let self else { return }
+            // 代次对不上 = 已被超时作废 / 被重试或本地模式取代。旗子属于新一轮，不碰。
+            guard generation == self.initialLoadGeneration else {
+                self.logWarning("refresh_result_discarded_stale_generation", metadata: [
+                    "resultGeneration": generation,
+                    "currentGeneration": self.initialLoadGeneration
+                ])
+                return
+            }
+            self.refreshTimeoutTask?.cancel()
+            self.refreshTimeoutTask = nil
+
+            // fetch 在途期间落过盘、或内存里有未保存的编辑：这份结果要么已过期、要么一应用
+            // 就会把用户编辑整份盖掉。丢弃，延后重排（等 auto-save 把基线洗干净）。
+            //
+            // blob 单行直写（updateProjectThumbnail 等）故意不 bump 写入代次：它们只动
+            // refresh 不读取的 blob 列 + 自己在内存维护的 projectIDsWith* 集合，且它们的
+            // save 会再触发一次变更通知 → 新一轮 refresh 自然把集合补齐。
+            if self.isSaving
+                || self.persistentWriteGeneration != writeGenerationAtStart
+                || self.hasModelChangesComparedToBaseline() {
+                self.logInfo("refresh_result_discarded_dirty", metadata: [
+                    "isSaving": self.isSaving,
+                    "writeGenerationChanged": self.persistentWriteGeneration != writeGenerationAtStart
+                ])
+                self.refreshTask = nil
+                self.isLoadingPersistentStore = false
+                self.replayDeferredRefreshIfNeeded()
+                self.scheduleRefreshFromPersistentStore(
+                    reason: "refreshRetryAfterDirtyDiscard",
+                    debounceSeconds: 3.0
+                )
                 return
             }
 
-            // 重置加载状态标志（在开始时重置 isDataLoaded，让逻辑更封闭）
-            isDataLoaded = false
-            brandsLoadedSuccessfully = false
-            stocksLoadedSuccessfully = false
-            projectsLoadedSuccessfully = false
-            customColorsLoadedSuccessfully = false
+            self.applyInitialPersistentLoad(
+                result,
+                fallbackSnapshot: fallbackSnapshot,
+                loadedBeadColors: loadedBeadColors,
+                loadedCurrentBrandId: loadedCurrentBrandId,
+                loadedPurchaseRecords: loadedPurchaseRecords
+            )
+            self.refreshTask = nil
+            self.isLoadingPersistentStore = false
+            self.replayDeferredRefreshIfNeeded()
+        }
+    }
 
-            // 检查是否需要迁移
-            let needsMigration = !UserDefaults.standard.bool(forKey: migrationCompletedKey)
-            if needsMigration {
-                migrateFromUserDefaults()
-            }
-
-            // 先拉取到临时变量，避免半成功状态直接污染当前内存数据
-            var loadedBrands = brands
-            var loadedBrandStocks = brandStocks
-            var loadedProjects = projects
-            var loadedCustomColors = customColors
-            var loadedCurrentBrandId = currentBrandId
-            var loadedPurchaseRecords = purchaseRecords
-            let loadedBeadColors = loadAllColorsFromJSON()
-
-            // 从 SwiftData 加载品牌
-            do {
-                let brandDescriptor = FetchDescriptor<SDBrand>(sortBy: [SortDescriptor(\.sortOrder)])
-                let sdBrands = try context.fetch(brandDescriptor)
-                loadedBrands = sdBrands.map { $0.toStruct() }
-                brandsLoadedSuccessfully = true
-                print("[InventoryManager] 成功加载 \(loadedBrands.count) 个品牌")
-                logInfo("load_brands_success", metadata: ["count": loadedBrands.count])
-            } catch {
-                print("[InventoryManager] ⚠️ 加载品牌失败: \(error)")
-                logError("load_brands_failed", metadata: ["error": "\(error)"])
-            }
-
-            // 从 SwiftData 加载品牌库存
-            do {
-                let stockDescriptor = FetchDescriptor<SDBrandStock>()
-                let sdStocks = try context.fetch(stockDescriptor)
-                loadedBrandStocks = sdStocks.map { $0.toStruct() }
-                stocksLoadedSuccessfully = true
-                print("[InventoryManager] 成功加载 \(loadedBrandStocks.count) 条库存记录")
-                logInfo("load_stocks_success", metadata: ["count": loadedBrandStocks.count])
-            } catch {
-                print("[InventoryManager] ⚠️ 加载库存失败: \(error)")
-                logError("load_stocks_failed", metadata: ["error": "\(error)"])
-            }
-
-            // 从 SwiftData 加载项目记录
-            //
-            // 关键：用 toMetadataStruct() 而不是 toStruct() —— 不读 thumbnail / finishedImage /
-            // patternGridData 三个大 Data blob。458 项目级用户曾因为这三个字段全部 inline
-            // 物化进内存爆 ~200MB 被 jetsam。视图需要图片时按需走 fetchProjectThumbnailData /
-            // fetchProjectFinishedImageData / fetchProjectPatternGrid 取单条 row。
-            do {
-                // **round-11 review C1 sweep 最后一处**：跟 refreshProjectBlobMetadata /
-                // ThumbnailMigrationCoordinator 同型修复。`toMetadataStruct()` 只控**生成的 struct**
-                // 里 blob 字段为 nil —— **控不住 `context.fetch` 阶段** SwiftData 是否物化 inline
-                // BLOB 列。冷启动 458 项目用户场景：458 row × 5-10 MB raw thumbnail = 2-5 GB 瞬时
-                // 峰值，跟列表 jetsam 同型问题但发生在 loadData 路径上。
-                // propertiesToFetch 显式列出所有要用的 metadata 字段（toMetadataStruct 消费的就是
-                // 这些），让 SwiftData 跳过 thumbnail / finishedImage / patternGridData / displayThumbnail
-                // 4 个大 blob 字段的物化。
-                // 注：`beadUsages` 是 @Relationship，不是 inline blob，不受 propertiesToFetch 影响。
-                var projectDescriptor = FetchDescriptor<SDProjectRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
-                projectDescriptor.propertiesToFetch = [
-                    \.id, \.name, \.date, \.totalBeads, \.brandId, \.isArchived,
-                    \.parentId, \.isPlanned, \.executedDate, \.completedDate, \.colorSystemRaw
-                ]
-                let sdProjects = try context.fetch(projectDescriptor)
-                loadedProjects = sdProjects.map { $0.toMetadataStruct() }
-                projectsLoadedSuccessfully = true
-                print("[InventoryManager] 成功加载 \(loadedProjects.count) 个项目记录 (metadata-only)")
-                logInfo("load_projects_success", metadata: ["count": loadedProjects.count])
-            } catch {
-                print("[InventoryManager] ⚠️ 加载项目失败: \(error)")
-                logError("load_projects_failed", metadata: ["error": "\(error)"])
-            }
-
-            // 加载当前品牌 ID
-            if let idString = UserDefaults.standard.string(forKey: currentBrandIdKey),
-               let id = UUID(uuidString: idString) {
-                loadedCurrentBrandId = id
-            }
-
-            // 从 SwiftData 加载自定义色号
-            do {
-                let customColorDescriptor = FetchDescriptor<SDCustomColor>(sortBy: [SortDescriptor(\.createdAt)])
-                let sdCustomColors = try context.fetch(customColorDescriptor)
-                loadedCustomColors = sdCustomColors.map { $0.toStruct() }
-                customColorsLoadedSuccessfully = true
-                print("[InventoryManager] 成功加载 \(loadedCustomColors.count) 个自定义色号")
-                logInfo("load_custom_colors_success", metadata: ["count": loadedCustomColors.count])
-            } catch {
-                print("[InventoryManager] ⚠️ 加载自定义色号失败: \(error)")
-                logError("load_custom_colors_failed", metadata: ["error": "\(error)"])
-            }
-
-            // 加载运输中的购买记录（存在 UserDefaults 中）
-            if let data = UserDefaults.standard.data(forKey: purchaseRecordsKey),
-               let decoded = try? JSONDecoder().decode([PurchaseRecord].self, from: data) {
-                loadedPurchaseRecords = decoded
-            }
-
-            // 只有当所有关键数据都成功加载时，才标记为加载完成
-            let allLoaded = brandsLoadedSuccessfully && stocksLoadedSuccessfully && projectsLoadedSuccessfully
-            if allLoaded {
-                // 防护：如果用户之前有数据，但本次 fetch 全部返回空，说明 SwiftData 加载异常
-                // 拒绝标记为加载成功，阻止后续 saveData() 把空数据写入数据库覆盖原有记录
-                let allEmpty = loadedBrands.isEmpty
-                    && loadedBrandStocks.isEmpty
-                    && loadedProjects.isEmpty
-                    && loadedCustomColors.isEmpty
-                let hadDataBefore = UserDefaults.standard.bool(forKey: hasExistingDataKey)
-
-                // 防护：刷新期间若出现“品牌/库存骤减”，优先认为是同步中的中间态，不覆盖当前内存
-                if let snapshot = fallbackSnapshot {
-                    let suspiciousBrandDrop = snapshot.brands.count >= 3
-                        && loadedBrands.count > 0
-                        && loadedBrands.count * 2 < snapshot.brands.count
-                    let suspiciousStockDrop = snapshot.brandStocks.count >= 200
-                        && loadedBrandStocks.count > 0
-                        && loadedBrandStocks.count * 2 < snapshot.brandStocks.count
-
-                    if suspiciousBrandDrop || suspiciousStockDrop {
-                        print("[InventoryManager] ⚠️ 检测到异常骤减（品牌/库存），判定为同步中间态，保留当前内存数据")
-                        logWarning("load_data_suspicious_drop", metadata: [
-                            "previousBrands": snapshot.brands.count,
-                            "loadedBrands": loadedBrands.count,
-                            "previousStocks": snapshot.brandStocks.count,
-                            "loadedStocks": loadedBrandStocks.count
-                        ])
-                        restoreInMemorySnapshot(snapshot)
-                        finishInitialLoadFailure(
-                            userMessage: String(localized: "云端数据仍在同步中，请稍后重试。"),
-                            metadata: [
-                                "failure": "suspiciousDrop",
-                                "previousBrands": snapshot.brands.count,
-                                "loadedBrands": loadedBrands.count,
-                                "previousStocks": snapshot.brandStocks.count,
-                                "loadedStocks": loadedBrandStocks.count
-                            ]
-                        )
-                        return
-                    }
-                }
-
-                if allEmpty && hadDataBefore {
-                    print("[InventoryManager] ⚠️ 异常：数据库应有数据但加载全部为空，拒绝标记为加载成功以防覆盖")
-                    logWarning("load_data_rejected_all_empty_after_existing_data")
-                    // 不设置 isDataLoaded = true，saveData() 会被 guard 拦截
-                    if let snapshot = fallbackSnapshot {
-                        print("[InventoryManager] 已回滚到刷新前的内存数据，保持当前可用状态")
-                        restoreInMemorySnapshot(snapshot)
-                    }
-                    finishInitialLoadFailure(
-                        userMessage: String(localized: "暂时无法确认已有数据，请稍后重试。"),
-                        metadata: ["failure": "unexpectedAllEmpty"]
-                    )
-                    return
-                }
-
-                // 当前品牌不存在时回退到首个品牌，避免引用悬空
-                if let selectedBrandId = loadedCurrentBrandId,
-                   !loadedBrands.contains(where: { $0.id == selectedBrandId }) {
-                    loadedCurrentBrandId = loadedBrands.first?.id
-                }
-
-                // 用户主动选了 fallback 后又收到了一次成功的加载结果（例如 CloudKit
-                // 远程通知触发了 refreshFromPersistentStore）。用真实数据接管 UI 是
-                // 严格更优的状态，但用户并不知道——明确记一条日志，便于排查
-                // "fallback 期间的写入丢失" 类问题。
-                if isUsingLocalFallbackMode {
-                    logInfo("local_fallback_exited_on_successful_load")
-                    isUsingLocalFallbackMode = false
-                }
-
-                // 原子提交：避免中途状态导致 UI 看到“品牌突然消失”
-                brands = loadedBrands
-                brandStocks = loadedBrandStocks
-                projects = loadedProjects
-                customColors = loadedCustomColors
-                currentBrandId = loadedCurrentBrandId
-                purchaseRecords = loadedPurchaseRecords
-                beadColors = loadedBeadColors
-
-                isDataLoaded = true
-                finishInitialLoadSuccess()
-                hasCompletedInitialPersistentLoad = true
-                print("[InventoryManager] ✅ 数据加载完成")
-                logInfo("load_data_completed", metadata: [
-                    "brands": brands.count,
-                    "stocks": brandStocks.count,
-                    "projects": projects.count,
-                    "customColors": customColors.count
-                ])
-
-                // 标记用户已有数据（只要有任何一项非空就标记）
-                if !allEmpty {
-                    UserDefaults.standard.set(true, forKey: hasExistingDataKey)
-                }
-
-                // 刷新「持久层里有 finishedImage 的项目 ID 集合」—— CalendarView 类的
-                // 存在性过滤要靠它（projects 本身已经不带 finishedImage Data）。
-                refreshProjectBlobMetadata()
-
-                // 刷新保存基线：后续 saveData() 只写入本地真实改动
-                refreshBaselines()
-
-                // 修复数据一致性问题（仅基于 executedDate 判断）
-                fixProjectConsistency()
-            } else {
-                print("[InventoryManager] ❌ 部分数据加载失败，禁止后续保存操作以防数据丢失")
-                print("[InventoryManager]   - 品牌: \(brandsLoadedSuccessfully ? "✅" : "❌")")
-                print("[InventoryManager]   - 库存: \(stocksLoadedSuccessfully ? "✅" : "❌")")
-                print("[InventoryManager]   - 项目: \(projectsLoadedSuccessfully ? "✅" : "❌")")
-                print("[InventoryManager]   - 自定义色号: \(customColorsLoadedSuccessfully ? "✅" : "❌")")
-                logError("load_data_partial_failure", metadata: [
-                    "brandsLoaded": brandsLoadedSuccessfully,
-                    "stocksLoaded": stocksLoadedSuccessfully,
-                    "projectsLoaded": projectsLoadedSuccessfully,
-                    "customColorsLoaded": customColorsLoadedSuccessfully
-                ])
-                if let snapshot = fallbackSnapshot {
-                    print("[InventoryManager] 已回滚到刷新前的内存数据，避免进入不可保存状态")
-                    restoreInMemorySnapshot(snapshot)
-                } else {
-                    // 保持颜色数据可用（用于界面展示），其余实体维持原内存状态
-                    beadColors = loadedBeadColors
-                }
-                finishInitialLoadFailure(
-                    userMessage: String(localized: "部分数据加载失败，请点击重试。"),
-                    metadata: [
-                        "failure": "partialLoad",
-                        "brandsLoaded": brandsLoadedSuccessfully,
-                        "stocksLoaded": stocksLoadedSuccessfully,
-                        "projectsLoaded": projectsLoadedSuccessfully,
-                        "customColorsLoaded": customColorsLoadedSuccessfully
-                    ]
-                )
-            }
+    /// refresh 的超时看门狗：只回收状态旗子，不打扰用户（refresh 没有可见的加载 UI）。
+    /// 不回收的话，卡死的 refresh 会让后续所有 refresh 永远被 defer 吞掉 —— 数据从此不再刷新。
+    private func startRefreshTimeoutWatchdog(generation: UInt64) {
+        refreshTimeoutTask?.cancel()
+        let timeout = refreshTimeout
+        refreshTimeoutTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            guard generation == self.initialLoadGeneration else { return }
+            self.initialLoadGeneration &+= 1   // 让在途结果作废（它回来时会自行丢弃）
+            self.refreshTask = nil
+            self.refreshTimeoutTask = nil
+            self.isLoadingPersistentStore = false
+            self.logError("refresh_timed_out", metadata: [
+                "timeoutSeconds": timeout,
+                "generation": generation
+            ])
+            self.replayDeferredRefreshIfNeeded()
         }
     }
 
@@ -2577,6 +2467,9 @@ class InventoryManager: ObservableObject {
                 }
 
                 try context.save()
+                // 写入代次 +1：作废所有 fetch 早于本次落盘的在途后台 refresh 结果
+                //（它们读到的是保存前的旧数据，一应用会把刚保存的编辑从内存里抹掉）。
+                persistentWriteGeneration &+= 1
                 refreshBaselines()
                 saveCurrentBrandId()
                 savePurchaseRecords()
@@ -2611,56 +2504,10 @@ class InventoryManager: ObservableObject {
     }
 
     // MARK: - 从 UserDefaults 迁移
-
-    private func migrateFromUserDefaults() {
-        guard let context = modelContext else { return }
-        // 与其它持久化路径同样的 fallback 守卫：fallback 期间不写库，
-        // 等用户重启或 iCloud 恢复后再让迁移完成。
-        if isUsingLocalFallbackMode {
-            logWarning("migrate_from_user_defaults_skipped_local_fallback")
-            return
-        }
-
-        print("开始从 UserDefaults 迁移数据到 SwiftData...")
-
-        // 迁移品牌
-        if let data = UserDefaults.standard.data(forKey: brandsKey),
-           let decoded = try? JSONDecoder().decode([Brand].self, from: data) {
-            for brand in decoded {
-                let sdBrand = SDBrand(from: brand)
-                context.insert(sdBrand)
-            }
-            print("迁移了 \(decoded.count) 个品牌")
-        }
-
-        // 迁移品牌库存
-        if let data = UserDefaults.standard.data(forKey: brandStocksKey),
-           let decoded = try? JSONDecoder().decode([BrandStock].self, from: data) {
-            for stock in decoded {
-                let sdStock = SDBrandStock(from: stock)
-                context.insert(sdStock)
-            }
-            print("迁移了 \(decoded.count) 条库存记录")
-        }
-
-        // 迁移项目记录
-        if let data = UserDefaults.standard.data(forKey: projectsKey),
-           let decoded = try? JSONDecoder().decode([ProjectRecord].self, from: data) {
-            for project in decoded {
-                let sdProject = SDProjectRecord(from: project)
-                context.insert(sdProject)
-            }
-            print("迁移了 \(decoded.count) 个项目记录")
-        }
-
-        do {
-            try context.save()
-            UserDefaults.standard.set(true, forKey: migrationCompletedKey)
-            print("数据迁移完成！")
-        } catch {
-            print("数据迁移失败: \(error)")
-        }
-    }
+    //
+    // 同步版 migrateFromUserDefaults 已删除：refresh 路径全面异步化后它成了死代码。
+    // 现役实现是 nonisolated static migrateLegacyUserDefaults —— 在首次加载的后台
+    // ModelContext 上执行（见 fetchInitialPersistentData），每次启动最多尝试一次。
 
     // 从 UserDefaults 加载（用于 Preview 或无 ModelContext 时）
     // 注意：此模式不涉及 SwiftData，所以加载标志设为 true 是安全的

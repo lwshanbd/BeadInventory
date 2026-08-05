@@ -306,6 +306,94 @@ final class InventoryManagerInitialLoadTests: XCTestCase {
         )
     }
 
+    // MARK: - refresh 路径（2.4GB 种子库实测的白屏真凶）
+
+    /// 首次加载完成后的 refresh 同样不得堵主线程。
+    ///
+    /// 2026-08-05 用 2.4GB 拼图模式种子库在模拟器实测：CloudKit / 跨 context 保存触发的
+    /// 变更通知走旧的同步 refresh，每次堵主线程 2.0-2.7s、启动后 30s 内连发 4 次 ——
+    /// 此时 loading 遮罩早已消失，用户看到的是整个 App 冻住。这才是 #51/#52/#57 三轮
+    /// 修完仍在报的「白屏」真凶：前三轮全部只看了首次加载路径。
+    func test_refresh_after_initial_load_runs_off_main_and_picks_up_store_changes() async throws {
+        let container = try makeFileBackedContainer()
+        try seedLargeStore(
+            in: container,
+            brandCount: 10,
+            stocksPerBrand: 200,
+            projectCount: 200,
+            blob: makeNoisyPNG(width: 900, height: 520)
+        )
+        // 预热读路径，隔离 SwiftData 首读固有开销（理由见上一个用例的注释）
+        await Task.detached {
+            let bg = ModelContext(container)
+            _ = try? bg.fetch(FetchDescriptor<SDBrand>())
+            _ = try? bg.fetch(FetchDescriptor<SDBrandStock>())
+            _ = try? bg.fetch(FetchDescriptor<SDProjectRecord>())
+            _ = try? bg.fetch(FetchDescriptor<SDCustomColor>())
+        }.value
+
+        let m = InventoryManager(modelContext: ModelContext(container))
+        m.performInitialLoadIfNeeded(reason: "unitTest.refreshStall")
+        await m.initialLoadTask?.value
+        XCTAssertTrue(m.hasCompletedInitialLoad)
+        let before = m.projects.count
+
+        // 模拟远端 / 其它 context 写入（正是触发 refresh 的真实场景）
+        let bg = ModelContext(container)
+        bg.insert(SDProjectRecord(name: "RemoteAdded", totalBeads: 1, beadUsages: []))
+        try bg.save()
+
+        let ticker = MainThreadTicker()
+        async let tickerRun: Void = ticker.run(intervalNanos: 5_000_000)
+
+        m.refreshFromPersistentStore(reason: "unitTest.refresh")
+        // refresh 必须异步：同步实现下这里已经刷完了。
+        XCTAssertNotNil(m.refreshTask, "refresh 应该在后台执行——同步返回说明活儿又回到主线程了")
+        XCTAssertEqual(m.projects.count, before, "refresh 不得同步完成")
+
+        await m.refreshTask?.value
+        ticker.stop()
+        _ = await tickerRun
+
+        XCTAssertEqual(m.projects.count, before + 1, "refresh 应拉到其它 context 新写入的项目")
+        XCTAssertTrue(m.projects.contains { $0.name == "RemoteAdded" })
+
+        let maxGapMillis = Double(ticker.maxGapNanos) / 1_000_000
+        XCTAssertLessThan(
+            maxGapMillis, 150,
+            "refresh 把主线程堵了 \(maxGapMillis)ms —— 这正是 2.4GB 库上实测 2-2.7s 冻屏的机制"
+        )
+    }
+
+    /// 内存里有未保存编辑时，后台 refresh 的结果必须被丢弃，不得整份盖掉用户改动。
+    ///
+    /// 旧同步实现靠「主线程被占住、用户根本没机会编辑」来保证这一点；异步化之后
+    /// fetch 在途窗口有几百 ms 到数秒，这个闸门（基线脏检查）是替代保障。
+    func test_refresh_discards_result_when_local_unsaved_edits_exist() async throws {
+        let container = try makeFileBackedContainer()
+        try seedLargeStore(
+            in: container,
+            brandCount: 3,
+            stocksPerBrand: 50,
+            projectCount: 10,
+            blob: makeNoisyPNG(width: 600, height: 360)
+        )
+        let m = InventoryManager(modelContext: ModelContext(container))
+        m.performInitialLoadIfNeeded(reason: "unitTest.dirtyGuard")
+        await m.initialLoadTask?.value
+        XCTAssertTrue(m.hasCompletedInitialLoad)
+
+        // 未保存的本地编辑：基线（refreshBaselines 已在加载时建立）与内存出现差异
+        let edited = m.brands + [Brand(name: "本地未保存新品牌")]
+        m.brands = edited
+
+        m.refreshFromPersistentStore(reason: "unitTest.dirtyRefresh")
+        XCTAssertNotNil(m.refreshTask)
+        await m.refreshTask?.value
+
+        XCTAssertEqual(m.brands, edited, "refresh 结果应被丢弃——应用它会把未保存的本地编辑整份盖掉")
+    }
+
     // MARK: - 异步化之后新增的竞态闸门
 
     /// 用户在读取在途时点「以本地模式继续」，随后的后台结果不得覆盖内存。
