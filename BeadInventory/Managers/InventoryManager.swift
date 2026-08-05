@@ -138,7 +138,15 @@ class InventoryManager: ObservableObject {
     // SwiftData ModelContext
     // internal (而非 private)：ThumbnailMigrationCoordinator 需要经 `modelContext?.container`
     // 拿 ModelContainer 派生后台 context 跑迁移（迁移的 SwiftData I/O 全部离主线程）
-    var modelContext: ModelContext?
+    var modelContext: ModelContext? {
+        didSet { imageLoader = modelContext.map { ProjectImageLoader(container: $0.container) } }
+    }
+
+    /// 视图取图的**后台**入口。视图层（列表 / 日历 / 详情）一律走它，不要再调
+    /// 本类的 `fetchProject*Data` —— 那些是 `@MainActor` 同步 fetch，正是用户
+    /// `.ips` 里主线程栈 `sqlite3_step → _platform_memmove` 的来源。
+    /// 详见 `ProjectImageLoader` 头注释。
+    private(set) var imageLoader: ProjectImageLoader?
 
     // 数据加载完成标志，防止在数据未加载时意外保存空数据
     private var isDataLoaded = false
@@ -296,6 +304,9 @@ class InventoryManager: ObservableObject {
     // 带 ModelContext 的初始化器
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
+        // `didSet` 在 init 里的赋值上**不会**触发，必须手动建一次，
+        // 否则视图层拿到的 imageLoader 恒为 nil，取图全部静默返回空。
+        self.imageLoader = ProjectImageLoader(container: modelContext.container)
         logInfo("init_with_model_context")
         initializeDefaultColors()
         logInfo("default_colors_loaded", metadata: ["count": beadColors.count])  // 启动耗时探针：色卡 JSON 解析完成

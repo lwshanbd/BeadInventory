@@ -162,8 +162,9 @@ struct PatternHighlightView: View {
             }
             .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
                 let id = project.id
-                let thumbData = inventoryManager.fetchProjectThumbnailData(for: id)
-                let grid = inventoryManager.fetchProjectPatternGrid(for: id)
+                let loader = inventoryManager.imageLoader
+                let thumbData = await loader?.thumbnail(for: id)
+                let grid = await loader?.patternGrid(for: id)
                 guard !Task.isCancelled, id == project.id else { return }
                 self.loadedImage = thumbData.flatMap { UIImage(data: $0) }
                 self.loadedGrid = grid

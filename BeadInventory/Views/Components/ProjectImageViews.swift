@@ -82,10 +82,14 @@ struct ProjectThumbnailImage<Placeholder: View, Content: View>: View {
             self.loadedKey = nil
         }
 
-        // **关键 jetsam 修复**：列表 row 优先读 displayThumbnail（小图），没有就 ImageDownsampler 现场降级。
-        // 永远不直接 UIImage(data: raw_thumbnail) —— raw 是 5-10 MB PNG，解码后 30+ MB × 10 row = jetsam。
-        let displayData = inventoryManager.fetchProjectDisplayThumbnail(for: key.projectId)
-        if let displayData {
+        // **取图一律走 ProjectImageLoader（后台 actor）**，不再调 InventoryManager 的
+        // `fetchProject*Data` —— 那些是 @MainActor 同步 SwiftData fetch，首屏 10 个 row
+        // 就是 10 次主线程读库，正是用户 `.ips` 里那条
+        // `CA::Transaction::commit → … → sqlite3_step → _platform_memmove` 主线程栈。
+        guard let loader = inventoryManager.imageLoader else { return }
+
+        // 优先读 displayThumbnail（512px JPEG，~50-100 KB）
+        if let displayData = await loader.displayThumbnail(for: key.projectId) {
             let decoded = await decode(displayData: displayData)
             guard !Task.isCancelled, currentKey == key else { return }
             self.image = decoded
@@ -93,11 +97,13 @@ struct ProjectThumbnailImage<Placeholder: View, Content: View>: View {
             return
         }
 
-        // 没有 displayThumbnail（老数据，迁移协调器还没跑到 / 跑失败）→ 现场降级原图。
-        // ImageDownsampler.downsampleToUIImage 用 CGImageSourceCreateThumbnailAtIndex 在 source 层
-        // 就限制尺寸，内存峰值 KB 级 —— 比 UIImage(data: raw_thumbnail) 安全得多。
-        let thumbData = inventoryManager.fetchProjectThumbnailData(for: key.projectId)
-        let decoded = await downsampleOnTheFly(rawData: thumbData)
+        // 没有 displayThumbnail（老数据，瘦身 pass 还没跑到）→ 现场降级原图。
+        // 读原图 + 降级都在 loader 这个 actor 内部完成：
+        //   - 不在主线程（不会再挡首帧提交）
+        //   - actor 隔离天然串行，同一时刻只有一份原图在内存里
+        //     （否则 10 个 row 并发各读一份 13 MB 就是 130 MB 瞬时峰值 = jetsam 老路）
+        //   - 走 ImageDownsampler 而不是 UIImage(data: raw)，峰值 KB 级
+        let decoded = await loader.downsampledRawThumbnail(for: key.projectId)
         guard !Task.isCancelled, currentKey == key else { return }
         self.image = decoded
         self.loadedKey = key
@@ -106,11 +112,6 @@ struct ProjectThumbnailImage<Placeholder: View, Content: View>: View {
     private nonisolated func decode(displayData: Data) async -> UIImage? {
         // 50-100 KB 的 JPEG，UIImage(data:) 解码安全
         return UIImage(data: displayData)
-    }
-
-    private nonisolated func downsampleOnTheFly(rawData: Data?) async -> UIImage? {
-        guard let rawData else { return nil }
-        return ImageDownsampler.downsampleToUIImage(rawData)
     }
 
     @State private var loadedKey: TaskKey?
@@ -158,7 +159,9 @@ struct ProjectFinishedImage<Placeholder: View, Content: View>: View {
             self.image = nil
             self.loadedKey = nil
         }
-        let data = inventoryManager.fetchProjectFinishedImageData(for: key.projectId)
+        // 同 ProjectThumbnailImage：走后台 actor，不在主线程读库。
+        guard let loader = inventoryManager.imageLoader else { return }
+        let data = await loader.finishedImage(for: key.projectId)
         let decoded = await decode(data: data)
         guard !Task.isCancelled, currentKey == key else { return }
         self.image = decoded
@@ -253,20 +256,26 @@ struct ProjectFinishedThumbnail<Placeholder: View, Content: View>: View {
             self.loadedKey = nil
         }
 
+        guard let loader = inventoryManager.imageLoader else { return }
+
         // 取图 + 降级在配额闸门内进行：withGatePermit 保证无论正常返回还是取消早退都归还配额。
+        // 取图本身走后台 actor（不在主线程读库），闸门仍然保留 —— 它管的是「翻月时一次别
+        // 排太多任务」，跟 actor 的串行化是两件事。
         let decoded = await withGatePermit {
             // 等待配额期间被取消（如翻月）就别再取图，提前退出（配额由 withGatePermit 归还）。
             if Task.isCancelled { return nil }
-            let data = inventoryManager.fetchProjectFinishedImageData(for: key.projectId)
-            if data == nil {
-                // 日历只为 projectIDsWithFinishedImage 里的项目渲染图片分支，这里 nil = set/DB 漂移
+            let result = await loader.downsampledFinishedImage(
+                for: key.projectId, maxPixelSize: maxPixelSize
+            )
+            if !result.bytesFound {
+                // 日历只为 projectIDsWithFinishedImage 里的项目渲染图片分支，这里没字节 = set/DB 漂移
                 // （删除/合并/恢复竞态留下的陈旧成员）。别静默成空格子，留一条日志好排查
                 // —— 对齐 InventoryManager 里 snapshot_capture_gap 的可观测约定。
                 AppLogger.shared.error("ProjectFinishedThumbnail", "finished_image_expected_but_nil", metadata: [
                     "projectId": key.projectId.uuidString
                 ])
             }
-            return await downsample(data: data, maxPixelSize: max(1, maxPixelSize))
+            return result.image
         }
 
         guard !Task.isCancelled, currentKey == key else { return }

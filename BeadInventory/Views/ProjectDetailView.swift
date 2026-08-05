@@ -421,7 +421,8 @@ struct ProjectInfoCardEnhanced: View {
             }
             .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
                 let id = project.id
-                let data = inventoryManager.fetchProjectThumbnailData(for: id)
+                // 走后台 actor —— 主线程同步 fetch 是用户 .ips 里那条崩溃栈的来源
+                let data = await inventoryManager.imageLoader?.thumbnail(for: id)
                 guard !Task.isCancelled, id == project.id else { return }
                 self.loadedThumbnail = data.flatMap { UIImage(data: $0) }
             }
@@ -685,7 +686,7 @@ struct FinishedImageSection: View {
         .padding(.horizontal)
         .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
             let id = project.id
-            let data = inventoryManager.fetchProjectFinishedImageData(for: id)
+            let data = await inventoryManager.imageLoader?.finishedImage(for: id)
             guard !Task.isCancelled, id == project.id else { return }
             self.loadedFinishedImage = data.flatMap { UIImage(data: $0) }
         }

@@ -1715,7 +1715,7 @@ struct PlannedProjectInfoCard: View {
             }
             .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
                 let id = project.id
-                let data = inventoryManager.fetchProjectThumbnailData(for: id)
+                let data = await inventoryManager.imageLoader?.thumbnail(for: id)
                 guard !Task.isCancelled, id == project.id else { return }
                 self.loadedThumbnail = data.flatMap { UIImage(data: $0) }
             }

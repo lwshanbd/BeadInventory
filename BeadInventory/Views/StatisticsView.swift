@@ -1679,8 +1679,15 @@ struct ProjectRowWithHierarchy: View {
         .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
             // 优先用成品图，没成品图回落到缩略图。
             let id = project.id
-            let finished = inventoryManager.fetchProjectFinishedImageData(for: id)
-            let data = finished ?? inventoryManager.fetchProjectThumbnailData(for: id)
+            let loader = inventoryManager.imageLoader
+            // `??` 的右侧是 autoclosure，不能放 await —— 拆成显式分支
+            let finished = await loader?.finishedImage(for: id)
+            let data: Data?
+            if let finished {
+                data = finished
+            } else {
+                data = await loader?.thumbnail(for: id)
+            }
             guard !Task.isCancelled, id == project.id else { return }
             self.loadedImage = data.flatMap { UIImage(data: $0) }
         }

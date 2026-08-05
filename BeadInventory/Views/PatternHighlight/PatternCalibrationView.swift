@@ -102,8 +102,9 @@ struct PatternCalibrationView: View {
             .task {
                 // 先把 thumbnail 和 patternGrid 从 SwiftData 取出来
                 let id = project.id
-                let thumbData = inventoryManager.fetchProjectThumbnailData(for: id)
-                let existing = inventoryManager.fetchProjectPatternGrid(for: id)
+                let loader = inventoryManager.imageLoader
+                let thumbData = await loader?.thumbnail(for: id)
+                let existing = await loader?.patternGrid(for: id)
                 guard !Task.isCancelled else { return }
                 self.image = thumbData.flatMap { UIImage(data: $0) }
                 if let existing = existing {
