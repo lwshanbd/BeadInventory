@@ -129,7 +129,7 @@ final class InitialLoadMemoryDiagnosticTests: XCTestCase {
         }
 
         // ==== 修复后的主路径：raw SQLite 头部扫描 ====
-        var scanned: ProjectBlobExistence?
+        var scanned: Result<ProjectBlobExistence, StoreScanFailure>?
         let scanBefore = Self.footprintMB()
         stage_scan: do {
             scanned = ProjectBlobExistenceScanner.scan(storeURL: url)
@@ -137,7 +137,9 @@ final class InitialLoadMemoryDiagnosticTests: XCTestCase {
         let scanDelta = Self.footprintMB() - scanBefore
         print("MEMDIAG stage=scanner_raw_sqlite delta=\(Int(scanDelta))MB")
 
-        let existence = try XCTUnwrap(scanned, "文件库上扫描器不应回退")
+        guard case .success(let existence) = try XCTUnwrap(scanned) else {
+            return XCTFail("文件库上扫描器不应失败，实际 \(String(describing: scanned))")
+        }
         // 正确性：与 SwiftData 查询逐集合一致
         XCTAssertEqual(existence.finishedImage, legacyFinished)
         XCTAssertEqual(existence.thumbnail, legacyThumb)

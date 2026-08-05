@@ -32,6 +32,19 @@
 import Foundation
 import SQLite3
 
+/// raw SQLite 扫描的失败原因 —— 调用方**必须**区分这两种。
+///
+/// 两个扫描器（存在性 / 瘦身候选）共用。分开的理由是回退策略完全相反：
+///   - `.unsupportedStore` 是永久状态（in-memory 测试库、未来 schema 变更），
+///     回退到 SwiftData 查询是对的。
+///   - `.transient` 是 SQLITE_BUSY / I/O 错误，**不能**回退 —— SwiftData 的 BLOB 谓词
+///     实测 +1.26GB，而扫描忙的时候恰恰是最不该吃内存的时候（迁移期间尤其）。
+///     正确做法是保留上一次的结果、等下次刷新。
+enum StoreScanFailure: Error, Equatable {
+    case unsupportedStore
+    case transient
+}
+
 enum ProjectImageCompactionScanner {
     private static let table = "ZSDPROJECTRECORD"
     private static let idColumn = "ZID"
@@ -39,13 +52,7 @@ enum ProjectImageCompactionScanner {
     private static let finishedImageColumn = "ZFINISHEDIMAGE"
     private static let displayThumbnailColumn = "ZDISPLAYTHUMBNAIL"
 
-    /// 扫描失败的原因 —— 调用方必须区分「schema 不支持」和「瞬时忙」。
-    /// 前者是永久状态（回退别的做法），后者只该重试（回退到 SwiftData BLOB 谓词
-    /// 恰恰是在最不该吃内存的时候吃 1.26 GB）。
-    enum ScanFailure: Error, Equatable {
-        case unsupportedStore     // 文件不存在 / schema 对不上 / in-memory 测试库
-        case transient            // SQLITE_BUSY、I/O 错误等，稍后重试
-    }
+    typealias ScanFailure = StoreScanFailure
 
     /// 找出需要瘦身的项目 ID。
     ///
