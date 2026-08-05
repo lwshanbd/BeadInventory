@@ -848,10 +848,17 @@ struct ScanView: View {
         clearState()
     }
 
-    /// 生成原分辨率缩略图数据（PNG 无损）。
-    /// 拼图模式依赖原图做网格识别，所以这里不再压缩。
+    /// 生成落盘用的图纸数据。
+    ///
+    /// **分辨率原样保留**（拼图模式依赖它做网格识别），只把编码从无损 PNG 换成高质量 JPEG。
+    /// 同一张 2400px 图：PNG ≈ 13 MB → JPEG 0.92 ≈ 0.8 MB。
+    /// 这两者都是 inline BLOB，SQLite 改行内任何一列都要重写整条记录（含 overflow page），
+    /// 13 MB 的行会让 `displayThumbnail` 回填、CloudKit 同步、vacuum 全部按 13 MB 计价 ——
+    /// 这就是用户 IPS 里 68.72 GB dirty writes 和 scene-create 看门狗的来源。
+    /// 细节见 `ProjectImageEncoder` 头注释。
     func generateThumbnailData() -> Data? {
-        return thumbnailImage?.pngData()
+        guard let thumbnailImage else { return nil }
+        return ProjectImageEncoder.encode(thumbnailImage)
     }
 
     /// 清除所有状态

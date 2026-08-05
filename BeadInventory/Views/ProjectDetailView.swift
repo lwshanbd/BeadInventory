@@ -985,12 +985,13 @@ struct ProjectImageEditorSheet: View {
         .presentationDetents([.medium, .large])
     }
 
-    /// 生成图片数据
-    /// 拼图模式需要原分辨率的图纸做网格识别，所以这里保留原图大小并用 PNG 无损存储。
-    /// maxImageSize 参数保留用于向后兼容，但已不再缩放（除非传入 < 1024 的明确小尺寸时降级，用于
-    /// 防御性兜底）。
+    /// 生成落盘用的图片数据。
+    ///
+    /// **分辨率原样保留**（拼图模式需要它做网格识别），只把编码从无损 PNG 换成高质量 JPEG。
+    /// 理由同 `ScanView.generateThumbnailData` —— 无损 PNG 是把 SQLite 库撑到 GB 级、
+    /// 进而触发 scene-create 看门狗的根因。细节见 `ProjectImageEncoder` 头注释。
     func generateImageData(from image: UIImage) -> Data? {
-        return image.pngData()
+        return ProjectImageEncoder.encode(image)
     }
 }
 
