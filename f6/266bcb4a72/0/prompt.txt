@@ -1,0 +1,152 @@
+@"/Users/baodi/Downloads/BeadInventory.diskwrites_resource-2026-08-04-210001.ips" @"/Users/baodi/Downloads/BeadInventory-2026-08-05-085339.ips"
+现在这个app有一个很严重的问题。用户反馈打开app以后，先转圈，然后闪退。我给你贴的是用户发给我的ips文件。虽然两个ips来自新旧两个版本，但都会闪退。我个人建议你可以先去读一下 PR59。
+
+PR59 是我刚刚让 Claude Code 做的一个尝试性修复，但很遗憾，这个尝试性的修复失败了。换句话说，它没有从根本上找到这个问题的原因。我建议你先读一下 PR59 究竟做了些什么工作，看看问题究竟出在什么地方。
+
+对于这个问题，我个人的直觉反馈是：
+之前有一个版本我们引入了“拼图模式”功能。最初我们所谓的“缩略图”是把整个图片压缩得很小，然后在一个框里展示。但拼图模式的引入，导致我们会存一些原图。你可以想象，如果用户存了很多原图，那么数据库无论是读还是写（我不知道具体的线程是怎么操作的，是主线程还是后台线程，anyway），因为有原图的存在、需要读取原图，很容易导致整个数据库读写爆炸。
+
+这是我的直观理解，但我没有查过代码。我想请你结合这次的 IPS 文件，看看是不是这个原因，并修复一下这个闪退的情况。
+
+针对修复方案，我个人有以下建议：
+
+1. 在用户点开“拼图模式”按钮之前，不应该在任何地方对原图进行操作。
+2. 用户的手机里现在有可能把“缩略图”存成了原图。我建议你在用户启动的时候，先给它压缩成缩略图，然后再把原图存在另一个地方。
+
+我不清楚这样做会不会又导致闪退或者内存读写过多。请你读一下代码并分析一下原因，看看究竟怎么把这个问题彻底修了。我个人认为，问题应该就出在这些图片上。当然了，虽然说是所谓的“数据持久化”（SwiftData），本身它可能涉及到一些 SwiftData 还有数据库之类乱七八糟的问题，我建议你综合来考虑处理一下
+
+---
+
+你先等等，我给你贴一下codex给的方案，你结合他的方案，再来跟我对齐一下。## 结论
+
+你的判断基本正确。根因不是单纯“图片太大”，而是：
+
+> 拼图模式把全分辨率 PNG 作为 `Data` 内联存进了 SwiftData 主记录；启动、列表缩略图补齐、CloudKit 同步和普通字段保存都会碰到这些“胖记录”，形成巨量读写、WAL checkpoint 与数据库争用，最终导致首屏 watchdog 闪退。
+
+根因置信度很高。由于本地没有这两个构建对应的 dSYM，无法把 IPS 中的应用帧精确还原到具体函数，但系统栈、版本历史和当前代码能完整对应上。
+
+## 两份 IPS 分别说明了什么
+
+| 文件 | 结论 |
+|---|---|
+| [1.8.0 build 157 崩溃 IPS](/Users/baodi/Downloads/BeadInventory-2026-08-05-085339.ips:46) | 真正的闪退。`SIGKILL / 0x8BADF00D / scene-create watchdog`，启动约 21 秒仍未完成。启动调用链正在 SwiftData/Core Data fetch → SQLite `sqlite3_step`，同时另一个数据库队列在做 WAL checkpoint 和 CloudKit 元数据迁移。设备热状态为 serious。不是典型 OOM。 |
+| [2.0.0 build 183 磁盘报告](/Users/baodi/Downloads/BeadInventory.diskwrites_resource-2026-08-04-210001.ips:27) | 它本身不是闪退报告，明确写着 `Action taken: none`。但应用在约 63 分钟内产生了 **68.72 GB dirty writes，约 18.08 MB/s**；重栈集中于 SwiftData save、SQLite 与 WAL checkpoint。这证明新版本仍有灾难性写放大。 |
+
+第二份报告中的内存大约从 492 MB 降到 294 MB，因此现有证据更符合“数据库 I/O、checkpoint、锁竞争和发热导致不可响应”，而不是直接被 jetsam 杀掉。
+
+## 根因链条
+
+拼图模式引入前，扫描图片会被压成最大 200×200 的 JPEG。拼图模式提交 `730cd29` 把它改成了全分辨率 PNG；当前代码仍然如此：
+
+- [ScanView.swift](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Views/ScanView.swift:851)
+- [SwiftDataModels.swift](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Models/SwiftDataModels.swift:85)
+
+现在一个项目记录里可能同时内联保存：
+
+- 全分辨率 `thumbnail`
+- `finishedImage`
+- 小图 `displayThumbnail`
+- `patternGridData`
+
+1.8.0 启动时又会同步 fetch 整张项目表并转换成业务对象，因此所有图片数据都可能在首帧前被物化。它和第一份 IPS 中“SwiftUI 首次提交期间卡在 SwiftData/SQLite fetch”高度吻合。
+
+当前版本虽然把初始加载移到了后台，但又增加了自动缩略图迁移：
+
+- App 激活后自动启动：[BeadInventoryApp.swift](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/BeadInventoryApp.swift:341)
+- 5 秒后、每批 10 条开始迁移：[ThumbnailMigrationCoordinator.swift](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/ThumbnailMigrationCoordinator.swift:53)
+- 每个项目读取原图、生成缩略图，然后单独 `save()`：[ThumbnailMigrationCoordinator.swift](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/ThumbnailMigrationCoordinator.swift:245)
+
+这很可能就是 build 183 巨量写入的主要来源：每次只是新增缩略图，但被保存的 SwiftData/Core Data 记录仍包含巨型 BLOB，并触发 WAL、checkpoint 和 CloudKit 后处理。
+
+此外，普通列表目前也不符合“点击拼图模式前不读取原图”的要求：如果缺少 `displayThumbnail`，列表会读取完整 `thumbnail` 并现场降采样：
+
+- [ProjectImageViews.swift](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Views/Components/ProjectImageViews.swift:85)
+
+所以现在不仅迁移器会提前读取原图，普通列表也会。
+
+## PR #59 为什么没能解决
+
+[PR #59](https://github.com/lwshanbd/BeadInventory/pull/59) 做了两件有价值的缓解：
+
+- 把 refresh/初始 fetch 移出主线程。
+- 用原始 SQLite header 扫描判断 BLOB 是否存在，避免 `#Predicate(blob != nil)` 意外物化图片。
+
+但它没有改变最关键的数据模型：
+
+- 原图仍在 SwiftData 主记录中。
+- 自动缩略图迁移仍会反复读取并保存胖记录。
+- 后台线程和主线程最终仍共享同一个 SQLite/WAL/CloudKit 持久层。
+- “移出主线程”可以降低直接卡 UI 的概率，但不能减少磁盘写入、checkpoint 或数据库争用。
+- SQLite 扫描失败时，当前还有回退到 SwiftData 存在性查询的路径，风险重新出现：[InventoryManager.swift](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/InventoryManager.swift:1697)
+
+PR 归档的 image-store 方案也不应直接恢复。它存在文件写失败后清空数据库、数据库提交前删除文件、迁移失败仍标记完成、用户替换图片时发生覆盖竞争、删除路径泄漏孤儿文件等数据安全问题。
+
+## 建议的彻底修复方案
+
+### 第一阶段：紧急止血
+
+下一版首先应该保证“启动阶段零原图访问”：
+
+- 关闭自动 `ThumbnailMigrationCoordinator`。
+- 启动、列表、日历和普通详情页只允许读取小缩略图及元数据。
+- 缺少小图的旧项目显示占位图，不能回退读取全分辨率 BLOB。
+- SQLite header 扫描遇到 BUSY/错误时记录为 unknown 并稍后重试，不能回退到 SwiftData BLOB 查询。
+- 新建项目时直接生成小图；原图不再写进项目 SwiftData 记录。
+- 只有用户明确进入拼图模式、全分辨率编辑或导出时，才允许请求原图。
+
+这一阶段即使还没迁完历史数据，也能优先阻断启动闪退。
+
+### 第二阶段：重新划分存储边界
+
+建议建立统一的 `ProjectImageRepository` actor：
+
+- SwiftData/CloudKit：只保存小尺寸 JPEG/HEIF 预览、图片版本号、hash 和迁移状态。
+- Application Support：保存拼图原图和成品原图。
+- `patternGridData` 较小，可以继续留在 SwiftData。
+- 数据库中不要保存绝对路径，保存稳定的 asset ID、版本号或内容 hash。
+- UI 不能直接访问 SwiftData 图片 `Data`，只能调用明确区分用途的接口，例如 `previewImage` 和 `originalForPatternMode`。
+
+Apple 支持通过 SwiftData `externalStorage` 把二进制放在模型存储旁边；CloudKit 也可以把大型二进制映射为 CKAsset：[SwiftData attribute options](https://developer.apple.com/documentation/swiftdata/schema/attribute/option)、[Core Data 与 CloudKit 二进制数据](https://developer.apple.com/documentation/CoreData/reading-cloudkit-records-for-core-data)。但已有内联字段直接改成 `externalStorage` 的迁移风险较高。更稳妥的是新增独立资产实体，或者在确认原图不需要跨设备同步后使用本地文件。
+
+图片历史记录也必须一起改。目前 undo/history snapshot 可能再次把完整图片编码进 BLOB；否则即使项目表瘦身，历史表仍会重新制造同样的问题。
+
+### 第三阶段：安全迁移旧用户数据
+
+我不建议按字面在启动时“把所有原图压一遍”。这正是最容易再次触发 watchdog 和 68 GB 写入的地方。
+
+迁移应该在首屏完全出现后执行，或者严格遵循你的要求，改为用户第一次进入拼图模式时按项目懒迁移。每次只处理一个项目：
+
+1. 只扫描记录 ID，不加载图片。
+2. 后台读取一个旧原图，并记录内容 hash/版本。
+3. 生成小预览。
+4. 原图先写临时文件，完成 flush、尺寸和 hash 校验。
+5. 原子发布为不可变版本文件。
+6. 提交前再次确认用户没有替换该图片。
+7. 一次 SwiftData transaction 写入小预览和资产引用，并清除旧 BLOB。
+8. 数据库提交成功后才标记迁移完成并清理旧文件。
+
+任何一步被杀死、磁盘满或保存失败，都必须至少保留数据库旧 BLOB或已验证文件中的一个，绝不能出现两边都没有。
+
+当前“10 条一批、每秒继续”的节奏过于激进。迁移还应在以下情况暂停：
+
+- thermal state 为 serious/critical
+- Low Power Mode
+- 进入后台
+- 磁盘空间不足
+- CloudKit/SQLite 正在繁忙
+- 单次实际写入超过预算
+
+### 第四阶段：验证与灰度
+
+必须用包含数百项目、每张约 10–13 MB 的真实设备库测试，并验证：
+
+- 首屏之前原图读取次数为 0。
+- 未进入拼图模式前原图读取次数为 0。
+- 统计系统实际 dirty writes，而不仅是数据库文件尺寸。
+- 模拟磁盘满、应用被杀、数据库回滚、用户同时换图、CloudKit 远端更新。
+- 验证删除、撤销、备份和恢复不会丢图或泄漏文件。
+- TestFlight 分阶段开启迁移，并保留远程 kill switch。
+
+模拟器仍按仓库要求使用 iPhone 17 Pro Max，但 watchdog、发热和磁盘 dirty-write 问题必须在真机验证。
+
+本轮只完成了分析和方案制定，没有修改任何代码。
