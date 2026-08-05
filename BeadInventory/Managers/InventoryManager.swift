@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 import SwiftData
 import CryptoKit
+import SQLite3
 
 @MainActor
 class InventoryManager: ObservableObject {
@@ -1693,46 +1694,43 @@ class InventoryManager: ObservableObject {
                 ])
             }
 
-            // 四个存在性查询也必须留在后台。它们虽然只投影 id，不会物化 blob，
-            // 但在大库上仍会扫描表，放回 MainActor 会把 loading overlay 冻住。
+            // 四个 blob 存在性集合优先走 raw SQLite 头部扫描。
+            //
+            // 不能用 SwiftData 的 `#Predicate { $0.blob != nil }`：哪怕 propertiesToFetch
+            // 只投影 id，SwiftData 也会把命中行的 blob 内容 SELECT 进内存（实测 120 条
+            // × 10.5MB → +1.26GB，见 InitialLoadMemoryDiagnosticTests）。四个查询跑在每次
+            // 加载/refresh 里，真实体量库上进程峰值实测 5.7GB —— 真机被 jetsam 杀死，
+            // 就是用户报的「转圈转着转着闪退」。SQLite 判 IS NOT NULL 只读记录头，零物化。
+            //
+            // 扫描器返回 nil（in-memory 测试库、未来 schema 变更）时回退旧 SwiftData 查询：
+            // 行为与旧版一致（小库无害，大库退回高内存 —— 记 error 让监控看得见）。
             if result.brands != nil, result.brandStocks != nil, result.projects != nil {
-                do {
-                    var finished = FetchDescriptor<SDProjectRecord>(
-                        predicate: #Predicate { $0.finishedImage != nil }
-                    )
-                    finished.propertiesToFetch = [\.id]
-                    var thumbnail = FetchDescriptor<SDProjectRecord>(
-                        predicate: #Predicate { $0.thumbnail != nil }
-                    )
-                    thumbnail.propertiesToFetch = [\.id]
-                    var patternGrid = FetchDescriptor<SDProjectRecord>(
-                        predicate: #Predicate { $0.patternGridData != nil }
-                    )
-                    patternGrid.propertiesToFetch = [\.id]
-                    var displayThumbnail = FetchDescriptor<SDProjectRecord>(
-                        predicate: #Predicate { $0.displayThumbnail != nil }
-                    )
-                    displayThumbnail.propertiesToFetch = [\.id]
-
-                    result.projectIDsWithFinishedImage = Set(
-                        try context.fetch(finished).map { $0.id }
-                    )
-                    result.projectIDsWithThumbnail = Set(
-                        try context.fetch(thumbnail).map { $0.id }
-                    )
-                    result.projectIDsWithPatternGrid = Set(
-                        try context.fetch(patternGrid).map { $0.id }
-                    )
-                    result.projectIDsWithDisplayThumbnail = Set(
-                        try context.fetch(displayThumbnail).map { $0.id }
-                    )
-                } catch {
-                    result.errors["projectBlobMetadata"] = "\(error)"
+                if let storeURL = container.configurations.first?.url,
+                   let existence = ProjectBlobExistenceScanner.scan(storeURL: storeURL) {
+                    result.projectIDsWithFinishedImage = existence.finishedImage
+                    result.projectIDsWithThumbnail = existence.thumbnail
+                    result.projectIDsWithPatternGrid = existence.patternGrid
+                    result.projectIDsWithDisplayThumbnail = existence.displayThumbnail
+                } else {
                     AppLogger.shared.error(
                         "InventoryManager",
-                        "project_blob_meta_refresh_failed",
-                        metadata: ["error": "\(error)", "execution": "background"]
+                        "blob_existence_scan_fallback_swiftdata",
+                        metadata: ["execution": "background"]
                     )
+                    do {
+                        let existence = try Self.legacyBlobExistenceFetch(context: context)
+                        result.projectIDsWithFinishedImage = existence.finishedImage
+                        result.projectIDsWithThumbnail = existence.thumbnail
+                        result.projectIDsWithPatternGrid = existence.patternGrid
+                        result.projectIDsWithDisplayThumbnail = existence.displayThumbnail
+                    } catch {
+                        result.errors["projectBlobMetadata"] = "\(error)"
+                        AppLogger.shared.error(
+                            "InventoryManager",
+                            "project_blob_meta_refresh_failed",
+                            metadata: ["error": "\(error)", "execution": "background"]
+                        )
+                    }
                 }
             }
 
@@ -1743,6 +1741,37 @@ class InventoryManager: ObservableObject {
             ])
             return result
         }.value
+    }
+
+    /// 旧版 SwiftData 存在性查询 —— 仅作 ProjectBlobExistenceScanner 的回退
+    ///（in-memory 测试库没有 SQLite 文件、未来 schema 变更时）。
+    /// ⚠️ 大库上会把命中行的 blob 物化进内存（见调用方注释），不要变回主路径。
+    nonisolated private static func legacyBlobExistenceFetch(
+        context: ModelContext
+    ) throws -> ProjectBlobExistence {
+        var finished = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.finishedImage != nil }
+        )
+        finished.propertiesToFetch = [\.id]
+        var thumbnail = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.thumbnail != nil }
+        )
+        thumbnail.propertiesToFetch = [\.id]
+        var patternGrid = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.patternGridData != nil }
+        )
+        patternGrid.propertiesToFetch = [\.id]
+        var displayThumbnail = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.displayThumbnail != nil }
+        )
+        displayThumbnail.propertiesToFetch = [\.id]
+
+        var existence = ProjectBlobExistence()
+        existence.finishedImage = Set(try context.fetch(finished).map { $0.id })
+        existence.thumbnail = Set(try context.fetch(thumbnail).map { $0.id })
+        existence.patternGrid = Set(try context.fetch(patternGrid).map { $0.id })
+        existence.displayThumbnail = Set(try context.fetch(displayThumbnail).map { $0.id })
+        return existence
     }
 
     nonisolated private static func migrateLegacyUserDefaults(
@@ -4092,32 +4121,41 @@ class InventoryManager: ObservableObject {
             projectBlobsRevision &+= 1
             return
         }
-        do {
-            // **round-11 review C1 修复**：4 个 fetch 都加 `propertiesToFetch = [\.id]`
-            // 单列投影。之前 4 个 fetch 都返回完整 SDProjectRecord 数组，每条带 inline
-            // raw thumbnail / finishedImage / patternGridData / displayThumbnail Data ——
-            // 458 项目 × 5-10 MB raw thumbnail = 2-5 GB 瞬时内存峰值。这函数在
-            // loadData 完成 / 远程合并完成 / backup restore 完成都调用，跟 R10 修的
-            // 迁移协调器 fetch 是**同型 bug**：fetch 谓词只是过滤，**不**避免物化整行。
-            var finishedDesc = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.finishedImage != nil })
-            finishedDesc.propertiesToFetch = [\.id]
-            var thumbDesc = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.thumbnail != nil })
-            thumbDesc.propertiesToFetch = [\.id]
-            var gridDesc = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.patternGridData != nil })
-            gridDesc.propertiesToFetch = [\.id]
-            var displayDesc = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.displayThumbnail != nil })
-            displayDesc.propertiesToFetch = [\.id]
-            projectIDsWithFinishedImage = Set(try context.fetch(finishedDesc).map { $0.id })
-            projectIDsWithThumbnail = Set(try context.fetch(thumbDesc).map { $0.id })
-            projectIDsWithPatternGrid = Set(try context.fetch(gridDesc).map { $0.id })
-            projectIDsWithDisplayThumbnail = Set(try context.fetch(displayDesc).map { $0.id })
-        } catch {
-            logError("project_blob_meta_refresh_failed", metadata: ["error": "\(error)"])
+        let container = context.container
+        // 全部挪到后台：旧实现的 4 个 `#Predicate { $0.blob != nil }` 查询在**主线程**上
+        // 会把命中行的 blob 内容物化进内存（实测 +1.26GB/120 条，见
+        // InitialLoadMemoryDiagnosticTests）—— 既是主线程停摆也是真机 jetsam 源。
+        // 现在优先 raw SQLite 头部扫描（零物化），失败才回退 SwiftData 查询（后台 context）。
+        // 调用方都不依赖集合同步更新（本就有 DispatchQueue.main.async 的先例），
+        // 迟到的应用是 last-wins，与并发 refresh 的整份覆盖语义一致。
+        Task { @MainActor [weak self] in
+            let existence: ProjectBlobExistence? = await Task.detached(priority: .utility) {
+                if let storeURL = container.configurations.first?.url,
+                   let scanned = ProjectBlobExistenceScanner.scan(storeURL: storeURL) {
+                    return scanned
+                }
+                AppLogger.shared.error(
+                    "InventoryManager",
+                    "blob_existence_scan_fallback_swiftdata",
+                    metadata: ["caller": "refreshProjectBlobMetadata"]
+                )
+                let bg = ModelContext(container)
+                return try? Self.legacyBlobExistenceFetch(context: bg)
+            }.value
+            guard let self else { return }
+            if let existence {
+                self.projectIDsWithFinishedImage = existence.finishedImage
+                self.projectIDsWithThumbnail = existence.thumbnail
+                self.projectIDsWithPatternGrid = existence.patternGrid
+                self.projectIDsWithDisplayThumbnail = existence.displayThumbnail
+            } else {
+                self.logError("project_blob_meta_refresh_failed", metadata: [:])
+            }
+            // 即使扫描失败也要 bump：调用方（loadData / restore / 远端合并）已经动过持久层，
+            // 视图缓存认定的 revision 必须前进一步，让 .task(id:) 重新跑取图，避免视图卡在
+            // 旧 revision 显示过期图。
+            self.projectBlobsRevision &+= 1
         }
-        // 即使 fetch 抛错也要 bump：调用方（loadData / restore / 远端合并）已经动过持久层，
-        // 视图缓存认定的 revision 必须前进一步，让 .task(id:) 重新跑取图，避免视图卡在
-        // 旧 revision 显示过期图。
-        projectBlobsRevision &+= 1
     }
 
     /// 内部直写：把单个项目的 4 个 blob 字段（thumbnail / finishedImage / patternGridData /
@@ -4626,4 +4664,104 @@ class InventoryManager: ObservableObject {
         return UUID(uuid: tuple)
     }
 
+}
+
+
+// MARK: - 项目 blob 存在性扫描（raw SQLite）
+
+/// 「哪些项目带某个 blob」的 4 个存在性集合，值类型跨线程安全。
+struct ProjectBlobExistence: Sendable {
+    var finishedImage: Set<UUID> = []
+    var thumbnail: Set<UUID> = []
+    var patternGrid: Set<UUID> = []
+    var displayThumbnail: Set<UUID> = []
+}
+
+/// 用只读 SQLite 连接对 store 文件做 `WHERE 列 IS NOT NULL` 的存在性扫描。
+///
+/// ## 为什么绕开 SwiftData
+///
+/// `#Predicate { $0.thumbnail != nil }` + `propertiesToFetch = [\.id]` 看起来只取 id，
+/// 实测（InitialLoadMemoryDiagnosticTests，120 条 × 10.5MB 库）会把**每条命中行的 blob
+/// 内容整个 SELECT 进进程内存：+1.26GB**。四个存在性查询跑在每次首次加载和每次 refresh
+/// 里，真实体量库上进程峰值实测冲到 5.7GB —— 真机前台 jetsam 上限只有 ~1.2-2.5GB，
+/// 表现就是用户报的「转圈转着转着突然闪退」。
+///
+/// SQLite 判 `IS NOT NULL` 只读记录头的 serial type，不物化 blob 内容；本扫描器全程
+/// 只在 C 层持有单行 ZID（16 字节），内存增量 ≈ 0。
+///
+/// ## 安全边界
+///
+/// - 只读打开（`SQLITE_OPEN_READONLY`），不可能写坏 store；WAL 模式下读到的是一致性快照。
+/// - 启动即用 `PRAGMA table_info` 核对表/列存在；任何一步对不上（未来 schema 变更、
+///   in-memory 测试库没有文件）→ 返回 nil，调用方回退 SwiftData 查询（行为同旧版）。
+/// - CoreData 的 UUID 属性存储为 16 字节 BLOB（旧数据可能是 TEXT），两种都解析；
+///   出现解析不了的行说明假设失效，整次扫描作废回退，绝不静默丢行。
+enum ProjectBlobExistenceScanner {
+    private static let table = "ZSDPROJECTRECORD"
+    private static let idColumn = "ZID"
+    private static let blobColumns: [(column: String, keyPath: WritableKeyPath<ProjectBlobExistence, Set<UUID>>)] = [
+        ("ZFINISHEDIMAGE", \.finishedImage),
+        ("ZTHUMBNAIL", \.thumbnail),
+        ("ZPATTERNGRIDDATA", \.patternGrid),
+        ("ZDISPLAYTHUMBNAIL", \.displayThumbnail)
+    ]
+
+    static func scan(storeURL: URL) -> ProjectBlobExistence? {
+        guard FileManager.default.fileExists(atPath: storeURL.path) else { return nil }
+
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(storeURL.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
+            if db != nil { sqlite3_close(db) }
+            return nil
+        }
+        defer { sqlite3_close(db) }
+        sqlite3_busy_timeout(db, 2_000)
+
+        // 核对 schema：表和所有依赖列必须存在，否则回退（未来改模型时的保险丝）
+        var existingColumns = Set<String>()
+        do {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &stmt, nil) == SQLITE_OK else {
+                return nil
+            }
+            defer { sqlite3_finalize(stmt) }
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let name = sqlite3_column_text(stmt, 1) {
+                    existingColumns.insert(String(cString: name).uppercased())
+                }
+            }
+        }
+        let required = [idColumn] + blobColumns.map(\.column)
+        guard required.allSatisfy({ existingColumns.contains($0) }) else { return nil }
+
+        var result = ProjectBlobExistence()
+        for (column, keyPath) in blobColumns {
+            var stmt: OpaquePointer?
+            let sql = "SELECT \(idColumn) FROM \(table) WHERE \(column) IS NOT NULL"
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+            defer { sqlite3_finalize(stmt) }
+
+            var ids = Set<UUID>()
+            var rc = sqlite3_step(stmt)
+            while rc == SQLITE_ROW {
+                switch sqlite3_column_type(stmt, 0) {
+                case SQLITE_BLOB where sqlite3_column_bytes(stmt, 0) == 16:
+                    guard let raw = sqlite3_column_blob(stmt, 0) else { return nil }
+                    ids.insert(UUID(uuid: raw.load(as: uuid_t.self)))
+                case SQLITE_TEXT:
+                    guard let c = sqlite3_column_text(stmt, 0),
+                          let uuid = UUID(uuidString: String(cString: c)) else { return nil }
+                    ids.insert(uuid)
+                default:
+                    // ZID 形态不符合任何已知存储方式：假设失效，整次作废回退
+                    return nil
+                }
+                rc = sqlite3_step(stmt)
+            }
+            guard rc == SQLITE_DONE else { return nil }
+            result[keyPath: keyPath] = ids
+        }
+        return result
+    }
 }
