@@ -212,12 +212,12 @@ private let finishedThumbnailLoadGate = ImageLoadGate(limit: 4)
 /// 异步加载并**降级**项目成品图，专供日历 / 网格等"小尺寸、多格同屏"场景。
 ///
 /// 与 `ProjectFinishedImage` 的关键差异：后者 `UIImage(data: finishedImage)` 全分辨率解码，
-/// 单张详情图安全；但**网格里几十格同屏会把内存峰值叠起来**。注意成品图当前是**整张原分辨率
-/// PNG 落盘**（`ProjectImageEditorSheet.generateImageData` 直接 `pngData()`，`maxImageSize`
-/// 已失效），一张手机照片可达数 MB，所以网格降级是**必须的、不是可选优化**。本组件走
-/// `ImageDownsampler.downsampleToUIImage(_:maxPixelSize:)`，在 CGImageSource 层就限制输出边长，
-/// 每格解码 KB 级 —— 这是 blob 网格的 jetsam-safe 入口。原始 Data 仍会短暂进内存，故再叠一层
-/// `finishedThumbnailLoadGate` 限制并发取图数。
+/// 单张详情图安全；但**网格里几十格同屏会把内存峰值叠起来**。成品图**分辨率仍是原图**
+/// （拼图模式需要），只是编码从无损 PNG 换成了 `ProjectImageEncoder` 的高质量编码，
+/// 单张仍可达 ~1 MB，解码后的位图更是几十 MB —— 所以网格降级是**必须的、不是可选优化**。
+/// 本组件走 `ProjectImageLoader.downsampledFinishedImage(for:maxPixelSize:)`：取字节和降级
+/// 都在后台 actor 里完成，原始 Data 不流出 actor，每格解码 KB 级 —— 这是 blob 网格的
+/// jetsam-safe 入口。再叠一层 `finishedThumbnailLoadGate` 限制翻月时一次排太多任务。
 ///
 /// 防闪烁 / revision 处理与 `ProjectThumbnailImage` 完全一致（完整推导见该处注释，三处需同步改）。
 struct ProjectFinishedThumbnail<Placeholder: View, Content: View>: View {
