@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "bb25abdc7b56",
+  "session_id": "7450e00e-9e75-4781-920f-9fcf4802c975",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-05T20:52:22.847877Z",
+  "branch": "fix/image-storage-compaction",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "BeadInventory/Managers/ProjectImageCompactionScanner.swift",
+    "BeadInventory/Managers/InventoryManager.swift"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "c57d57162d5f",
+  "checkpoint_transcript_start": 677,
+  "transcript_lines_at_start": 677,
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 18039,
+    "cache_read_tokens": 4423568,
+    "output_tokens": 8408,
+    "api_call_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-05T20:52:22.825791Z",
+    "agent_lines": 78,
+    "agent_removed": 32,
+    "human_added": 4,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 82,
+    "total_lines_changed": 116,
+    "agent_percentage": 94.82758620689656,
+    "metric_version": 2
+  }
+}
