@@ -1826,6 +1826,22 @@ class InventoryManager: ObservableObject {
             migratedProjects = decoded.count
             for project in decoded {
                 context.insert(SDProjectRecord(from: project))
+                // `SDProjectRecord(from:)` 刻意不写三张大图（见其文档注释），所以这里必须
+                // 自己把老 JSON 里的图落成文件 —— 否则这批 v1.x 老用户升级即丢图。
+                // 先写文件、后 save：save 失败会 rollback 掉行，文件成为孤儿目录，由存在性
+                // 集合的 knownIDs 交集滤掉，无害。反过来先 save 后写文件失败才是真丢图。
+                for (kind, bytes) in [
+                    (ProjectImageStore.Kind.thumbnail, project.thumbnail),
+                    (ProjectImageStore.Kind.finishedImage, project.finishedImage),
+                    (ProjectImageStore.Kind.displayThumbnail, project.displayThumbnail)
+                ] {
+                    guard let bytes else { continue }
+                    if !ProjectImageStore.persistVerified(bytes, projectId: project.id, kind: kind) {
+                        AppLogger.shared.error("InventoryManager", "legacy_migration_image_write_failed", metadata: [
+                            "projectId": project.id.uuidString, "kind": kind.rawValue, "bytes": bytes.count
+                        ])
+                    }
+                }
             }
         }
 
@@ -2798,7 +2814,7 @@ class InventoryManager: ObservableObject {
 
         // 卸掉 in-memory blob 副本：blob 已经在 SwiftData 里了，缓存继续持有等于在内存里
         // 多放一份。连续扫描多次时会重新堆出内存压力 —— 这就是引发 jetsam 的同型问题。
-        stripBlobFromInMemoryProject(enriched.id)
+        persistStagedImagesThenStrip(enriched.id)
 
         // 记录历史 —— 用刚 strip 过的 metadata-only 记录（add 撤回不需要图：
         // undo 走 `deleteProject(id:)` 不读 snapshot 里的图）。
@@ -3308,7 +3324,7 @@ class InventoryManager: ObservableObject {
             // 重建项目带 blob 副本残留在 manager.projects 里；持久化后 strip 回 metadata-only，
             // 同 addProject / duplicate 的语义，避免内存峰值堆积。
             for snap in mergeSnapshot.originalProjects {
-                stripBlobFromInMemoryProject(snap.id)
+                persistStagedImagesThenStrip(snap.id)
             }
             print("[InventoryManager] 撤回复杂合并：恢复了 \(mergeSnapshot.originalProjects.count) 个项目")
             return true
@@ -3446,7 +3462,7 @@ class InventoryManager: ObservableObject {
         if plannedProject.displayThumbnail != nil { projectIDsWithDisplayThumbnail.insert(plannedProject.id) }
         projectBlobsRevision &+= 1
 
-        stripBlobFromInMemoryProject(plannedProject.id)
+        persistStagedImagesThenStrip(plannedProject.id)
 
         // 记录历史 —— metadata-only（撤销 add 不需要图）
         if let stripped = projects.first(where: { $0.id == plannedProject.id }) {
@@ -3770,12 +3786,12 @@ class InventoryManager: ObservableObject {
         if sourceThumbnail != nil { projectIDsWithThumbnail.insert(newId) }
         if sourceGridData != nil { projectIDsWithPatternGrid.insert(newId) }
         if sourceDisplay != nil { projectIDsWithDisplayThumbnail.insert(newId) }
-        stripBlobFromInMemoryProject(newId)
+        persistStagedImagesThenStrip(newId)
         for child in childCopies {
             if child.thumbnail != nil { projectIDsWithThumbnail.insert(child.record.id) }
             if child.gridData != nil { projectIDsWithPatternGrid.insert(child.record.id) }
             if child.displayThumbnail != nil { projectIDsWithDisplayThumbnail.insert(child.record.id) }
-            stripBlobFromInMemoryProject(child.record.id)
+            persistStagedImagesThenStrip(child.record.id)
         }
         projectBlobsRevision &+= 1
 
@@ -3880,12 +3896,12 @@ class InventoryManager: ObservableObject {
         if sourceThumbnail != nil { projectIDsWithThumbnail.insert(newId) }
         if sourceGridData != nil { projectIDsWithPatternGrid.insert(newId) }
         if sourceDisplay != nil { projectIDsWithDisplayThumbnail.insert(newId) }
-        stripBlobFromInMemoryProject(newId)
+        persistStagedImagesThenStrip(newId)
         for child in childCopies {
             if child.thumbnail != nil { projectIDsWithThumbnail.insert(child.record.id) }
             if child.gridData != nil { projectIDsWithPatternGrid.insert(child.record.id) }
             if child.displayThumbnail != nil { projectIDsWithDisplayThumbnail.insert(child.record.id) }
-            stripBlobFromInMemoryProject(child.record.id)
+            persistStagedImagesThenStrip(child.record.id)
         }
         projectBlobsRevision &+= 1
 
@@ -4373,12 +4389,41 @@ class InventoryManager: ObservableObject {
         // 这里不要重复 bump。
     }
 
-    /// 给某个 in-memory `ProjectRecord` 卸掉 thumbnail / finishedImage / patternGrid / displayThumbnail。
-    /// 用在 addProject / duplicate 这种「先把含 blob 的 record 暂存进 projects 数组以触发
-    /// SDProjectRecord(from:) 持久化」的路径上：持久化完成后立刻把内存里的 blob 删掉，
-    /// 否则连续 N 次扫描添加项目时 blob 会在内存里重新堆起来，重蹈 458 项目 jetsam 路。
-    fileprivate func stripBlobFromInMemoryProject(_ projectId: UUID) {
+    /// 把暂存在 in-memory `ProjectRecord` 里的三张图**落成文件**，然后卸掉内存副本。
+    ///
+    /// 用在 addProject / addPlannedProject / duplicate / history 恢复这种
+    /// 「先把含 blob 的 record 塞进 `projects` 以触发 saveData 建行」的路径上。
+    ///
+    /// 落图为什么必须在这里做：`SDProjectRecord(from:)` 已经不再把三张图写进行了
+    /// （见其文档注释）—— 每新建一个带图项目就往行里塞 13MB 正是 68.72GB 写放大的来源。
+    /// 现在行只留 metadata，图由这里写进 `ProjectImageStore`。顺序上 `saveData()` 先建好
+    /// 瘦行、这里再写文件，**没有「先写胖再清瘦」的二次整行重写**。
+    ///
+    /// 卸内存副本的理由不变：连续 N 次扫描添加项目时 blob 会在内存里堆起来，
+    /// 重蹈 458 项目 jetsam 的老路。
+    fileprivate func persistStagedImagesThenStrip(_ projectId: UUID) {
         guard let idx = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        let staged = projects[idx]
+
+        if staged.thumbnail != nil || staged.finishedImage != nil || staged.displayThumbnail != nil {
+            let ok = _setProjectBlobsDirectly(
+                projectId: projectId,
+                thumbnail: .some(staged.thumbnail),
+                finishedImage: .some(staged.finishedImage),
+                displayThumbnail: .some(staged.displayThumbnail)
+            )
+            guard ok else {
+                // 图没落盘。**不卸内存副本** —— 此时内存里这份是仅存的拷贝，卸了就是永久丢图。
+                // 留着让用户本次会话至少还能看到，并记 error。
+                logError("staged_images_persist_failed", metadata: [
+                    "projectId": projectId.uuidString,
+                    "hasThumbnail": staged.thumbnail != nil,
+                    "hasFinishedImage": staged.finishedImage != nil
+                ])
+                return
+            }
+        }
+
         projects[idx].thumbnail = nil
         projects[idx].finishedImage = nil
         projects[idx].patternGrid = nil

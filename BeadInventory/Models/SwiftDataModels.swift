@@ -132,10 +132,21 @@ final class SDProjectRecord {
         self.beadUsages = beadUsages
     }
 
+    /// 从 struct 建行 —— **刻意不写 thumbnail / finishedImage / displayThumbnail 三个大图**。
+    ///
+    /// 这三张图归 `ProjectImageStore`（文件）管，行里只留 metadata。原实现把它们一并写进行，
+    /// 于是每新建 / 复制一个带图项目就往 SQLite 行里塞 13MB —— 而 SQLite 更新任何一列都
+    /// 重写整行，正是 68.72GB 写放大的来源（见 ProjectImageStore 顶部注释）。搬迁老数据的
+    /// 同时新数据还在往回灌，等于白搬（PR #59 双审 Codex critical）。
+    ///
+    /// **调用方契约**：insert + save 之后必须把 record 里的三张图落成文件，否则图会丢。
+    /// `InventoryManager` 里统一走 `persistStagedImagesThenStrip(_:)`；后台迁移等不在
+    /// MainActor 上的路径自己调 `ProjectImageStore.persistVerified`。
+    /// `patternGridData` 是 ~100KB JSON，留在行里无妨，继续由这里写。
     convenience init(from record: ProjectRecord) {
         let usages = record.beadUsage.map { SDBeadUsage(from: $0) }
         let gridData = SDProjectRecord.encodePatternGrid(record.patternGrid, projectId: record.id)
-        self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, parentId: record.parentId, isPlanned: record.isPlanned, executedDate: record.executedDate, thumbnail: record.thumbnail, finishedImage: record.finishedImage, completedDate: record.completedDate, colorSystemRaw: record.colorSystem.rawValue, patternGridData: gridData, displayThumbnail: record.displayThumbnail, beadUsages: usages)
+        self.init(id: record.id, name: record.name, date: record.date, totalBeads: record.totalBeads, brandId: record.brandId, isArchived: record.isArchived, parentId: record.parentId, isPlanned: record.isPlanned, executedDate: record.executedDate, thumbnail: nil, finishedImage: nil, completedDate: record.completedDate, colorSystemRaw: record.colorSystem.rawValue, patternGridData: gridData, displayThumbnail: nil, beadUsages: usages)
     }
 
     /// 完整版转换：读取 thumbnail / finishedImage / patternGridData / displayThumbnail 四个大 blob 字段。

@@ -341,4 +341,56 @@ final class ProjectImageStoreTests: XCTestCase {
         XCTAssertNil(ProjectImageStore.projectIDs(with: .thumbnail),
                      "读取失败必须返回 nil——当成空集会让所有项目的图同时消失")
     }
+
+    // MARK: - 不变量 8：新建项目的图也不进数据库行（PR #59 双审 Codex critical）
+
+    /// 首版只把**存量**图搬出行，但 `SDProjectRecord(from:)` 仍把新项目的图写回行里 ——
+    /// 用户每建一个带图项目就重新塞 13MB，写放大原样复发，等于白搬。
+    ///
+    /// 这条用例直接测生产故障量本身：建 N 个带大图的项目，数据库文件不得随图片体量增长。
+    func test_adding_projects_with_images_does_not_grow_the_sqlite_store() async throws {
+        let container = try makeContainer()
+        // 先播一行：空库 + 全局 hasExistingDataKey（会被别的用例污染）会命中
+        // 「异常全空」保护，导致初始加载判失败、isDataLoaded 永远为 false。
+        _ = try seedProject(in: container, thumbnail: nil)
+
+        let manager = InventoryManager(modelContext: ModelContext(container))
+        // 走真实初始加载把 isDataLoaded 置位——saveData 有 guard，不加载就整个跳过。
+        manager.performInitialLoadIfNeeded(reason: "unitTest.addWithImages")
+        await manager.initialLoadTask?.value
+        XCTAssertTrue(manager.hasCompletedInitialLoad)
+
+        let png = makeNoisePNG(longEdge: 1200)   // ~3MB/张
+        XCTAssertGreaterThan(png.count, 2_000_000)
+
+        let before = storeBytes()
+        var ids: [UUID] = []
+        for i in 0..<8 {
+            let id = UUID()
+            ids.append(id)
+            seededProjectIDs.append(id)
+            manager.addProject(ProjectRecord(
+                id: id, name: "新建\(i)", totalBeads: 10, thumbnail: png
+            ))
+        }
+        let grew = storeBytes() - before
+        let imageBytes = png.count * 8
+
+        // 阈值 1MB：修复后行里只有 metadata（8 行 ≈ 几十 KB）；回归时实测涨 3.4MB
+        // （行先被写胖再被清空，SQLite 留下的空间碎片）。两者差一个数量级。
+        XCTAssertLessThan(
+            grew, 1_048_576,
+            "新建 8 个带图项目让数据库涨了 \(grew) 字节（图片共 \(imageBytes / 1_048_576)MB）"
+            + " —— 图又被写进 SQLite 行了，68.72GB 写放大会复发"
+        )
+
+        // 图必须真的存在（落成文件），不是被丢了
+        for id in ids {
+            XCTAssertTrue(ProjectImageStore.exists(projectId: id, kind: .thumbnail),
+                          "图必须落成文件")
+            XCTAssertEqual(manager.fetchProjectThumbnailData(for: id), png, "图字节必须完整")
+            let row = try XCTUnwrap(fetchRow(id, in: container))
+            XCTAssertNil(row.thumbnail, "数据库列必须保持 nil")
+        }
+    }
 }
