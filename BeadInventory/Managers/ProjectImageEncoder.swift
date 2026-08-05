@@ -130,6 +130,25 @@ enum ProjectImageEncoder {
     /// - Parameter source: 库里现存的字节
     /// - Returns: 更小的新字节；已经够小 / 解不开 / 重编码后反而更大 → nil
     static nonisolated func recompress(_ source: Data) -> EncodeResult? {
+        // **必须显式 autoreleasepool。**
+        //
+        // 这条路径要解一张全分辨率位图（3072×2304×4 ≈ 28 MB）并试多种编码，中间产物
+        // （CGImage / UIImage / 每次 encode 出来的 Data）全是 autorelease 的。
+        // 迁移器是在一个长跑的 async 循环里逐条调用它，Swift 并发的隐式 pool 不会在
+        // 循环中间排空 —— 实测 24 条连续瘦身，进程 footprint 涨了 **935 MB**
+        // （StoreCompactionIntegrationTests 抓到的）。真机上这就是 jetsam：
+        // 修崩溃的迁移器自己把 App 干掉，与 round-10 那次「修 jetsam 的协调器自己撞 jetsam」
+        // 是同一个形状。
+        //
+        // 加了 pool 之后每条处理完立即归还，峰值恒定为一张图。
+        var result: EncodeResult?
+        autoreleasepool {
+            result = recompressInner(source)
+        }
+        return result
+    }
+
+    private static nonisolated func recompressInner(_ source: Data) -> EncodeResult? {
         guard source.count > compactionThresholdBytes else { return nil }
 
         let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
@@ -190,45 +209,14 @@ enum ProjectImageEncoder {
             let effectiveEdge = min(longestEdge, pixelSize)
             guard triedEdges.insert(effectiveEdge).inserted else { continue }
 
-            let scaled: CGImage
-            if effectiveEdge == longestEdge {
-                scaled = image                                  // 不缩放，分辨率原样保留
-            } else {
-                guard let s = resize(image, maxPixelSize: effectiveEdge) else { continue }
-                scaled = s
+            // 每一档单独 pool：一档要试 PNG + 三档 JPEG 质量，四份 Data 全是 autorelease 的，
+            // 不当场归还的话「试探性编码」的中间产物会全程堆着。
+            var settled: EncodeResult?
+            autoreleasepool {
+                settled = attempt(image: image, edge: effectiveEdge, longestEdge: longestEdge,
+                                  hasAlpha: hasAlpha, best: &lastAttempt)
             }
-
-            let size = CGSize(width: scaled.width, height: scaled.height)
-            let ui = UIImage(cgImage: scaled)
-
-            // **先试 PNG，够小就用 PNG。**
-            //
-            // 这不是保守，是实测结论：纯色块合成图纸（拼豆图纸最常见的形态）PNG 压得极好 ——
-            // 2400px 的 100×100 色块图 PNG 只有 228 KB，而同一张图 JPEG 0.92 反而要 1.05 MB
-            // （JPEG 的 DCT 最不擅长处理锐利色块边界，网格线更是每条都要花码率）。
-            // 早期版本无脑上 JPEG，会把这批用户的图从 228 KB 放大到 1 MB —— 修崩溃的过程中
-            // 把一部分人搞得更糟。
-            //
-            // 真正撑爆库的 13 MB 图是**照片型**内容（2400px / 13MB ≈ 2.2 字节每像素，
-            // 纯色块图不可能到这个密度），那类图 PNG 压不动、JPEG 一压就下来，走下面的分支。
-            if let png = ui.pngData() {
-                let result = EncodeResult(data: png, didReachBudget: png.count <= targetByteBudget,
-                                          usedLossless: true, pixelSize: size)
-                if result.didReachBudget { return result }
-                lastAttempt = smaller(lastAttempt, result)
-            }
-
-            // 带 alpha 不能转 JPEG（无 alpha 通道，压平到白底会在深色模式下露馅），
-            // 只能靠降分辨率继续退让。
-            guard !hasAlpha else { continue }
-
-            for quality in qualitySteps {
-                guard let jpeg = ui.jpegData(compressionQuality: quality) else { continue }
-                let result = EncodeResult(data: jpeg, didReachBudget: jpeg.count <= targetByteBudget,
-                                          usedLossless: false, pixelSize: size)
-                if result.didReachBudget { return result }
-                lastAttempt = smaller(lastAttempt, result)
-            }
+            if let settled { return settled }
         }
 
         if let lastAttempt {
@@ -246,6 +234,56 @@ enum ProjectImageEncoder {
             ])
         }
         return lastAttempt
+    }
+
+    /// 单个尺寸档位的尝试。进预算就返回结果；否则把「目前最小的一版」记进 `best` 返回 nil。
+    private static nonisolated func attempt(
+        image: CGImage,
+        edge: Int,
+        longestEdge: Int,
+        hasAlpha: Bool,
+        best lastAttempt: inout EncodeResult?
+    ) -> EncodeResult? {
+        let scaled: CGImage
+        if edge == longestEdge {
+            scaled = image                                  // 不缩放，分辨率原样保留
+        } else {
+            guard let s = resize(image, maxPixelSize: edge) else { return nil }
+            scaled = s
+        }
+
+        let size = CGSize(width: scaled.width, height: scaled.height)
+        let ui = UIImage(cgImage: scaled)
+
+        // **先试 PNG，够小就用 PNG。**
+        //
+        // 这不是保守，是实测结论：纯色块合成图纸（拼豆图纸最常见的形态）PNG 压得极好 ——
+        // 2400px 的 100×100 色块图 PNG 只有 228 KB，而同一张图 JPEG 0.92 反而要 1.05 MB
+        // （JPEG 的 DCT 最不擅长处理锐利色块边界，网格线更是每条都要花码率）。
+        // 早期版本无脑上 JPEG，会把这批用户的图从 228 KB 放大到 1 MB —— 修崩溃的过程中
+        // 把一部分人搞得更糟。
+        //
+        // 真正撑爆库的 13 MB 图是**照片型**内容（2400px / 13MB ≈ 2.2 字节每像素，
+        // 纯色块图不可能到这个密度），那类图 PNG 压不动、JPEG 一压就下来，走下面的分支。
+        if let png = ui.pngData() {
+            let result = EncodeResult(data: png, didReachBudget: png.count <= targetByteBudget,
+                                      usedLossless: true, pixelSize: size)
+            if result.didReachBudget { return result }
+            lastAttempt = smaller(lastAttempt, result)
+        }
+
+        // 带 alpha 不能转 JPEG（无 alpha 通道，压平到白底会在深色模式下露馅），
+        // 只能靠降分辨率继续退让。
+        guard !hasAlpha else { return nil }
+
+        for quality in qualitySteps {
+            guard let jpeg = ui.jpegData(compressionQuality: quality) else { continue }
+            let result = EncodeResult(data: jpeg, didReachBudget: jpeg.count <= targetByteBudget,
+                                      usedLossless: false, pixelSize: size)
+            if result.didReachBudget { return result }
+            lastAttempt = smaller(lastAttempt, result)
+        }
+        return nil
     }
 
     private static nonisolated func smaller(_ a: EncodeResult?, _ b: EncodeResult) -> EncodeResult {

@@ -208,12 +208,19 @@ final class ThumbnailMigrationCoordinator {
             return
         }
 
-        AppLogger.shared.info("ThumbnailMigration", "started", metadata: [:])
-
         guard let storeURL = container.configurations.first?.url else {
             AppLogger.shared.warning("ThumbnailMigration", "no_store_url_skipping", metadata: [:])
             return
         }
+
+        // storeURL / 候选数进日志：瘦身「跑了但一条都没选中」和「压根没跑」在用户设备上
+        // 长得一模一样，出问题时没有这两个字段无从下手。
+        AppLogger.shared.info("ThumbnailMigration", "started", metadata: [
+            "storeURL": storeURL.lastPathComponent,
+            "storeExists": FileManager.default.fileExists(atPath: storeURL.path),
+            "storeDir": String(storeURL.deletingLastPathComponent().path.suffix(60)),
+            "stubbornCount": Self.loadStubbornIDs().count
+        ])
 
         var migrated = 0
         var raceSkipped = 0
@@ -288,6 +295,11 @@ final class ThumbnailMigrationCoordinator {
             ) {
             case .success(let ids):
                 pageIDs = ids
+                if pagesFetched == 0 {
+                    AppLogger.shared.info("ThumbnailMigration", "first_scan", metadata: [
+                        "candidates": ids.count, "excluded": excluded.count
+                    ])
+                }
             case .failure(let failure):
                 // 这里**不回退 SwiftData BLOB 谓词** —— 那条路径实测 +1.26 GB，
                 // 而扫描失败最可能的时机（store 正忙）恰恰是最不该吃内存的时候。
@@ -579,9 +591,12 @@ final class ThumbnailMigrationCoordinator {
         guard !Task.isCancelled else { return .cancelled }
 
         // 列表小图：用重编码后的字节生成（更小 → 解码更快），没重编码就用原字节。
+        // 同 recompress，显式 pool —— downsample 内部也要建 CGImageSource / CGImage / UIImage。
         var displayThumbnailFailed = false
         if !hasDisplayThumbnail, let source = newThumbnail ?? originalThumbnail {
-            newDisplayThumbnail = ImageDownsampler.downsample(source)
+            autoreleasepool {
+                newDisplayThumbnail = ImageDownsampler.downsample(source)
+            }
             if newDisplayThumbnail == nil {
                 // 字节坏掉 / 格式解不开。**不**阻断瘦身 —— 瘦身才是修崩溃的那一半，
                 // 而且列表本来就有现场降级兜底。但要保留失败信号，见下面 return 分支。
