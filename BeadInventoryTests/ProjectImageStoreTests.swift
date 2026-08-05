@@ -33,12 +33,10 @@ final class ProjectImageStoreTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        ProjectImageStore.rootOverrideForTesting = nil
+        // 顺序要紧：先删目录（此时 override 还生效，删的是本用例的隔离目录），再清 override。
+        // 旧实现反过来，导致 deleteAll 解析到真实 Application Support —— 什么也没清到。
         try? FileManager.default.removeItem(at: storeDir)
-        // ProjectImageStore 写的是真实 Application Support 目录，用例之间必须自己清干净
-        for id in seededProjectIDs {
-            ProjectImageStore.deleteAll(projectId: id)
-        }
+        ProjectImageStore.rootOverrideForTesting = nil
     }
 
     private func makeContainer() throws -> ModelContainer {
@@ -63,6 +61,35 @@ final class ProjectImageStoreTests: XCTestCase {
     }
 
     /// store 文件在磁盘上的实际字节数（含 WAL）—— 用来量「行有没有真的变小」。
+
+    /// 播种一行，返回 id。
+    @discardableResult
+    private func seedProject(
+        in container: ModelContainer,
+        thumbnail: Data?,
+        finishedImage: Data? = nil,
+        displayThumbnail: Data? = nil
+    ) throws -> UUID {
+        let ctx = ModelContext(container)
+        let record = SDProjectRecord(
+            name: "种子", totalBeads: 0,
+            thumbnail: thumbnail, finishedImage: finishedImage,
+            displayThumbnail: displayThumbnail, beadUsages: []
+        )
+        ctx.insert(record)
+        try ctx.save()
+        seededProjectIDs.append(record.id)
+        return record.id
+    }
+
+    /// 用独立 context 读回一行（避免拿到被测 context 里已注册的实例）。
+    private func fetchRow(_ id: UUID, in container: ModelContainer) throws -> SDProjectRecord? {
+        let ctx = ModelContext(container)
+        var d = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.id == id })
+        d.fetchLimit = 1
+        return try ctx.fetch(d).first
+    }
+
     private func storeBytes() -> Int {
         let fm = FileManager.default
         var total = 0
@@ -208,5 +235,110 @@ final class ProjectImageStoreTests: XCTestCase {
             ProjectImageStore.exists(projectId: project.id, kind: .thumbnail),
             "删除项目后图片文件应一并清掉，否则磁盘上会堆孤儿文件"
         )
+    }
+
+    // MARK: - 不变量 5：文件写入失败时，绝不清空数据库列（PR #59 双审 C1）
+
+    /// 这是本 PR 首版最严重的缺陷：`_setProjectBlobsDirectly` 丢弃 `write` 的返回值，
+    /// 然后无论如何清空数据库列 —— 盘满 / 沙盒错误时用户的原图两边都没有，永久丢失。
+    ///
+    /// 用只读目录模拟写入失败。断言：整个操作失败、数据库列原封不动、读取仍能拿到原字节、
+    /// 存在性集合不谎报。
+    func test_file_write_failure_preserves_database_column() throws {
+        let container = try makeContainer()
+        let original = makeNoisePNG(longEdge: 400)
+        let projectId = try seedProject(in: container, thumbnail: original)
+
+        let m = InventoryManager(modelContext: ModelContext(container))
+        m.projects = [ProjectRecord(id: projectId, name: "只读目录", totalBeads: 0)]
+
+        // 把图片根目录指到一个不可写的位置 —— 写入必失败
+        let readOnly = storeDir.appendingPathComponent("readonly", isDirectory: true)
+        try FileManager.default.createDirectory(at: readOnly, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: readOnly.path)
+        ProjectImageStore.rootOverrideForTesting = readOnly
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: readOnly.path)
+        }
+
+        let replacement = makeNoisePNG(longEdge: 401)
+        let ok = m.updateProjectThumbnail(projectId, thumbnail: replacement)
+
+        XCTAssertFalse(ok, "文件写入失败时整个操作必须失败，不能报告成功")
+        let row = try XCTUnwrap(fetchRow(projectId, in: container))
+        XCTAssertEqual(row.thumbnail, original, "写入失败时数据库列必须原封不动——清了就是永久丢图")
+        XCTAssertEqual(m.fetchProjectThumbnailData(for: projectId), original, "读取应仍能拿到原图")
+    }
+
+    /// 派生缓存（displayThumbnail）写失败时同样不清库列，但不阻断整个操作。
+    func test_display_thumbnail_write_failure_does_not_clear_column() throws {
+        let container = try makeContainer()
+        let small = makeNoisePNG(longEdge: 80)
+        let projectId = try seedProject(in: container, thumbnail: nil, displayThumbnail: small)
+
+        let m = InventoryManager(modelContext: ModelContext(container))
+        let readOnly = storeDir.appendingPathComponent("readonly2", isDirectory: true)
+        try FileManager.default.createDirectory(at: readOnly, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: readOnly.path)
+        ProjectImageStore.rootOverrideForTesting = readOnly
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: readOnly.path)
+        }
+
+        _ = m._setProjectBlobsDirectly(projectId: projectId, displayThumbnail: .some(makeNoisePNG(longEdge: 81)))
+        let row = try XCTUnwrap(fetchRow(projectId, in: container))
+        XCTAssertEqual(row.displayThumbnail, small, "小图写失败也不能清库列，否则列表退化成现场降采样")
+        XCTAssertFalse(m.projectIDsWithDisplayThumbnail.contains(projectId), "写失败不得声称文件存在")
+    }
+
+    // MARK: - 不变量 6：成品图走同一条受检路径（PR #59 双审 C3）
+
+    /// 首版 `_setProjectFinishedImageDirectly` 仍直写 `sd.finishedImage`，而读取已改成文件
+    /// 优先，导致：换图看到旧图、删图重启复活、该行重新成为迁移候选。
+    func test_finished_image_update_goes_to_file_not_database_column() throws {
+        let container = try makeContainer()
+        let projectId = try seedProject(in: container, thumbnail: nil)
+        let m = InventoryManager(modelContext: ModelContext(container))
+        m.projects = [ProjectRecord(id: projectId, name: "成品图", totalBeads: 0)]
+
+        let finished = makeNoisePNG(longEdge: 300)
+        m.updateProjectFinishedImage(projectId, finishedImage: finished)
+
+        let row = try XCTUnwrap(fetchRow(projectId, in: container))
+        XCTAssertNil(row.finishedImage, "成品图必须落文件，数据库列保持 nil——留在行里就是写放大复发")
+        XCTAssertTrue(ProjectImageStore.exists(projectId: projectId, kind: .finishedImage))
+        XCTAssertEqual(m.fetchProjectFinishedImageData(for: projectId), finished)
+
+        // 换一张：读取必须返回新图（首版这里会返回旧图）
+        let replacement = makeNoisePNG(longEdge: 301)
+        m.updateProjectFinishedImage(projectId, finishedImage: replacement)
+        XCTAssertEqual(m.fetchProjectFinishedImageData(for: projectId), replacement, "换图后必须读到新图")
+
+        // 删除：文件要真的消失（首版只清了本来就是 nil 的库列，文件残留 → 重启复活）
+        m.updateProjectFinishedImage(projectId, finishedImage: nil)
+        XCTAssertFalse(ProjectImageStore.exists(projectId: projectId, kind: .finishedImage),
+                       "删除成品图后文件必须消失，否则下次启动会被并回存在性集合、图片复活")
+        XCTAssertNil(m.fetchProjectFinishedImageData(for: projectId))
+        XCTAssertFalse(m.projectIDsWithFinishedImage.contains(projectId))
+    }
+
+    // MARK: - 不变量 7：目录读取失败 ≠ 没有图（PR #59 双审）
+
+    func test_directory_listing_failure_is_distinguishable_from_empty() throws {
+        // 根目录不存在 = 还没迁移，正常空集
+        ProjectImageStore.rootOverrideForTesting = storeDir.appendingPathComponent("never-created")
+        XCTAssertEqual(ProjectImageStore.projectIDs(with: .thumbnail), [],
+                       "目录不存在是迁移前的正常状态，应返回空集")
+
+        // 根目录存在但不可读 = 读取失败，必须返回 nil 而不是空集
+        let unreadable = storeDir.appendingPathComponent("unreadable", isDirectory: true)
+        try FileManager.default.createDirectory(at: unreadable, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: unreadable.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: unreadable.path)
+        }
+        ProjectImageStore.rootOverrideForTesting = unreadable
+        XCTAssertNil(ProjectImageStore.projectIDs(with: .thumbnail),
+                     "读取失败必须返回 nil——当成空集会让所有项目的图同时消失")
     }
 }

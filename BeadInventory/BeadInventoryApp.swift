@@ -11,6 +11,10 @@ import CloudKit
 import CoreData
 import Combine
 import TipKit
+import QuartzCore
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @main
 struct BeadInventoryApp: App {
@@ -37,7 +41,9 @@ struct BeadInventoryApp: App {
     init() {
         AppLogger.shared.info("App", "bootstrap_started")
         // 必须是 init 里的第一件事：后面任何一步卡死被看门狗杀掉，都要留下痕迹。
-        LaunchIntegritySentinel.noteLaunchStarted()
+        // 返回值必须接住并**先于** `||` 求值 —— 旧实现把它放在 `||` 右边，
+        // bootValue == true 的用户（已关 iCloud 同步、仍打不开的那批）永远跳过它。
+        let launchMode = LaunchIntegritySentinel.noteLaunchStarted()
 
         // 设置 SwiftData ModelContainer（使用版本化 Schema 支持数据迁移）
         let schema = Schema(versionedSchema: CurrentSchema.self)
@@ -45,7 +51,8 @@ struct BeadInventoryApp: App {
         // 安全模式下强制按「已关闭同步」处理：CloudKit 初始化（PFCloudKitMetadataModelMigrator
         // 的 schema 检查 + WAL checkpoint + vacuum）是启动期最重的一块 I/O，也是 157 崩溃栈里
         // 占着 SQLite 队列、把主线程 fetch 堵到看门狗超时的那条线程。
-        let userOptedOutOfCloudKit = CloudSyncPreferences.bootValue || LaunchIntegritySentinel.isSafeModeActive
+        let isSafeMode = (launchMode == .safe)
+        let userOptedOutOfCloudKit = CloudSyncPreferences.bootValue || isSafeMode
         if userOptedOutOfCloudKit {
             AppLogger.shared.info("App", "cloud_sync_user_opted_out")
         }
@@ -250,7 +257,12 @@ struct BeadInventoryApp: App {
                     }
 
                     // 首帧已经画出来了 —— 本次启动没被看门狗杀掉，清零失败计数。
-                    LaunchIntegritySentinel.noteFirstFrameRendered()
+                    // 必须等当前事务真正提交给渲染服务之后再清零。直接在 .onAppear 里清
+                    // 等于在看门狗计时的那个 CA::Transaction::commit **内部**清零 ——
+                    // 崩溃恰好发生在这之后，证据被自己擦掉，安全模式永不触发。
+                    CATransaction.setCompletionBlock {
+                        LaunchIntegritySentinel.noteFirstFrameRendered()
+                    }
                     inventoryManager.performInitialLoadIfNeeded(reason: "rootView.onAppear")
                     AppLogger.shared.info("App", "root_view_appeared")
                     // App 启动时检查是否有待处理的共享图片
@@ -404,43 +416,105 @@ enum CloudSyncPreferences {
 ///
 /// 2026-08-05 用户报告：App Store 1.8.0(157) 与 TestFlight 2.0.0(183) 均**每次启动即闪退**，
 /// 重启手机 / 更新系统 / 卸载重装（iOS 的「卸载」保留数据容器，等于数据条件没变）全部无效。
-/// 崩溃日志是 `scene-create watchdog 0x8BADF00D`：首帧没能在 2.06s 内画出来。
+/// 崩溃日志是 `scene-create watchdog 0x8BADF00D`：首帧没能在时限内画出来。
 ///
 /// 这类故障的致命之处在于**用户完全没有自救手段** —— 设置页里的「以本地模式继续」「关闭
 /// iCloud 同步」两个逃生按钮都在 App 内部，而 App 根本打不开。
 ///
 /// ## 机制
 ///
-/// `App.init` 一开始就把「本次启动尚未完成」写进 UserDefaults 并**立即同步落盘**；首帧真正
-/// 画出来之后清零。于是被看门狗杀掉的启动会留下痕迹，连续两次没画出首帧就判定为启动崩溃循环，
-/// 下一次启动自动进安全模式：关 CloudKit、跳过一切后台任务，只求先打开。
+/// `App.init` 一开始就把「本次启动尚未完成」写进 UserDefaults 并**立即同步落盘**；首帧
+/// 真正提交给显示系统之后清零。被看门狗杀掉的启动会留下痕迹，连续两次没画出首帧即判定为
+/// 启动崩溃循环，下一次启动进安全模式：关 CloudKit、跳过后台迁移，只求先打开。
 ///
-/// 阈值取 2 而不是 1：偶发的一次超时（设备发烫、系统繁忙）不该把用户踢进降级模式。
+/// ## 首版（PR #59 首次提交）的四个缺陷，双审全部命中，这一版逐条修掉
+///
+/// 1. **计数含在途启动 → 一次失败就降级。** 旧实现先 `+1` 再读阈值，读到的值包含本次
+///    启动，`2 >= 2` 在**第一次**失败后的下一次启动就成立 —— 正是注释承诺要避免的
+///    「偶发一次超时不该把用户踢进降级模式」。现在 `noteLaunchStarted` 先用**自增前**的
+///    值判定，再自增。
+/// 2. **`||` 短路让目标人群完全绕过。** 旧实现在 `App.init` 里写
+///    `CloudSyncPreferences.bootValue || isSafeModeActive`，而 `isSafeModeActive` 是
+///    lazy `static let`：`bootValue == true`（正是已按建议关掉 iCloud 同步、仍然打不开的
+///    那批人）时右边**永不求值**，首次求值推迟到 scenePhase，那时 `.onAppear` 已经清零了。
+///    现在 `noteLaunchStarted()` **返回** `LaunchMode`，调用方必须接住 —— 没有 lazy 全局
+///    可以被短路跳过。
+/// 3. **`.onAppear` 不是「首帧已提交」。** 它在 SwiftUI 的更新阶段执行，正处于看门狗计时的
+///    那个 `CA::Transaction::commit` **内部** —— 崩溃栈就是
+///    `CA::Transaction::commit → SwiftUI → 我们的代码 → sqlite3_step`。也就是说旧实现
+///    在被杀之前就把计数清零了，安全模式**永远不会触发**。现在改用
+///    `CATransaction.setCompletionBlock`：它在当前事务真正提交给渲染服务之后才回调。
+/// 4. **后台唤醒误触发。** Info.plist 声明了 `remote-notification`，静默推送会跑 `App.init`
+///    （自增）但没有可见场景，`.onAppear` 永不触发 → 计数只涨不落。配合缺陷 1，一次后台
+///    唤醒就足以让下次前台启动降级。现在只在**前台场景**启动时才计数（见 `noteLaunchStarted`
+///    的 `isForegroundLaunch` 判定）。
 enum LaunchIntegritySentinel {
     private static let pendingCountKey = "launchPendingFailureCount"
     private static let safeModeThreshold = 2
 
-    /// 本次启动是否处于安全模式。`App.init` 读一次后全程用这个快照。
-    static let isSafeModeActive: Bool = {
-        UserDefaults.standard.integer(forKey: pendingCountKey) >= safeModeThreshold
-    }()
-
-    /// App.init 最开始调用：标记「启动进行中」。
-    /// 必须 `synchronize()` —— 被 SIGKILL 的进程没有机会走正常的 UserDefaults 落盘时机，
-    /// 不强制同步就检测不到这次失败。
-    static func noteLaunchStarted() {
-        let defaults = UserDefaults.standard
-        let next = defaults.integer(forKey: pendingCountKey) + 1
-        defaults.set(next, forKey: pendingCountKey)
-        defaults.synchronize()
-        if next >= safeModeThreshold {
-            AppLogger.shared.error("LaunchSentinel", "safe_mode_engaged", metadata: [
-                "consecutiveFailures": next
-            ])
-        }
+    enum LaunchMode {
+        case normal
+        case safe
     }
 
-    /// 首帧真正画出来之后调用：本次启动算成功，清零。
+    /// `noteLaunchStarted()` 之后才有值。刻意**不是** lazy `static let` ——
+    /// 旧实现正因为 lazy + `||` 短路而在目标人群上永不求值（见类型注释缺陷 2）。
+    private(set) static var isSafeModeActive = false
+    private static var didNoteLaunch = false
+
+    /// App.init 最开始调用：判定本次启动模式，并标记「启动进行中」。
+    ///
+    /// 判定用的是**自增前**的计数，即只看**此前**的连续失败次数 —— 这样 `threshold = 2`
+    /// 的字面含义就是「连续失败 2 次后的下一次启动降级」。
+    ///
+    /// 必须 `synchronize()`：被 SIGKILL 的进程没有机会走 UserDefaults 的正常落盘时机，
+    /// 不强制同步就检测不到这次失败。
+    @discardableResult
+    static func noteLaunchStarted() -> LaunchMode {
+        guard !didNoteLaunch else { return isSafeModeActive ? .safe : .normal }
+        didNoteLaunch = true
+
+        // 后台唤醒（静默推送等）不参与计数：这类进程没有可见场景，永远走不到首帧，
+        // 计进去只会单调累加，把健康用户误判成崩溃循环。
+        guard isForegroundLaunch else {
+            AppLogger.shared.info("LaunchSentinel", "background_launch_not_counted")
+            return .normal
+        }
+
+        let defaults = UserDefaults.standard
+        let priorFailures = defaults.integer(forKey: pendingCountKey)
+        isSafeModeActive = priorFailures >= safeModeThreshold
+
+        defaults.set(priorFailures + 1, forKey: pendingCountKey)
+        defaults.synchronize()
+
+        if isSafeModeActive {
+            AppLogger.shared.error("LaunchSentinel", "safe_mode_engaged", metadata: [
+                "priorConsecutiveFailures": priorFailures,
+                "threshold": safeModeThreshold
+            ])
+        } else if priorFailures > 0 {
+            AppLogger.shared.warning("LaunchSentinel", "prior_launch_did_not_finish", metadata: [
+                "priorConsecutiveFailures": priorFailures
+            ])
+        }
+        return isSafeModeActive ? .safe : .normal
+    }
+
+    /// UIApplication 的 state 在 `App.init` 时刻已经可用：前台启动是 `.inactive`
+    /// （即将变 active），后台唤醒是 `.background`。
+    private static var isForegroundLaunch: Bool {
+        #if canImport(UIKit)
+        return UIApplication.shared.applicationState != .background
+        #else
+        return true
+        #endif
+    }
+
+    /// 首帧**真正提交给渲染服务**之后调用：本次启动算成功，清零。
+    ///
+    /// 调用方应从 `.onAppear` 里挂 `CATransaction.setCompletionBlock` —— 直接在
+    /// `.onAppear` 里清零等于在看门狗计时的事务内部清零，被杀之前就把证据擦掉了。
     static func noteFirstFrameRendered() {
         let defaults = UserDefaults.standard
         guard defaults.integer(forKey: pendingCountKey) != 0 else { return }
@@ -448,6 +522,14 @@ enum LaunchIntegritySentinel {
         defaults.synchronize()
         AppLogger.shared.info("LaunchSentinel", "first_frame_ok_counter_reset")
     }
+
+    #if DEBUG
+    /// 仅测试用：重置进程内状态，让同一进程里可以跑多轮启动场景。
+    static func resetForTesting() {
+        didNoteLaunch = false
+        isSafeModeActive = false
+    }
+    #endif
 }
 
 /// iCloud 同步状态管理（仅用于 UI 状态展示）
