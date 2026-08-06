@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "5b8bdb7de123",
+  "strategy": "manual-commit",
+  "branch": "fix/image-storage-compaction",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "BeadInventory/Managers/InventoryManager.swift",
+    "BeadInventory/Managers/ProjectImageLoader.swift",
+    "BeadInventory/Views/StatisticsView.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5b/8bdb7de123/0/metadata.json",
+      "transcript": "/5b/8bdb7de123/0/full.jsonl",
+      "content_hash": "/5b/8bdb7de123/0/content_hash.txt",
+      "prompt": "/5b/8bdb7de123/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 792,
+    "cache_creation_tokens": 1492917,
+    "cache_read_tokens": 162942088,
+    "output_tokens": 439665,
+    "api_call_count": 356
+  }
+}
