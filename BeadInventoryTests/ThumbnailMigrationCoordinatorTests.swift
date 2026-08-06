@@ -47,14 +47,15 @@ final class ThumbnailMigrationCoordinatorTests: XCTestCase {
     private func seedProject(
         in container: ModelContainer,
         thumbnail: Data?,
-        displayThumbnail: Data? = nil
+        displayThumbnail: Data? = nil,
+        finishedImage: Data? = nil
     ) throws -> UUID {
         let ctx = ModelContext(container)
         let record = SDProjectRecord(
             name: "迁移测试",
             totalBeads: 0,
             thumbnail: thumbnail,
-            finishedImage: nil,
+            finishedImage: finishedImage,
             displayThumbnail: displayThumbnail,
             beadUsages: []
         )
@@ -374,6 +375,43 @@ final class ThumbnailMigrationCoordinatorTests: XCTestCase {
         XCTAssertFalse(
             ThumbnailMigrationCoordinator.ThrottleReason.thermal.endsThisRun,
             "发热是等一等就能好的，不该把整轮掐掉"
+        )
+    }
+
+    /// `finishedImage` 的 TOCTOU 守卫此前不设防 —— 变异测试里只删它，整套仍然全绿，
+    /// 因为两条新测试都只碰 thumbnail / displayThumbnail。失效后果与 thumbnail 那条完全同型：
+    /// 用户在编码窗口里换了成品图，迁移器把**已被替换那张**的重编码版盖回去。
+    @MainActor
+    func test_compactOne_discards_stale_finished_image_when_replaced_mid_encode() async throws {
+        ThumbnailMigrationCoordinator.resetTestSeams()
+        defer { ThumbnailMigrationCoordinator.resetTestSeams() }
+
+        let container = try makeContainer()
+        let id = try seedProject(
+            in: container,
+            thumbnail: makePNG(side: 64),
+            displayThumbnail: makePNG(side: 32),
+            finishedImage: makeFatPhotoPNG()
+        )
+
+        let replacement = makePNG(side: 100)
+        ThumbnailMigrationCoordinator.didFinishEncodingForTesting = { @Sendable changedId in
+            await MainActor.run {
+                let ctx = ModelContext(container)
+                var d = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.id == changedId })
+                d.fetchLimit = 1
+                if let row = try? ctx.fetch(d).first {
+                    row.finishedImage = replacement
+                    try? ctx.save()
+                }
+            }
+        }
+
+        let outcome = await ThumbnailMigrationCoordinator.compactOne(projectId: id, container: container)
+        XCTAssertEqual(outcome, .raceSkipped, "成品图源字节在编码期间变了，结果必须作废")
+        XCTAssertEqual(
+            try fetchRow(id, in: container)?.finishedImage, replacement,
+            "用户刚换上的成品图被旧图的重编码版覆盖了 —— 静默的用户数据丢失"
         )
     }
 }

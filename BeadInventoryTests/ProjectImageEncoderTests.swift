@@ -133,6 +133,44 @@ final class ProjectImageEncoderTests: XCTestCase {
         return UIImage(cgImage: cg)
     }
 
+
+    /// **真有透明像素**且 PNG 必然超预算的夹具。
+    ///
+    /// 前一版的透明测试用 `makePatternImage(hasAlpha: true)` —— 那张图有 alpha 通道
+    /// 但每个格子都被不透明色填满，**一个透明像素都没有**；而且 1200px 纯色块 PNG
+    /// 只有几十 KB，第一次 PNG 尝试就进预算返回了，`guard !hasAlpha` 那道闸门根本
+    /// 不会被求值。于是它对「透明判定坏掉」完全不设防 —— 实测两个方向的变异
+    ///（恒 true / 恒 false）它都是绿的。
+    ///
+    /// 这个夹具两条都满足：左半完全透明，噪声让 PNG 到 ~4.8 MB 稳超预算。
+    private func makeTransparentOverBudgetImage(longEdge: Int = 2400) -> UIImage {
+        let w = longEdge, h = longEdge
+        var buf = [UInt8](repeating: 0, count: w * h * 4)
+        var seed: UInt64 = 0x243F6A8885A308D3
+        for y in 0..<h {
+            for x in 0..<w {
+                let i = (y * w + x) * 4
+                seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                let n = UInt8((seed >> 33) & 0xFF)
+                let a: UInt8 = x < w / 2 ? 0 : 255          // 左半完全透明
+                // premultipliedLast：透明区的颜色分量必须是 0
+                buf[i] = a == 0 ? 0 : n
+                buf[i + 1] = a == 0 ? 0 : (n &+ 40)
+                buf[i + 2] = a == 0 ? 0 : (n &+ 80)
+                buf[i + 3] = a
+            }
+        }
+        let cs = CGColorSpaceCreateDeviceRGB()
+        let provider = CGDataProvider(data: Data(buf) as CFData)!
+        let cg = CGImage(
+            width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: w * 4, space: cs,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+        )!
+        return UIImage(cgImage: cg)
+    }
+
     /// 调色板 + 与之对应的 BeadColor 表，色号就是十六进制本身，方便断言。
     private func makePalette() -> (colors: [UIColor], beads: [BeadColor]) {
         let hexes = ["FFFFFF", "E8112D", "1B5FAA", "F4C400", "1E8A3C",
@@ -303,14 +341,60 @@ final class ProjectImageEncoderTests: XCTestCase {
         )
     }
 
-    /// 反向守卫：**真的**有透明像素的图必须仍然走无损分支，不能被压平成白底。
+    /// 反向守卫：**真的**有透明像素的图必须仍然走无损分支，不能被压平。
     /// 上面两条是「别把不透明图误判成透明」，这条防止修过头。
+    ///
+    /// 这条是双审在 round 2 抓出来的真 bug 的回归钉：`containsTransparency` 里
+    /// alpha 缓冲预填了 255，而 `CGContext.draw` 是 source-over 合成 ——
+    /// `dst = src + 1·(1−src) = 1` 恒不透明，函数结构上不可能返回 true。
+    /// 后果是**任何透明图都被 JPEG 压平，不可逆，而且迁移器会在后台自动对存量图执行**。
     func test_genuinely_transparent_image_still_uses_lossless() throws {
-        let (palette, _) = makePalette()
-        let image = makePatternImage(longEdge: 1200, rows: 20, cols: 20,
-                                     palette: palette, hasAlpha: true)
+        let image = makeTransparentOverBudgetImage()
+
+        // 前提：必须超预算，否则第一次 PNG 尝试就返回了，alpha 闸门根本不参与
+        let pngBytes = try XCTUnwrap(image.pngData()).count
+        XCTAssertGreaterThan(
+            pngBytes, ProjectImageEncoder.targetByteBudget,
+            "夹具没超预算，alpha 闸门不会被求值 —— 这个测试就什么都没测"
+        )
+
         let result = try XCTUnwrap(ProjectImageEncoder.encodeResult(image))
-        XCTAssertTrue(result.usedLossless, "真带透明度的图纸必须保持无损，不能压平成白底")
+        XCTAssertTrue(
+            result.usedLossless,
+            "真带透明像素的图被压成了有损格式（\(result.data.count)B）—— 透明度不可逆丢失"
+        )
+
+        // 解码回来 alpha 通道必须还在
+        let decoded = try XCTUnwrap(UIImage(data: result.data)?.cgImage)
+        let alpha = decoded.alphaInfo
+        XCTAssertTrue(
+            alpha == .first || alpha == .last
+                || alpha == .premultipliedFirst || alpha == .premultipliedLast,
+            "重编码后 alpha 通道没了，alphaInfo=\(alpha.rawValue)"
+        )
+    }
+
+    /// 迁移路径同样要认得透明 —— 存量老图走的是 `recompress`（从 Data 解码），
+    /// 与写入路径是两条独立的判定链路。
+    func test_recompress_preserves_transparency() throws {
+        let png = try XCTUnwrap(makeTransparentOverBudgetImage().pngData())
+        XCTAssertGreaterThan(png.count, ProjectImageEncoder.compactionThresholdBytes,
+                             "夹具必须超扫描阈值，否则 recompress 直接返回 nil")
+
+        guard let result = ProjectImageEncoder.recompress(png) else {
+            return   // 压不下去 → 原样保留，也是安全的
+        }
+        XCTAssertTrue(
+            result.usedLossless,
+            "迁移器把用户的透明图压成了有损格式 —— 这是后台自动执行的不可逆数据破坏"
+        )
+        let decoded = try XCTUnwrap(UIImage(data: result.data)?.cgImage)
+        let alpha = decoded.alphaInfo
+        XCTAssertTrue(
+            alpha == .first || alpha == .last
+                || alpha == .premultipliedFirst || alpha == .premultipliedLast,
+            "recompress 后 alpha 通道没了，alphaInfo=\(alpha.rawValue)"
+        )
     }
 
     // MARK: - 2. 拼图模式保真（方案选型里唯一真有风险的假设）

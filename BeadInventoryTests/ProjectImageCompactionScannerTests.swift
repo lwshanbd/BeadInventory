@@ -15,6 +15,7 @@
 
 import XCTest
 import SwiftData
+import SQLite3
 import UIKit
 @testable import BeadInventory
 
@@ -201,5 +202,50 @@ final class ProjectImageCompactionScannerTests: XCTestCase {
             storeURL: missing, thresholdBytes: 1000, limit: 10, excluding: []
         )
         XCTAssertEqual(result, .failure(.unsupportedStore))
+    }
+
+    // MARK: - 失败分类（变异测试证实此前完全不设防）
+
+    /// 这张表是「BUSY 不能被当成永久失败」那条修复的全部内容，而它此前零覆盖：
+    /// 唯一的测试断言 `.unsupportedStore`，一个恒返回 `.unsupportedStore` 的变异体
+    /// 照样绿。认错成永久的代价是走 SwiftData BLOB 回退（实测 +1.26 GB）。
+    func test_classify_maps_transient_and_permanent_correctly() {
+        let transient: [Int32] = [
+            SQLITE_BUSY, SQLITE_LOCKED, SQLITE_IOERR, SQLITE_CANTOPEN,
+            SQLITE_PROTOCOL, SQLITE_NOMEM, SQLITE_INTERRUPT
+        ]
+        for code in transient {
+            XCTAssertEqual(
+                StoreScanFailure.classify(resultCode: code), .transient,
+                "结果码 \(code) 被判成永久失败 —— 那条分支会回退到 +1.26GB 的 SwiftData 谓词"
+            )
+        }
+
+        let permanent: [Int32] = [
+            SQLITE_ERROR, SQLITE_CORRUPT, SQLITE_NOTADB, SQLITE_FORMAT,
+            SQLITE_MISMATCH, SQLITE_PERM, SQLITE_AUTH, SQLITE_READONLY
+        ]
+        for code in permanent {
+            XCTAssertEqual(
+                StoreScanFailure.classify(resultCode: code), .unsupportedStore,
+                "结果码 \(code) 被判成瞬时 —— 会永远重试一个修不好的库"
+            )
+        }
+    }
+
+    /// 扩展码必须按主码分类：`SQLITE_IOERR_READ` = 266 = 主码 SQLITE_IOERR(10)。
+    /// `& 0xFF` 那步是承重的，写错了所有扩展码都会掉进 default。
+    func test_classify_masks_extended_result_codes() {
+        let ioerrRead: Int32 = SQLITE_IOERR | (1 << 8)      // 266
+        XCTAssertEqual(StoreScanFailure.classify(resultCode: ioerrRead), .transient)
+        let busySnapshot: Int32 = SQLITE_BUSY | (2 << 8)    // 517
+        XCTAssertEqual(StoreScanFailure.classify(resultCode: busySnapshot), .transient)
+        let corruptVtab: Int32 = SQLITE_CORRUPT | (1 << 8)  // 267
+        XCTAssertEqual(StoreScanFailure.classify(resultCode: corruptVtab), .unsupportedStore)
+    }
+
+    /// 未知结果码必须往**瞬时**靠 —— 两个方向的代价不对称。
+    func test_classify_defaults_unknown_codes_to_transient() {
+        XCTAssertEqual(StoreScanFailure.classify(resultCode: 99), .transient)
     }
 }

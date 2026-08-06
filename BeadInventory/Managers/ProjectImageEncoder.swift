@@ -357,7 +357,20 @@ enum ProjectImageEncoder {
         let w = max(1, Int((Double(image.width) * scale).rounded()))
         let h = max(1, Int((Double(image.height) * scale).rounded()))
 
-        var buffer = [UInt8](repeating: 255, count: w * h)
+        // **缓冲必须清零，不能预填 255。**
+        //
+        // `CGContext.draw` 是 source-over 合成，不是 copy。目标预填 255（alpha=1.0）时
+        //     dst = src + 1·(1 − src) = 1
+        // 恒等于不透明 —— 函数结构上不可能返回 true，任何透明图都会被判成不透明，
+        // 进而被 JPEG 压平。实测：4.8 MB 的半透明图 → usedLossless=false，
+        // 解码回来 alphaInfo=noneSkipFirst，**透明度被永久摧毁**。
+        //
+        // 这比它要修的原 bug 更糟：原 bug 只是图偏大，这个是不可逆地毁用户数据，
+        // 而且迁移器会在后台自动对存量图执行。
+        //
+        // 清零之后 source-over 得到 dst = src，即真实 alpha；而且「画不上去」
+        // （draw 无效）也会留下 0 → 报告有透明 → 走无损，方向仍然是保守的。
+        var buffer = [UInt8](repeating: 0, count: w * h)
         let rendered = buffer.withUnsafeMutableBytes { raw -> Bool in
             guard let ctx = CGContext(
                 data: raw.baseAddress, width: w, height: h,

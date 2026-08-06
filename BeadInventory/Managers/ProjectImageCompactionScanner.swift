@@ -53,14 +53,27 @@ enum StoreScanFailure: Error, Equatable {
     /// 分类法自己的盲区把它本来要防的失败模式放了进来。
     static func classify(_ db: OpaquePointer?) -> StoreScanFailure {
         guard let db else { return .transient }
-        switch sqlite3_extended_errcode(db) & 0xFF {
-        case SQLITE_BUSY, SQLITE_LOCKED, SQLITE_IOERR, SQLITE_CANTOPEN,
-             SQLITE_PROTOCOL, SQLITE_NOMEM, SQLITE_INTERRUPT:
-            return .transient
-        default:
-            // SQLITE_ERROR（SQL/schema 不匹配）、SQLITE_CORRUPT、SQLITE_NOTADB 等
-            // 都是换个时间重试也一样的 —— 让调用方走永久回退。
+        return classify(resultCode: sqlite3_errcode(db))
+    }
+
+    /// 纯函数版 —— 分类表本身可以直接表驱动测试，不用把真库驱进 SQLITE_NOTADB 那种状态。
+    ///
+    /// **默认方向是 `.transient`。** 认错成瞬时的代价是下次启动多扫一遍；
+    /// 认错成永久的代价是走 SwiftData BLOB 回退（实测 +1.26 GB）或者整个功能停摆 ——
+    /// 两边不对称，所以未知码往安全的那边靠。
+    static func classify(resultCode: Int32) -> StoreScanFailure {
+        switch resultCode & 0xFF {
+        case SQLITE_ERROR,      // SQL / schema 不匹配
+             SQLITE_CORRUPT,
+             SQLITE_NOTADB,
+             SQLITE_FORMAT,
+             SQLITE_MISMATCH,
+             SQLITE_PERM,
+             SQLITE_AUTH,
+             SQLITE_READONLY:
             return .unsupportedStore
+        default:
+            return .transient
         }
     }
 }

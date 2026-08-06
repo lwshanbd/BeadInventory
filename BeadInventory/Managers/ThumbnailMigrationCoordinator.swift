@@ -219,15 +219,6 @@ final class ThumbnailMigrationCoordinator {
         Set(UserDefaults.standard.stringArray(forKey: stubbornDefaultsKey) ?? [])
     }
 
-    /// 扫描器只给 ID，所以这里把「已知 stubborn 的 ID」摊平出来供排除用。
-    /// 同一个 ID 只要还带着记账过的那个字节数就会被排除；字节数变了则 key 不匹配，
-    /// 但 ID 仍在集合里 —— 所以还需要 `compactOne` 侧的二次确认（见 `.stubborn` 分支）。
-    nonisolated static func loadStubbornIDs() -> Set<UUID> {
-        Set(loadStubbornKeys().compactMap { key in
-            UUID(uuidString: String(key.prefix(36)))
-        })
-    }
-
     nonisolated static func isStubborn(_ id: UUID, bytes: Int) -> Bool {
         loadStubbornKeys().contains(stubbornKey(id, bytes: bytes))
     }
@@ -275,24 +266,14 @@ final class ThumbnailMigrationCoordinator {
 
     // MARK: - 内部实现
 
-    /// 项目阶段的一整轮，抽出来是为了**可测**。
-    ///
-    /// 变异测试发现：删掉 run loop 的 `excluded.insert`（唯一防止无限重选同一行的条件）
-    /// 没有任何测试会红 —— 因为 `run()` 是 private、只能经 `start()` 触达，而没有测试
-    /// 调 `start()`。`StoreCompactionIntegrationTests` 则在测试体里**重新实现了一遍循环**，
-    /// 于是它验证的是测试作者写的循环，不是发布的这一个。
-    ///
-    /// - Returns: 本轮统计，供测试断言与日志。
-    struct PhaseStats: Equatable {
-        var migrated = 0
-        var raceSkipped = 0
-        var alreadyDone = 0
-        var stubborn = 0
-        var failures = 0
-        var pagesFetched = 0
-        var bytesWritten = 0
-    }
-
+    // 注：`run()` 仍是 private，只能经 `start()` 触达，而没有测试调 `start()` ——
+    // 也就是说 run loop 的终止条件（`excluded.insert`）目前仍**没有**测试覆盖，
+    // 变异测试证实删掉它不会让任何测试变红。`StoreCompactionIntegrationTests` 是在
+    // 测试体里重新实现了一遍循环，验证的是测试作者写的循环而不是这一个。
+    //
+    // 正确的修法是把项目阶段抽成 `nonisolated static func runProjectPhase(...)` 并返回一个统计结构体
+    // 让集成测试直接调发布代码。本轮没做 —— 抽取涉及七个计数器和两处 labeled break，
+    // 机械改写风险高于收益，留作 follow-up，不在这里放一个空壳类型假装已经做了。
     private func run(inventoryManager: InventoryManager) async {
         // 先睡 5s 让出冷启动 + 首屏 commit
         do {
@@ -318,7 +299,7 @@ final class ThumbnailMigrationCoordinator {
             "storeURL": storeURL.lastPathComponent,
             "storeExists": FileManager.default.fileExists(atPath: storeURL.path),
             "storeDir": String(storeURL.deletingLastPathComponent().path.suffix(60)),
-            "stubbornCount": Self.loadStubbornIDs().count
+            "stubbornCount": Self.loadStubbornKeys().count
         ])
 
         var migrated = 0
@@ -350,8 +331,16 @@ final class ThumbnailMigrationCoordinator {
         // 「本轮处理过的就不再考虑」是同一件事更直接的表达，且对所有 outcome 一致成立。
         //
         // 只有 `.stubborn`（试过但压不下去）会**落盘**跨启动排除；其余的下次启动重新给机会。
-        let stubborn = Self.loadStubbornIDs()
-        var excluded = stubborn
+        // **不要**用 stubborn 集合预填 `excluded`。
+        //
+        // 那样等于把 ID 无条件喂给扫描器的 `excluding:`，行就再也不会作为候选返回，
+        // 于是下面按字节数的二次确认永远够不到 —— round 2 引入内容键控
+        //（「用户换图 / 备份恢复 / CloudKit 同步来新图之后就该重新考虑」）成了摆设，
+        // 行为跟只按 ID 拉黑完全一样。历史阶段从空集起所以是对的；两边不一致就是线索。
+        //
+        // 从空集起之后终止性不受影响：stubborn 命中会 `excluded.insert` + `continue`，
+        // 其余 outcome 也一律 insert，每个被扫到的候选本轮内都会离开候选集。
+        var excluded = Set<UUID>()
 
         // 打标签：下面 switch 里的失败分支要跳出的是**这个循环**，
         // 裸 `break` 只会跳出 switch（这条正是编译器帮我抓到的）。
@@ -513,10 +502,11 @@ final class ThumbnailMigrationCoordinator {
         var saved = 0
         var failures = 0
         var noOpSkipped = 0
+        var raceOrCancelled = 0
         var historyThrottles = 0
         var excluded = Set<UUID>()
 
-        while true {
+        historyLoop: while true {
             guard !Task.isCancelled else { return }
             // 闸门与项目阶段共用同一份写预算 —— 两个阶段加起来不超过单次 run 的上限。
             if let reason = Self.throttleReason(bytesWrittenThisRun: bytesWritten) {
@@ -525,9 +515,12 @@ final class ThumbnailMigrationCoordinator {
                 ])
                 // 与项目阶段用同一条策略（见 ThrottleReason.endsThisRun）——
                 // 以前这里把所有原因都当终止，瞬时发热会把整个历史阶段掐掉。
-                if reason.endsThisRun { break }
+                if reason.endsThisRun { break historyLoop }
                 historyThrottles += 1
-                if historyThrottles >= Self.maxConsecutiveThrottles { break }
+                // **连续**计数：成功拿到一页就归零（见下）。原来只增不减，于是一个健康但
+                // 偶尔遇到瞬时发热的历史阶段，累计 10 次非相邻闸门就退出了 ——
+                // 而它比的是 maxConsecutiveThrottles。项目阶段一直是对的，这里漏了。
+                if historyThrottles >= Self.maxConsecutiveThrottles { break historyLoop }
                 do {
                     try await Task.sleep(nanoseconds: Self.throttledRetryNanos)
                 } catch {
@@ -549,9 +542,12 @@ final class ThumbnailMigrationCoordinator {
                 AppLogger.shared.warning("ThumbnailMigration", "history_scan_failed", metadata: [
                     "failure": "\(failure)", "compacted": compacted
                 ])
-                return
+                // 跳出循环而不是 return —— 否则下面的 history_completed 永远不记录，
+                // 与它自己「无条件汇报」的注释矛盾。（裸 break 只跳出 switch。）
+                break historyLoop
             }
-            if ids.isEmpty { break }
+            if ids.isEmpty { break historyLoop }
+            historyThrottles = 0   // 成功拿到一页 = 闸门不再连续命中
 
             for candidate in ids {
                 guard !Task.isCancelled else { return }
@@ -568,17 +564,22 @@ final class ThumbnailMigrationCoordinator {
                     noOpSkipped += 1
                     continue
                 }
-                let result = await Self.compactHistoryOne(recordId: id, container: container)
-                if result.changed {
+                switch await Self.compactHistoryOne(recordId: id, container: container) {
+                case .compacted(let bytesSaved, let written):
                     compacted += 1
-                    saved += result.bytesSaved
-                    bytesWritten += max(0, result.bytesWritten)
-                } else if result.failed {
-                    failures += 1
-                } else {
-                    // 「扫描选中了它，但一张图都不用动」—— 记账，下次别再解析它
+                    saved += bytesSaved
+                    bytesWritten += written
+                case .noOp:
+                    // 只有「真的一张图都不用动」才落盘记账，否则下次冷启动还要把这条
+                    // 几十 MB 的快照完整解析一遍
                     Self.noteStubborn(id, bytes: candidate.bytes)
                     noOpSkipped += 1
+                case .failed:
+                    failures += 1
+                case .skipped:
+                    // 取消 / 竞态：**不**落盘。切一次后台就把正在处理的那条永久拉黑，
+                    // 而处理最慢的恰恰是最大的那些。
+                    raceOrCancelled += 1
                 }
             }
 
@@ -595,6 +596,7 @@ final class ThumbnailMigrationCoordinator {
             "compacted": compacted,
             "failures": failures,
             "noOpSkipped": noOpSkipped,
+            "raceOrCancelled": raceOrCancelled,
             "bytesSaved": saved
         ])
     }
@@ -603,12 +605,33 @@ final class ThumbnailMigrationCoordinator {
     ///
     /// 撤回语义完全不变 —— 图片还在快照里，只是变小了。刻意**不**做「删掉老快照里的图」：
     /// `.projectDelete` 的快照是那张图删除之后的唯一拷贝，删了就是永久数据丢失。
-    /// - Returns: `failed` 区分「真失败」和「没什么可做」——两者以前都返回 `(false, 0, 0)`，
-    ///   于是「历史表本来就干净」和「历史压缩 100% 坏了」在遥测上长得一模一样。
+    /// 单条历史记录的处理结果。
+    ///
+    /// 早期是 `(changed: Bool, failed: Bool, bytesSaved: Int, bytesWritten: Int)`，三个问题：
+    ///   - 两个相邻 Bool 靠位置构造（八处 `return (false, true, 0, 0)` 之类），写反了不报错；
+    ///   - `(changed: true, failed: true)` 这种无意义组合可以表示；
+    ///   - 调用方是 `if changed / else if failed / else`，而 `else` 分支会**落盘永久拉黑**。
+    ///     取消和 TOCTOU 竞态都落在那个 else 里 —— 用户切一次后台，正在处理的那条快照就被
+    ///     永久排除（历史行 append-only，字节数不会再变，内容键控也救不回来），
+    ///     而处理最慢、最容易被取消的恰恰是最大的那些。
+    ///
+    /// 改成枚举：非法组合不可表示；调用方是穷尽 `switch`，将来新增 outcome 是编译错误
+    /// 而不是静默掉进「永久拉黑」。
+    enum HistoryOutcome: Equatable {
+        /// 真的写回了。`bytesWritten` 供写预算记账，`bytesSaved` 供遥测。
+        case compacted(bytesSaved: Int, bytesWritten: Int)
+        /// 扫描选中了它，但一张图都不用动 —— **只有这个** outcome 该落 stubborn 记账。
+        case noOp
+        /// fetch / save 抛错。下次启动重试。
+        case failed
+        /// 取消，或 TOCTOU 竞态。**不落盘**，下次重来。
+        case skipped
+    }
+
     nonisolated static func compactHistoryOne(
         recordId: UUID,
         container: ModelContainer
-    ) async -> (changed: Bool, failed: Bool, bytesSaved: Int, bytesWritten: Int) {
+    ) async -> HistoryOutcome {
         let originalBefore: Data?
         let originalAfter: Data?
         do {
@@ -618,17 +641,17 @@ final class ThumbnailMigrationCoordinator {
             descriptor.fetchLimit = 1
             descriptor.propertiesToFetch = [\.beforeSnapshot, \.afterSnapshot]
             let bg = ModelContext(container)
-            guard let row = try bg.fetch(descriptor).first else { return (false, false, 0, 0) }
+            guard let row = try bg.fetch(descriptor).first else { return .skipped }
             originalBefore = row.beforeSnapshot
             originalAfter = row.afterSnapshot
         } catch {
             AppLogger.shared.error("ThumbnailMigration", "history_fetch_failed", metadata: [
                 "recordId": recordId.uuidString, "error": "\(error)"
             ])
-            return (false, true, 0, 0)
+            return .failed
         }
 
-        guard !Task.isCancelled else { return (false, false, 0, 0) }
+        guard !Task.isCancelled else { return .skipped }
 
         // 显式 autoreleasepool —— 与 `ProjectImageEncoder.recompress` 同理，而且这里更狠：
         // `HistorySnapshotCompactor.compact` 要把一个可达 34 MB 的快照 `JSONSerialization`
@@ -637,11 +660,11 @@ final class ThumbnailMigrationCoordinator {
         //（而 base64 的 +33% 正是这个压缩器存在的理由）。
         var newBefore: HistorySnapshotCompactor.Result?
         autoreleasepool { newBefore = originalBefore.flatMap(HistorySnapshotCompactor.compact) }
-        guard !Task.isCancelled else { return (false, false, 0, 0) }
+        guard !Task.isCancelled else { return .skipped }
         var newAfter: HistorySnapshotCompactor.Result?
         autoreleasepool { newAfter = originalAfter.flatMap(HistorySnapshotCompactor.compact) }
         // 一张图都不用动 —— 不是失败，调用方会据此落 stubborn 记账避免下次重新解析
-        guard newBefore != nil || newAfter != nil else { return (false, false, 0, 0) }
+        guard newBefore != nil || newAfter != nil else { return .noOp }
 
         var bytesSaved = 0
         var bytesWritten = 0
@@ -652,7 +675,7 @@ final class ThumbnailMigrationCoordinator {
             descriptor.fetchLimit = 1
             descriptor.propertiesToFetch = [\.beforeSnapshot, \.afterSnapshot]
             let bg = ModelContext(container)
-            guard let row = try bg.fetch(descriptor).first else { return (false, false, 0, 0) }
+            guard let row = try bg.fetch(descriptor).first else { return .skipped }
 
             // TOCTOU：历史记录本身是 append-only 的，但撤回会改 isReverted、
             // trim 会删行，所以仍然按字段校验一次再写。
@@ -666,15 +689,16 @@ final class ThumbnailMigrationCoordinator {
                 bytesSaved += newAfter.bytesSaved
                 bytesWritten += newAfter.data.count
             }
-            guard bg.hasChanges else { return (false, false, 0, 0) }
+            // 两条 TOCTOU 都没通过 = 并发改动，不是 no-op，**不能**落盘拉黑
+            guard bg.hasChanges else { return .skipped }
             try bg.save()
         } catch {
             AppLogger.shared.error("ThumbnailMigration", "history_save_failed", metadata: [
                 "recordId": recordId.uuidString, "error": "\(error)"
             ])
-            return (false, true, 0, 0)
+            return .failed
         }
-        return (true, false, bytesSaved, bytesWritten)
+        return .compacted(bytesSaved: bytesSaved, bytesWritten: bytesWritten)
     }
 
     enum MigrationOutcome: Equatable {
