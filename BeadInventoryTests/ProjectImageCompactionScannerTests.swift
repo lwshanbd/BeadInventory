@@ -210,9 +210,13 @@ final class ProjectImageCompactionScannerTests: XCTestCase {
     /// 唯一的测试断言 `.unsupportedStore`，一个恒返回 `.unsupportedStore` 的变异体
     /// 照样绿。认错成永久的代价是走 SwiftData BLOB 回退（实测 +1.26 GB）。
     func test_classify_maps_transient_and_permanent_correctly() {
+        // READONLY 在这张表里的位置反直觉但是对的：它最常见的出场方式是
+        // READONLY_RECOVERY/_CANTINIT —— 只读连接打开刚崩溃过的 WAL 库时，WAL 恢复
+        // 必须等写连接（App 自己的 SwiftData）来做，等一等重试就能过。
         let transient: [Int32] = [
             SQLITE_BUSY, SQLITE_LOCKED, SQLITE_IOERR, SQLITE_CANTOPEN,
-            SQLITE_PROTOCOL, SQLITE_NOMEM, SQLITE_INTERRUPT
+            SQLITE_PROTOCOL, SQLITE_NOMEM, SQLITE_INTERRUPT,
+            SQLITE_PERM, SQLITE_AUTH, SQLITE_READONLY
         ]
         for code in transient {
             XCTAssertEqual(
@@ -222,8 +226,7 @@ final class ProjectImageCompactionScannerTests: XCTestCase {
         }
 
         let permanent: [Int32] = [
-            SQLITE_ERROR, SQLITE_CORRUPT, SQLITE_NOTADB, SQLITE_FORMAT,
-            SQLITE_MISMATCH, SQLITE_PERM, SQLITE_AUTH, SQLITE_READONLY
+            SQLITE_ERROR, SQLITE_CORRUPT, SQLITE_NOTADB, SQLITE_FORMAT, SQLITE_MISMATCH
         ]
         for code in permanent {
             XCTAssertEqual(
@@ -242,6 +245,9 @@ final class ProjectImageCompactionScannerTests: XCTestCase {
         XCTAssertEqual(StoreScanFailure.classify(resultCode: busySnapshot), .transient)
         let corruptVtab: Int32 = SQLITE_CORRUPT | (1 << 8)  // 267
         XCTAssertEqual(StoreScanFailure.classify(resultCode: corruptVtab), .unsupportedStore)
+        // 刚崩溃过的 WAL 库 + 只读连接的教科书场景
+        let readonlyRecovery: Int32 = SQLITE_READONLY | (1 << 8)  // 264
+        XCTAssertEqual(StoreScanFailure.classify(resultCode: readonlyRecovery), .transient)
     }
 
     /// 未知结果码必须往**瞬时**靠 —— 两个方向的代价不对称。

@@ -27,6 +27,22 @@ import UIKit
 
 final class ThumbnailMigrationCoordinatorTests: XCTestCase {
 
+    // seam（nonisolated(unsafe) static var）和 stubborn 记账（UserDefaults）都是跨测试的
+    // 全局状态。individual 测试里的 defer 靠自觉，忘一个就毒害后面所有 compactOne 调用 ——
+    // 收进 setUp/tearDown，忘了也兜得住（round-2 双审两侧都点了这条）。
+    // 另外 compactOne 现在会在「行仍超阈值」时自己写 ledger，不重置的话跨运行残留。
+    override func setUp() {
+        super.setUp()
+        ThumbnailMigrationCoordinator.resetTestSeams()
+        ThumbnailMigrationCoordinator.resetStubbornIDsForTesting()
+    }
+
+    override func tearDown() {
+        ThumbnailMigrationCoordinator.resetTestSeams()
+        ThumbnailMigrationCoordinator.resetStubbornIDsForTesting()
+        super.tearDown()
+    }
+
     private func makeContainer() throws -> ModelContainer {
         let schema = Schema(versionedSchema: CurrentSchema.self)
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
@@ -364,7 +380,15 @@ final class ThumbnailMigrationCoordinatorTests: XCTestCase {
 
     // MARK: - 闸门
 
-    func test_throttle_reason_write_budget_is_terminal() {
+    func test_throttle_reason_write_budget_is_terminal() throws {
+        // 第一条断言读的是**真实环境**（thermalState / 低电量 / 磁盘余量）——
+        // 发热的 CI、开低电量的笔记本上它必红，而那不是被测代码的错。
+        // 环境不干净就跳过，别把「断言环境」当成「断言行为」（round-1 批过的同款错误）。
+        let info = ProcessInfo.processInfo
+        try XCTSkipUnless(
+            (info.thermalState == .nominal || info.thermalState == .fair) && !info.isLowPowerModeEnabled,
+            "宿主机处于发热/低电量状态，环境相关断言无意义"
+        )
         XCTAssertNil(ThumbnailMigrationCoordinator.throttleReason(bytesWrittenThisRun: 0))
         let over = ThumbnailMigrationCoordinator.throttleReason(bytesWrittenThisRun: 400 * 1024 * 1024)
         XCTAssertEqual(over, .writeBudget)
@@ -413,5 +437,160 @@ final class ThumbnailMigrationCoordinatorTests: XCTestCase {
             try fetchRow(id, in: container)?.finishedImage, replacement,
             "用户刚换上的成品图被旧图的重编码版覆盖了 —— 静默的用户数据丢失"
         )
+    }
+
+    // MARK: - 瘦身后仍超阈值 → 落账（Codex round-2 C1：反复有损重编码）
+
+    /// thumbnail 是解不开的坏字节（永远压不动）而 finishedImage 压下来了：
+    /// 行被成功瘦身（.migrated）但仍超扫描阈值。不落账的话下一轮扫描重新选中它 ——
+    /// **每次启动一次有损重编码**，画质逐次下降，写放大换了个触发器。
+    @MainActor
+    func test_compactOne_ledgers_row_that_stays_over_threshold() async throws {
+        let container = try makeContainer()
+        var corrupt = Data(count: 13 * 1024 * 1024)
+        corrupt.withUnsafeMutableBytes { arc4random_buf($0.baseAddress, $0.count) }
+        let id = try seedProject(
+            in: container, thumbnail: corrupt, displayThumbnail: nil,
+            finishedImage: makeFatPhotoPNG()
+        )
+
+        let outcome = await ThumbnailMigrationCoordinator.compactOne(projectId: id, container: container)
+        XCTAssertTrue(outcome.isMigrated, "成品图压下来了，应算成功，实际 \(outcome)")
+
+        let row = try XCTUnwrap(fetchRow(id, in: container))
+        XCTAssertEqual(row.thumbnail, corrupt, "解不开的字节必须原样保留")
+        let finishedAfter = try XCTUnwrap(row.finishedImage)
+        XCTAssertLessThan(finishedAfter.count, ProjectImageEncoder.compactionThresholdBytes)
+
+        // 口径必须与扫描器的 sizeExpression 一致：三个图片列之和
+        let scannerMetric = (row.thumbnail?.count ?? 0)
+            + (row.finishedImage?.count ?? 0)
+            + (row.displayThumbnail?.count ?? 0)
+        XCTAssertTrue(
+            ThumbnailMigrationCoordinator.isStubborn(id, bytes: scannerMetric),
+            "行瘦身后仍超阈值却没落账 —— 下一轮扫描会重新选中它，每次启动一次有损重编码"
+        )
+    }
+
+    // MARK: - displayThumbnail 被并发填充时不得覆盖（round-2 变异测试指出的 M2b 缺口）
+
+    @MainActor
+    func test_compactOne_does_not_clobber_concurrently_filled_display_thumbnail() async throws {
+        let container = try makeContainer()
+        // 原图够小 → 只触发回填分支
+        let id = try seedProject(in: container, thumbnail: makePNG(side: 64), displayThumbnail: nil)
+
+        let concurrentFill = Data([0xF1, 0xE2, 0xD3])   // 对方（updateProjectThumbnail）填的小图
+        ThumbnailMigrationCoordinator.didFinishEncodingForTesting = { @Sendable changedId in
+            await MainActor.run {
+                let ctx = ModelContext(container)
+                var d = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.id == changedId })
+                d.fetchLimit = 1
+                if let row = try? ctx.fetch(d).first {
+                    row.displayThumbnail = concurrentFill
+                    try? ctx.save()
+                }
+            }
+        }
+
+        let outcome = await ThumbnailMigrationCoordinator.compactOne(projectId: id, container: container)
+        XCTAssertEqual(outcome, .alreadyDone, "对方已填好小图，本次应是 no-op，实际 \(outcome)")
+        XCTAssertEqual(
+            try fetchRow(id, in: container)?.displayThumbnail, concurrentFill,
+            "并发填充的小图被迁移器覆盖了 —— 对方拿的是更新的原图，我们的版本是旧的"
+        )
+    }
+
+    // MARK: - compactHistoryOne（round-2 变异测试：整个函数零测试触达）
+
+    @MainActor
+    private func seedHistory(
+        in container: ModelContainer,
+        before: Data?,
+        after: Data?
+    ) throws -> UUID {
+        let ctx = ModelContext(container)
+        let rec = SDHistoryRecord(
+            operationType: "projectUpdate", targetName: "历史测试",
+            beforeSnapshot: before, afterSnapshot: after
+        )
+        ctx.insert(rec)
+        try ctx.save()
+        return rec.id
+    }
+
+    @MainActor
+    private func fetchHistoryRow(_ id: UUID, in container: ModelContainer) throws -> SDHistoryRecord? {
+        let ctx = ModelContext(container)
+        var d = FetchDescriptor<SDHistoryRecord>(predicate: #Predicate { $0.id == id })
+        d.fetchLimit = 1
+        return try ctx.fetch(d).first
+    }
+
+    private func makeFatSnapshotJSON() throws -> Data {
+        let snapshot = ProjectSnapshot(
+            id: UUID(), name: "带图快照", date: Date(timeIntervalSince1970: 1_700_000_000),
+            totalBeads: 42, brandId: nil, isArchived: false, parentId: nil,
+            isPlanned: false, executedDate: nil, beadUsages: [],
+            thumbnail: makeFatPhotoPNG(),
+            finishedImage: makeFatPhotoPNG(side: 1300),
+            capturesImages: true
+        )
+        return try JSONEncoder().encode(snapshot)
+    }
+
+    /// 快照两列都压下来 → .compacted；解码回来撤回语义完整；
+    /// 压完仍超阈值（两列 base64 各 ~3.5MB）→ **函数内部**落账；第二遍 → .noOp。
+    @MainActor
+    func test_compactHistoryOne_compacts_ledgers_and_converges() async throws {
+        let container = try makeContainer()
+        let fat = try makeFatSnapshotJSON()
+        XCTAssertGreaterThan(fat.count, ProjectImageEncoder.compactionThresholdBytes,
+                             "夹具必须超阈值，否则没在测该测的东西")
+        let id = try seedHistory(in: container, before: fat, after: fat)
+
+        let outcome = await ThumbnailMigrationCoordinator.compactHistoryOne(recordId: id, container: container)
+        guard case .compacted(let saved, let written) = outcome else {
+            return XCTFail("期望 .compacted，实际 \(outcome)")
+        }
+        XCTAssertGreaterThan(saved, 0)
+
+        let row = try XCTUnwrap(fetchHistoryRow(id, in: container))
+        let newBefore = try XCTUnwrap(row.beforeSnapshot)
+        XCTAssertLessThan(newBefore.count, fat.count, "快照没变小")
+        // 撤回语义：图还在、能解码
+        let decoded = try JSONDecoder().decode(ProjectSnapshot.self, from: newBefore)
+        XCTAssertNotNil(decoded.thumbnail, "撤回要靠它还原图片，绝不能变 nil")
+        XCTAssertNotNil(UIImage(data: try XCTUnwrap(decoded.thumbnail)))
+        XCTAssertEqual(decoded.capturesImages, true)
+
+        // 预算记账按整行（两列之和），与历史扫描器的 sizeExpression 同口径
+        let rowTotal = (row.beforeSnapshot?.count ?? 0) + (row.afterSnapshot?.count ?? 0)
+        XCTAssertEqual(written, rowTotal, "bytesWritten 必须是保存后整行之和（预算口径）")
+        if rowTotal > ProjectImageEncoder.compactionThresholdBytes {
+            XCTAssertTrue(
+                ThumbnailMigrationCoordinator.isStubborn(id, bytes: rowTotal),
+                "压完仍超阈值却没落账 —— 每次启动都会重新解析这条几 MB 的快照"
+            )
+        }
+
+        // 收敛：第二遍必须是 .noOp（里面每张图都已低于单图阈值）
+        let second = await ThumbnailMigrationCoordinator.compactHistoryOne(recordId: id, container: container)
+        XCTAssertEqual(second, .noOp, "第二遍应当无事可做，实际 \(second)")
+    }
+
+    /// 坏字节快照 → .noOp（**有意**不走 .failed）：JSONSerialization 对相同输入的失败是
+    /// 确定性的，走 .failed = 每次启动重新解析同一条坏快照、永远失败，纯烧 CPU。
+    /// 落 stubborn（内容键控，由调用方做）才是对确定性失败的正确处置。
+    @MainActor
+    func test_compactHistoryOne_returns_noOp_for_malformed_snapshot() async throws {
+        let container = try makeContainer()
+        let garbage = Data([0x00, 0x01, 0x02, 0x03])
+        let id = try seedHistory(in: container, before: garbage, after: nil)
+
+        let outcome = await ThumbnailMigrationCoordinator.compactHistoryOne(recordId: id, container: container)
+        XCTAssertEqual(outcome, .noOp)
+        XCTAssertEqual(try fetchHistoryRow(id, in: container)?.beforeSnapshot, garbage,
+                       "坏字节必须原样保留 —— .projectDelete 的快照可能是照片唯一拷贝")
     }
 }

@@ -1677,19 +1677,25 @@ struct ProjectRowWithHierarchy: View {
             }
         }
         .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
-            // 优先用成品图，没成品图回落到缩略图。
+            // 优先用成品图，没成品图回落到图纸 —— **全部走降级路径**。
+            // 这一行只有 40-50pt，早先取原字节 `UIImage(data:)` 是全分辨率解码：
+            // 统计页可见的几个 row 各留一份全尺寸位图（round-2 双审两侧命中）。
             let id = project.id
-            let loader = inventoryManager.imageLoader
-            // `??` 的右侧是 autoclosure，不能放 await —— 拆成显式分支
-            let finished = await loader?.finishedImage(for: id)
-            let data: Data?
-            if let finished {
-                data = finished
-            } else {
-                data = await loader?.thumbnail(for: id)
+            guard let loader = inventoryManager.imageLoader else { return }
+            var image: UIImage?
+            let finished = await loader.downsampledFinishedImage(for: id, maxPixelSize: 200)
+            if let finishedImage = finished.image {
+                image = finishedImage
+            } else if !finished.bytesFound {
+                // 没有成品图 → 图纸：优先列表小图（~50-100KB JPEG），缺了再现场降级原图
+                if let displayData = await loader.displayThumbnail(for: id) {
+                    image = UIImage(data: displayData)
+                } else {
+                    image = await loader.downsampledRawThumbnail(for: id)
+                }
             }
             guard !Task.isCancelled, id == project.id else { return }
-            self.loadedImage = data.flatMap { UIImage(data: $0) }
+            self.loadedImage = image
         }
     }
 }

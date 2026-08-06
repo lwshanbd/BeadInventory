@@ -1,6 +1,36 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "好" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        }
+      }
+    },
+    "这张图片无法处理，原有图片已保留。请重试或换一张图片。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This image couldn't be processed. Your existing image was kept. Please try again or choose a different image."
+          }
+        }
+      }
+    },
+    "这张图片无法处理，项目未创建。请重试或换一张图片。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This image couldn't be processed, so the project wasn't created. Please try again or choose a different image."
+          }
+        }
+      }
+    },
     "" : {
 
     },
@@ -4638,7 +4668,14 @@
       }
     },
     "加载中…" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading…"
+          }
+        }
+      }
     },
     "加载图片中..." : {
       "localizations" : {

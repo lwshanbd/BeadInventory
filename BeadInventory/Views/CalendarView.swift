@@ -526,8 +526,10 @@ private struct DayProjectCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // 缩略图：异步从 SwiftData 按需取 finishedImage
-            ProjectFinishedImage(projectId: project.id) {
+            // 缩略图：走降级组件 —— 这张卡只有 64pt（3x = 192px），
+            // `ProjectFinishedImage` 会把成品图**全分辨率**解码（可达几十 MB 位图），
+            // 一个月十几张卡叠起来就是当年 jetsam 的老路（round-2 双审两侧命中）。
+            ProjectFinishedThumbnail(projectId: project.id, maxPixelSize: 200) {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Theme.ColorToken.Surface.subtle)
                     .frame(width: 64, height: 64)

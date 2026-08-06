@@ -58,19 +58,22 @@ enum StoreScanFailure: Error, Equatable {
 
     /// 纯函数版 —— 分类表本身可以直接表驱动测试，不用把真库驱进 SQLITE_NOTADB 那种状态。
     ///
-    /// **默认方向是 `.transient`。** 认错成瞬时的代价是下次启动多扫一遍；
-    /// 认错成永久的代价是走 SwiftData BLOB 回退（实测 +1.26 GB）或者整个功能停摆 ——
-    /// 两边不对称，所以未知码往安全的那边靠。
+    /// **默认方向是 `.transient`。** 认错成瞬时的代价是下次启动多扫一遍（零物化，
+    /// 实测 0.016 MB）；认错成永久的代价是走 SwiftData BLOB 回退（实测 +1.26 GB）
+    /// 或者整个功能停摆 —— 两边不对称，所以**只有确证「换个时间也一样」的码**才进永久档。
+    ///
+    /// 特别说明 `SQLITE_READONLY`：名字像永久，实际上它最常见的出场方式是
+    /// `SQLITE_READONLY_RECOVERY / _CANTINIT` —— **只读连接**打开一个 WAL 库时发现
+    /// WAL 需要恢复（App 刚崩过），而恢复必须由写连接（App 自己的 SwiftData 连接）
+    /// 来做。等主连接把库打开、WAL 恢复完，重试就能过 —— 这是教科书式的瞬时失败。
+    /// PERM / AUTH 是文件层权限（沙盒态漂移），也可能随生命周期变化，同归瞬时档。
     static func classify(resultCode: Int32) -> StoreScanFailure {
         switch resultCode & 0xFF {
-        case SQLITE_ERROR,      // SQL / schema 不匹配
-             SQLITE_CORRUPT,
-             SQLITE_NOTADB,
+        case SQLITE_ERROR,      // SQL / schema 不匹配 —— 对同一库确定性复现
+             SQLITE_CORRUPT,    // 库文件损坏
+             SQLITE_NOTADB,     // 根本不是 SQLite 文件
              SQLITE_FORMAT,
-             SQLITE_MISMATCH,
-             SQLITE_PERM,
-             SQLITE_AUTH,
-             SQLITE_READONLY:
+             SQLITE_MISMATCH:
             return .unsupportedStore
         default:
             return .transient
@@ -104,7 +107,7 @@ enum ProjectImageCompactionScanner {
         scanIDs(
             storeURL: storeURL,
             table: table,
-            sizeExpression: "max(coalesce(length(\(thumbnailColumn)), 0), coalesce(length(\(finishedImageColumn)), 0))",
+            sizeExpression: "(coalesce(length(\(thumbnailColumn)), 0) + coalesce(length(\(finishedImageColumn)), 0) + coalesce(length(\(displayThumbnailColumn)), 0))",
             where: """
             length(\(thumbnailColumn)) > ?1 \
             OR length(\(finishedImageColumn)) > ?1 \
@@ -117,21 +120,31 @@ enum ProjectImageCompactionScanner {
         )
     }
 
+    /// 一条候选：ID + 当时行内相关列长度**之和**。
+    ///
+    /// 带上字节数是为了让协调器的 stubborn 记账能**按内容键控**而不是按 ID 永久拉黑 ——
+    /// 用户换图 / 备份恢复 / CloudKit 从未升级设备同步来新图之后，字节数变了就该重新考虑。
+    ///
+    /// 用 sum 而不是 max：max 只反映最大那列，用户换掉**较小**那张图（或清掉
+    /// displayThumbnail）时 max 不变 → 指纹不变 → 该行被继续拉黑（round-2 双审两侧命中）。
+    /// sum 让任何一列的变化都改变指纹（等长替换仍撞，但那需要字节数恰好相同，可接受）。
+    ///
+    /// **口径耦合（三处必须一致，改一处要同步另两处）**：
+    ///   1. 本文件两个 sizeExpression（项目 = 三个图片列之和；历史 = 两列快照之和）
+    ///   2. `compactOne` 保存后算的 `scannerMetricBytes`
+    ///   3. `compactHistoryOne` 保存后算的 `bytesWritten`
+    /// stubborn 键靠这个数字对得上，口径漂移 = 拉黑永远失配。
+    struct Candidate: Equatable, Sendable {
+        let id: UUID
+        let bytes: Int
+    }
+
     /// 两张表共用的实现：只读连接 + schema 保险丝 + 取 ZID。
     ///
     /// `whereClause` 里的 `?1` 绑定 `thresholdBytes`，`?2` 绑定 limit。
     /// 谓词一律写成 `length(<直接列引用>)` 的形态 —— SQLite 只对这种形态启用
     /// `OPFLAG_LENGTHARG`（只读记录头的 serial type，不追 overflow page 链）。
     /// 套一层表达式（`length(coalesce(x, ''))` 之类）就会退化成真的把 blob 读出来。
-    /// 一条候选：ID + 当时命中列的最大字节数。
-    ///
-    /// 带上字节数是为了让协调器的 stubborn 记账能**按内容键控**而不是按 ID 永久拉黑 ——
-    /// 用户换图 / 备份恢复 / CloudKit 从未升级设备同步来新图之后，字节数变了就该重新考虑。
-    struct Candidate: Equatable, Sendable {
-        let id: UUID
-        let bytes: Int
-    }
-
     private static func scanIDs(
         storeURL: URL,
         table: String,
@@ -245,7 +258,7 @@ enum ProjectImageCompactionScanner {
         scanIDs(
             storeURL: storeURL,
             table: historyTable,
-            sizeExpression: "max(coalesce(length(\(historyBeforeColumn)), 0), coalesce(length(\(historyAfterColumn)), 0))",
+            sizeExpression: "(coalesce(length(\(historyBeforeColumn)), 0) + coalesce(length(\(historyAfterColumn)), 0))",
             where: "length(\(historyBeforeColumn)) > ?1 OR length(\(historyAfterColumn)) > ?1",
             requiredColumns: [historyBeforeColumn, historyAfterColumn],
             thresholdBytes: thresholdBytes,

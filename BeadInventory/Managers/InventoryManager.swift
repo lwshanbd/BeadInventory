@@ -39,6 +39,15 @@ class InventoryManager: ObservableObject {
     /// 在 loadData 完成后 / updateProjectFinishedImage 后刷新。
     @Published private(set) var projectIDsWithFinishedImage: Set<UUID> = []
 
+    /// 是否已经**成功跑完过一次全量** blob 存在性扫描（raw SQLite 或 legacy 回退均算）。
+    ///
+    /// 它存在的唯一理由是给 `scheduleBlobMetadataRetry` 当停止条件。早先的停止条件是
+    /// 「集合非空」—— 但集合也被 addProject / duplicate / restore **增量**插入：用户在
+    /// 重试的 2 秒退避窗口里新建一个带封面的项目 → 集合非空 → 重试链无声死亡 →
+    /// 此后整个 session 所有**老**项目都报告「没有图」（拼图模式按钮灰、日历空白）。
+    /// 增量插入≠扫描过，两件事必须分开记（round-2 双审两侧命中）。
+    private var hasCompletedBlobMetadataScan = false
+
     /// 持久层里有 thumbnail 的项目 ID 集合（不含 Data）。
     @Published private(set) var projectIDsWithThumbnail: Set<UUID> = []
 
@@ -1970,6 +1979,11 @@ class InventoryManager: ObservableObject {
         }
         if let ids = result.projectIDsWithDisplayThumbnail {
             projectIDsWithDisplayThumbnail = ids
+        }
+        // 四个集合由 fetchInitialPersistentData 整批产出（scanner 或 legacy 都是要么全有
+        // 要么全无），任一非 nil 即代表全量扫描成功过。
+        if result.projectIDsWithThumbnail != nil {
+            hasCompletedBlobMetadataScan = true
         }
         projectBlobsRevision &+= 1
 
@@ -4161,8 +4175,8 @@ class InventoryManager: ObservableObject {
     /// 扫描报 `.transient` 时的有界重试。退避 2s / 5s / 10s，三次后放弃并记 error
     /// （能被监控看到「有用户整个 session 没有图」，而不是只剩一条 warning）。
     ///
-    /// 判定「这次也没成」的依据是集合仍为空 —— 对真的一张图都没有的新用户会白跑三次，
-    /// 代价是三次零物化扫描（实测 footprint 增量 0.0156 MB），可以接受。
+    /// 停止条件是 `hasCompletedBlobMetadataScan` —— 对真的一张图都没有的新用户，
+    /// 首次扫描一样会成功（返回空集）并置位，不会白跑三次。
     private func scheduleBlobMetadataRetry(attempt: Int) {
         let delays: [TimeInterval] = [2, 5, 10]
         guard attempt <= delays.count else {
@@ -4176,9 +4190,9 @@ class InventoryManager: ObservableObject {
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard let self, !Task.isCancelled else { return }
-            // 已经被别的路径（CloudKit 远端合并等）填上了就不用再试
-            guard self.projectIDsWithThumbnail.isEmpty,
-                  self.projectIDsWithFinishedImage.isEmpty else { return }
+            // 停止条件是「全量扫描成功过」这个**事实**，不是「集合非空」这个代理 ——
+            // 集合会被 addProject 等增量插入，非空不代表老项目的数据已经扫出来了。
+            guard !self.hasCompletedBlobMetadataScan else { return }
             self.logInfo("blob_metadata_retry", metadata: ["attempt": attempt])
             self.refreshProjectBlobMetadata(retryAttempt: attempt)
         }
@@ -4190,6 +4204,8 @@ class InventoryManager: ObservableObject {
             projectIDsWithThumbnail = []
             projectIDsWithPatternGrid = []
             projectIDsWithDisplayThumbnail = []
+            // Preview / 无 store 模式：没有东西可扫，空集就是终态 —— 置位，别让重试空转。
+            hasCompletedBlobMetadataScan = true
             projectBlobsRevision &+= 1
             return
         }
@@ -4234,11 +4250,12 @@ class InventoryManager: ObservableObject {
                 self.projectIDsWithThumbnail = existence.thumbnail
                 self.projectIDsWithPatternGrid = existence.patternGrid
                 self.projectIDsWithDisplayThumbnail = existence.displayThumbnail
+                self.hasCompletedBlobMetadataScan = true
             } else {
                 self.logError("project_blob_meta_refresh_failed", metadata: ["retryAttempt": retryAttempt])
                 // 忙库 → 退避重试。不重试的话，冷启动撞上忙库的用户整个 session
                 // 都看不到拼图模式按钮和日历成品图（空集在下游等于「确定没有图」）。
-                if retryAttempt > 0 || self.projectIDsWithThumbnail.isEmpty {
+                if !self.hasCompletedBlobMetadataScan {
                     self.scheduleBlobMetadataRetry(attempt: retryAttempt + 1)
                 }
             }

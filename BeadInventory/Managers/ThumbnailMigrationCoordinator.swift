@@ -80,7 +80,9 @@ final class ThumbnailMigrationCoordinator {
     /// 30s × 10 = 5 分钟；再耗下去不如把 CPU 还给用户。
     private static let maxConsecutiveThrottles: Int = 10
 
-    /// 单次 run 的写入预算，按**整行重写量**记账。
+    /// 单次 run 的写入预算，按**整行重写量**记账，且逐行**事前预留**
+    ///（用 candidate.bytes 这个上界先扣再动手，见 run loop）——
+    /// 不是事后发现超了才停，单行不会把预算冲破到未知量级。
     ///
     /// 记账口径很重要：本文件的中心论点就是「改任何一列都要重写整条记录，含未改动的列」。
     /// 只算新写入的图片字节会系统性低估 —— 一条 thumbnail 13 MB→1.5 MB 而
@@ -429,11 +431,14 @@ final class ThumbnailMigrationCoordinator {
                     alreadyDone += 1
                     continue
                 }
-                // 预算逐行检查而不是逐批 —— 一批 10 条胖行可以超支上百 MB，
-                // 而预算的全部意义就是给单次启动的写入量一个硬上限。
-                if Self.throttleReason(bytesWrittenThisRun: bytesWritten)?.endsThisRun == true {
+                // 预算逐行检查，且做**事前预留**：把即将处理的这行按 `candidate.bytes`
+                //（扫描器报的压缩前行体量）预扣进去再比。压缩输出 ≤ 输入、小图回填只加
+                // ~150KB，所以 candidate.bytes 是本行落盘量的可靠上界 —— 检查通过才动手，
+                // 单行不会把预算冲破到未知量级。事后按实际值记账（compactOne 返回的整行大小）。
+                if Self.throttleReason(bytesWrittenThisRun: bytesWritten + candidate.bytes)?.endsThisRun == true {
                     AppLogger.shared.info("ThumbnailMigration", "write_budget_reached_mid_page", metadata: [
-                        "migrated": migrated, "bytesWritten": bytesWritten
+                        "migrated": migrated, "bytesWritten": bytesWritten,
+                        "nextRowBytes": candidate.bytes
                     ])
                     break scanLoop
                 }
@@ -564,6 +569,14 @@ final class ThumbnailMigrationCoordinator {
                     noOpSkipped += 1
                     continue
                 }
+                // 事前预留，同项目阶段：candidate.bytes（两列压缩前之和）是本行落盘量上界。
+                if Self.throttleReason(bytesWrittenThisRun: bytesWritten + candidate.bytes)?.endsThisRun == true {
+                    AppLogger.shared.info("ThumbnailMigration", "history_write_budget_reached_mid_page", metadata: [
+                        "compacted": compacted, "bytesWritten": bytesWritten,
+                        "nextRowBytes": candidate.bytes
+                    ])
+                    break historyLoop
+                }
                 switch await Self.compactHistoryOne(recordId: id, container: container) {
                 case .compacted(let bytesSaved, let written):
                     compacted += 1
@@ -663,7 +676,16 @@ final class ThumbnailMigrationCoordinator {
         guard !Task.isCancelled else { return .skipped }
         var newAfter: HistorySnapshotCompactor.Result?
         autoreleasepool { newAfter = originalAfter.flatMap(HistorySnapshotCompactor.compact) }
-        // 一张图都不用动 —— 不是失败，调用方会据此落 stubborn 记账避免下次重新解析
+        // afterSnapshot 的压缩可能长达数秒 —— stop() 落在这中间时，下面还有一次
+        // fetch + save，不查取消就白做且顶着「用户已要求停止」写库（Codex round-2）。
+        guard !Task.isCancelled else { return .skipped }
+        // 一张图都不用动 —— 不是失败，调用方会据此落 stubborn 记账避免下次重新解析。
+        //
+        // 注意 `compact` 返回 nil 也包括「快照不是合法 JSON / 重编码失败」。这里**有意**
+        // 不把它们与「真没图可压」区分开走 .failed：这些失败对同一份输入是确定性的
+        //（JSONSerialization / ImageIO 对相同字节的行为可复现），走 .failed = 每次启动
+        // 重新解析同一条几十 MB 的坏快照、永远失败 —— 纯烧 CPU。落 stubborn（内容键控）
+        // 才是对确定性失败的正确处置；compact 内部已对这两类分别记了 error 日志，遥测可分。
         guard newBefore != nil || newAfter != nil else { return .noOp }
 
         var bytesSaved = 0
@@ -682,16 +704,28 @@ final class ThumbnailMigrationCoordinator {
             if let newBefore, row.beforeSnapshot == originalBefore {
                 row.beforeSnapshot = newBefore.data
                 bytesSaved += newBefore.bytesSaved
-                bytesWritten += newBefore.data.count
             }
             if let newAfter, row.afterSnapshot == originalAfter {
                 row.afterSnapshot = newAfter.data
                 bytesSaved += newAfter.bytesSaved
-                bytesWritten += newAfter.data.count
             }
             // 两条 TOCTOU 都没通过 = 并发改动，不是 no-op，**不能**落盘拉黑
             guard bg.hasChanges else { return .skipped }
             try bg.save()
+
+            // 预算记账按**整行**（两列保存后之和），与项目阶段同口径 —— 只算改动列会
+            // 系统性低估（SQLite 重写整条记录，含没动的那一列）。
+            bytesWritten = (row.beforeSnapshot?.count ?? 0) + (row.afterSnapshot?.count ?? 0)
+
+            // 同 compactOne：压过了但行仍超扫描阈值（比如两列各剩 ~1.8MB）→ 落账，
+            // 否则每次启动都重新解析。键的口径 = 历史扫描器的 sizeExpression（两列之和）。
+            if bytesWritten > ProjectImageEncoder.compactionThresholdBytes {
+                Self.noteStubborn(recordId, bytes: bytesWritten)
+                AppLogger.shared.info("ThumbnailMigration", "history_compacted_but_still_over_threshold", metadata: [
+                    "recordId": recordId.uuidString,
+                    "rowBytes": bytesWritten
+                ])
+            }
         } catch {
             AppLogger.shared.error("ThumbnailMigration", "history_save_failed", metadata: [
                 "recordId": recordId.uuidString, "error": "\(error)"
@@ -720,7 +754,9 @@ final class ThumbnailMigrationCoordinator {
 
     // MARK: - 测试接缝
 
-    /// `compactOne` 内部实际执行的线程 —— 由 `compactOne` 自己写入。
+    /// `compactOne` 内部是否踏上过主线程 —— 由 `compactOne` 自己写入。
+    /// 采样点有两个：函数入口（赋值），和写回阶段（`if Thread.isMainThread` 置 true）——
+    /// 只采入口的话，将来有人把 fetch/save 包进 `MainActor.run` 这种局部回归探测不到。
     ///
     /// 为什么需要它：`test_compactOne_never_touches_main_thread` 原本断言的是**测试体**
     /// 所在的线程（在调用 `compactOne` 之前），那是在测 XCTest 怎么调度异步测试，
@@ -867,11 +903,16 @@ final class ThumbnailMigrationCoordinator {
                 predicate: #Predicate { $0.id == projectId }
             )
             descriptor.fetchLimit = 1
-            descriptor.propertiesToFetch = [\.thumbnail, \.finishedImage, \.displayThumbnail]
+            // patternGridData 只读不写 —— 拉进来是给预算记账用的：SQLite 重写整行时
+            // 它同样要被重写，漏掉它预算就系统性偏低（Codex round-2 C2）。
+            descriptor.propertiesToFetch = [\.thumbnail, \.finishedImage, \.displayThumbnail, \.patternGridData]
             let bg = ModelContext(container)
             guard let sd = try bg.fetch(descriptor).first else {
                 return .raceSkipped
             }
+            // 写回阶段也采样线程 —— 入口采样挡不住「将来有人把 fetch/save 包进
+            // MainActor.run」这种局部回归（round-2 测试 agent 指出入口采样的盲区）。
+            if Thread.isMainThread { lastCompactRanOnMainThreadForTesting = true }
 
             // **先把库里的现值抄下来再动手。** 下面会给 `sd.thumbnail` 赋新值，
             // 之后再拿 `sd.thumbnail` 去比 `originalThumbnail` 比的就是自己刚写的东西了。
@@ -924,9 +965,30 @@ final class ThumbnailMigrationCoordinator {
 
             // 写入记账按**整行**算，不是按「新写进去的那几个字段」。
             // SQLite 重写整条记录（含没改动的列），只算新字节会低估到预算失效。
-            writtenBytes = (sd.thumbnail?.count ?? 0)
+            //
+            // 两个口径，别混：
+            //  - `scannerMetricBytes`（三个图片列之和）：**必须**与
+            //    `ProjectImageCompactionScanner` 的 sizeExpression 逐字对应 —— stubborn
+            //    键靠这个数字对得上，口径漂移 = 记账永远失配 = 拉黑失效。
+            //  - `writtenBytes`（再加 patternGridData）：预算口径，整行重写的估算。
+            let scannerMetricBytes = (sd.thumbnail?.count ?? 0)
                 + (sd.finishedImage?.count ?? 0)
                 + (sd.displayThumbnail?.count ?? 0)
+            writtenBytes = scannerMetricBytes + (sd.patternGridData?.count ?? 0)
+
+            // 瘦身**成功**但行仍超阈值（典型：thumbnail 是解不开的坏字节而 finishedImage
+            // 压下来了）：不落账的话下一轮扫描会重新选中它 → **每次启动一次有损重编码**，
+            // 画质逐次下降，写放大换了个触发器（Codex round-2 C1）。
+            // 记到 stubborn（内容键控）—— 用户换图后字节数变化，自然重新考虑。
+            let stillOver = (sd.thumbnail?.count ?? 0) > ProjectImageEncoder.compactionThresholdBytes
+                || (sd.finishedImage?.count ?? 0) > ProjectImageEncoder.compactionThresholdBytes
+            if stillOver {
+                Self.noteStubborn(projectId, bytes: scannerMetricBytes)
+                AppLogger.shared.info("ThumbnailMigration", "compacted_but_still_over_threshold", metadata: [
+                    "projectId": projectId.uuidString,
+                    "rowImageBytes": scannerMetricBytes
+                ])
+            }
         } catch {
             AppLogger.shared.error("ThumbnailMigration", "save_failed", metadata: [
                 "projectId": projectId.uuidString,

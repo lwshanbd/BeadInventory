@@ -130,10 +130,10 @@ actor ProjectImageLoader {
 
     /// 观测到的最大并发数。
     ///
-    /// 窗口刻意盖住**整个公开方法**（含 `ImageDownsampler` 那半），而不只是 fetch：
-    /// 原来只包 `fetchColumn`，而 fetch 是同步的 actor 方法，actor 隔离下并发数
-    /// 结构上不可能大于 1 —— 断言恒真，是个自证命题。真正有内存代价、也真正可能
-    /// 被未来某次「加个 await」破坏的是「读原图 + 降级」这一整段。
+    /// 窗口盖的是**两条降级方法**（`downsampledRawThumbnail` / `downsampledFinishedImage`），
+    /// 不是全部六个公开方法 —— 纯 fetch 方法是同步 actor 方法，隔离下并发数结构上
+    /// 不可能大于 1，包了也是自证命题；真正有内存代价、也真正可能被未来某次
+    /// 「加个 await」破坏的，是「读原图 + 降级」这两段。
     private(set) var peakConcurrencyForTesting = 0
     private var inFlight = 0
 
