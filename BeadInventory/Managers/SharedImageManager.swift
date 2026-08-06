@@ -55,9 +55,12 @@ class SharedImageManager: ObservableObject {
             return false
         }
 
-        // PNG 无损保存（拼图模式需要原图做网格识别）
-        guard let imageData = image.pngData() else {
-            print("SharedImageManager: PNG 编码失败")
+        // 分辨率原样保留（拼图模式需要它做网格识别），编码走 ProjectImageEncoder ——
+        // 理由同 ScanView.generateThumbnailData：无损 PNG 是把库撑到 GB 级的根因。
+        // 这里落的是 App Group 容器里的中转文件，压小同样省 Share Extension 的内存
+        //（扩展的内存上限只有 ~120MB，pngData() 一张大图就可能被系统杀掉）。
+        guard let imageData = ProjectImageEncoder.encode(image) else {
+            print("SharedImageManager: 图片编码失败")
             return false
         }
 

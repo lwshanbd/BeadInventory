@@ -38,6 +38,8 @@ struct ScanView: View {
 
     @State private var deductionResolver: DeductionResolver?
     @State private var showingDeductionFailure = false
+    /// 图片编码失败。必须可见 —— 静默失败会让用户拿到一个永远没有图的项目。
+    @State private var imageEncodeFailed = false
     @State private var deductionFailureMessage = ""
     @State private var deductSuccessAt: Date = .distantPast
 
@@ -246,6 +248,12 @@ struct ScanView: View {
         view
             .haptic(.success, trigger: deductSuccessAt)
             .haptic(.error, trigger: showingDeductionFailure)
+            .haptic(.error, trigger: imageEncodeFailed)
+            .alert("图片处理失败", isPresented: $imageEncodeFailed) {
+                Button("好", role: .cancel) { }
+            } message: {
+                Text("这张图片无法处理，项目未创建。请重试或换一张图片。")
+            }
             .alert("部分颜色扣减失败", isPresented: $showingDeductionFailure) {
                 Button("知道了") { }
             } message: {
@@ -772,10 +780,26 @@ struct ScanView: View {
     }
 
     func applyToInventoryWithResolver(_ resolver: DeductionResolver) {
-        // 先执行扣减（不保存），确认结果后再创建项目记录
-        let failedItems = resolver.executeDeductions(shouldSave: false)
+        // **先编码再扣减。** 编码失败必须能干净中止，而扣减一旦执行就动了库存。
+        // 早期写法是「扣减 → 编码（不检查 nil）→ 建项目 → clearState() → 放成功震动」：
+        // 编码失败时用户会得到一个永久没有图、拼图模式永久不可用的项目，
+        // 而 clearState() 已经把内存里那张图丢了，除了重扫一遍无法挽回 —— 却看到成功反馈。
+        guard let thumbnailDataOrNil = generateThumbnailData() else {
+            AppLogger.shared.error("Scan", "thumbnail_encode_failed_aborting_project", metadata: [:])
+            // 先收起复核页再弹 alert —— 本函数下面 30 行的扣减失败路径就是这么做的，
+            // 理由同样适用：`applyToInventoryWithResolver` 由
+            // `navigationDestination(item: $deductionResolver)` 推出来的页面调用，
+            // 此时 alert 挂在被盖住的根视图上，直接置位用户什么都看不到。
+            deductionResolver = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                imageEncodeFailed = true
+            }
+            return   // 扣减走的是 shouldSave: false，此时尚未落盘，直接返回即可
+        }
+        let thumbnailData = thumbnailDataOrNil   // 可能是 nil（用户没图），那是合法的
 
-        let thumbnailData = generateThumbnailData()
+        // 确认图能编码之后再执行扣减
+        let failedItems = resolver.executeDeductions(shouldSave: false)
         // 标记失败项为未扣减
         let beadUsages = resolver.items.map { item in
             BeadUsage(
@@ -827,8 +851,14 @@ struct ScanView: View {
     }
 
     func createPlannedProject() {
-        // 生成压缩的缩略图数据
-        let thumbnailData = generateThumbnailData()
+        // 同 applyToInventoryWithResolver：**编码失败**不建项目、不清状态，让用户能重试；
+        // 「用户没有封面图」是合法状态，照常建计划。
+        guard let thumbnailDataOrNil = generateThumbnailData() else {
+            AppLogger.shared.error("Scan", "thumbnail_encode_failed_aborting_plan", metadata: [:])
+            imageEncodeFailed = true
+            return
+        }
+        let thumbnailData = thumbnailDataOrNil
 
         // 创建计划项目（不扣减库存）
         let beadUsages = recognizedItems.map { item in
@@ -848,10 +878,26 @@ struct ScanView: View {
         clearState()
     }
 
-    /// 生成原分辨率缩略图数据（PNG 无损）。
-    /// 拼图模式依赖原图做网格识别，所以这里不再压缩。
-    func generateThumbnailData() -> Data? {
-        return thumbnailImage?.pngData()
+    /// 生成落盘用的图纸数据。
+    ///
+    /// **分辨率原样保留**（拼图模式依赖它做网格识别），只撤回「无条件无损 PNG」那半 ——
+    /// 编码器 PNG / JPEG 两种都试取小的，细节见 `ProjectImageEncoder` 头注释。
+    ///
+    /// 返回值是 `Data??`，因为调用方必须区分两件完全不同的事：
+    ///   - `.some(nil)` = **用户没有封面图**。手动添加色号（`manualEntryButton` 是无条件
+    ///     渲染的，压根不涉及图片）、或者用户主动点了「移除」—— 都是完全合法的状态，
+    ///     项目照建不误，`thumbnail` 存 nil。
+    ///   - `nil` = **编码失败**。这时候不能建项目，要报错让用户重试。
+    ///
+    /// 早期版本把两者都返回 `nil`，调用方一律当失败处理 —— 结果是**手动添加流程整个死掉**：
+    /// 用户输完色号点扣减，弹「这张图片无法处理」，然后什么都没发生，而他根本没提供过图片。
+    /// 这是 round-1 那个缺陷的镜像：上一层从「硬编码成功」变成了「对合法状态硬编码失败」。
+    func generateThumbnailData() -> Data?? {
+        guard let thumbnailImage else { return .some(nil) }   // 没有图，合法
+        guard let encoded = ProjectImageEncoder.encode(thumbnailImage) else {
+            return nil                                        // 有图但编码失败
+        }
+        return .some(encoded)
     }
 
     /// 清除所有状态

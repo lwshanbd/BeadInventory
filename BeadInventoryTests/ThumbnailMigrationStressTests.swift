@@ -30,6 +30,18 @@ private final class MainThreadTicker {
     private(set) var tickCount: Int = 0
     private var isRunning = false
 
+    /// 覆盖时长 —— 见 InventoryManagerInitialLoadTests 里同名字段的说明：
+    /// 「样本数 > N」实际在量机器负载（`Task.sleep` 在全量并发跑时大幅超时），
+    /// 单测常绿、全量必红。覆盖时长与 tick 频率无关，才是「ticker 真的守过整段」的表达。
+    private(set) var firstTickAt: DispatchTime?
+    private(set) var lastTickAt: DispatchTime?
+
+    var observedSpanNanos: UInt64 {
+        guard let first = firstTickAt, let last = lastTickAt,
+              last.uptimeNanoseconds > first.uptimeNanoseconds else { return 0 }
+        return last.uptimeNanoseconds - first.uptimeNanoseconds
+    }
+
     func run(intervalNanos: UInt64) async {
         isRunning = true
         var lastTick = DispatchTime.now()
@@ -41,6 +53,8 @@ private final class MainThreadTicker {
             if gap > maxGapNanos { maxGapNanos = gap }
             lastTick = now
             tickCount += 1
+            if firstTickAt == nil { firstTickAt = now }
+            lastTickAt = now
         }
     }
 
@@ -133,25 +147,34 @@ final class ThumbnailMigrationStressTests: XCTestCase {
         let ticker = await MainThreadTicker()
         async let tickerRun: Void = ticker.run(intervalNanos: 5_000_000)  // 5ms
 
+        let migrationStart = DispatchTime.now()
         var outcomes: [ThumbnailMigrationCoordinator.MigrationOutcome] = []
         outcomes.reserveCapacity(projectCount)
         for id in ids {
-            let outcome = await ThumbnailMigrationCoordinator.migrateOne(projectId: id, container: container)
+            let outcome = await ThumbnailMigrationCoordinator.compactOne(projectId: id, container: container)
             outcomes.append(outcome)
         }
 
+        let migrationDurationNanos = DispatchTime.now().uptimeNanoseconds - migrationStart.uptimeNanoseconds
         await ticker.stop()
         _ = await tickerRun
 
         // 正确性：120 个全新种子项目应当全部迁移成功（无 race / 无失败）。
-        XCTAssertEqual(outcomes, Array(repeating: .migrated, count: projectCount))
+        XCTAssertEqual(outcomes.filter(\.isMigrated).count, projectCount, "120 个全新种子项目应全部瘦身成功，实际 \(outcomes.filter { !$0.isMigrated })")
 
         let tickCount = await ticker.tickCount
         let maxGapMillis = await Double(ticker.maxGapNanos) / 1_000_000
 
         // 样本量太少说明 ticker 根本没跑起来（比如迁移瞬间就结束了）——测试本身失效，
         // 不代表通过。
-        XCTAssertGreaterThan(tickCount, 20, "ticker 应在整个迁移期间持续打点，样本太少说明测试没有真正覆盖迁移过程")
+        let observedSpan = await ticker.observedSpanNanos
+        XCTAssertGreaterThanOrEqual(tickCount, 3, "ticker 根本没跑起来，maxGap 断言无意义")
+        XCTAssertGreaterThan(
+            Double(observedSpan), Double(migrationDurationNanos) * 0.5,
+            "ticker 只覆盖了迁移过程的 "
+            + "\(Int(Double(observedSpan) / Double(max(migrationDurationNanos, 1)) * 100))%，"
+            + "maxGap 没有真正守住整段"
+        )
 
         // 阈值校准（非拍脑袋）：对同一台跑测试的机器做过两组对照实验——
         // (a) ticker 完全 idle（零并发负载）500ms 内已测到 46ms 的调度抖动；

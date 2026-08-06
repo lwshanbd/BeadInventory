@@ -115,9 +115,9 @@ struct ProjectRecord: Identifiable, Codable, Equatable, Sendable {
     var parentId: UUID?           // 父项目ID，nil表示顶级项目
     var isPlanned: Bool           // 是否为计划项目（true=计划中，false=已执行）
     var executedDate: Date?       // 执行日期（计划项目执行后记录）
-    var thumbnail: Data?          // 「原图」—— 全分辨率 PNG。拼图模式 / 详情大图用。**列表 row 不要直接读**
+    var thumbnail: Data?          // 「原图」—— 全分辨率（编码见 ProjectImageEncoder）。拼图模式 / 详情大图用。**列表 row 不要直接读**
                                   // （读了就 jetsam）—— 走 displayThumbnail，没有就 ImageDownsampler 现场降级。
-    var finishedImage: Data?      // 成品图数据（PNG，仅已执行项目使用）
+    var finishedImage: Data?      // 成品图数据（编码见 ProjectImageEncoder，仅已执行项目使用）
     var completedDate: Date?      // 完成日期（用于日历展示，用户可自定义选择）
     var colorSystem: ColorSystem  // 色号体系（MARD/卡卡等）
     var patternGrid: BeadPatternGrid?  // 拼图模式网格数据（nil = 未标定）

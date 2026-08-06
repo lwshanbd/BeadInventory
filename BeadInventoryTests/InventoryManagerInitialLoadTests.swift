@@ -31,6 +31,21 @@ private final class MainThreadTicker {
     private(set) var tickCount: Int = 0
     private var isRunning = false
 
+    /// 第一次和最后一次打点的时刻 —— 用来回答「ticker 到底守了多长一段时间」。
+    ///
+    /// 存在的理由：原先的「样本数 > 20」守卫其实在量**机器负载**而不是被测代码。
+    /// `Task.sleep(5ms)` 在全量测试并发跑的时候会大幅超时，同样长的一段读取，
+    /// 单跑能攒 40 个点，全量跑只有 15-18 个 —— 于是这条断言在单测通过、全量必红。
+    /// 覆盖时长与 tick 频率无关，才是「ticker 真的守过整段读取」的正确表达。
+    private(set) var firstTickAt: DispatchTime?
+    private(set) var lastTickAt: DispatchTime?
+
+    var observedSpanNanos: UInt64 {
+        guard let first = firstTickAt, let last = lastTickAt,
+              last.uptimeNanoseconds > first.uptimeNanoseconds else { return 0 }
+        return last.uptimeNanoseconds - first.uptimeNanoseconds
+    }
+
     func run(intervalNanos: UInt64) async {
         isRunning = true
         var lastTick = DispatchTime.now()
@@ -42,6 +57,8 @@ private final class MainThreadTicker {
             if gap > maxGapNanos { maxGapNanos = gap }
             lastTick = now
             tickCount += 1
+            if firstTickAt == nil { firstTickAt = now }
+            lastTickAt = now
         }
     }
 
@@ -193,6 +210,7 @@ final class InventoryManagerInitialLoadTests: XCTestCase {
         let ticker = MainThreadTicker()
         async let tickerRun: Void = ticker.run(intervalNanos: 5_000_000)  // 5ms
 
+        let loadStart = DispatchTime.now()
         m.performInitialLoadIfNeeded(reason: "unitTest.mainThreadStall")
 
         // 本用例是两层防线，分别管两种回归：
@@ -206,6 +224,7 @@ final class InventoryManagerInitialLoadTests: XCTestCase {
         XCTAssertFalse(m.hasCompletedInitialLoad, "首次读取不得同步完成，否则 SwiftUI 没机会提交首帧")
 
         await m.initialLoadTask?.value
+        let loadDurationNanos = DispatchTime.now().uptimeNanoseconds - loadStart.uptimeNanoseconds
 
         ticker.stop()
         _ = await tickerRun
@@ -220,9 +239,20 @@ final class InventoryManagerInitialLoadTests: XCTestCase {
         // metadata-only：内存缓存不得持有 blob（否则又是 jetsam 同型事故）
         XCTAssertTrue(m.projects.allSatisfy { $0.thumbnail == nil && $0.finishedImage == nil })
 
+        // 「ticker 真的守过整段读取」的守卫。
+        //
+        // 原先写的是 `tickCount > 20`，但样本数取决于 `Task.sleep(5ms)` 的实际超时幅度，
+        // 也就是**机器负载**：同一段读取单跑能攒 40 个点，全量测试并发跑只有 15-18 个。
+        // 结果这条断言单测常绿、全量必红（已在 base commit 上复现确认，与本轮改动无关）。
+        //
+        // 改成量「覆盖时长」——与 tick 频率无关，读取快时要求自动放宽，
+        // 表达的正是原注释想表达的意思。
+        XCTAssertGreaterThanOrEqual(ticker.tickCount, 3, "ticker 根本没跑起来，maxGap 断言无意义")
         XCTAssertGreaterThan(
-            ticker.tickCount, 20,
-            "ticker 应在整个读取期间持续打点，样本太少说明测试没有真正覆盖读取过程"
+            Double(ticker.observedSpanNanos), Double(loadDurationNanos) * 0.5,
+            "ticker 只覆盖了读取过程的 "
+            + "\(Int(Double(ticker.observedSpanNanos) / Double(max(loadDurationNanos, 1)) * 100))%，"
+            + "maxGap 没有真正守住整段读取"
         )
 
         // 阈值校准（实测，非拍脑袋），同一台机器四组对照：

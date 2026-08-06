@@ -421,7 +421,8 @@ struct ProjectInfoCardEnhanced: View {
             }
             .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
                 let id = project.id
-                let data = inventoryManager.fetchProjectThumbnailData(for: id)
+                // 走后台 actor —— 主线程同步 fetch 是用户 .ips 里那条崩溃栈的来源
+                let data = await inventoryManager.imageLoader?.thumbnail(for: id)
                 guard !Task.isCancelled, id == project.id else { return }
                 self.loadedThumbnail = data.flatMap { UIImage(data: $0) }
             }
@@ -685,7 +686,7 @@ struct FinishedImageSection: View {
         .padding(.horizontal)
         .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
             let id = project.id
-            let data = inventoryManager.fetchProjectFinishedImageData(for: id)
+            let data = await inventoryManager.imageLoader?.finishedImage(for: id)
             guard !Task.isCancelled, id == project.id else { return }
             self.loadedFinishedImage = data.flatMap { UIImage(data: $0) }
         }
@@ -764,6 +765,8 @@ struct ProjectImageEditorSheet: View {
     @State private var showingCamera = false
     @State private var pendingCropAfterCamera = false  // 相机关闭后需要打开裁切
     @State private var saveSuccessAt: Date = .distantPast
+    /// 编码失败时置位。失败必须可见 —— 静默失败会让用户以为图存上了。
+    @State private var encodeFailed = false
 
     var displayImage: UIImage? {
         editedImage ?? currentImage
@@ -907,7 +910,22 @@ struct ProjectImageEditorSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("保存") {
                         if let image = displayImage {
-                            let imageData = generateImageData(from: image)
+                            // **编码失败绝不能落到 onSave**。`onSave` 的参数是 `Data?`，而
+                            // `nil` 已经被上面的「移除图片」按钮占用了含义（`onSave(nil)`
+                            // → `_setProjectBlobsDirectly(.some(nil))` → `sd.thumbnail = nil`）。
+                            // 也就是说「编码失败」和「用户要求删图」在这条链路上无法区分：
+                            // 用户给一个已有照片的项目换图、编码失败 → 现存照片被清空，
+                            // 而下一行还会放成功反馈。用户看到「已保存」，照片没了。
+                            //
+                            // 这正是归档分支被双审否掉的那个形状（写入层知道自己失败了，
+                            // 上面每一层硬编码成功），所以这里必须挡住。
+                            guard let imageData = generateImageData(from: image) else {
+                                AppLogger.shared.error("ProjectImageEditor", "encode_failed_keeping_existing", metadata: [
+                                    "pixelSize": "\(image.size)"
+                                ])
+                                encodeFailed = true
+                                return   // 不写库、不放成功反馈、不关闭 sheet
+                            }
                             onSave(imageData)
                             saveSuccessAt = Date()
                         }
@@ -982,15 +1000,21 @@ struct ProjectImageEditorSheet: View {
             }
         }
         .haptic(.success, trigger: saveSuccessAt)
+        .alert("图片处理失败", isPresented: $encodeFailed) {
+            Button("好", role: .cancel) { }
+        } message: {
+            Text("这张图片无法处理，原有图片已保留。请重试或换一张图片。")
+        }
         .presentationDetents([.medium, .large])
     }
 
-    /// 生成图片数据
-    /// 拼图模式需要原分辨率的图纸做网格识别，所以这里保留原图大小并用 PNG 无损存储。
-    /// maxImageSize 参数保留用于向后兼容，但已不再缩放（除非传入 < 1024 的明确小尺寸时降级，用于
-    /// 防御性兜底）。
+    /// 生成落盘用的图片数据。
+    ///
+    /// **分辨率原样保留**（拼图模式需要它做网格识别），只把编码从无损 PNG 换成高质量 JPEG。
+    /// 理由同 `ScanView.generateThumbnailData` —— 无损 PNG 是把 SQLite 库撑到 GB 级、
+    /// 进而触发 scene-create 看门狗的根因。细节见 `ProjectImageEncoder` 头注释。
     func generateImageData(from image: UIImage) -> Data? {
-        return image.pngData()
+        return ProjectImageEncoder.encode(image)
     }
 }
 

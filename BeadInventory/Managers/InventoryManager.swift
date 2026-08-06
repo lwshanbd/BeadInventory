@@ -28,7 +28,8 @@ class InventoryManager: ObservableObject {
     //
     // 自 v2.0.x 起：`projects` 不再持有 thumbnail / finishedImage / patternGridData /
     // displayThumbnail 四个大 Data blob（防止 458 项目级用户加载完 ~200MB 撞 jetsam）。
-    // 视图需要图片时走 fetchProject*Data / fetchProjectDisplayThumbnail 按需从
+    // **视图层走 `imageLoader`（后台 actor）**，不是下面这些 @MainActor 同步方法 ——
+    // 后者只剩备份导出 / history 快照捕获等主线程调用方。按需从
     // SwiftData 取单条 row。**列表 row 优先读 displayThumbnail（小图 ~50-100 KB）**，
     // 没有再走 ImageDownsampler 现场降级 raw thumbnail，**永远不**直接 UIImage(data: raw thumbnail)。
     //
@@ -37,6 +38,15 @@ class InventoryManager: ObservableObject {
     /// 持久层里有 finishedImage 的项目 ID 集合（不含 Data）。
     /// 在 loadData 完成后 / updateProjectFinishedImage 后刷新。
     @Published private(set) var projectIDsWithFinishedImage: Set<UUID> = []
+
+    /// 是否已经**成功跑完过一次全量** blob 存在性扫描（raw SQLite 或 legacy 回退均算）。
+    ///
+    /// 它存在的唯一理由是给 `scheduleBlobMetadataRetry` 当停止条件。早先的停止条件是
+    /// 「集合非空」—— 但集合也被 addProject / duplicate / restore **增量**插入：用户在
+    /// 重试的 2 秒退避窗口里新建一个带封面的项目 → 集合非空 → 重试链无声死亡 →
+    /// 此后整个 session 所有**老**项目都报告「没有图」（拼图模式按钮灰、日历空白）。
+    /// 增量插入≠扫描过，两件事必须分开记（round-2 双审两侧命中）。
+    private var hasCompletedBlobMetadataScan = false
 
     /// 持久层里有 thumbnail 的项目 ID 集合（不含 Data）。
     @Published private(set) var projectIDsWithThumbnail: Set<UUID> = []
@@ -138,7 +148,15 @@ class InventoryManager: ObservableObject {
     // SwiftData ModelContext
     // internal (而非 private)：ThumbnailMigrationCoordinator 需要经 `modelContext?.container`
     // 拿 ModelContainer 派生后台 context 跑迁移（迁移的 SwiftData I/O 全部离主线程）
-    var modelContext: ModelContext?
+    var modelContext: ModelContext? {
+        didSet { imageLoader = modelContext.map { ProjectImageLoader(container: $0.container) } }
+    }
+
+    /// 视图取图的**后台**入口。视图层（列表 / 日历 / 详情）一律走它，不要再调
+    /// 本类的 `fetchProject*Data` —— 那些是 `@MainActor` 同步 fetch，正是用户
+    /// `.ips` 里主线程栈 `sqlite3_step → _platform_memmove` 的来源。
+    /// 详见 `ProjectImageLoader` 头注释。
+    private(set) var imageLoader: ProjectImageLoader?
 
     // 数据加载完成标志，防止在数据未加载时意外保存空数据
     private var isDataLoaded = false
@@ -296,6 +314,9 @@ class InventoryManager: ObservableObject {
     // 带 ModelContext 的初始化器
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
+        // `didSet` 在 init 里的赋值上**不会**触发，必须手动建一次，
+        // 否则视图层拿到的 imageLoader 恒为 nil，取图全部静默返回空。
+        self.imageLoader = ProjectImageLoader(container: modelContext.container)
         logInfo("init_with_model_context")
         initializeDefaultColors()
         logInfo("default_colors_loaded", metadata: ["count": beadColors.count])  // 启动耗时探针：色卡 JSON 解析完成
@@ -1702,16 +1723,30 @@ class InventoryManager: ObservableObject {
             // 加载/refresh 里，真实体量库上进程峰值实测 5.7GB —— 真机被 jetsam 杀死，
             // 就是用户报的「转圈转着转着闪退」。SQLite 判 IS NOT NULL 只读记录头，零物化。
             //
-            // 扫描器返回 nil（in-memory 测试库、未来 schema 变更）时回退旧 SwiftData 查询：
-            // 行为与旧版一致（小库无害，大库退回高内存 —— 记 error 让监控看得见）。
+            // 回退策略按失败类型分叉，**不是**一律回退：
+            //   .unsupportedStore（in-memory 测试库 / 未来 schema 变更）→ 永久状态，
+            //     回退 SwiftData 查询是对的（这类库都很小，高内存路径无害）。
+            //   .transient（SQLITE_BUSY / I-O）→ **不回退**。SwiftData 的 BLOB 谓词实测
+            //     +1.26GB，而 store 忙的时候恰恰是最不该吃内存的时候 —— 瘦身 pass 正在跑的
+            //     时候尤其容易撞上。留 nil 让调用方保留上一次的集合，等下次刷新重来。
             if result.brands != nil, result.brandStocks != nil, result.projects != nil {
-                if let storeURL = container.configurations.first?.url,
-                   let existence = ProjectBlobExistenceScanner.scan(storeURL: storeURL) {
+                let scanResult = (container.configurations.first?.url).map {
+                    ProjectBlobExistenceScanner.scan(storeURL: $0)
+                } ?? .failure(.unsupportedStore)
+
+                switch scanResult {
+                case .success(let existence):
                     result.projectIDsWithFinishedImage = existence.finishedImage
                     result.projectIDsWithThumbnail = existence.thumbnail
                     result.projectIDsWithPatternGrid = existence.patternGrid
                     result.projectIDsWithDisplayThumbnail = existence.displayThumbnail
-                } else {
+                case .failure(.transient):
+                    AppLogger.shared.warning(
+                        "InventoryManager",
+                        "blob_existence_scan_transient_keeping_previous",
+                        metadata: ["execution": "background"]
+                    )
+                case .failure(.unsupportedStore):
                     AppLogger.shared.error(
                         "InventoryManager",
                         "blob_existence_scan_fallback_swiftdata",
@@ -1945,7 +1980,32 @@ class InventoryManager: ObservableObject {
         if let ids = result.projectIDsWithDisplayThumbnail {
             projectIDsWithDisplayThumbnail = ids
         }
+        // 四个集合由 fetchInitialPersistentData 整批产出（scanner 或 legacy 都是要么全有
+        // 要么全无），任一非 nil 即代表全量扫描成功过。
+        if result.projectIDsWithThumbnail != nil {
+            hasCompletedBlobMetadataScan = true
+        }
         projectBlobsRevision &+= 1
+
+        // 四个集合全是 nil = 扫描报了 `.transient`（库正忙），我们按约定保留了「上一次的值」。
+        //
+        // 问题是**冷启动时「上一次」就是空集**，而空集在下游不是「未知」而是「确定没有图」：
+        // 拼图模式按钮 `.disabled(!hasThumbnail)` 全灰、日历一张成品图都不显示、
+        // 详情页成品图区块整块隐藏。而 `refreshProjectBlobMetadata()` 只在 CloudKit 远端
+        // 合并和批量写图时才被调用，`scenePhase == .active` 上没有挂 —— 撞上忙库的用户
+        // 会一直残废到某次远端变更，或者重启进同一个忙库。
+        //
+        // 所以这里补一次有界重试。瘦身是空闲任务可以等，但「用户这一整个 session 看不到图」
+        // 不能等。
+        if result.projectIDsWithThumbnail == nil,
+           result.projectIDsWithFinishedImage == nil,
+           result.projectIDsWithPatternGrid == nil,
+           result.projectIDsWithDisplayThumbnail == nil {
+            logWarning("blob_metadata_unavailable_scheduling_retry", metadata: [
+                "reason": "scanner reported transient during initial load"
+            ])
+            scheduleBlobMetadataRetry(attempt: 1)
+        }
 
         isDataLoaded = true
         finishInitialLoadSuccess()
@@ -4038,8 +4098,8 @@ class InventoryManager: ObservableObject {
     }
 
     /// 同步取单个项目的 displayThumbnail（列表用小图）。错误处理同上。
-    /// **列表 view 主要走这条路径**：UIImage(data:) 这份 ~50-100 KB JPEG 不会撞 jetsam。
-    /// 老数据这里返 nil，view 层会降级到 `ImageDownsampler.downsampleToUIImage(thumbnail)` 现场降级原图。
+    /// **注意：视图层已不再走这里**，改走 `ProjectImageLoader.displayThumbnail(for:)`（后台 actor）。
+    /// 本方法只剩备份导出 / history 快照捕获等主线程调用方。
     /// **round-10 review I1**：`propertiesToFetch = [\.displayThumbnail]` 限定单列 —— 否则
     /// 列表每滚一个 row 都会 fault 同行的 raw thumbnail（5-10 MB inline PNG）到内存。
     func fetchProjectDisplayThumbnail(for projectId: UUID) -> Data? {
@@ -4112,12 +4172,40 @@ class InventoryManager: ObservableObject {
     /// 调用结束会 bump `projectBlobsRevision`，让视图 `.task(id:)` 复合 key 触发重取。
     /// `internal` 访问层级是为了让 BeadInventoryTests 能在测试里调到（通过同 module
     /// 的 @testable import 即可，不再需要 forTests 桥）。
-    func refreshProjectBlobMetadata() {
+    /// 扫描报 `.transient` 时的有界重试。退避 2s / 5s / 10s，三次后放弃并记 error
+    /// （能被监控看到「有用户整个 session 没有图」，而不是只剩一条 warning）。
+    ///
+    /// 停止条件是 `hasCompletedBlobMetadataScan` —— 对真的一张图都没有的新用户，
+    /// 首次扫描一样会成功（返回空集）并置位，不会白跑三次。
+    private func scheduleBlobMetadataRetry(attempt: Int) {
+        let delays: [TimeInterval] = [2, 5, 10]
+        guard attempt <= delays.count else {
+            logError("blob_metadata_retry_exhausted", metadata: [
+                "attempts": delays.count,
+                "impact": "拼图模式按钮/日历成品图本次启动不可用"
+            ])
+            return
+        }
+        let delay = delays[attempt - 1]
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            // 停止条件是「全量扫描成功过」这个**事实**，不是「集合非空」这个代理 ——
+            // 集合会被 addProject 等增量插入，非空不代表老项目的数据已经扫出来了。
+            guard !self.hasCompletedBlobMetadataScan else { return }
+            self.logInfo("blob_metadata_retry", metadata: ["attempt": attempt])
+            self.refreshProjectBlobMetadata(retryAttempt: attempt)
+        }
+    }
+
+    func refreshProjectBlobMetadata(retryAttempt: Int = 0) {
         guard let context = modelContext else {
             projectIDsWithFinishedImage = []
             projectIDsWithThumbnail = []
             projectIDsWithPatternGrid = []
             projectIDsWithDisplayThumbnail = []
+            // Preview / 无 store 模式：没有东西可扫，空集就是终态 —— 置位，别让重试空转。
+            hasCompletedBlobMetadataScan = true
             projectBlobsRevision &+= 1
             return
         }
@@ -4130,17 +4218,31 @@ class InventoryManager: ObservableObject {
         // 迟到的应用是 last-wins，与并发 refresh 的整份覆盖语义一致。
         Task { @MainActor [weak self] in
             let existence: ProjectBlobExistence? = await Task.detached(priority: .utility) {
-                if let storeURL = container.configurations.first?.url,
-                   let scanned = ProjectBlobExistenceScanner.scan(storeURL: storeURL) {
+                let scanResult = (container.configurations.first?.url).map {
+                    ProjectBlobExistenceScanner.scan(storeURL: $0)
+                } ?? .failure(.unsupportedStore)
+
+                switch scanResult {
+                case .success(let scanned):
                     return scanned
+                case .failure(.transient):
+                    // **不回退 SwiftData BLOB 谓词**（实测 +1.26GB）。store 忙的时候
+                    // 恰恰是最不该吃内存的时候。返回 nil → 下面保留上一次的集合。
+                    AppLogger.shared.warning(
+                        "InventoryManager",
+                        "blob_existence_scan_transient_keeping_previous",
+                        metadata: ["caller": "refreshProjectBlobMetadata", "retryAttempt": retryAttempt]
+                    )
+                    return nil
+                case .failure(.unsupportedStore):
+                    AppLogger.shared.error(
+                        "InventoryManager",
+                        "blob_existence_scan_fallback_swiftdata",
+                        metadata: ["caller": "refreshProjectBlobMetadata"]
+                    )
+                    let bg = ModelContext(container)
+                    return try? Self.legacyBlobExistenceFetch(context: bg)
                 }
-                AppLogger.shared.error(
-                    "InventoryManager",
-                    "blob_existence_scan_fallback_swiftdata",
-                    metadata: ["caller": "refreshProjectBlobMetadata"]
-                )
-                let bg = ModelContext(container)
-                return try? Self.legacyBlobExistenceFetch(context: bg)
             }.value
             guard let self else { return }
             if let existence {
@@ -4148,8 +4250,14 @@ class InventoryManager: ObservableObject {
                 self.projectIDsWithThumbnail = existence.thumbnail
                 self.projectIDsWithPatternGrid = existence.patternGrid
                 self.projectIDsWithDisplayThumbnail = existence.displayThumbnail
+                self.hasCompletedBlobMetadataScan = true
             } else {
-                self.logError("project_blob_meta_refresh_failed", metadata: [:])
+                self.logError("project_blob_meta_refresh_failed", metadata: ["retryAttempt": retryAttempt])
+                // 忙库 → 退避重试。不重试的话，冷启动撞上忙库的用户整个 session
+                // 都看不到拼图模式按钮和日历成品图（空集在下游等于「确定没有图」）。
+                if !self.hasCompletedBlobMetadataScan {
+                    self.scheduleBlobMetadataRetry(attempt: retryAttempt + 1)
+                }
             }
             // 即使扫描失败也要 bump：调用方（loadData / restore / 远端合并）已经动过持久层，
             // 视图缓存认定的 revision 必须前进一步，让 .task(id:) 重新跑取图，避免视图卡在
@@ -4707,13 +4815,18 @@ enum ProjectBlobExistenceScanner {
         ("ZDISPLAYTHUMBNAIL", \.displayThumbnail)
     ]
 
-    static func scan(storeURL: URL) -> ProjectBlobExistence? {
-        guard FileManager.default.fileExists(atPath: storeURL.path) else { return nil }
+    /// - Returns: 失败时区分 `.unsupportedStore`（永久，可回退 SwiftData 查询）
+    ///   和 `.transient`（SQLITE_BUSY / I-O，**不可**回退 —— 见 `StoreScanFailure` 注释）。
+    static func scan(storeURL: URL) -> Result<ProjectBlobExistence, StoreScanFailure> {
+        guard FileManager.default.fileExists(atPath: storeURL.path) else {
+            return .failure(.unsupportedStore)
+        }
 
         var db: OpaquePointer?
         guard sqlite3_open_v2(storeURL.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
+            let failure = StoreScanFailure.classify(db)
             if db != nil { sqlite3_close(db) }
-            return nil
+            return .failure(failure)
         }
         defer { sqlite3_close(db) }
         sqlite3_busy_timeout(db, 2_000)
@@ -4723,23 +4836,34 @@ enum ProjectBlobExistenceScanner {
         do {
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &stmt, nil) == SQLITE_OK else {
-                return nil
+                return .failure(StoreScanFailure.classify(db))
             }
             defer { sqlite3_finalize(stmt) }
-            while sqlite3_step(stmt) == SQLITE_ROW {
+            var rc = sqlite3_step(stmt)
+            while rc == SQLITE_ROW {
                 if let name = sqlite3_column_text(stmt, 1) {
                     existingColumns.insert(String(cString: name).uppercased())
                 }
+                rc = sqlite3_step(stmt)
+            }
+            // 终止码必须检查 —— 中途 SQLITE_BUSY 会安静退出循环留下残缺列名集合，
+            // 下面 allSatisfy 失败即误判成永久不支持。详见 StoreScanFailure.classify。
+            guard rc == SQLITE_DONE else {
+                return .failure(StoreScanFailure.classify(db))
             }
         }
         let required = [idColumn] + blobColumns.map(\.column)
-        guard required.allSatisfy({ existingColumns.contains($0) }) else { return nil }
+        guard required.allSatisfy({ existingColumns.contains($0) }) else {
+            return .failure(.unsupportedStore)
+        }
 
         var result = ProjectBlobExistence()
         for (column, keyPath) in blobColumns {
             var stmt: OpaquePointer?
             let sql = "SELECT \(idColumn) FROM \(table) WHERE \(column) IS NOT NULL"
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                return .failure(StoreScanFailure.classify(db))
+            }
             defer { sqlite3_finalize(stmt) }
 
             var ids = Set<UUID>()
@@ -4747,21 +4871,23 @@ enum ProjectBlobExistenceScanner {
             while rc == SQLITE_ROW {
                 switch sqlite3_column_type(stmt, 0) {
                 case SQLITE_BLOB where sqlite3_column_bytes(stmt, 0) == 16:
-                    guard let raw = sqlite3_column_blob(stmt, 0) else { return nil }
+                    guard let raw = sqlite3_column_blob(stmt, 0) else { return .failure(.unsupportedStore) }
                     ids.insert(UUID(uuid: raw.load(as: uuid_t.self)))
                 case SQLITE_TEXT:
                     guard let c = sqlite3_column_text(stmt, 0),
-                          let uuid = UUID(uuidString: String(cString: c)) else { return nil }
+                          let uuid = UUID(uuidString: String(cString: c)) else {
+                        return .failure(.unsupportedStore)
+                    }
                     ids.insert(uuid)
                 default:
                     // ZID 形态不符合任何已知存储方式：假设失效，整次作废回退
-                    return nil
+                    return .failure(.unsupportedStore)
                 }
                 rc = sqlite3_step(stmt)
             }
-            guard rc == SQLITE_DONE else { return nil }
+            guard rc == SQLITE_DONE else { return .failure(StoreScanFailure.classify(db)) }
             result[keyPath: keyPath] = ids
         }
-        return result
+        return .success(result)
     }
 }

@@ -1,6 +1,36 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "好" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        }
+      }
+    },
+    "这张图片无法处理，原有图片已保留。请重试或换一张图片。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This image couldn't be processed. Your existing image was kept. Please try again or choose a different image."
+          }
+        }
+      }
+    },
+    "这张图片无法处理，项目未创建。请重试或换一张图片。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This image couldn't be processed, so the project wasn't created. Please try again or choose a different image."
+          }
+        }
+      }
+    },
     "" : {
 
     },
@@ -864,6 +894,22 @@
         }
       }
     },
+    "color_mode.empty.no_my_themes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save a tweak as a new theme to see it here."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调出喜欢的配色后，点击「保存为新主题」可加入此处"
+          }
+        }
+      }
+    },
     "color_mode.entry.group_title" : {
       "localizations" : {
         "en" : {
@@ -940,22 +986,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "主题保存失败"
-          }
-        }
-      }
-    },
-    "color_mode.empty.no_my_themes" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save a tweak as a new theme to see it here."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "调出喜欢的配色后，点击「保存为新主题」可加入此处"
           }
         }
       }
@@ -4633,6 +4663,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loading..."
+          }
+        }
+      }
+    },
+    "加载中…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading…"
           }
         }
       }
