@@ -37,6 +37,54 @@ struct BeadInventoryApp: App {
     init() {
         AppLogger.shared.info("App", "bootstrap_started")
 
+        // ── 启动取证：必须发生在任何重活之前 ───────────────────────────────────
+        //
+        // 顺序是有讲究的，不能随手调整：
+        //   1. 先读**上一次**的残留标记 —— begin() 会覆盖它；
+        //   2. 再 begin() 本次；
+        //   3. 再读 store / -wal / -shm 体积（纯文件属性，**不开库**）；
+        //   4. 最后才创建 ModelContainer。
+        //
+        // 第 3 步必须在第 4 步之前：开库本身就是嫌疑最大的一步，等容器建好了再去问
+        // `configurations.first?.url` 拿体积，量的已经是"活下来的那次"，没有意义。
+        //
+        // 残留标记非 nil = 上一次启动没走到 .active。注意它只说明
+        // **最后成功落盘到哪个阶段**，不等于"死在这个阶段"（见 LaunchDiagnostics 头注释）。
+        let residual = LaunchDiagnostics.residualMarker()
+        if let residual {
+            // 逐项显式标注类型:混类型 [String: Any] 字面量 + 多个 `??`
+            // 会让 Swift 类型检查器指数级退化(SourceKit 实测报
+            // "unable to type-check this expression in reasonable time")。
+            var meta: [String: Any] = [
+                "lastPhase": residual.phase.rawValue,
+                "prevBuild": residual.build,
+                "prevLaunchID": residual.launchID.uuidString
+            ]
+            meta["storeBytes"] = residual.storeBytes.map { Int($0) } ?? -1
+            meta["walBytes"] = residual.walBytes.map { Int($0) } ?? -1
+            meta["shmBytes"] = residual.shmBytes.map { Int($0) } ?? -1
+            meta["storeOpenMillis"] = residual.storeOpenMillis.map { Int($0.rounded()) } ?? -1
+            meta["wasPrewarm"] = residual.wasPrewarm
+            // 预热进程本来就常常不激活场景,残留是预期的,不该占用 error 级别 ——
+            // 否则真正的"启动被杀"会被淹没在预热噪声里。
+            if residual.wasPrewarm {
+                AppLogger.shared.warning("App", "previous_prewarm_incomplete", metadata: meta)
+            } else {
+                AppLogger.shared.error("App", "previous_launch_incomplete", metadata: meta)
+            }
+            AppLogger.shared.flushNow()
+        }
+        LaunchDiagnostics.begin(build: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown")
+
+        let storeMetrics = LaunchDiagnostics.recordStoreMetrics()
+        var storeMeta: [String: Any] = [:]
+        storeMeta["storeBytes"] = storeMetrics.store.map { Int($0) } ?? -1
+        storeMeta["walBytes"] = storeMetrics.wal.map { Int($0) } ?? -1
+        storeMeta["shmBytes"] = storeMetrics.shm.map { Int($0) } ?? -1
+        AppLogger.shared.info("App", "store_metrics_before_open", metadata: storeMeta)
+        AppLogger.shared.flushNow()
+        // ──────────────────────────────────────────────────────────────────────
+
         // 设置 SwiftData ModelContainer（使用版本化 Schema 支持数据迁移）
         let schema = Schema(versionedSchema: CurrentSchema.self)
         // 主动触发 bootValue 求值，确保设置页能用它判断"是否需要重启"。
@@ -59,6 +107,15 @@ struct BeadInventoryApp: App {
         let container: ModelContainer
         let isCloudSyncEnabled: Bool
         var fatalErrorMessage: String?
+
+        // 开库是本次调查里嫌疑最大的一步，也是唯一一处**同步**的重活。
+        // storeOpenBegin 落盘之后如果再没有 storeOpenEnd，下次启动就能读到
+        // "最后成功落盘在 storeOpenBegin" —— 这是目前唯一能在进程外观测到
+        // "开库没返回"的手段（看门狗 / jetsam 是 SIGKILL，进程内捕获不到）。
+        LaunchDiagnostics.record(.storeOpenBegin)
+        AppLogger.shared.flushNow()
+        let storeOpenStartedAt = Date()
+
         do {
             container = try ModelContainer(
                 for: schema,
@@ -166,6 +223,16 @@ struct BeadInventoryApp: App {
             }
         }
 
+        // 走到这里说明容器已就位（可能是主配置，也可能已经掉进了兜底链）。
+        // 耗时含全部兜底重试 —— 正是我们想知道的"开库到底花了多久"。
+        let storeOpenMillis = Date().timeIntervalSince(storeOpenStartedAt) * 1000
+        LaunchDiagnostics.recordStoreOpenDuration(millis: storeOpenMillis)
+        AppLogger.shared.info("App", "store_open_completed", metadata: [
+            "millis": Int(storeOpenMillis.rounded()),
+            "cloudKit": isCloudSyncEnabled
+        ])
+        AppLogger.shared.flushNow()
+
         self.modelContainer = container
         #if DEBUG
         // 清理统一走 WhiteScreenReproSeeder 的分批版本：两者共用 "ChaosSeed-" 前缀，
@@ -189,6 +256,9 @@ struct BeadInventoryApp: App {
         AppLogger.shared.info("App", "history_context_set")  // 启动耗时探针：HistoryManager 上下文就绪（取数已转后台，不再阻塞此处）
 
         self.initialFatalErrorMessage = fatalErrorMessage
+
+        LaunchDiagnostics.record(.managersReady)
+        AppLogger.shared.flushNow()
 
         // 初始化 TipKit —— 移出 App.init 同步路径。Tips.configure 冷启动要做 datastore 磁盘
         // 初始化（实测可达数百 ms），但它跟首帧无关（tips 是后续在具体页面按交互才弹），放在
@@ -325,6 +395,16 @@ struct BeadInventoryApp: App {
                     )
                 } else {
                     hasSeenInitialActivePhase = true
+                    // 首次抵达 .active = 本次启动活下来了，删除取证标记。
+                    //
+                    // 注意这里**只**记录"到达了可交互状态"。F1（启动后 5 秒的自动备份）
+                    // 和存量瘦身都还没跑 —— 崩在那之后的情况本轮标记覆盖不到，
+                    // 需要后续增量补更细的阶段（见方案 §F5 的稳定期计数）。
+                    LaunchDiagnostics.record(.firstFrameActive)
+                    LaunchDiagnostics.markLaunchCompleted()
+                    AppLogger.shared.info("AppLifecycle", "launch_completed")
+                    AppLogger.shared.flushNow()
+
                     let hadCompletedInitialLoadBeforeActive = inventoryManager.hasCompletedInitialLoad
                     inventoryManager.performInitialLoadIfNeeded(reason: "scenePhase.active.initial")
                     if !hadCompletedInitialLoadBeforeActive && inventoryManager.hasCompletedInitialLoad {

@@ -1104,35 +1104,25 @@ class InventoryManager: ObservableObject {
     }
 
     // MARK: - 数据迁移
-
-    /// 迁移旧 SDProjectRecord：补充 colorSystemRaw 字段（nil → "MARD"）
-    func migrateProjectColorSystem() {
-        guard let context = modelContext else { return }
-        // fallback 模式下也要避免 context.save()：迁移会写持久层并触发 CloudKit 同步，
-        // 同样有覆盖云端真实数据的风险。等用户重启切回普通模式或 opt-out 后再走这条路径。
-        if isUsingLocalFallbackMode {
-            logWarning("migrate_project_color_system_skipped_local_fallback")
-            return
-        }
-        do {
-            let descriptor = FetchDescriptor<SDProjectRecord>()
-            let records = try context.fetch(descriptor)
-            var updated = false
-            for record in records {
-                if record.colorSystemRaw == nil {
-                    record.colorSystemRaw = ColorSystem.mard.rawValue
-                    updated = true
-                }
-            }
-            if updated {
-                try context.save()
-                logInfo("migrate_project_color_system_saved")
-            }
-        } catch {
-            print("[DataMigration] migrateProjectColorSystem error: \(error)")
-            logError("migrate_project_color_system_failed", metadata: ["error": "\(error)"])
-        }
-    }
+    //
+    // 这里曾有一个 `migrateProjectColorSystem()`：全表扫 `SDProjectRecord`，把
+    // `colorSystemRaw == nil` 的行填成 "MARD"。已删除，两条独立理由：
+    //
+    //   1. **冗余** —— `toStruct()` / `toMetadataStruct()` 都是
+    //      `ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard`，nil 读出来本来就是
+    //      `.mard`。迁移做的事是把读取时已经生效的默认值持久化一遍，语义零变化。
+    //   2. **代价与收益完全不成比例** —— 它是裸 `FetchDescriptor<SDProjectRecord>()`
+    //      （不带 `propertiesToFetch`），fetch 阶段就把全表四个 blob 列物化进内存；
+    //      随后逐行赋值 + 单次 `context.save()`，而 SQLite 改任何一列都要重写整条记录
+    //      （含 inline 的图片 overflow page）。等于为了一个默认值把整个图库重写一遍，
+    //      并把同样体量推给 CloudKit。
+    //
+    // 它当时没有造成事故，只因为唯一调用链 `DataMigration.migrateIfNeeded` 从未被接进
+    // 启动流程 —— 也就是说这是一颗没插引信的雷，而不是一个安全的设计。
+    //
+    // 将来真要写迁移，模板是 `ThumbnailMigrationCoordinator`，不是这个：
+    // 单列投影、每行独立 `ModelContext` + 独立 save、分批 + 批间让出、每轮写预算上限、
+    // 跨启动续跑。参见 memory 里那条「SwiftData 大 blob 表禁止裸 fetch」。
 
     /// 应用回到前台时刷新 SwiftData，拉取 iCloud 端已合并的数据
     func refreshFromPersistentStore(reason: String, preserveInMemoryOnFailure: Bool = true) {
