@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "91f20a080109",
+  "strategy": "manual-commit",
+  "branch": "feat/launch-diagnostics",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "BeadInventory.xcodeproj/project.pbxproj",
+    "BeadInventory/BeadInventoryApp.swift",
+    "BeadInventory/Managers/BackupManager.swift",
+    "BeadInventory/Managers/F1BenchmarkRecorder.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/91/f20a080109/0/metadata.json",
+      "transcript": "/91/f20a080109/0/full.jsonl",
+      "content_hash": "/91/f20a080109/0/content_hash.txt",
+      "prompt": "/91/f20a080109/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1269,
+    "cache_creation_tokens": 1725204,
+    "cache_read_tokens": 42099991,
+    "output_tokens": 231408,
+    "api_call_count": 167
+  }
+}
