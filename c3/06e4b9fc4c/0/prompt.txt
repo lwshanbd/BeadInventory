@@ -297,3 +297,30 @@ A
 ---
 
 送复审
+
+---
+
+结论：方向正确，生产自动备份已真正切到流式归档；但我建议先修完下列两项再合并。不能标为“P0 全部清零”。
+
+1. 项目在快照后被删除，会被写成“项目还在、四张图都没有”。
+metadata 已先取快照，随后 `blobs(for:)` 找不到行时返回全 `nil`；恢复又按“字段缺失即显式清空”处理。结果是一份内部自相矛盾的备份，恢复会复活已删除项目但丢失其图片。应将“行消失”作为可重试失败抛出，让本次保留为 `.partial`，而不是编码为无图。见 [ProjectImageLoader.swift (line 176)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/ProjectImageLoader.swift:176)、[BackupArchive.swift (line 254)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:254)。
+2. 恢复残留目前只记日志，没有真正通知用户。
+启动代码注释称“暴露给 UI”，实际只写 `AppLogger`。若 metadata 已替换、blob 恢复中断，用户仍会在不知情下继续使用半恢复库。应在备份/恢复页面展示持久横幅，明确指出哪份归档和中断阶段，并引导“重新恢复该归档”；成功完成后再清除提示。见 [BeadInventoryApp.swift (line 85)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/BeadInventoryApp.swift:85)。
+
+其余结论：
+
+* R1/R2/R3 的主体处置成立：生产调用走 `performArchiveBackup`，旧 JSON 写出已被编译条件隔离；手动备份可以解除当周抑制；恢复日志也只在完整成功后清除。
+* TOCTOU staging 可以暂缓：我确认目前没有 `.beadbackup` 的 `fileImporter`、URL 导入或 Documents 文件共享配置；恢复入口只来自 App 私有 `WeeklyBackups` 列表。导入功能上线前必须完成 staging copy + 校验后从不可变私有副本应用。
+* 但导入前还要补一个限额顺序问题：当前总字节数/条目数是在 `Data(contentsOf:)` 和 SHA-256 后才检查，恶意归档仍可诱导大量 I/O 与哈希。应在读 blob 前预检 `count + 1` 和 `total + actual`。见 [BackupArchive.swift (line 540)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:540)。
+* “峰值恒为单张图”已不准确：写出一次会持有一个项目的四个 blob，恢复也先读四个 blob；理论上可达 `4 × 64 MB`。这仍消除了“随项目总数线性增长”的 F1 形状，但报告和注释应改为“受单项目 blob 总量约束”，并补恢复路径峰值测量。见 [BackupArchive.swift (line 193)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:193)、[BackupArchive.swift (line 734)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:734)。
+* 旧 JSON 恢复仍会整份 `Data(contentsOf:)`，所以“列表不 OOM”已修，但用户点旧备份恢复仍有旧风险；这是可接受的明确遗留项，但应在 UI 对旧格式提示，或列为下一批必做。
+* 新增的“立即备份 / 抑制提示”等字符串仍是硬编码中文，应补入 `Localizable.xcstrings`。
+
+验证完成：
+
+* `BackupArchiveValidationTests` + `BackupArchiveRoundTripTests`：15/15 通过。
+* `Release + F1_BENCHMARK`、iPhone 17 Pro Max 模拟器：构建通过。
+* `git diff --check main...HEAD` 无空白错误。
+* 未改动你的工作区文件。
+
+度量口径也同意收窄：70 MB 是该窗口、该采样条件下的观测值，不是模拟器 jetsam 证据；但“去掉全库 base64 累积，因而不再随项目总数线性增长”的结构性结论成立。
