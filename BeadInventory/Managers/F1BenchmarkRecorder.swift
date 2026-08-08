@@ -14,7 +14,7 @@
 //  所以本记录器写**独立的结构化结果文件**,并且:
 //    - 每次启动由 `-F1RunID` 传入唯一 ID,文件名即该 ID —— 结构上不可能读到上一轮残留;
 //    - 每次更新都**原子写 + fsync**(复用 LaunchDiagnostics 已实测验证的机制);
-//    - `observedMaxSoFar` **增量更新** —— 进程中途被杀时,已观测到的峰值仍然留在盘上。
+//    - 峰值**增量更新**落盘 —— 进程中途被杀时,已观测到的值仍然留在盘上。
 //      这一条是"中断也算有效结果"这句话能成立的前提,否则那只是一句空话。
 //
 //  ## 构建门控
@@ -49,8 +49,17 @@ struct F1BenchmarkResult: Codable {
 
     /// 六个检查点的 phys_footprint(字节)。键是检查点名。
     var checkpoints: [String: UInt64] = [:]
-    /// 采样器观测到的最大 phys_footprint。**持续更新**,中断留证用。
-    var observedMaxSoFar: UInt64 = 0
+    /// **整个进程生命周期**观测到的最大 phys_footprint。
+    ///
+    /// 采样器在 `App.init()` 就启动且不停,所以这个值覆盖开库、首屏渲染、初始加载、
+    /// 各种后台任务 —— **不能归因给被测操作**。此前的报告拿它做过新旧路径对比,
+    /// 那个对比是无效的,已作废。要归因请看 `windowMax*`。
+    var processLifetimeMax: UInt64 = 0
+
+    /// 被测窗口内的最大值。由 `beginWindow` / `endWindow` 圈定,**这个才可归因**。
+    var windowMaxFootprint: UInt64?
+    var windowBaselineFootprint: UInt64?
+    var windowLabel: String?
     /// 采样周期(毫秒)—— 结论里必须一并报告,峰值只能表述为"该周期下观测到的最大值"。
     var samplePeriodMillis: Int = 50
 
@@ -237,15 +246,18 @@ enum F1Benchmark {
             while samplingActive {
                 if let fp = physFootprint() {
                     lock.lock()
-                    if var r = result, fp > r.observedMaxSoFar {
-                        r.observedMaxSoFar = fp
-                        result = r
-                        lock.unlock()
-                        // 每次刷新最大值就落盘 —— 进程被杀时盘上留着的就是最后观测值。
-                        persist()
-                    } else {
-                        lock.unlock()
+                    var changed = false
+                    if var r = result {
+                        if fp > r.processLifetimeMax { r.processLifetimeMax = fp; changed = true }
+                        // 窗口开着时才更新可归因的那个值。
+                        if r.windowLabel != nil, fp > (r.windowMaxFootprint ?? 0) {
+                            r.windowMaxFootprint = fp; changed = true
+                        }
+                        if changed { result = r }
                     }
+                    lock.unlock()
+                    // 每次刷新最大值就落盘 —— 进程被杀时盘上留着的就是最后观测值。
+                    if changed { persist() }
                 }
                 Thread.sleep(forTimeInterval: Double(periodMillis) / 1000)
             }
@@ -253,6 +265,23 @@ enum F1Benchmark {
         t.qualityOfService = .userInitiated   // 别被降频，否则采样周期名不副实
         t.start()
         sampler = t
+    }
+
+    /// 圈定一段**可归因**的测量窗口。
+    ///
+    /// 没有窗口的话,采样器给出的只是进程生命周期最大值 —— 它混着开库、首屏、后台任务,
+    /// 拿它做"新旧路径对比"是无效的(上一版报告就犯了这个错)。
+    static func beginWindow(_ label: String) {
+        let baseline = physFootprint()
+        mutate {
+            $0.windowLabel = label
+            $0.windowBaselineFootprint = baseline
+            $0.windowMaxFootprint = baseline
+        }
+    }
+
+    static func endWindow() {
+        mutate { $0.windowLabel = nil }
     }
 
     static func stopSampling() {

@@ -141,6 +141,8 @@ class BackupManager {
         // 而这里量的是主线程不可响应时长，必须单调。
         #if DEBUG || F1_BENCHMARK
         let benchStart = DispatchTime.now()
+        // 圈定可归因的测量窗口 —— 进程生命周期最大值混着开库/首屏/后台任务，不能拿来对比。
+        F1Benchmark.beginWindow("legacy_json_backup")
         F1Benchmark.checkpoint("1_beforePerformBackup")
         defer {
             // 检查点 5：函数返回后。与检查点 4（写盘后）的差值用于区分
@@ -148,6 +150,7 @@ class BackupManager {
             F1Benchmark.checkpoint("5_afterPerformBackupReturn")
             let millis = Double(DispatchTime.now().uptimeNanoseconds - benchStart.uptimeNanoseconds) / 1_000_000
             F1Benchmark.recordMainThreadDuration(millis: millis)
+            F1Benchmark.endWindow()
             // 检查点 6：下一轮 RunLoop 之后 —— autorelease 池排空后的真实回落点。
             DispatchQueue.main.async {
                 F1Benchmark.checkpoint("6_afterNextRunLoop")
@@ -236,6 +239,7 @@ class BackupManager {
             return
         }
 
+        F1Benchmark.beginWindow("streaming_archive_backup")
         F1Benchmark.checkpoint("1_beforePerformBackup")
         let started = DispatchTime.now()
 
@@ -269,6 +273,7 @@ class BackupManager {
             AppLogger.shared.error("F1Benchmark", "archive_backup_failed", metadata: ["error": "\(error)"])
         }
 
+        F1Benchmark.endWindow()
         F1Benchmark.checkpoint("5_afterPerformBackupReturn")
         DispatchQueue.main.async {
             F1Benchmark.checkpoint("6_afterNextRunLoop")

@@ -40,13 +40,25 @@
 //
 //  ## 一致性模型:逐记录一致(产品已裁决)
 //
-//  主线程只取一份 blob-free 的 metadata 快照,图片随后在后台逐条取。所以
-//  **每条记录内部自洽,但整库不是同一时刻的快照** —— 备份期间用户若改了某个项目,
-//  该项目可能拿到新 metadata + 旧图片。这是备份工具的常规取舍,已明确接受,
-//  并写进 manifest 的 `consistencyModel` 字段备查。
+//  **保证的**:每个项目的四个 blob 由**一次 fetch**取回(`ProjectImageLoader.blobs(for:)`),
+//  所以单条记录内部的图片来自同一事务视图,不会出现"新缩略图 + 旧成品图"这种自相矛盾。
+//
+//  **不保证的**:整库不是同一时刻的快照。metadata 在主线程一次性取,各项目的图片随后
+//  逐条取,所以项目之间、以及同一项目的 metadata 与图片之间,可能跨越用户的修改。
+//  这是备份工具的常规取舍,已明确接受,并写进 manifest 的 `consistencyModel` 备查。
+//
+//  初版实现其实**连逐记录一致都没做到** —— 一个项目的四张图分四次取,来自四个不同时刻,
+//  却仍在 manifest 里声称 `per-record`。复审指出后改成单次 fetch 补齐。
+//  记在这里是因为:声称的语义和实现的语义脱节,比语义本身弱要危险得多。
 //
 //  要做到全库同一时刻需要单一持久化事务视图,复杂度高一个量级,防的却是低频且后果轻微
 //  的情况 —— 不做。
+//
+//  ## 读失败绝不等于"没有图"
+//
+//  `blobs(for:)` 读取失败会 **throw,整次备份终止**。这一条不是防御性编程,是必需的:
+//  恢复端按"完整快照"语义处理缺失字段(有则写、无则**显式清空**),所以一旦把读失败
+//  记成"这条没图",恢复就会把用户的图**永久删掉** —— 一次瞬时错误被转写成"用户删了图"。
 
 import Foundation
 import CryptoKit
@@ -232,29 +244,31 @@ enum BackupArchiveWriter {
                 }
             )
 
-            // 逐个字段取 → 写 → 释放。每个 await 之间内存里只有一张图。
-            // autoreleasepool 不适用于 async 边界，靠的是作用域立即结束 + 不累积引用。
-            if let data = await imageLoader.thumbnail(for: project.id) {
+            // **单次 fetch 取回该项目的全部 blob** —— 同一事务视图，
+            // 这才让「逐记录一致」名副其实。分四次取的话，同一个项目的四张图会来自四个
+            // 不同时刻，归档里可能出现"新缩略图 + 旧成品图"这种自身矛盾的记录。
+            //
+            // **读失败会 throw，整次备份就此终止**（不再往下写）。绝不能把读失败当成
+            // "这条没图" —— 恢复端按完整快照语义会显式清空，那等于把一次瞬时读取错误
+            // 转写成"用户删了图"，造成永久数据丢失。
+            let blobs = try await imageLoader.blobs(for: project.id)
+
+            if let data = blobs.thumbnail {
                 archived.thumbnail = try writeBlob(data, name: "\(project.id.uuidString).thumbnail",
                                                    in: blobsURL, root: partialURL)
             }
-            if Task.isCancelled { throw WriteError.cancelled }
-
-            if let data = await imageLoader.finishedImage(for: project.id) {
+            if let data = blobs.finishedImage {
                 archived.finishedImage = try writeBlob(data, name: "\(project.id.uuidString).finished",
                                                        in: blobsURL, root: partialURL)
             }
-            if Task.isCancelled { throw WriteError.cancelled }
-
-            if let data = await imageLoader.displayThumbnail(for: project.id) {
+            if let data = blobs.displayThumbnail {
                 archived.displayThumbnail = try writeBlob(data, name: "\(project.id.uuidString).display",
                                                           in: blobsURL, root: partialURL)
             }
-            if Task.isCancelled { throw WriteError.cancelled }
-
             // patternGrid：旧 JSON 格式一直漏着，恢复后用户的网格标定会丢。
-            if let grid = await imageLoader.patternGrid(for: project.id),
-               let gridData = try? JSONEncoder().encode(grid) {
+            // 这里直接搬原始 JSON 字节，不做解码再编码 —— 原来用 `try?` 编码，
+            // 编码失败会静默丢掉网格，同样是"失败被转写成没有"。
+            if let gridData = blobs.patternGridData {
                 archived.patternGrid = try writeBlob(gridData, name: "\(project.id.uuidString).grid",
                                                      in: blobsURL, root: partialURL)
             }
@@ -309,15 +323,29 @@ enum BackupArchiveWriter {
 
         // 原子提交：目录 rename 在同卷上是原子的。到这一步之前，外界看到的一直是
         // `.partial`（不可列出、不可恢复）。
-        if fm.fileExists(atPath: finalURL.path) {
-            try? fm.removeItem(at: finalURL)
+        //
+        // **绝不为了提交先删掉同名旧归档。** 原来这里是 removeItem + moveItem ——
+        // 一旦 move 失败（磁盘满、权限、卷变化），旧备份已经没了、新备份也没到位，
+        // 两头空。而备份的全部意义就是"出事时还有一份"，为了写新的先毁掉旧的
+        // 是把它最该起作用的场景拆掉。
+        //
+        // 改为：撞名就换一个唯一名字。多留一份备份的代价，远小于丢一份的代价；
+        // 多出来的旧备份由既有的保留策略（maxBackupCount）自然轮转。
+        var committedURL = finalURL
+        if fm.fileExists(atPath: committedURL.path) {
+            var suffix = 2
+            repeat {
+                committedURL = destinationDirectory
+                    .appendingPathComponent("\(archiveName)-\(suffix).\(directoryExtension)")
+                suffix += 1
+            } while fm.fileExists(atPath: committedURL.path) && suffix < 100
         }
         do {
-            try fm.moveItem(at: partialURL, to: finalURL)
+            try fm.moveItem(at: partialURL, to: committedURL)
         } catch {
             throw WriteError.ioFailed("提交归档失败: \(error)")
         }
-        return finalURL
+        return committedURL
     }
 
     /// 列出目录里的可用归档。
@@ -385,6 +413,18 @@ enum BackupArchiveReader {
     /// 64 MB 给足余量,同时把"一个条目就能撑爆内存"挡在门外。
     static let maxBlobBytes = 64 * 1024 * 1024
 
+    /// manifest.json 的大小上限。
+    ///
+    /// 原来直接 `Data(contentsOf:)` 整个读进来 —— 一个几 GB 的 manifest 就能在校验开始
+    /// 之前把进程干掉。**先看文件大小再决定读不读**,与单条 blob 同理。
+    /// 32 MB 对一个只含 metadata 的 JSON 是极宽的余量(实测 669 项目约 1 MB)。
+    static let maxManifestBytes: Int64 = 32 * 1024 * 1024
+
+    /// 条目数与总量上限。防的是"每条都不超限、但条数无限"这种绕过方式。
+    static let maxProjects = 100_000
+    static let maxBlobCount = 400_000          // 每项目最多 4 个
+    static let maxTotalBlobBytes: Int64 = 64 * 1024 * 1024 * 1024   // 64 GB
+
     struct ValidationReport {
         let manifest: BackupArchiveManifest
         let root: URL
@@ -402,6 +442,9 @@ enum BackupArchiveReader {
         case blobSizeMismatch(String, declared: Int, actual: Int)
         case checksumMismatch(String)
         case insufficientDiskSpace(needed: Int64, available: Int64)
+        case manifestTooLarge(bytes: Int64)
+        case tooManyEntries(kindLabel: String, count: Int)
+        case totalSizeExceedsLimit(bytes: Int64)
 
         /// 不带 payload 的稳定标识。
         ///
@@ -419,6 +462,9 @@ enum BackupArchiveReader {
             case .blobSizeMismatch: return "blobSizeMismatch"
             case .checksumMismatch: return "checksumMismatch"
             case .insufficientDiskSpace: return "insufficientDiskSpace"
+            case .manifestTooLarge: return "manifestTooLarge"
+            case .tooManyEntries: return "tooManyEntries"
+            case .totalSizeExceedsLimit: return "totalSizeExceedsLimit"
             }
         }
 
@@ -433,6 +479,9 @@ enum BackupArchiveReader {
             case .blobSizeMismatch(let p, let d, let a): return "条目大小不符: \(p) 声明 \(d) 实际 \(a)"
             case .checksumMismatch(let p): return "条目校验和不符: \(p)"
             case .insufficientDiskSpace(let n, let a): return "磁盘空间不足：需要 \(n) 字节，可用 \(a)"
+            case .manifestTooLarge(let b): return "manifest 过大: \(b) 字节"
+            case .tooManyEntries(let k, let c): return "\(k) 条目数超限: \(c)"
+            case .totalSizeExceedsLimit(let b): return "归档总量超限: \(b) 字节"
             }
         }
     }
@@ -442,6 +491,12 @@ enum BackupArchiveReader {
         let fm = FileManager.default
         let manifestURL = root.appendingPathComponent("manifest.json")
         guard fm.fileExists(atPath: manifestURL.path) else { throw ValidationError.manifestMissing }
+
+        // 先看大小再决定读不读 —— 否则一个几 GB 的 manifest 能在校验开始前就干掉进程。
+        let manifestSize = ((try? fm.attributesOfItem(atPath: manifestURL.path))?[.size] as? NSNumber)?.int64Value ?? -1
+        guard manifestSize <= maxManifestBytes else {
+            throw ValidationError.manifestTooLarge(bytes: manifestSize)
+        }
 
         let manifest: BackupArchiveManifest
         do {
@@ -453,9 +508,15 @@ enum BackupArchiveReader {
             throw ValidationError.manifestUndecodable("\(error)")
         }
 
-        // 未来版本一律拒绝 —— 不做"尽力而为"解析，那只会用新格式的半懂数据覆盖用户旧数据。
-        guard manifest.formatVersion <= BackupArchiveWriter.currentFormatVersion else {
+        // **精确匹配，不是 `<=`。** 原来写 `<= current` 等于放行 0 和负数版本 ——
+        // 只有 v1 存在，任何别的值都说明这不是我们写出来的东西，不该"尽力而为"解析。
+        guard manifest.formatVersion == BackupArchiveWriter.currentFormatVersion else {
             throw ValidationError.unsupportedFormatVersion(manifest.formatVersion)
+        }
+
+        // 条目数上限：防"每条都不超限、但条数无限"绕过单条限制。
+        guard manifest.projects.count <= maxProjects else {
+            throw ValidationError.tooManyEntries(kindLabel: "projects", count: manifest.projects.count)
         }
 
         var totalBytes: Int64 = 0
@@ -482,6 +543,14 @@ enum BackupArchiveReader {
 
                 totalBytes += actual
                 count += 1
+                // 边累加边查 —— 等全部算完再查就已经把时间花掉了，而且给了构造者
+                // 用海量小条目拖死校验的机会。
+                guard count <= maxBlobCount else {
+                    throw ValidationError.tooManyEntries(kindLabel: "blobs", count: count)
+                }
+                guard totalBytes <= maxTotalBlobBytes else {
+                    throw ValidationError.totalSizeExceedsLimit(bytes: totalBytes)
+                }
             }
         }
 
@@ -616,8 +685,9 @@ extension BackupArchiveReader {
         onProgress: (Int, Int) -> Void = { _, _ in }
     ) throws {
         RestoreJournal.begin(archive: report.root)
-        defer { RestoreJournal.finish() }
-
+        // **刻意不用 `defer { finish() }`** —— defer 在抛错退出时同样会执行，
+        // 那会把"metadata 已替换、blob 写到一半失败"的库标记成"恢复完成"，
+        // 恰好抹掉这个日志唯一的作用。日志只在**全部成功后**才清除，见函数末尾。
         let m = report.manifest
 
         // ① metadata 整体替换（语义就是"替换全部数据"，不是合并）
@@ -667,7 +737,7 @@ extension BackupArchiveReader {
             let gridData = try p.patternGrid.map { try readBlob($0, root: report.root) }
 
             // 单条调用 —— 见方法注释里关于 OOM 形状的说明。
-            _ = manager.restoreProjectBlobsFromBackup([(
+            let result = manager.restoreProjectBlobsFromBackup([(
                 id: p.id,
                 thumbnail: thumbnail,
                 finishedImage: finished,
@@ -680,7 +750,27 @@ extension BackupArchiveReader {
                 displayThumbnailProvided: true
             )])
 
+            // **返回值必须检查。** 原来这里是 `_ =` —— 写失败被静默吞掉，
+            // 结果是"部分 blob 没写进去"的库照样被标成恢复完成。
+            // 而 metadata 已经替换过了，用户拿到的是一个自己不知道有问题的库。
+            guard result.failedIDs.isEmpty else {
+                throw RestoreError.blobWriteFailed(projectID: p.id)
+            }
+
             onProgress(index + 1, total)
+        }
+
+        // 只有走到这里才算完成 —— 日志此时才清除。
+        RestoreJournal.finish()
+    }
+
+    enum RestoreError: Error, CustomStringConvertible {
+        case blobWriteFailed(projectID: UUID)
+
+        var description: String {
+            switch self {
+            case .blobWriteFailed(let id): return "项目 \(id) 的图片写入失败，恢复已中止"
+            }
         }
     }
 }

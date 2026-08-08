@@ -122,6 +122,77 @@ actor ProjectImageLoader {
         return (true, image)
     }
 
+    // MARK: - 备份用:单次 fetch 取回一个项目的全部 blob
+
+    /// 一个项目的四个 blob。
+    struct ProjectBlobs: Sendable {
+        let thumbnail: Data?
+        let finishedImage: Data?
+        let displayThumbnail: Data?
+        let patternGridData: Data?
+    }
+
+    enum LoadError: Error, CustomStringConvertible {
+        case fetchFailed(projectId: UUID, underlying: String)
+
+        var description: String {
+            switch self {
+            case .fetchFailed(let id, let e): return "读取项目 \(id) 的图片失败: \(e)"
+            }
+        }
+    }
+
+    /// 取回一个项目的全部 blob —— **单次 fetch,同一事务视图**。
+    ///
+    /// ## 为什么必须是单次 fetch(而不是调四遍上面的单列方法)
+    ///
+    /// 备份的一致性语义是「逐记录一致」(产品裁决)。分四次取,同一个项目的四张图会来自
+    /// 四个不同时刻 —— 用户在备份期间改了图,归档里就可能是"新缩略图 + 旧成品图"这种
+    /// 自身矛盾的记录。单次 fetch 才让"逐记录一致"名副其实。
+    ///
+    /// 内存代价是**一个项目的四个 blob 同时在内存**(约两张图量级),仍然与项目总数无关 ——
+    /// 这跟"全表物化"是两回事。
+    ///
+    /// ## 为什么 throw 而不是返回 nil
+    ///
+    /// 上面那组单列方法把「真的没图」和「fetch 抛错」**都返回 nil**(错误只进了日志)。
+    /// 对视图层那是合理的降级;但对备份是致命的 ——
+    ///
+    ///     一次瞬时读取失败 → 备份记成"这条没图" → 恢复时按"完整快照"语义显式清空
+    ///       → 图被永久删除
+    ///
+    /// 也就是说"读失败"会被转写成"用户删了图"。备份路径必须能区分这两者,所以这里
+    /// 用 throw 把失败暴露出去,由调用方决定终止整次备份。
+    func blobs(for projectId: UUID) throws -> ProjectBlobs {
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        descriptor.fetchLimit = 1
+        descriptor.propertiesToFetch = [
+            \.thumbnail, \.finishedImage, \.displayThumbnail, \.patternGridData
+        ]
+        do {
+            let context = ModelContext(container)
+            guard let row = try context.fetch(descriptor).first else {
+                // 行不存在 —— 这是合法状态(项目在备份期间被删),不是错误。
+                // 返回全 nil,由调用方按"这条没有图"处理。
+                return ProjectBlobs(thumbnail: nil, finishedImage: nil,
+                                    displayThumbnail: nil, patternGridData: nil)
+            }
+            return ProjectBlobs(
+                thumbnail: row.thumbnail,
+                finishedImage: row.finishedImage,
+                displayThumbnail: row.displayThumbnail,
+                patternGridData: row.patternGridData
+            )
+        } catch {
+            AppLogger.shared.error("ProjectImageLoader", "blobs_fetch_failed", metadata: [
+                "projectId": projectId.uuidString, "error": "\(error)"
+            ])
+            throw LoadError.fetchFailed(projectId: projectId, underlying: "\(error)")
+        }
+    }
+
     // MARK: - 测试探针
 
     /// 供 `ProjectImageLoaderTests` 钉住「取图不在主线程」这条不变量。

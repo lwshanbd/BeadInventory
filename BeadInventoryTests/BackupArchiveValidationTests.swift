@@ -173,6 +173,30 @@ final class BackupArchiveValidationTests: XCTestCase {
         assertRejects("manifestUndecodable")
     }
 
+    // MARK: - 资源上限
+
+    /// manifest 无上限时会被整个读进内存 —— 一个几 GB 的 manifest 能在校验开始前
+    /// 就干掉进程。必须先看大小再决定读不读。
+    func testRejectsOversizedManifest() throws {
+        // 直接造一个超过上限的文件（内容无所谓，检查发生在解析之前）
+        let url = root.appendingPathComponent("manifest.json")
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: UInt64(BackupArchiveReader.maxManifestBytes) + 1)
+        try handle.close()
+
+        assertRejects("manifestTooLarge")
+    }
+
+    /// `formatVersion` 必须**精确等于** 1。
+    /// 原来写 `<= current` 等于放行 0 和负数 —— 只有 v1 存在，别的值都说明这不是
+    /// 我们写出来的东西，不该"尽力而为"解析。
+    func testRejectsZeroFormatVersion() throws {
+        let ref = try writeBlob(Data(repeating: 0x01, count: 8), name: "a.thumbnail")
+        try writeManifest(formatVersion: 0, thumbnail: ref)
+        assertRejects("unsupportedFormatVersion")
+    }
+
     // MARK: - 半成品不可见
 
     /// `.partial` 是中断留下的半成品。被列出来就意味着用户可能拿残缺数据覆盖好数据。
