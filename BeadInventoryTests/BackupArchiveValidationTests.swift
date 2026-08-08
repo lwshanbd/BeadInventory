@@ -58,7 +58,7 @@ final class BackupArchiveValidationTests: XCTestCase {
         let manifest = BackupArchiveManifest(
             formatVersion: formatVersion, createdAt: Date(), appVersion: "test",
             consistencyModel: "per-record", projects: [project],
-            brands: [], brandStocks: [], customColors: [], currentBrandId: nil
+            brands: [], brandStocks: [], customColors: [], purchaseRecords: [], currentBrandId: nil
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

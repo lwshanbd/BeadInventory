@@ -246,6 +246,7 @@ class BackupManager {
             brands: inventoryManager.brands,
             brandStocks: inventoryManager.brandStocks,
             customColors: inventoryManager.customColors,
+            purchaseRecords: inventoryManager.purchaseRecords,
             currentBrandId: inventoryManager.currentBrandId,
             appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         )

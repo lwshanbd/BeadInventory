@@ -100,7 +100,25 @@ struct BackupArchiveManifest: Codable {
     var brands: [ArchivedBrand]
     var brandStocks: [ArchivedBrandStock]
     var customColors: [ArchivedCustomColor]
+    /// 进货记录。旧 JSON 格式有这一节（`data["purchaseRecords"]`），
+    /// 新格式初版漏了 —— 那会是与 patternGrid 完全同类的静默数据丢失，补上。
+    var purchaseRecords: [ArchivedPurchaseRecord]
     var currentBrandId: UUID?
+}
+
+struct ArchivedPurchaseRecord: Codable {
+    let id: UUID
+    var name: String
+    var date: Date
+    var brandId: UUID
+    var items: [ArchivedPurchaseItem]
+    var note: String?
+}
+
+struct ArchivedPurchaseItem: Codable {
+    let id: UUID
+    let colorCode: String
+    var quantity: Int
 }
 
 struct ArchivedBrand: Codable {
@@ -153,6 +171,7 @@ enum BackupArchiveWriter {
         let brands: [Brand]
         let brandStocks: [BrandStock]
         let customColors: [CustomColor]
+        let purchaseRecords: [PurchaseRecord]
         let currentBrandId: UUID?
         let appVersion: String
     }
@@ -264,6 +283,15 @@ enum BackupArchiveWriter {
             customColors: snapshot.customColors.map {
                 ArchivedCustomColor(id: $0.id, colorCode: $0.colorCode, colorName: $0.colorName,
                                     colorHex: $0.colorHex, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
+            },
+            purchaseRecords: snapshot.purchaseRecords.map { record in
+                ArchivedPurchaseRecord(
+                    id: record.id, name: record.name, date: record.date, brandId: record.brandId,
+                    items: record.items.map {
+                        ArchivedPurchaseItem(id: $0.id, colorCode: $0.colorCode, quantity: $0.quantity)
+                    },
+                    note: record.note
+                )
             },
             currentBrandId: snapshot.currentBrandId
         )
@@ -502,5 +530,157 @@ enum BackupArchiveReader {
     static func readBlob(_ ref: ArchivedBlobRef, root: URL) throws -> Data {
         let url = try safeBlobURL(ref.file, root: root)
         return try Data(contentsOf: url)
+    }
+}
+
+// MARK: - 恢复(应用阶段)
+
+/// 恢复日志。
+///
+/// `validate()` 保证了"格式和内容是好的",但保证不了"写到一半不被杀"。
+/// 恢复过程要改 metadata + 逐条写图,进程若在中途被终止,库就停在半恢复状态 ——
+/// 而恢复往往正是用户数据已经出问题时才做的操作,再给他一个半损坏的库是最坏结果。
+///
+/// 这里的做法与备份哨兵同型:**开工前落一条记录,完成后清掉**。下次启动读到残留,
+/// 就知道库可能是半恢复的,并且知道该用哪个归档重跑 —— 归档还在盘上,重跑是幂等的。
+///
+/// 注:这不是事务。它做不到"回滚",能做到的是**不静默** —— 让半恢复状态可被发现、可被修复。
+/// 真正的回滚需要在恢复前把整个 store 复制一份,对 GB 级库代价过高,不在本轮范围。
+struct RestoreJournalEntry: Codable {
+    let archivePath: String
+    let startedAt: Date
+    var phase: String
+}
+
+enum RestoreJournal {
+    private static var fileURL: URL? {
+        guard let base = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return nil }
+        let dir = base.appendingPathComponent("BackupState", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("restore_journal.json")
+    }
+
+    static func begin(archive: URL) {
+        write(RestoreJournalEntry(archivePath: archive.path, startedAt: Date(), phase: "metadata"))
+    }
+
+    static func setPhase(_ phase: String) {
+        guard var entry = residual() else { return }
+        entry.phase = phase
+        write(entry)
+    }
+
+    static func finish() {
+        guard let url = fileURL else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    /// 非 nil = 上一次恢复没有走完，库可能处于半恢复状态。
+    static func residual() -> RestoreJournalEntry? {
+        guard let url = fileURL, let data = try? Data(contentsOf: url) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(RestoreJournalEntry.self, from: data)
+    }
+
+    private static func write(_ entry: RestoreJournalEntry) {
+        guard let url = fileURL else { return }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(entry) else { return }
+        try? data.write(to: url, options: .atomic)
+        if let handle = try? FileHandle(forWritingTo: url) {
+            try? handle.synchronize()
+            try? handle.close()
+        }
+    }
+}
+
+extension BackupArchiveReader {
+
+    /// 应用一个**已校验**的归档。
+    ///
+    /// - Important: 只接受 `ValidationReport` 而不是 URL —— 类型上强制"先校验后应用"。
+    ///   传不进来一个没验过的归档,是刻意的。
+    ///
+    /// 图片**逐条**读取写入:`readBlob` 一次一个,写完即释放。任何时刻内存里最多一张图,
+    /// 与写出侧对称。**不要**改成先收集成数组再一次性交给
+    /// `restoreProjectBlobsFromBackup` —— 那个签名一次收全部条目,正是写出器刚修掉的
+    /// OOM 形状(388 MB 图会一次性全进内存)。
+    @MainActor
+    static func apply(
+        _ report: ValidationReport,
+        to manager: InventoryManager,
+        onProgress: (Int, Int) -> Void = { _, _ in }
+    ) throws {
+        RestoreJournal.begin(archive: report.root)
+        defer { RestoreJournal.finish() }
+
+        let m = report.manifest
+
+        // ① metadata 整体替换（语义就是"替换全部数据"，不是合并）
+        manager.brands = m.brands.map {
+            Brand(id: $0.id, name: $0.name, sortOrder: $0.sortOrder, createdAt: $0.createdAt,
+                  lowStockThreshold: $0.lowStockThreshold,
+                  colorSystem: ColorSystem(rawValue: $0.colorSystemRaw) ?? .mard)
+        }
+        manager.brandStocks = m.brandStocks.map {
+            BrandStock(id: $0.id, brandId: $0.brandId, mardCode: $0.mardCode,
+                       stock: $0.stock, used: $0.used, isHidden: $0.isHidden)
+        }
+        manager.customColors = m.customColors.map {
+            CustomColor(id: $0.id, colorCode: $0.colorCode, colorHex: $0.colorHex,
+                        colorName: $0.colorName, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
+        }
+        manager.purchaseRecords = m.purchaseRecords.map { r in
+            PurchaseRecord(id: r.id, name: r.name, date: r.date, brandId: r.brandId,
+                           items: r.items.map { PurchaseItem(id: $0.id, colorCode: $0.colorCode, quantity: $0.quantity) },
+                           note: r.note)
+        }
+        manager.currentBrandId = m.currentBrandId
+        // projects 只放 metadata —— 图片走下面的直写接口。
+        // 塞进 manager.projects 的 ProjectRecord 恒不带 blob（v2.0.x 起的既定约束）。
+        manager.projects = m.projects.map { p in
+            ProjectRecord(
+                id: p.id, name: p.name, date: p.date,
+                beadUsage: p.beadUsage.map {
+                    BeadUsage(colorCode: $0.colorCode, brandId: $0.brandId,
+                              quantity: $0.quantity, isDeducted: $0.isDeducted)
+                },
+                totalBeads: p.totalBeads, brandId: p.brandId, isArchived: p.isArchived,
+                parentId: p.parentId, isPlanned: p.isPlanned, executedDate: p.executedDate,
+                completedDate: p.completedDate,
+                colorSystem: ColorSystem(rawValue: p.colorSystemRaw) ?? .mard
+            )
+        }
+        manager.saveData()
+
+        // ② 图片逐条写回
+        RestoreJournal.setPhase("blobs")
+        let total = m.projects.count
+        for (index, p) in m.projects.enumerated() {
+            let thumbnail = try p.thumbnail.map { try readBlob($0, root: report.root) }
+            let finished = try p.finishedImage.map { try readBlob($0, root: report.root) }
+            let display = try p.displayThumbnail.map { try readBlob($0, root: report.root) }
+            let gridData = try p.patternGrid.map { try readBlob($0, root: report.root) }
+
+            // 单条调用 —— 见方法注释里关于 OOM 形状的说明。
+            _ = manager.restoreProjectBlobsFromBackup([(
+                id: p.id,
+                thumbnail: thumbnail,
+                finishedImage: finished,
+                patternGridData: gridData,
+                // 本格式**总是**如实表达 patternGrid 的有无：
+                // 有则写、没有则显式清空。旧 JSON 格式压根没这个字段，只能 provided=false
+                // （不动 store 旧值），那是兼容妥协，不是本格式该继承的行为。
+                patternGridProvided: true,
+                displayThumbnail: display,
+                displayThumbnailProvided: true
+            )])
+
+            onProgress(index + 1, total)
+        }
     }
 }
