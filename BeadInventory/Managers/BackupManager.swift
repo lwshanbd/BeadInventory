@@ -225,6 +225,56 @@ class BackupManager {
     }
 
     #if DEBUG || F1_BENCHMARK
+    /// 实验入口:走**新的流式归档写出器**,与旧 JSON 路径对照测内存峰值。
+    ///
+    /// 刻意不接进自动备份 —— 先证明新写出器把峰值压下去了,再切换,否则一旦有问题
+    /// 就同时失去了旧路径和对照基线。
+    @MainActor func performArchiveBackupForBenchmark(inventoryManager: InventoryManager) async {
+        guard let backupDir = backupDirectory,
+              let loader = inventoryManager.imageLoader else {
+            AppLogger.shared.error("F1Benchmark", "archive_backup_precondition_failed")
+            return
+        }
+
+        F1Benchmark.checkpoint("1_beforePerformBackup")
+        let started = DispatchTime.now()
+
+        // 主线程只取 blob-free 的 metadata 快照（projects 缓存本来就不带 blob）。
+        // 这就是「逐记录一致」里那份基准。
+        let snapshot = BackupArchiveWriter.MetadataSnapshot(
+            projects: inventoryManager.projects,
+            brands: inventoryManager.brands,
+            brandStocks: inventoryManager.brandStocks,
+            customColors: inventoryManager.customColors,
+            currentBrandId: inventoryManager.currentBrandId,
+            appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        )
+        F1Benchmark.checkpoint("2_afterCreateBackupData")
+
+        do {
+            let url = try await BackupArchiveWriter.write(
+                snapshot: snapshot,
+                imageLoader: loader,
+                to: backupDir,
+                archiveName: "benchmark_\(Int(Date().timeIntervalSince1970))"
+            )
+            F1Benchmark.checkpoint("4_afterWrite")
+            let millis = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
+            F1Benchmark.recordMainThreadDuration(millis: millis)
+            AppLogger.shared.info("F1Benchmark", "archive_backup_completed", metadata: [
+                "path": url.lastPathComponent, "millis": Int(millis.rounded())
+            ])
+        } catch {
+            AppLogger.shared.error("F1Benchmark", "archive_backup_failed", metadata: ["error": "\(error)"])
+        }
+
+        F1Benchmark.checkpoint("5_afterPerformBackupReturn")
+        DispatchQueue.main.async {
+            F1Benchmark.checkpoint("6_afterNextRunLoop")
+            F1Benchmark.setState("completed")
+        }
+    }
+
     /// 进程内复位「本周已备份」标记。
     ///
     /// 实验每轮都要重新触发自动备份,而 `hasBackedUpThisWeek()` 会挡掉。外部

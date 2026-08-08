@@ -375,6 +375,17 @@ struct BeadInventoryApp: App {
                     if !BeadInventoryApp.isStartupTaskDisabled("-DisableAutomaticBackup") {
                         BackupManager.shared.checkAndPerformWeeklyBackupIfNeeded(inventoryManager: inventoryManager)
                     }
+                    #if DEBUG || F1_BENCHMARK
+                    // 实验：走新的流式归档写出器，与旧 JSON 路径对照测峰值。
+                    if F1Benchmark.hasFlag("-BenchmarkArchiveWriter") {
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 5_000_000_000)
+                            await BackupManager.shared.performArchiveBackupForBenchmark(
+                                inventoryManager: inventoryManager
+                            )
+                        }
+                    }
+                    #endif
                     // 启动时检查 iCloud 状态
                     cloudSyncStatusManager.refreshAccountStatus()
 

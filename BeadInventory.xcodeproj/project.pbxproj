@@ -62,6 +62,7 @@
 		38FA2CED2F274B2900912E02 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 38FA2CE32F274B2900912E02 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		38FA2CF72F274C4000912E02 /* SharedImageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38FA2CF62F274C4000912E02 /* SharedImageManager.swift */; };
 		39AA00012F5000010099AA01 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39AA00022F5000010099AA01 /* AppLogger.swift */; };
+		39AA10072F5000010099AA01 /* BackupArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39AA10082F5000010099AA01 /* BackupArchive.swift */; };
 		39AA10052F5000010099AA01 /* BackupAttemptState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39AA10062F5000010099AA01 /* BackupAttemptState.swift */; };
 		39AA10032F5000010099AA01 /* F1BenchmarkRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39AA10042F5000010099AA01 /* F1BenchmarkRecorder.swift */; };
 		39AA10012F5000010099AA01 /* LaunchDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39AA10022F5000010099AA01 /* LaunchDiagnostics.swift */; };
@@ -198,6 +199,7 @@
 		38FA2CF62F274C4000912E02 /* SharedImageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedImageManager.swift; sourceTree = "<group>"; };
 		38FA2CF82F274D5200912E02 /* BeadInventory.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BeadInventory.entitlements; sourceTree = "<group>"; };
 		39AA00022F5000010099AA01 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
+		39AA10082F5000010099AA01 /* BackupArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupArchive.swift; sourceTree = "<group>"; };
 		39AA10062F5000010099AA01 /* BackupAttemptState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupAttemptState.swift; sourceTree = "<group>"; };
 		39AA10042F5000010099AA01 /* F1BenchmarkRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F1BenchmarkRecorder.swift; sourceTree = "<group>"; };
 		39AA10022F5000010099AA01 /* LaunchDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchDiagnostics.swift; sourceTree = "<group>"; };
@@ -434,6 +436,7 @@
 				3850010F2FB3A70D00F5DDE2 /* GridValidator.swift */,
 				A0123456001C /* AIService.swift */,
 				39AA00022F5000010099AA01 /* AppLogger.swift */,
+				39AA10082F5000010099AA01 /* BackupArchive.swift */,
 				39AA10062F5000010099AA01 /* BackupAttemptState.swift */,
 				39AA10042F5000010099AA01 /* F1BenchmarkRecorder.swift */,
 				39AA10022F5000010099AA01 /* LaunchDiagnostics.swift */,
@@ -685,6 +688,7 @@
 				FF0C4401A00E0001DEADBEEF /* HistorySnapshotCompactor.swift in Sources */,
 				FF0C4001A00A0001DEADBEEF /* ThumbnailMigrationCoordinator.swift in Sources */,
 				39AA00012F5000010099AA01 /* AppLogger.swift in Sources */,
+				39AA10072F5000010099AA01 /* BackupArchive.swift in Sources */,
 				39AA10052F5000010099AA01 /* BackupAttemptState.swift in Sources */,
 				39AA10032F5000010099AA01 /* F1BenchmarkRecorder.swift in Sources */,
 				39AA10012F5000010099AA01 /* LaunchDiagnostics.swift in Sources */,
