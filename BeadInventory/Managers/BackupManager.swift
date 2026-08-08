@@ -14,6 +14,12 @@ class BackupManager {
     private let backupFolderName = "WeeklyBackups"
     private let maxBackupCount = 8  // 最多保留8个备份（约2个月）
 
+    /// 在飞的自动备份任务。持有它才能取消 —— 原实现是 fire-and-forget。
+    @MainActor private var backupTask: Task<Void, Never>?
+
+    /// 本周自动备份是否已被抑制（上次尝试被进程中断）。供 UI 提示"可手动备份恢复"。
+    @MainActor private(set) var isAutomaticBackupSuppressed = false
+
     private init() {}
 
     // MARK: - 备份目录
@@ -49,19 +55,42 @@ class BackupManager {
     /// 在 cold-start 的 onAppear 同步路径里跑这玩意儿可能撞 scene-create watchdog，
     /// 所以把执行延后一个 tick + 5s、走 Task：让首屏先 commit，避免首帧渲染期间被卡。
     @MainActor func checkAndPerformWeeklyBackupIfNeeded(inventoryManager: InventoryManager) {
+        // ① 先消费残留尝试记录。**必须在资格判定之前** —— 残留即上次被中断，
+        //    据此抑制那一周，避免"最容易被杀的那段"每次启动都重来一遍。
+        if BackupAttemptStore.consumeResidualIfNeeded() {
+            isAutomaticBackupSuppressed = true
+        }
+
+        // ② 被抑制的周直接跳过。解除条件是一次**手动**备份成功。
+        let week = BackupAttemptStore.weekKey()
+        if BackupAttemptStore.isSuppressed(week: week) {
+            isAutomaticBackupSuppressed = true
+            // 键名避开 "key" —— AppLogger 会把含该子串的值脱敏成 ***（见 BackupAttemptState）。
+            AppLogger.shared.warning("BackupManager", "automatic_backup_suppressed", metadata: ["week": week])
+            print("[BackupManager] 本周自动备份已暂停（上次尝试被中断），可手动备份恢复")
+            return
+        }
+
         if hasBackedUpThisWeek() {
             print("[BackupManager] 本周已备份，跳过")
             return
         }
+
+        // 重入保护：onAppear 可能多次触发，别起多个任务互相抢。
+        guard backupTask == nil else { return }
 
         // 推迟到下一次 runloop tick：让首屏 scene-create commit 先完成。
         // 注意：备份仍然要在 MainActor 上跑（SwiftData mainContext 限定主线程），
         // 但它不会再卡在第一帧 commit 里 —— iOS watchdog 不会因此再 0x8BADF00D。
         //
         // 再延后 5s：备份要逐项目从 SwiftData 取图 + base64（全程主线程），跟启动后紧接着的
-        // initial load / 首次用户交互挤在同一窗口会明显掉帧。晚 5s 做备份没有任何语义差别
-        //（本周备份标记在写盘成功后才更新；5s 内退出则下次启动重试）。
-        Task { @MainActor in
+        // initial load / 首次用户交互挤在同一窗口会明显掉帧。
+        //
+        // **任务现在被持有且可取消**（原来是 fire-and-forget，scenePhase 的
+        // .background / .inactive 分支只 stop 了迁移器，对备份一个字都没管 ——
+        // 于是这段主线程重活会一路跑到系统挂起，正是最容易被杀的形态）。
+        backupTask = Task { @MainActor [weak self] in
+            defer { self?.backupTask = nil }
             // 取消 = 跳过本次备份（标记未写，下次启动重试）。
             // 不能用 try?：取消时 sleep 立即抛错，吞掉后 performBackup 会在 t≈0 无延迟执行，
             // 恰好落回 5s 想避开的启动窗口 —— 取消语义整个反转。
@@ -70,22 +99,43 @@ class BackupManager {
             } catch {
                 return
             }
-            // sleep 后复查资格：同一窗口内的重复调用（如 onAppear 重入）串行到这里时，
+            guard let self, !Task.isCancelled else { return }
+            // sleep 后复查资格：同一窗口内的重复调用串行到这里时，
             // 第一个已完成备份并写了标记，后续直接跳过，保证幂等。
-            guard !hasBackedUpThisWeek() else { return }
-            performBackup(inventoryManager: inventoryManager)
+            guard !self.hasBackedUpThisWeek() else { return }
+            guard !BackupAttemptStore.isSuppressed(week: week) else { return }
+            self.performBackup(inventoryManager: inventoryManager)
         }
+    }
+
+    /// 取消在飞的自动备份。App 进入 `.inactive` / `.background` 时调用。
+    ///
+    /// 与 `ThumbnailMigrationCoordinator.stop()` 对齐 —— 之前只有迁移器被停，
+    /// 备份却一直没人管。让出的同时把尝试记录按 `.backgrounded` 收尾：
+    /// 这是**可恢复失败**，不触发抑制，下次启动照常重试。
+    @MainActor func stop() {
+        guard backupTask != nil else { return }
+        backupTask?.cancel()
+        backupTask = nil
+        BackupAttemptStore.finishAttempt(.backgrounded)
+        AppLogger.shared.info("BackupManager", "automatic_backup_cancelled")
     }
 
     // MARK: - 执行备份
 
     /// 创建备份
     @discardableResult
-    @MainActor func performBackup(inventoryManager: InventoryManager) -> Bool {
+    @MainActor func performBackup(inventoryManager: InventoryManager, isManual: Bool = false) -> Bool {
         guard let backupDir = backupDirectory else {
             print("[BackupManager] 无法获取备份目录")
             return false
         }
+
+        // 开工记录：**必须在任何重活之前落盘**。
+        // 进程被 SIGKILL 时没有任何机会写"我被中断了"，所以只能反过来 ——
+        // 先落一条"进行中"，正常收尾时清掉；下次启动读到残留即判定中断。
+        // 这是唯一能在进程外观测到 SIGKILL 的手段。
+        BackupAttemptStore.beginAttempt()
 
         // F1 实测探针。用单调时钟，不用 Date() —— 后者会被系统时间调整影响，
         // 而这里量的是主线程不可响应时长，必须单调。
@@ -111,10 +161,21 @@ class BackupManager {
 
         #if DEBUG || F1_BENCHMARK
         F1Benchmark.checkpoint("2_afterCreateBackupData")
+        // 反常排查：检查点 2 只涨 8 MB，与「base64 字符串在字典里累积」的模型矛盾
+        //（190 张图 296 MB 原始字节 → base64 应约 395 MB）。
+        // 先不猜机制，直接量：走一遍返回的结构，把三个字段的字符串**实际长度**加起来。
+        //   · 若 ≈ 395 MB 而 footprint 只涨 8 MB → 字符串活着但未计入 phys_footprint
+        //   · 若本身就很小                      → 有东西在返回前把它们释放了
+        F1Benchmark.measureRetainedBase64(in: backupData)
         #endif
+
+        BackupAttemptStore.updatePhase("serializing")
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: backupData, options: [.prettyPrinted, .sortedKeys]) else {
             print("[BackupManager] 备份数据序列化失败")
+            // 可恢复失败 —— 清记录、允许后续重试，**不抑制**。
+            // 只有"记录残留"（从未收尾）才判定为进程中断。
+            BackupAttemptStore.finishAttempt(.serializationFailed)
             return false
         }
 
@@ -126,6 +187,8 @@ class BackupManager {
         let fileName = generateBackupFileName()
         let fileURL = backupDir.appendingPathComponent(fileName)
 
+        BackupAttemptStore.updatePhase("writing")
+
         do {
             try jsonData.write(to: fileURL)
 
@@ -136,6 +199,17 @@ class BackupManager {
             // 更新上次备份日期
             UserDefaults.standard.set(Date(), forKey: lastBackupDateKey)
 
+            // 正常收尾 —— 清掉"进行中"记录，下次启动不会看到残留。
+            BackupAttemptStore.finishAttempt(.completed)
+
+            // 手动备份成功 = 这台设备当前状态下备份跑得完，恢复自动备份。
+            // 这是抑制的**唯一**解除路径：自动备份自己成功不能解除，
+            // 因为被抑制时它压根不会运行。
+            if isManual {
+                BackupAttemptStore.clearSuppression()
+                isAutomaticBackupSuppressed = false
+            }
+
             print("[BackupManager] 备份成功: \(fileName)")
 
             // 清理旧备份
@@ -144,6 +218,8 @@ class BackupManager {
             return true
         } catch {
             print("[BackupManager] 备份写入失败: \(error)")
+            // 写盘失败多为磁盘不足，属可恢复失败，不抑制。
+            BackupAttemptStore.finishAttempt(.lowDisk)
             return false
         }
     }

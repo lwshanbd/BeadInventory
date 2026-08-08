@@ -71,6 +71,14 @@ struct F1BenchmarkResult: Codable {
     /// `performBackup()` 占用主线程的时长(单调时钟)。Q4。
     var mainThreadMillis: Double?
     var freeDiskBytes: Int64?
+
+    // 反常排查(检查点 2 只涨 8 MB)。见 `F1Benchmark.measureRetainedBase64`。
+    var retainedBase64Chars: Int64?
+    var retainedBase64Fields: Int?
+    var footprintAfterBase64Walk: UInt64?
+    var vmInternal: UInt64?
+    var vmCompressed: UInt64?
+    var vmResident: UInt64?
 }
 
 enum F1Benchmark {
@@ -147,6 +155,63 @@ enum F1Benchmark {
 
     static func recordStoreMetrics(store: Int64?, wal: Int64?) {
         mutate { $0.storeBytes = store; $0.walBytes = wal }
+    }
+
+    /// 走一遍 `createBackupData` 的返回结构,统计三个图片字段的 base64 字符串**实际长度**,
+    /// 以及此刻的 footprint。
+    ///
+    /// 用途:排查"检查点 2 只涨 8 MB"这个反常。它把两种可能分开 ——
+    ///   · `retainedBase64Chars ≈ 预期` 而 footprint 不涨 → 字符串活着但没进 phys_footprint;
+    ///   · `retainedBase64Chars` 本身就小 → 有东西在返回前释放了它们。
+    ///
+    /// 遍历本身**不复制字符串内容**(只读 `count`),因此不会显著抬高被测值;
+    /// 但遍历会 touch 这些字符串 —— 如果它们此前被压缩换出,这一步会把它们换回来,
+    /// 于是 `footprintAfterWalk` 相对 `checkpoint 2` 的涨幅本身就是一个信号。
+    static func measureRetainedBase64(in backupData: [String: Any]) {
+        guard isActive else { return }
+        var chars: Int64 = 0
+        var fields = 0
+        if let projects = backupData["projects"] as? [[String: Any]] {
+            for p in projects {
+                for key in ["thumbnail", "finishedImage", "displayThumbnail"] {
+                    if let s = p[key] as? String {
+                        chars += Int64(s.count)
+                        fields += 1
+                    }
+                }
+            }
+        }
+        let after = physFootprint()
+        let vm = vmBreakdown()
+        mutate {
+            $0.retainedBase64Chars = chars
+            $0.retainedBase64Fields = fields
+            $0.footprintAfterBase64Walk = after
+            $0.vmInternal = vm?.internalBytes
+            $0.vmCompressed = vm?.compressed
+            $0.vmResident = vm?.resident
+        }
+    }
+
+    /// `phys_footprint` 之外的几个 `task_vm_info` 分量。
+    ///
+    /// 排查用:已确证字典里活着 518 MB 的 base64 字符串,而 `phys_footprint` 完全不动。
+    /// "被释放了"和"被压缩了"都已排除(前者有实测字符数,后者 base64 的熵不允许),
+    /// 所以怀疑落在**记账口径**上。`internal` 是进程私有的匿名内存,`compressed` 是被
+    /// 压缩器换出的部分 —— 三个数一起看就能判断这 518 MB 到底算在了哪里,
+    /// 还是压根没被算。
+    private static func vmBreakdown() -> (internalBytes: UInt64, compressed: UInt64, resident: UInt64)? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size
+        )
+        let kr = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        guard kr == KERN_SUCCESS else { return nil }
+        return (info.internal, info.compressed, info.resident_size)
     }
 
     static func recordMainThreadDuration(millis: Double) {
