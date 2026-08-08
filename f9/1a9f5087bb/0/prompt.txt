@@ -285,3 +285,7 @@ A
 另外，writer 在提交前会先删同名既有 archive；应改为唯一名称或安全替换，不能为了原子提交先毁掉旧备份。[BackupArchive.swift (line 312)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:312)
 你记录的删库目录错误和 `.inactive` 导致迁移不可达均成立；删库修复应保持独立、单独评审。
 未改动代码。
+
+---
+
+都可以，你自己来决定
