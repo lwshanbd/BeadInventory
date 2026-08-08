@@ -1,6 +1,96 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "上次恢复未完成，当前数据可能不完整" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last restore did not finish — your data may be incomplete"
+          }
+        }
+      }
+    },
+    "上次自动备份被中断，本周已暂停自动备份。手动备份成功后会自动恢复。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last automatic backup was interrupted, so it is paused for this week. A successful manual backup will resume it."
+          }
+        }
+      }
+    },
+    "备份与恢复" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup & Restore"
+          }
+        }
+      }
+    },
+    "备份失败，请检查存储空间后重试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup failed. Check available storage and try again."
+          }
+        }
+      }
+    },
+    "备份完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup complete"
+          }
+        }
+      }
+    },
+    "找不到该归档，可能已被删除。请从下方列表选择其它备份恢复。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That archive is missing — it may have been deleted. Choose another backup from the list below."
+          }
+        }
+      }
+    },
+    "旧格式：恢复较慢，且不含拼图网格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Legacy format: slower to restore, and does not include pattern grids"
+          }
+        }
+      }
+    },
+    "立即备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back Up Now"
+          }
+        }
+      }
+    },
+    "重新恢复该归档" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore This Archive Again"
+          }
+        }
+      }
+    },
     "好" : {
       "localizations" : {
         "en" : {

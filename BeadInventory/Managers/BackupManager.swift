@@ -118,6 +118,9 @@ class BackupManager {
     ///
     /// 图片经 `ProjectImageLoader` 逐项目取(单次 fetch,同一事务视图),写完即释放,
     /// 主线程只做一次 blob-free 的 metadata 快照。
+    ///
+    /// 峰值受**单个项目的 blob 总量**约束,不是"单张图" —— 逐记录一致要求一次取回
+    /// 该项目的四个 blob。关键是它**不随项目总数增长**,那才是 F1 的病灶形状。
     @discardableResult
     @MainActor func performArchiveBackup(
         inventoryManager: InventoryManager, isManual: Bool = false

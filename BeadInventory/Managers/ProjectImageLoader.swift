@@ -134,10 +134,14 @@ actor ProjectImageLoader {
 
     enum LoadError: Error, CustomStringConvertible {
         case fetchFailed(projectId: UUID, underlying: String)
+        /// 行在 metadata 快照之后消失了(通常是用户删了这个项目)。
+        /// **可重试失败** —— 下次备份基于新的快照就一致了。
+        case projectRowMissing(projectId: UUID)
 
         var description: String {
             switch self {
             case .fetchFailed(let id, let e): return "读取项目 \(id) 的图片失败: \(e)"
+            case .projectRowMissing(let id): return "项目 \(id) 在备份过程中消失（可能已被删除）"
             }
         }
     }
@@ -174,10 +178,19 @@ actor ProjectImageLoader {
         do {
             let context = ModelContext(container)
             guard let row = try context.fetch(descriptor).first else {
-                // 行不存在 —— 这是合法状态(项目在备份期间被删),不是错误。
-                // 返回全 nil,由调用方按"这条没有图"处理。
-                return ProjectBlobs(thumbnail: nil, finishedImage: nil,
-                                    displayThumbnail: nil, patternGridData: nil)
+                // **行消失必须抛错,不能返回全 nil。**
+                //
+                // metadata 快照是在这之前取的,所以"快照里有、现在没有"意味着用户在备份
+                // 期间删掉了这个项目。若在这里返回全 nil,归档里就会写成
+                // **「项目还在、四张图都没有」** —— 而恢复端按"字段缺失即显式清空"处理,
+                // 于是恢复会**复活一个已删除的项目、并且它的图全丢**。
+                // 那是一份内部自相矛盾的备份,比备份失败糟得多。
+                //
+                // 也刻意**不**在这里"跳过该项目":`first == nil` 只说明没查到行,
+                // 不能断定原因就是"用户删了"。把"查不到"直接翻译成"已删除"正是
+                // 本方法存在要修的那类歧义(见下方 throw 的理由)。
+                // 抛出可重试失败,让本次备份保留为 `.partial`,下次基于新快照重来即可。
+                throw LoadError.projectRowMissing(projectId: projectId)
             }
             return ProjectBlobs(
                 thumbnail: row.thumbnail,

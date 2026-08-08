@@ -18,7 +18,12 @@
 //       不存在单张上界。
 //
 //  本格式两条都消掉:图片以**原始二进制**逐个落成独立文件,写完即释放。
-//  **峰值内存 = 单张最大图**,与项目数无关。
+//
+//  **峰值内存受"单个项目的 blob 总量"约束,与项目总数无关。**
+//  注意不是"单张最大图" —— 写出时 `blobs(for:)` 会一次取回同一项目的四个 blob
+//  (逐记录一致所必需),恢复时也是先读四个再写;理论上界是 4 × `maxBlobBytes`。
+//  真正被消掉的是"随项目总数线性增长"这个 F1 形状,而不是"恒为一张图"。
+//  早期注释写成"峰值 = 单张最大图"是不准确的,已更正。
 //
 //  ## 格式
 //
@@ -190,8 +195,8 @@ enum BackupArchiveWriter {
 
     /// 流式写出归档。
     ///
-    /// - 图片经 `ProjectImageLoader`（后台 actor、单列投影）**逐条**取出，写完即释放；
-    ///   任何时刻内存里最多一张图。
+    /// - 图片经 `ProjectImageLoader.blobs(for:)` **逐项目**取出（单次 fetch，同一事务视图），
+    ///   写完即释放；任何时刻内存里最多**一个项目的四个 blob**，与项目总数无关。
     /// - 每写完一条检查一次取消。
     /// - 全部写完才 `rename` 成最终名字；中途失败留下的 `.partial` 不会被列出或恢复。
     ///
@@ -537,20 +542,24 @@ enum BackupArchiveReader {
                     throw ValidationError.blobSizeMismatch(ref.file, declared: ref.bytes, actual: Int(actual))
                 }
 
+                // **上限必须在读盘 + 哈希之前检查。**
+                //
+                // 原来是先 `Data(contentsOf:)` + SHA-256、再累加后判断 —— 那样恶意归档
+                // 仍能诱导我们把海量 I/O 和哈希**全做完**才被拒，限额等于形同虚设。
+                // 用 `count + 1` / `totalBytes + actual` 预判，超限就在读之前退出。
+                guard count + 1 <= maxBlobCount else {
+                    throw ValidationError.tooManyEntries(kindLabel: "blobs", count: count + 1)
+                }
+                guard totalBytes + actual <= maxTotalBlobBytes else {
+                    throw ValidationError.totalSizeExceedsLimit(bytes: totalBytes + actual)
+                }
+
                 let data = try Data(contentsOf: url)
                 let hex = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
                 guard hex == ref.sha256 else { throw ValidationError.checksumMismatch(ref.file) }
 
                 totalBytes += actual
                 count += 1
-                // 边累加边查 —— 等全部算完再查就已经把时间花掉了，而且给了构造者
-                // 用海量小条目拖死校验的机会。
-                guard count <= maxBlobCount else {
-                    throw ValidationError.tooManyEntries(kindLabel: "blobs", count: count)
-                }
-                guard totalBytes <= maxTotalBlobBytes else {
-                    throw ValidationError.totalSizeExceedsLimit(bytes: totalBytes)
-                }
             }
         }
 
@@ -646,6 +655,12 @@ enum RestoreJournal {
         try? FileManager.default.removeItem(at: url)
     }
 
+    /// 上一次恢复是否没走完 —— 供 UI 展示持久提示。
+    ///
+    /// **只记日志是不够的**：metadata 已替换、blob 恢复中断的用户会在毫不知情的情况下
+    /// 继续使用一个半恢复的库。日志只有开发者看得到。
+    static var hasResidual: Bool { residual() != nil }
+
     /// 非 nil = 上一次恢复没有走完，库可能处于半恢复状态。
     static func residual() -> RestoreJournalEntry? {
         guard let url = fileURL, let data = try? Data(contentsOf: url) else { return nil }
@@ -674,8 +689,8 @@ extension BackupArchiveReader {
     /// - Important: 只接受 `ValidationReport` 而不是 URL —— 类型上强制"先校验后应用"。
     ///   传不进来一个没验过的归档,是刻意的。
     ///
-    /// 图片**逐条**读取写入:`readBlob` 一次一个,写完即释放。任何时刻内存里最多一张图,
-    /// 与写出侧对称。**不要**改成先收集成数组再一次性交给
+    /// 图片**逐条**读取写入:`readBlob` 一次一个。与写出侧对称,受"单个项目的 blob 总量"
+    /// 约束(本方法会先把一个项目的四个 blob 读出来再写),而不是"恒为一张图"。**不要**改成先收集成数组再一次性交给
     /// `restoreProjectBlobsFromBackup` —— 那个签名一次收全部条目,正是写出器刚修掉的
     /// OOM 形状(388 MB 图会一次性全进内存)。
     @MainActor

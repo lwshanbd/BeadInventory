@@ -23,10 +23,14 @@ struct BackupRestoreView: View {
     @State private var isBackingUp = false
     @State private var isSuppressed = false
     @State private var backupMessage: String?
+    /// 上一次恢复没走完时的残留记录。**必须展示给用户** —— 只写日志的话，
+    /// metadata 已替换、blob 恢复中断的用户会毫不知情地继续用一个半恢复的库。
+    @State private var restoreResidual: RestoreJournalEntry?
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                restoreResidualBanner
                 suppressionBanner
                 messageBanner
                 if backups.isEmpty {
@@ -64,6 +68,7 @@ struct BackupRestoreView: View {
             .onAppear {
                 loadBackups()
                 isSuppressed = BackupManager.shared.isAutomaticBackupSuppressed
+                restoreResidual = RestoreJournal.residual()
             }
             .confirmationDialog(
                 "确定要恢复这个备份吗？",
@@ -111,6 +116,42 @@ struct BackupRestoreView: View {
     // 抽成独立属性而不是内联进 body：SwiftUI 的 body 里堆条件分支会让 Swift 类型检查器
     // 指数级退化（SourceKit 实测报 "unable to type-check this expression in reasonable
     // time"）。本仓库 ScanView 甚至为此专门有个 `.pipe` helper。
+
+    /// 上一次恢复中断的持久提示。
+    ///
+    /// 这是**数据可能已经半损坏**的告知，比抑制提示严重一个等级：metadata 已被替换、
+    /// 图片只恢复了一部分。归档还在盘上且重跑幂等，所以直接给一个"重新恢复该归档"的动作。
+    /// 提示在成功恢复后自动消失（RestoreJournal 届时被清除）。
+    @ViewBuilder
+    private var restoreResidualBanner: some View {
+        if let residual = restoreResidual {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.octagon.fill")
+                        .foregroundStyle(.red)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("上次恢复未完成，当前数据可能不完整")
+                            .font(.footnote.weight(.semibold))
+                        Text("中断于：\(residual.phase)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text((residual.archivePath as NSString).lastPathComponent)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Spacer(minLength: 0)
+                }
+                Button("重新恢复该归档") {
+                    retryResidualRestore(residual)
+                }
+                .font(.footnote.weight(.semibold))
+            }
+            .padding(12)
+            .background(Color.red.opacity(0.12))
+        }
+    }
 
     /// 被抑制时必须让用户看得见 —— 否则"这周怎么没备份"无从得知，
     /// 而解除办法（点一次"立即备份"）就在同一屏上。
@@ -214,6 +255,30 @@ struct BackupRestoreView: View {
 
     // MARK: - 方法
 
+    /// 重跑中断的恢复。归档还在盘上，重跑是幂等的。
+    private func retryResidualRestore(_ residual: RestoreJournalEntry) {
+        let url = URL(fileURLWithPath: residual.archivePath)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            restoreError = "找不到该归档，可能已被删除。请从下方列表选择其它备份恢复。"
+            showingError = true
+            return
+        }
+        isRestoring = true
+        DispatchQueue.main.async {
+            do {
+                let report = try BackupArchiveReader.validate(archiveAt: url)
+                try BackupArchiveReader.apply(report, to: inventoryManager)
+                isRestoring = false
+                restoreResidual = RestoreJournal.residual()   // 成功后应为 nil
+                showingSuccess = true
+            } catch {
+                isRestoring = false
+                restoreError = "\(error)"
+                showingError = true
+            }
+        }
+    }
+
     /// 手动备份。成功后解除抑制并刷新列表。
     private func performManualBackup() async {
         isBackingUp = true
@@ -284,6 +349,16 @@ struct BackupRow: View {
                 }
                 .font(.caption)
                 .foregroundColor(.secondary)
+
+                // 旧格式的两个已知短板必须让用户看见：
+                //  ① 恢复时会把整个 JSON（可达数百 MB）一次性读进内存 —— 既有行为，未重写；
+                //  ② 它压根没写 patternGrid 字段，恢复后网格标定会丢。
+                // 不提示的话，用户会以为两种备份等价。
+                if backup.format == .legacyJSON {
+                    Label("旧格式：恢复较慢，且不含拼图网格", systemImage: "exclamationmark.triangle")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
             }
 
             Spacer()
