@@ -292,6 +292,19 @@ enum BackupArchiveWriter {
         return finalURL
     }
 
+    /// 列出目录里的可用归档。
+    ///
+    /// **`.partial` 一律不列出** —— 它按定义是中断留下的半成品,把它当成可恢复备份
+    /// 会让用户拿残缺数据覆盖好数据。
+    static func listArchives(in directory: URL) -> [URL] {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
+            return []
+        }
+        return entries.filter { $0.pathExtension == directoryExtension }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+    }
+
     /// 写一个二进制条目并返回其引用(含 sha256)。
     ///
     /// `data` 在本函数返回后即无引用 —— 调用方也不持有,所以峰值恒为单张。
@@ -307,5 +320,187 @@ enum BackupArchiveWriter {
         let digest = SHA256.hash(data: data)
         let hex = digest.map { String(format: "%02x", $0) }.joined()
         return ArchivedBlobRef(file: "blobs/\(name)", bytes: data.count, sha256: hex)
+    }
+}
+
+// MARK: - 读取与校验
+
+/// 归档读取器。
+///
+/// ## 为什么校验必须**全部先做完**再动数据
+///
+/// 现有的 JSON 恢复是**分段落盘**的:先把内存数组整体赋给 manager、`saveData()` 写
+/// metadata,**再**由 `restoreProjectBlobsFromBackup` 单独写图。中间任何一步失败,
+/// 用户就留在一个"metadata 是新的、图还是旧的"的半恢复状态 —— 而恢复往往正是
+/// 用户数据已经出问题时才做的操作,再给他一个半损坏状态是最坏的结果。
+///
+/// 所以本读取器的契约是:**`validate()` 通过之前,一个字节都不写入 store。**
+///
+/// ## 威胁模型
+///
+/// 归档将来可由用户从「文件」App 导入 —— 也就是说 **manifest 的内容是不可信输入**。
+/// 具体防的:
+///
+///   - **路径穿越**:manifest 里的 `file` 字段是相对路径,恶意归档可以写
+///     `../../../../private/etc/passwd` 或绝对路径,让我们把任意文件当图片读进库。
+///     防法是三层:拒绝绝对路径、拒绝任何 `..` 段、**规范化并解析符号链接后再验证
+///     仍在归档根内**(只做前两层挡不住归档里放一个指向外部的 symlink)。
+///   - **超大条目**:单个 blob 文件被做成几 GB,`Data(contentsOf:)` 直接 OOM。
+///     所以读之前先看**文件系统报告的大小**,超限直接拒。
+///   - **谎报大小 / 内容被篡改**:逐条校验实际字节数与 sha256。
+///   - **未来格式**:`formatVersion` 高于本版一律拒绝,不做"尽力而为"解析。
+enum BackupArchiveReader {
+
+    /// 单个 blob 的大小上限。
+    ///
+    /// 正常图片经 `ProjectImageEncoder` 落在 1-2 MB;历史遗留的无损 PNG 最大见过 13 MB。
+    /// 64 MB 给足余量,同时把"一个条目就能撑爆内存"挡在门外。
+    static let maxBlobBytes = 64 * 1024 * 1024
+
+    struct ValidationReport {
+        let manifest: BackupArchiveManifest
+        let root: URL
+        let totalBlobBytes: Int64
+        let blobCount: Int
+    }
+
+    enum ValidationError: Error, CustomStringConvertible {
+        case manifestMissing
+        case manifestUndecodable(String)
+        case unsupportedFormatVersion(Int)
+        case unsafeBlobPath(String)
+        case blobMissing(String)
+        case blobTooLarge(String, bytes: Int64)
+        case blobSizeMismatch(String, declared: Int, actual: Int)
+        case checksumMismatch(String)
+        case insufficientDiskSpace(needed: Int64, available: Int64)
+
+        /// 不带 payload 的稳定标识。
+        ///
+        /// 两个用途:①遥测 —— 上报只发这个,不发路径/文件名等用户内容(路径里可能有项目
+        /// UUID,`description` 里还可能带解码器吐出的原始片段);②测试断言按 case 比对,
+        /// 不依赖会随实现变化的描述文案。
+        var kind: String {
+            switch self {
+            case .manifestMissing: return "manifestMissing"
+            case .manifestUndecodable: return "manifestUndecodable"
+            case .unsupportedFormatVersion: return "unsupportedFormatVersion"
+            case .unsafeBlobPath: return "unsafeBlobPath"
+            case .blobMissing: return "blobMissing"
+            case .blobTooLarge: return "blobTooLarge"
+            case .blobSizeMismatch: return "blobSizeMismatch"
+            case .checksumMismatch: return "checksumMismatch"
+            case .insufficientDiskSpace: return "insufficientDiskSpace"
+            }
+        }
+
+        var description: String {
+            switch self {
+            case .manifestMissing: return "归档缺少 manifest.json"
+            case .manifestUndecodable(let e): return "manifest 无法解析: \(e)"
+            case .unsupportedFormatVersion(let v): return "备份格式版本 \(v) 高于当前版本，无法读取"
+            case .unsafeBlobPath(let p): return "归档包含不安全的路径: \(p)"
+            case .blobMissing(let p): return "归档缺少文件: \(p)"
+            case .blobTooLarge(let p, let b): return "归档条目过大: \(p) (\(b) 字节)"
+            case .blobSizeMismatch(let p, let d, let a): return "条目大小不符: \(p) 声明 \(d) 实际 \(a)"
+            case .checksumMismatch(let p): return "条目校验和不符: \(p)"
+            case .insufficientDiskSpace(let n, let a): return "磁盘空间不足：需要 \(n) 字节，可用 \(a)"
+            }
+        }
+    }
+
+    /// 完整校验。**通过之前不写入任何数据。**
+    static func validate(archiveAt root: URL) throws -> ValidationReport {
+        let fm = FileManager.default
+        let manifestURL = root.appendingPathComponent("manifest.json")
+        guard fm.fileExists(atPath: manifestURL.path) else { throw ValidationError.manifestMissing }
+
+        let manifest: BackupArchiveManifest
+        do {
+            let data = try Data(contentsOf: manifestURL)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            manifest = try decoder.decode(BackupArchiveManifest.self, from: data)
+        } catch {
+            throw ValidationError.manifestUndecodable("\(error)")
+        }
+
+        // 未来版本一律拒绝 —— 不做"尽力而为"解析，那只会用新格式的半懂数据覆盖用户旧数据。
+        guard manifest.formatVersion <= BackupArchiveWriter.currentFormatVersion else {
+            throw ValidationError.unsupportedFormatVersion(manifest.formatVersion)
+        }
+
+        var totalBytes: Int64 = 0
+        var count = 0
+        for project in manifest.projects {
+            for ref in [project.thumbnail, project.finishedImage,
+                        project.displayThumbnail, project.patternGrid].compactMap({ $0 }) {
+                let url = try safeBlobURL(ref.file, root: root)
+                guard fm.fileExists(atPath: url.path) else { throw ValidationError.blobMissing(ref.file) }
+
+                // 先问文件系统要大小，再决定读不读 —— 顺序反过来就等于让归档决定我们分配多少内存。
+                let attrs = try? fm.attributesOfItem(atPath: url.path)
+                let actual = (attrs?[.size] as? NSNumber)?.int64Value ?? -1
+                guard actual <= Int64(maxBlobBytes) else {
+                    throw ValidationError.blobTooLarge(ref.file, bytes: actual)
+                }
+                guard actual == Int64(ref.bytes) else {
+                    throw ValidationError.blobSizeMismatch(ref.file, declared: ref.bytes, actual: Int(actual))
+                }
+
+                let data = try Data(contentsOf: url)
+                let hex = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                guard hex == ref.sha256 else { throw ValidationError.checksumMismatch(ref.file) }
+
+                totalBytes += actual
+                count += 1
+            }
+        }
+
+        // 恢复要把这些字节写进 store，先确认盘装得下。
+        if let values = try? root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
+           let available = values.volumeAvailableCapacityForImportantUsage,
+           available < totalBytes {
+            throw ValidationError.insufficientDiskSpace(needed: totalBytes, available: available)
+        }
+
+        return ValidationReport(manifest: manifest, root: root, totalBlobBytes: totalBytes, blobCount: count)
+    }
+
+    /// 把 manifest 里的相对路径解析成安全的绝对 URL。
+    ///
+    /// 三层防护缺一不可,见类型头注释的「威胁模型」。
+    static func safeBlobURL(_ relative: String, root: URL) throws -> URL {
+        guard !relative.isEmpty, !relative.hasPrefix("/") else {
+            throw ValidationError.unsafeBlobPath(relative)
+        }
+        let components = relative.split(separator: "/", omittingEmptySubsequences: false)
+        guard !components.contains("..") else {
+            throw ValidationError.unsafeBlobPath(relative)
+        }
+
+        let rootStd = root.standardizedFileURL.resolvingSymlinksInPath()
+        let candidate = root.appendingPathComponent(relative).standardizedFileURL
+
+        // 第一道：规范化后必须在根内。
+        guard candidate.path.hasPrefix(rootStd.path + "/") || candidate.path.hasPrefix(root.standardizedFileURL.path + "/") else {
+            throw ValidationError.unsafeBlobPath(relative)
+        }
+        // 第二道：文件存在时解析符号链接再验一次 —— 只做路径字符串检查挡不住
+        // 归档里放一个指向外部的 symlink。
+        if FileManager.default.fileExists(atPath: candidate.path) {
+            let resolved = candidate.resolvingSymlinksInPath()
+            guard resolved.path.hasPrefix(rootStd.path + "/") else {
+                throw ValidationError.unsafeBlobPath(relative)
+            }
+        }
+        return candidate
+    }
+
+    /// 按需读取单个 blob。**恢复时逐条调用,不要一次性全读** ——
+    /// 一次性读全部正是写出器刚修掉的那个 OOM 形状。
+    static func readBlob(_ ref: ArchivedBlobRef, root: URL) throws -> Data {
+        let url = try safeBlobURL(ref.file, root: root)
+        return try Data(contentsOf: url)
     }
 }
