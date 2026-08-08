@@ -87,13 +87,40 @@ class BackupManager {
             return false
         }
 
+        // F1 实测探针。用单调时钟，不用 Date() —— 后者会被系统时间调整影响，
+        // 而这里量的是主线程不可响应时长，必须单调。
+        #if DEBUG || F1_BENCHMARK
+        let benchStart = DispatchTime.now()
+        F1Benchmark.checkpoint("1_beforePerformBackup")
+        defer {
+            // 检查点 5：函数返回后。与检查点 4（写盘后）的差值用于区分
+            // “backupData / jsonData 尚未释放” 与 “释放不掉”。
+            F1Benchmark.checkpoint("5_afterPerformBackupReturn")
+            let millis = Double(DispatchTime.now().uptimeNanoseconds - benchStart.uptimeNanoseconds) / 1_000_000
+            F1Benchmark.recordMainThreadDuration(millis: millis)
+            // 检查点 6：下一轮 RunLoop 之后 —— autorelease 池排空后的真实回落点。
+            DispatchQueue.main.async {
+                F1Benchmark.checkpoint("6_afterNextRunLoop")
+                F1Benchmark.setState("completed")
+            }
+        }
+        #endif
+
         // 生成备份数据
         let backupData = createBackupData(from: inventoryManager)
+
+        #if DEBUG || F1_BENCHMARK
+        F1Benchmark.checkpoint("2_afterCreateBackupData")
+        #endif
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: backupData, options: [.prettyPrinted, .sortedKeys]) else {
             print("[BackupManager] 备份数据序列化失败")
             return false
         }
+
+        #if DEBUG || F1_BENCHMARK
+        F1Benchmark.checkpoint("3_afterJSONSerialization")
+        #endif
 
         // 生成文件名：backup_2024-01-15_周一.json
         let fileName = generateBackupFileName()
@@ -101,6 +128,10 @@ class BackupManager {
 
         do {
             try jsonData.write(to: fileURL)
+
+            #if DEBUG || F1_BENCHMARK
+            F1Benchmark.checkpoint("4_afterWrite")
+            #endif
 
             // 更新上次备份日期
             UserDefaults.standard.set(Date(), forKey: lastBackupDateKey)
@@ -116,6 +147,19 @@ class BackupManager {
             return false
         }
     }
+
+    #if DEBUG || F1_BENCHMARK
+    /// 进程内复位「本周已备份」标记。
+    ///
+    /// 实验每轮都要重新触发自动备份,而 `hasBackedUpThisWeek()` 会挡掉。外部
+    /// `xcrun simctl spawn defaults delete` 受模拟器偏好域路径影响可能静默失败,
+    /// 那会让整轮变成假阴性(看起来"备份没跑",其实是没触发)。所以提供进程内入口,
+    /// 并由 `F1Benchmark` 把结果写进结构化结果文件供脚本核对。
+    func resetWeeklyBackupStateForBenchmark() {
+        UserDefaults.standard.removeObject(forKey: lastBackupDateKey)
+        AppLogger.shared.warning("F1Benchmark", "weekly_backup_state_reset")
+    }
+    #endif
 
     // MARK: - 备份数据生成
 
@@ -155,7 +199,17 @@ class BackupManager {
         //
         // 注意：自 v2.0.x 起 manager.projects 不再持有 thumbnail / finishedImage Data
         // （为避免 458 项目级用户加载即 ~200MB 内存撞 jetsam）。备份阶段才把图按需取出来 base64。
-        // 一次只持有一张图的 Data，循环结束即释放，峰值内存 ≈ 单张最大图 + JSON 累积体积。
+        //
+        // **原注释「峰值内存 ≈ 单张最大图」具有误导性，已更正：**
+        // 原始 `Data` 确实逐张释放，但下面写进 projectData 的是 `base64EncodedString()`
+        // 产生的 **String**，它随数组一路累积、持有到序列化结束；随后
+        // `JSONSerialization.data(...)` 再把整棵树物化成第二份完整拷贝。
+        // 也就是说峰值**随项目总数与图片总字节线性增长，不存在单张上界**。
+        // 具体倍数正由 F1 实测确定（见实验计划 v3），确定前不在此写死数字。
+        #if DEBUG || F1_BENCHMARK
+        var benchThumbCount = 0, benchFinishedCount = 0, benchDisplayCount = 0
+        var benchThumbBytes: Int64 = 0, benchFinishedBytes: Int64 = 0, benchDisplayBytes: Int64 = 0
+        #endif
         data["projects"] = manager.projects.map { project in
             var projectData: [String: Any] = [
                 "id": project.id.uuidString,
@@ -181,15 +235,24 @@ class BackupManager {
             // 按需从 SwiftData 取图（projects 缓存里已不含）。
             if let thumbnail = manager.fetchProjectThumbnailData(for: project.id) {
                 projectData["thumbnail"] = thumbnail.base64EncodedString()
+                #if DEBUG || F1_BENCHMARK
+                benchThumbCount += 1; benchThumbBytes += Int64(thumbnail.count)
+                #endif
             }
             if let finishedImage = manager.fetchProjectFinishedImageData(for: project.id) {
                 projectData["finishedImage"] = finishedImage.base64EncodedString()
+                #if DEBUG || F1_BENCHMARK
+                benchFinishedCount += 1; benchFinishedBytes += Int64(finishedImage.count)
+                #endif
             }
             // displayThumbnail：备份带就写小图，让 restore 直接拿来不用现场降级。
             // displayThumbnailProvided 标志让 restore 区分"老备份没这个字段"和"新备份显式说没小图"。
             projectData["displayThumbnailProvided"] = true
             if let displayThumbnail = manager.fetchProjectDisplayThumbnail(for: project.id) {
                 projectData["displayThumbnail"] = displayThumbnail.base64EncodedString()
+                #if DEBUG || F1_BENCHMARK
+                benchDisplayCount += 1; benchDisplayBytes += Int64(displayThumbnail.count)
+                #endif
             }
             projectData["beadUsage"] = project.beadUsage.map { usage in
                 [
@@ -200,6 +263,16 @@ class BackupManager {
             }
             return projectData
         }
+
+        #if DEBUG || F1_BENCHMARK
+        // 横轴数据：备份**实际读取**的三个字段，实测而非估算。
+        // patternGridData 不在此列 —— createBackupData 根本不读它，算进去会压低斜率。
+        F1Benchmark.recordBlobBytes(
+            thumbnail: (benchThumbCount, benchThumbBytes),
+            finished: (benchFinishedCount, benchFinishedBytes),
+            display: (benchDisplayCount, benchDisplayBytes)
+        )
+        #endif
 
         // 自定义色号
         data["customColors"] = manager.customColors.map { color in

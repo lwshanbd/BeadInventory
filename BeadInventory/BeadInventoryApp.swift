@@ -34,8 +34,36 @@ struct BeadInventoryApp: App {
     /// 监听应用生命周期
     @Environment(\.scenePhase) private var scenePhase
 
+    /// 启动期后台任务的实验隔离开关。
+    ///
+    /// **在发布构建里恒为 `false`** —— 整个实现体被 `#if` 编掉,连字符串常量都不进二进制
+    /// (已用 `nm` 对照验证:纯 Release 下 `F1Benchmark` / `WhiteScreenReproSeeder` 符号数均为 0)。
+    /// 所以这不是"靠不勾选来防"的测试后门,而是结构上不存在。
+    ///
+    /// 之所以做成按开关名查询而不是一个总开关:基准轮需要的组合是
+    /// **migration OFF + backup ON**(backup 正是被测对象),单一开关表达不了。
+    static func isStartupTaskDisabled(_ flag: String) -> Bool {
+        #if DEBUG || F1_BENCHMARK
+        let disabled = ProcessInfo.processInfo.arguments.contains(flag)
+        if disabled {
+            AppLogger.shared.warning("F1Benchmark", "startup_task_disabled", metadata: ["flag": flag])
+        }
+        return disabled
+        #else
+        return false
+        #endif
+    }
+
     init() {
         AppLogger.shared.info("App", "bootstrap_started")
+
+        #if DEBUG || F1_BENCHMARK
+        // F1 实测记录器。没有 -F1RunID 就整体 no-op，日常调试启动不受影响。
+        F1Benchmark.begin()
+        // 采样器要在任何重活之前起来 —— 它的观测窗口必须覆盖整个进程生命周期，
+        // 否则"备份开始前的基线"就无从取得。
+        F1Benchmark.startSampling()
+        #endif
 
         // ── 启动取证：必须发生在任何重活之前 ───────────────────────────────────
         //
@@ -76,6 +104,23 @@ struct BeadInventoryApp: App {
         }
         LaunchDiagnostics.begin(build: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown")
 
+        #if DEBUG || F1_BENCHMARK
+        // 回显**实际生效**的配置。外部 `defaults write userOptedOutOfICloudSync` 可能因
+        // 模拟器偏好域路径问题静默失败 —— 那会让 seeder 拒绝灌数、整轮变成假阴性。
+        // 让 App 报告它真正读到的值，脚本据此验证而不是假设。
+        F1Benchmark.recordEffectiveConfig(
+            cloudOptOut: CloudSyncPreferences.bootValue,
+            migrationDisabled: F1Benchmark.hasFlag("-DisableThumbnailMigration"),
+            backupDisabled: F1Benchmark.hasFlag("-DisableAutomaticBackup")
+        )
+        F1Benchmark.recordFreeDisk()
+        // 进程内复位「本周已备份」标记。不把外部 `defaults delete` 当唯一依据，理由同上。
+        if F1Benchmark.hasFlag("-ResetWeeklyBackupState") {
+            BackupManager.shared.resetWeeklyBackupStateForBenchmark()
+            F1Benchmark.setState("reset_done")
+        }
+        #endif
+
         let storeMetrics = LaunchDiagnostics.recordStoreMetrics()
         var storeMeta: [String: Any] = [:]
         storeMeta["storeBytes"] = storeMetrics.store.map { Int($0) } ?? -1
@@ -83,6 +128,11 @@ struct BeadInventoryApp: App {
         storeMeta["shmBytes"] = storeMetrics.shm.map { Int($0) } ?? -1
         AppLogger.shared.info("App", "store_metrics_before_open", metadata: storeMeta)
         AppLogger.shared.flushNow()
+        #if DEBUG || F1_BENCHMARK
+        // store / WAL 与三字段 blob 字节并列报告。**拟合只用三字段字节** ——
+        // store 里含 patternGrid 等不参与备份的数据，不能直接换算成内存阈值。
+        F1Benchmark.recordStoreMetrics(store: storeMetrics.store, wal: storeMetrics.wal)
+        #endif
         // ──────────────────────────────────────────────────────────────────────
 
         // 设置 SwiftData ModelContainer（使用版本化 Schema 支持数据迁移）
@@ -234,7 +284,7 @@ struct BeadInventoryApp: App {
         AppLogger.shared.flushNow()
 
         self.modelContainer = container
-        #if DEBUG
+        #if DEBUG || F1_BENCHMARK
         // 清理统一走 WhiteScreenReproSeeder 的分批版本：两者共用 "ChaosSeed-" 前缀，
         // 但原来那版是一次性 delete 全部再 save —— 拼图模式种子每条带 ~10MB 原图，
         // 200 条一个事务会把 2GB 挂在 context 里，清理本身就先 OOM 了。
@@ -320,7 +370,11 @@ struct BeadInventoryApp: App {
                     sharedImageManager.checkForPendingImage()
 
                     // 检查并执行每周自动备份
-                    BackupManager.shared.checkAndPerformWeeklyBackupIfNeeded(inventoryManager: inventoryManager)
+                    // F1 实测:灌数 / 复位阶段必须关掉它,否则那两次启动之后它照样会在
+                    // 约 5 秒时触发,污染下一轮。基准轮则保持开启 —— 它就是被测对象。
+                    if !BeadInventoryApp.isStartupTaskDisabled("-DisableAutomaticBackup") {
+                        BackupManager.shared.checkAndPerformWeeklyBackupIfNeeded(inventoryManager: inventoryManager)
+                    }
                     // 启动时检查 iCloud 状态
                     cloudSyncStatusManager.refreshAccountStatus()
 
@@ -422,7 +476,12 @@ struct BeadInventoryApp: App {
                 // 协调器内部 5s 延迟 + 重入安全（已在跑就跳过）+ 失败自愈（下次启动从余量继续）。
                 // **关键路径**：458 项目级用户在迁移完成前列表 fallback 现场降级，**已经**不会撞 jetsam，
                 // 迁移只是把列表加载从 fallback CGImageSource 升级到直接读小图 JPEG。
-                ThumbnailMigrationCoordinator.shared.start(inventoryManager: inventoryManager)
+                // F1 实测:迁移器与自动备份落在同一启动窗口,不隔离就测不出"备份自己"的峰值。
+                // 基准轮的组合是 migration OFF + backup ON（backup 正是被测对象），
+                // 所以这是两个独立开关，不能合并。仅实验构建存在。
+                if !BeadInventoryApp.isStartupTaskDisabled("-DisableThumbnailMigration") {
+                    ThumbnailMigrationCoordinator.shared.start(inventoryManager: inventoryManager)
+                }
             @unknown default:
                 break
             }
@@ -1231,7 +1290,7 @@ class CloudSyncStatusManager: ObservableObject {
     }
 }
 
-#if DEBUG
+#if DEBUG || F1_BENCHMARK
 // MARK: - Chaos 压测灌数据（DEBUG-only，仅在启动参数带 -StressSeedThumbnails 时触发）
 //
 // Release / TestFlight 构建整个 extension 不参与编译；不带该参数的日常调试启动
@@ -1386,7 +1445,7 @@ extension BeadInventoryApp {
 //  模拟器通常没登录 iCloud，不受影响。
 //
 
-#if DEBUG
+#if DEBUG || F1_BENCHMARK
 enum WhiteScreenReproSeeder {
 
     /// 种子记录统一前缀，cleanup 靠它识别。改名会导致旧种子清理不掉。
