@@ -78,6 +78,19 @@ struct BeadInventoryApp: App {
         //
         // 残留标记非 nil = 上一次启动没走到 .active。注意它只说明
         // **最后成功落盘到哪个阶段**，不等于"死在这个阶段"（见 LaunchDiagnostics 头注释）。
+        // 上一次**恢复**没走完 → 库可能处于半恢复状态（metadata 已换、图片写了一半）。
+        // 复审要求：没有这个检测之前不得开放恢复入口，否则半恢复状态会静默存在。
+        // 归档还在盘上，重跑是幂等的 —— 这里先把事实记下来并暴露给 UI，
+        // 由用户决定重跑哪一份。
+        if let restoreResidual = RestoreJournal.residual() {
+            AppLogger.shared.error("App", "previous_restore_incomplete", metadata: [
+                "archive": (restoreResidual.archivePath as NSString).lastPathComponent,
+                "phase": restoreResidual.phase,
+                "startedAt": ISO8601DateFormatter().string(from: restoreResidual.startedAt)
+            ])
+            AppLogger.shared.flushNow()
+        }
+
         let residual = LaunchDiagnostics.residualMarker()
         if let residual {
             // 逐项显式标注类型:混类型 [String: Any] 字面量 + 多个 `??`

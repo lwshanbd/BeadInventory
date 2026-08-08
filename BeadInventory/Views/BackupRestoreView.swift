@@ -20,17 +20,22 @@ struct BackupRestoreView: View {
     @State private var restoreError: String?
     @State private var showingError = false
     @State private var showingSuccess = false
+    @State private var isBackingUp = false
+    @State private var isSuppressed = false
+    @State private var backupMessage: String?
 
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: 0) {
+                suppressionBanner
+                messageBanner
                 if backups.isEmpty {
                     emptyView
                 } else {
                     backupListView
                 }
             }
-            .navigationTitle("恢复备份")
+            .navigationTitle("备份与恢复")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -38,9 +43,27 @@ struct BackupRestoreView: View {
                         dismiss()
                     }
                 }
+                // 手动备份入口。
+                //
+                // 它不只是"方便" —— 自动备份被中断后会**抑制当周**，而被抑制时它压根
+                // 不运行，所以无法靠自己成功来解除。手动成功是唯一的主动解除路径
+                //（另一条是跨周自然失效）。没有这个入口，用户遇到中断就只能干等一周。
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        Task { await performManualBackup() }
+                    } label: {
+                        if isBackingUp {
+                            ProgressView()
+                        } else {
+                            Label("立即备份", systemImage: "arrow.clockwise.icloud")
+                        }
+                    }
+                    .disabled(isBackingUp)
+                }
             }
             .onAppear {
                 loadBackups()
+                isSuppressed = BackupManager.shared.isAutomaticBackupSuppressed
             }
             .confirmationDialog(
                 "确定要恢复这个备份吗？",
@@ -80,6 +103,38 @@ struct BackupRestoreView: View {
             } message: {
                 Text("数据已成功恢复")
             }
+        }
+    }
+
+    // MARK: - 顶部横幅
+    //
+    // 抽成独立属性而不是内联进 body：SwiftUI 的 body 里堆条件分支会让 Swift 类型检查器
+    // 指数级退化（SourceKit 实测报 "unable to type-check this expression in reasonable
+    // time"）。本仓库 ScanView 甚至为此专门有个 `.pipe` helper。
+
+    /// 被抑制时必须让用户看得见 —— 否则"这周怎么没备份"无从得知，
+    /// 而解除办法（点一次"立即备份"）就在同一屏上。
+    @ViewBuilder
+    private var suppressionBanner: some View {
+        if isSuppressed {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("上次自动备份被中断，本周已暂停自动备份。手动备份成功后会自动恢复。")
+                    .font(.footnote)
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .background(Color.orange.opacity(0.12))
+        }
+    }
+
+    @ViewBuilder
+    private var messageBanner: some View {
+        if let backupMessage {
+            Text(backupMessage)
+                .font(.footnote)
+                .padding(8)
         }
     }
 
@@ -158,6 +213,19 @@ struct BackupRestoreView: View {
     }
 
     // MARK: - 方法
+
+    /// 手动备份。成功后解除抑制并刷新列表。
+    private func performManualBackup() async {
+        isBackingUp = true
+        backupMessage = nil
+        let ok = await BackupManager.shared.performArchiveBackup(
+            inventoryManager: inventoryManager, isManual: true
+        )
+        isBackingUp = false
+        isSuppressed = BackupManager.shared.isAutomaticBackupSuppressed
+        backupMessage = ok ? "备份完成" : "备份失败，请检查存储空间后重试"
+        loadBackups()
+    }
 
     private func loadBackups() {
         backups = BackupManager.shared.getBackupList()

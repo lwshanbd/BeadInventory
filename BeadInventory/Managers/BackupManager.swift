@@ -104,8 +104,104 @@ class BackupManager {
             // 第一个已完成备份并写了标记，后续直接跳过，保证幂等。
             guard !self.hasBackedUpThisWeek() else { return }
             guard !BackupAttemptStore.isSuppressed(week: week) else { return }
-            self.performBackup(inventoryManager: inventoryManager)
+            await self.performArchiveBackup(inventoryManager: inventoryManager)
         }
+    }
+
+    /// 生产路径的备份 —— 走流式归档写出器。
+    ///
+    /// 与被它取代的 JSON 路径的差别(同库同机实测,Release 级优化):
+    ///
+    ///     检查点峰值   813 MB → 67 MB（全程平坦，不再随项目数增长）
+    ///     产出体积     548 MB → 422 MB（省掉 base64 的 +33%）
+    ///     patternGrid  丢失   → 保住（旧格式压根没写这个字段）
+    ///
+    /// 图片经 `ProjectImageLoader` 逐项目取(单次 fetch,同一事务视图),写完即释放,
+    /// 主线程只做一次 blob-free 的 metadata 快照。
+    @discardableResult
+    @MainActor func performArchiveBackup(
+        inventoryManager: InventoryManager, isManual: Bool = false
+    ) async -> Bool {
+        guard let backupDir = backupDirectory else {
+            AppLogger.shared.error("BackupManager", "archive_backup_no_directory")
+            return false
+        }
+        guard let loader = inventoryManager.imageLoader else {
+            AppLogger.shared.error("BackupManager", "archive_backup_no_image_loader")
+            return false
+        }
+
+        // 开工记录：**必须在任何重活之前落盘**。进程被 SIGKILL 时没机会写"我被中断了"，
+        // 只能反过来：先落"进行中"，正常收尾清掉；下次启动读到残留即判定中断。
+        BackupAttemptStore.beginAttempt()
+
+        #if DEBUG || F1_BENCHMARK
+        F1Benchmark.beginWindow("streaming_archive_backup")
+        F1Benchmark.checkpoint("1_beforePerformBackup")
+        #endif
+
+        // 主线程只取 blob-free 的 metadata 快照（projects 缓存本来就不带 blob）。
+        let snapshot = BackupArchiveWriter.MetadataSnapshot(
+            projects: inventoryManager.projects,
+            brands: inventoryManager.brands,
+            brandStocks: inventoryManager.brandStocks,
+            customColors: inventoryManager.customColors,
+            purchaseRecords: inventoryManager.purchaseRecords,
+            currentBrandId: inventoryManager.currentBrandId,
+            appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        )
+
+        do {
+            let url = try await BackupArchiveWriter.write(
+                snapshot: snapshot, imageLoader: loader,
+                to: backupDir, archiveName: generateArchiveName(),
+                onPhase: { BackupAttemptStore.updatePhase($0) }
+            )
+            UserDefaults.standard.set(Date(), forKey: lastBackupDateKey)
+            BackupAttemptStore.finishAttempt(.completed)
+
+            // 手动备份成功 = 这台设备当前状态下备份跑得完 → 解除抑制。
+            // 这是抑制的**唯一**主动解除路径（自动备份被抑制时压根不运行，
+            // 所以它自己的成功无法解除）；此外还有跨周自然失效。
+            if isManual {
+                BackupAttemptStore.clearSuppression()
+                isAutomaticBackupSuppressed = false
+            }
+
+            cleanupOldBackups()
+            AppLogger.shared.info("BackupManager", "archive_backup_completed", metadata: [
+                "name": url.lastPathComponent
+            ])
+            #if DEBUG || F1_BENCHMARK
+            F1Benchmark.checkpoint("4_afterWrite")
+            F1Benchmark.endWindow()
+            F1Benchmark.setState("completed")
+            #endif
+            return true
+        } catch {
+            // 取消属可恢复失败（用户切后台），与磁盘/IO 失败一样不触发抑制 ——
+            // 只有"记录残留、从未收尾"才判定为进程中断。
+            let reason: BackupAttemptEndReason =
+                (error as? BackupArchiveWriter.WriteError).map {
+                    if case .cancelled = $0 { return .backgrounded } else { return .lowDisk }
+                } ?? .lowDisk
+            BackupAttemptStore.finishAttempt(reason)
+            AppLogger.shared.error("BackupManager", "archive_backup_failed", metadata: [
+                "error": "\(error)"
+            ])
+            #if DEBUG || F1_BENCHMARK
+            F1Benchmark.endWindow()
+            #endif
+            return false
+        }
+    }
+
+    /// 归档目录名。不含扩展名 —— 由写出器补 `.beadbackup`。
+    private func generateArchiveName() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd_HHmmss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return "backup_\(f.string(from: Date()))"
     }
 
     /// 取消在飞的自动备份。App 进入 `.inactive` / `.background` 时调用。
@@ -123,7 +219,14 @@ class BackupManager {
 
     // MARK: - 执行备份
 
-    /// 创建备份
+    #if DEBUG || F1_BENCHMARK
+    /// 旧的 JSON 备份写出路径。**已退出生产,仅保留作对照实验用。**
+    ///
+    /// 生产路径见 `performArchiveBackup`。这里保留它是因为 F1 的新旧对比需要一个基线 ——
+    /// 但它不再被任何生产代码调用,旧 JSON 只保留**读取**兼容(`restoreLegacyJSONBackup`)。
+    ///
+    /// 它的问题就是这轮工作的起点:主线程累积全库 base64,实测 388 MB 图片 → 518 MB 字符串
+    /// 同时驻留,主线程阻塞 3.14 秒,产出 548 MB。
     @discardableResult
     @MainActor func performBackup(inventoryManager: InventoryManager, isManual: Bool = false) -> Bool {
         guard let backupDir = backupDirectory else {
@@ -227,7 +330,6 @@ class BackupManager {
         }
     }
 
-    #if DEBUG || F1_BENCHMARK
     /// 实验入口:走**新的流式归档写出器**,与旧 JSON 路径对照测内存峰值。
     ///
     /// 刻意不接进自动备份 —— 先证明新写出器把峰值压下去了,再切换,否则一旦有问题
@@ -473,6 +575,12 @@ class BackupManager {
 
     // MARK: - 获取备份列表
 
+    /// 备份的格式。新写出的一律是 `.archiveV1`；`.legacyJSON` **只读**，不再产生。
+    enum BackupFormat {
+        case archiveV1      // <name>.beadbackup/ 目录：manifest + 二进制 blob
+        case legacyJSON     // 旧的单个巨型 JSON（图片 base64 内嵌）
+    }
+
     struct BackupInfo: Identifiable {
         let id = UUID()
         let fileURL: URL
@@ -480,6 +588,7 @@ class BackupManager {
         let date: Date
         let fileSize: Int64
         let stats: BackupStats?
+        let format: BackupFormat
 
         var formattedDate: String {
             let formatter = DateFormatter()
@@ -505,53 +614,93 @@ class BackupManager {
     func getBackupList() -> [BackupInfo] {
         guard let backupDir = backupDirectory else { return [] }
 
-        do {
-            let files = try FileManager.default.contentsOfDirectory(
-                at: backupDir,
-                includingPropertiesForKeys: [.creationDateKey, .fileSizeKey],
-                options: .skipsHiddenFiles
-            )
+        var result: [BackupInfo] = []
 
-            return files
-                .filter { $0.pathExtension == "json" }
-                .compactMap { fileURL -> BackupInfo? in
-                    guard let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-                          let creationDate = attributes[.creationDate] as? Date,
-                          let fileSize = attributes[.size] as? Int64 else {
-                        return nil
-                    }
-
-                    // 尝试读取统计信息
-                    var stats: BackupStats?
-                    if let data = try? Data(contentsOf: fileURL),
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let statsDict = json["stats"] as? [String: Int] {
-                        stats = BackupStats(
-                            brandsCount: statsDict["brandsCount"] ?? 0,
-                            stocksCount: statsDict["stocksCount"] ?? 0,
-                            projectsCount: statsDict["projectsCount"] ?? 0
-                        )
-                    }
-
-                    return BackupInfo(
-                        fileURL: fileURL,
-                        fileName: fileURL.lastPathComponent,
-                        date: creationDate,
-                        fileSize: fileSize,
-                        stats: stats
-                    )
+        // ① 新格式：.beadbackup 目录。stats 从 manifest 读 —— manifest 只含 metadata，
+        //    体积与图片无关（实测 669 项目约 1 MB）。
+        for url in BackupArchiveWriter.listArchives(in: backupDir) {
+            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+            let date = (attrs?[.creationDate] as? Date) ?? Date.distantPast
+            var stats: BackupStats?
+            var size: Int64 = 0
+            let manifestURL = url.appendingPathComponent("manifest.json")
+            if let mAttrs = try? FileManager.default.attributesOfItem(atPath: manifestURL.path),
+               let mSize = (mAttrs[.size] as? NSNumber)?.int64Value,
+               mSize <= BackupArchiveReader.maxManifestBytes,
+               let data = try? Data(contentsOf: manifestURL) {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                if let m = try? decoder.decode(BackupArchiveManifest.self, from: data) {
+                    stats = BackupStats(brandsCount: m.brands.count,
+                                        stocksCount: m.brandStocks.count,
+                                        projectsCount: m.projects.count)
                 }
-                .sorted { $0.date > $1.date }  // 按日期降序
-        } catch {
-            print("[BackupManager] 获取备份列表失败: \(error)")
-            return []
+            }
+            size = directorySize(url)
+            result.append(BackupInfo(fileURL: url, fileName: url.lastPathComponent,
+                                     date: date, fileSize: size, stats: stats, format: .archiveV1))
         }
+
+        // ② 旧格式：单个 .json。**只读兼容，不再产生。**
+        //
+        // 这里**刻意不读文件内容**。原实现为了取 stats 会
+        // `Data(contentsOf:)` + `JSONSerialization` 把**每一个**备份整个读进内存并完整解析 ——
+        // 单份实测 548 MB，保留 8 份就是打开备份列表这个动作本身要读 4.4 GB。
+        // 那是与 F1 完全同类的 OOM，而且发生在用户主动点进来的页面上。
+        // 旧备份的 stats 显示为空是完全可以接受的代价。
+        if let files = try? FileManager.default.contentsOfDirectory(
+            at: backupDir, includingPropertiesForKeys: [.creationDateKey, .fileSizeKey],
+            options: .skipsHiddenFiles
+        ) {
+            for fileURL in files where fileURL.pathExtension == "json" {
+                guard let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+                      let creationDate = attributes[.creationDate] as? Date,
+                      let fileSize = attributes[.size] as? Int64 else { continue }
+                result.append(BackupInfo(fileURL: fileURL, fileName: fileURL.lastPathComponent,
+                                         date: creationDate, fileSize: fileSize,
+                                         stats: nil, format: .legacyJSON))
+            }
+        }
+
+        return result.sorted { $0.date > $1.date }
+    }
+
+    /// 目录总字节数。只做一层 `blobs/` 遍历 —— 归档结构是固定的，不需要通用递归。
+    private func directorySize(_ url: URL) -> Int64 {
+        var total: Int64 = 0
+        let fm = FileManager.default
+        for sub in [url, url.appendingPathComponent("blobs")] {
+            guard let entries = try? fm.contentsOfDirectory(at: sub, includingPropertiesForKeys: [.fileSizeKey]) else { continue }
+            for e in entries {
+                if let n = (try? fm.attributesOfItem(atPath: e.path))?[.size] as? NSNumber {
+                    total += n.int64Value
+                }
+            }
+        }
+        return total
     }
 
     // MARK: - 恢复备份
 
-    /// 从备份恢复数据
+    /// 从备份恢复数据。按格式分发。
+    ///
+    /// **新格式的恢复路径是"先完整校验、再应用"** —— 校验不通过一个字节都不写入 store。
+    /// 旧 JSON 保留只读兼容,但它的恢复是分段落盘的(先写 metadata 再写图),
+    /// 中途失败会留下半恢复状态;这是既有行为,没有在本次改动范围内重写。
     @MainActor func restoreBackup(from backup: BackupInfo, to manager: InventoryManager) throws {
+        switch backup.format {
+        case .archiveV1:
+            let report = try BackupArchiveReader.validate(archiveAt: backup.fileURL)
+            try BackupArchiveReader.apply(report, to: manager)
+            AppLogger.shared.info("BackupManager", "archive_restore_completed", metadata: [
+                "projects": report.manifest.projects.count, "blobs": report.blobCount
+            ])
+        case .legacyJSON:
+            try restoreLegacyJSONBackup(from: backup, to: manager)
+        }
+    }
+
+    @MainActor private func restoreLegacyJSONBackup(from backup: BackupInfo, to manager: InventoryManager) throws {
         let data = try Data(contentsOf: backup.fileURL)
 
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
