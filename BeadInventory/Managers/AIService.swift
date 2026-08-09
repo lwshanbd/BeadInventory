@@ -184,8 +184,8 @@ struct AIConfig: Codable, Equatable {
     static let defaultGeminiURL = "https://generativelanguage.googleapis.com/v1beta"
 
     // 2026-07 更新。均需支持图像输入（识别用）。
-    // Kimi：K3（2026-07-16 发布，原生视觉）；K2.5/2.6 平台 8/31 落日，仅存量用户可用
-    static let kimiModels = ["kimi-k3", "kimi-k2.6", "kimi-k2.5"]
+    // Kimi：默认 K2.6（长期可用）；K3（2026-07-16 发布，原生视觉）可选；K2.5 平台 8/31 落日，仅存量用户可用
+    static let kimiModels = ["kimi-k2.6", "kimi-k3", "kimi-k2.5"]
     // OpenAI：GPT-5.6 家族（2026-07-09）：luna 入门 / terra 中档 / sol 旗舰
     static let openAIModels = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"]
     // Anthropic：Claude 5 家族（fable 5 = 最新旗舰）+ Opus 4.8 / Haiku 4.5
@@ -198,7 +198,7 @@ struct AIConfig: Codable, Equatable {
     static func defaultModel(for provider: AIProvider) -> String {
         switch provider {
         case .kimi:
-            return "kimi-k3"
+            return "kimi-k2.6"
         case .openai:
             return "gpt-5.6-luna"
         case .anthropic:
