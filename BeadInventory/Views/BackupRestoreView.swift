@@ -20,6 +20,8 @@ struct BackupRestoreView: View {
     @State private var isRestoring = false
     @State private var restoreError: String?
     @State private var showingError = false
+    /// 这次失败发生时 store 是否已被改动 —— 决定弹窗说"恢复失败"还是"恢复中断"。
+    @State private var restoreDidMutateStore = false
     @State private var showingSuccess = false
     @State private var isBackingUp = false
     @State private var isSuppressed = false
@@ -137,10 +139,14 @@ struct BackupRestoreView: View {
                 }
                 Button("取消", role: .cancel) {}
             }
-            .alert("恢复失败", isPresented: $showingError) {
+            // 标题按"库有没有被改过"分开。两者对用户的含义完全不同：
+            // 「恢复失败」= 你的数据没被动，可以放心重试；
+            // 「恢复中断」= 库现在可能是半恢复的，必须重跑。
+            // 混成一句会让人以为库还是干净的，然后就此走开。
+            .alert(restoreFailureTitle, isPresented: $showingError) {
                 Button("确定", role: .cancel) {}
             } message: {
-                Text(restoreError ?? "未知错误")
+                Text(restoreError ?? String(localized: "未知错误"))
             }
             .alert("恢复成功", isPresented: $showingSuccess) {
                 Button("确定") {
@@ -389,10 +395,31 @@ struct BackupRestoreView: View {
             // **失败时不无条件删 staging** —— 若 apply 中断，RestoreJournal 正指向它，
             // 用户要靠它重跑。cleanupIfSafe 自己会判断。
             if let staging = staged { BackupImportStaging.cleanupIfSafe(staging) }
-            restoreResidual = RestoreJournal.residual()
-            restoreError = "\(error)"
-            showingError = true
+            presentRestoreFailure(error)
         }
+    }
+
+    /// 失败弹窗标题。**不要内联成三元表达式** —— 放进 `.alert(...)` 的修饰符链里会让
+    /// Swift 类型检查器超时（SourceKit 实测 "unable to type-check in reasonable time"）。
+    private var restoreFailureTitle: String {
+        restoreDidMutateStore
+            ? String(localized: "恢复中断")
+            : String(localized: "恢复失败")
+    }
+
+    /// 统一的恢复失败呈现。
+    ///
+    /// 所有恢复相关的 catch 都走这里，理由有三：
+    ///   1. `"\(error)"` 而非 `localizedDescription` —— 这些错误只符合
+    ///      `CustomStringConvertible`，后者会产出 "…error 3." 之类的系统乱码；
+    ///   2. `RestoreError.didMutateStore` 决定标题，让"数据没动"和"数据可能不完整"
+    ///      不再被混成同一句；
+    ///   3. 顺手刷新残留横幅 —— 半恢复必须当场可见，而不是等用户退出再进来。
+    private func presentRestoreFailure(_ error: Error) {
+        restoreDidMutateStore = (error as? BackupArchiveReader.RestoreError)?.didMutateStore ?? false
+        restoreError = "\(error)"
+        restoreResidual = RestoreJournal.residual()
+        showingError = true
     }
 
     /// 成对释放 security scope。任何退出路径都必须走到这里。
@@ -427,9 +454,7 @@ struct BackupRestoreView: View {
                 showingSuccess = true
             } catch {
                 isRestoring = false
-                restoreError = "\(error)"
-                restoreResidual = RestoreJournal.residual()
-                showingError = true
+                presentRestoreFailure(error)
             }
         }
     }
@@ -465,15 +490,7 @@ struct BackupRestoreView: View {
                 showingSuccess = true
             } catch {
                 isRestoring = false
-                // **不能用 `localizedDescription`。** 这些错误只符合 CustomStringConvertible
-                // 而非 LocalizedError，`localizedDescription` 会产出
-                // "The operation couldn't be completed. (… error 3.)"，
-                // 把写好的中文全丢掉。本文件其它调用点都用的 "\(error)"，唯独最危险的这条没有。
-                restoreError = "\(error)"
-                // 半恢复必须当场可见。原来这里不刷新，红色横幅要等用户退出再进来才出现 ——
-                // 而这正是让半恢复被发现的那个机制。
-                restoreResidual = RestoreJournal.residual()
-                showingError = true
+                presentRestoreFailure(error)
             }
         }
     }

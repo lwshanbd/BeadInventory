@@ -17,6 +17,21 @@ class BackupManager {
     /// 在飞的自动备份任务。持有它才能取消 —— 原实现是 fire-and-forget。
     @MainActor private var backupTask: Task<Void, Never>?
 
+    /// 归档写出是否正在进行（**手动与自动共用**）。
+    ///
+    /// `backupTask` 只跟踪自动备份 —— 手动备份从 `BackupRestoreView` 直接调
+    /// `performArchiveBackup`，从不赋给它。于是两者可以并发，而它们共用
+    /// `BackupAttemptStore` 里**唯一一个** `inFlight` 槽：后开始的会覆盖先开始的记录，
+    /// 先结束的会把后者的哨兵清掉。此时若进程被 SIGKILL，就不留残留 ——
+    /// `BackupAttemptState` 赖以成立的"记录残留 = 上次被中断"再次失效。
+    /// 两者还会在同一秒撞上同名 `.partial`（`generateArchiveName` 是秒精度），
+    /// 后者开头的"删同名 partial"会删掉前者正在写的目录。
+    ///
+    /// 这个标志把两条路径收进同一道闸。它在 MainActor 上读写，而
+    /// `performArchiveBackup` 的挂起点都在 `write` 内部 —— 进入时置位、`defer` 清除，
+    /// 足以排除重入。
+    @MainActor private var archiveWriteInFlight = false
+
     /// 本周自动备份是否已被抑制（上次尝试被进程中断）。供 UI 提示"可手动备份恢复"。
     @MainActor private(set) var isAutomaticBackupSuppressed = false
 
@@ -104,8 +119,47 @@ class BackupManager {
             // 第一个已完成备份并写了标记，后续直接跳过，保证幂等。
             guard !self.hasBackedUpThisWeek() else { return }
             guard !BackupAttemptStore.isSuppressed(week: week) else { return }
+
+            // **等待初始加载，而不是跳过。**
+            //
+            // `performArchiveBackup` 会拒绝对未加载完成的状态拍快照（否则可能写出空归档），
+            // 但这个函数**只从 `.onAppear` 调一次**，没有重试也没有 `.active` 上的补调。
+            // 直接 return 的话，初始加载稳定超过 5 秒的大库用户会每次启动都在这里止步，
+            // `lastWeeklyBackupDate` 从不写入所以资格检查一直通过，于是
+            // **自动备份对他们永久失效，且没有任何提示** —— 而库越大越容易踩中，
+            // 恰好是最输不起的那批用户。
+            guard await self.waitForInitialLoad(inventoryManager) else {
+                self.isAutomaticBackupSuppressed = true
+                AppLogger.shared.warning("BackupManager", "archive_backup_deferred_load_timeout")
+                return
+            }
             await self.performArchiveBackup(inventoryManager: inventoryManager)
         }
+    }
+
+    /// 有界地等待初始加载完成。
+    ///
+    /// - Returns: `true` = 可以拍快照；`false` = 超时或处于本地回退模式，本次放弃。
+    ///
+    /// 轮询而非订阅：`hasCompletedInitialLoad` 是计算属性、没有可等待的信号，
+    /// 而这条路径每次启动最多跑一遍，2 秒一次的代价可以忽略。
+    @MainActor
+    private func waitForInitialLoad(
+        _ manager: InventoryManager, timeout: TimeInterval = 60
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if Task.isCancelled { return false }
+            // 回退模式下的内存状态不可信，等下去也不会变好 —— 直接放弃本次。
+            if manager.isUsingLocalFallbackMode { return false }
+            if manager.hasCompletedInitialLoad { return true }
+            do {
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+            } catch {
+                return false   // 取消
+            }
+        }
+        return false
     }
 
     /// 生产路径的备份 —— 走流式归档写出器。
@@ -134,6 +188,15 @@ class BackupManager {
             return false
         }
 
+        // 手动与自动共用这道闸 —— 见 `archiveWriteInFlight` 的说明。
+        guard !archiveWriteInFlight else {
+            AppLogger.shared.warning("BackupManager", "archive_backup_rejected_concurrent", metadata: [
+                "isManual": isManual
+            ])
+            print("[BackupManager] 已有备份在进行中，跳过本次")
+            return false
+        }
+
         // **不能对一个还没加载好、或明知不可信的内存状态拍快照。**
         //
         // 具体事故形状：库损坏 → `BeadInventoryApp.init` 落到重置或内存分支 → App 以空库打开。
@@ -159,12 +222,24 @@ class BackupManager {
         //
         // 只挡自动备份：手动点「立即备份」是用户的明确意图（比如他确实清空了库并想留档），
         // 替他否决没有道理。自动备份没有这种意图信号，只能保守。
-        if !isManual && inventoryManager.projects.isEmpty && inventoryManager.brands.isEmpty
-            && hasNonEmptyExistingBackup() {
+        //
+        // "空"必须覆盖**全部**持久化集合。上一版只看 projects + brands，于是一个只有
+        // 自定义颜色（或只有进货记录）的用户不受保护 —— 他的库同样会被判成空、
+        // 同样会写出空归档挤掉真备份。
+        let snapshotIsEmpty = inventoryManager.projects.isEmpty
+            && inventoryManager.brands.isEmpty
+            && inventoryManager.brandStocks.isEmpty
+            && inventoryManager.customColors.isEmpty
+            && inventoryManager.purchaseRecords.isEmpty
+        if !isManual && snapshotIsEmpty && hasNonEmptyExistingBackup() {
             AppLogger.shared.warning("BackupManager", "archive_backup_refused_empty_snapshot")
             print("[BackupManager] 当前数据为空但已有非空备份，拒绝写出空归档")
             return false
         }
+
+        // 闸在 beginAttempt 之前合上、函数退出时打开 —— 覆盖整个哨兵生命周期。
+        archiveWriteInFlight = true
+        defer { archiveWriteInFlight = false }
 
         // 开工记录：**必须在任何重活之前落盘**。进程被 SIGKILL 时没机会写"我被中断了"，
         // 只能反过来：先落"进行中"，正常收尾清掉；下次启动读到残留即判定中断。
@@ -676,7 +751,15 @@ class BackupManager {
     /// 判错的方向是"少写一次备份"，而不是"删掉用户最后一份数据"。
     private func hasNonEmptyExistingBackup() -> Bool {
         guard let backupDir = backupDirectory else { return false }
+        return BackupManager.hasNonEmptyArchive(in: backupDir)
+    }
 
+    /// `hasNonEmptyExistingBackup` 的纯函数内核 —— 只依赖一个目录，因此可测。
+    ///
+    /// 抽出来是因为它守着"空归档不许挤掉真备份"这条闸，而它有六个可以独立改坏的分支
+    /// （三条保守 `return true` 的兜底、legacy `.json` 判定、空/非空 manifest），
+    /// 埋在 private 实例方法里一条都测不到。
+    static func hasNonEmptyArchive(in backupDir: URL) -> Bool {
         for url in BackupArchiveWriter.listArchives(in: backupDir) {
             let manifestURL = url.appendingPathComponent("manifest.json")
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: manifestURL.path),
@@ -689,7 +772,10 @@ class BackupManager {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             guard let m = try? decoder.decode(BackupArchiveManifest.self, from: data) else { return true }
-            if !m.projects.isEmpty || !m.brands.isEmpty { return true }
+            // 与 `snapshotIsEmpty` 同口径 —— 两处必须一起看，否则会出现
+            // "内存判为空、盘上判为非空"这种不对称。
+            if !m.projects.isEmpty || !m.brands.isEmpty || !m.brandStocks.isEmpty
+                || !m.customColors.isEmpty || !m.purchaseRecords.isEmpty { return true }
         }
 
         if let files = try? FileManager.default.contentsOfDirectory(

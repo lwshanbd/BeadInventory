@@ -67,6 +67,7 @@
 
 import Foundation
 import CryptoKit
+import os
 
 // MARK: - 格式定义
 
@@ -171,7 +172,29 @@ enum BackupArchiveWriter {
 
     static let currentFormatVersion = 1
     static let directoryExtension = "beadbackup"
-    static let partialSuffix = ".partial"
+    /// 半成品的扩展名。**这是唯一的真相来源** —— `partialSuffix` 由它派生。
+    /// 反过来（从 `".partial"` 用 `dropFirst()` 推扩展名）改一个字符就会静默失配。
+    static let partialExtension = "partial"
+    static var partialSuffix: String { ".\(partialExtension)" }
+
+    /// 本进程内正在写的 `.partial` 路径。
+    ///
+    /// 存在的唯一理由是让 `sweepStalePartials` **不可能**删掉在飞的那一份。
+    /// 上一版靠一句"只在启动时调用一次"的注释来保证，而调用点是个 `Task.detached(.utility)`，
+    /// 与 t+5s 的自动备份无序并发 —— 注释保证不了任何事，这里改成运行时检查。
+    private static let inFlightPartials = OSAllocatedUnfairLock<Set<URL>>(initialState: [])
+
+    private static func claimPartial(_ url: URL) {
+        inFlightPartials.withLock { $0.insert(url.standardizedFileURL) }
+    }
+
+    private static func releasePartial(_ url: URL) {
+        inFlightPartials.withLock { _ = $0.remove(url.standardizedFileURL) }
+    }
+
+    private static func isPartialInFlight(_ url: URL) -> Bool {
+        inFlightPartials.withLock { $0.contains(url.standardizedFileURL) }
+    }
 
     enum WriteError: Error {
         case cancelled
@@ -212,6 +235,31 @@ enum BackupArchiveWriter {
         let finalURL = destinationDirectory.appendingPathComponent("\(archiveName).\(directoryExtension)")
         let partialURL = destinationDirectory.appendingPathComponent("\(archiveName).\(directoryExtension)\(partialSuffix)")
 
+        // **认领必须发生在任何可能创建 partialURL 的操作之前**，包括下面的
+        // createDirectory —— 它可以先建出 `<name>.beadbackup.partial/` 再在 `blobs/` 上失败。
+        // 上一版把 defer 装在 createDirectory 之后，那条路径的泄漏仍然逃掉了。
+        claimPartial(partialURL)
+        var committed = false
+        defer {
+            releasePartial(partialURL)
+            if !committed {
+                do {
+                    try fm.removeItem(at: partialURL)
+                    AppLogger.shared.info("BackupArchive", "partial_reclaimed", metadata: [
+                        "name": partialURL.lastPathComponent
+                    ])
+                } catch let error as NSError
+                    where error.domain == NSCocoaErrorDomain && error.code == NSFileNoSuchFileError {
+                    // 还没建出来就失败了，正常。
+                } catch {
+                    // 回收失败要留痕：这是"App 显示 3.4 GB、文件夹实占 12 GB"的唯一线索。
+                    AppLogger.shared.warning("BackupArchive", "partial_reclaim_failed", metadata: [
+                        "name": partialURL.lastPathComponent, "error": "\(error)"
+                    ])
+                }
+            }
+        }
+
         // 残留的同名 .partial（上次中断）直接清掉 —— 它按定义不可用。
         if fm.fileExists(atPath: partialURL.path) {
             try? fm.removeItem(at: partialURL)
@@ -221,34 +269,6 @@ enum BackupArchiveWriter {
             try fm.createDirectory(at: blobsURL, withIntermediateDirectories: true)
         } catch {
             throw WriteError.ioFailed("创建归档目录失败: \(error)")
-        }
-
-        // **任何失败路径都必须回收 `.partial`。**
-        //
-        // 上面那次"删同名 partial"救不了场：归档名带 `HHmmss`（见
-        // `BackupManager.generateArchiveName`），两次运行实际上永不撞名。而 partial 的扩展名是
-        // `.partial`，`listArchives` 按 `pathExtension == "beadbackup"` 过滤，于是
-        // `getBackupList()` 看不见它 → `cleanupOldBackups()` 也永远删不到它。
-        //
-        // 取消现在是常态而非例外：`stop()` 挂在 `.inactive` 上，而 `.inactive` 会被控制中心、
-        // 通知横幅、App 切换器频繁触发，自动备份又要流式写数百 MB。没有这个 defer 的话，
-        // 用户每拉一次控制中心就永久留下一份最大 422 MB 的垃圾，且 App 内完全不可见 ——
-        // 直到磁盘写满，而写失败又会泄漏更多。
-        var committed = false
-        defer {
-            if !committed {
-                do {
-                    try fm.removeItem(at: partialURL)
-                    AppLogger.shared.info("BackupArchive", "partial_reclaimed", metadata: [
-                        "name": partialURL.lastPathComponent
-                    ])
-                } catch {
-                    // 回收失败要留痕：这是"App 显示 3.4 GB、文件夹实占 12 GB"的唯一线索。
-                    AppLogger.shared.warning("BackupArchive", "partial_reclaim_failed", metadata: [
-                        "name": partialURL.lastPathComponent, "error": "\(error)"
-                    ])
-                }
-            }
         }
 
         onPhase("writing_blobs")
@@ -384,22 +404,51 @@ enum BackupArchiveWriter {
         return committedURL
     }
 
-    /// 清扫遗留的 `.partial`。启动时调用一次。
+    /// 清扫遗留的 `.beadbackup.partial`。
     ///
     /// `write()` 的 defer 覆盖的是"进程还活着"的失败；进程被 SIGKILL（jetsam / 看门狗）时
     /// defer 不会执行，那种 partial 只能靠这里回收。两条路径缺一不可。
     ///
-    /// 判据只有"扩展名是 `.partial`"—— 按定义它就是中断留下的半成品，不存在还有用的情形。
-    /// 正在写的那一份也叫 `.partial`，所以**不能在备份进行中调用**（现约束为启动时一次）。
+    /// ## 为什么它可以在任何时候被调用
+    ///
+    /// 上一版的说明是"不能在备份进行中调用（现约束为启动时一次）"，而实际调用点是个
+    /// `Task.detached(.utility)`，与 t+5s 的自动备份、以及用户随时可点的手动备份**无序并发**。
+    /// 那句约束保证不了任何事：清扫恰好跑在写出器建目录之后，就会把正在写的归档删掉，
+    /// 写出器随即 ENOENT 失败，本周备份丢失 —— 而且非确定性，表现为"某些设备上备份莫名停了"。
+    ///
+    /// 现在改成两道运行时检查，**不依赖调用时机**：
+    ///   1. `isPartialInFlight` —— 本进程正在写的那一份绝不动；
+    ///   2. `staleThreshold` —— 最近修改过的一概跳过，兜住"上一版进程刚被杀、清扫紧接着跑"
+    ///      这类边界，也兜住未来可能出现的其它写入者。
+    ///
+    /// 匹配的是完整后缀 `.beadbackup.partial`，不是任意 `.partial` —— 后者会让这个函数
+    /// 在被指向别的目录时误删（例如导入暂存区）。
     @discardableResult
-    static func sweepStalePartials(in directory: URL) -> Int {
+    static func sweepStalePartials(in directory: URL, staleThreshold: TimeInterval = 300) -> Int {
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: nil
         ) else { return 0 }
 
+        let fullSuffix = ".\(directoryExtension).\(partialExtension)"
         var reclaimed = 0
-        for url in entries where url.pathExtension == String(partialSuffix.dropFirst()) {
+        for url in entries where url.lastPathComponent.hasSuffix(fullSuffix) {
+            if isPartialInFlight(url) {
+                AppLogger.shared.info("BackupArchive", "partial_sweep_skipped_in_flight", metadata: [
+                    "name": url.lastPathComponent
+                ])
+                continue
+            }
+            // 用 attributesOfItem 而非 resourceValues —— 后者按 URL 实例缓存
+            //（这个坑在 BackupTransfer.requireRegularFile 里已经踩过一次）。
+            if let attrs = try? fm.attributesOfItem(atPath: url.path),
+               let modified = attrs[.modificationDate] as? Date,
+               Date().timeIntervalSince(modified) < staleThreshold {
+                AppLogger.shared.info("BackupArchive", "partial_sweep_skipped_recent", metadata: [
+                    "name": url.lastPathComponent
+                ])
+                continue
+            }
             do {
                 try fm.removeItem(at: url)
                 reclaimed += 1
@@ -506,6 +555,8 @@ enum BackupArchiveReader {
         case unsafeBlobPath(String)
         case blobMissing(String)
         case blobTooLarge(String, bytes: Int64)
+        /// 拿不到文件大小 —— 不能当成 0 或 -1 放行，见 validate 里的说明。
+        case blobUnreadable(String)
         case blobSizeMismatch(String, declared: Int, actual: Int)
         case checksumMismatch(String)
         case insufficientDiskSpace(needed: Int64, available: Int64)
@@ -526,6 +577,7 @@ enum BackupArchiveReader {
             case .unsafeBlobPath: return "unsafeBlobPath"
             case .blobMissing: return "blobMissing"
             case .blobTooLarge: return "blobTooLarge"
+            case .blobUnreadable: return "blobUnreadable"
             case .blobSizeMismatch: return "blobSizeMismatch"
             case .checksumMismatch: return "checksumMismatch"
             case .insufficientDiskSpace: return "insufficientDiskSpace"
@@ -543,6 +595,7 @@ enum BackupArchiveReader {
             case .unsafeBlobPath(let p): return "归档包含不安全的路径: \(p)"
             case .blobMissing(let p): return "归档缺少文件: \(p)"
             case .blobTooLarge(let p, let b): return "归档条目过大: \(p) (\(b) 字节)"
+            case .blobUnreadable(let p): return "无法读取归档条目的大小: \(p)"
             case .blobSizeMismatch(let p, let d, let a): return "条目大小不符: \(p) 声明 \(d) 实际 \(a)"
             case .checksumMismatch(let p): return "条目校验和不符: \(p)"
             case .insufficientDiskSpace(let n, let a): return "磁盘空间不足：需要 \(n) 字节，可用 \(a)"
@@ -560,7 +613,11 @@ enum BackupArchiveReader {
         guard fm.fileExists(atPath: manifestURL.path) else { throw ValidationError.manifestMissing }
 
         // 先看大小再决定读不读 —— 否则一个几 GB 的 manifest 能在校验开始前就干掉进程。
-        let manifestSize = ((try? fm.attributesOfItem(atPath: manifestURL.path))?[.size] as? NSNumber)?.int64Value ?? -1
+        // 同样不能 `?? -1` —— 见 blob 循环里的说明。读不到大小就等于没有上限。
+        guard let manifestAttrs = try? fm.attributesOfItem(atPath: manifestURL.path),
+              let manifestSize = (manifestAttrs[.size] as? NSNumber)?.int64Value, manifestSize >= 0 else {
+            throw ValidationError.blobUnreadable("manifest.json")
+        }
         guard manifestSize <= maxManifestBytes else {
             throw ValidationError.manifestTooLarge(bytes: manifestSize)
         }
@@ -595,8 +652,19 @@ enum BackupArchiveReader {
                 guard fm.fileExists(atPath: url.path) else { throw ValidationError.blobMissing(ref.file) }
 
                 // 先问文件系统要大小，再决定读不读 —— 顺序反过来就等于让归档决定我们分配多少内存。
-                let attrs = try? fm.attributesOfItem(atPath: url.path)
-                let actual = (attrs?[.size] as? NSNumber)?.int64Value ?? -1
+                //
+                // **读不到大小必须硬失败，不能用 `-1` 兜底。** 原来是 `?? -1`，
+                // 而 `-1 <= maxBlobBytes` 恒成立 —— 所有体积上限一起失效。
+                // 更糟的是 `ref.bytes` 来自不可信 manifest：声明 `-1` 就能让相等检查通过，
+                // 随后 `totalBytes += actual` **递减**，几条就能把累计压成负数，
+                // 同时击穿总量上限和磁盘余量检查。
+                guard let attrs = try? fm.attributesOfItem(atPath: url.path),
+                      let actual = (attrs[.size] as? NSNumber)?.int64Value else {
+                    throw ValidationError.blobUnreadable(ref.file)
+                }
+                guard ref.bytes >= 0, actual >= 0 else {
+                    throw ValidationError.blobSizeMismatch(ref.file, declared: ref.bytes, actual: Int(actual))
+                }
                 guard actual <= Int64(maxBlobBytes) else {
                     throw ValidationError.blobTooLarge(ref.file, bytes: actual)
                 }
@@ -827,6 +895,38 @@ enum RestoreJournal {
 
 extension BackupArchiveReader {
 
+    /// `apply` 改动内存之前的原样，用于失败时**同步**还原。
+    ///
+    /// 只覆盖 `apply` 会写的那六个字段 —— 多存无益，少存就会留下不一致。
+    /// 这些都是值类型数组/可选值，拷贝是 O(条目数) 的指针搬运，不含任何图片字节
+    /// （`ProjectRecord` 恒不带 blob）。669 项目实测量级与一次 metadata 快照相同。
+    struct InMemorySnapshot {
+        private let brands: [Brand]
+        private let brandStocks: [BrandStock]
+        private let customColors: [CustomColor]
+        private let purchaseRecords: [PurchaseRecord]
+        private let currentBrandId: UUID?
+        private let projects: [ProjectRecord]
+
+        @MainActor init(of manager: InventoryManager) {
+            brands = manager.brands
+            brandStocks = manager.brandStocks
+            customColors = manager.customColors
+            purchaseRecords = manager.purchaseRecords
+            currentBrandId = manager.currentBrandId
+            projects = manager.projects
+        }
+
+        @MainActor func restore(into manager: InventoryManager) {
+            manager.brands = brands
+            manager.brandStocks = brandStocks
+            manager.customColors = customColors
+            manager.purchaseRecords = purchaseRecords
+            manager.currentBrandId = currentBrandId
+            manager.projects = projects
+        }
+    }
+
     /// 应用一个**已校验**的归档。
     ///
     /// - Important: 只接受 `ValidationReport` 而不是 URL —— 类型上强制"先校验后应用"。
@@ -845,11 +945,32 @@ extension BackupArchiveReader {
         // **日志必须先落盘，落不下去就不动数据。**
         // 它是半恢复状态唯一的发现手段；写不成还继续改数据，就等于在最需要留痕的那一次
         // 静默关掉了留痕。抛出即中止，此时一个字节都还没改。
-        try RestoreJournal.begin(archive: report.root)
+        do {
+            try RestoreJournal.begin(archive: report.root)
+        } catch {
+            // 包成 RestoreError，让 `apply` 只有一种错误类型漏出去（见该类型的注释）。
+            throw RestoreError.journalUnavailable(detail: "\(error)")
+        }
         // **刻意不用 `defer { finish() }`** —— defer 在抛错退出时同样会执行，
         // 那会把"metadata 已替换、blob 写到一半失败"的库标记成"恢复完成"，
         // 恰好抹掉这个日志唯一的作用。日志只在**全部成功后**才清除，见函数末尾。
         let m = report.manifest
+
+        // **改内存之前先留一份原样。**
+        //
+        // 上一版这里的补救是 `refreshFromPersistentStore(preserveInMemoryOnFailure: false)`，
+        // 那是**确定性的空操作**：它是 fire-and-forget 异步（loadData → startBackgroundRefresh），
+        // 而结果回来时必然撞上 InventoryManager 的脏数据门 ——
+        // `hasModelChangesComparedToBaseline()` 在这里**由构造保证为 true**
+        // （metadata 刚被替换、save 已回滚，而 refreshBaselines() 在 save 成功之后才跑、根本没到），
+        // 于是结果被丢弃并重排，重排后撞同一个条件，永远。
+        //
+        // 后果比它要修的 bug 更隐蔽：弹窗告诉用户"原有数据未被改动"，UI 里却列着归档的内容；
+        // 用户点任何东西，下一次自动保存就把这份幻影**提交**了 —— 归档里新增的项目会以
+        // `thumbnail = nil` 落库（内存 ProjectRecord 按设计不带 blob），永久无图。
+        //
+        // 所以失败路径必须**同步**把内存还原成它进来时的样子，一个字段都不差。
+        let rollback = InMemorySnapshot(of: manager)
 
         // ① metadata 整体替换（语义就是"替换全部数据"，不是合并）
         manager.brands = m.brands.map {
@@ -901,14 +1022,13 @@ extension BackupArchiveReader {
             AppLogger.shared.error("BackupArchive", "restore_metadata_commit_failed", metadata: [
                 "outcome": outcome.kind
             ])
-            // 内存里现在是"已恢复"的样子，盘上却不是。不同步回来的话，用户会看到一个
-            // 并不存在于持久层的库，而后续任何一次 saveData 都可能把它半推半就地写进去。
-            manager.refreshFromPersistentStore(
-                reason: "restoreMetadataCommitFailed",
-                preserveInMemoryOnFailure: false
-            )
-            // 日志**保留** —— 此处 store 未被改动，但让用户看到横幅并重跑是安全的
-            // （重跑幂等）；把它清掉才会掩盖问题。
+            // **同步还原。** 见上面 `rollback` 的说明 —— 异步 refresh 在这里救不了场。
+            rollback.restore(into: manager)
+            // 内存已经和 store 一致了（store 从头到尾没被改动，六条非持久化 outcome
+            // 要么在闭包之前返回、要么在 rollback() 之后），所以这里**清除日志**是正确的：
+            // 留着它会让用户看到"数据可能不完整"的红色横幅，而事实是什么都没发生 ——
+            // 那与弹窗里的"原有数据未被改动"自相矛盾。
+            RestoreJournal.finish()
             throw RestoreError.metadataCommitFailed(outcome: outcome.kind)
         }
 
@@ -916,10 +1036,19 @@ extension BackupArchiveReader {
         RestoreJournal.setPhase("blobs")
         let total = m.projects.count
         for (index, p) in m.projects.enumerated() {
-            let thumbnail = try p.thumbnail.map { try readBlob($0, root: report.root) }
-            let finished = try p.finishedImage.map { try readBlob($0, root: report.root) }
-            let display = try p.displayThumbnail.map { try readBlob($0, root: report.root) }
-            let gridData = try p.patternGrid.map { try readBlob($0, root: report.root) }
+            // 读失败必须包成 RestoreError。裸的 `readBlob` 抛的是 ValidationError 或
+            // Foundation 的错误，而它发生在**提交之后**、循环之中 —— 那是"库已经被改过"的
+            // 分支。不包的话 `didMutateStore` 覆盖不到它，UI 就会把一个半恢复的库
+            // 说成"原有数据未被改动"。
+            let thumbnail: Data?, finished: Data?, display: Data?, gridData: Data?
+            do {
+                thumbnail = try p.thumbnail.map { try readBlob($0, root: report.root) }
+                finished = try p.finishedImage.map { try readBlob($0, root: report.root) }
+                display = try p.displayThumbnail.map { try readBlob($0, root: report.root) }
+                gridData = try p.patternGrid.map { try readBlob($0, root: report.root) }
+            } catch {
+                throw RestoreError.blobReadFailed(projectID: p.id, underlying: "\(error)")
+            }
 
             // 单条调用 —— 见方法注释里关于 OOM 形状的说明。
             let result = manager.restoreProjectBlobsFromBackup([(
@@ -949,35 +1078,51 @@ extension BackupArchiveReader {
         RestoreJournal.finish()
     }
 
+    /// `apply` 抛出的**唯一**错误类型。
+    ///
+    /// 「唯一」是 `didMutateStore` 能成立的前提：只要 `apply` 还能漏出别的错误类型，
+    /// 调用方就无法回答"库被改过没有"，而那正是这个类型存在的理由。
+    /// 所以 `RestoreJournal.begin` 和 `readBlob` 的失败都在 `apply` 内被包进来。
     enum RestoreError: Error, CustomStringConvertible {
-        case blobWriteFailed(projectID: UUID)
+        case journalUnavailable(detail: String)
         case metadataCommitFailed(outcome: String)
+        case blobReadFailed(projectID: UUID, underlying: String)
+        case blobWriteFailed(projectID: UUID)
 
         var description: String {
             switch self {
-            case .blobWriteFailed(let id):
-                return "项目 \(id) 的图片写入失败，恢复已中止"
+            case .journalUnavailable(let detail):
+                return String(localized: "无法建立恢复日志，恢复已中止，原有数据未被改动：\(detail)")
             case .metadataCommitFailed(let outcome):
-                return "数据未能写入存储（\(outcome)），恢复已中止，原有数据未被改动"
+                return String(localized: "数据未能写入存储，恢复已中止，原有数据未被改动（\(outcome)）")
+            case .blobReadFailed(let id, _):
+                return String(localized: "项目 \(id.uuidString) 的图片读取失败，恢复已中断，数据可能不完整")
+            case .blobWriteFailed(let id):
+                return String(localized: "项目 \(id.uuidString) 的图片写入失败，恢复已中断，数据可能不完整")
             }
         }
 
         /// 无载荷标识，供遥测与断言使用。
         var kind: String {
             switch self {
-            case .blobWriteFailed: return "blobWriteFailed"
+            case .journalUnavailable: return "journalUnavailable"
             case .metadataCommitFailed: return "metadataCommitFailed"
+            case .blobReadFailed: return "blobReadFailed"
+            case .blobWriteFailed: return "blobWriteFailed"
             }
         }
 
         /// 抛出时 store 是否已被改动。
         ///
-        /// UI 要靠它决定说"恢复失败，原数据未动"还是"恢复中断，数据可能不完整" ——
+        /// UI 靠它决定说"恢复失败，原数据未动"还是"恢复中断，数据可能不完整" ——
         /// 这两句对用户的含义完全不同，混为一谈会让人以为库还是干净的。
+        /// 接入点见 `BackupRestoreView.presentRestoreFailure`。
+        ///
+        /// 无 `default:` 是刻意的：新增 case 必须在这里做出选择，编译器会强制。
         var didMutateStore: Bool {
             switch self {
-            case .metadataCommitFailed: return false
-            case .blobWriteFailed: return true
+            case .journalUnavailable, .metadataCommitFailed: return false
+            case .blobReadFailed, .blobWriteFailed: return true
             }
         }
     }

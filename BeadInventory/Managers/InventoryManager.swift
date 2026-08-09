@@ -2249,6 +2249,17 @@ class InventoryManager: ObservableObject {
         _ = saveDataReportingOutcome()
     }
 
+    #if DEBUG
+    /// 只给测试用：把管理器标成"初始加载已完成"，让 `saveData` 走到真正的落盘分支。
+    ///
+    /// 没有它就无法测归档恢复的成功路径 —— 单测里的 `InventoryManager` 从不跑
+    /// `performInitialLoadIfNeeded`，`isDataLoaded` 恒为 false，每次保存都在
+    /// `.notLoaded` 上短路。DEBUG-only，不进生产二进制。
+    func markDataLoadedForTesting() {
+        isDataLoaded = true
+    }
+    #endif
+
     /// 与 `saveData()` 同一实现，但**报告结果**。
     ///
     /// 给必须知道"到底写没写进去"的调用方用（目前是归档恢复）。
@@ -2644,6 +2655,12 @@ class InventoryManager: ObservableObject {
     private func saveCurrentBrandId() {
         if let id = currentBrandId {
             UserDefaults.standard.set(id.uuidString, forKey: currentBrandIdKey)
+        } else {
+            // **else 分支不能省。** 没有它，恢复一个 `currentBrandId == nil` 的归档时
+            // UserDefaults 里的旧值原封不动；而 `.metadataOnly` 路径随即把 baseline 设成 nil，
+            // 此后永不重试。下次启动读回旧值，恢复前的品牌选择就复活了 ——
+            // 一个被 `isPersisted == true` 盖过去的静默不一致。
+            UserDefaults.standard.removeObject(forKey: currentBrandIdKey)
         }
     }
 

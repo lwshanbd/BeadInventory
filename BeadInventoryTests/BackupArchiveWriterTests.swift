@@ -174,19 +174,24 @@ final class BackupArchiveWriterTests: XCTestCase {
 
     /// 进程被 SIGKILL 时 `write()` 的 defer 不会执行，那种 `.partial` 只能靠启动清扫回收。
     ///
-    /// 变异检查：让 `sweepStalePartials` 返回 0 且不删任何东西 → 第一条断言红。
-    /// 把过滤条件写成"删所有目录" → 第二条断言红。
+    /// 夹具必须把 mtime 拨旧：清扫现在会跳过最近修改过的 partial（那可能是**正在写**的那一份）。
+    /// "新鲜的必须被跳过"由 `BackupRestoreSafetyTests.testSweepSkipsRecentlyModifiedPartial` 覆盖。
+    ///
+    /// 变异检查：让 `sweepStalePartials` 返回 0 且不删任何东西 → 第一、二条断言红。
+    /// 把过滤条件写成"删所有目录" → 第一、三条断言红。
     func testSweepRemovesPartialsButKeepsRealArchives() throws {
         let fm = FileManager.default
         let stale = workDir.appendingPathComponent("backup_a.beadbackup.partial", isDirectory: true)
         let real = workDir.appendingPathComponent("backup_b.beadbackup", isDirectory: true)
         try fm.createDirectory(at: stale, withIntermediateDirectories: true)
         try fm.createDirectory(at: real, withIntermediateDirectories: true)
+        try fm.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -3600)],
+                             ofItemAtPath: stale.path)
 
         let reclaimed = BackupArchiveWriter.sweepStalePartials(in: workDir)
 
         XCTAssertEqual(reclaimed, 1)
-        XCTAssertFalse(fm.fileExists(atPath: stale.path), "残留的 .partial 必须被清掉")
+        XCTAssertFalse(fm.fileExists(atPath: stale.path), "陈旧的 .partial 必须被清掉")
         XCTAssertTrue(fm.fileExists(atPath: real.path), "真归档一根汗毛都不能动")
     }
 
