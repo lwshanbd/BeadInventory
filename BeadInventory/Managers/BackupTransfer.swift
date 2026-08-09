@@ -166,7 +166,10 @@ enum BackupImportStaging {
     /// **不复制任何东西**,只读 manifest 并核对每个被引用条目的存在性与大小。
     ///
     /// 调用方必须已持有 `source` 的 security scope。
-    static func makePlan(source: URL) throws -> Plan {
+    /// - Parameter totalLimit: 总量上限。**仅为测试可注入**;生产一律用默认值。
+    ///   不做成可注入的话,"复制途中源文件变大"这类用例在单测里根本触发不到
+    ///   (默认 64 GB),那条防线就只能靠读代码相信它有效。
+    static func makePlan(source: URL, totalLimit: Int64 = maxSourceTotalBytes) throws -> Plan {
         let fm = FileManager.default
         let manifestURL = source.appendingPathComponent("manifest.json")
         guard fm.fileExists(atPath: manifestURL.path) else { throw StagingError.manifestMissing }
@@ -194,7 +197,22 @@ enum BackupImportStaging {
         for project in manifest.projects {
             for ref in [project.thumbnail, project.finishedImage,
                         project.displayThumbnail, project.patternGrid].compactMap({ $0 }) {
-                // 路径安全检查复用校验器那套（拒绝绝对路径、`..`、解析符号链接后越界）。
+                // **路径形状必须精确匹配 `blobs/<单段文件名>`。**
+                //
+                // 复用 safeBlobURL 的越界检查还不够 —— 它只保证"不跑出归档根"，
+                // 但 `blobs/a/b/c/.../x` 这种深层嵌套仍然合法。写出器只会产生
+                // `blobs/<uuid>.<kind>` 一种形状，所以任何别的形状都说明这不是我们写的东西。
+                //
+                // 收紧的实际收益：materialize 只需 `blobs/` 一层目录，不必按外部输入
+                // 递归创建目录树 —— 少一整类"用超深路径把文件系统或我们的建目录逻辑
+                // 拖垮"的可能。
+                let components = ref.file.split(separator: "/", omittingEmptySubsequences: false)
+                guard components.count == 2, components[0] == "blobs",
+                      !components[1].isEmpty, components[1] != ".", components[1] != ".." else {
+                    throw StagingError.unsafePath(ref.file)
+                }
+
+                // 再走一遍校验器那套（绝对路径、`..`、解析符号链接后越界）。
                 let url: URL
                 do {
                     url = try BackupArchiveReader.safeBlobURL(ref.file, root: source)
@@ -216,7 +234,7 @@ enum BackupImportStaging {
                     throw StagingError.entryTooLarge(ref.file, bytes: actual)
                 }
                 total += actual
-                guard total <= maxSourceTotalBytes else { throw StagingError.totalTooLarge(bytes: total) }
+                guard total <= totalLimit else { throw StagingError.totalTooLarge(bytes: total) }
 
                 entries.append((ref.file, url, actual))
             }
@@ -239,7 +257,8 @@ enum BackupImportStaging {
     /// 按计划逐项复制到 staging。**只复制计划里的条目**,未被引用的文件一概不进来。
     ///
     /// - Important: 调用方必须在**用户确认之后**才调用本方法 —— 这一步才是那 422 MB。
-    static func materialize(_ plan: Plan, source: URL) throws -> URL {
+    static func materialize(_ plan: Plan, source: URL,
+                            totalLimit: Int64 = maxSourceTotalBytes) throws -> URL {
         let fm = FileManager.default
         let root = try stagingRoot()
         let partial = root.appendingPathComponent("import-\(UUID().uuidString).beadbackup.partial")
@@ -264,7 +283,7 @@ enum BackupImportStaging {
             // 复制途中源文件可能被换成更大的东西 —— 以**落地后的实际大小**再查一次。
             let landed = ((try? fm.attributesOfItem(atPath: dest.path))?[.size] as? NSNumber)?.int64Value ?? 0
             copied += landed
-            if copied > maxSourceTotalBytes {
+            if copied > totalLimit {
                 try? fm.removeItem(at: partial)
                 throw StagingError.totalTooLarge(bytes: copied)
             }

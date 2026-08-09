@@ -179,6 +179,122 @@ final class BackupImportStagingTests: XCTestCase {
         assertPlanRejects("entryMissing")
     }
 
+    // MARK: - 源在 plan 与 materialize 之间被改动(TOCTOU)
+
+    /// 复制途中源文件变大。
+    ///
+    /// 预检按 plan 时的大小算，但真正落地的是复制时的大小 —— 若只信 plan，
+    /// 一个在两步之间被换大的文件就能突破总量上限。materialize 必须按**落地后的实际大小**
+    /// 重新累计。（上限做成可注入就是为了能真的触发这条，而不是读代码相信它有效。）
+    func testGrowingSourceBetweenPlanAndCopyIsCaught() throws {
+        let small = Data(repeating: 0xAB, count: 1024)
+        let ref = try writeBlob(small, name: "a.thumbnail")
+        try writeManifest(thumbnail: ref)
+
+        // 上限设在 plan 时的总量之上一点点，让"按 plan 算"能过、"按落地算"必须挂
+        let plan = try BackupImportStaging.makePlan(source: source, totalLimit: 64 * 1024)
+        XCTAssertLessThan(plan.totalBytes, 64 * 1024)
+
+        // plan 之后把源换成大文件
+        try Data(repeating: 0xCD, count: 200 * 1024)
+            .write(to: source.appendingPathComponent("blobs/a.thumbnail"))
+
+        XCTAssertThrowsError(
+            try BackupImportStaging.materialize(plan, source: source, totalLimit: 64 * 1024)
+        ) { e in
+            XCTAssertEqual((e as? BackupImportStaging.StagingError)?.kind, "totalTooLarge",
+                           "必须按落地后的实际大小累计，不能只信 plan 里的值：\(e)")
+        }
+        // 失败时不留半成品
+        let root = try BackupImportStaging.stagingRoot()
+        let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        XCTAssertTrue(leftovers.filter { $0.hasSuffix(".partial") }.isEmpty, "失败后不应残留 .partial")
+    }
+
+    /// staging 之后源被替换成符号链接 —— 后续一律走 staging 副本，源怎么变都无关。
+    ///
+    /// 这条钉的是 TOCTOU 关闭点：materialize 完成后，validate/apply 读的必须是我们
+    /// 自己的不可变副本。
+    func testSourceReplacedAfterStagingDoesNotAffectResult() throws {
+        let data = Data(repeating: 0xAB, count: 256)
+        let ref = try writeBlob(data, name: "a.thumbnail")
+        try writeManifest(thumbnail: ref)
+        let plan = try BackupImportStaging.makePlan(source: source)
+        let staged = try BackupImportStaging.materialize(plan, source: source)
+        defer { try? FileManager.default.removeItem(at: staged) }
+
+        // 源被换成指向外部的符号链接 + manifest 被改坏
+        let blob = source.appendingPathComponent("blobs/a.thumbnail")
+        try FileManager.default.removeItem(at: blob)
+        let outside = FileManager.default.temporaryDirectory
+            .appendingPathComponent("evil-\(UUID().uuidString).bin")
+        try Data(repeating: 0xFF, count: 999).write(to: outside)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        try FileManager.default.createSymbolicLink(at: blob, withDestinationURL: outside)
+        try Data("{ corrupted".utf8).write(to: source.appendingPathComponent("manifest.json"))
+
+        // staging 副本不受任何影响，仍能通过完整校验
+        let report = try BackupArchiveReader.validate(archiveAt: staged)
+        XCTAssertEqual(report.blobCount, 1)
+        XCTAssertEqual(report.totalBlobBytes, 256)
+    }
+
+    // MARK: - 路径形状
+
+    /// 深层嵌套路径。写出器只产生 `blobs/<uuid>.<kind>` 一种形状，
+    /// 别的形状都说明这不是我们写的东西 —— 直接拒，省得为外部输入递归建目录树。
+    func testRejectsNestedBlobPath() throws {
+        try FileManager.default.createDirectory(
+            at: source.appendingPathComponent("blobs/a/b/c"), withIntermediateDirectories: true)
+        let data = Data(repeating: 1, count: 16)
+        try data.write(to: source.appendingPathComponent("blobs/a/b/c/deep.thumbnail"))
+        try writeManifest(thumbnail: ArchivedBlobRef(
+            file: "blobs/a/b/c/deep.thumbnail", bytes: 16, sha256: sha256(data)))
+        assertPlanRejects("unsafePath")
+    }
+
+    /// 根目录下的裸文件（不在 blobs/ 里）同样拒绝。
+    func testRejectsBlobOutsideBlobsDirectory() throws {
+        let data = Data(repeating: 1, count: 16)
+        try data.write(to: source.appendingPathComponent("rogue.thumbnail"))
+        try writeManifest(thumbnail: ArchivedBlobRef(
+            file: "rogue.thumbnail", bytes: 16, sha256: sha256(data)))
+        assertPlanRejects("unsafePath")
+    }
+
+    // MARK: - 中断后可重试
+
+    /// apply 中途被打断（进程被杀）后，staging 仍在、journal 仍指向它，
+    /// 重跑 validate + apply 应当成功 —— 这就是红色横幅上那个「重新恢复该归档」的底座。
+    ///
+    /// 单测里杀不了进程，所以直接构造它留下的状态：journal 存在 + staging 存在。
+    func testInterruptedApplyCanBeRetriedFromStaging() throws {
+        let data = Data(repeating: 0xAB, count: 512)
+        let ref = try writeBlob(data, name: "a.thumbnail")
+        try writeManifest(thumbnail: ref)
+        let plan = try BackupImportStaging.makePlan(source: source)
+        let staged = try BackupImportStaging.materialize(plan, source: source)
+
+        // 模拟"apply 跑到一半进程被杀"：journal 留在盘上，指向 staging
+        RestoreJournal.begin(archive: staged)
+        RestoreJournal.setPhase("blobs")
+
+        // 重启后应当能读到残留，并且它指向的归档还在
+        let residual = try XCTUnwrap(RestoreJournal.residual())
+        XCTAssertEqual(residual.archivePath, staged.path)
+        XCTAssertEqual(residual.phase, "blobs")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: residual.archivePath),
+                      "归档必须还在 —— 否则「重新恢复该归档」按钮找不到东西")
+
+        // 重跑校验必须成功（apply 需要 InventoryManager，这里只钉到校验这一层）
+        let report = try BackupArchiveReader.validate(
+            archiveAt: URL(fileURLWithPath: residual.archivePath))
+        XCTAssertEqual(report.blobCount, 1)
+
+        RestoreJournal.finish()
+        BackupImportStaging.cleanupIfSafe(staged)
+    }
+
     // MARK: - staging 生命周期
 
     /// `RestoreJournal` 指向这份 staging 时**绝不能删** —— 用户重跑恢复靠的就是它。
