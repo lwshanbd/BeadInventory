@@ -1,166 +1,6 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
-    "导入备份" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Import Backup"
-          }
-        }
-      }
-    },
-    "导入将替换全部数据" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Importing will replace all data"
-          }
-        }
-      }
-    },
-    "导入并替换" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Import and Replace"
-          }
-        }
-      }
-    },
-    "导出" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Export"
-          }
-        }
-      }
-    },
-    "旧格式：不可导出、不含拼图网格。请点右上角「立即备份」生成新版完整备份。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Legacy format: cannot be exported and has no pattern grids. Tap Back Up Now to create a new full backup."
-          }
-        }
-      }
-    },
-    "上次恢复未完成，当前数据可能不完整" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The last restore did not finish — your data may be incomplete"
-          }
-        }
-      }
-    },
-    "上次自动备份被中断，本周已暂停自动备份。手动备份成功后会自动恢复。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The last automatic backup was interrupted, so it is paused for this week. A successful manual backup will resume it."
-          }
-        }
-      }
-    },
-    "备份与恢复" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Backup & Restore"
-          }
-        }
-      }
-    },
-    "备份失败，请检查存储空间后重试" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Backup failed. Check available storage and try again."
-          }
-        }
-      }
-    },
-    "备份完成" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Backup complete"
-          }
-        }
-      }
-    },
-    "找不到该归档，可能已被删除。请从下方列表选择其它备份恢复。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "That archive is missing — it may have been deleted. Choose another backup from the list below."
-          }
-        }
-      }
-    },
-    "立即备份" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Back Up Now"
-          }
-        }
-      }
-    },
-    "重新恢复该归档" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Restore This Archive Again"
-          }
-        }
-      }
-    },
-    "好" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        }
-      }
-    },
-    "这张图片无法处理，原有图片已保留。请重试或换一张图片。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This image couldn't be processed. Your existing image was kept. Please try again or choose a different image."
-          }
-        }
-      }
-    },
-    "这张图片无法处理，项目未创建。请重试或换一张图片。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This image couldn't be processed, so the project wasn't created. Please try again or choose a different image."
-          }
-        }
-      }
-    },
     "" : {
 
     },
@@ -3563,12 +3403,32 @@
         }
       }
     },
+    "上次恢复未完成，当前数据可能不完整" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last restore did not finish — your data may be incomplete"
+          }
+        }
+      }
+    },
     "上次检查：%@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Last checked: %@"
+          }
+        }
+      }
+    },
+    "上次自动备份被中断，本周已暂停自动备份。手动备份成功后会自动恢复。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last automatic backup was interrupted, so it is paused for this week. A successful manual backup will resume it."
           }
         }
       }
@@ -3652,6 +3512,16 @@
     },
     "个品牌" : {
 
+    },
+    "中断于：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interrupted at: %@"
+          }
+        }
+      }
     },
     "为品牌" : {
       "localizations" : {
@@ -5470,6 +5340,38 @@
         }
       }
     },
+    "备份与恢复" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup & Restore"
+          }
+        }
+      }
+    },
+    "备份失败，请检查存储空间后重试" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup failed. Check available storage and try again."
+          }
+        }
+      }
+    },
+    "备份完成" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup complete"
+          }
+        }
+      }
+    },
     "备份恢复" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5577,6 +5479,16 @@
     "失败：%@" : {
 
     },
+    "好" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        }
+      }
+    },
     "好的" : {
       "localizations" : {
         "en" : {
@@ -5659,6 +5571,16 @@
         }
       }
     },
+    "导入备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import Backup"
+          }
+        }
+      }
+    },
     "导入失败" : {
       "localizations" : {
         "en" : {
@@ -5687,6 +5609,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Import/Export & Backup/Restore"
+          }
+        }
+      }
+    },
+    "导入将替换全部数据" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importing will replace all data"
+          }
+        }
+      }
+    },
+    "导入并替换" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import and Replace"
           }
         }
       }
@@ -5738,6 +5680,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Import Projects"
+          }
+        }
+      }
+    },
+    "导出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export"
           }
         }
       }
@@ -5969,6 +5921,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The following projects will be merged"
+          }
+        }
+      }
+    },
+    "将导入 %lld 个项目，约 %lld MB。当前所有数据会被替换，此操作不可撤销。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Will import %1$lld projects, about %2$lld MB. All current data will be replaced. This cannot be undone."
           }
         }
       }
@@ -7244,6 +7206,17 @@
     "找不到服务器主机，请检查 API 地址" : {
 
     },
+    "找不到该归档，可能已被删除。请从下方列表选择其它备份恢复。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That archive is missing — it may have been deleted. Choose another backup from the list below."
+          }
+        }
+      }
+    },
     "找到" : {
 
     },
@@ -7858,6 +7831,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "日志导出与排查"
+          }
+        }
+      }
+    },
+    "旧格式：不可导出、不含拼图网格。请点右上角「立即备份」生成新版完整备份。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Legacy format: cannot be exported and has no pattern grids. Tap Back Up Now to create a new full backup."
           }
         }
       }
@@ -9226,6 +9209,16 @@
         }
       }
     },
+    "立即备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back Up Now"
+          }
+        }
+      }
+    },
     "第 %lld 行列数不足" : {
       "localizations" : {
         "en" : {
@@ -10448,6 +10441,26 @@
         }
       }
     },
+    "这张图片无法处理，原有图片已保留。请重试或换一张图片。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This image couldn't be processed. Your existing image was kept. Please try again or choose a different image."
+          }
+        }
+      }
+    },
+    "这张图片无法处理，项目未创建。请重试或换一张图片。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This image couldn't be processed, so the project wasn't created. Please try again or choose a different image."
+          }
+        }
+      }
+    },
     "连接成功 · %lld ms" : {
 
     },
@@ -10654,6 +10667,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duplicate Handling"
+          }
+        }
+      }
+    },
+    "重新恢复该归档" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore This Archive Again"
           }
         }
       }
