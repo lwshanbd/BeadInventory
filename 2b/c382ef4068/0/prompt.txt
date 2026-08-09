@@ -397,3 +397,24 @@ manifest 的“声明总量”不可信；目录还可以塞入 manifest 未引�
 ---
 
 整批送复审
+
+---
+
+结论：本批不能合并；P0-2 实际上尚未完成。 package/UTI、只导出新格式、恢复日志保留 staging 的方向都正确，但外部导入现在仍有一个可被绕过的资源上限。
+
+* P0：`copyItem` 会先完整复制、后检查。
+`makePlan` 后外部 blob 若被替换成超大文件或目录，`copyItem` 会先搬完全部内容；`landed` 检查发生在返回后。当前“源变大”测试用 200 KB 验证的是事后拒绝，不是复制过程受限。应改为固定块大小的 `FileHandle` 流式复制：每次写前检查单条、累计和磁盘上限；同时在复制前重新拒绝 symlink、目录和非普通文件。manifest 应保存预检时读取的有上限原始字节，直接写入 staging，避免它在确认后被替换。
+* P1：staging 前缺少项目数/blob 数限制。
+`makePlan` 遍历全部项目与 blob，但 `maxProjects` / `maxBlobCount` 仅在 staging 后的 `validate()` 执行。恶意 manifest 可先让用户确认并复制数十万个小文件，最后才被拒绝。应在 `makePlan` 同步执行同样的 count 预检；同时限制 brands、stocks、purchase records 及嵌套 items，避免 32 MB manifest 解码膨胀。
+* P1：422 MB 的复制与校验没有明确移出 UI actor。
+`performImport()` 从 SwiftUI 的 `Task` 直接同步调用 `materialize` 和 `validate`，且两者都是阻塞 I/O / 哈希。导入时进度遮罩很可能不刷新，Files/iCloud 慢时直接卡住界面。复制、预检、校验应放到明确的后台执行器；只有 `BackupArchiveReader.apply` 保留主线程的 SwiftData 写入。
+
+其余复审结论：
+
+* `com.apple.package + public.content`、不加 `CFBundleDocumentTypes`、`FileRepresentation(...openInPlace: false)` 都正确；Apple 也要求 package 文档同时具备内容语义以用于 AirDrop。[Apple UTI 文档](https://developer.apple.com/documentation/uniformtypeidentifiers/defining-file-and-data-types-for-your-app)
+* 禁止导出旧 JSON 是正确修复，避免制造“带得走却导不回来”的伪备份。
+* `RestoreJournal` 指向 staging 时不删除的生命周期处理正确，相关测试有价值。
+* 可注入限额的测试让步同意；建议封装成内部 `Limits` 值类型，不要改成运行时可配置。
+* 另有 P2：进程若在 staging rename 后、`apply()` 前被杀，会留下未被 journal 引用的 staging；启动时应删除 ImportStaging 下无 journal 引用的成品/`.partial`。UTI 的中文描述也应补 `InfoPlist.strings` 英文版本。
+
+验证：当前 HEAD 的 29 个指定测试通过，Release + `F1_BENCHMARK` 构建通过，未修改工作区。
