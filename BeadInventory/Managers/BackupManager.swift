@@ -134,6 +134,38 @@ class BackupManager {
             return false
         }
 
+        // **不能对一个还没加载好、或明知不可信的内存状态拍快照。**
+        //
+        // 具体事故形状：库损坏 → `BeadInventoryApp.init` 落到重置或内存分支 → App 以空库打开。
+        // `lastWeeklyBackupDate` 存在 UserDefaults 里，不随 store 重置消失，所以若已跨周，
+        // 自动备份会在 t+5s 触发，`projects` 为空，写出一个**完全合法的 0 项目归档**，
+        // 然后 `cleanupOldBackups()` 按时间降序把最老的那个**真备份**删掉。
+        // 同一次启动既丢了数据，又销毁了恢复材料；每周重复，八个槽位全变空档。
+        //
+        // 冷启动时初始加载没在 5 秒内跑完、以及本地回退模式，都是同一类不可信状态。
+        guard inventoryManager.hasCompletedInitialLoad else {
+            AppLogger.shared.warning("BackupManager", "archive_backup_deferred_not_loaded")
+            print("[BackupManager] 初始加载未完成，跳过本次备份")
+            return false
+        }
+        guard !inventoryManager.isUsingLocalFallbackMode else {
+            AppLogger.shared.warning("BackupManager", "archive_backup_deferred_local_fallback")
+            print("[BackupManager] 本地回退模式，跳过本次备份")
+            return false
+        }
+        // 加载完成但一件东西都没有：可能是新装用户（合法），也可能是刚被重置的损坏库。
+        // 区分不了，所以看盘上有没有**非空**的既有备份 —— 有的话，这次空快照不该覆盖它们。
+        // 新装用户没有既有备份，因此不受影响。
+        //
+        // 只挡自动备份：手动点「立即备份」是用户的明确意图（比如他确实清空了库并想留档），
+        // 替他否决没有道理。自动备份没有这种意图信号，只能保守。
+        if !isManual && inventoryManager.projects.isEmpty && inventoryManager.brands.isEmpty
+            && hasNonEmptyExistingBackup() {
+            AppLogger.shared.warning("BackupManager", "archive_backup_refused_empty_snapshot")
+            print("[BackupManager] 当前数据为空但已有非空备份，拒绝写出空归档")
+            return false
+        }
+
         // 开工记录：**必须在任何重活之前落盘**。进程被 SIGKILL 时没机会写"我被中断了"，
         // 只能反过来：先落"进行中"，正常收尾清掉；下次启动读到残留即判定中断。
         BackupAttemptStore.beginAttempt()
@@ -207,17 +239,30 @@ class BackupManager {
         return "backup_\(f.string(from: Date()))"
     }
 
-    /// 取消在飞的自动备份。App 进入 `.inactive` / `.background` 时调用。
+    /// 请求取消在飞的自动备份。App 进入 `.inactive` / `.background` 时调用。
     ///
-    /// 与 `ThumbnailMigrationCoordinator.stop()` 对齐 —— 之前只有迁移器被停，
-    /// 备份却一直没人管。让出的同时把尝试记录按 `.backgrounded` 收尾：
-    /// 这是**可恢复失败**，不触发抑制，下次启动照常重试。
+    /// 与 `ThumbnailMigrationCoordinator.stop()` 对齐 —— 之前只有迁移器被停，备份却没人管。
+    ///
+    /// **这里只发取消请求，不碰尝试记录、也不清 `backupTask`。**
+    ///
+    /// 原来这三件事一起做，那是错的：`cancel()` 是协作式的，写出器只在下一个项目迭代
+    /// 开头才观察到取消（`BackupArchiveWriter.write` 里的 `Task.isCancelled`），
+    /// 所以 `stop()` 返回时写入**仍在进行**。而这段窗口正是 App 挂起期间 —— jetsam
+    /// 最可能下手的时刻。记录如果此时已被清掉，进程被 SIGKILL 就不留残留，
+    /// `consumeResidualIfNeeded()` 什么也读不到，
+    /// **`BackupAttemptState` 赖以成立的那条不变量（"记录残留 = 上次被中断"）当场失效。**
+    ///
+    /// 收尾交给任务自己：正常结束走 `.completed`，抛错走 catch 里的 `finishAttempt`
+    /// （取消映射为 `.backgrounded`，属可恢复失败、不触发抑制）。
+    /// `backupTask` 由任务体的 `defer` 清空 —— 那才是它真正结束的时刻，
+    /// 提前清会让下一次 `checkAndPerformWeeklyBackupIfNeeded` 越过重入保护。
+    ///
+    /// 另注：`stop()` 可能在 5 秒 sleep 期间被调用，那时 `beginAttempt()` 还没执行；
+    /// 此时本来就没有记录可收尾，由任务自己 `return` 即可。
     @MainActor func stop() {
-        guard backupTask != nil else { return }
-        backupTask?.cancel()
-        backupTask = nil
-        BackupAttemptStore.finishAttempt(.backgrounded)
-        AppLogger.shared.info("BackupManager", "automatic_backup_cancelled")
+        guard let task = backupTask else { return }
+        task.cancel()
+        AppLogger.shared.info("BackupManager", "automatic_backup_cancel_requested")
     }
 
     // MARK: - 执行备份
@@ -613,6 +658,48 @@ class BackupManager {
         let projectsCount: Int
     }
 
+    /// 回收中断的备份写出留下的 `.beadbackup.partial`。
+    ///
+    /// **只在启动时调用一次。** 正在写的那一份也叫 `.partial`，备份进行中扫会把它删掉。
+    func sweepStaleBackupPartials() {
+        guard let dir = backupDirectory else { return }
+        BackupArchiveWriter.sweepStalePartials(in: dir)
+    }
+
+    /// 盘上是否已有**非空**的既有备份。
+    ///
+    /// 用于判断"当前内存为空"到底是新装用户还是刚被重置的损坏库 —— 后者绝不能拿空快照
+    /// 去挤掉真备份（见 `performArchiveBackup` 的拒绝逻辑）。
+    ///
+    /// 只读 manifest，不碰 blob。旧 JSON 无法在不整份读入的情况下判断内容
+    /// （那正是 `getBackupList` 特意避免的 4.4 GB 读取），所以**一律当作非空** ——
+    /// 判错的方向是"少写一次备份"，而不是"删掉用户最后一份数据"。
+    private func hasNonEmptyExistingBackup() -> Bool {
+        guard let backupDir = backupDirectory else { return false }
+
+        for url in BackupArchiveWriter.listArchives(in: backupDir) {
+            let manifestURL = url.appendingPathComponent("manifest.json")
+            guard let attrs = try? FileManager.default.attributesOfItem(atPath: manifestURL.path),
+                  let size = (attrs[.size] as? NSNumber)?.int64Value,
+                  size <= BackupArchiveReader.maxManifestBytes,
+                  let data = try? Data(contentsOf: manifestURL) else {
+                // 读不出来 = 判断不了 = 保守当作非空。
+                return true
+            }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            guard let m = try? decoder.decode(BackupArchiveManifest.self, from: data) else { return true }
+            if !m.projects.isEmpty || !m.brands.isEmpty { return true }
+        }
+
+        if let files = try? FileManager.default.contentsOfDirectory(
+            at: backupDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
+        ), files.contains(where: { $0.pathExtension == "json" }) {
+            return true
+        }
+        return false
+    }
+
     /// 获取所有备份
     func getBackupList() -> [BackupInfo] {
         guard let backupDir = backupDirectory else { return [] }
@@ -690,10 +777,21 @@ class BackupManager {
     /// **新格式的恢复路径是"先完整校验、再应用"** —— 校验不通过一个字节都不写入 store。
     /// 旧 JSON 保留只读兼容,但它的恢复是分段落盘的(先写 metadata 再写图),
     /// 中途失败会留下半恢复状态;这是既有行为,没有在本次改动范围内重写。
-    @MainActor func restoreBackup(from backup: BackupInfo, to manager: InventoryManager) throws {
+    @MainActor func restoreBackup(from backup: BackupInfo, to manager: InventoryManager) async throws {
         switch backup.format {
         case .archiveV1:
-            let report = try BackupArchiveReader.validate(archiveAt: backup.fileURL)
+            // **校验必须离开主 actor。** `validate()` 是无隔离的 static func，从 @MainActor
+            // 调用就跑在主线程上，而它要读遍并 SHA-256 每一个 blob（实测约 422 MB）；
+            // 紧接着 `apply` 再读一遍。原来这条路径外面套的
+            // `DispatchQueue.main.asyncAfter` 什么也没买到 —— 调用点本来就在主线程。
+            // 合计约 850 MB 同步 I/O + 哈希卡住 UI，正是本分支的诊断代码要追查的
+            // 看门狗形状（0x8BADF00D）。导入路径早已这么拆，恢复路径此前没跟上。
+            //
+            // `apply` 留在主 actor：它写 SwiftData mainContext，本来就必须在主线程。
+            let url = backup.fileURL
+            let report = try await Task.detached(priority: .userInitiated) {
+                try BackupArchiveReader.validate(archiveAt: url)
+            }.value
             try BackupArchiveReader.apply(report, to: manager)
             AppLogger.shared.info("BackupManager", "archive_restore_completed", metadata: [
                 "projects": report.manifest.projects.count, "blobs": report.blobCount

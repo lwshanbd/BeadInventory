@@ -223,6 +223,34 @@ enum BackupArchiveWriter {
             throw WriteError.ioFailed("创建归档目录失败: \(error)")
         }
 
+        // **任何失败路径都必须回收 `.partial`。**
+        //
+        // 上面那次"删同名 partial"救不了场：归档名带 `HHmmss`（见
+        // `BackupManager.generateArchiveName`），两次运行实际上永不撞名。而 partial 的扩展名是
+        // `.partial`，`listArchives` 按 `pathExtension == "beadbackup"` 过滤，于是
+        // `getBackupList()` 看不见它 → `cleanupOldBackups()` 也永远删不到它。
+        //
+        // 取消现在是常态而非例外：`stop()` 挂在 `.inactive` 上，而 `.inactive` 会被控制中心、
+        // 通知横幅、App 切换器频繁触发，自动备份又要流式写数百 MB。没有这个 defer 的话，
+        // 用户每拉一次控制中心就永久留下一份最大 422 MB 的垃圾，且 App 内完全不可见 ——
+        // 直到磁盘写满，而写失败又会泄漏更多。
+        var committed = false
+        defer {
+            if !committed {
+                do {
+                    try fm.removeItem(at: partialURL)
+                    AppLogger.shared.info("BackupArchive", "partial_reclaimed", metadata: [
+                        "name": partialURL.lastPathComponent
+                    ])
+                } catch {
+                    // 回收失败要留痕：这是"App 显示 3.4 GB、文件夹实占 12 GB"的唯一线索。
+                    AppLogger.shared.warning("BackupArchive", "partial_reclaim_failed", metadata: [
+                        "name": partialURL.lastPathComponent, "error": "\(error)"
+                    ])
+                }
+            }
+        }
+
         onPhase("writing_blobs")
 
         var archivedProjects: [ArchivedProject] = []
@@ -350,7 +378,41 @@ enum BackupArchiveWriter {
         } catch {
             throw WriteError.ioFailed("提交归档失败: \(error)")
         }
+        // rename 成功 = partial 这个路径已经不存在了，defer 不该再去删（那会删掉刚提交的归档吗？
+        // 不会 —— 路径不同 —— 但会留下一条误导性的 reclaim_failed 日志）。
+        committed = true
         return committedURL
+    }
+
+    /// 清扫遗留的 `.partial`。启动时调用一次。
+    ///
+    /// `write()` 的 defer 覆盖的是"进程还活着"的失败；进程被 SIGKILL（jetsam / 看门狗）时
+    /// defer 不会执行，那种 partial 只能靠这里回收。两条路径缺一不可。
+    ///
+    /// 判据只有"扩展名是 `.partial`"—— 按定义它就是中断留下的半成品，不存在还有用的情形。
+    /// 正在写的那一份也叫 `.partial`，所以**不能在备份进行中调用**（现约束为启动时一次）。
+    @discardableResult
+    static func sweepStalePartials(in directory: URL) -> Int {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil
+        ) else { return 0 }
+
+        var reclaimed = 0
+        for url in entries where url.pathExtension == String(partialSuffix.dropFirst()) {
+            do {
+                try fm.removeItem(at: url)
+                reclaimed += 1
+                AppLogger.shared.info("BackupArchive", "stale_partial_swept", metadata: [
+                    "name": url.lastPathComponent
+                ])
+            } catch {
+                AppLogger.shared.warning("BackupArchive", "stale_partial_sweep_failed", metadata: [
+                    "name": url.lastPathComponent, "error": "\(error)"
+                ])
+            }
+        }
+        return reclaimed
     }
 
     /// 列出目录里的可用归档。
@@ -631,28 +693,89 @@ struct RestoreJournalEntry: Codable {
 }
 
 enum RestoreJournal {
-    private static var fileURL: URL? {
+
+    /// 日志自身写不下去时抛这个。
+    ///
+    /// **必须让调用方停手，不能吞。** 日志的全部作用是"让半恢复可被发现"；它没落盘还照常
+    /// 改数据，等于在最需要留痕的那次恢复里静默关掉了留痕 —— 而磁盘将满恰恰既是日志写失败的
+    /// 原因，也是后续 blob 写失败的原因，两者高度相关。
+    enum JournalError: Error, CustomStringConvertible {
+        case unavailableLocation
+        case writeFailed(String)
+
+        var description: String {
+            switch self {
+            case .unavailableLocation:
+                return "无法定位恢复日志目录，已中止恢复（继续下去会让半恢复状态无法被发现）"
+            case .writeFailed(let detail):
+                return "恢复日志写入失败，已中止恢复：\(detail)"
+            }
+        }
+    }
+
+    private static func resolveFileURL() throws -> URL {
         guard let base = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
-        ).first else { return nil }
+        ).first else { throw JournalError.unavailableLocation }
         let dir = base.appendingPathComponent("BackupState", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            throw JournalError.writeFailed("创建目录失败: \(error)")
+        }
         return dir.appendingPathComponent("restore_journal.json")
     }
 
-    static func begin(archive: URL) {
-        write(RestoreJournalEntry(archivePath: archive.path, startedAt: Date(), phase: "metadata"))
+    /// 只读场景用。定位失败时返回 nil（读不到 = 没有残留，是安全方向）。
+    private static var fileURLForReading: URL? {
+        guard let base = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return nil }
+        return base.appendingPathComponent("BackupState", isDirectory: true)
+            .appendingPathComponent("restore_journal.json")
     }
 
+    /// 开工。**抛错即表示日志没落盘，调用方必须中止恢复。**
+    static func begin(archive: URL) throws {
+        try write(RestoreJournalEntry(archivePath: archive.path, startedAt: Date(), phase: "metadata"))
+        AppLogger.shared.info("RestoreJournal", "restore_journal_begin", metadata: [
+            "archive": archive.lastPathComponent
+        ])
+    }
+
+    /// 阶段推进。失败只记警告、不抛 —— 此时 `begin` 已经成功，
+    /// 盘上有一条（阶段偏旧的）日志，残留仍然可被发现；为一个诊断字段中止恢复不划算。
     static func setPhase(_ phase: String) {
-        guard var entry = residual() else { return }
+        guard var entry = residual() else {
+            AppLogger.shared.warning("RestoreJournal", "restore_journal_phase_without_entry", metadata: [
+                "phase": phase
+            ])
+            return
+        }
         entry.phase = phase
-        write(entry)
+        do {
+            try write(entry)
+        } catch {
+            AppLogger.shared.warning("RestoreJournal", "restore_journal_phase_write_failed", metadata: [
+                "phase": phase, "error": "\(error)"
+            ])
+        }
     }
 
+    /// 收尾。删除失败要记错误：那会在**成功恢复之后**留下一个永久的红色横幅，
+    /// 用户会以为自己的库坏了。无声的话没人能解释这个横幅从哪来。
     static func finish() {
-        guard let url = fileURL else { return }
-        try? FileManager.default.removeItem(at: url)
+        guard let url = fileURLForReading else { return }
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch let error as NSError
+            where error.domain == NSCocoaErrorDomain && error.code == NSFileNoSuchFileError {
+            // 本来就没有，正常。
+        } catch {
+            AppLogger.shared.error("RestoreJournal", "restore_journal_clear_failed", metadata: [
+                "error": "\(error)"
+            ])
+        }
     }
 
     /// 上一次恢复是否没走完 —— 供 UI 展示持久提示。
@@ -663,21 +786,41 @@ enum RestoreJournal {
 
     /// 非 nil = 上一次恢复没有走完，库可能处于半恢复状态。
     static func residual() -> RestoreJournalEntry? {
-        guard let url = fileURL, let data = try? Data(contentsOf: url) else { return nil }
+        guard let url = fileURLForReading, let data = try? Data(contentsOf: url) else { return nil }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try? decoder.decode(RestoreJournalEntry.self, from: data)
     }
 
-    private static func write(_ entry: RestoreJournalEntry) {
-        guard let url = fileURL else { return }
+    /// 落盘 + fsync。
+    ///
+    /// fsync 是必要的：这条日志存在的意义就是"进程被 SIGKILL 之后还能读到"，
+    /// 而对掉电 / 内核 panic，仅 `write(options: .atomic)` 不保证已经到介质上。
+    private static func write(_ entry: RestoreJournalEntry) throws {
+        let url = try resolveFileURL()
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(entry) else { return }
-        try? data.write(to: url, options: .atomic)
-        if let handle = try? FileHandle(forWritingTo: url) {
-            try? handle.synchronize()
-            try? handle.close()
+        let data: Data
+        do {
+            data = try encoder.encode(entry)
+        } catch {
+            throw JournalError.writeFailed("编码失败: \(error)")
+        }
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            throw JournalError.writeFailed("写盘失败: \(error)")
+        }
+        do {
+            let handle = try FileHandle(forWritingTo: url)
+            defer { try? handle.close() }
+            try handle.synchronize()
+        } catch {
+            // 内容已经落盘，只是没能强制刷到介质 —— 对 SIGKILL（我们的主要场景）已经够用，
+            // 不足以中止恢复。记警告即可。
+            AppLogger.shared.warning("RestoreJournal", "restore_journal_fsync_failed", metadata: [
+                "error": "\(error)"
+            ])
         }
     }
 }
@@ -699,7 +842,10 @@ extension BackupArchiveReader {
         to manager: InventoryManager,
         onProgress: (Int, Int) -> Void = { _, _ in }
     ) throws {
-        RestoreJournal.begin(archive: report.root)
+        // **日志必须先落盘，落不下去就不动数据。**
+        // 它是半恢复状态唯一的发现手段；写不成还继续改数据，就等于在最需要留痕的那一次
+        // 静默关掉了留痕。抛出即中止，此时一个字节都还没改。
+        try RestoreJournal.begin(archive: report.root)
         // **刻意不用 `defer { finish() }`** —— defer 在抛错退出时同样会执行，
         // 那会把"metadata 已替换、blob 写到一半失败"的库标记成"恢复完成"，
         // 恰好抹掉这个日志唯一的作用。日志只在**全部成功后**才清除，见函数末尾。
@@ -740,7 +886,31 @@ extension BackupArchiveReader {
                 colorSystem: ColorSystem(rawValue: p.colorSystemRaw) ?? .mard
             )
         }
-        manager.saveData()
+        // **必须检查落盘结果。** 原来这里是裸的 `manager.saveData()` —— 它返回 Void，
+        // 内部有五条静默 early-return 和一个把异常吞掉并 `context.rollback()` 的终止 catch。
+        //
+        // 被回滚时的后果是本次改动里最危险的一条：metadata 全部退回恢复前，而下面的循环
+        // 照常把 669 个项目的图片写进**旧的行**（行存在、ID 匹配，`_setProjectBlobsDirectly`
+        // 全部返回 true，`failedIDs` 为空）→ 日志被清除 → UI 显示"恢复成功"。
+        // 用户拿到的是"旧元数据绑新图片"，且不知道出过任何事。
+        //
+        // 恢复时磁盘紧张正是常见情形：`validate()` 只预留了 blob 的体积，
+        // SwiftData 自己的写入还需要额外余量。
+        let outcome = manager.saveDataReportingOutcome()
+        guard outcome.isPersisted else {
+            AppLogger.shared.error("BackupArchive", "restore_metadata_commit_failed", metadata: [
+                "outcome": outcome.kind
+            ])
+            // 内存里现在是"已恢复"的样子，盘上却不是。不同步回来的话，用户会看到一个
+            // 并不存在于持久层的库，而后续任何一次 saveData 都可能把它半推半就地写进去。
+            manager.refreshFromPersistentStore(
+                reason: "restoreMetadataCommitFailed",
+                preserveInMemoryOnFailure: false
+            )
+            // 日志**保留** —— 此处 store 未被改动，但让用户看到横幅并重跑是安全的
+            // （重跑幂等）；把它清掉才会掩盖问题。
+            throw RestoreError.metadataCommitFailed(outcome: outcome.kind)
+        }
 
         // ② 图片逐条写回
         RestoreJournal.setPhase("blobs")
@@ -781,10 +951,33 @@ extension BackupArchiveReader {
 
     enum RestoreError: Error, CustomStringConvertible {
         case blobWriteFailed(projectID: UUID)
+        case metadataCommitFailed(outcome: String)
 
         var description: String {
             switch self {
-            case .blobWriteFailed(let id): return "项目 \(id) 的图片写入失败，恢复已中止"
+            case .blobWriteFailed(let id):
+                return "项目 \(id) 的图片写入失败，恢复已中止"
+            case .metadataCommitFailed(let outcome):
+                return "数据未能写入存储（\(outcome)），恢复已中止，原有数据未被改动"
+            }
+        }
+
+        /// 无载荷标识，供遥测与断言使用。
+        var kind: String {
+            switch self {
+            case .blobWriteFailed: return "blobWriteFailed"
+            case .metadataCommitFailed: return "metadataCommitFailed"
+            }
+        }
+
+        /// 抛出时 store 是否已被改动。
+        ///
+        /// UI 要靠它决定说"恢复失败，原数据未动"还是"恢复中断，数据可能不完整" ——
+        /// 这两句对用户的含义完全不同，混为一谈会让人以为库还是干净的。
+        var didMutateStore: Bool {
+            switch self {
+            case .metadataCommitFailed: return false
+            case .blobWriteFailed: return true
             }
         }
     }

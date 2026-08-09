@@ -91,9 +91,19 @@ struct BeadInventoryApp: App {
             AppLogger.shared.flushNow()
         }
 
-        // 清掉没人引用的导入暂存（进程在 rename 之后、apply 之前被杀会留下它，
-        // 可能有几百 MB）。被 RestoreJournal 指向的那份不动 —— 用户要靠它重跑。
-        BackupImportStaging.cleanupOrphans()
+        // 回收两类进程被杀留下的垃圾：
+        //   ① 没人引用的导入暂存（rename 之后、apply 之前被杀），可能几百 MB；
+        //      被 RestoreJournal 指向的那份不动 —— 用户要靠它重跑。
+        //   ② 中断的备份写出留下的 `.beadbackup.partial`。写出器自己的 defer 覆盖
+        //      "进程还活着"的失败，被 SIGKILL 时 defer 不执行，只能靠这里。
+        //
+        // **放到后台、且不在 init 里同步做。** 递归 unlink 几百 MB 不是免费的，
+        // 而这里正是本分支其余部分用来观测看门狗的启动关键路径 ——
+        // 在这条路径上做大额同步 I/O，等于一边装监控一边制造它要抓的现象。
+        Task.detached(priority: .utility) {
+            BackupImportStaging.cleanupOrphans()
+            BackupManager.shared.sweepStaleBackupPartials()
+        }
 
         let residual = LaunchDiagnostics.residualMarker()
         if let residual {

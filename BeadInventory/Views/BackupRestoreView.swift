@@ -411,9 +411,16 @@ struct BackupRestoreView: View {
             return
         }
         isRestoring = true
-        DispatchQueue.main.async {
+        Task {
             do {
-                let report = try BackupArchiveReader.validate(archiveAt: url)
+                // 与 performImport / restoreBackup 同样的拆分：校验（读遍并哈希全部 blob）
+                // 离开主 actor，只有 apply 留在主线程。
+                //
+                // 这条路径尤其不能卡主线程：它是给**已知半恢复**的库做修复的。
+                // 在这里被看门狗杀掉，只会再制造一次中断记录，把用户留在原地。
+                let report = try await Task.detached(priority: .userInitiated) {
+                    try BackupArchiveReader.validate(archiveAt: url)
+                }.value
                 try BackupArchiveReader.apply(report, to: inventoryManager)
                 isRestoring = false
                 restoreResidual = RestoreJournal.residual()   // 成功后应为 nil
@@ -421,6 +428,7 @@ struct BackupRestoreView: View {
             } catch {
                 isRestoring = false
                 restoreError = "\(error)"
+                restoreResidual = RestoreJournal.residual()
                 showingError = true
             }
         }
@@ -448,14 +456,23 @@ struct BackupRestoreView: View {
 
         isRestoring = true
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        Task {
             do {
-                try BackupManager.shared.restoreBackup(from: backup, to: inventoryManager)
+                // restoreBackup 内部把校验放到了 detached 任务上（见其注释）。
+                try await BackupManager.shared.restoreBackup(from: backup, to: inventoryManager)
                 isRestoring = false
+                restoreResidual = RestoreJournal.residual()   // 成功后应为 nil
                 showingSuccess = true
             } catch {
                 isRestoring = false
-                restoreError = error.localizedDescription
+                // **不能用 `localizedDescription`。** 这些错误只符合 CustomStringConvertible
+                // 而非 LocalizedError，`localizedDescription` 会产出
+                // "The operation couldn't be completed. (… error 3.)"，
+                // 把写好的中文全丢掉。本文件其它调用点都用的 "\(error)"，唯独最危险的这条没有。
+                restoreError = "\(error)"
+                // 半恢复必须当场可见。原来这里不刷新，红色横幅要等用户退出再进来才出现 ——
+                // 而这正是让半恢复被发现的那个机制。
+                restoreResidual = RestoreJournal.residual()
                 showingError = true
             }
         }

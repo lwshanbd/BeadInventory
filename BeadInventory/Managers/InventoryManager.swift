@@ -2197,13 +2197,70 @@ class InventoryManager: ObservableObject {
         }
     }
 
+    /// `saveDataReportingOutcome()` 的结果。
+    ///
+    /// 加这个类型是因为 `saveData()` 有**五条静默 early-return 加一个吞掉异常的终止 catch**，
+    /// 而调用方拿到的是 `Void` —— 分不清"写进去了"和"什么都没做"。
+    ///
+    /// 对绝大多数调用点（编辑库存、改项目）这没问题：下次保存会补上。
+    /// 对**恢复**是致命的：`BackupArchiveReader.apply` 先替换 metadata 再逐条写图片，
+    /// 若 metadata 那步实际被回滚而 apply 以为成功，图片就会写进**旧的行**，
+    /// 用户得到"旧元数据绑新图片"，且被告知恢复成功。
+    enum SaveOutcome {
+        /// 已提交到 SwiftData。
+        case committed
+        /// 与基线一致，无需写入 —— 也是成功（盘上内容就是期望内容）。
+        case noChanges
+        /// 只有元数据变化，走了轻量保存路径 —— 也是成功。
+        case metadataOnly
+        case noContext
+        case notLoaded
+        case localFallbackMode
+        case reentrant
+        /// 全量清空保险丝拦下。
+        case blockedFullPurge
+        case failed(String)
+
+        /// 调用方期望的内容是否确实在盘上。
+        var isPersisted: Bool {
+            switch self {
+            case .committed, .noChanges, .metadataOnly: return true
+            default: return false
+            }
+        }
+
+        /// 无载荷标识，供日志与错误文案使用（不含路径等敏感信息）。
+        var kind: String {
+            switch self {
+            case .committed: return "committed"
+            case .noChanges: return "noChanges"
+            case .metadataOnly: return "metadataOnly"
+            case .noContext: return "noContext"
+            case .notLoaded: return "notLoaded"
+            case .localFallbackMode: return "localFallbackMode"
+            case .reentrant: return "reentrant"
+            case .blockedFullPurge: return "blockedFullPurge"
+            case .failed: return "failed"
+            }
+        }
+    }
+
     func saveData() {
-        guard let context = modelContext else { return }
+        _ = saveDataReportingOutcome()
+    }
+
+    /// 与 `saveData()` 同一实现，但**报告结果**。
+    ///
+    /// 给必须知道"到底写没写进去"的调用方用（目前是归档恢复）。
+    /// 其余调用点继续用 `saveData()`，行为完全不变。
+    @discardableResult
+    func saveDataReportingOutcome() -> SaveOutcome {
+        guard let context = modelContext else { return .noContext }
 
         // 防止在数据未加载完成时保存空数据，导致覆盖原有数据
         guard isDataLoaded else {
             print("[InventoryManager] 警告：数据尚未加载完成，跳过保存")
-            return
+            return .notLoaded
         }
 
         // 本地浏览模式：用户主动放弃等待 iCloud 同步，此时云端可能存在
@@ -2214,13 +2271,13 @@ class InventoryManager: ObservableObject {
         guard !isUsingLocalFallbackMode else {
             // logWarning 让 Sentry/AppLogger 能监测到有多少用户卡在 fallback。
             logWarning("save_skipped_local_fallback_mode")
-            return
+            return .localFallbackMode
         }
 
         // 防止重入：.inactive → .background 快速连续触发时，避免并发修改 SwiftData 关系
         guard !isSaving else {
             print("[InventoryManager] 警告：saveData() 正在执行中，跳过重复调用")
-            return
+            return .reentrant
         }
         isSaving = true
         defer { isSaving = false }
@@ -2230,7 +2287,7 @@ class InventoryManager: ObservableObject {
 
         if !hasModelChanges && !hasMetadataChanges {
             print("[InventoryManager] 无本地改动，跳过保存")
-            return
+            return .noChanges
         }
 
         if !hasModelChanges && hasMetadataChanges {
@@ -2239,7 +2296,7 @@ class InventoryManager: ObservableObject {
             baselineCurrentBrandId = currentBrandId
             baselinePurchaseRecords = purchaseRecords
             print("[InventoryManager] 仅元数据变更，执行轻量保存")
-            return
+            return .metadataOnly
         }
 
         // 保险丝：
@@ -2261,9 +2318,11 @@ class InventoryManager: ObservableObject {
                 reason: "blockedUnexpectedFullPurge",
                 preserveInMemoryOnFailure: false
             )
-            return
+            return .blockedFullPurge
         }
 
+        // `perform` 的闭包是非逃逸且同步执行的，所以可以就地取回结果。
+        var outcome: SaveOutcome = .failed("保存闭包未执行")
         AppBackgroundTaskManager.shared.perform(named: "InventorySave") {
             do {
                 // 仅写入本地改动，避免把另一台设备新同步的数据“当作缺失”删除
@@ -2562,12 +2621,18 @@ class InventoryManager: ObservableObject {
                 if isFullPurgeAuthorized {
                     fullPurgeAuthorizedUntil = nil
                 }
+                outcome = .committed
             } catch {
                 print("[InventoryManager] ⚠️ 保存数据失败: \(error)")
                 // 回滚 context 中所有未提交的变更，防止残留的删除/插入操作被后续 save 意外提交
                 context.rollback()
+                // 回滚意味着**内存里的改动一个都没落盘**。以前这里只 print，调用方无从得知；
+                // 恢复流程据此把图片写进了未被替换的旧行。
+                logError("save_failed_rolled_back", metadata: ["error": "\(error)"])
+                outcome = .failed("\(error)")
             }
         }
+        return outcome
     }
 
     private func savePurchaseRecords() {

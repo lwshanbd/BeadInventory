@@ -397,7 +397,11 @@ final class BackupImportStagingTests: XCTestCase {
         let staged = try BackupImportStaging.materialize(plan, source: source)
 
         // 模拟"apply 跑到一半进程被杀"：journal 留在盘上，指向 staging
-        RestoreJournal.begin(archive: staged)
+        try RestoreJournal.begin(archive: staged)
+        // **紧跟 begin 的 defer 是必须的**：日志写在真实的 Application Support 里，
+        // 下面任何一条断言失败都会把它留在盘上，之后每次 cleanupIfSafe 都变成静默 no-op，
+        // 开发机上的 App 还会一直显示"半恢复"横幅。
+        defer { RestoreJournal.finish() }
         RestoreJournal.setPhase("blobs")
 
         // 重启后应当能读到残留，并且它指向的归档还在
@@ -426,7 +430,7 @@ final class BackupImportStagingTests: XCTestCase {
         let plan = try BackupImportStaging.makePlan(source: source)
         let staged = try BackupImportStaging.materialize(plan, source: source)
 
-        RestoreJournal.begin(archive: staged)
+        try RestoreJournal.begin(archive: staged)
         defer { RestoreJournal.finish() }
 
         BackupImportStaging.cleanupIfSafe(staged)
