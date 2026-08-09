@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct BackupRestoreView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
@@ -26,6 +27,17 @@ struct BackupRestoreView: View {
     /// 上一次恢复没走完时的残留记录。**必须展示给用户** —— 只写日志的话，
     /// metadata 已替换、blob 恢复中断的用户会毫不知情地继续用一个半恢复的库。
     @State private var restoreResidual: RestoreJournalEntry?
+
+    // 导入状态。
+    //
+    // `importSource` 是**持有 security scope 的**外部 URL —— 从 picker 返回一直握到
+    // materialize 结束或用户取消。scope 必须跨越那次确认交互（用户在确认框里做决定时，
+    // 我们还没开始复制）。任何退出路径都要成对 stopAccessing，见 releaseImportSource()。
+    @State private var importSource: URL?
+    @State private var importPlan: BackupImportStaging.Plan?
+    @State private var showingImporter = false
+    @State private var showingImportConfirm = false
+    @State private var isImporting = false
 
     var body: some View {
         NavigationStack {
@@ -54,6 +66,14 @@ struct BackupRestoreView: View {
                 //（另一条是跨周自然失效）。没有这个入口，用户遇到中断就只能干等一周。
                 ToolbarItem(placement: .primaryAction) {
                     Button {
+                        showingImporter = true
+                    } label: {
+                        Label("导入备份", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(isImporting || isRestoring)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
                         Task { await performManualBackup() }
                     } label: {
                         if isBackingUp {
@@ -69,6 +89,27 @@ struct BackupRestoreView: View {
                 loadBackups()
                 isSuppressed = BackupManager.shared.isAutomaticBackupSuppressed
                 restoreResidual = RestoreJournal.residual()
+            }
+            .fileImporter(
+                isPresented: $showingImporter,
+                allowedContentTypes: [.beadInventoryBackup],
+                allowsMultipleSelection: false
+            ) { result in
+                handleImportSelection(result)
+            }
+            .confirmationDialog(
+                "导入将替换全部数据",
+                isPresented: $showingImportConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("导入并替换", role: .destructive) {
+                    Task { await performImport() }
+                }
+                Button("取消", role: .cancel) { releaseImportSource() }
+            } message: {
+                if let plan = importPlan {
+                    Text("将导入 \(plan.manifest.projects.count) 个项目，约 \(plan.totalBytes / 1024 / 1024) MB。当前所有数据会被替换，此操作不可撤销。")
+                }
             }
             .confirmationDialog(
                 "确定要恢复这个备份吗？",
@@ -219,6 +260,23 @@ struct BackupRestoreView: View {
                                 Label("删除", systemImage: "trash")
                             }
                         }
+                        .swipeActions(edge: .leading) {
+                            // **只有新格式能导出。**
+                            //
+                            // 旧 JSON 看似"也能分享"，但它导入不回来（导入只接受
+                            // .beadbackup），而且它本身就漏 patternGrid。给它一个导出按钮
+                            // 等于产出一份"用户带得走、重装后却用不回来"的备份 ——
+                            // 那正是这次事故的形状：他以为自己有备份。
+                            if backup.format == .archiveV1 {
+                                ShareLink(
+                                    item: BackupExport(archiveURL: backup.fileURL),
+                                    preview: SharePreview(backup.fileName)
+                                ) {
+                                    Label("导出", systemImage: "square.and.arrow.up")
+                                }
+                                .tint(.blue)
+                            }
+                        }
                 }
             } header: {
                 Text("点击备份进行恢复")
@@ -254,6 +312,77 @@ struct BackupRestoreView: View {
     }
 
     // MARK: - 方法
+
+    // MARK: - 导入
+
+    /// picker 回调：取 security scope → **只做轻量预检** → 弹确认。
+    ///
+    /// 这里**不复制任何东西**。复制那 422 MB 必须发生在用户确认之后 ——
+    /// 先复制再问，等于用户还没同意就已经付出了全部磁盘与时间代价，
+    /// 而且"取消"时那份副本已经在盘上了。
+    private func handleImportSelection(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure(let error):
+            restoreError = "\(error)"; showingError = true
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            // scope 从这里一直握到 materialize 结束或用户取消（见 releaseImportSource）。
+            guard url.startAccessingSecurityScopedResource() else {
+                restoreError = BackupImportStaging.StagingError.securityScopeDenied.description
+                showingError = true
+                return
+            }
+            importSource = url
+            do {
+                importPlan = try BackupImportStaging.makePlan(source: url)
+                showingImportConfirm = true
+            } catch {
+                releaseImportSource()
+                restoreError = "\(error)"
+                showingError = true
+            }
+        }
+    }
+
+    /// 确认之后才开始的重活：复制 → 校验 → 应用。
+    private func performImport() async {
+        guard let plan = importPlan, let source = importSource else { return }
+        isImporting = true
+        defer { isImporting = false }
+
+        var staged: URL?
+        do {
+            staged = try BackupImportStaging.materialize(plan, source: source)
+            // 复制完就可以放掉外部 scope —— 后续一律在我们自己的不可变副本上做，
+            // 源文件此后怎么变都影响不到校验与应用（TOCTOU 就此关闭）。
+            releaseImportSource()
+
+            guard let staging = staged else { return }
+            let report = try BackupArchiveReader.validate(archiveAt: staging)
+            try BackupArchiveReader.apply(report, to: inventoryManager)
+
+            // 成功：journal 已被 apply 清除，staging 可以回收。
+            BackupImportStaging.cleanupIfSafe(staging)
+            restoreResidual = RestoreJournal.residual()
+            loadBackups()
+            showingSuccess = true
+        } catch {
+            releaseImportSource()
+            // **失败时不无条件删 staging** —— 若 apply 中断，RestoreJournal 正指向它，
+            // 用户要靠它重跑。cleanupIfSafe 自己会判断。
+            if let staging = staged { BackupImportStaging.cleanupIfSafe(staging) }
+            restoreResidual = RestoreJournal.residual()
+            restoreError = "\(error)"
+            showingError = true
+        }
+    }
+
+    /// 成对释放 security scope。任何退出路径都必须走到这里。
+    private func releaseImportSource() {
+        importSource?.stopAccessingSecurityScopedResource()
+        importSource = nil
+        importPlan = nil
+    }
 
     /// 重跑中断的恢复。归档还在盘上，重跑是幂等的。
     private func retryResidualRestore(_ residual: RestoreJournalEntry) {
@@ -355,7 +484,11 @@ struct BackupRow: View {
                 //  ② 它压根没写 patternGrid 字段，恢复后网格标定会丢。
                 // 不提示的话，用户会以为两种备份等价。
                 if backup.format == .legacyJSON {
-                    Label("旧格式：恢复较慢，且不含拼图网格", systemImage: "exclamationmark.triangle")
+                    // 旧格式的短板必须让用户看见，并给出**可执行的下一步** ——
+                    // 它不能导出（导入只接受新格式，给它导出按钮就是造一份带得走却
+                    // 用不回来的"备份"），恢复时还要整份读入内存、且不含拼图网格。
+                    Label("旧格式：不可导出、不含拼图网格。请点右上角「立即备份」生成新版完整备份。",
+                          systemImage: "exclamationmark.triangle")
                         .font(.caption2)
                         .foregroundStyle(.orange)
                 }

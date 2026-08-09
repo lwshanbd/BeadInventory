@@ -1,6 +1,56 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "导入备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import Backup"
+          }
+        }
+      }
+    },
+    "导入将替换全部数据" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importing will replace all data"
+          }
+        }
+      }
+    },
+    "导入并替换" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import and Replace"
+          }
+        }
+      }
+    },
+    "导出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export"
+          }
+        }
+      }
+    },
+    "旧格式：不可导出、不含拼图网格。请点右上角「立即备份」生成新版完整备份。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Legacy format: cannot be exported and has no pattern grids. Tap Back Up Now to create a new full backup."
+          }
+        }
+      }
+    },
     "上次恢复未完成，当前数据可能不完整" : {
       "localizations" : {
         "en" : {
@@ -57,16 +107,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "That archive is missing — it may have been deleted. Choose another backup from the list below."
-          }
-        }
-      }
-    },
-    "旧格式：恢复较慢，且不含拼图网格" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Legacy format: slower to restore, and does not include pattern grids"
           }
         }
       }
