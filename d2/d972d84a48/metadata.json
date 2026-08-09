@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "d2d972d84a48",
+  "strategy": "manual-commit",
+  "branch": "feat/launch-diagnostics",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "BeadInventory/Managers/BackupArchive.swift",
+    "BeadInventory/Managers/BackupManager.swift",
+    "BeadInventory/Managers/InventoryManager.swift",
+    "BeadInventory/Views/BackupRestoreView.swift",
+    "BeadInventoryTests/BackupArchiveWriterTests.swift",
+    "BeadInventoryTests/BackupRestoreSafetyTests.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d2/d972d84a48/0/metadata.json",
+      "transcript": "/d2/d972d84a48/0/full.jsonl",
+      "content_hash": "/d2/d972d84a48/0/content_hash.txt",
+      "prompt": "/d2/d972d84a48/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16247,
+    "cache_creation_tokens": 5691566,
+    "cache_read_tokens": 197385248,
+    "output_tokens": 632740,
+    "api_call_count": 529
+  }
+}
