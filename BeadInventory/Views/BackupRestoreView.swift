@@ -359,11 +359,19 @@ struct BackupRestoreView: View {
             // 主线程整个卡住：进度遮罩不刷新，Files/iCloud 慢的时候界面直接僵住。
             //
             // 只有 apply 留在主线程 —— 它写 SwiftData，本来就必须在 mainContext 上。
-            let (stagedURL, report) = try await Task.detached(priority: .userInitiated) {
-                let url = try BackupImportStaging.materialize(plan, source: source)
-                return (url, try BackupArchiveReader.validate(archiveAt: url))
+            // **materialize 与 validate 必须分两步 await。**
+            //
+            // 合成一个 detached task 的话，validate 抛错时整个 task 不返回值 ——
+            // 外层的 staged 仍是 nil，catch 里就清理不到**已经落地的**那份 package。
+            // 反复导入"能落地但校验失败"的恶意归档就会一份份堆在盘上。
+            let stagedURL = try await Task.detached(priority: .userInitiated) {
+                try BackupImportStaging.materialize(plan, source: source)
             }.value
-            staged = stagedURL
+            staged = stagedURL          // ← 先记下来，之后任何失败 catch 都清理得到
+
+            let report = try await Task.detached(priority: .userInitiated) {
+                try BackupArchiveReader.validate(archiveAt: stagedURL)
+            }.value
             // 复制完就可以放掉外部 scope —— 后续一律在我们自己的不可变副本上做，
             // 源文件此后怎么变都影响不到校验与应用（TOCTOU 就此关闭）。
             releaseImportSource()

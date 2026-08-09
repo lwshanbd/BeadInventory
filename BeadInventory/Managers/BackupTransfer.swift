@@ -202,6 +202,11 @@ enum BackupImportStaging {
         let manifestURL = source.appendingPathComponent("manifest.json")
         guard fm.fileExists(atPath: manifestURL.path) else { throw StagingError.manifestMissing }
 
+        // **manifest 也必须先验形态。** 之前只验 blob，manifest 却可以是一条指向外部
+        // 目标的符号链接 —— 我们会跟着它读到归档外的文件，与"复制前拒绝 symlink"
+        // 这个安全承诺自相矛盾。它还是**第一个**被读的东西，漏在这里等于前门没锁。
+        try requireRegularFile(at: manifestURL, label: "manifest.json")
+
         let manifestSize = ((try? fm.attributesOfItem(atPath: manifestURL.path))?[.size] as? NSNumber)?.int64Value ?? -1
         guard manifestSize <= BackupArchiveReader.maxManifestBytes else {
             throw StagingError.manifestTooLarge(bytes: manifestSize)
@@ -241,6 +246,10 @@ enum BackupImportStaging {
 
         var entries: [(String, URL, Int64)] = []
         var total: Int64 = manifestSize
+        // 总量检查必须在进 blob 循环**之前**先做一次：只含 manifest 的归档
+        // （blob 数为 0）根本进不了循环，那条上限就永远不会被执行 ——
+        // 生产默认值下触发不到，但 Limits 的契约不该有这种缺口。
+        guard total <= limits.totalBytes else { throw StagingError.totalTooLarge(bytes: total) }
         var blobCount = 0
 
         for project in manifest.projects {
@@ -346,8 +355,10 @@ enum BackupImportStaging {
             // manifest 写**预检时读到的那份字节**，不重新从源读 —— 用户点确认到这里
             // 之间，源上的 manifest 可以被换掉，那样"用户看到的"和"实际导入的"就不是
             // 一回事了。
-            try plan.manifestData.write(to: partial.appendingPathComponent("manifest.json"))
             copied += Int64(plan.manifestData.count)
+            // 与 blob 一样，写之前先查 —— 否则 manifest 这一段绕过了上限契约。
+            guard copied <= limits.totalBytes else { throw StagingError.totalTooLarge(bytes: copied) }
+            try plan.manifestData.write(to: partial.appendingPathComponent("manifest.json"))
 
             for entry in plan.entries {
                 // 复制**前**再验一次形态：预检到现在之间，源可以被换成 symlink 或目录。

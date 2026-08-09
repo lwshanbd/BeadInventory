@@ -206,17 +206,69 @@ final class BackupImportStagingTests: XCTestCase {
         try Data(repeating: 0xCD, count: huge)
             .write(to: source.appendingPathComponent("blobs/a.thumbnail"))
 
+        // **断言必须落在"我们写了多少字节"上，不能只断言最终 staging 为空。**
+        //
+        // 上一版断言的是"失败后目录为空"—— 旧的 copyItem 实现（先搬完 8 MB、
+        // 再发现超限、再清理）**同样会通过**，所以那条断言根本区分不出两种实现，
+        // 证明不了"未完整写入"。这是同一轮里第二次栽在"测试没证明它声称的东西"。
+        //
+        // 改看错误里携带的累计字节：
+        //   · 流式实现  → 在 64 KB 上限处停手，报出的是 ~64 KB
+        //   · copyItem  → 先搬完 8 MB 才检查，报出的会是 ~8 MB
+        // 这个数值把两种实现彻底分开。
+        var reportedBytes: Int64 = -1
         XCTAssertThrowsError(
             try BackupImportStaging.materialize(plan, source: source, limits: limits)
         ) { e in
-            let kind = (e as? BackupImportStaging.StagingError)?.kind
-            XCTAssertTrue(kind == "totalTooLarge" || kind == "entryTooLarge", "实际 \(e)")
+            guard let err = e as? BackupImportStaging.StagingError else {
+                return XCTFail("期望 StagingError，实际 \(e)")
+            }
+            switch err {
+            case .totalTooLarge(let b): reportedBytes = b
+            case .entryTooLarge(_, let b): reportedBytes = b
+            default: XCTFail("拒绝原因不符：\(err)")
+            }
         }
+
+        XCTAssertGreaterThan(reportedBytes, 0)
+        XCTAssertLessThan(
+            reportedBytes, Int64(256 * 1024),
+            """
+            复制在过程中就该停手：上限 64 KB、块 4 KB，最坏只多写一块。
+            实际写了 \(reportedBytes) 字节 —— 接近源大小（\(huge)）说明整个文件被搬完了，
+            那就退回成了"事后拒绝"。
+            """
+        )
 
         // 失败后不残留任何东西
         let root = try BackupImportStaging.stagingRoot()
         let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
         XCTAssertTrue(leftovers.isEmpty, "失败后不应残留：\(leftovers)")
+    }
+
+    /// 只含 manifest（无 blob）的归档也要受总量上限约束。
+    ///
+    /// blob 数为 0 时根本进不了循环，若上限只在循环里查，这条契约就有个洞。
+    /// 生产默认值下触发不到，但 Limits 不该有"某些形状下不生效"的缺口。
+    func testManifestOnlyArchiveStillHitsTotalLimit() throws {
+        try writeManifest(thumbnail: nil)
+        var limits = BackupImportStaging.Limits.production
+        limits.totalBytes = 10        // 比任何 manifest 都小
+        XCTAssertThrowsError(try BackupImportStaging.makePlan(source: source, limits: limits)) { e in
+            XCTAssertEqual((e as? BackupImportStaging.StagingError)?.kind, "totalTooLarge", "实际 \(e)")
+        }
+    }
+
+    /// manifest 本身是符号链接 —— 它是**第一个**被读的东西，漏在这里等于前门没锁。
+    func testRejectsSymlinkedManifest() throws {
+        let outside = FileManager.default.temporaryDirectory
+            .appendingPathComponent("outside-manifest-\(UUID().uuidString).json")
+        try Data("{}".utf8).write(to: outside)
+        defer { try? FileManager.default.removeItem(at: outside) }
+
+        try FileManager.default.createSymbolicLink(
+            at: source.appendingPathComponent("manifest.json"), withDestinationURL: outside)
+        assertPlanRejects("symlinkRejected")
     }
 
     /// 复制前源被换成目录 / 符号链接 —— 预检到复制之间源可以被换掉，所以复制前要再验一次形态。
