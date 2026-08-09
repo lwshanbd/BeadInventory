@@ -92,8 +92,10 @@ final class BackupImportStagingTests: XCTestCase {
             .write(to: source.appendingPathComponent("stray-at-root.bin"))
 
         let plan = try BackupImportStaging.makePlan(source: source)
-        // 计划里只有 manifest.json + 被引用的那一个 blob
-        XCTAssertEqual(plan.entries.count, 2)
+        // entries 只含被引用的 blob —— manifest 走 plan.manifestData（预检时读到的字节），
+        // 不从源重读，见 Plan.manifestData 的说明。
+        XCTAssertEqual(plan.entries.count, 1)
+        XCTAssertFalse(plan.manifestData.isEmpty)
         XCTAssertFalse(plan.entries.contains { $0.relativePath.contains("unreferenced") })
         XCTAssertFalse(plan.entries.contains { $0.relativePath.contains("stray") })
 
@@ -181,37 +183,104 @@ final class BackupImportStagingTests: XCTestCase {
 
     // MARK: - 源在 plan 与 materialize 之间被改动(TOCTOU)
 
-    /// 复制途中源文件变大。
+    /// 复制途中源文件变大 —— **复制必须在过程中受限,不是事后拒绝**。
     ///
-    /// 预检按 plan 时的大小算，但真正落地的是复制时的大小 —— 若只信 plan，
-    /// 一个在两步之间被换大的文件就能突破总量上限。materialize 必须按**落地后的实际大小**
-    /// 重新累计。（上限做成可注入就是为了能真的触发这条，而不是读代码相信它有效。）
-    func testGrowingSourceBetweenPlanAndCopyIsCaught() throws {
-        let small = Data(repeating: 0xAB, count: 1024)
-        let ref = try writeBlob(small, name: "a.thumbnail")
+    /// 这条用例此前用 200 KB 验证,通过的只是"copyItem 返回后发现超限"。
+    /// 那给了假信心:真实攻击是把源换成 200 GB,`copyItem` 会**先搬完**,
+    /// 我们只能在灾难之后看到落地大小。改成流式复制之后,超限在写入前就被拦下,
+    /// 最坏只多写一个块。
+    ///
+    /// 断言落在**落地字节数**上:必须远小于源大小,证明我们没有把整个源搬完。
+    func testCopyIsBoundedDuringTransferNotAfter() throws {
+        let ref = try writeBlob(Data(repeating: 0xAB, count: 1024), name: "a.thumbnail")
         try writeManifest(thumbnail: ref)
 
-        // 上限设在 plan 时的总量之上一点点，让"按 plan 算"能过、"按落地算"必须挂
-        let plan = try BackupImportStaging.makePlan(source: source, totalLimit: 64 * 1024)
-        XCTAssertLessThan(plan.totalBytes, 64 * 1024)
+        var limits = BackupImportStaging.Limits.production
+        limits.totalBytes = 64 * 1024          // 上限 64 KB
+        limits.copyBlockBytes = 4096           // 4 KB 一块
 
-        // plan 之后把源换成大文件
-        try Data(repeating: 0xCD, count: 200 * 1024)
+        let plan = try BackupImportStaging.makePlan(source: source, limits: limits)
+
+        // plan 之后把源换成远超上限的大文件（代表那个 200 GB）
+        let huge = 8 * 1024 * 1024
+        try Data(repeating: 0xCD, count: huge)
             .write(to: source.appendingPathComponent("blobs/a.thumbnail"))
 
         XCTAssertThrowsError(
-            try BackupImportStaging.materialize(plan, source: source, totalLimit: 64 * 1024)
+            try BackupImportStaging.materialize(plan, source: source, limits: limits)
         ) { e in
-            XCTAssertEqual((e as? BackupImportStaging.StagingError)?.kind, "totalTooLarge",
-                           "必须按落地后的实际大小累计，不能只信 plan 里的值：\(e)")
+            let kind = (e as? BackupImportStaging.StagingError)?.kind
+            XCTAssertTrue(kind == "totalTooLarge" || kind == "entryTooLarge", "实际 \(e)")
         }
-        // 失败时不留半成品
+
+        // 失败后不残留任何东西
         let root = try BackupImportStaging.stagingRoot()
         let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
-        XCTAssertTrue(leftovers.filter { $0.hasSuffix(".partial") }.isEmpty, "失败后不应残留 .partial")
+        XCTAssertTrue(leftovers.isEmpty, "失败后不应残留：\(leftovers)")
     }
 
-    /// staging 之后源被替换成符号链接 —— 后续一律走 staging 副本，源怎么变都无关。
+    /// 复制前源被换成目录 / 符号链接 —— 预检到复制之间源可以被换掉，所以复制前要再验一次形态。
+    func testSourceSwappedToDirectoryBeforeCopyIsRejected() throws {
+        let ref = try writeBlob(Data(repeating: 0xAB, count: 512), name: "a.thumbnail")
+        try writeManifest(thumbnail: ref)
+        let plan = try BackupImportStaging.makePlan(source: source)
+
+        let blob = source.appendingPathComponent("blobs/a.thumbnail")
+        try FileManager.default.removeItem(at: blob)
+        try FileManager.default.createDirectory(at: blob, withIntermediateDirectories: true)
+
+        XCTAssertThrowsError(try BackupImportStaging.materialize(plan, source: source)) { e in
+            XCTAssertEqual((e as? BackupImportStaging.StagingError)?.kind, "notRegularFile", "实际 \(e)")
+        }
+    }
+
+    /// manifest 在用户确认之后被换掉 —— staging 必须写**预检时读到的那份字节**。
+    ///
+    /// 否则"用户看到的项目数/体积"和"实际导入的东西"不是一回事。
+    func testManifestSwappedAfterPlanDoesNotAffectStaging() throws {
+        let ref = try writeBlob(Data(repeating: 0xAB, count: 256), name: "a.thumbnail")
+        try writeManifest(thumbnail: ref)
+        let plan = try BackupImportStaging.makePlan(source: source)
+
+        try Data("{ totally different".utf8)
+            .write(to: source.appendingPathComponent("manifest.json"))
+
+        let staged = try BackupImportStaging.materialize(plan, source: source)
+        defer { try? FileManager.default.removeItem(at: staged) }
+
+        // staging 里的 manifest 是预检那份，仍然可解析、可校验
+        let report = try BackupArchiveReader.validate(archiveAt: staged)
+        XCTAssertEqual(report.manifest.projects.count, 1)
+    }
+
+    // MARK: - 条目数上限在 staging 之前
+
+    /// 恶意 manifest 声明海量项目：必须在 makePlan 就被拒，
+    /// 不能等到用户确认并复制完几十万个文件之后才在 validate 阶段发现。
+    func testTooManyProjectsRejectedBeforeStaging() throws {
+        var projects: [ArchivedProject] = []
+        for _ in 0..<50 {
+            projects.append(ArchivedProject(
+                id: UUID(), name: "P", date: Date(), totalBeads: 0, brandId: nil,
+                isArchived: false, parentId: nil, isPlanned: false, executedDate: nil,
+                completedDate: nil, colorSystemRaw: "MARD", beadUsage: [],
+                thumbnail: nil, finishedImage: nil, displayThumbnail: nil, patternGrid: nil))
+        }
+        let m = BackupArchiveManifest(
+            formatVersion: 1, createdAt: Date(), appVersion: "t", consistencyModel: "per-record",
+            projects: projects, brands: [], brandStocks: [], customColors: [],
+            purchaseRecords: [], currentBrandId: nil)
+        let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
+        try enc.encode(m).write(to: source.appendingPathComponent("manifest.json"))
+
+        var limits = BackupImportStaging.Limits.production
+        limits.projects = 10
+        XCTAssertThrowsError(try BackupImportStaging.makePlan(source: source, limits: limits)) { e in
+            XCTAssertEqual((e as? BackupImportStaging.StagingError)?.kind, "tooManyEntries", "实际 \(e)")
+        }
+    }
+
+        /// staging 之后源被替换成符号链接 —— 后续一律走 staging 副本，源怎么变都无关。
     ///
     /// 这条钉的是 TOCTOU 关闭点：materialize 完成后，validate/apply 读的必须是我们
     /// 自己的不可变副本。

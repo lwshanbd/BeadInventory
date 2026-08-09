@@ -91,6 +91,10 @@ struct BeadInventoryApp: App {
             AppLogger.shared.flushNow()
         }
 
+        // 清掉没人引用的导入暂存（进程在 rename 之后、apply 之前被杀会留下它，
+        // 可能有几百 MB）。被 RestoreJournal 指向的那份不动 —— 用户要靠它重跑。
+        BackupImportStaging.cleanupOrphans()
+
         let residual = LaunchDiagnostics.residualMarker()
         if let residual {
             // 逐项显式标注类型:混类型 [String: Any] 字面量 + 多个 `??`

@@ -352,13 +352,23 @@ struct BackupRestoreView: View {
 
         var staged: URL?
         do {
-            staged = try BackupImportStaging.materialize(plan, source: source)
+            // **复制与校验必须离开 UI actor。**
+            //
+            // 这个 Task 继承 View 的 MainActor 隔离，而 materialize 是阻塞 I/O、
+            // validate 要对全部 blob 算 SHA-256 —— 直接在这儿同步跑，422 MB 期间
+            // 主线程整个卡住：进度遮罩不刷新，Files/iCloud 慢的时候界面直接僵住。
+            //
+            // 只有 apply 留在主线程 —— 它写 SwiftData，本来就必须在 mainContext 上。
+            let (stagedURL, report) = try await Task.detached(priority: .userInitiated) {
+                let url = try BackupImportStaging.materialize(plan, source: source)
+                return (url, try BackupArchiveReader.validate(archiveAt: url))
+            }.value
+            staged = stagedURL
             // 复制完就可以放掉外部 scope —— 后续一律在我们自己的不可变副本上做，
             // 源文件此后怎么变都影响不到校验与应用（TOCTOU 就此关闭）。
             releaseImportSource()
 
-            guard let staging = staged else { return }
-            let report = try BackupArchiveReader.validate(archiveAt: staging)
+            let staging = stagedURL
             try BackupArchiveReader.apply(report, to: inventoryManager)
 
             // 成功：journal 已被 apply 清除，staging 可以回收。

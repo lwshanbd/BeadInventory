@@ -1,3 +1,6 @@
 /* English */
 "CFBundleDisplayName" = "BeadInventory";
 "CFBundleName" = "BeadInventory";
+
+/* 导出的备份归档类型描述。中文见 Info.plist 的 UTTypeDescription。 */
+"com.beadinventory.backup-archive" = "Bead Inventory Backup";
