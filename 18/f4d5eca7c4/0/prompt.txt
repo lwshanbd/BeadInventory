@@ -328,3 +328,60 @@ metadata 已先取快照，随后 `blobs(for:)` 找不到行时返回全 `nil`�
 ---
 
 导入导出你要怎么做？
+
+---
+
+结论：package 方案通过，ZIP 不必现在做；但原设计不能直接开工。 先补三条约束，否则会重新引入数据不可恢复或磁盘耗尽风险。
+
+1. 旧 JSON 不应提供“导出”按钮。
+方案同时说“旧 JSON 可导出”与“旧 JSON 不可导入”，这会产出一份用户带得走、重装后却用不回来的“备份”，直接违背唯一验收标准。旧格式本身还漏过 `patternGrid`。
+建议：仅允许导出 `.archiveV1`；旧行显示“请先立即生成新版完整备份”，完成后再导出新版。
+2. 不能递归 `copyItem` 整个外部 package。
+manifest 的“声明总量”不可信；目录还可以塞入 manifest 未引用的 200 GB 文件或大量条目。先整体复制再校验，正是资源耗尽入口。当前校验器只验证 manifest 引用的 blob，不负责发现这类额外文件。见 [BackupArchive.swift (line 529)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:529)。
+应改为“按清单、带上限的流式 staging”：
+
+```
+选择外部 package
+→ 受 security scope 保护，读取有大小上限的 manifest
+→ 仅用它生成“复制计划”（不信任结论）
+→ 显示替换确认
+→ 逐个复制 manifest 与被引用 blob 到 stage.partial
+   - 仅常规文件，拒绝所有 symlink
+   - 每项和累计实际字节在复制前/复制中限额
+   - 拒绝额外路径、未知条目、目录层级
+→ 完整 validate(staging)
+→ apply(staging)
+```
+
+确认应放在“轻量预检后、422 MB 复制前”，而非复制完成后。磁盘预检也应以源文件的实际大小为准，并预留至少“staging 一份 + 恢复写入一份 + 安全余量”的空间，不可只看 manifest 声明值。
+3. staging 不能在失败时立即删除。
+`apply` 中断后，`RestoreJournal` 会指向 staging 归档，以便用户重跑恢复。见 [BackupArchive.swift (line 702)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:702)。因此：
+   * 校验失败、用户取消：删 staging；
+   * apply 成功且 journal 清除：删 staging；
+   * apply 抛错或进程被杀：保留 staging，直到重试成功或用户明确放弃。
+否则刚补好的“半恢复可重试”机制会因归档被删而失效。
+
+对 §1 的具体建议：
+
+* 选择 A：package。Apple 将 `com.apple.package` 定义为“以单一文件形式呈现的目录”，适合 Files / iCloud Drive / AirDrop 的 Apple-only 场景。[Apple 文档](https://developer.apple.com/documentation/uniformtypeidentifiers/uttypepackage)
+* UTI 除 `com.apple.package` 外，还应声明 `public.content`；后者是 AirDrop 可共享文档所需的语义。[Apple UTI 指南](https://developer.apple.com/documentation/uniformtypeidentifiers/defining-file-and-data-types-for-your-app)
+* 不需要现在加 `CFBundleDocumentTypes`：当前只有应用内 picker，并没有“从 Files 直接打开 App”的路由处理。先只注册 exported UTI、扩展名和本地化类型描述即可。
+* 不建议裸用 `ShareLink(item: URL)`。做一个 `BackupExport: Transferable`，使用 `FileRepresentation(exportedContentType: .beadInventoryBackup, shouldAllowToOpenInPlace: false)`，明确传输的是该 package，且接收方拿副本而非原归档。Apple 也建议大文件使用精确内容类型的 `FileRepresentation`。[Apple 文档](https://developer.apple.com/documentation/coretransferable/filerepresentation)
+* `fileImporter` 的 security scope 要仅覆盖 source 的预检与复制，并严格成对释放。 [Apple 文档](https://developer.apple.com/documentation/photosui/photospicker/fileimporter%28ispresented%3Aallowedcontenttypes%3Aoncompletion%3A%29)
+
+对待裁决的回答：
+
+* Q1：package。 除非近期确有 Android、网页上传或非 Apple 客户端需求。
+* Q2：不做 metadata-only backup。 若以后做，只能叫“数据摘要/报表”，文件名与 UI 都不能含“备份”。
+* Q3：需要提示，但不做伪进度。 ShareLink 只能证明“已交给系统”，不能证明 iCloud 已上传完成。文案应提示用户在 Files 中确认 package 已出现、且 iCloud 不再显示等待上传，再卸载 App。
+* Q4：建议一次性、可关闭的卡片，不要启动弹窗。 在首次成功生成新版归档后提示“创建一份 App 外副本”；除非能验证回流，否则不要把“点过分享”记成“已保护”。
+
+验收测试还应增加：
+
+* 外部 package 含未引用超大文件、超深目录、任意 symlink；
+* manifest 谎报总量、blob 在复制途中增长；
+* staging 后源文件被替换；
+* staging 完成后杀进程、`apply` 中途杀进程，确认重启后仍能重试；
+* 真机手工链路：iCloud Drive 导出 → 删除 App → 重装 → 导入 → 全字段与 blob SHA-256 比对。
+
+注：本地工作区当前已前进到 `89c6bad`；其中此前指出的“项目消失编码为空图”、恢复残留提示，以及总量读前检查都已落地。
