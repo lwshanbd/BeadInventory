@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "86fd37b58c89",
+  "strategy": "manual-commit",
+  "branch": "feat/launch-diagnostics",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "BeadInventory/Localizable.xcstrings"
+  ],
+  "sessions": [
+    {
+      "metadata": "/86/fd37b58c89/0/metadata.json",
+      "transcript": "/86/fd37b58c89/0/full.jsonl",
+      "content_hash": "/86/fd37b58c89/0/content_hash.txt",
+      "prompt": "/86/fd37b58c89/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1686,
+    "cache_creation_tokens": 4757953,
+    "cache_read_tokens": 162185227,
+    "output_tokens": 481884,
+    "api_call_count": 389
+  }
+}
