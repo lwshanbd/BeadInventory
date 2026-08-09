@@ -15,13 +15,34 @@
 			</array>
 		</dict>
 	</array>
+	<key>UIAppFonts</key>
+	<array>
+		<string>ZCOOLKuaiLe-Regular.ttf</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
 	</array>
-	<key>UIAppFonts</key>
+	<key>UTExportedTypeDeclarations</key>
 	<array>
-		<string>ZCOOLKuaiLe-Regular.ttf</string>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>啃小仓备份</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.beadinventory.backup-archive</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>beadbackup</string>
+				</array>
+			</dict>
+		</dict>
 	</array>
 </dict>
 </plist>
