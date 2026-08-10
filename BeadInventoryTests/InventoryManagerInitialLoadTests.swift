@@ -468,6 +468,35 @@ final class InventoryManagerInitialLoadTests: XCTestCase {
         XCTAssertTrue(m.isUsingLocalFallbackMode, "过期结果不应把用户拉出本地模式")
     }
 
+    func test_local_fallback_does_not_persist_project_image_updates() async throws {
+        let container = try makeFileBackedContainer()
+        let seedContext = ModelContext(container)
+        let originalThumbnail = Data([0x01, 0x02, 0x03])
+        let project = SDProjectRecord(
+            name: "本地模式图片",
+            thumbnail: originalThumbnail,
+            beadUsages: []
+        )
+        seedContext.insert(project)
+        try seedContext.save()
+        let projectID = project.id
+
+        let manager = InventoryManager(modelContext: ModelContext(container))
+        manager.performInitialLoadIfNeeded(reason: "unitTest.localFallbackBlobs")
+        await manager.initialLoadTask?.value
+        manager.continueInLocalFallbackMode(reason: "unitTest")
+
+        manager.updateProjectThumbnail(projectID, thumbnail: Data([0xAA]))
+        manager.updateProjectFinishedImage(projectID, finishedImage: Data([0xBB]))
+
+        let verificationContext = ModelContext(container)
+        var descriptor = FetchDescriptor<SDProjectRecord>(predicate: #Predicate { $0.id == projectID })
+        descriptor.fetchLimit = 1
+        let stored = try XCTUnwrap(verificationContext.fetch(descriptor).first)
+        XCTAssertEqual(stored.thumbnail, originalThumbnail)
+        XCTAssertNil(stored.finishedImage)
+    }
+
     /// 读取迟迟不返回时，超时看门狗必须放出出口按钮，而不是让 UI 永远转圈。
     ///
     /// 这是异步化引入的新失败模式：旧同步实现卡死至少还会被系统看门狗杀掉进程；异步版本

@@ -4440,6 +4440,10 @@ class InventoryManager: ObservableObject {
         patternGridData: Data?? = nil,
         displayThumbnail: Data?? = nil
     ) -> Bool {
+        guard !isUsingLocalFallbackMode else {
+            logWarning("set_blobs_skipped_local_fallback", metadata: ["projectId": projectId.uuidString])
+            return false
+        }
         guard let context = modelContext else {
             logError("set_blobs_no_context", metadata: ["projectId": projectId.uuidString])
             return false
@@ -4495,6 +4499,10 @@ class InventoryManager: ObservableObject {
         finishedImage: Data?,
         autoFillCompletedDate: Bool
     ) {
+        guard !isUsingLocalFallbackMode else {
+            logWarning("set_finished_image_skipped_local_fallback", metadata: ["projectId": projectId.uuidString])
+            return
+        }
         // 显式 guard context —— 之前用 `try modelContext?.save()`，nil context 时整个表达式
         // 是 nil 不抛、不 log，但底下 ID 集合 + revision 还是 bump → 用户看到状态变了但
         // SwiftData 里啥都没写。改成同 `_setProjectBlobsDirectly` 的结构：先 guard，
