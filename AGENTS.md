@@ -1,5 +1,16 @@
 # Repository Guidelines
 
+## 第一原则：我们在做一个给人用的 App
+
+BeadInventory 是真人每天使用的 iOS GUI App。所有改动与验证的判定基准只有一个：**用户在 App 里能不能更顺、更少困惑地把事情做完**，而不是任何指标数字。
+
+完整说明见 [CLAUDE.md「第一原则」](CLAUDE.md)，要点：
+
+- 验证优先级：模拟器里真走一遍用户路径并截图 > 看 UI 本身（截断/深色模式/空态/错误态/滚动）> 只对易静默出错的纯逻辑写单元测试。
+- 不为"有测试"而堆测试，不追覆盖率，不把覆盖率/准确率/耗时百分比当验收标准或成果。
+- 指标只有能翻译成用户视角的一句话时才值得提（"打开就能看到库存" ✅ / "内存下降 12%" ❌）。
+- AI 识别一定会错：目标是让错了也好改（可编辑、可撤销、不确定处可见），而不是刷准确率。
+
 ## Project Structure & Module Organization
 
 - `BeadInventory/`: main iOS app (SwiftUI + SwiftData)
@@ -31,8 +42,13 @@ Requirements: iOS 17.0+, Xcode 15.0+.
 
 ## Testing Guidelines
 
-- Use XCTest (`BeadInventoryTests` / `BeadInventoryUITests`) when adding tests.
-- Prefer fast, deterministic tests for `Managers/` logic; add UI tests only for critical flows (Scan, inventory adjustments).
+首要判据见上文「第一原则」——测试是为了保护用户体验，不是为了产出数字。
+
+- 默认验证方式是**在模拟器里跑一遍对应的用户路径并截图**，不是加一个测试用例。
+- 只在"错了用户看不见"的纯逻辑上写 XCTest（`BeadInventoryTests`）：色号/跨品牌换算、库存加减、撤销回滚、数据迁移。
+- UI 测试仅用于关键主流程（Scan、库存增减），且必须是稳定的；易抖动的 UI 测试不如一张截图。
+- 现有测试照常跑、不要删；但不要新增只是把实现照抄一遍的测试，也不要在 PR 里汇报覆盖率。
+- 已知噪声：多 worktree 并发跑 test 会争用同一台模拟器导致 "signal kill"，那是环境问题不是代码问题。
 
 ## Commit & Pull Request Guidelines
 
