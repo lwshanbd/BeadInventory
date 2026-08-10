@@ -22,6 +22,9 @@ class InventoryManager: ObservableObject {
     @Published var customColors: [CustomColor] = []  // 自定义色号
     @Published var purchaseRecords: [PurchaseRecord] = []  // 运输中的购买记录
     @Published private(set) var isInitialLoadInProgress = false
+    /// 首次可用数据已提交。供 App lifecycle 把纯后台迁移安排在用户能操作之后，
+    /// 而不是与首轮数据库读取争抢同一个 SQLite store。
+    @Published private(set) var hasCompletedInitialLoad = false
     @Published private(set) var initialLoadErrorMessage: String?
 
     // MARK: - 项目图片 Blob 元数据
@@ -225,6 +228,15 @@ class InventoryManager: ObservableObject {
     // 远程变更刷新防抖
     private var remoteRefreshWorkItem: DispatchWorkItem?
     private var remoteRefreshScheduledAt: Date?
+    /// CloudKit 首次导入会按记录批次连续发出数百个通知。每个通知都全量读取项目表会让
+    /// 用户一直卡在 refresh 里；这里记录一个 burst，只在静默窗口结束后合并为一次读取。
+    private var cloudKitRefreshWorkItem: DispatchWorkItem?
+    private var cloudKitRefreshScheduledAt: Date?
+    private var cloudKitChangeBurstStartedAt: Date?
+    private var latestCloudKitChangeAt: Date?
+    private var hasPendingCloudKitRefresh = false
+    private let cloudKitQuietPeriod: TimeInterval = 8
+    private let cloudKitMaximumDeferral: TimeInterval = 30
     private var lastPersistentRefreshAt: Date = .distantPast
     private let minimumRefreshInterval: TimeInterval = 1.5
 
@@ -341,10 +353,6 @@ class InventoryManager: ObservableObject {
 
     private func logError(_ event: String, metadata: [String: Any] = [:]) {
         AppLogger.shared.error("InventoryManager", event, metadata: metadata)
-    }
-
-    var hasCompletedInitialLoad: Bool {
-        hasCompletedInitialPersistentLoad
     }
 
     func retryInitialLoad(reason: String = "manualRetry") {
@@ -628,37 +636,42 @@ class InventoryManager: ObservableObject {
     }
 
     func getStock(brandId: UUID, mardCode: String) -> BrandStock? {
-        // 快路径：索引命中且行内容匹配。
-        if let i = stockPositionIndex[brandId]?[mardCode], i < brandStocks.count {
-            let stock = brandStocks[i]
-            if stock.brandId == brandId && stock.mardCode == mardCode {
-                return stock
+        let index = stockPositionIndex
+
+        // 索引缺 key 就是「这条库存不存在」。`stockPositionIndex` 在 brandStocks 的每次
+        // 写入后都会标脏、下一次读时从同一数组完整重建，因此不能把正常的 nil 查询再
+        // 降级为全表扫描。
+        //
+        // 计划页会为每个「缺豆」颜色查询每个适用品牌。过去每一次查不到库存都扫描完整
+        // brandStocks（大库约 3.2 万行），把一次 tab 切换放大到数百万次比较并卡死主线程。
+        guard let i = index[brandId]?[mardCode], i < brandStocks.count else {
+            return nil
+        }
+
+        let stock = brandStocks[i]
+        if stock.brandId == brandId && stock.mardCode == mardCode {
+            return stock
+        }
+
+        // 索引命中却指向了不匹配的行是编程错误，而不是正常的「库存不存在」。强制重建
+        // 一次并重试，既能在 DEBUG 暴露问题，也不会让热路径退化回 O(N) 的线性扫描。
+        assertionFailure(
+            "stockPositionIndex stale at [\(brandId)][\(mardCode)] → row \(i)"
+        )
+        stockPositionIndexDirty = true
+        if let rebuiltIndex = stockPositionIndex[brandId]?[mardCode], rebuiltIndex < brandStocks.count {
+            let rebuiltStock = brandStocks[rebuiltIndex]
+            if rebuiltStock.brandId == brandId && rebuiltStock.mardCode == mardCode {
+                return rebuiltStock
             }
-            // 命中到这里说明索引指向了不匹配的行——属于"索引被绕过维护"的 bug。
-            // DEBUG 立刻暴露；release 走 AppLogger 上报到日志流，再线性扫描兜底
-            // 避免给用户错数据。两条信号至少一条会被开发者看到，不让 bug 静默。
-            assertionFailure(
-                "stockPositionIndex stale at [\(brandId)][\(mardCode)] → row \(i)"
-            )
-            logError("stock_index_stale", metadata: [
-                "brandId": "\(brandId)",
-                "mardCode": mardCode,
-                "row": i
-            ])
         }
-        // 慢路径：索引缺 key。正常情况是「真的没这条记录」→ 线性扫描返回 nil。
-        // 异常情况是「索引漏 key 但数组里有这一行」→ 这才是 bug，要单独上报。
-        let hit = brandStocks.first { $0.brandId == brandId && $0.mardCode == mardCode }
-        if hit != nil, stockPositionIndex[brandId]?[mardCode] == nil {
-            assertionFailure(
-                "stockPositionIndex missing key for existing row [\(brandId)][\(mardCode)]"
-            )
-            logError("stock_index_missing_key", metadata: [
-                "brandId": "\(brandId)",
-                "mardCode": mardCode
-            ])
-        }
-        return hit
+
+        logError("stock_index_stale", metadata: [
+            "brandId": "\(brandId)",
+            "mardCode": mardCode,
+            "row": i
+        ])
+        return nil
     }
 
     private func rebuildStockPositionIndex() {
@@ -1211,11 +1224,96 @@ class InventoryManager: ObservableObject {
     }
 
     func cancelScheduledRefresh(reason: String) {
-        guard remoteRefreshWorkItem != nil || remoteRefreshScheduledAt != nil else { return }
+        guard remoteRefreshWorkItem != nil || remoteRefreshScheduledAt != nil
+            || cloudKitRefreshWorkItem != nil || cloudKitRefreshScheduledAt != nil else { return }
         remoteRefreshWorkItem?.cancel()
         remoteRefreshWorkItem = nil
         remoteRefreshScheduledAt = nil
+        cloudKitRefreshWorkItem?.cancel()
+        cloudKitRefreshWorkItem = nil
+        cloudKitRefreshScheduledAt = nil
         logInfo("schedule_refresh_cancelled", metadata: ["reason": reason])
+    }
+
+    /// 记录 CloudKit 已经合并到本地 store 的变更。通知只表示「还有一批写入」，
+    /// 不是「这一批已经是最终状态」；因此不应直接启动昂贵的全量读取。
+    func recordCloudKitRemoteChange() {
+        guard modelContext != nil else {
+            logWarning("cloudkit_remote_change_skipped_no_model_context")
+            return
+        }
+
+        let now = Date()
+        if cloudKitChangeBurstStartedAt == nil {
+            cloudKitChangeBurstStartedAt = now
+            logInfo("cloudkit_remote_change_burst_started")
+        }
+        latestCloudKitChangeAt = now
+        hasPendingCloudKitRefresh = true
+
+        // 初始读取本身已是一个一致快照。等待它提交后再观察同步是否安静，避免刚完成
+        // 首次加载就立刻开始第二轮完整项目读取。
+        guard hasCompletedInitialPersistentLoad, !isLoadingPersistentStore else { return }
+        schedulePendingCloudKitRefreshIfNeeded()
+    }
+
+    /// 以「最后一次通知后静默 N 秒」为准，而非旧逻辑的「第一条通知后 N 秒」。
+    /// `maximumDeferral` 是活性上限：持续同步很久时仍会周期性让 UI 看到新数据，
+    /// 但不会退化为每 1.2 秒重新读取一遍数 GB 项目库。
+    private func schedulePendingCloudKitRefreshIfNeeded() {
+        guard hasPendingCloudKitRefresh,
+              hasCompletedInitialPersistentLoad,
+              !isLoadingPersistentStore else { return }
+        guard let burstStartedAt = cloudKitChangeBurstStartedAt,
+              let latestChangeAt = latestCloudKitChangeAt else { return }
+
+        let now = Date()
+        let quietDeadline = latestChangeAt.addingTimeInterval(cloudKitQuietPeriod)
+        let maximumDeadline = burstStartedAt.addingTimeInterval(cloudKitMaximumDeferral)
+        let deadline = min(quietDeadline, maximumDeadline)
+
+        let hadScheduledRefresh = cloudKitRefreshWorkItem != nil
+            && cloudKitRefreshScheduledAt != nil
+        if let existing = cloudKitRefreshWorkItem,
+           !existing.isCancelled,
+           let scheduledAt = cloudKitRefreshScheduledAt,
+           abs(scheduledAt.timeIntervalSince(deadline)) < 0.01 {
+            return
+        }
+        cloudKitRefreshWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.cloudKitRefreshWorkItem = nil
+            self.cloudKitRefreshScheduledAt = nil
+            guard self.hasPendingCloudKitRefresh else { return }
+            guard !self.isLoadingPersistentStore, !self.isSaving else {
+                // 在读取/保存窗口不能丢这批变更；把 burst 从现在重新计时，等稳定后再合并。
+                self.cloudKitChangeBurstStartedAt = Date()
+                self.latestCloudKitChangeAt = Date()
+                self.schedulePendingCloudKitRefreshIfNeeded()
+                return
+            }
+
+            self.hasPendingCloudKitRefresh = false
+            self.cloudKitChangeBurstStartedAt = nil
+            self.latestCloudKitChangeAt = nil
+            self.logInfo("cloudkit_remote_change_burst_refreshing", metadata: [
+                "quietSeconds": self.cloudKitQuietPeriod,
+                "maximumDeferralSeconds": self.cloudKitMaximumDeferral
+            ])
+            self.refreshFromPersistentStore(reason: "remoteChangeNotification")
+        }
+        cloudKitRefreshWorkItem = workItem
+        cloudKitRefreshScheduledAt = deadline
+        // 同步一批数千条记录时可能有数百个通知。只记录 burst 首次排程，后续通知仅
+        // 重置内存里的 deadline；否则诊断文件本身又会被无意义的小写入刷爆。
+        if !hadScheduledRefresh {
+            logInfo("cloudkit_remote_change_refresh_scheduled", metadata: [
+                "delayMs": max(0, Int(deadline.timeIntervalSince(now) * 1_000))
+            ])
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, deadline.timeIntervalSince(now)), execute: workItem)
     }
 
     /// 远程变更到达时的防抖刷新（避免 CloudKit 短时间多次通知导致频繁全量 reload）
@@ -1563,6 +1661,7 @@ class InventoryManager: ObservableObject {
                 self.initialLoadTask = nil
                 self.isLoadingPersistentStore = false
                 self.replayDeferredRefreshIfNeeded()
+                self.schedulePendingCloudKitRefreshIfNeeded()
             }
             self.initialLoadTimeoutTask?.cancel()
             self.initialLoadTimeoutTask = nil
@@ -1674,25 +1773,46 @@ class InventoryManager: ObservableObject {
                 ])
             }
 
-            do {
-                // 只投影 metadata 列；beadUsages relationship 会在这个后台 context 上 fault。
-                var descriptor = FetchDescriptor<SDProjectRecord>(
-                    sortBy: [SortDescriptor(\.date, order: .reverse)]
-                )
-                descriptor.propertiesToFetch = [
-                    \.id, \.name, \.date, \.totalBeads, \.brandId, \.isArchived,
-                    \.parentId, \.isPlanned, \.executedDate, \.completedDate, \.colorSystemRaw
-                ]
-                let loaded = try context.fetch(descriptor).map { $0.toMetadataStruct() }
+            let projectStoreURL = container.configurations.first?.url
+            let rawProjectResult = projectStoreURL.map(ProjectMetadataScanner.load)
+            switch rawProjectResult {
+            case .some(.success(let loaded)):
                 result.projects = loaded
                 AppLogger.shared.info("InventoryManager", "load_projects_success", metadata: [
                     "count": loaded.count,
-                    "execution": "background"
+                    "execution": "background",
+                    "source": "rawSQLite"
                 ])
-            } catch {
-                result.errors["projects"] = "\(error)"
-                AppLogger.shared.error("InventoryManager", "load_projects_failed", metadata: [
-                    "error": "\(error)",
+            case .some(.failure(.unsupportedStore)), .none:
+                // in-memory 测试库或未来 schema 变更时保留 SwiftData 兼容路径。
+                // 这条路径不适合真实大库：访问 @Model 会将 inline 图片行 fault 进内存。
+                do {
+                    var descriptor = FetchDescriptor<SDProjectRecord>(
+                        sortBy: [SortDescriptor(\.date, order: .reverse)]
+                    )
+                    descriptor.propertiesToFetch = [
+                        \.id, \.name, \.date, \.totalBeads, \.brandId, \.isArchived,
+                        \.parentId, \.isPlanned, \.executedDate, \.completedDate, \.colorSystemRaw
+                    ]
+                    let loaded = try context.fetch(descriptor).map { $0.toMetadataStruct() }
+                    result.projects = loaded
+                    AppLogger.shared.info("InventoryManager", "load_projects_success", metadata: [
+                        "count": loaded.count,
+                        "execution": "background",
+                        "source": "swiftDataFallback"
+                    ])
+                } catch {
+                    result.errors["projects"] = "\(error)"
+                    AppLogger.shared.error("InventoryManager", "load_projects_failed", metadata: [
+                        "error": "\(error)",
+                        "execution": "background"
+                    ])
+                }
+            case .some(.failure(.transient)):
+                // 忙库时绝不能退回 SwiftData 全行 fault，否则正好在 CloudKit 写入高峰把
+                // 图片 BLOB 物化。让既有的首次加载重试机制稍后用稳定快照再读。
+                result.errors["projects"] = "raw SQLite store temporarily unavailable"
+                AppLogger.shared.warning("InventoryManager", "load_projects_deferred_store_busy", metadata: [
                     "execution": "background"
                 ])
             }
@@ -2010,6 +2130,7 @@ class InventoryManager: ObservableObject {
         isDataLoaded = true
         finishInitialLoadSuccess()
         hasCompletedInitialPersistentLoad = true
+        hasCompletedInitialLoad = true
         if !allEmpty {
             UserDefaults.standard.set(true, forKey: hasExistingDataKey)
         }
@@ -2158,6 +2279,7 @@ class InventoryManager: ObservableObject {
             self.refreshTask = nil
             self.isLoadingPersistentStore = false
             self.replayDeferredRefreshIfNeeded()
+            self.schedulePendingCloudKitRefreshIfNeeded()
         }
     }
 

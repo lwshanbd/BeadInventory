@@ -104,6 +104,7 @@
 		FF0C4201A00C0001DEADBEEF /* ProjectImageCompactionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0C4201A00C0002DEADBEEF /* ProjectImageCompactionScanner.swift */; };
 		FF0C4301A00D0001DEADBEEF /* ProjectImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0C4301A00D0002DEADBEEF /* ProjectImageLoader.swift */; };
 		FF0C4401A00E0001DEADBEEF /* HistorySnapshotCompactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0C4401A00E0002DEADBEEF /* HistorySnapshotCompactor.swift */; };
+		F10000000000000000000001 /* ProjectMetadataScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* ProjectMetadataScanner.swift */; };
 		TM0001A0000000000001BFIL /* ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = TM0001A0000000000001FILE /* ThemeManager.swift */; };
 /* End PBXBuildFile section */
 
@@ -235,6 +236,7 @@
 		FF0C4201A00C0002DEADBEEF /* ProjectImageCompactionScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectImageCompactionScanner.swift; sourceTree = "<group>"; };
 		FF0C4301A00D0002DEADBEEF /* ProjectImageLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectImageLoader.swift; sourceTree = "<group>"; };
 		FF0C4401A00E0002DEADBEEF /* HistorySnapshotCompactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistorySnapshotCompactor.swift; sourceTree = "<group>"; };
+		F10000000000000000000002 /* ProjectMetadataScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectMetadataScanner.swift; sourceTree = "<group>"; };
 		TM0001A0000000000001FILE /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -421,6 +423,7 @@
 				FF0C4001A00A0002DEADBEEF /* ThumbnailMigrationCoordinator.swift */,
 				FF0C4101A00B0002DEADBEEF /* ProjectImageEncoder.swift */,
 				FF0C4201A00C0002DEADBEEF /* ProjectImageCompactionScanner.swift */,
+				F10000000000000000000002 /* ProjectMetadataScanner.swift */,
 				FF0C4301A00D0002DEADBEEF /* ProjectImageLoader.swift */,
 				FF0C4401A00E0002DEADBEEF /* HistorySnapshotCompactor.swift */,
 				A01234560016 /* OCRManager.swift */,
@@ -675,6 +678,7 @@
 				FF0C3F01A0090001DEADBEEF /* ImageDownsampler.swift in Sources */,
 				FF0C4101A00B0001DEADBEEF /* ProjectImageEncoder.swift in Sources */,
 				FF0C4201A00C0001DEADBEEF /* ProjectImageCompactionScanner.swift in Sources */,
+				F10000000000000000000001 /* ProjectMetadataScanner.swift in Sources */,
 				FF0C4301A00D0001DEADBEEF /* ProjectImageLoader.swift in Sources */,
 				FF0C4401A00E0001DEADBEEF /* HistorySnapshotCompactor.swift in Sources */,
 				FF0C4001A00A0001DEADBEEF /* ThumbnailMigrationCoordinator.swift in Sources */,

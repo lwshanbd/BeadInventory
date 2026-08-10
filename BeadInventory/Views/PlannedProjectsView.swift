@@ -176,6 +176,7 @@ struct PlannedProjectsView: View {
             if v == 0 { readyCount += 1 } else { totalShortageColors += v }
         }
         let needsCount = plans.count - readyCount
+        let firstFilteredProjectID = filtered.first?.id
 
         return NavigationStack {
             Group {
@@ -199,7 +200,19 @@ struct PlannedProjectsView: View {
                                 readyCount: readyCount
                             )
                             tipsBlock(planCount: plans.count)
-                            planList(filtered: filtered, shortageMap: shortageMap, aggregates: aggregates)
+                            // `ForEach` 必须直接是外层 LazyVStack 的 child。之前这里包了一层
+                            // 普通 VStack，300 个计划会在第一次打开时全部建卡、同时启动全部
+                            // ProjectThumbnailImage 任务；即使图片 I/O 不在主线程，数百次状态
+                            // 更新也会让 tab 切换明显掉帧。直接放进 LazyVStack 后，首屏只构造
+                            // 可见的卡片与缩略图任务。
+                            ForEach(filtered) { project in
+                                planRow(
+                                    project: project,
+                                    shortageMap: shortageMap,
+                                    aggregates: aggregates,
+                                    isFirst: project.id == firstFilteredProjectID
+                                )
+                            }
                         }
                         .padding(.bottom, 20)
                     }
@@ -501,84 +514,82 @@ struct PlannedProjectsView: View {
 
     // MARK: - Plan List
 
-    private func planList(
-        filtered: [ProjectRecord],
+    private func planRow(
+        project: ProjectRecord,
         shortageMap: [UUID: Int],
-        aggregates: [UUID: PlannedParentAggregate]
+        aggregates: [UUID: PlannedParentAggregate],
+        isFirst: Bool
     ) -> some View {
-        VStack(spacing: 10) {
-            ForEach(filtered) { project in
-                let isSelected = sel.contains(project.id)
-                let short = shortage(of: project, in: shortageMap)
-                // parent 的总颗数/颜色数从 body 级聚合字典取（O(1)），不再让每张卡
-                // 各自调 plannedAggregated*（每次全表 filter，N 卡 = O(N×M)）。
-                let isParent = inventoryManager.isParentProject(project.id)
-                let cardTotalBeads = isParent ? (aggregates[project.id]?.totalBeads ?? 0) : project.totalBeads
-                let cardColorCount = isParent ? (aggregates[project.id]?.colorCount ?? 0) : project.beadUsage.count
+        let isSelected = sel.contains(project.id)
+        let short = shortage(of: project, in: shortageMap)
+        // parent 的总颗数/颜色数从 body 级聚合字典取（O(1)），不再让每张卡
+        // 各自调 plannedAggregated*（每次全表 filter，N 卡 = O(N×M)）。
+        let isParent = inventoryManager.isParentProject(project.id)
+        let cardTotalBeads = isParent ? (aggregates[project.id]?.totalBeads ?? 0) : project.totalBeads
+        let cardColorCount = isParent ? (aggregates[project.id]?.colorCount ?? 0) : project.beadUsage.count
 
-                Group {
-                    if sel.isActive {
-                        // 多选态：整卡作为 toggle button，禁止跳转
-                        Button {
-                            sel.toggle(project.id)
-                        } label: {
-                            PlanCard(
-                                project: project,
-                                shortageColors: short,
-                                isSelected: isSelected,
-                                selectionActive: true,
-                                isParent: isParent,
-                                totalBeads: cardTotalBeads,
-                                colorCount: cardColorCount
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        // 普通态：NavigationLink 直接包卡片，整张卡可点跳转
-                        NavigationLink {
-                            PlannedProjectDetailView(project: project)
-                        } label: {
-                            PlanCard(
-                                project: project,
-                                shortageColors: short,
-                                isSelected: false,
-                                selectionActive: false,
-                                isParent: isParent,
-                                totalBeads: cardTotalBeads,
-                                colorCount: cardColorCount
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
+        return Group {
+            if sel.isActive {
+                // 多选态：整卡作为 toggle button，禁止跳转
+                Button {
+                    sel.toggle(project.id)
+                } label: {
+                    PlanCard(
+                        project: project,
+                        shortageColors: short,
+                        isSelected: isSelected,
+                        selectionActive: true,
+                        isParent: isParent,
+                        totalBeads: cardTotalBeads,
+                        colorCount: cardColorCount
+                    )
                 }
-                .onLongPressGesture(minimumDuration: 0.4) {
-                    if !sel.isActive {
-                        withAnimation { sel.enter(initial: project.id) }
-                    }
+                .buttonStyle(.plain)
+            } else {
+                // 普通态：NavigationLink 直接包卡片，整张卡可点跳转
+                NavigationLink {
+                    PlannedProjectDetailView(project: project)
+                } label: {
+                    PlanCard(
+                        project: project,
+                        shortageColors: short,
+                        isSelected: false,
+                        selectionActive: false,
+                        isParent: isParent,
+                        totalBeads: cardTotalBeads,
+                        colorCount: cardColorCount
+                    )
                 }
-                .contextMenu {
-                    if !sel.isActive {
-                        Button {
-                            activeSheet = .execute(project)
-                        } label: {
-                            Label("执行", systemImage: "play.fill")
-                        }
-                        Button {
-                            _ = inventoryManager.duplicatePlannedProject(project.id)
-                        } label: {
-                            Label("复制", systemImage: "doc.on.doc")
-                        }
-                        Button(role: .destructive) {
-                            inventoryManager.deletePlannedProject(project.id)
-                        } label: {
-                            Label("删除", systemImage: "trash")
-                        }
-                    }
+                .buttonStyle(.plain)
+            }
+        }
+        .onLongPressGesture(minimumDuration: 0.4) {
+            if !sel.isActive {
+                withAnimation { sel.enter(initial: project.id) }
+            }
+        }
+        .contextMenu {
+            if !sel.isActive {
+                Button {
+                    activeSheet = .execute(project)
+                } label: {
+                    Label("执行", systemImage: "play.fill")
+                }
+                Button {
+                    _ = inventoryManager.duplicatePlannedProject(project.id)
+                } label: {
+                    Label("复制", systemImage: "doc.on.doc")
+                }
+                Button(role: .destructive) {
+                    inventoryManager.deletePlannedProject(project.id)
+                } label: {
+                    Label("删除", systemImage: "trash")
                 }
             }
         }
         .padding(.horizontal, 18)
-        .padding(.top, 4)
+        .padding(.top, isFirst ? 4 : 0)
+        .padding(.bottom, 10)
     }
 }
 
