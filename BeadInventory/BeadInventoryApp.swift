@@ -284,8 +284,13 @@ struct BeadInventoryApp: App {
                         )
                         return
                     }
-                    AppLogger.shared.info("CloudSync", "remote_change_received")
-                    inventoryManager.scheduleRefreshFromPersistentStore(reason: "remoteChangeNotification")
+                    inventoryManager.recordCloudKitRemoteChange()
+                }
+                .onChange(of: inventoryManager.hasCompletedInitialLoad) { _, completed in
+                    // 图片瘦身是空闲工作。首次项目快照已经提交、且用户当前仍在前台时
+                    // 才启动，避免它与冷启动读库/CloudKit 导入争用同一个 SQLite store。
+                    guard completed, scenePhase == .active, !inventoryManager.isUsingLocalFallbackMode else { return }
+                    ThumbnailMigrationCoordinator.shared.start(inventoryManager: inventoryManager)
                 }
         }
         .modelContainer(modelContainer)
@@ -338,11 +343,11 @@ struct BeadInventoryApp: App {
                 // 历史记录若在启动时加载失败（isDataLoaded 仍 false），前台恢复时补一次重试 ——
                 // 否则失败后整 session 历史只在内存、saveDataImmediately 也被守卫跳过、退出即丢。
                 HistoryManager.shared.reloadIfNeeded()
-                // 启动 displayThumbnail 后台迁移协调器 —— 给老用户的大图后台 backfill 小图。
-                // 协调器内部 5s 延迟 + 重入安全（已在跑就跳过）+ 失败自愈（下次启动从余量继续）。
-                // **关键路径**：458 项目级用户在迁移完成前列表 fallback 现场降级，**已经**不会撞 jetsam，
-                // 迁移只是把列表加载从 fallback CGImageSource 升级到直接读小图 JPEG。
-                ThumbnailMigrationCoordinator.shared.start(inventoryManager: inventoryManager)
+                // 已完成首次加载的前台恢复可继续后台缩略图迁移；首次启动则由上面的
+                // `hasCompletedInitialLoad` 观察器在数据提交后再开始，避免争抢首轮读库。
+                if inventoryManager.hasCompletedInitialLoad, !inventoryManager.isUsingLocalFallbackMode {
+                    ThumbnailMigrationCoordinator.shared.start(inventoryManager: inventoryManager)
+                }
             @unknown default:
                 break
             }
