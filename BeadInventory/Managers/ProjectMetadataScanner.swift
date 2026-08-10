@@ -60,10 +60,12 @@ enum ProjectMetadataScanner {
             p.Z_PK, p.ZID, p.ZNAME, p.ZDATE, p.ZTOTALBEADS, p.ZBRANDID,
             p.ZISARCHIVED, p.ZPARENTID, p.ZISPLANNED, p.ZEXECUTEDDATE,
             p.ZCOMPLETEDDATE, p.ZCOLORSYSTEMRAW,
-            u.ZID, u.ZCOLORCODE, u.ZBRANDID, u.ZQUANTITY, u.ZISDEDUCTED
+            u.Z_PK, u.ZID, u.ZCOLORCODE, u.ZBRANDID, u.ZQUANTITY, u.ZISDEDUCTED
         FROM ZSDPROJECTRECORD p
         LEFT JOIN ZSDBEADUSAGE u ON u.ZPROJECT = p.Z_PK
-        ORDER BY p.ZDATE DESC, u.Z_PK ASC
+        -- 同一项目的 join 行必须连续；否则相同 date 的项目会在按 usage PK 排序时交错，
+        -- reducer 会把一个项目错误地拆成多个 ProjectRecord。
+        ORDER BY p.ZDATE DESC, p.Z_PK ASC, u.Z_PK ASC
         """
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
@@ -87,7 +89,9 @@ enum ProjectMetadataScanner {
                     return .failure(.unsupportedStore)
                 }
 
-                let date = Date(timeIntervalSinceReferenceDate: sqlite3_column_double(statement, 3))
+                guard let date = requiredDate(statement, column: 3) else {
+                    return .failure(.unsupportedStore)
+                }
                 let executedDate = optionalDate(statement, column: 9)
                 let completedDate = optionalDate(statement, column: 10)
                 let colorSystem = optionalText(statement, column: 11)
@@ -113,20 +117,21 @@ enum ProjectMetadataScanner {
                 currentProjectPrimaryKey = primaryKey
             }
 
-            // LEFT JOIN 没有用量时，u.ZID 为 NULL；这不是坏数据。
+            // LEFT JOIN 没有用量时 u.Z_PK 为 NULL。若实际用量行的 ZID 缺失，不能把它
+            // 误当成「没有用量」而静默丢掉。
             if sqlite3_column_type(statement, 12) != SQLITE_NULL {
-                guard let id = requiredUUID(statement, column: 12),
-                      let colorCode = requiredText(statement, column: 13) else {
+                guard let id = requiredUUID(statement, column: 13),
+                      let colorCode = requiredText(statement, column: 14) else {
                     return .failure(.unsupportedStore)
                 }
-                let brandID = optionalUUID(statement, column: 14)
+                let brandID = optionalUUID(statement, column: 15)
                 guard brandID.isValid else { return .failure(.unsupportedStore) }
                 projects[projects.count - 1].beadUsage.append(BeadUsage(
                     id: id,
                     colorCode: colorCode,
                     brandId: brandID.value,
-                    quantity: Int(sqlite3_column_int64(statement, 15)),
-                    isDeducted: sqlite3_column_int(statement, 16) != 0
+                    quantity: Int(sqlite3_column_int64(statement, 16)),
+                    isDeducted: sqlite3_column_int(statement, 17) != 0
                 ))
             }
             resultCode = sqlite3_step(statement)
@@ -205,6 +210,11 @@ enum ProjectMetadataScanner {
     }
 
     private static func optionalDate(_ statement: OpaquePointer, column: Int32) -> Date? {
+        guard sqlite3_column_type(statement, column) != SQLITE_NULL else { return nil }
+        return Date(timeIntervalSinceReferenceDate: sqlite3_column_double(statement, column))
+    }
+
+    private static func requiredDate(_ statement: OpaquePointer, column: Int32) -> Date? {
         guard sqlite3_column_type(statement, column) != SQLITE_NULL else { return nil }
         return Date(timeIntervalSinceReferenceDate: sqlite3_column_double(statement, column))
     }

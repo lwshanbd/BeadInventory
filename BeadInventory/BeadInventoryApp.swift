@@ -289,7 +289,7 @@ struct BeadInventoryApp: App {
                 .onChange(of: inventoryManager.hasCompletedInitialLoad) { _, completed in
                     // 图片瘦身是空闲工作。首次项目快照已经提交、且用户当前仍在前台时
                     // 才启动，避免它与冷启动读库/CloudKit 导入争用同一个 SQLite store。
-                    guard completed, scenePhase == .active else { return }
+                    guard completed, scenePhase == .active, !inventoryManager.isUsingLocalFallbackMode else { return }
                     ThumbnailMigrationCoordinator.shared.start(inventoryManager: inventoryManager)
                 }
         }
@@ -345,7 +345,7 @@ struct BeadInventoryApp: App {
                 HistoryManager.shared.reloadIfNeeded()
                 // 已完成首次加载的前台恢复可继续后台缩略图迁移；首次启动则由上面的
                 // `hasCompletedInitialLoad` 观察器在数据提交后再开始，避免争抢首轮读库。
-                if inventoryManager.hasCompletedInitialLoad {
+                if inventoryManager.hasCompletedInitialLoad, !inventoryManager.isUsingLocalFallbackMode {
                     ThumbnailMigrationCoordinator.shared.start(inventoryManager: inventoryManager)
                 }
             @unknown default:

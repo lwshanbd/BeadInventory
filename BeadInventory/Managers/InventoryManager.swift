@@ -204,6 +204,9 @@ class InventoryManager: ObservableObject {
     /// 不进入错误重试 UI。`private(set)` 供测试 `await refreshTask?.value` 确定性等待。
     private(set) var refreshTask: Task<Void, Never>?
     private var refreshTimeoutTask: Task<Void, Never>?
+    /// 原始 SQLite 项目扫描遇到短暂锁竞争时，后台 refresh 最多补一次重试；避免一次忙库
+    /// 就让远端数据一直停在旧快照，同时不在持续锁定时无限轮询。
+    private var hasScheduledProjectLoadRetry = false
     /// refresh 超时上限。卡死的 refresh 不影响可见 UI，但会让 `isLoadingPersistentStore`
     /// 永远为 true —— 后续所有 refresh 都被 defer 吞掉，数据从此不再刷新。到点作废回收旗子。
     /// 非 `let` 仅为测试能调小覆盖超时分支 —— 生产代码不要改它。
@@ -415,6 +418,7 @@ class InventoryManager: ObservableObject {
         // 仅解除 UI 屏蔽，不更新 isDataLoaded / loaded* 标志，
         // 由 saveData() 上方的 fallback 守卫直接拦截写入。
         hasCompletedInitialPersistentLoad = true
+        hasCompletedInitialLoad = true
         logWarning("initial_load_user_opted_local_fallback", metadata: [
             "reason": reason,
             "isLoadingInFlight": isLoadingPersistentStore
@@ -644,7 +648,18 @@ class InventoryManager: ObservableObject {
         //
         // 计划页会为每个「缺豆」颜色查询每个适用品牌。过去每一次查不到库存都扫描完整
         // brandStocks（大库约 3.2 万行），把一次 tab 切换放大到数百万次比较并卡死主线程。
-        guard let i = index[brandId]?[mardCode], i < brandStocks.count else {
+        guard let i = index[brandId]?[mardCode] else {
+            return nil
+        }
+
+        guard i < brandStocks.count else {
+            logError("stock_index_out_of_bounds", metadata: [
+                "brandId": "\(brandId)",
+                "mardCode": mardCode,
+                "row": i,
+                "stockCount": brandStocks.count
+            ])
+            stockPositionIndexDirty = true
             return nil
         }
 
@@ -655,9 +670,12 @@ class InventoryManager: ObservableObject {
 
         // 索引命中却指向了不匹配的行是编程错误，而不是正常的「库存不存在」。强制重建
         // 一次并重试，既能在 DEBUG 暴露问题，也不会让热路径退化回 O(N) 的线性扫描。
-        assertionFailure(
-            "stockPositionIndex stale at [\(brandId)][\(mardCode)] → row \(i)"
-        )
+        logError("stock_index_stale", metadata: [
+            "brandId": "\(brandId)",
+            "mardCode": mardCode,
+            "row": i
+        ])
+        assertionFailure("stockPositionIndex stale at [\(brandId)][\(mardCode)] → row \(i)")
         stockPositionIndexDirty = true
         if let rebuiltIndex = stockPositionIndex[brandId]?[mardCode], rebuiltIndex < brandStocks.count {
             let rebuiltStock = brandStocks[rebuiltIndex]
@@ -666,11 +684,6 @@ class InventoryManager: ObservableObject {
             }
         }
 
-        logError("stock_index_stale", metadata: [
-            "brandId": "\(brandId)",
-            "mardCode": mardCode,
-            "row": i
-        ])
         return nil
     }
 
@@ -1225,13 +1238,18 @@ class InventoryManager: ObservableObject {
 
     func cancelScheduledRefresh(reason: String) {
         guard remoteRefreshWorkItem != nil || remoteRefreshScheduledAt != nil
-            || cloudKitRefreshWorkItem != nil || cloudKitRefreshScheduledAt != nil else { return }
+            || cloudKitRefreshWorkItem != nil || cloudKitRefreshScheduledAt != nil
+            || hasPendingCloudKitRefresh || cloudKitChangeBurstStartedAt != nil
+            || latestCloudKitChangeAt != nil else { return }
         remoteRefreshWorkItem?.cancel()
         remoteRefreshWorkItem = nil
         remoteRefreshScheduledAt = nil
         cloudKitRefreshWorkItem?.cancel()
         cloudKitRefreshWorkItem = nil
         cloudKitRefreshScheduledAt = nil
+        hasPendingCloudKitRefresh = false
+        cloudKitChangeBurstStartedAt = nil
+        latestCloudKitChangeAt = nil
         logInfo("schedule_refresh_cancelled", metadata: ["reason": reason])
     }
 
@@ -1262,15 +1280,20 @@ class InventoryManager: ObservableObject {
     /// 但不会退化为每 1.2 秒重新读取一遍数 GB 项目库。
     private func schedulePendingCloudKitRefreshIfNeeded() {
         guard hasPendingCloudKitRefresh,
-              hasCompletedInitialPersistentLoad,
-              !isLoadingPersistentStore else { return }
+              hasCompletedInitialPersistentLoad else { return }
         guard let burstStartedAt = cloudKitChangeBurstStartedAt,
               let latestChangeAt = latestCloudKitChangeAt else { return }
 
         let now = Date()
         let quietDeadline = latestChangeAt.addingTimeInterval(cloudKitQuietPeriod)
         let maximumDeadline = burstStartedAt.addingTimeInterval(cloudKitMaximumDeferral)
-        let deadline = min(quietDeadline, maximumDeadline)
+        let requestedDeadline = min(quietDeadline, maximumDeadline)
+        // 读取或保存尚未结束时保留原始 burst 的时间基准，只短暂重试；不能重置它，
+        // 否则持续忙碌会把 maximumDeferral 无限制地往后推。
+        let retryDeadline = (isLoadingPersistentStore || isSaving)
+            ? now.addingTimeInterval(1)
+            : now
+        let deadline = max(requestedDeadline, retryDeadline)
 
         let hadScheduledRefresh = cloudKitRefreshWorkItem != nil
             && cloudKitRefreshScheduledAt != nil
@@ -1288,9 +1311,8 @@ class InventoryManager: ObservableObject {
             self.cloudKitRefreshScheduledAt = nil
             guard self.hasPendingCloudKitRefresh else { return }
             guard !self.isLoadingPersistentStore, !self.isSaving else {
-                // 在读取/保存窗口不能丢这批变更；把 burst 从现在重新计时，等稳定后再合并。
-                self.cloudKitChangeBurstStartedAt = Date()
-                self.latestCloudKitChangeAt = Date()
+                // 在读取/保存窗口不能丢这批变更。保留首次通知时间，下一秒再检查，
+                // 这样不会把 30 秒活性上限重新计时，也不会在忙碌时零延迟自旋。
                 self.schedulePendingCloudKitRefreshIfNeeded()
                 return
             }
@@ -1308,7 +1330,7 @@ class InventoryManager: ObservableObject {
         cloudKitRefreshScheduledAt = deadline
         // 同步一批数千条记录时可能有数百个通知。只记录 burst 首次排程，后续通知仅
         // 重置内存里的 deadline；否则诊断文件本身又会被无意义的小写入刷爆。
-        if !hadScheduledRefresh {
+        if !hadScheduledRefresh, !isLoadingPersistentStore, !isSaving {
             logInfo("cloudkit_remote_change_refresh_scheduled", metadata: [
                 "delayMs": max(0, Int(deadline.timeIntervalSince(now) * 1_000))
             ])
@@ -2276,10 +2298,21 @@ class InventoryManager: ObservableObject {
                 loadedCurrentBrandId: loadedCurrentBrandId,
                 loadedPurchaseRecords: loadedPurchaseRecords
             )
+            let shouldRetryProjectLoad = result.projects == nil && !self.hasScheduledProjectLoadRetry
+            if result.projects != nil {
+                self.hasScheduledProjectLoadRetry = false
+            }
             self.refreshTask = nil
             self.isLoadingPersistentStore = false
             self.replayDeferredRefreshIfNeeded()
             self.schedulePendingCloudKitRefreshIfNeeded()
+            if shouldRetryProjectLoad {
+                self.hasScheduledProjectLoadRetry = true
+                self.scheduleRefreshFromPersistentStore(
+                    reason: "refreshRetryAfterProjectLoadFailure",
+                    debounceSeconds: 3.0
+                )
+            }
         }
     }
 
@@ -2769,6 +2802,7 @@ class InventoryManager: ObservableObject {
         customColorsLoadedSuccessfully = true
         isDataLoaded = true
         hasCompletedInitialPersistentLoad = true
+        hasCompletedInitialLoad = true
         finishInitialLoadSuccess()
         refreshBaselines()
         print("[InventoryManager] 数据从 UserDefaults 加载完成")
