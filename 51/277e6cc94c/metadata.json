@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "51277e6cc94c",
+  "strategy": "manual-commit",
+  "branch": "codex/startup-performance",
+  "checkpoints_count": 7,
+  "files_touched": [
+    "BeadInventory/BeadInventoryApp.swift",
+    "BeadInventory/Managers/InventoryManager.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/51/277e6cc94c/0/metadata.json",
+      "transcript": "/51/277e6cc94c/0/full.jsonl",
+      "content_hash": "/51/277e6cc94c/0/content_hash.txt",
+      "prompt": "/51/277e6cc94c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16365,
+    "cache_creation_tokens": 6294311,
+    "cache_read_tokens": 231182532,
+    "output_tokens": 753026,
+    "api_call_count": 592
+  }
+}
