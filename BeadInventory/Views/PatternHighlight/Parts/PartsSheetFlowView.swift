@@ -47,7 +47,7 @@ struct PartsSheetFlowView: View {
 
     @State private var busy: String?
 
-    enum Step: Hashable { case list, cellSize }
+    enum Step: Hashable { case list, cellSize, review }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -93,8 +93,18 @@ struct PartsSheetFlowView: View {
                             image: image,
                             parts: parts,
                             calibration: $calibration,
-                            onContinue: { save() }
+                            onContinue: { runClassification() }
                         )
+                    }
+                case .review:
+                    if let image {
+                        PartsColorReviewStepView(
+                            image: image,
+                            parts: $parts,
+                            colorSystem: project.colorSystem,
+                            onFinish: { save() }
+                        )
+                        .environmentObject(inventoryManager)
                     }
                 }
             }
@@ -160,6 +170,39 @@ struct PartsSheetFlowView: View {
                 self.parts = newParts
                 self.busy = nil
                 if self.path.isEmpty { self.path = [.list] }
+            }
+        }
+    }
+
+    // MARK: - 逐格判色
+
+    private func runClassification() {
+        guard let image, let calibration else { return }
+        let snapshot = parts
+        let currentROI = roi
+        let colorSystem = project.colorSystem
+        let legend = project.beadUsage.map(\.colorCode)
+        let colors = inventoryManager.beadColors
+        busy = "正在看每格什么颜色…"
+
+        Task.detached(priority: .userInitiated) {
+            let result = PartsCellClassifier.classify(
+                image: image,
+                parts: snapshot,
+                roi: currentROI,
+                calibration: calibration,
+                colorSystem: colorSystem,
+                legendCodes: legend,
+                availableColors: colors,
+                progress: { done, total in
+                    Task { @MainActor in busy = "正在看每格什么颜色…（\(done)/\(total)）" }
+                }
+            )
+            await MainActor.run {
+                self.parts = result.parts
+                self.palette = result.palette
+                self.busy = nil
+                self.path = [.list, .cellSize, .review]
             }
         }
     }
