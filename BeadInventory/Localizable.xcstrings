@@ -11476,6 +11476,96 @@
         }
       }
     },
+    "底色和任意色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Background & Any Color"
+          }
+        }
+      }
+    },
+    "底色（空白）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Background (empty)"
+          }
+        }
+      }
+    },
+    "零件外面那一片，不用放豆子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The area around the pieces — no beads there"
+          }
+        }
+      }
+    },
+    "色号表里写「任意色」的那种豆子，没有就不用点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bead the sheet's table marks as “any color” — skip if there isn't one"
+          }
+        }
+      }
+    },
+    "用什么颜色的豆子拼都行" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Any bead color will do"
+          }
+        }
+      }
+    },
+    "现在点图上的**底色**" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now tap the **background** on the sheet"
+          }
+        }
+      }
+    },
+    "现在点图上的**任意色**豆子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now tap an **any color** bead on the sheet"
+          }
+        }
+      }
+    },
+    "开始判色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read the Colors"
+          }
+        }
+      }
+    },
+    "清掉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear"
+          }
+        }
+      }
+    },
     "零件清单" : {
       "localizations" : {
         "en" : {

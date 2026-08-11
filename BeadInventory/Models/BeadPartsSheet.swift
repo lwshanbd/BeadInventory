@@ -280,6 +280,12 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
     var calibration: PartsGridCalibration?
     /// 用户给「任意色」最终指定的色号。nil = 还没定，扣库存时要先问。
     var anyColorCode: String?
+    /// 用户在图上指认的**底色**（`RRGGBB`）。每张图纸底色都不一样，
+    /// 不先摘出去，那一大片空白会被硬套到最近的色号上。nil = 还没指认，判色时自己猜。
+    var emptyHex: String?
+    /// 用户在图上指认的**任意色**（`RRGGBB`）。这个猜不出来 ——
+    /// 它在图上就是一种普通豆子，「代表任意色」只写在色号表那一行字里。
+    var anyColorHex: String?
     var lastUpdatedAt: Date
 
     init(
@@ -290,6 +296,8 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
         palette: [PartsPaletteEntry] = [],
         calibration: PartsGridCalibration? = nil,
         anyColorCode: String? = nil,
+        emptyHex: String? = nil,
+        anyColorHex: String? = nil,
         lastUpdatedAt: Date = Date()
     ) {
         self.roi = roi
@@ -299,6 +307,8 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
         self.palette = palette
         self.calibration = calibration
         self.anyColorCode = anyColorCode
+        self.emptyHex = emptyHex
+        self.anyColorHex = anyColorHex
         self.lastUpdatedAt = lastUpdatedAt
     }
 

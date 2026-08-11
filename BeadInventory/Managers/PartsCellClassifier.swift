@@ -27,6 +27,38 @@ enum PartsCellClassifier {
     /// 零件中间的镂空和零件外面蹭进框里的背景是同一种像素，一起归到空。
     private static let emptyDeltaE: Double = 14
 
+    /// 用户亲手在图上点出来的颜色（底色 / 任意色）的认领范围。
+    /// 比 `mergeDeltaE`(8) 宽一点：他点的是某一格，而同一片色块在 JPEG 压缩之后
+    /// 各格之间本来就有几个单位的漂移，卡太死会漏掉一半。
+    private static let pickedDeltaE: Double = 12
+
+    /// 在图上某一点取色，返回 `RRGGBB`。
+    ///
+    /// 取的是**一小片的众数色**而不是那一个像素：用户手指点不了那么准，
+    /// 而豆子之间还有深色的格线，正好点在线上就会取到一个根本不存在的颜色。
+    /// - Parameter patch: 取样方块的边长（归一化，相对整张图纸）。一般给半格。
+    static func sampleHex(work: PartsWorkImage, at point: CGPoint, patch: Double) -> String? {
+        let side = max(patch, 0.001)
+        let rect = CGRect(x: Double(point.x) - side / 2, y: Double(point.y) - side / 2,
+                          width: side, height: side)
+            .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard rect.width > 0, rect.height > 0,
+              let bitmap = PartsBitmap.make(from: work, roi: rect, maxPixels: 4_000)
+        else { return nil }
+        var histogram: [Int32: Int] = [:]
+        for i in 0..<bitmap.pixelCount {
+            histogram[bitmap.quantized[i], default: 0] += 1
+        }
+        guard let winner = histogram.max(by: { $0.value < $1.value })?.key else { return nil }
+        return QuantizedRGB.hex(of: Int(winner))
+    }
+
+    /// 自己猜一个底色，给「指认底色」那一屏当初值 —— 多数图纸猜得对，用户点头就行。
+    static func autoEmptyHex(work: PartsWorkImage, roi: CGRect) -> String? {
+        guard let bitmap = PartsBitmap.make(from: work, roi: roi, maxPixels: 400_000) else { return nil }
+        return hex(of: PartsDetector.backgroundLab(of: bitmap))
+    }
+
     struct Result {
         /// 填好 rows / cols / cells / gridRect 的零件
         var parts: [BeadPart]
@@ -45,11 +77,18 @@ enum PartsCellClassifier {
         colorSystem: ColorSystem,
         legendCodes: [String],
         availableColors: [BeadColor],
+        emptyHex: String? = nil,
+        anyColorHex: String? = nil,
         progress: ((Int, Int) -> Void)? = nil
     ) -> Result {
-        // 背景色从整个零件区取（不是从单个零件的框里取 —— 那里面大半是零件自己）
-        let backgroundLab = PartsBitmap.make(from: work, roi: roi, maxPixels: 400_000)
-            .map { PartsDetector.backgroundLab(of: $0) }
+        // 底色：用户指认的优先，没指认才自己猜（从整个零件区取 ——
+        // 不能从单个零件的框里取，那里面大半是零件自己）。
+        let backgroundLab = emptyHex.flatMap { GridCellSampler.lab(forHex: $0) }
+            ?? PartsBitmap.make(from: work, roi: roi, maxPixels: 400_000)
+                .map { PartsDetector.backgroundLab(of: $0) }
+        // 任意色：只有用户指认了才有。它不是色号，猜不出来 —— 图纸上它就是一种普通的
+        // 淡色，跟别的豆子长得一样，唯一的区别写在色号表那一行字里。
+        let anyColorLab = anyColorHex.flatMap { GridCellSampler.lab(forHex: $0) }
 
         // 第一趟：把每个零件切格、量出每格的平均色
         var fittedParts: [BeadPart] = []
@@ -77,6 +116,7 @@ enum PartsCellClassifier {
         let assignments = assignIdentities(
             clusters: clusters,
             backgroundLab: backgroundLab,
+            anyColorLab: anyColorLab,
             colorSystem: colorSystem,
             legendCodes: legendCodes,
             availableColors: availableColors
@@ -216,6 +256,7 @@ enum PartsCellClassifier {
     private static func assignIdentities(
         clusters: [Cluster],
         backgroundLab: LabColor?,
+        anyColorLab: LabColor?,
         colorSystem: ColorSystem,
         legendCodes: [String],
         availableColors: [BeadColor]
@@ -245,6 +286,19 @@ enum PartsCellClassifier {
         let table = legendTable.isEmpty ? fullTable : legendTable
 
         return clusters.map { cluster in
+            // **先认任意色，再认底色，最后才轮到色号。**
+            //
+            // 顺序不能反。任意色和底色都不是色号，可它们在图上是实实在在的一大片格子：
+            // 不先摘出去，就会被硬套到最近的那个色号上 —— 这张图纸上「任意色」有两千多颗，
+            // 一旦混进某个色号，用户在核对页看到的是「这个色号里掺了一大堆不该有的」，
+            // 而它们和真的那些混在同一类里，整类改也不是、一格格挑也不是。
+            //
+            // 这也是为什么这两样必须让用户指认：底色每张图纸都不一样（这张是浅粉），
+            // 任意色更是完全看不出来 —— 它在图上就是一种普通的淡紫豆子，
+            // 「它代表任意色」这件事只写在色号表那一行字里。
+            if let anyColorLab, GridCellSampler.deltaE(cluster.lab, anyColorLab) <= pickedDeltaE {
+                return Identity(fill: .anyColor, role: .anyColor, hex: hex(of: cluster.lab), deltaE: nil)
+            }
             if let backgroundLab, GridCellSampler.deltaE(cluster.lab, backgroundLab) <= emptyDeltaE {
                 return Identity(fill: .empty, role: .empty, hex: hex(of: cluster.lab), deltaE: nil)
             }

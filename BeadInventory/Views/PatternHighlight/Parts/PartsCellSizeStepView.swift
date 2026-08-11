@@ -543,6 +543,15 @@ struct PartsCanvasTransform {
                        y: center.y + (flat.y - center.y) * zoom + pan.height)
     }
 
+    /// `screen(_:)` 的逆：屏幕点 → 归一化坐标（相对整张图纸）
+    func normalized(_ screenPoint: CGPoint) -> CGPoint {
+        guard display.width > 0, display.height > 0, zoom > 0 else { return .zero }
+        let flat = CGPoint(x: center.x + (screenPoint.x - pan.width - center.x) / zoom,
+                           y: center.y + (screenPoint.y - pan.height - center.y) / zoom)
+        return CGPoint(x: region.minX + (flat.x - display.minX) / display.width * region.width,
+                       y: region.minY + (flat.y - display.minY) / display.height * region.height)
+    }
+
     func screenRect(_ normalized: CGRect) -> CGRect {
         let a = screen(normalized.origin)
         let b = screen(CGPoint(x: normalized.maxX, y: normalized.maxY))

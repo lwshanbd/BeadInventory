@@ -49,10 +49,14 @@ struct PartsSheetFlowView: View {
     @State private var palette: [PartsPaletteEntry] = []
     @State private var calibration: PartsGridCalibration?
     @State private var anyColorCode: String?
+    /// 用户在图上指认的底色和任意色（`RRGGBB`）。判色前必须知道这两样，
+    /// 否则它们会被硬套到最近的色号上（见 PartsBaseColorStepView 的头注释）。
+    @State private var emptyHex: String?
+    @State private var anyColorHex: String?
 
     @State private var busy: String?
 
-    enum Step: Hashable { case list, cellSize, review }
+    enum Step: Hashable { case list, cellSize, baseColor, review }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -104,6 +108,15 @@ struct PartsSheetFlowView: View {
                                 work: work,
                                 parts: $parts,
                                 calibration: $calibration,
+                                onContinue: { path = [.list, .cellSize, .baseColor] }
+                            )
+                        case .baseColor:
+                            PartsBaseColorStepView(
+                                work: work,
+                                roi: roi,
+                                calibration: calibration,
+                                emptyHex: $emptyHex,
+                                anyColorHex: $anyColorHex,
                                 onContinue: { runClassification() }
                             )
                         case .review:
@@ -163,6 +176,8 @@ struct PartsSheetFlowView: View {
             self.palette = saved.palette
             self.calibration = saved.calibration
             self.anyColorCode = saved.anyColorCode
+            self.emptyHex = saved.emptyHex
+            self.anyColorHex = saved.anyColorHex
         }
         self.didLoadOnce = true
 
@@ -289,6 +304,8 @@ struct PartsSheetFlowView: View {
         let colorSystem = project.colorSystem
         let legend = project.beadUsage.map(\.colorCode)
         let colors = inventoryManager.beadColors
+        let base = emptyHex
+        let any = anyColorHex
         busy = "正在看每格什么颜色…"
 
         Task.detached(priority: .userInitiated) {
@@ -300,6 +317,8 @@ struct PartsSheetFlowView: View {
                 colorSystem: colorSystem,
                 legendCodes: legend,
                 availableColors: colors,
+                emptyHex: base,
+                anyColorHex: any,
                 progress: { done, total in
                     Task { @MainActor in busy = "正在看每格什么颜色…（\(done)/\(total)）" }
                 }
@@ -308,7 +327,7 @@ struct PartsSheetFlowView: View {
                 self.parts = result.parts
                 self.palette = result.palette
                 self.busy = nil
-                self.path = [.list, .cellSize, .review]
+                self.path = [.list, .cellSize, .baseColor, .review]
             }
         }
     }
@@ -324,7 +343,9 @@ struct PartsSheetFlowView: View {
             parts: parts,
             palette: palette,
             calibration: calibration,
-            anyColorCode: anyColorCode
+            anyColorCode: anyColorCode,
+            emptyHex: emptyHex,
+            anyColorHex: anyColorHex
         )
         inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet)
         dismiss()
