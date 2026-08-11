@@ -111,6 +111,7 @@ struct PartsSheetFlowView: View {
                                 work: work,
                                 parts: $parts,
                                 colorSystem: project.colorSystem,
+                                legendCounts: legendCounts,
                                 onFinish: { save() }
                             )
                             .environmentObject(inventoryManager)
@@ -176,6 +177,14 @@ struct PartsSheetFlowView: View {
     /// 整张图纸的低清版长边上限。这一版只给「圈零件区」看轮廓，1600 足够，
     /// 也把首屏的解码代价压到最低。
     private static let overviewMaxPixel = 1600
+
+    /// 上一步 AI 读色号表得到的「每个色号多少颗」。核对颜色那屏拿它当参照。
+    /// 同一个色号被记了多次时相加 —— 表格识别偶尔会把一个色号拆成两行。
+    private var legendCounts: [String: Int] {
+        project.beadUsage.reduce(into: [:]) { result, usage in
+            result[usage.colorCode, default: 0] += usage.quantity
+        }
+    }
 
     /// 解码整张图纸时的像素上限。
     ///

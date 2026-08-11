@@ -11396,6 +11396,86 @@
         }
       }
     },
+    "这张图纸的颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colors on This Sheet"
+          }
+        }
+      }
+    },
+    "认出 %lld 颗" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld found"
+          }
+        }
+      }
+    },
+    "认出 %lld 颗，跟图纸写的一样" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld found — matches the sheet"
+          }
+        }
+      }
+    },
+    "认出 %lld 颗，图纸写 %lld 颗（差 %lld 颗）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld found, sheet says %2$lld (off by %3$lld)"
+          }
+        }
+      }
+    },
+    "还有 %lld 个没核对" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld left to check"
+          }
+        }
+      }
+    },
+    "每个色号都核对过了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every code has been checked"
+          }
+        }
+      }
+    },
+    "「%@」没问题，看下一个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” looks right — next"
+          }
+        }
+      }
+    },
+    "「%@」已核对" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” checked"
+          }
+        }
+      }
+    },
     "零件清单" : {
       "localizations" : {
         "en" : {

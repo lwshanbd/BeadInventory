@@ -231,15 +231,24 @@ enum PartsCellClassifier {
         let legendTable = table(availableColors.filter { legendSet.contains($0.displayCode(for: colorSystem)) })
         let fullTable = table(availableColors)
 
+        // **图纸自己写了用色表，就只在这张表里选。**
+        //
+        // 上一版是「图例里 ΔE ≤ 25 才用图例，否则去几百色的全色库里找最近的」，
+        // 结果图纸上明明只有十来种豆子，却认出一堆表上压根没有的色号 ——
+        // 用户实测：黑色的 H7 被判成了 23。全色库里总有一个色差更小的，
+        // 但那个色号这张图纸上根本不存在，用户拿着它去翻库存只会一头雾水。
+        //
+        // 代价是：图例漏写的颜色会被硬套到最近的那个图例色号上。这个代价可以接受 ——
+        // 它会整类扎堆出现在核对那一屏，用户一眼看得见，一次就能整类改掉；
+        // 而散落在几百个色号里的假色号是找都找不出来的。
+        // 图例为空（用户手动建的项目、没识别色号表）时才退回全色库。
+        let table = legendTable.isEmpty ? fullTable : legendTable
+
         return clusters.map { cluster in
             if let backgroundLab, GridCellSampler.deltaE(cluster.lab, backgroundLab) <= emptyDeltaE {
                 return Identity(fill: .empty, role: .empty, hex: hex(of: cluster.lab), deltaE: nil)
             }
-            // 图例里够近就用图例的：图例是这张图纸自己声明的用色表
-            if let hit = nearest(cluster.lab, in: legendTable), hit.1 <= 25 {
-                return Identity(fill: .code(hit.0), role: .code(hit.0), hex: hex(of: cluster.lab), deltaE: hit.1)
-            }
-            if let hit = nearest(cluster.lab, in: fullTable) {
+            if let hit = nearest(cluster.lab, in: table) {
                 return Identity(fill: .code(hit.0), role: .code(hit.0), hex: hex(of: cluster.lab), deltaE: hit.1)
             }
             return Identity(fill: .empty, role: .empty, hex: hex(of: cluster.lab), deltaE: nil)

@@ -21,6 +21,10 @@ struct PartsColorReviewStepView: View {
     let work: PartsWorkImage
     @Binding var parts: [BeadPart]
     let colorSystem: ColorSystem
+    /// 上一步 AI 识别色号表得出的「这张图纸每个色号要多少颗」。
+    /// 只作参照：核对时用户能直接比对「我认出 2,887 颗，图纸写的是 3,006 颗」，
+    /// 差得多就说明这个色号还得再看看。
+    let legendCounts: [String: Int]
     let onFinish: () -> Void
 
     @EnvironmentObject var inventoryManager: InventoryManager
@@ -30,6 +34,9 @@ struct PartsColorReviewStepView: View {
     @State private var swatches: [CellRef: UIImage] = [:]
     @State private var showingCodePicker = false
     @State private var pickedCodes: Set<String> = []
+    /// 已经核对过的色号（按 groupKey）。只是给用户记进度用，不影响数据。
+    @State private var confirmed: Set<String> = []
+    @State private var showingPalette = false
 
     /// 框选模式。开着时列表不滚动，拖一条对角线就把扫过的格子全选上。
     /// 一个色号动不动上千格，一格一格点是不可能的。
@@ -66,58 +73,111 @@ struct PartsColorReviewStepView: View {
             ColorSelectionView(selectedColors: $pickedCodes, colorSystem: colorSystem)
                 .environmentObject(inventoryManager)
         }
+        .sheet(isPresented: $showingPalette) {
+            PartsPaletteSheet(
+                rows: groups.map { group in
+                    PartsPaletteSheet.Row(
+                        key: group.key,
+                        label: label(for: group.fill),
+                        color: color(for: group.fill),
+                        found: group.count,
+                        onSheet: legendCount(for: group.fill),
+                        isConfirmed: confirmed.contains(group.key),
+                        isSelected: group.key == groupKey(selectedGroup)
+                    )
+                },
+                onPick: { key in
+                    if let hit = groups.first(where: { $0.key == key }) {
+                        select(hit.fill)
+                    }
+                    showingPalette = false
+                }
+            )
+        }
     }
 
     // MARK: - 上：色号一排
 
     private var groupBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Theme.Spacing.sm) {
-                ForEach(groups, id: \.key) { group in
-                    Button {
-                        selectedGroup = group.fill
-                        selection.removeAll()
-                    } label: {
-                        HStack(spacing: 6) {
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(color(for: group.fill))
-                                .frame(width: 16, height: 16)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-                                )
-                            Text(label(for: group.fill))
-                                .font(.footnote.weight(.medium))
-                            Text("\(group.count) 颗")
-                                .font(.caption2.monospacedDigit())
-                                .foregroundColor(Theme.ColorToken.Text.secondary)
-                        }
-                        .padding(.horizontal, Theme.Spacing.md)
-                        .padding(.vertical, Theme.Spacing.sm)
-                        .background(
-                            Capsule().fill(
-                                groupKey(group.fill) == groupKey(selectedGroup)
-                                    ? Theme.ColorToken.Morandi.mauve.opacity(0.22)
-                                    : Theme.ColorToken.Surface.elevated
-                            )
-                        )
-                        .overlay(
-                            Capsule().stroke(
-                                groupKey(group.fill) == groupKey(selectedGroup)
-                                    ? Theme.ColorToken.Morandi.mauve
-                                    : Color.clear,
-                                lineWidth: 1.5
-                            )
-                        )
+        HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    ForEach(groups, id: \.key) { group in
+                        Button { select(group.fill) } label: { chip(for: group) }
+                            .buttonStyle(.plain)
+                            .foregroundColor(Theme.ColorToken.Text.primary)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundColor(Theme.ColorToken.Text.primary)
                 }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.md)
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.vertical, Theme.Spacing.md)
+
+            // 横着划过十几个色号才找得到要看的那一个，太难受了 —— 给一个展开，一屏看全。
+            Button { showingPalette = true } label: {
+                Image(systemName: "square.grid.2x2")
+                    .font(.footnote.weight(.semibold))
+                    .frame(width: 44, height: 34)
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(Theme.ColorToken.Text.secondary)
+            .background(Theme.ColorToken.Surface.background)
         }
         .background(Theme.ColorToken.Surface.background)
+    }
+
+    /// 一个色号的小胶囊。写两个数：**认出来多少颗 / 图纸写多少颗**。
+    /// 后面那个是上一步 AI 读色号表得到的，两个数差得多就说明这个色号还得再看看 ——
+    /// 光给一个「2,887 颗」，用户没有任何参照物去判断它对不对。
+    private func chip(for group: Group) -> some View {
+        let isSelected = group.key == groupKey(selectedGroup)
+        return HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(color(for: group.fill))
+                .frame(width: 16, height: 16)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+                )
+            if confirmed.contains(group.key) {
+                Image(systemName: "checkmark")
+                    .font(.caption2.weight(.bold))
+                    .foregroundColor(Theme.ColorToken.Status.success)
+            }
+            Text(label(for: group.fill))
+                .font(.footnote.weight(.medium))
+            Text(countText(for: group))
+                .font(.caption2.monospacedDigit())
+                .foregroundColor(Theme.ColorToken.Text.secondary)
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(
+            Capsule().fill(isSelected
+                           ? Theme.ColorToken.Morandi.mauve.opacity(0.22)
+                           : Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            Capsule().stroke(isSelected ? Theme.ColorToken.Morandi.mauve : Color.clear, lineWidth: 1.5)
+        )
+    }
+
+    private func countText(for group: Group) -> String {
+        if let onSheet = legendCount(for: group.fill) {
+            return "\(group.count) / \(onSheet) 颗"
+        }
+        return "\(group.count) 颗"
+    }
+
+    /// 图纸色号表里写的颗数。空白和任意色不在表里，所以没有。
+    private func legendCount(for fill: PartCellFill) -> Int? {
+        guard case .code(let code) = fill else { return nil }
+        return legendCounts[code]
+    }
+
+    private func select(_ fill: PartCellFill) {
+        selectedGroup = fill
+        selection.removeAll()
+        marquee = false
     }
 
     // MARK: - 中：这个色号的所有格子
@@ -211,7 +271,9 @@ struct PartsColorReviewStepView: View {
         VStack(spacing: Theme.Spacing.md) {
             HStack {
                 if selection.isEmpty {
-                    Text("有不对的点一下")
+                    Text(unconfirmed.isEmpty
+                         ? "每个色号都核对过了"
+                         : "还有 \(unconfirmed.count) 个没核对")
                         .font(.footnote)
                         .foregroundStyle(Theme.ColorToken.Text.secondary)
                 } else {
@@ -267,6 +329,19 @@ struct PartsColorReviewStepView: View {
             .font(.footnote)
             .lineLimit(1)
 
+            // 一个色号一个色号地收工。以前只有一个「完成」，用户看完一个色号
+            // 没有任何地方可以「记一笔」，十几个色号翻下来根本不记得看到哪儿了。
+            Button(action: confirmCurrentGroup) {
+                Label(confirmed.contains(groupKey(selectedGroup))
+                      ? "「\(label(for: selectedGroup))」已核对"
+                      : "「\(label(for: selectedGroup))」没问题，看下一个",
+                      systemImage: "checkmark.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .font(.footnote)
+            .buttonStyle(.bordered)
+            .disabled(confirmed.contains(groupKey(selectedGroup)) && unconfirmed.isEmpty)
+
             Button(action: onFinish) {
                 Label("完成 · 一共 \(totalBeads) 颗", systemImage: "checkmark").frame(maxWidth: .infinity)
             }
@@ -284,28 +359,47 @@ struct PartsColorReviewStepView: View {
         var key: String
     }
 
-    /// 按颗数从多到少。**空不列在这里** —— 零件轮廓外面、矩形四角、中间镂空
-    /// 全是空格，数量比任何一个色号都大，但它不是一种要买要放的豆子，
-    /// 摆进来只会把真正要核对的色号挤到后面去。
-    /// 某一片本来有豆子却被判成空时，从它现在所在的那个色号里选中改回来即可。
+    /// 色号按颗数从多到少，**「空白」永远排最后**。
+    ///
+    /// 空格数量比任何一个色号都大（零件轮廓外面、矩形四角、中间镂空全是空），
+    /// 按颗数排会把真正要核对的色号全挤到后面去，所以钉在末尾。
+    ///
+    /// 但它必须在：图纸底色各不相同，底色判错时一整片本该是豆子的格子会被判成空，
+    /// 而空格不进任何色号组 —— 列表里没有这一项的话，那些格子在这一屏根本点不到，
+    /// 用户除了退出去重来没有第二条路。
     private var groups: [Group] {
         var counts: [String: (fill: PartCellFill, count: Int)] = [:]
         for part in parts {
             for row in part.cells {
-                for cell in row where cell != .empty {
+                for cell in row {
                     let key = groupKey(cell)
                     counts[key, default: (cell, 0)].count += 1
                 }
             }
         }
-        return counts
-            .map { Group(fill: $0.value.fill, count: $0.value.count, key: $0.key) }
-            .sorted { $0.count > $1.count }
+        let all = counts.map { Group(fill: $0.value.fill, count: $0.value.count, key: $0.key) }
+        let beads = all.filter { $0.fill != .empty }.sorted { $0.count > $1.count }
+        return beads + all.filter { $0.fill == .empty }
     }
 
     /// 图纸上一共要放多少颗豆子（空格不算）
     private var totalBeads: Int {
-        groups.reduce(0) { $0 + $1.count }
+        groups.filter { $0.fill != .empty }.reduce(0) { $0 + $1.count }
+    }
+
+    /// 还没核对过的色号（空白也算一项 —— 底色判错是最常见的一种错）
+    private var unconfirmed: [Group] {
+        groups.filter { !confirmed.contains($0.key) }
+    }
+
+    /// 记下「这个色号我看过了」，然后自动跳到下一个还没看的。
+    /// 十几个色号一个个点过去，用户很难记得自己看到哪儿了。
+    private func confirmCurrentGroup() {
+        confirmed.insert(groupKey(selectedGroup))
+        selection.removeAll()
+        if let next = unconfirmed.first {
+            select(next.fill)
+        }
     }
 
     private func groupKey(_ fill: PartCellFill) -> String {
@@ -416,6 +510,94 @@ struct PartsColorReviewStepView: View {
         guard let code = pickedCodes.sorted().first else { return }
         apply(.code(code))
         pickedCodes = []
+    }
+}
+
+// MARK: - 展开看全部色号
+
+/// 上面那条横向色号栏的展开版：一屏看全，顺便把两个数摆开写清楚。
+///
+/// 横着划过十几个胶囊才找得到要看的那一个，本身就难受；更要紧的是
+/// 「认出来 2,887 颗 / 图纸写 3,006 颗」这组对照在胶囊里只能挤成一个斜杠，
+/// 得有个地方把它说明白 —— 差得多的那几个色号就是最该重看的。
+private struct PartsPaletteSheet: View {
+    struct Row: Identifiable {
+        let key: String
+        let label: String
+        let color: Color
+        /// 逐格判色认出来的颗数
+        let found: Int
+        /// 图纸色号表里写的颗数（空白 / 任意色没有）
+        let onSheet: Int?
+        let isConfirmed: Bool
+        let isSelected: Bool
+
+        var id: String { key }
+    }
+
+    let rows: [Row]
+    let onPick: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(rows) { row in
+                Button { onPick(row.key) } label: {
+                    HStack(spacing: Theme.Spacing.md) {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(row.color)
+                            .frame(width: 30, height: 30)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+                            )
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.label)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(Theme.ColorToken.Text.primary)
+                            Text(detail(for: row))
+                                .font(.caption.monospacedDigit())
+                                .foregroundColor(Theme.ColorToken.Text.secondary)
+                        }
+
+                        Spacer()
+
+                        if row.isConfirmed {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(Theme.ColorToken.Status.success)
+                        }
+                        if row.isSelected {
+                            Image(systemName: "eye")
+                                .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                        }
+                    }
+                    // 整行都能点。少了这一句，点到色块和文字之间那段空白就没反应 ——
+                    // 一行里能点的地方和不能点的地方长得一模一样，最让人火大。
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .navigationTitle("这张图纸的颜色")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func detail(for row: Row) -> String {
+        guard let onSheet = row.onSheet else {
+            return String(localized: "认出 \(row.found) 颗")
+        }
+        let gap = row.found - onSheet
+        if gap == 0 {
+            return String(localized: "认出 \(row.found) 颗，跟图纸写的一样")
+        }
+        return String(localized: "认出 \(row.found) 颗，图纸写 \(onSheet) 颗（差 \(abs(gap)) 颗）")
     }
 }
 
