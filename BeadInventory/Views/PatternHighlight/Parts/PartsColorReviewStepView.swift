@@ -68,7 +68,9 @@ struct PartsColorReviewStepView: View {
         .navigationTitle("核对颜色")
         .navigationBarTitleDisplayMode(.inline)
         .task { selectDefaultGroup() }
-        .task(id: groupKey(selectedGroup)) { await loadSwatches() }
+        // 工作图也算进 id：进来时先拿到的是整张图纸的低清兜底版，高清版在后台裁好之后
+        // 才换上来。不跟着重裁的话，用户看到的一直是一格十来个像素的马赛克。
+        .task(id: "\(groupKey(selectedGroup))|\(work.image.size)") { await loadSwatches() }
         .sheet(isPresented: $showingCodePicker, onDismiss: applyPickedCode) {
             ColorSelectionView(selectedColors: $pickedCodes, colorSystem: colorSystem)
                 .environmentObject(inventoryManager)

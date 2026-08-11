@@ -30,6 +30,7 @@ struct PartsSheetFlowView: View {
 
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     /// 整张图纸的低清版，只给第一屏「圈零件区」用 —— 那屏本来就只要看个大概。
     @State private var overview: UIImage?
@@ -84,7 +85,11 @@ struct PartsSheetFlowView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") { dismiss() }
+                    // 关掉就是关掉，不是丢掉 —— 每一步的结果都已经存过了（见 persist）
+                    Button("关闭") {
+                        persist()
+                        dismiss()
+                    }
                 }
             }
             .navigationDestination(for: Step.self) { step in
@@ -99,7 +104,10 @@ struct PartsSheetFlowView: View {
                                 work: work,
                                 roi: roi,
                                 parts: $parts,
-                                onContinue: { path = [.list, .cellSize] },
+                                onContinue: {
+                                    persist()
+                                    path = [.list, .cellSize]
+                                },
                                 projectId: project.id,
                                 onSourceLoaded: { Task { await reloadFromSource() } }
                             )
@@ -108,7 +116,10 @@ struct PartsSheetFlowView: View {
                                 work: work,
                                 parts: $parts,
                                 calibration: $calibration,
-                                onContinue: { path = [.list, .cellSize, .baseColor] }
+                                onContinue: {
+                                    persist()
+                                    path = [.list, .cellSize, .baseColor]
+                                }
                             )
                         case .baseColor:
                             PartsBaseColorStepView(
@@ -150,6 +161,11 @@ struct PartsSheetFlowView: View {
             }
         }
         .task { await load() }
+        // 切出去接个电话不该丢掉刚改的色号 —— 核对页的修改是直接落在 parts 上的，
+        // 不等到「完成」那一下。
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { persist() }
+        }
     }
 
     // MARK: - 载入
@@ -181,9 +197,15 @@ struct PartsSheetFlowView: View {
         }
         self.didLoadOnce = true
 
-        // 拆过零件就直接回到清单 —— 用户上次已经圈好区了，不该再让他重圈一遍。
+        // 上次做到哪儿，这次就从哪儿接着来。
+        //
+        // 之前只认「拆过零件 → 回到清单」这一档，于是判完色、改完色号退出去再进来，
+        // 落点还是零件清单 —— 而从清单往下走会重新判一遍色，用户改过的色号全被盖掉。
+        // 他看到的就是「填好的颜色不见了」。判过色的（格子里有内容）直接回到核对页。
         if let saved, !saved.parts.isEmpty, low != nil {
-            self.path = [.list]
+            self.path = saved.parts.contains(where: \.hasCells)
+                ? [.list, .cellSize, .baseColor, .review]
+                : [.list]
         }
         // 高清版在后台换上去，换好之后界面自己刷新，用户不用等
         await prepareWorkImage()
@@ -291,6 +313,7 @@ struct PartsSheetFlowView: View {
             // 换了零件区就等于换了一张图纸，之前量的格子和判的色全部作废
             self.calibration = nil
             self.busy = nil
+            self.persist()
             if self.path.isEmpty { self.path = [.list] }
         }
     }
@@ -327,6 +350,7 @@ struct PartsSheetFlowView: View {
                 self.parts = result.parts
                 self.palette = result.palette
                 self.busy = nil
+                self.persist()
                 self.path = [.list, .cellSize, .baseColor, .review]
             }
         }
@@ -334,11 +358,16 @@ struct PartsSheetFlowView: View {
 
     // MARK: - 保存
 
-    private func save() {
-        guard let work else { return }
+    /// 把当前进度写回项目。
+    ///
+    /// **每走完一步就存一次**，而不是等用户点「完成」。拆五十几个零件、量格子、
+    /// 一个色号一个色号地核对，这是个能横跨好几天的活；中途退出去（甚至只是被电话打断）
+    /// 就全部作废，没有人受得了。
+    private func persist() {
+        guard !parts.isEmpty else { return }
         let sheet = BeadPartsSheet(
             roi: roi,
-            workingImageSize: work.image.size,
+            workingImageSize: work?.image.size ?? .zero,
             colorSystem: project.colorSystem,
             parts: parts,
             palette: palette,
@@ -348,6 +377,10 @@ struct PartsSheetFlowView: View {
             anyColorHex: anyColorHex
         )
         inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet)
+    }
+
+    private func save() {
+        persist()
         dismiss()
     }
 }

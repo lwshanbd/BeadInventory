@@ -115,7 +115,8 @@ struct PartsCellSizeStepView: View {
         }
         .navigationTitle("量格子")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: sampleIndex) { await loadSample() }
+        // 工作图也算进 id：进来时先拿到的是低清兜底版，高清版在后台裁好之后才换上来。
+        .task(id: "\(sampleIndex)|\(work.image.size)") { await loadSample() }
         .task { await estimateIfNeeded() }
         .onChange(of: frameOrigin) { _, new in
             calibration?.originX = Double(new.x)

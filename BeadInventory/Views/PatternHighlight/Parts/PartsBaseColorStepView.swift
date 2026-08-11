@@ -73,7 +73,8 @@ struct PartsBaseColorStepView: View {
         }
         .navigationTitle("底色和任意色")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
+        // 工作图也算进 id：低清兜底版换成高清版之后要重裁，否则取色取的是糊图
+        .task(id: "\(work.image.size)") { await load() }
     }
 
     // MARK: - 画布
