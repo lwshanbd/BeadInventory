@@ -188,6 +188,9 @@ struct PartsListStepView: View {
                     SimultaneousGesture(
                         SpatialTapGesture()
                             .onEnded { value in
+                                // 补零件时不响应点选：一次拖动结束时点选手势也会跟着触发，
+                                // 于是画完一个框会连带选中旁边一个（实测「已选 2 个」）。
+                                guard !addingPart else { return }
                                 toggleHit(at: content(value.location, in: size), displayRect: displayRect)
                             },
                         DragGesture(minimumDistance: addingPart ? 12 : 4)
@@ -215,7 +218,8 @@ struct PartsListStepView: View {
                                 // 框却没建出来）。
                                 let movedFar = abs(value.translation.width) >= 10
                                     && abs(value.translation.height) >= 10
-                                addingPart = false
+                                // **画完一个不退出**，接着画下一个。一张图纸漏几块是常事，
+                                // 每补一个都要重新点一次按钮纯属折腾；什么时候补完由用户自己说。
                                 guard movedFar else { return }
                                 let drawn = CGRect(corner: content(value.startLocation, in: size),
                                                    to: content(value.location, in: size))
@@ -339,7 +343,7 @@ struct PartsListStepView: View {
             if selection.isEmpty {
                 VStack(spacing: Theme.Spacing.sm) {
                     Text(addingPart
-                         ? "在漏掉的那个零件上拖一个框出来。"
+                         ? "在漏掉的零件上拖一个框出来，可以接着拖下一个。补完了点下面收工。"
                          : "找到 \(parts.count) 个零件。点一下选中它，然后可以删除、合并、拆开或改名。\n两指捏合放大，单指拖动移动图片。")
                         .font(.footnote)
                         .foregroundStyle(addingPart ? Theme.ColorToken.Morandi.honey : Theme.ColorToken.Text.secondary)
@@ -350,8 +354,8 @@ struct PartsListStepView: View {
                         addingPart.toggle()
                         if addingPart { selection.removeAll() }
                     } label: {
-                        Label(addingPart ? "取消补零件" : "有零件没框住？补一个",
-                              systemImage: addingPart ? "xmark" : "plus.viewfinder")
+                        Label(addingPart ? "补完了" : "有零件没框住？补一个",
+                              systemImage: addingPart ? "checkmark" : "plus.viewfinder")
                             .font(.footnote.weight(.medium))
                             .frame(maxWidth: .infinity)
                     }
@@ -485,7 +489,8 @@ struct PartsListStepView: View {
 
         let newPart = BeadPart(rowBand: rowBand(forMidY: inImage.midY), bounds: inImage)
         insertSorted(newPart)
-        selection = [newPart.id]
+        // 累加而不是替换：连着补好几个之后它们都还选着，看着不对可以一起删掉
+        selection.insert(newPart.id)
         lastTappedOnImage = newPart.id
 
         // 后台收缩到实际边界
