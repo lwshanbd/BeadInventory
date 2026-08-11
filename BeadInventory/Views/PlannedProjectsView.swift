@@ -1335,6 +1335,9 @@ struct PlannedProjectDetailView: View {
     @State private var showThumbnailEditor = false
     @State private var sortByQuantity = true
     @State private var showChildrenSection = true
+    @State private var showPatternModePicker = false
+    /// 在模式选择页里选了「单图纸模式」，等它收起后再进下一页（见 openSinglePatternModeIfSelected）
+    @State private var pendingSinglePatternMode = false
     @State private var showPatternCalibration = false
     @State private var showPatternHighlight = false
 
@@ -1400,6 +1403,9 @@ struct PlannedProjectDetailView: View {
         .sheet(isPresented: $showStockCheckSheet) { stockCheckSheet }
         .sheet(isPresented: $showEditSheet) { editSheet }
         .sheet(isPresented: $showThumbnailEditor) { thumbnailEditorSheet }
+        .sheet(isPresented: $showPatternModePicker, onDismiss: openSinglePatternModeIfSelected) {
+            PatternModeSelectionSheet(onSelectSinglePattern: { pendingSinglePatternMode = true })
+        }
         .sheet(isPresented: $showPatternCalibration) {
             PatternCalibrationView(
                 project: currentProject ?? project,
@@ -1462,16 +1468,23 @@ struct PlannedProjectDetailView: View {
         .padding(.horizontal)
     }
 
+    /// 单图纸模式沿用原来的分支：已标定过网格直接进高亮页，没标定先去标定页。
+    private func openSinglePatternModeIfSelected() {
+        guard pendingSinglePatternMode else { return }
+        pendingSinglePatternMode = false
+        let projectId = (currentProject ?? project).id
+        if inventoryManager.projectIDsWithPatternGrid.contains(projectId) {
+            showPatternHighlight = true
+        } else {
+            showPatternCalibration = true
+        }
+    }
+
     private var patternHighlightButton: some View {
         let projectId = (currentProject ?? project).id
         let hasThumbnail = inventoryManager.projectIDsWithThumbnail.contains(projectId)
-        let hasGrid = inventoryManager.projectIDsWithPatternGrid.contains(projectId)
         return Button {
-            if hasGrid {
-                showPatternHighlight = true
-            } else {
-                showPatternCalibration = true
-            }
+            showPatternModePicker = true
         } label: {
             HStack {
                 Image(systemName: "square.grid.3x3.square")
