@@ -67,6 +67,55 @@ private extension Int {
     var clampedToByte: Int { Swift.max(0, Swift.min(255, self)) }
 }
 
+/// 分析用的「工作图」：一张位图 + 它对应整张图纸的哪一块。
+///
+/// ## 为什么需要这层
+///
+/// 整张图纸是竖长条，直接按长边压到 2000px，宽度只剩八百多，零件区又只占其中一半 ——
+/// 一格豆子最后只有十来个像素，量格子、判色、抠格子全建在这个分辨率上，糊得很明显。
+///
+/// 所以第一屏（圈零件区）用整张的低清版看个大概就行，从确定零件区开始，
+/// 换成**从原图里把零件区裁出来**的高清版：同样的内存预算，全花在真正要看的那块上。
+///
+/// 全流程的几何量仍然是「相对整张图纸」的归一化坐标（跟 BeadPartsSheet 一致），
+/// 由这个类型负责翻译到当前这块图上，调用方不用关心手里拿的是整张还是一块。
+struct PartsWorkImage {
+    let image: UIImage
+    /// `image` 对应整张图纸的哪一块（归一化）。整张图时是单位矩形。
+    let region: CGRect
+
+    static func whole(_ image: UIImage) -> PartsWorkImage {
+        PartsWorkImage(image: image, region: CGRect(x: 0, y: 0, width: 1, height: 1))
+    }
+
+    /// 整张图纸的归一化矩形 → 本工作图内部的归一化矩形
+    func localRect(_ whole: CGRect) -> CGRect {
+        guard region.width > 0, region.height > 0 else { return .zero }
+        return CGRect(
+            x: (whole.minX - region.minX) / region.width,
+            y: (whole.minY - region.minY) / region.height,
+            width: whole.width / region.width,
+            height: whole.height / region.height
+        )
+    }
+
+    /// 本工作图内部的归一化矩形 → 整张图纸的归一化矩形
+    func wholeRect(_ local: CGRect) -> CGRect {
+        CGRect(
+            x: region.minX + local.minX * region.width,
+            y: region.minY + local.minY * region.height,
+            width: local.width * region.width,
+            height: local.height * region.height
+        )
+    }
+
+    /// 一格在这张工作图上大约有多少像素 —— 用来判断分辨率够不够
+    func pixels(forNormalizedWidth width: Double) -> Double {
+        guard region.width > 0 else { return 0 }
+        return width / Double(region.width) * Double(image.size.width)
+    }
+}
+
 /// 图纸某个区域的降采样位图，逐像素带一个量化颜色索引。
 struct PartsBitmap {
     /// 工作分辨率下的宽高
@@ -114,13 +163,22 @@ struct PartsBitmap {
 
     // MARK: - 构建
 
-    /// 从一张图 + 归一化 ROI 造位图。
+    /// 从工作图 + 归一化 ROI（**相对整张图纸**）造位图。
     ///
-    /// - Parameter maxPixels: 工作分辨率上限。超过就等比缩小 —— 拼豆图纸的一格
-    ///   在原图上通常几十像素，缩到「一格还剩 5~10 像素」对连通域和取色都绰绰有余，
-    ///   而内存和耗时是平方级省下来的。
+    /// - Parameter maxPixels: 工作分辨率上限。超过就等比缩小 —— 内存和耗时是平方级省下来的。
     /// - Returns: ROI 太小或解码失败时返回 nil。
-    static func make(from image: UIImage, roi: CGRect, maxPixels: Int) -> PartsBitmap? {
+    static func make(from work: PartsWorkImage, roi wholeROI: CGRect, maxPixels: Int) -> PartsBitmap? {
+        let local = work.localRect(wholeROI)
+        guard let bitmap = make(from: work.image, localROI: local, maxPixels: maxPixels) else { return nil }
+        // 位图自己记的 roi 要换算回「相对整张图纸」，下游的几何计算才对得上
+        return PartsBitmap(
+            width: bitmap.width, height: bitmap.height,
+            quantized: bitmap.quantized,
+            roi: work.wholeRect(bitmap.roi)
+        )
+    }
+
+    private static func make(from image: UIImage, localROI roi: CGRect, maxPixels: Int) -> PartsBitmap? {
         guard let cg = image.cgImage else { return nil }
         let fullPixels = CGRect(x: 0, y: 0, width: cg.width, height: cg.height)
         let roiPixels = CGRect(

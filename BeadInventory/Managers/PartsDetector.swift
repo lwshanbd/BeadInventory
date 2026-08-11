@@ -62,11 +62,11 @@ enum PartsDetector {
     ///   - image: 已经降采样过的整张图纸
     ///   - roi: 用户圈的零件区（归一化，相对整张图）
     static func detect(
-        in image: UIImage,
+        in work: PartsWorkImage,
         roi: CGRect,
         options: PartsDetectionOptions = PartsDetectionOptions()
     ) -> [DetectedPart] {
-        guard let bitmap = PartsBitmap.make(from: image, roi: roi, maxPixels: options.maxWorkingPixels) else {
+        guard let bitmap = PartsBitmap.make(from: work, roi: roi, maxPixels: options.maxWorkingPixels) else {
             return []
         }
         return detect(in: bitmap, options: options)

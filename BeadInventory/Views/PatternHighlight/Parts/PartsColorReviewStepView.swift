@@ -18,7 +18,7 @@
 import SwiftUI
 
 struct PartsColorReviewStepView: View {
-    let image: UIImage
+    let work: PartsWorkImage
     @Binding var parts: [BeadPart]
     let colorSystem: ColorSystem
     let onFinish: () -> Void
@@ -148,6 +148,37 @@ struct PartsColorReviewStepView: View {
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+
+                // 整类一起改。图纸上那种「整片白其实是镂空、不是豆子」的情况，
+                // 一格一格点几百下不现实，得能一次说清楚。
+                HStack(spacing: Theme.Spacing.sm) {
+                    Button {
+                        selectWholeGroup()
+                        pickedCodes = []
+                        showingCodePicker = true
+                    } label: {
+                        Label("这类都改成…", systemImage: "paintpalette").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        selectWholeGroup()
+                        apply(.anyColor)
+                    } label: {
+                        Label("这类是任意色", systemImage: "wand.and.stars").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        selectWholeGroup()
+                        apply(.empty)
+                    } label: {
+                        Label("这类没有豆子", systemImage: "square.dashed").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .font(.footnote)
+                .lineLimit(1)
             } else {
                 HStack {
                     Text("已选 \(selection.count) 格")
@@ -185,7 +216,7 @@ struct PartsColorReviewStepView: View {
             }
 
             Button(action: onFinish) {
-                Label("完成", systemImage: "checkmark").frame(maxWidth: .infinity)
+                Label("完成 · 一共 \(totalBeads) 颗", systemImage: "checkmark").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
         }
@@ -201,12 +232,15 @@ struct PartsColorReviewStepView: View {
         var key: String
     }
 
-    /// 按格数从多到少。空排在最后 —— 它通常最多，但用户最不需要翻它。
+    /// 按颗数从多到少。**空不列在这里** —— 零件轮廓外面、矩形四角、中间镂空
+    /// 全是空格，数量比任何一个色号都大，但它不是一种要买要放的豆子，
+    /// 摆进来只会把真正要核对的色号挤到后面去。
+    /// 某一片本来有豆子却被判成空时，从它现在所在的那个色号里选中改回来即可。
     private var groups: [Group] {
         var counts: [String: (fill: PartCellFill, count: Int)] = [:]
         for part in parts {
             for row in part.cells {
-                for cell in row {
+                for cell in row where cell != .empty {
                     let key = groupKey(cell)
                     counts[key, default: (cell, 0)].count += 1
                 }
@@ -214,11 +248,12 @@ struct PartsColorReviewStepView: View {
         }
         return counts
             .map { Group(fill: $0.value.fill, count: $0.value.count, key: $0.key) }
-            .sorted { lhs, rhs in
-                let lhsEmpty = lhs.fill == .empty, rhsEmpty = rhs.fill == .empty
-                if lhsEmpty != rhsEmpty { return !lhsEmpty }
-                return lhs.count > rhs.count
-            }
+            .sorted { $0.count > $1.count }
+    }
+
+    /// 图纸上一共要放多少颗豆子（空格不算）
+    private var totalBeads: Int {
+        groups.reduce(0) { $0 + $1.count }
     }
 
     private func groupKey(_ fill: PartCellFill) -> String {
@@ -265,12 +300,7 @@ struct PartsColorReviewStepView: View {
     }
 
     private func selectDefaultGroup() {
-        // 默认落在格数最多的那个**真色号**上，不是空
-        if let first = groups.first(where: { $0.fill != .empty }) {
-            selectedGroup = first.fill
-        } else if let first = groups.first {
-            selectedGroup = first.fill
-        }
+        if let first = groups.first { selectedGroup = first.fill }
     }
 
     // MARK: - 抠格子
@@ -281,7 +311,7 @@ struct PartsColorReviewStepView: View {
     private func loadSwatches() async {
         let refs = cells(of: selectedGroup)
         let snapshot = parts
-        let img = image
+        let source = work
         // 一次最多抠 1500 个，再多用户也不会一个个看，先让界面出来
         let capped = Array(refs.prefix(1500))
         let built = await Task.detached(priority: .userInitiated) { () -> [CellRef: UIImage] in
@@ -289,7 +319,7 @@ struct PartsColorReviewStepView: View {
             for ref in capped {
                 guard ref.part < snapshot.count else { continue }
                 let rect = snapshot[ref.part].cellRect(row: ref.row, col: ref.col)
-                if let cropped = PartsThumbnailMaker.crop(img, normalized: rect) {
+                if let cropped = PartsThumbnailMaker.crop(source, normalized: rect) {
                     result[ref] = cropped
                 }
             }
@@ -299,6 +329,10 @@ struct PartsColorReviewStepView: View {
     }
 
     // MARK: - 改
+
+    private func selectWholeGroup() {
+        selection = Set(cells(of: selectedGroup))
+    }
 
     private func apply(_ fill: PartCellFill) {
         for ref in selection {

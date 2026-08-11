@@ -29,7 +29,7 @@ enum PartsPitchEstimator {
     /// - Parameter samples: 拿来量的零件。挑大的几个 —— 零件越大，格线越多，
     ///   得分曲线的峰越尖锐。
     /// - Returns: 一个零件都量不出来时返回 nil，由调用方给用户一个手动量的初值。
-    static func estimate(image: UIImage, parts: [BeadPart], sampleCount: Int = 5) -> PartsGridCalibration? {
+    static func estimate(work: PartsWorkImage, parts: [BeadPart], sampleCount: Int = 5) -> PartsGridCalibration? {
         let samples = parts
             .sorted { $0.bounds.width * $0.bounds.height > $1.bounds.width * $1.bounds.height }
             .prefix(sampleCount)
@@ -38,7 +38,7 @@ enum PartsPitchEstimator {
         var widths: [Double] = []
         var heights: [Double] = []
         for part in samples {
-            guard let bitmap = PartsBitmap.make(from: image, roi: part.bounds, maxPixels: 400_000),
+            guard let bitmap = PartsBitmap.make(from: work, roi: part.bounds, maxPixels: 400_000),
                   bitmap.width >= 8, bitmap.height >= 8 else { continue }
             let profiles = gradientProfiles(of: bitmap)
             // 周期是像素数；bbox 精确等于 cols 格，所以四舍五入回整数格再反算格距，
@@ -149,27 +149,43 @@ enum PartsPitchEstimator {
     ///
     /// 所以这里在 bbox 附近搜一遍「起点 + 格距」，让所有格线尽量落在颜色突变的地方。
     /// 格距允许在用户给的值上下浮动 6%：用户是用手指量的，本来就不可能精确。
+    /// - Parameters:
+    ///   - forcedCols/forcedRows: 用户在界面上手点过的格数。传了就用它，不再从格距反推 ——
+    ///     否则用户点 +1 之后这里又按 bbox 算回原来的数，按钮看起来像没反应。
     static func fitGrid(
-        image: UIImage,
+        work: PartsWorkImage,
         part: BeadPart,
-        calibration: PartsGridCalibration
+        calibration: PartsGridCalibration,
+        forcedCols: Int? = nil,
+        forcedRows: Int? = nil
     ) -> FittedGrid? {
-        let cols = max(1, Int((Double(part.bounds.width) / calibration.cellWidth).rounded()))
-        let rows = max(1, Int((Double(part.bounds.height) / calibration.cellHeight).rounded()))
+        let cols = forcedCols ?? max(1, Int((Double(part.bounds.width) / calibration.cellWidth).rounded()))
+        let rows = forcedRows ?? max(1, Int((Double(part.bounds.height) / calibration.cellHeight).rounded()))
 
         // 往外放两格再搜，保证真正的边界落在搜索范围里面
         let margin = CGSize(width: calibration.cellWidth * 2, height: calibration.cellHeight * 2)
         let expanded = part.bounds
             .insetBy(dx: -margin.width, dy: -margin.height)
             .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
-        guard let bitmap = PartsBitmap.make(from: image, roi: expanded, maxPixels: 400_000),
+        guard let bitmap = PartsBitmap.make(from: work, roi: expanded, maxPixels: 400_000),
               bitmap.width >= 16, bitmap.height >= 16 else { return nil }
 
         let profiles = gradientProfiles(of: bitmap)
-        let pitchX = calibration.cellWidth / Double(expanded.width) * Double(bitmap.width)
-        let pitchY = calibration.cellHeight / Double(expanded.height) * Double(bitmap.height)
-        guard let x = fitAxis(profile: profiles.columns, lines: cols, pitch: pitchX),
-              let y = fitAxis(profile: profiles.rows, lines: rows, pitch: pitchY) else { return nil }
+        // 格距按「这个零件的 bbox ÷ 格数」算，而不是直接用全局值：
+        // 用户点 +1 改的就是格数，格距必须跟着走，否则线的疏密不变。
+        let cellW = forcedCols != nil ? Double(part.bounds.width) / Double(cols) : calibration.cellWidth
+        let cellH = forcedRows != nil ? Double(part.bounds.height) / Double(rows) : calibration.cellHeight
+        let pitchX = cellW / Double(expanded.width) * Double(bitmap.width)
+        let pitchY = cellH / Double(expanded.height) * Double(bitmap.height)
+        // 网格的起点应该就在零件左上角附近，允许它在正负一格半里找 ——
+        // 放开整个搜索窗口去找的话，得分最高的位置常常整片飘到零件外面（那里
+        // 有水印和图纸底纹的规则纹理，同样能刷出高分）。
+        let expectedX = Double(part.bounds.minX - expanded.minX) / Double(expanded.width) * Double(bitmap.width)
+        let expectedY = Double(part.bounds.minY - expanded.minY) / Double(expanded.height) * Double(bitmap.height)
+        guard let x = fitAxis(profile: profiles.columns, lines: cols, pitch: pitchX,
+                              expectedStart: expectedX, tolerance: pitchX * 1.5),
+              let y = fitAxis(profile: profiles.rows, lines: rows, pitch: pitchY,
+                              expectedStart: expectedY, tolerance: pitchY * 1.5) else { return nil }
 
         let rect = CGRect(
             x: expanded.minX + CGFloat(x.start / Double(bitmap.width)) * expanded.width,
@@ -180,34 +196,37 @@ enum PartsPitchEstimator {
         return FittedGrid(rect: rect, rows: rows, cols: cols)
     }
 
-    /// 在一条曲线上找「起点 + 格距」，让 lines+1 条等距线尽量都落在峰上。
-    private static func fitAxis(profile: [Double], lines: Int, pitch: Double) -> (start: Double, pitch: Double)? {
+    /// 在一条曲线上找网格的**起点**，让 lines+1 条等距线尽量都落在峰上。
+    ///
+    /// **格距是给定的，这里不动它。** 早先允许它在给定值上下浮动 6%，理由是
+    /// 「用手指量的不可能准」；结果每个零件的格子大小都不一样，同一张图纸上
+    /// 一格到底多大变成了一件说不清的事。格距全图一个数，这里只解相位。
+    private static func fitAxis(
+        profile: [Double], lines: Int, pitch: Double,
+        expectedStart: Double, tolerance: Double
+    ) -> (start: Double, pitch: Double)? {
         let n = profile.count
-        guard lines >= 1, pitch >= 2, Double(n) >= pitch * Double(lines) else { return nil }
+        let span = pitch * Double(lines)
+        guard lines >= 1, pitch >= 2, span <= Double(n - 1) else { return nil }
 
-        var best: (start: Double, pitch: Double, score: Double)?
-        let pitchSteps = stride(from: 0.94, through: 1.06, by: 0.005)
-        for factor in pitchSteps {
-            let p = pitch * factor
-            let span = p * Double(lines)
-            guard span <= Double(n - 1) else { continue }
-            var start = 0.0
-            while start <= Double(n - 1) - span {
-                var total = 0.0
-                for k in 0...lines {
-                    let x = Int((start + Double(k) * p).rounded())
-                    let lo = max(0, x - 1), hi = min(n - 1, x + 1)
-                    total += (lo...hi).map { profile[$0] }.max() ?? 0
-                }
-                let score = total / Double(lines + 1)
-                if best == nil || score > best!.score {
-                    best = (start, p, score)
-                }
-                start += 0.25
+        var best: (start: Double, score: Double)?
+        let lower = max(0, expectedStart - tolerance)
+        let upper = min(Double(n - 1) - span, expectedStart + tolerance)
+        guard lower <= upper else { return nil }
+        var start = lower
+        while start <= upper {
+            var total = 0.0
+            for k in 0...lines {
+                let x = Int((start + Double(k) * pitch).rounded())
+                let lo = max(0, x - 1), hi = min(n - 1, x + 1)
+                total += (lo...hi).map { profile[$0] }.max() ?? 0
             }
+            let score = total / Double(lines + 1)
+            if best == nil || score > best!.score { best = (start, score) }
+            start += 0.25
         }
         guard let best else { return nil }
-        return (best.start, best.pitch)
+        return (best.start, pitch)
     }
 
     private static func median(_ values: [Double]) -> Double? {

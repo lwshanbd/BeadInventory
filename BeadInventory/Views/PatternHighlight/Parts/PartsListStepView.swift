@@ -23,7 +23,7 @@
 import SwiftUI
 
 struct PartsListStepView: View {
-    let image: UIImage
+    let work: PartsWorkImage
     let roi: CGRect
     @Binding var parts: [BeadPart]
     let onContinue: () -> Void
@@ -69,11 +69,11 @@ struct PartsListStepView: View {
         }
         .task(id: partsSignature) {
             let snapshot = parts
-            let img = image
+            let source = work
             let region = roi
             let built = await Task.detached(priority: .userInitiated) {
-                (thumbs: PartsThumbnailMaker.make(for: snapshot, from: img),
-                 crop: PartsThumbnailMaker.crop(img, normalized: region))
+                (thumbs: PartsThumbnailMaker.make(for: snapshot, from: source),
+                 crop: PartsThumbnailMaker.crop(source, normalized: region))
             }.value
             thumbnails = built.thumbs
             roiImage = built.crop
@@ -340,7 +340,7 @@ struct PartsListStepView: View {
             var options = PartsDetectionOptions()
             options.minAreaRatio = 0.01        // 相对这个小框
             options.maxWorkingPixels = 250_000
-            let found = PartsDetector.detect(in: image, roi: inImage, options: options)
+            let found = PartsDetector.detect(in: work, roi: inImage, options: options)
             guard let biggest = found.max(by: {
                 $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height
             }) else { return }
@@ -387,7 +387,7 @@ struct PartsListStepView: View {
         splitting = true
 
         Task.detached(priority: .userInitiated) {
-            let sub = PartsDetector.detect(in: image, roi: padded, options: options)
+            let sub = PartsDetector.detect(in: work, roi: padded, options: options)
             // 放大过的框会把邻居蹭进来，只保留主体落在原框里的
             let mine = sub.filter { candidate in
                 let overlap = candidate.bounds.intersection(target.bounds)
@@ -539,22 +539,23 @@ extension CGRect {
 
 enum PartsThumbnailMaker {
     /// 按零件 bbox 从整图上裁小图。四周留 6% 余量，免得描边紧贴缩略图边缘看不清。
-    static func make(for parts: [BeadPart], from image: UIImage) -> [UUID: UIImage] {
-        guard let cg = image.cgImage else { return [:] }
+    static func make(for parts: [BeadPart], from work: PartsWorkImage) -> [UUID: UIImage] {
         var result: [UUID: UIImage] = [:]
         for part in parts {
             let padded = part.bounds.insetBy(dx: -part.bounds.width * 0.06,
                                              dy: -part.bounds.height * 0.06)
-            if let cropped = crop(cg, normalized: padded, scale: image.scale, orientation: image.imageOrientation) {
+            if let cropped = crop(work, normalized: padded) {
                 result[part.id] = cropped
             }
         }
         return result
     }
 
-    static func crop(_ image: UIImage, normalized rect: CGRect) -> UIImage? {
-        guard let cg = image.cgImage else { return nil }
-        return crop(cg, normalized: rect, scale: image.scale, orientation: image.imageOrientation)
+    /// `rect` 是**相对整张图纸**的归一化矩形，由工作图自己翻译到它手里那块图上。
+    static func crop(_ work: PartsWorkImage, normalized rect: CGRect) -> UIImage? {
+        guard let cg = work.image.cgImage else { return nil }
+        return crop(cg, normalized: work.localRect(rect),
+                    scale: work.image.scale, orientation: work.image.imageOrientation)
     }
 
     private static func crop(

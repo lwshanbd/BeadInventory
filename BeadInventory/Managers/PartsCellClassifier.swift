@@ -38,7 +38,7 @@ enum PartsCellClassifier {
     ///
     /// - Parameter progress: (已完成零件数, 总数)
     static func classify(
-        image: UIImage,
+        work: PartsWorkImage,
         parts: [BeadPart],
         roi: CGRect,
         calibration: PartsGridCalibration,
@@ -48,7 +48,7 @@ enum PartsCellClassifier {
         progress: ((Int, Int) -> Void)? = nil
     ) -> Result {
         // 背景色从整个零件区取（不是从单个零件的框里取 —— 那里面大半是零件自己）
-        let backgroundLab = PartsBitmap.make(from: image, roi: roi, maxPixels: 400_000)
+        let backgroundLab = PartsBitmap.make(from: work, roi: roi, maxPixels: 400_000)
             .map { PartsDetector.backgroundLab(of: $0) }
 
         // 第一趟：把每个零件切格、量出每格的平均色
@@ -56,14 +56,22 @@ enum PartsCellClassifier {
         var cellLabs: [[[LabColor?]]] = []      // [part][row][col]
         for (index, part) in parts.enumerated() {
             var updated = part
-            let fitted = PartsPitchEstimator.fitGrid(image: image, part: part, calibration: calibration)
-            let rows = fitted?.rows ?? part.gridSize(for: calibration).rows
-            let cols = fitted?.cols ?? part.gridSize(for: calibration).cols
-            updated.gridRect = fitted?.rect
+            // 用户在「量格子」那屏手动调过的零件已经带着 gridRect 和行列数，
+            // 直接用他的结论 —— 自动重贴会把手动修正覆盖掉。
+            let rows: Int, cols: Int
+            if part.gridRect != nil, part.rows > 0, part.cols > 0 {
+                rows = part.rows
+                cols = part.cols
+            } else {
+                let fitted = PartsPitchEstimator.fitGrid(work: work, part: part, calibration: calibration)
+                rows = fitted?.rows ?? part.gridSize(for: calibration).rows
+                cols = fitted?.cols ?? part.gridSize(for: calibration).cols
+                updated.gridRect = fitted?.rect
+            }
             updated.rows = rows
             updated.cols = cols
 
-            let labs = sampleCells(image: image, part: updated)
+            let labs = sampleCells(work: work, part: updated)
             cellLabs.append(labs)
             updated.cells = Array(repeating: Array(repeating: .empty, count: cols), count: rows)
             fittedParts.append(updated)
@@ -119,10 +127,10 @@ enum PartsCellClassifier {
     ///
     /// 众数只认「这一格里最多的那个颜色」。描边再深也只占一圈，占不到一半，直接被无视；
     /// 网格差个几分之一格也不影响结论。
-    private static func sampleCells(image: UIImage, part: BeadPart) -> [[LabColor?]] {
+    private static func sampleCells(work: PartsWorkImage, part: BeadPart) -> [[LabColor?]] {
         let area = part.gridRect ?? part.bounds
         guard part.rows > 0, part.cols > 0,
-              let bitmap = PartsBitmap.make(from: image, roi: area, maxPixels: 600_000) else {
+              let bitmap = PartsBitmap.make(from: work, roi: area, maxPixels: 600_000) else {
             return Array(repeating: Array(repeating: nil, count: max(part.cols, 0)), count: max(part.rows, 0))
         }
         var result = [[LabColor?]](repeating: [LabColor?](repeating: nil, count: part.cols), count: part.rows)
