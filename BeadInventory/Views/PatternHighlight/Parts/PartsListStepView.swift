@@ -42,6 +42,12 @@ struct PartsListStepView: View {
     @State private var splitFailed = false
     /// 正在图上拖出来的那个新框（屏幕坐标）。松手即清空。
     @State private var draftRect: CGRect?
+    /// 图上的缩放。小零件在整张零件区里只有几个点大，不放大根本框不住。
+    /// 锚点取捏合的起始位置（`MagnifyGesture.startAnchor`）—— 捏哪儿放大哪儿，
+    /// 于是不需要再单独做一套平移手势跟「拖框」抢一根手指。
+    @State private var zoom: CGFloat = 1
+    @State private var lastZoom: CGFloat = 1
+    @State private var zoomAnchor: UnitPoint = .center
     @State private var showingFinishedConfirm = false
     /// 原图副本还在不在。拼好了删掉之后这一行就消失。
     @State private var sourceBytes = 0
@@ -119,7 +125,8 @@ struct PartsListStepView: View {
                     parts: parts,
                     roi: roi,
                     selection: selection,
-                    displayRect: display
+                    displayRect: display,
+                    zoom: zoom
                 )
 
                 if let draftRect {
@@ -131,31 +138,70 @@ struct PartsListStepView: View {
                         .allowsHitTesting(false)
                 }
             }
-            .contentShape(Rectangle())
-            // 点选和拖框必须并进同一个 SimultaneousGesture：分开挂的话
-            // DragGesture 会把 tap 整个吃掉，点零件变成没反应。
-            .gesture(
-                SimultaneousGesture(
-                    SpatialTapGesture()
-                        .onEnded { value in toggleHit(at: value.location, displayRect: display) },
-                    DragGesture(minimumDistance: 12)
-                        .onChanged { value in
-                            draftRect = CGRect(corner: value.startLocation, to: value.location)
-                                .intersection(display)
-                        }
-                        .onEnded { value in
-                            let drawn = CGRect(corner: value.startLocation, to: value.location)
-                                .intersection(display)
-                            draftRect = nil
-                            addPart(fromDisplayRect: drawn, displayRect: display)
-                        }
-                )
-            )
+            .scaleEffect(zoom, anchor: zoomAnchor)
+            .overlay(gestureCatcher(in: geo.size, displayRect: display))
         }
         // 图纸是竖长的，240pt 高只剩不到 180pt 宽，五十几个框挤成一团看不清谁是谁。
         // 340pt 是「图上看得清 + 下面还能露出两行缩略图」的折中。
         .frame(height: 340)
         .background(Theme.ColorToken.Surface.subtle)
+        // 必须裁：`scaleEffect` 只是画得更大，不会自己留在框里 ——
+        // 少了这一行，放大后的图会盖到导航栏和下面的缩略图上。
+        .clipped()
+    }
+
+    /// 手势层。**故意挂在没被缩放的那一层上**，自己做逆变换。
+    ///
+    /// 一开始是把手势直接挂在 `.scaleEffect` 之后的视图上，指望 SwiftUI 把触点映射回
+    /// 内容坐标系 —— 实测不是：放大到 4 倍再拖框，框会落到别的零件上。
+    /// 与其去猜 `scaleEffect` 和手势坐标系的关系，不如让触点始终是**容器坐标**，
+    /// 再按 `C = A + (S - A) / zoom` 自己换回内容坐标（A 是缩放锚点）。这样是确定的。
+    private func gestureCatcher(in size: CGSize, displayRect: CGRect) -> some View {
+        // 点选、拖框、捏合必须并进同一个 SimultaneousGesture：分开挂的话
+        // DragGesture 会把 tap 整个吃掉，点零件变成没反应。
+        Color.clear
+            .contentShape(Rectangle())
+            .gesture(
+                SimultaneousGesture(
+                    SimultaneousGesture(
+                        SpatialTapGesture()
+                            .onEnded { value in
+                                toggleHit(at: content(value.location, in: size), displayRect: displayRect)
+                            },
+                        DragGesture(minimumDistance: 12)
+                            .onChanged { value in
+                                draftRect = CGRect(corner: content(value.startLocation, in: size),
+                                                   to: content(value.location, in: size))
+                                    .intersection(displayRect)
+                            }
+                            .onEnded { value in
+                                let drawn = CGRect(corner: content(value.startLocation, in: size),
+                                                   to: content(value.location, in: size))
+                                    .intersection(displayRect)
+                                draftRect = nil
+                                addPart(fromDisplayRect: drawn, displayRect: displayRect)
+                            }
+                    ),
+                    MagnifyGesture()
+                        .onChanged { value in
+                            zoomAnchor = value.startAnchor
+                            zoom = max(1, min(8, lastZoom * value.magnification))
+                        }
+                        .onEnded { _ in
+                            lastZoom = zoom
+                            if zoom <= 1.01 { zoomAnchor = .center }
+                        }
+                )
+            )
+    }
+
+    /// 屏幕（容器）坐标 → 内容坐标。`scaleEffect(z, anchor: A)` 把内容点 C 画到
+    /// S = A + (C - A) * z，这里做的是它的逆。
+    private func content(_ point: CGPoint, in size: CGSize) -> CGPoint {
+        guard zoom > 0 else { return point }
+        let a = CGPoint(x: zoomAnchor.x * size.width, y: zoomAnchor.y * size.height)
+        return CGPoint(x: a.x + (point.x - a.x) / zoom,
+                       y: a.y + (point.y - a.y) / zoom)
     }
 
     private func toggleHit(at point: CGPoint, displayRect: CGRect) {
@@ -230,7 +276,7 @@ struct PartsListStepView: View {
     private var footer: some View {
         VStack(spacing: Theme.Spacing.md) {
             if selection.isEmpty {
-                Text("找到 \(parts.count) 个零件。点一下可以选中，选中之后能删除、合并、拆开或者改名。\n有零件没被框住，直接在它上面拖一下就能补一个。")
+                Text("找到 \(parts.count) 个零件。点一下可以选中，选中之后能删除、合并、拆开或者改名。\n有零件没被框住，在它上面拖一下就能补一个；零件太小就先两指捏合放大。")
                     .font(.footnote)
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
                     .multilineTextAlignment(.center)
@@ -467,6 +513,9 @@ private struct PartsBoxOverlay: View {
     let roi: CGRect
     let selection: Set<UUID>
     let displayRect: CGRect
+    /// 当前缩放。框线和编号要**除掉**它，否则放大 4 倍时编号也变成 4 倍，
+    /// 一个数字就能把整个零件盖住。
+    let zoom: CGFloat
 
     var body: some View {
         Canvas { context, _ in
@@ -489,25 +538,27 @@ private struct PartsBoxOverlay: View {
                 if selected {
                     context.fill(Path(roundedRect: r, cornerRadius: 2), with: .color(.white.opacity(0.28)))
                 }
-                context.stroke(Path(roundedRect: r, cornerRadius: 2),
+                context.stroke(Path(roundedRect: r, cornerRadius: 2 / zoom),
                                with: .color(stroke),
-                               lineWidth: selected ? 2 : 1)
+                               lineWidth: (selected ? 2 : 1) / zoom)
 
                 // 序号贴在框的左上角外侧；框太靠上时贴内侧，免得跑出画面。
                 //
                 // 小框不画号：一张图上五十几个零件，全画出来数字会叠成一团反而谁都看不清。
                 // 小零件靠「点一下高亮」认领 —— 点图上的框或点下面的缩略图，两边同时高亮。
-                let bigEnough = min(r.width, r.height) >= 16
+                // 「够大才画号」按**屏幕上**的尺寸判断，所以门槛也要跟着缩放走
+                let bigEnough = min(r.width, r.height) * zoom >= 16
                 guard bigEnough || selected else { continue }
                 let badge = Text("\(index + 1)")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 9 / zoom, weight: .bold))
                     .foregroundStyle(Color.black)
-                let badgeY = r.minY > displayRect.minY + 8 ? r.minY - 5 : r.minY + 5
+                let badgeY = r.minY > displayRect.minY + 8 / zoom ? r.minY - 5 / zoom : r.minY + 5 / zoom
                 context.fill(
-                    Path(ellipseIn: CGRect(x: r.minX - 6, y: badgeY - 6, width: 13, height: 13)),
+                    Path(ellipseIn: CGRect(x: r.minX - 6 / zoom, y: badgeY - 6 / zoom,
+                                           width: 13 / zoom, height: 13 / zoom)),
                     with: .color(selected ? .white : .cyan)
                 )
-                context.draw(badge, at: CGPoint(x: r.minX + 0.5, y: badgeY))
+                context.draw(badge, at: CGPoint(x: r.minX + 0.5 / zoom, y: badgeY))
             }
         }
     }
