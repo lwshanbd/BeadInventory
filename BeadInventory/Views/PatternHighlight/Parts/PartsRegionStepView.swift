@@ -73,14 +73,14 @@ struct PartsRegionStepView: View {
 
     private var footer: some View {
         VStack(spacing: Theme.Spacing.md) {
-            Text("把中间那一片零件框住。顶上的色号表、底下的装配图留在框外。")
+            Text("拖动方框，把中间这一片零件圈进去。上面的色号表和下面的成品图不用圈。")
                 .font(.footnote)
                 .foregroundStyle(Theme.ColorToken.Text.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
             Button(action: onContinue) {
-                Label("自动拆零件", systemImage: "square.on.square.dashed")
+                Label("开始找零件", systemImage: "square.on.square.dashed")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)

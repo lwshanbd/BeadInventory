@@ -4,13 +4,20 @@
 //
 //  多零件模式（立体图纸）- 整条流程的容器
 //
-//  三屏，一屏一件事，每屏底部都有明确的「下一步」：
+//  两屏，一屏一件事：
 //
-//      ① 圈零件区   把中间那一大块框住（排除顶部色号表 / 底部装配图）
-//      ② 零件清单   自动拆出来的零件，能删、能合并、能改名、能调灵敏度重拆
-//      ③ 图纸调色板 这张图用了哪几种颜色，各代表什么色号 / 任意色 / 空
+//      ① 圈零件区   把中间那一大块框住（排除顶部色号表 / 底部成品图）
+//      ② 零件清单   找出来的零件，能删、能合并、能拆开、能补、能改名
 //
-//  第 2 步（量格子大小 → 逐格识别 → 校色）接在 ③ 之后，届时从这里再往下推一屏。
+//  ## 这里曾经有第三屏「图纸调色板」，已经删掉
+//
+//  那一屏按像素占比列出图上的十几种颜色（「H7 占 10.6%」）让用户认领色号。
+//  它是错的：拼豆用户是一颗一颗放豆子的，「占 10.6%」对他没有任何意义，
+//  他要知道的是「这个色号有多少颗、分别是哪几格」。而那一屏统计的是**像素**，
+//  当时连「格子」这个概念都还不存在 —— 网格还没对齐。
+//
+//  正确的顺序是：量出一格多大 → 每个零件切成 rows × cols → 每格判一个色号 →
+//  按色号把格子摆出来让用户校对。色号认领这件事属于那一屏，不该提前到这里。
 //
 //  刻意不复用 `PatternCalibrationView`：那一页是为「整张图一个大网格」设计的，
 //  两套心智模型挤一屏用户会不知道该点哪个。
@@ -38,11 +45,9 @@ struct PartsSheetFlowView: View {
     @State private var calibration: PartsGridCalibration?
     @State private var anyColorCode: String?
 
-    /// 拆分灵敏度（0~1）。拆多了 / 拆少了，用户在清单页拉这根滑杆重拆。
-    @State private var sensitivity: Double = 0.5
     @State private var busy: String?
 
-    enum Step: Hashable { case list, palette }
+    enum Step: Hashable { case list }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -54,7 +59,7 @@ struct PartsSheetFlowView: View {
                     PartsRegionStepView(
                         image: image,
                         roi: $roi,
-                        onContinue: { runDetection(resetSensitivity: true) }
+                        onContinue: { runDetection() }
                     )
                 } else {
                     ContentUnavailableView(
@@ -79,19 +84,9 @@ struct PartsSheetFlowView: View {
                             image: image,
                             roi: roi,
                             parts: $parts,
-                            sensitivity: $sensitivity,
-                            onRedetect: { runDetection(resetSensitivity: false) },
-                            onContinue: { buildPalette() }
+                            onSave: { save() }
                         )
                     }
-                case .palette:
-                    PartsPaletteStepView(
-                        palette: $palette,
-                        colorSystem: project.colorSystem,
-                        partCount: parts.count,
-                        onFinish: { save() }
-                    )
-                    .environmentObject(inventoryManager)
                 }
             }
             .overlay {
@@ -140,12 +135,14 @@ struct PartsSheetFlowView: View {
 
     // MARK: - 拆零件
 
-    private func runDetection(resetSensitivity: Bool) {
+    /// 找零件只有这一个入口，也没有任何可调的旋钮 —— 阈值是算法的事，不是用户要理解的东西。
+    /// 结果不对，用户在清单页直接改图上的框（删 / 补 / 合并 / 拆开）；
+    /// 要是连零件区都圈错了，返回上一屏挪一下框再点一次就是重来。
+    private func runDetection() {
         guard let image else { return }
-        if resetSensitivity { sensitivity = 0.5 }
-        let options = PartsDetectionOptions.fromSensitivity(sensitivity)
+        let options = PartsDetectionOptions()
         let currentROI = roi
-        busy = "正在拆零件…"
+        busy = "正在找零件…"
 
         Task.detached(priority: .userInitiated) {
             let detected = PartsDetector.detect(in: image, roi: currentROI, options: options)
@@ -154,58 +151,6 @@ struct PartsSheetFlowView: View {
                 self.parts = newParts
                 self.busy = nil
                 if self.path.isEmpty { self.path = [.list] }
-            }
-        }
-    }
-
-    // MARK: - 调色板
-
-    private func buildPalette() {
-        guard let image else { return }
-        let currentROI = roi
-        let bounds = parts.map(\.bounds)
-        let colorSystem = project.colorSystem
-        let legend = project.beadUsage.map(\.colorCode)
-        let colors = inventoryManager.beadColors
-        let existing = palette
-        busy = "正在读取图纸配色…"
-
-        Task.detached(priority: .userInitiated) {
-            guard let bitmap = PartsBitmap.make(from: image, roi: currentROI, maxPixels: 1_600_000) else {
-                await MainActor.run { self.busy = nil }
-                return
-            }
-            var built = PartsPaletteExtractor.buildInitialPalette(
-                bitmap: bitmap,
-                partBounds: bounds,
-                colorSystem: colorSystem,
-                legendCodes: legend,
-                availableColors: colors
-            )
-            // 用户上次已经认领过的颜色要对回去 —— 重跑一次不该把人工结论冲掉。
-            //
-            // 按颜色距离对而不是按 hex 字符串对：零件框动一下，聚类中心就可能挪到
-            // 相邻的量化桶里，hex 一变人工结论就全丢了。ΔE ≤ 6 是「同一种颜色的抖动」
-            // 量级，比调色板自身 12 的合并阈值小一半，不会张冠李戴。
-            built = built.map { entry in
-                guard let entryLab = GridCellSampler.lab(forHex: entry.hex) else { return entry }
-                let prev = existing.min { a, b in
-                    let da = GridCellSampler.lab(forHex: a.hex).map { GridCellSampler.deltaE($0, entryLab) } ?? .infinity
-                    let db = GridCellSampler.lab(forHex: b.hex).map { GridCellSampler.deltaE($0, entryLab) } ?? .infinity
-                    return da < db
-                }
-                guard let prev,
-                      let prevLab = GridCellSampler.lab(forHex: prev.hex),
-                      GridCellSampler.deltaE(prevLab, entryLab) <= 6 else { return entry }
-                var merged = entry
-                merged.role = prev.role
-                merged.matchDeltaE = prev.matchDeltaE
-                return merged
-            }
-            await MainActor.run {
-                self.palette = built
-                self.busy = nil
-                self.path = [.list, .palette]
             }
         }
     }

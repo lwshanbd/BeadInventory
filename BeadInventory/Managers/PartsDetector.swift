@@ -34,10 +34,14 @@ struct DetectedPart: Equatable, Sendable {
     var rowBand: Int
 }
 
+/// 检测参数。**这些不暴露给用户** —— 曾经把 `foregroundDeltaE` / `minAreaRatio`
+/// 包成一根「灵敏度」滑杆放在界面上，那是在让用户替算法调参：他既不知道该往哪边拉，
+/// 也不知道拉了会换来什么。结果不对时用户要做的是在图上直接改那几个框，不是猜刻度。
+/// 只有 `splitSelected` / `addPart` 这种「在一个小框里重跑」的场景才改这里的值。
 struct PartsDetectionOptions: Equatable, Sendable {
     /// 前景判定阈值（跟背景色的 Lab 距离）。
-    /// 调小 → 更敏感，浅色零件不会漏，但水印和 JPEG 色偏也可能被当成零件；
-    /// 调大 → 更干净，但跟背景接近的浅色零件会被吃掉。
+    /// 小了浅色零件不会漏，但水印和 JPEG 色偏也可能被当成零件；
+    /// 大了更干净，但跟背景接近的浅色零件会被吃掉。
     var foregroundDeltaE: Double = 12
 
     /// 最小零件面积，占零件区总像素的比例。低于这个的连通域丢掉。
@@ -49,18 +53,6 @@ struct PartsDetectionOptions: Equatable, Sendable {
 
     /// 工作分辨率上限
     var maxWorkingPixels: Int = 1_600_000
-
-    /// 「灵敏度」滑杆（0~1）映射到上面两个阈值。0.5 = 上面的默认值。
-    /// 往高调 = 更敏感（阈值更低、允许更小的零件）。
-    static func fromSensitivity(_ s: Double) -> PartsDetectionOptions {
-        let t = max(0, min(1, s))
-        var o = PartsDetectionOptions()
-        // ΔE 20 → 6：低灵敏度只留跟背景差别很大的（黑描边），高灵敏度连浅紫都收
-        o.foregroundDeltaE = 20 - 14 * t
-        // 面积门槛 0.0015 → 0.00008
-        o.minAreaRatio = 0.0015 * pow(0.055, t)
-        return o
-    }
 }
 
 enum PartsDetector {

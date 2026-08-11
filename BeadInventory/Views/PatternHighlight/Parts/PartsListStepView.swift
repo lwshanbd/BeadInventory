@@ -4,11 +4,20 @@
 //
 //  多零件模式 · 第 ② 屏 - 零件清单
 //
-//  上一版立体拼豆被废掉的一条原因是：识别完只给了一句「找到 N 个零件」，
-//  用户不知道结果对不对，也不知道下一步该干什么。所以这一屏的验收标准是两句话：
+//  这一屏的验收标准只有两句话：
 //
 //    1. 一眼看得出**算法把哪块当成了一个零件** —— 图上有框有号，下面有对应缩略图；
-//    2. 看出来不对时**当场能改** —— 删、合并、改名，或者拉灵敏度重拆。
+//    2. 看出来不对时**当场能改回来**。
+//
+//  第 2 条要求这一屏必须覆盖算法出错的全部三种形态，缺一种用户就卡死：
+//
+//    多了（水印、文字被当成零件）  → 选中删除
+//    粘了（两个零件一个框）        → 拆开；实在分不开就删掉重画
+//    漏了（图上有块，压根没有框）  → **直接在它上面拖一个框**
+//
+//  第三种是最初漏掉的：删除 / 合并 / 拆开 / 改名全都要求先有一个框才能操作，
+//  于是「图上明明有一块但没框住」时用户什么都做不了 —— 只能退出去重来，
+//  而重来大概率还是漏同一块。所以「拖一下补一个」是这屏的地基，不是锦上添花。
 //
 
 import SwiftUI
@@ -17,21 +26,20 @@ struct PartsListStepView: View {
     let image: UIImage
     let roi: CGRect
     @Binding var parts: [BeadPart]
-    @Binding var sensitivity: Double
-    let onRedetect: () -> Void
-    let onContinue: () -> Void
+    let onSave: () -> Void
 
     @State private var selection: Set<UUID> = []
     @State private var thumbnails: [UUID: UIImage] = [:]
     @State private var roiImage: UIImage?
     @State private var renamingPart: BeadPart?
     @State private var renameText: String = ""
-    @State private var showingSensitivity = false
     /// 最近一次是从图上点中的零件。用来驱动下面的缩略图滚过去；
     /// 单独一个 State 而不是复用 `selection`，是因为在缩略图里点选时不该再滚一次。
     @State private var lastTappedOnImage: UUID?
     @State private var splitting = false
     @State private var splitFailed = false
+    /// 正在图上拖出来的那个新框（屏幕坐标）。松手即清空。
+    @State private var draftRect: CGRect?
 
     private let columns = [GridItem(.adaptive(minimum: 86), spacing: Theme.Spacing.md)]
 
@@ -44,21 +52,6 @@ struct PartsListStepView: View {
         }
         .navigationTitle("零件清单")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showingSensitivity = true
-                } label: {
-                    Label("重新拆分", systemImage: "slider.horizontal.3")
-                }
-            }
-        }
-        .sheet(isPresented: $showingSensitivity) {
-            SensitivitySheet(sensitivity: $sensitivity, partCount: parts.count) {
-                selection.removeAll()
-                onRedetect()
-            }
-        }
         .alert("零件改名", isPresented: Binding(
             get: { renamingPart != nil },
             set: { if !$0 { renamingPart = nil } }
@@ -67,12 +60,12 @@ struct PartsListStepView: View {
             Button("取消", role: .cancel) { renamingPart = nil }
             Button("保存") { commitRename() }
         } message: {
-            Text("留空就用自动编号。")
+            Text("留空就用默认的编号。")
         }
-        .alert("这块拆不开", isPresented: $splitFailed) {
+        .alert("这块分不开", isPresented: $splitFailed) {
             Button("知道了", role: .cancel) {}
         } message: {
-            Text("它在图上本来就是连成一整片的。如果确实是两个零件，先删掉它，再用右上角的「重新拆分」把灵敏度往左调一点试试。")
+            Text("在图上它是连成一整片的，找不到下刀的地方。如果确实是两个零件，可以先把它删掉，再在两块上各拖一个框出来。")
         }
         .task(id: partsSignature) {
             let snapshot = parts
@@ -113,11 +106,35 @@ struct PartsListStepView: View {
                     selection: selection,
                     displayRect: display
                 )
+
+                if let draftRect {
+                    Rectangle()
+                        .strokeBorder(Theme.ColorToken.Morandi.honey, lineWidth: 2)
+                        .background(Rectangle().fill(Theme.ColorToken.Morandi.honey.opacity(0.2)))
+                        .frame(width: draftRect.width, height: draftRect.height)
+                        .position(x: draftRect.midX, y: draftRect.midY)
+                        .allowsHitTesting(false)
+                }
             }
             .contentShape(Rectangle())
+            // 点选和拖框必须并进同一个 SimultaneousGesture：分开挂的话
+            // DragGesture 会把 tap 整个吃掉，点零件变成没反应。
             .gesture(
-                SpatialTapGesture()
-                    .onEnded { value in toggleHit(at: value.location, displayRect: display) }
+                SimultaneousGesture(
+                    SpatialTapGesture()
+                        .onEnded { value in toggleHit(at: value.location, displayRect: display) },
+                    DragGesture(minimumDistance: 12)
+                        .onChanged { value in
+                            draftRect = CGRect(corner: value.startLocation, to: value.location)
+                                .intersection(display)
+                        }
+                        .onEnded { value in
+                            let drawn = CGRect(corner: value.startLocation, to: value.location)
+                                .intersection(display)
+                            draftRect = nil
+                            addPart(fromDisplayRect: drawn, displayRect: display)
+                        }
+                )
             )
         }
         // 图纸是竖长的，240pt 高只剩不到 180pt 宽，五十几个框挤成一团看不清谁是谁。
@@ -170,9 +187,9 @@ struct PartsListStepView: View {
         ScrollView {
             if parts.isEmpty {
                 ContentUnavailableView(
-                    "没拆出零件",
+                    "一个零件也没找到",
                     systemImage: "square.dashed",
-                    description: Text("框可能没圈住零件，或者灵敏度太低。点右上角「重新拆分」调一下。")
+                    description: Text("多半是上一步的框没圈到零件。回上一步把框挪一下再试；或者直接在图上拖出零件的位置，自己补一个。")
                 )
                 .padding(.top, Theme.Spacing.xxl)
             } else {
@@ -198,7 +215,7 @@ struct PartsListStepView: View {
     private var footer: some View {
         VStack(spacing: Theme.Spacing.md) {
             if selection.isEmpty {
-                Text("共 \(parts.count) 个零件。点图上的框或下面的缩略图选中，选中后能删除、合并、拆开或改名。")
+                Text("找到 \(parts.count) 个零件。点一下可以选中，选中之后能删除、合并、拆开或者改名。\n有零件没被框住，直接在它上面拖一下就能补一个。")
                     .font(.footnote)
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
                     .multilineTextAlignment(.center)
@@ -243,12 +260,17 @@ struct PartsListStepView: View {
                 .lineLimit(1)
             }
 
-            Button(action: onContinue) {
-                Label("下一步：确认图纸配色", systemImage: "paintpalette")
+            Button(action: onSave) {
+                Label("保存这 \(parts.count) 个零件", systemImage: "checkmark")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .disabled(parts.isEmpty)
+
+            Text("下一步是量出一格有多大、再看每个格子是什么颜色，还在做。")
+                .font(.caption2)
+                .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                .multilineTextAlignment(.center)
         }
         .padding()
         .background(.regularMaterial)
@@ -286,6 +308,69 @@ struct PartsListStepView: View {
             $0.rowBand != $1.rowBand ? $0.rowBand < $1.rowBand : $0.bounds.minX < $1.bounds.minX
         }
         selection = [merged.id]
+    }
+
+    /// 在图上拖一个框 = 补一个算法漏掉的零件。
+    ///
+    /// 用户拖个大概就行：先按拖出来的框立刻插进清单（马上看得见，不用等），
+    /// 再在后台于这个框里跑一次连通域，把框收缩到那块零件的实际边界。
+    /// 框里什么都没有（拖到空白处）就保持原样，不弹错——用户自己看得见框住了什么。
+    private func addPart(fromDisplayRect drawn: CGRect, displayRect: CGRect) {
+        guard displayRect.width > 0, displayRect.height > 0 else { return }
+        // 太小的一律当误触：手指在图上轻轻一划不该凭空多出一个零件
+        guard drawn.width >= 10, drawn.height >= 10 else { return }
+
+        let relative = CGRect(
+            x: (drawn.minX - displayRect.minX) / displayRect.width,
+            y: (drawn.minY - displayRect.minY) / displayRect.height,
+            width: drawn.width / displayRect.width,
+            height: drawn.height / displayRect.height
+        )
+        // 预览图画的是 ROI 裁出来那块，换算回整张图的归一化坐标
+        let inImage = CGRect(
+            x: roi.minX + relative.minX * roi.width,
+            y: roi.minY + relative.minY * roi.height,
+            width: relative.width * roi.width,
+            height: relative.height * roi.height
+        )
+
+        let newPart = BeadPart(rowBand: rowBand(forMidY: inImage.midY), bounds: inImage)
+        insertSorted(newPart)
+        selection = [newPart.id]
+        lastTappedOnImage = newPart.id
+
+        // 后台收缩到实际边界
+        let id = newPart.id
+        Task.detached(priority: .userInitiated) {
+            var options = PartsDetectionOptions()
+            options.minAreaRatio = 0.01        // 相对这个小框
+            options.maxWorkingPixels = 250_000
+            let found = PartsDetector.detect(in: image, roi: inImage, options: options)
+            guard let biggest = found.max(by: {
+                $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height
+            }) else { return }
+            await MainActor.run {
+                guard let index = parts.firstIndex(where: { $0.id == id }) else { return }
+                parts[index].bounds = biggest.bounds
+            }
+        }
+    }
+
+    /// 新零件归到哪一行：取竖直方向上离它最近的那个已有零件的行号。
+    /// 补进来的零件多半就在某一行里漏掉的那个位置，跟着邻居走比重新聚类稳。
+    private func rowBand(forMidY midY: CGFloat) -> Int {
+        guard let nearest = parts.min(by: {
+            abs($0.bounds.midY - midY) < abs($1.bounds.midY - midY)
+        }) else { return 0 }
+        return nearest.rowBand
+    }
+
+    private func insertSorted(_ part: BeadPart) {
+        var next = parts
+        next.append(part)
+        parts = next.sorted {
+            $0.rowBand != $1.rowBand ? $0.rowBand < $1.rowBand : $0.bounds.minX < $1.bounds.minX
+        }
     }
 
     /// 拆开 = 只在这一个框里重跑一次检测，并且**关掉闭运算** ——
@@ -447,60 +532,11 @@ private struct PartThumbnailCell: View {
     }
 }
 
-// MARK: - 灵敏度
-
-private struct SensitivitySheet: View {
-    @Binding var sensitivity: Double
-    let partCount: Int
-    let onApply: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                Text("现在拆出 \(partCount) 个零件。")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.ColorToken.Text.secondary)
-
-                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    Slider(value: $sensitivity, in: 0...1)
-                    HStack {
-                        Text("拆得少 · 只认颜色重的")
-                        Spacer()
-                        Text("拆得多 · 浅色也认")
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
-                }
-
-                Text("零件被切成好几块 → 往左调；水印、色号表的碎片也被当成零件 → 往左调。\n浅色零件整个没被认出来 → 往右调。")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.ColorToken.Text.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button {
-                    onApply()
-                    dismiss()
-                } label: {
-                    Label("按这个灵敏度重拆", systemImage: "arrow.clockwise")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-
-                Spacer(minLength: 0)
-            }
-            .padding(Theme.Spacing.lg)
-            .background(Theme.ColorToken.Surface.background)
-            .navigationTitle("重新拆分")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("取消") { dismiss() }
-                }
-            }
-        }
-        .presentationDetents([.medium])
+extension CGRect {
+    /// 由拖动的起点和当前点构造矩形（两点顺序任意）
+    init(corner a: CGPoint, to b: CGPoint) {
+        self.init(x: Swift.min(a.x, b.x), y: Swift.min(a.y, b.y),
+                  width: abs(b.x - a.x), height: abs(b.y - a.y))
     }
 }
 

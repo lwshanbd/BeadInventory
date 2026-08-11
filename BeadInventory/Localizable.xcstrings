@@ -11116,42 +11116,12 @@
         }
       }
     },
-    "把中间那一片零件框住。顶上的色号表、底下的装配图留在框外。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Frame the block of pieces in the middle. Keep the color table above and the assembly diagram below outside the box."
-          }
-        }
-      }
-    },
-    "自动拆零件" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Find Pieces"
-          }
-        }
-      }
-    },
     "零件清单" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pieces"
-          }
-        }
-      }
-    },
-    "重新拆分" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Detect Again"
           }
         }
       }
@@ -11172,66 +11142,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Name"
-          }
-        }
-      }
-    },
-    "留空就用自动编号。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Leave it blank to fall back to the automatic number."
-          }
-        }
-      }
-    },
-    "这块拆不开" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This one can't be split"
-          }
-        }
-      }
-    },
-    "它在图上本来就是连成一整片的。如果确实是两个零件，先删掉它，再用右上角的「重新拆分」把灵敏度往左调一点试试。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "On the image it is a single connected shape. If it really is two pieces, delete it and use “Detect Again” in the top right with the sensitivity turned down a little."
-          }
-        }
-      }
-    },
-    "没拆出零件" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No pieces found"
-          }
-        }
-      }
-    },
-    "框可能没圈住零件，或者灵敏度太低。点右上角「重新拆分」调一下。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The box may not cover the pieces, or the sensitivity is too low. Tap “Detect Again” in the top right to adjust."
-          }
-        }
-      }
-    },
-    "共 %lld 个零件。点图上的框或下面的缩略图选中，选中后能删除、合并、拆开或改名。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld pieces. Tap a box on the image or a thumbnail below to select it, then delete, merge, split or rename it."
           }
         }
       }
@@ -11266,126 +11176,6 @@
         }
       }
     },
-    "下一步：确认图纸配色" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Next: Confirm Colors"
-          }
-        }
-      }
-    },
-    "现在拆出 %lld 个零件。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld pieces detected right now."
-          }
-        }
-      }
-    },
-    "拆得少 · 只认颜色重的" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fewer · strong colors only"
-          }
-        }
-      }
-    },
-    "拆得多 · 浅色也认" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "More · pale colors too"
-          }
-        }
-      }
-    },
-    "零件被切成好几块 → 往左调；水印、色号表的碎片也被当成零件 → 往左调。\n浅色零件整个没被认出来 → 往右调。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A piece got cut into several → move left; watermark or color-table fragments show up as pieces → move left.\nA pale piece was missed entirely → move right."
-          }
-        }
-      }
-    },
-    "按这个灵敏度重拆" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Detect at This Sensitivity"
-          }
-        }
-      }
-    },
-    "图纸配色" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pattern Colors"
-          }
-        }
-      }
-    },
-    "图纸上找到 %lld 种颜色" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld colors found on the pattern"
-          }
-        }
-      }
-    },
-    "按占比从多到少排。带 ⚠︎ 的是自动匹得不太准的，重点看这几条。\n零件中间的镂空要标成「空」，图例里写「任意色」的那种浅色标成「任意色」。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sorted by share, largest first. Rows marked ⚠︎ were matched with low confidence — check those first.\nHoles inside a piece should be marked “Empty”; the pale color the legend calls “any color” should be marked “Any Color”."
-          }
-        }
-      }
-    },
-    "保存这 %lld 个零件" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save These %lld Pieces"
-          }
-        }
-      }
-    },
-    "下一步（量格子大小、逐格识别）还在做，先把零件和配色存下来。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The next step (measuring the cell size and reading each cell) is still in progress — this saves the pieces and colors for now."
-          }
-        }
-      }
-    },
-    "%1$lld 种色号 · %2$lld 种任意色 · %3$lld 种空" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld codes · %2$lld any-color · %3$lld empty"
-          }
-        }
-      }
-    },
     "任意色" : {
       "localizations" : {
         "en" : {
@@ -11405,53 +11195,114 @@
           }
         }
       }
-    },
-    "还没选色号" : {
+    }
+,
+    "开始找零件" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No code chosen yet"
+            "value" : "Find Pieces"
           }
         }
       }
     },
-    "空（没有豆子）" : {
+    "拖动方框，把中间这一片零件圈进去。上面的色号表和下面的成品图不用圈。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Empty (no bead)"
+            "value" : "Drag the box so it covers the block of pieces in the middle. You don't need to include the color table above or the finished photo below."
           }
         }
       }
     },
-    "换一个色号（现在是 %@）" : {
+    "正在找零件…" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Change code (currently %@)"
+            "value" : "Finding pieces…"
           }
         }
       }
     },
-    "选一个色号" : {
+    "一个零件也没找到" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose a code"
+            "value" : "No pieces found"
           }
         }
       }
     },
-    "自动匹配可能不准，请确认" : {
+    "多半是上一步的框没圈到零件。回上一步把框挪一下再试；或者直接在图上拖出零件的位置，自己补一个。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Auto-match may be off — please confirm"
+            "value" : "The box in the previous step probably missed them. Go back and move it, or drag over a piece right here to add it yourself."
+          }
+        }
+      }
+    },
+    "找到 %lld 个零件。点一下可以选中，选中之后能删除、合并、拆开或者改名。\n有零件没被框住，直接在它上面拖一下就能补一个。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pieces found. Tap one to select it, then delete, merge, split or rename it.\nIf a piece has no box, just drag over it to add one."
+          }
+        }
+      }
+    },
+    "这块分不开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This one can't be split"
+          }
+        }
+      }
+    },
+    "在图上它是连成一整片的，找不到下刀的地方。如果确实是两个零件，可以先把它删掉，再在两块上各拖一个框出来。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the image it's one connected shape, with nowhere to cut. If it really is two pieces, delete it and drag a box over each of them."
+          }
+        }
+      }
+    },
+    "留空就用默认的编号。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leave it blank to use the default number."
+          }
+        }
+      }
+    },
+    "保存这 %lld 个零件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save These %lld Pieces"
+          }
+        }
+      }
+    },
+    "下一步是量出一格有多大、再看每个格子是什么颜色，还在做。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Measuring the cell size and reading each cell's color is still in progress."
           }
         }
       }
