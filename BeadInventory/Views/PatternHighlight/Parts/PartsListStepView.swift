@@ -348,28 +348,18 @@ struct PartsListStepView: View {
 
     private var footer: some View {
         VStack(spacing: Theme.Spacing.md) {
-            if selection.isEmpty {
-                VStack(spacing: Theme.Spacing.sm) {
-                    Text(addingPart
-                         ? "在漏掉的零件上拖一个框出来，可以接着拖下一个。补完了点下面收工。"
-                         : "找到 \(parts.count) 个零件。点一下选中它，然后可以删除、合并、拆开或改名。\n两指捏合放大，单指拖动移动图片。")
-                        .font(.footnote)
-                        .foregroundStyle(addingPart ? Theme.ColorToken.Morandi.honey : Theme.ColorToken.Text.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Button {
-                        addingPart.toggle()
-                        if addingPart { selection.removeAll() }
-                    } label: {
-                        Label(addingPart ? "补完了" : "有零件没框住？补一个",
-                              systemImage: addingPart ? "checkmark" : "plus.viewfinder")
-                            .font(.footnote.weight(.medium))
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(addingPart ? Theme.ColorToken.Morandi.honey : nil)
-                }
+            if addingPart {
+                Text("在漏掉的那块上拖一个框出来。画完这一个就退出来，方便你挪动图片再补下一个。")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.ColorToken.Morandi.honey)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if selection.isEmpty {
+                Text("找到 \(parts.count) 个零件。点一下选中它，然后可以删除、合并、拆开或改名。\n两指捏合放大，单指拖动移动图片。")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 // 四个操作 + 计数挤一行会换行成两层（实测在默认字号下就会），
                 // 所以计数单独一行，按钮那行只放动词。
@@ -409,6 +399,21 @@ struct PartsListStepView: View {
                 .font(.footnote)
                 .lineLimit(1)
             }
+
+            // **这个按钮任何时候都在。** 以前它藏在「没选中任何零件」那一支里：
+            // 补完一个零件之后它是选中状态，按钮就消失了，用户必须先点「取消选择」
+            // 才能再补下一个 —— 而他压根不知道自己进了选中态，只看到按钮没了。
+            Button {
+                addingPart.toggle()
+                if addingPart { selection.removeAll() }
+            } label: {
+                Label(addingPart ? "先不补了" : "有零件没框住？补一个",
+                      systemImage: addingPart ? "xmark" : "plus.viewfinder")
+                    .font(.footnote.weight(.medium))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(addingPart ? Theme.ColorToken.Morandi.honey : nil)
 
             if sourceBytes > 0 {
                 HStack {
@@ -497,9 +502,17 @@ struct PartsListStepView: View {
 
         let newPart = BeadPart(rowBand: rowBand(forMidY: inImage.midY), bounds: inImage)
         insertSorted(newPart)
-        // 累加而不是替换：连着补好几个之后它们都还选着，看着不对可以一起删掉
-        selection.insert(newPart.id)
+        // 只留刚画的这一个高亮：图上五十几个框，用橙色标出「这个是我刚补的」才有意义，
+        // 一路累加下去到第三个就分不清哪个是新的了。
+        selection = [newPart.id]
         lastTappedOnImage = newPart.id
+        // **画完一个就退出补零件状态。**
+        //
+        // 上一版是「画完不退出，接着画下一个」——那是在电脑上想出来的。真在手机上补零件，
+        // 得先放大才框得住小零件，而放大之后下一个零件多半不在屏幕里，非得先挪图不可；
+        // 可补零件状态下单指拖是画框，图根本挪不动。于是「不退出」反而把人锁死在原地。
+        // 现在画完立刻交还单指（=挪图），要补下一个再点一次按钮，多一次点击换回自由移动。
+        addingPart = false
 
         // 后台收缩到实际边界
         let id = newPart.id
@@ -624,14 +637,18 @@ private struct PartsBoxOverlay: View {
                     width: rel.width * displayRect.width,
                     height: rel.height * displayRect.height
                 )
+                // 选中的框换个颜色，不是加粗。图纸底色是浅粉、豆子里又有大片白，
+                // 原先「选中 = 白框 + 白色蒙版」在上面几乎看不出来 ——
+                // 用户补完一个零件，界面上没有任何地方告诉他「刚画的是这个、它选中了」。
+                // 橙色和这张图上的任何颜色都不撞，一眼就能找到。
                 let selected = selection.contains(part.id)
-                let stroke: Color = selected ? .white : .cyan
+                let stroke: Color = selected ? .orange : .cyan
                 if selected {
-                    context.fill(Path(roundedRect: r, cornerRadius: 2), with: .color(.white.opacity(0.28)))
+                    context.fill(Path(roundedRect: r, cornerRadius: 2), with: .color(.orange.opacity(0.3)))
                 }
                 context.stroke(Path(roundedRect: r, cornerRadius: 2 / zoom),
                                with: .color(stroke),
-                               lineWidth: (selected ? 2 : 1) / zoom)
+                               lineWidth: (selected ? 2.5 : 1) / zoom)
 
                 // 序号贴在框的左上角外侧；框太靠上时贴内侧，免得跑出画面。
                 //
@@ -647,7 +664,7 @@ private struct PartsBoxOverlay: View {
                 context.fill(
                     Path(ellipseIn: CGRect(x: r.minX - 6 / zoom, y: badgeY - 6 / zoom,
                                            width: 13 / zoom, height: 13 / zoom)),
-                    with: .color(selected ? .white : .cyan)
+                    with: .color(selected ? .orange : .cyan)
                 )
                 context.draw(badge, at: CGPoint(x: r.minX + 0.5 / zoom, y: badgeY))
             }
@@ -685,8 +702,9 @@ private struct PartThumbnailCell: View {
                     .padding(4)
             }
             .overlay(
+                // 跟图上的框用同一个橙色：上下两处同时亮起来，才看得出「图上那个 = 这个」
                 RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
-                    .stroke(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default,
+                    .stroke(isSelected ? Color.orange : Theme.ColorToken.Border.default,
                             lineWidth: isSelected ? 2.5 : 1)
             )
 
