@@ -56,6 +56,14 @@ struct ScanView: View {
     @State private var thumbnailImage: UIImage?      // 缩略图（可裁切）
     @State private var showingThumbnailCrop = false  // 显示缩略图裁切视图
 
+    /// 从相册选进来的那张图的**原始字节**。建项目时另存一份给拼图模式用
+    /// （见 `patternSourceData()` 和 `PatternSourceStore`）。
+    @State private var pickedOriginalData: Data?
+    /// 缩略图被裁过没有。裁过的话上面那份原始字节就作废了 ——
+    /// 它和项目封面的取景不一样，而拼图模式所有坐标都是相对封面那张图归一化的，
+    /// 拿构图不同的一张图去铺网格，零件框会整片错位。
+    @State private var thumbnailWasCropped = false
+
     // 图片固定功能
     @State private var isImagePinned = false         // 是否固定图片在顶部
 
@@ -223,6 +231,7 @@ struct ScanView: View {
                 if let image = thumbnailImage ?? originalImage {
                     ImageCropView(image: image) { croppedImage in
                         thumbnailImage = croppedImage
+                        thumbnailWasCropped = true
                     }
                 } else {
                     Color.black.onAppear { showingThumbnailCrop = false }
@@ -377,6 +386,8 @@ struct ScanView: View {
                     selectedImage = image
                     originalImage = image
                     thumbnailImage = image
+                    pickedOriginalData = data
+                    thumbnailWasCropped = false
                     isLoadingImage = false
                 }
             } catch {
@@ -398,6 +409,27 @@ struct ScanView: View {
             thumbnailImage = image
             externalImage = nil
         }
+    }
+
+    /// 建项目时给拼图模式另存的那份「原图」。
+    ///
+    /// 识别图纸这条路上，用户传的那张图本来就是全分辨率的，可这以前只被压成封面存进库里
+    /// （长边 3072、1.2 MB 预算），拼图模式要逐格看颜色时就只剩十来个像素一格。
+    /// 用户上传时手里明明有原图，却要等走到拼图模式才被提示「去相册再选一次」——
+    /// 所以现在建项目的同时就把它留下来。
+    ///
+    /// 两条来源，取哪条只看**取景对不对得上封面**：
+    ///   - 没裁过封面 → 用相册那份原始字节（没有二次编码，最干净）
+    ///   - 裁过封面   → 原始字节的构图已经不是封面那张了，改存裁完的全分辨率图。
+    ///     拼图模式所有几何量都是相对封面归一化的，构图一错整片零件框都会偏。
+    ///
+    /// 开关关掉时返回 nil，一个字节都不写（`PatternSourceStore.save` 内部也会再挡一道）。
+    private func patternSourceData() -> Data? {
+        guard PatternSourceStore.isEnabled else { return nil }
+        if !thumbnailWasCropped, let pickedOriginalData { return pickedOriginalData }
+        // 相机拍的、Share Extension 传进来的、以及裁过的，都没有可用的原始字节，
+        // 只能按当前这张全分辨率图重新编一份。0.95 是「看不出退化」和「别太大」的折中。
+        return thumbnailImage?.jpegData(compressionQuality: 0.95)
     }
 
     // MARK: - 主 body 的子片段（拆分以减轻类型检查复杂度）
@@ -622,7 +654,8 @@ struct ScanView: View {
             ThumbnailPreviewSection(
                 thumbnailImage: $thumbnailImage,
                 originalImage: originalImage,
-                showingThumbnailCrop: $showingThumbnailCrop
+                showingThumbnailCrop: $showingThumbnailCrop,
+                thumbnailWasCropped: $thumbnailWasCropped
             )
             .padding(.horizontal)
 
@@ -817,6 +850,11 @@ struct ScanView: View {
             colorSystem: scanColorSystem
         )
         inventoryManager.addProject(project) // addProject 内部已调用 saveData()
+        // 封面存进去了再留原图，免得留下一个对不上任何项目的孤儿文件。
+        // clearState() 会把图丢掉，所以必须在它之前。
+        if let source = patternSourceData() {
+            PatternSourceStore.save(source, for: project.id)
+        }
 
         clearState()
 
@@ -873,6 +911,9 @@ struct ScanView: View {
             colorSystem: scanColorSystem
         )
         inventoryManager.addPlannedProject(project)
+        if let source = patternSourceData() {
+            PatternSourceStore.save(source, for: project.id)
+        }
 
         // 清除结果
         clearState()
@@ -908,6 +949,8 @@ struct ScanView: View {
         projectName = ""
         originalImage = nil
         thumbnailImage = nil
+        pickedOriginalData = nil
+        thumbnailWasCropped = false
         isImagePinned = false
     }
 
@@ -2345,6 +2388,9 @@ struct ThumbnailPreviewSection: View {
     @Binding var thumbnailImage: UIImage?
     let originalImage: UIImage?
     @Binding var showingThumbnailCrop: Bool
+    /// 在这里换过封面就置位：换完之后识别时那张图的原始字节跟封面已经不是一张图了，
+    /// 拼图模式那份原图得改从当前封面重出（见 `ScanView.patternSourceData()`）。
+    @Binding var thumbnailWasCropped: Bool
 
     // 上传新封面相关
     @State private var selectedPhotoItem: PhotosPickerItem?
@@ -2485,6 +2531,7 @@ struct ThumbnailPreviewSection: View {
             if let image = uploadedImage {
                 ImageCropView(image: image) { croppedImage in
                     thumbnailImage = croppedImage
+                    thumbnailWasCropped = true
                     uploadedImage = nil
                 }
             } else {
