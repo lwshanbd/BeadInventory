@@ -3006,6 +3006,8 @@ class InventoryManager: ObservableObject {
     }
 
     func deleteProject(id: UUID) {
+        // 拼图模式的原图副本跟着项目走 —— 不删就永远留下一个谁也不会再读的孤儿文件
+        PatternSourceStore.remove(for: id)
         if let index = projects.firstIndex(where: { $0.id == id }) {
             let project = projects[index]
 

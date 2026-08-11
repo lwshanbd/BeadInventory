@@ -93,7 +93,8 @@ struct PartsSheetFlowView: View {
                                 work: work,
                                 roi: roi,
                                 parts: $parts,
-                                onContinue: { path = [.list, .cellSize] }
+                                onContinue: { path = [.list, .cellSize] },
+                                projectId: project.id
                             )
                         case .cellSize:
                             PartsCellSizeStepView(
@@ -139,7 +140,10 @@ struct PartsSheetFlowView: View {
     private func load() async {
         let id = project.id
         let loader = inventoryManager.imageLoader
-        let data = await loader?.thumbnail(for: id)
+        // 有原图就用原图 —— 它是上传时另存的全分辨率副本，只有这条流程会读（见 PatternSourceStore）。
+        // 没有就退回 SwiftData 里那份压缩图，流程完全一样，只是一格豆子的像素少一半。
+        var data = PatternSourceStore.data(for: id)
+        if data == nil { data = await loader?.thumbnail(for: id) }
         let saved = await loader?.partsSheet(for: id)
         let low = data.flatMap { ImageDownsampler.downsampleToUIImage($0, maxPixelSize: Self.overviewMaxPixel) }
         guard !Task.isCancelled else { return }
@@ -189,7 +193,9 @@ struct PartsSheetFlowView: View {
 
         let id = project.id
         let loader = inventoryManager.imageLoader
-        guard let data = await loader?.thumbnail(for: id) else { return }
+        var source = PatternSourceStore.data(for: id)
+        if source == nil { source = await loader?.thumbnail(for: id) }
+        guard let data = source else { return }
         let region = roi
         let built = await Task.detached(priority: .userInitiated) { () -> PartsWorkImage? in
             // autoreleasepool：整图那份大 CGImage 用完立刻还回去，只留裁出来的那块。

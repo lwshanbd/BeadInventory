@@ -27,6 +27,8 @@ struct PartsListStepView: View {
     let roi: CGRect
     @Binding var parts: [BeadPart]
     let onContinue: () -> Void
+    /// 这张图纸对应的项目。只用来找它的原图副本（「拼好了」要删的就是那个）。
+    let projectId: UUID
 
     @State private var selection: Set<UUID> = []
     @State private var thumbnails: [UUID: UIImage] = [:]
@@ -40,6 +42,9 @@ struct PartsListStepView: View {
     @State private var splitFailed = false
     /// 正在图上拖出来的那个新框（屏幕坐标）。松手即清空。
     @State private var draftRect: CGRect?
+    @State private var showingFinishedConfirm = false
+    /// 原图副本还在不在。拼好了删掉之后这一行就消失。
+    @State private var sourceBytes = 0
 
     private let columns = [GridItem(.adaptive(minimum: 86), spacing: Theme.Spacing.md)]
 
@@ -66,6 +71,16 @@ struct PartsListStepView: View {
             Button("知道了", role: .cancel) {}
         } message: {
             Text("在图上它是连成一整片的，找不到下刀的地方。如果确实是两个零件，可以先把它删掉，再在两块上各拖一个框出来。")
+        }
+        .task { sourceBytes = PatternSourceStore.byteSize(for: projectId) }
+        .alert("这套拼好了？", isPresented: $showingFinishedConfirm) {
+            Button("拼好了，删掉原图", role: .destructive) {
+                PatternSourceStore.remove(for: projectId)
+                sourceBytes = 0
+            }
+            Button("还没有", role: .cancel) {}
+        } message: {
+            Text("会删掉这张图纸的原图副本，腾出 \(byteText(sourceBytes))。\n零件、格子、色号这些都会留着，高亮照常能用；只是「核对颜色」里的小图会变糊一点。")
         }
         .task(id: partsSignature) {
             let snapshot = parts
@@ -260,6 +275,17 @@ struct PartsListStepView: View {
                 .lineLimit(1)
             }
 
+            if sourceBytes > 0 {
+                HStack {
+                    Text("这张图纸留了一份原图，占 \(byteText(sourceBytes))")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                    Spacer()
+                    Button("拼好了") { showingFinishedConfirm = true }
+                        .font(.caption2)
+                }
+            }
+
             Button(action: onContinue) {
                 Label("下一步：量格子", systemImage: "grid")
                     .frame(maxWidth: .infinity)
@@ -269,6 +295,10 @@ struct PartsListStepView: View {
         }
         .padding()
         .background(.regularMaterial)
+    }
+
+    private func byteText(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 
     // MARK: - 编辑

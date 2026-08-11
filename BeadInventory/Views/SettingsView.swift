@@ -10,6 +10,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
     @ObservedObject private var aiService = AIServiceManager.shared
+    @AppStorage(PatternSourceStore.keepSourceDefaultsKey) private var keepPatternSource = true
     @AppStorage("defaultColorSystem") private var defaultColorSystemRaw: String = "MARD"
     @State private var showingResetAlert = false
     @State private var showingResetUsageAlert = false
@@ -57,6 +58,15 @@ struct SettingsView: View {
                     Text("AI 图像识别")
                 } footer: {
                     Text("配置云端 API 或下载本地模型用于扫描识别")
+                }
+
+                // 拼图模式：是否留一份原图
+                Section {
+                    Toggle("上传图纸时保留原图", isOn: $keepPatternSource)
+                } header: {
+                    Text("拼图模式")
+                } footer: {
+                    Text("原图只用在拼图模式里，用来看清每一格的颜色。列表和详情页仍然用压缩后的图；原图存在本机，不占 iCloud、不进备份。拼完之后可以在拼图模式里点「拼好了」把它删掉。")
                 }
 
                 // 扫描默认设置

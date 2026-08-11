@@ -785,6 +785,10 @@ struct ProjectImageEditorSheet: View {
     @EnvironmentObject var inventoryManager: InventoryManager
 
     @State private var selectedPhotoItem: PhotosPickerItem?
+    /// 相册直接给的**原始文件字节**。压缩版照旧进 SwiftData 当封面，这一份另存到
+    /// `PatternSourceStore` 只给拼图模式用（见那个文件顶部的说明）。
+    /// 相机拍照 / 分享导入这些路径拿不到原始字节，就只能没有 —— 拼图模式会退回用压缩图。
+    @State private var pickedOriginalData: Data?
     @State private var editedImage: UIImage?
     @State private var isLoadingImage = false
     @State private var showingCropView = false
@@ -954,6 +958,11 @@ struct ProjectImageEditorSheet: View {
                                 return   // 不写库、不放成功反馈、不关闭 sheet
                             }
                             onSave(imageData)
+                            // 原图另存一份，只给拼图模式用；开关关着时 save 内部会直接跳过。
+                            // 放在 onSave 之后：封面存成功才留原图，避免留下对不上号的孤儿文件。
+                            if let original = pickedOriginalData {
+                                PatternSourceStore.save(original, for: projectId)
+                            }
                             saveSuccessAt = Date()
                         }
                         dismiss()
@@ -970,6 +979,7 @@ struct ProjectImageEditorSheet: View {
                            let image = UIImage(data: data) {
                             await MainActor.run {
                                 imageToCrop = image
+                                pickedOriginalData = data
                                 isLoadingImage = false
                             }
                         } else {
