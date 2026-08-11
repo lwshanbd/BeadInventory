@@ -31,6 +31,17 @@ struct PartsColorReviewStepView: View {
     @State private var showingCodePicker = false
     @State private var pickedCodes: Set<String> = []
 
+    /// 框选模式。开着时列表不滚动，拖一条对角线就把扫过的格子全选上。
+    /// 一个色号动不动上千格，一格一格点是不可能的。
+    @State private var marquee = false
+    /// 正在拖的那个选框（全局坐标）
+    @State private var marqueeRect: CGRect?
+    /// 这一次拖动开始前已经选中的，用来支持「框好几片」
+    @State private var marqueeBase: Set<CellRef> = []
+    /// 屏幕上每一格的位置（全局坐标）。只在框选模式下收集 ——
+    /// 平时收集会让每一帧滚动都重算几百条 preference。
+    @State private var cellFrames: [CellRef: CGRect] = [:]
+
     /// 一格的坐标：第几个零件、第几行、第几列
     struct CellRef: Hashable {
         let part: Int
@@ -128,6 +139,14 @@ struct PartsColorReviewStepView: View {
                             image: swatches[ref],
                             isSelected: selection.contains(ref)
                         )
+                        .background {
+                            if marquee {
+                                GeometryReader { geo in
+                                    Color.clear.preference(key: CellFramesKey.self,
+                                                           value: [ref: geo.frame(in: .global)])
+                                }
+                            }
+                        }
                         .onTapGesture {
                             if selection.contains(ref) { selection.remove(ref) } else { selection.insert(ref) }
                         }
@@ -136,84 +155,117 @@ struct PartsColorReviewStepView: View {
                 .padding(Theme.Spacing.lg)
             }
         }
+        .scrollDisabled(marquee)
+        .onPreferenceChange(CellFramesKey.self) { cellFrames = $0 }
+        .overlay { if marquee { marqueeLayer } }
+    }
+
+    /// 框选那一层。盖在格子上面自己收手势 —— 全部用全局坐标，
+    /// 免得再去换算列表滚到哪儿了。
+    private var marqueeLayer: some View {
+        GeometryReader { geo in
+            let origin = geo.frame(in: .global).origin
+            ZStack(alignment: .topLeading) {
+                Color.clear.contentShape(Rectangle())
+
+                if let rect = marqueeRect {
+                    Rectangle()
+                        .fill(Theme.ColorToken.Morandi.mauve.opacity(0.18))
+                        .overlay(Rectangle().stroke(Theme.ColorToken.Morandi.mauve, lineWidth: 1.5))
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX - origin.x, y: rect.midY - origin.y)
+                        .allowsHitTesting(false)
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                    .onChanged { value in
+                        if marqueeRect == nil { marqueeBase = selection }
+                        let rect = CGRect(corner: value.startLocation, to: value.location)
+                        marqueeRect = rect
+                        selection = marqueeBase.union(
+                            cellFrames.filter { $0.value.intersects(rect) }.keys
+                        )
+                    }
+                    .onEnded { _ in marqueeRect = nil }
+            )
+            .simultaneousGesture(
+                // 框选模式下单点也要能加减一格，不然想补一格还得先退出去
+                SpatialTapGesture(coordinateSpace: .global).onEnded { value in
+                    guard let hit = cellFrames.first(where: { $0.value.contains(value.location) })?.key
+                    else { return }
+                    if selection.contains(hit) { selection.remove(hit) } else { selection.insert(hit) }
+                }
+            )
+        }
     }
 
     // MARK: - 下：操作
 
+    /// 底部只留一行提示 + 一排动作。
+    ///
+    /// 这里曾经写着「这里是被判成「P10」的所有格子。有不对的就点中它，可以多选。」——
+    /// 上面的色号已经高亮着、格子已经铺在眼前了，这句话说的全是用户看得见的事。
+    /// 屏幕下半截被字占满，真正要按的按钮反而被挤扁。
     private var footer: some View {
         VStack(spacing: Theme.Spacing.md) {
-            if selection.isEmpty {
-                Text("这里是被判成「\(label(for: selectedGroup))」的所有格子。有不对的就点中它，可以多选。")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.ColorToken.Text.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                // 整类一起改。图纸上那种「整片白其实是镂空、不是豆子」的情况，
-                // 一格一格点几百下不现实，得能一次说清楚。
-                HStack(spacing: Theme.Spacing.sm) {
-                    Button {
-                        selectWholeGroup()
-                        pickedCodes = []
-                        showingCodePicker = true
-                    } label: {
-                        Label("这类都改成…", systemImage: "paintpalette").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        selectWholeGroup()
-                        apply(.anyColor)
-                    } label: {
-                        Label("这类是任意色", systemImage: "wand.and.stars").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        selectWholeGroup()
-                        apply(.empty)
-                    } label: {
-                        Label("这类没有豆子", systemImage: "square.dashed").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .font(.footnote)
-                .lineLimit(1)
-            } else {
-                HStack {
+            HStack {
+                if selection.isEmpty {
+                    Text("有不对的点一下")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                } else {
                     Text("已选 \(selection.count) 格")
                         .font(.footnote)
                         .foregroundStyle(Theme.ColorToken.Text.secondary)
-                    Spacer()
                     Button("取消选择") { selection.removeAll() }
                         .font(.footnote)
                 }
-                HStack(spacing: Theme.Spacing.sm) {
-                    Button {
-                        pickedCodes = []
-                        showingCodePicker = true
-                    } label: {
-                        Label("改成别的色号", systemImage: "paintpalette").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        apply(.anyColor)
-                    } label: {
-                        Label("任意色", systemImage: "wand.and.stars").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        apply(.empty)
-                    } label: {
-                        Label("设为空", systemImage: "square.dashed").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
+                Spacer()
+                Button {
+                    marquee.toggle()
+                    marqueeRect = nil
+                    if !marquee { cellFrames = [:] }
+                } label: {
+                    Label(marquee ? "选完了" : "拖着框选",
+                          systemImage: marquee ? "checkmark" : "rectangle.dashed")
+                        .font(.footnote.weight(.medium))
                 }
-                .font(.footnote)
-                .lineLimit(1)
             }
+
+            // 没选中任何一格时，这三个按钮作用于整类 —— 图纸上那种
+            // 「整片白其实是镂空、不是豆子」的情况，一格一格点几百下不现实。
+            HStack(spacing: Theme.Spacing.sm) {
+                Button {
+                    if selection.isEmpty { selectWholeGroup() }
+                    pickedCodes = []
+                    showingCodePicker = true
+                } label: {
+                    Label(selection.isEmpty ? "这类都改成…" : "改成别的色号", systemImage: "paintpalette")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    if selection.isEmpty { selectWholeGroup() }
+                    apply(.anyColor)
+                } label: {
+                    Label(selection.isEmpty ? "这类是任意色" : "任意色", systemImage: "wand.and.stars")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    if selection.isEmpty { selectWholeGroup() }
+                    apply(.empty)
+                } label: {
+                    Label(selection.isEmpty ? "这类没有豆子" : "设为空", systemImage: "square.dashed")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+            .font(.footnote)
+            .lineLimit(1)
 
             Button(action: onFinish) {
                 Label("完成 · 一共 \(totalBeads) 颗", systemImage: "checkmark").frame(maxWidth: .infinity)
@@ -272,14 +324,26 @@ struct PartsColorReviewStepView: View {
         }
     }
 
+    /// 色号 → 色库里那颗豆子。
+    ///
+    /// **MARD 不能走 `findColor(byCode:preferSystem:)`** —— 那个重载在
+    /// `preferSystem == .mard` 时会跳过整段匹配直接返回 nil（它只负责「别跨品牌乱碰」，
+    /// MARD 自己那一路留给了 `findColor(byMardCode:)`）。之前这里一律走前者，
+    /// 于是 MARD 图纸上每一个色号的小方块都取不到颜色，全成了一片黑。
+    ///
+    /// 判色那步存进 `cells` 的就是 `displayCode(for: colorSystem)`，所以这里按体系分流。
+    private func bead(for code: String) -> BeadColor? {
+        colorSystem == .mard
+            ? inventoryManager.findColor(byMardCode: code)
+            : inventoryManager.findColor(byCode: code, preferSystem: colorSystem)
+    }
+
     private func color(for fill: PartCellFill) -> Color {
         switch fill {
         case .empty: return Theme.ColorToken.Surface.subtle
         case .anyColor: return Theme.ColorToken.Morandi.mauve
         case .code(let code):
-            guard let bead = inventoryManager.findColor(byCode: code, preferSystem: colorSystem) else {
-                return Theme.ColorToken.Surface.subtle
-            }
+            guard let bead = bead(for: code) else { return Theme.ColorToken.Surface.subtle }
             return bead.color
         }
     }
@@ -312,11 +376,15 @@ struct PartsColorReviewStepView: View {
         let refs = cells(of: selectedGroup)
         let snapshot = parts
         let source = work
-        // 一次最多抠 1500 个，再多用户也不会一个个看，先让界面出来
-        let capped = Array(refs.prefix(1500))
+        // 这一组有多少格就抠多少格。
+        //
+        // 这里曾经封顶 1500 个，理由是「再多用户也不会一个个看」—— 结果 H7 有 2901 格，
+        // 第 1501 格往后全是灰底空方块，用户看到的是「一大堆不知道为什么存在的空白格」，
+        // 而且那些格子还照样能被选中、被改。抠一格只是对已解码的大图取个子矩形，
+        // 几千次也是毫秒级，本来就不值得为它牺牲正确性。
         let built = await Task.detached(priority: .userInitiated) { () -> [CellRef: UIImage] in
             var result: [CellRef: UIImage] = [:]
-            for ref in capped {
+            for ref in refs {
                 guard ref.part < snapshot.count else { continue }
                 let rect = snapshot[ref.part].cellRect(row: ref.row, col: ref.col)
                 if let cropped = PartsThumbnailMaker.crop(source, normalized: rect) {
@@ -348,6 +416,19 @@ struct PartsColorReviewStepView: View {
         guard let code = pickedCodes.sorted().first else { return }
         apply(.code(code))
         pickedCodes = []
+    }
+}
+
+// MARK: - 格子在屏幕上的位置
+
+/// 框选要知道每一格现在画在哪儿。只在框选模式下收集（见 `cellGrid`）。
+private struct CellFramesKey: PreferenceKey {
+    static let defaultValue: [PartsColorReviewStepView.CellRef: CGRect] = [:]
+    static func reduce(
+        value: inout [PartsColorReviewStepView.CellRef: CGRect],
+        nextValue: () -> [PartsColorReviewStepView.CellRef: CGRect]
+    ) {
+        value.merge(nextValue()) { _, new in new }
     }
 }
 

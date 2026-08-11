@@ -11256,6 +11256,146 @@
         }
       }
     },
+    "有不对的点一下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap any cell that looks wrong"
+          }
+        }
+      }
+    },
+    "拖着框选" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag to select"
+          }
+        }
+      }
+    },
+    "选完了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done selecting"
+          }
+        }
+      }
+    },
+    "改成别的色号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change code"
+          }
+        }
+      }
+    },
+    "设为空" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark as empty"
+          }
+        }
+      }
+    },
+    "这类都改成…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change all to…"
+          }
+        }
+      }
+    },
+    "这类是任意色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All are any color"
+          }
+        }
+      }
+    },
+    "这类没有豆子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None of these are beads"
+          }
+        }
+      }
+    },
+    "已选 %lld 格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld selected"
+          }
+        }
+      }
+    },
+    "核对颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check the Colors"
+          }
+        }
+      }
+    },
+    "完成 · 一共 %lld 颗" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done · %lld beads in total"
+          }
+        }
+      }
+    },
+    "这个颜色一格也没有" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No cells in this color"
+          }
+        }
+      }
+    },
+    "上面换一个色号看看。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick another code above."
+          }
+        }
+      }
+    },
+    "未定色号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No code yet"
+          }
+        }
+      }
+    },
     "零件清单" : {
       "localizations" : {
         "en" : {
