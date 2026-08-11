@@ -17,8 +17,23 @@ struct ProjectDetailView: View {
     // 图片编辑相关状态
     @State private var showingThumbnailEditor = false
     @State private var showingFinishedImageEditor = false
+    @State private var showingPatternModePicker = false
+    /// 在模式选择页里选了「单图纸模式」，等它收起后再进下一页（见 openSinglePatternModeIfSelected）
+    @State private var pendingSinglePatternMode = false
     @State private var showingPatternCalibration = false
     @State private var showingPatternHighlight = false
+
+    /// 单图纸模式沿用原来的分支：已标定过网格直接进高亮页，没标定先去标定页。
+    private func openSinglePatternModeIfSelected() {
+        guard pendingSinglePatternMode else { return }
+        pendingSinglePatternMode = false
+        let projectId = (currentProject ?? project).id
+        if inventoryManager.projectIDsWithPatternGrid.contains(projectId) {
+            showingPatternHighlight = true
+        } else {
+            showingPatternCalibration = true
+        }
+    }
 
     var isParentProject: Bool {
         inventoryManager.isParentProject(project.id)
@@ -174,20 +189,18 @@ struct ProjectDetailView: View {
             if (currentProject ?? project).isPlanned {
                 let projectId = (currentProject ?? project).id
                 let hasThumbnail = inventoryManager.projectIDsWithThumbnail.contains(projectId)
-                let hasGrid = inventoryManager.projectIDsWithPatternGrid.contains(projectId)
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        if hasGrid {
-                            showingPatternHighlight = true
-                        } else {
-                            showingPatternCalibration = true
-                        }
+                        showingPatternModePicker = true
                     } label: {
                         Label("拼图模式", systemImage: "square.grid.3x3.square")
                     }
                     .disabled(!hasThumbnail)
                 }
             }
+        }
+        .sheet(isPresented: $showingPatternModePicker, onDismiss: openSinglePatternModeIfSelected) {
+            PatternModeSelectionSheet(onSelectSinglePattern: { pendingSinglePatternMode = true })
         }
         .sheet(isPresented: $showingPatternCalibration) {
             PatternCalibrationView(
