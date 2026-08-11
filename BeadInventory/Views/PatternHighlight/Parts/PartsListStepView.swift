@@ -42,12 +42,27 @@ struct PartsListStepView: View {
     @State private var splitFailed = false
     /// 正在图上拖出来的那个新框（屏幕坐标）。松手即清空。
     @State private var draftRect: CGRect?
-    /// 图上的缩放。小零件在整张零件区里只有几个点大，不放大根本框不住。
-    /// 锚点取捏合的起始位置（`MagnifyGesture.startAnchor`）—— 捏哪儿放大哪儿，
-    /// 于是不需要再单独做一套平移手势跟「拖框」抢一根手指。
+    /// 图上的缩放和平移。小零件在整张零件区里只有几个点大，不放大根本框不住；
+    /// 放大之后不能平移又等于没放大。
+    ///
+    /// 缩放锚点固定在**中心**，「捏哪儿放大哪儿」靠同步改 `pan` 实现（见 magnify 手势）。
+    /// 这么绕一下是为了让平移有确定的边界可以夹 —— 锚点跟着手指跑的话，
+    /// 「图不能被拖出屏幕」这条约束就没有简单解。
     @State private var zoom: CGFloat = 1
     @State private var lastZoom: CGFloat = 1
-    @State private var zoomAnchor: UnitPoint = .center
+    @State private var pan: CGSize = .zero
+    @State private var lastPan: CGSize = .zero
+    /// 捏合开始时手指下面是内容的哪一点（内容坐标）+ 它当时在屏幕的哪儿。
+    /// 用来在缩放过程中把这一点钉在原地。
+    @State private var pinchContentAnchor: CGPoint?
+    @State private var pinchScreenPoint: CGPoint = .zero
+
+    /// 是不是正处于「补一个零件」的状态。
+    ///
+    /// **默认是关的，单指拖 = 移动图片。** 早先没有这个状态，单指拖一律新建框 ——
+    /// 放大之后想挪一下看别处，手指一落就啪地多出一个零件框，而且根本挪不了。
+    /// 新建框是低频动作，不该占着默认手势。
+    @State private var addingPart = false
     @State private var showingFinishedConfirm = false
     /// 原图副本还在不在。拼好了删掉之后这一行就消失。
     @State private var sourceBytes = 0
@@ -138,13 +153,20 @@ struct PartsListStepView: View {
                         .allowsHitTesting(false)
                 }
             }
-            .scaleEffect(zoom, anchor: zoomAnchor)
+            .scaleEffect(zoom, anchor: .center)
+            .offset(pan)
             .overlay(gestureCatcher(in: geo.size, displayRect: display))
         }
         // 图纸是竖长的，240pt 高只剩不到 180pt 宽，五十几个框挤成一团看不清谁是谁。
         // 340pt 是「图上看得清 + 下面还能露出两行缩略图」的折中。
         .frame(height: 340)
         .background(Theme.ColorToken.Surface.subtle)
+        // 处于补零件状态时给画布描一圈 —— 让「现在单指拖会画框」这件事看得见
+        .overlay(
+            Rectangle()
+                .stroke(Theme.ColorToken.Morandi.honey, lineWidth: addingPart ? 3 : 0)
+                .allowsHitTesting(false)
+        )
         // 必须裁：`scaleEffect` 只是画得更大，不会自己留在框里 ——
         // 少了这一行，放大后的图会盖到导航栏和下面的缩略图上。
         .clipped()
@@ -155,9 +177,9 @@ struct PartsListStepView: View {
     /// 一开始是把手势直接挂在 `.scaleEffect` 之后的视图上，指望 SwiftUI 把触点映射回
     /// 内容坐标系 —— 实测不是：放大到 4 倍再拖框，框会落到别的零件上。
     /// 与其去猜 `scaleEffect` 和手势坐标系的关系，不如让触点始终是**容器坐标**，
-    /// 再按 `C = A + (S - A) / zoom` 自己换回内容坐标（A 是缩放锚点）。这样是确定的。
+    /// 自己换回内容坐标。这样是确定的。
     private func gestureCatcher(in size: CGSize, displayRect: CGRect) -> some View {
-        // 点选、拖框、捏合必须并进同一个 SimultaneousGesture：分开挂的话
+        // 点选、单指拖、捏合必须并进同一个 SimultaneousGesture：分开挂的话
         // DragGesture 会把 tap 整个吃掉，点零件变成没反应。
         Color.clear
             .contentShape(Rectangle())
@@ -168,40 +190,79 @@ struct PartsListStepView: View {
                             .onEnded { value in
                                 toggleHit(at: content(value.location, in: size), displayRect: displayRect)
                             },
-                        DragGesture(minimumDistance: 12)
+                        DragGesture(minimumDistance: addingPart ? 12 : 4)
                             .onChanged { value in
-                                draftRect = CGRect(corner: content(value.startLocation, in: size),
-                                                   to: content(value.location, in: size))
-                                    .intersection(displayRect)
+                                if addingPart {
+                                    draftRect = CGRect(corner: content(value.startLocation, in: size),
+                                                       to: content(value.location, in: size))
+                                        .intersection(displayRect)
+                                } else {
+                                    pan = clampPan(CGSize(
+                                        width: lastPan.width + value.translation.width,
+                                        height: lastPan.height + value.translation.height
+                                    ), in: size)
+                                }
                             }
                             .onEnded { value in
+                                guard addingPart else {
+                                    lastPan = pan
+                                    return
+                                }
+                                draftRect = nil
+                                // 「够不够大」按**手指在屏幕上划了多远**算，不能按内容坐标 ——
+                                // 那个门槛是拿来挡误触的，而放大 4 倍之后正常的一拖在内容
+                                // 坐标里只剩四分之一，会被静默丢掉（实测就是这样：模式退出了，
+                                // 框却没建出来）。
+                                let movedFar = abs(value.translation.width) >= 10
+                                    && abs(value.translation.height) >= 10
+                                addingPart = false
+                                guard movedFar else { return }
                                 let drawn = CGRect(corner: content(value.startLocation, in: size),
                                                    to: content(value.location, in: size))
                                     .intersection(displayRect)
-                                draftRect = nil
                                 addPart(fromDisplayRect: drawn, displayRect: displayRect)
                             }
                     ),
                     MagnifyGesture()
                         .onChanged { value in
-                            zoomAnchor = value.startAnchor
+                            if pinchContentAnchor == nil {
+                                pinchScreenPoint = value.startLocation
+                                pinchContentAnchor = content(value.startLocation, in: size)
+                            }
+                            guard let anchor = pinchContentAnchor else { return }
                             zoom = max(1, min(8, lastZoom * value.magnification))
+                            // 把捏合开始时手指下的那一点钉回原处
+                            let center = CGPoint(x: size.width / 2, y: size.height / 2)
+                            pan = clampPan(CGSize(
+                                width: pinchScreenPoint.x - center.x - (anchor.x - center.x) * zoom,
+                                height: pinchScreenPoint.y - center.y - (anchor.y - center.y) * zoom
+                            ), in: size)
                         }
                         .onEnded { _ in
                             lastZoom = zoom
-                            if zoom <= 1.01 { zoomAnchor = .center }
+                            lastPan = pan
+                            pinchContentAnchor = nil
                         }
                 )
             )
     }
 
-    /// 屏幕（容器）坐标 → 内容坐标。`scaleEffect(z, anchor: A)` 把内容点 C 画到
-    /// S = A + (C - A) * z，这里做的是它的逆。
+    /// 屏幕（容器）坐标 → 内容坐标。
+    /// `scaleEffect(z, anchor: .center)` 后接 `offset(pan)` 把内容点 C 画到
+    /// `S = 中心 + (C - 中心) * z + pan`，这里做的是它的逆。
     private func content(_ point: CGPoint, in size: CGSize) -> CGPoint {
         guard zoom > 0 else { return point }
-        let a = CGPoint(x: zoomAnchor.x * size.width, y: zoomAnchor.y * size.height)
-        return CGPoint(x: a.x + (point.x - a.x) / zoom,
-                       y: a.y + (point.y - a.y) / zoom)
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        return CGPoint(x: center.x + (point.x - pan.width - center.x) / zoom,
+                       y: center.y + (point.y - pan.height - center.y) / zoom)
+    }
+
+    /// 夹住平移，别让图被拖出容器（放大 z 倍后，最多能挪出去半个「多出来的部分」）。
+    private func clampPan(_ offset: CGSize, in size: CGSize) -> CGSize {
+        let limitX = max(0, (zoom - 1) * size.width / 2)
+        let limitY = max(0, (zoom - 1) * size.height / 2)
+        return CGSize(width: min(max(offset.width, -limitX), limitX),
+                      height: min(max(offset.height, -limitY), limitY))
     }
 
     private func toggleHit(at point: CGPoint, displayRect: CGRect) {
@@ -276,11 +337,27 @@ struct PartsListStepView: View {
     private var footer: some View {
         VStack(spacing: Theme.Spacing.md) {
             if selection.isEmpty {
-                Text("找到 \(parts.count) 个零件。点一下可以选中，选中之后能删除、合并、拆开或者改名。\n有零件没被框住，在它上面拖一下就能补一个；零件太小就先两指捏合放大。")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.ColorToken.Text.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: Theme.Spacing.sm) {
+                    Text(addingPart
+                         ? "在漏掉的那个零件上拖一个框出来。"
+                         : "找到 \(parts.count) 个零件。点一下选中它，然后可以删除、合并、拆开或改名。\n两指捏合放大，单指拖动移动图片。")
+                        .font(.footnote)
+                        .foregroundStyle(addingPart ? Theme.ColorToken.Morandi.honey : Theme.ColorToken.Text.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button {
+                        addingPart.toggle()
+                        if addingPart { selection.removeAll() }
+                    } label: {
+                        Label(addingPart ? "取消补零件" : "有零件没框住？补一个",
+                              systemImage: addingPart ? "xmark" : "plus.viewfinder")
+                            .font(.footnote.weight(.medium))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(addingPart ? Theme.ColorToken.Morandi.honey : nil)
+                }
             } else {
                 // 四个操作 + 计数挤一行会换行成两层（实测在默认字号下就会），
                 // 所以计数单独一行，按钮那行只放动词。
@@ -388,8 +465,9 @@ struct PartsListStepView: View {
     /// 框里什么都没有（拖到空白处）就保持原样，不弹错——用户自己看得见框住了什么。
     private func addPart(fromDisplayRect drawn: CGRect, displayRect: CGRect) {
         guard displayRect.width > 0, displayRect.height > 0 else { return }
-        // 太小的一律当误触：手指在图上轻轻一划不该凭空多出一个零件
-        guard drawn.width >= 10, drawn.height >= 10 else { return }
+        // 这里只挡退化矩形；「是不是误触」由调用方按屏幕位移判断（放大之后
+        // 内容坐标里的尺寸会缩水，拿它当门槛会把正常操作也挡掉）。
+        guard drawn.width > 0, drawn.height > 0 else { return }
 
         let relative = CGRect(
             x: (drawn.minX - displayRect.minX) / displayRect.width,
