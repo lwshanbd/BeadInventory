@@ -192,7 +192,10 @@ struct PartsSheetFlowView: View {
         guard let data = await loader?.thumbnail(for: id) else { return }
         let region = roi
         let built = await Task.detached(priority: .userInitiated) { () -> PartsWorkImage? in
-            // autoreleasepool：整图那份大 CGImage 用完立刻还回去，只留裁出来的那块
+            // autoreleasepool：整图那份大 CGImage 用完立刻还回去，只留裁出来的那块。
+            //
+            // 实测这一整段（取字节 + 解码 + 裁切）只要 0.10s，所以它从来不是「慢」的来源；
+            // 早先那次界面卡死是因为把它做成了进入下一屏的必需条件，失败就没有退路。
             autoreleasepool {
                 guard let full = ImageDownsampler.downsampleToUIImage(data, maxPixelSize: Self.workMaxPixel),
                       let cropped = PartsThumbnailMaker.crop(.whole(full), normalized: region) else { return nil }
