@@ -21,11 +21,16 @@ struct PatternModeSelectionSheet: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    /// 两张卡片实际占的高度。放大字号时卡片会长高，写死 detent 会把第二张卡切掉
-    /// （AX-XXXL 下实测「多零件模式」整张看不见），所以量出来再定 detent。
+    /// 内容块（两张卡片 + 四周 padding）实际占的高度。放大字号时卡片会长高，
+    /// detent 写死会让第二张卡落到折叠线以下，所以量出来再定。
+    /// 首帧是 0，detent 先取下限 240 再跳到实测值，开合时会有一次高度变化。
     @State private var contentHeight: CGFloat = 0
 
-    /// 内容高度 + 导航条，夹在一个合理范围内；超过就交给 `.large`。
+    /// 内容高度 + 64 的经验余量（导航条 + 底部安全区，不是算出来的；
+    /// 改标题样式或改 padding 之后要重新量），夹在 [240, 620]。
+    ///
+    /// 注意上限的实际效果：内容再高也只是停在 620，**不会**自动切到 `.large`——
+    /// AX-XXXL 下「多零件模式」仍然在折叠线以下，要用户自己上拉或滚动。
     private var preferredDetent: PresentationDetent {
         .height(min(max(contentHeight + 64, 240), 620))
     }
@@ -36,7 +41,7 @@ struct PatternModeSelectionSheet: View {
                 VStack(spacing: Theme.Spacing.md) {
                     PatternModeOptionCard(
                         icon: "square.grid.3x3.square",
-                        tint: Theme.ColorToken.Fill.mauve,
+                        tint: Theme.ColorToken.Morandi.mauve,
                         title: "单图纸模式",
                         subtitle: "一张平面图纸，逐格高亮对照着拼",
                         showsChevron: true
@@ -47,7 +52,7 @@ struct PatternModeSelectionSheet: View {
 
                     PatternModeOptionCard(
                         icon: "cube.transparent",
-                        tint: Theme.ColorToken.Fill.info,
+                        tint: Theme.ColorToken.Morandi.mist,
                         title: "多零件模式",
                         subtitle: "多零件模式常见于立体拼图图纸",
                         showsChevron: false
@@ -73,7 +78,8 @@ struct PatternModeSelectionSheet: View {
                 }
             }
         }
-        // 超大字号下内容比 620pt 还高，`.large` 兜底让用户能撑开继续滚。
+        // 超大字号下内容比 620pt 还高，`.large` 是兜底：用户上拉能撑开继续滚，
+        // 但不会自动切过去（见 preferredDetent）。
         .presentationDetents([preferredDetent, .large])
         .presentationDragIndicator(.visible)
     }
@@ -90,6 +96,8 @@ private struct PatternModeContentHeightKey: PreferenceKey {
 
 private struct PatternModeOptionCard: View {
     let icon: String
+    /// 图标色。用 `Theme.ColorToken.Morandi.*`，**不要**用 `Fill.*` ——
+    /// Fill 深色下会自动加深（为压白字设计），当图标前景色会糊在深色卡片上。
     let tint: Color
     let title: String
     let subtitle: String
