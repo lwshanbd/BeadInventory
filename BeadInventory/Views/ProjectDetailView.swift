@@ -18,20 +18,27 @@ struct ProjectDetailView: View {
     @State private var showingThumbnailEditor = false
     @State private var showingFinishedImageEditor = false
     @State private var showingPatternModePicker = false
-    /// 在模式选择页里选了「单图纸模式」，等它收起后再进下一页（见 openSinglePatternModeIfSelected）
+    /// 在模式选择页里选了哪种模式，等它收起后再进下一页（见 openPatternModeIfSelected）
     @State private var pendingSinglePatternMode = false
+    @State private var pendingMultiPartMode = false
     @State private var showingPatternCalibration = false
     @State private var showingPatternHighlight = false
+    @State private var showingPartsSheetFlow = false
 
     /// 单图纸模式沿用原来的分支：已标定过网格直接进高亮页，没标定先去标定页。
-    private func openSinglePatternModeIfSelected() {
-        guard pendingSinglePatternMode else { return }
-        pendingSinglePatternMode = false
-        let projectId = (currentProject ?? project).id
-        if inventoryManager.projectIDsWithPatternGrid.contains(projectId) {
-            showingPatternHighlight = true
-        } else {
-            showingPatternCalibration = true
+    /// 多零件模式只有一个入口，进去之后由流程页自己决定从圈区还是从清单开始。
+    private func openPatternModeIfSelected() {
+        if pendingSinglePatternMode {
+            pendingSinglePatternMode = false
+            let projectId = (currentProject ?? project).id
+            if inventoryManager.projectIDsWithPatternGrid.contains(projectId) {
+                showingPatternHighlight = true
+            } else {
+                showingPatternCalibration = true
+            }
+        } else if pendingMultiPartMode {
+            pendingMultiPartMode = false
+            showingPartsSheetFlow = true
         }
     }
 
@@ -199,8 +206,15 @@ struct ProjectDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingPatternModePicker, onDismiss: openSinglePatternModeIfSelected) {
-            PatternModeSelectionSheet(onSelectSinglePattern: { pendingSinglePatternMode = true })
+        .sheet(isPresented: $showingPatternModePicker, onDismiss: openPatternModeIfSelected) {
+            PatternModeSelectionSheet(
+                onSelectSinglePattern: { pendingSinglePatternMode = true },
+                onSelectMultiPart: { pendingMultiPartMode = true }
+            )
+        }
+        .fullScreenCover(isPresented: $showingPartsSheetFlow) {
+            PartsSheetFlowView(project: currentProject ?? project)
+                .environmentObject(inventoryManager)
         }
         .sheet(isPresented: $showingPatternCalibration) {
             PatternCalibrationView(

@@ -16,6 +16,14 @@
 		383001022FB3A70D00F5DDE2 /* BeadPatternGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383001012FB3A70D00F5DDE2 /* BeadPatternGrid.swift */; };
 		384001022FB3A70D00F5DDE2 /* PatternCalibrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 384001012FB3A70D00F5DDE2 /* PatternCalibrationView.swift */; };
 		384001122FB3A70D00F5DDE2 /* PatternModeSelectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 384001112FB3A70D00F5DDE2 /* PatternModeSelectionSheet.swift */; };
+		A8F51D5E0A724576A96C2AD6 /* BeadPartsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0D7A272D1C4E3A8023F50F /* BeadPartsSheet.swift */; };
+		92A6D96EF23F40C8BA712E90 /* PartsBitmap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0163F38C7E6C447C8822049C /* PartsBitmap.swift */; };
+		B5910BC0E8754A1EBE531732 /* PartsDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40AD7A4DA3740AEA95FBFB0 /* PartsDetector.swift */; };
+		3D7C9714708F4CDEB057B94D /* PartsPaletteExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E807D12FE0C343C79FF77A87 /* PartsPaletteExtractor.swift */; };
+		4F49E92EED50469FBB77E1EA /* PartsSheetFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0011D17F039F4AFEA93CD778 /* PartsSheetFlowView.swift */; };
+		9EADAAF39F6A4175B437D9D8 /* PartsRegionStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04C9CA7455A24A53A45A88CE /* PartsRegionStepView.swift */; };
+		E830B69F9EBC438AA6B3541F /* PartsListStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFE2EC263D7F43A1B5CD47BD /* PartsListStepView.swift */; };
+		C89345CFEC3449E38E26E89B /* PartsPaletteStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2AC50E4089F45848A567AE2 /* PartsPaletteStepView.swift */; };
 		385001022FB3A70D00F5DDE2 /* GridGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001012FB3A70D00F5DDE2 /* GridGeometry.swift */; };
 		385001042FB3A70D00F5DDE2 /* GridDetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001032FB3A70D00F5DDE2 /* GridDetectionService.swift */; };
 		385001062FB3A70D00F5DDE2 /* GridCellSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001052FB3A70D00F5DDE2 /* GridCellSampler.swift */; };
@@ -151,6 +159,14 @@
 		383001012FB3A70D00F5DDE2 /* BeadPatternGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeadPatternGrid.swift; sourceTree = "<group>"; };
 		384001012FB3A70D00F5DDE2 /* PatternCalibrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternCalibrationView.swift; path = BeadInventory/Views/PatternHighlight/PatternCalibrationView.swift; sourceTree = SOURCE_ROOT; };
 		384001112FB3A70D00F5DDE2 /* PatternModeSelectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternModeSelectionSheet.swift; path = BeadInventory/Views/PatternHighlight/PatternModeSelectionSheet.swift; sourceTree = SOURCE_ROOT; };
+		5A0D7A272D1C4E3A8023F50F /* BeadPartsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BeadPartsSheet.swift; path = BeadInventory/Models/BeadPartsSheet.swift; sourceTree = SOURCE_ROOT; };
+		0163F38C7E6C447C8822049C /* PartsBitmap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsBitmap.swift; path = BeadInventory/Managers/PartsBitmap.swift; sourceTree = SOURCE_ROOT; };
+		F40AD7A4DA3740AEA95FBFB0 /* PartsDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsDetector.swift; path = BeadInventory/Managers/PartsDetector.swift; sourceTree = SOURCE_ROOT; };
+		E807D12FE0C343C79FF77A87 /* PartsPaletteExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsPaletteExtractor.swift; path = BeadInventory/Managers/PartsPaletteExtractor.swift; sourceTree = SOURCE_ROOT; };
+		0011D17F039F4AFEA93CD778 /* PartsSheetFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsSheetFlowView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsSheetFlowView.swift; sourceTree = SOURCE_ROOT; };
+		04C9CA7455A24A53A45A88CE /* PartsRegionStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsRegionStepView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsRegionStepView.swift; sourceTree = SOURCE_ROOT; };
+		EFE2EC263D7F43A1B5CD47BD /* PartsListStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsListStepView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsListStepView.swift; sourceTree = SOURCE_ROOT; };
+		A2AC50E4089F45848A567AE2 /* PartsPaletteStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsPaletteStepView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsPaletteStepView.swift; sourceTree = SOURCE_ROOT; };
 		385001012FB3A70D00F5DDE2 /* GridGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridGeometry.swift; sourceTree = "<group>"; };
 		385001032FB3A70D00F5DDE2 /* GridDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridDetectionService.swift; sourceTree = "<group>"; };
 		385001052FB3A70D00F5DDE2 /* GridCellSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridCellSampler.swift; sourceTree = "<group>"; };
@@ -316,6 +332,14 @@
 			children = (
 				384001012FB3A70D00F5DDE2 /* PatternCalibrationView.swift */,
 				384001112FB3A70D00F5DDE2 /* PatternModeSelectionSheet.swift */,
+				5A0D7A272D1C4E3A8023F50F /* BeadPartsSheet.swift */,
+				0163F38C7E6C447C8822049C /* PartsBitmap.swift */,
+				F40AD7A4DA3740AEA95FBFB0 /* PartsDetector.swift */,
+				E807D12FE0C343C79FF77A87 /* PartsPaletteExtractor.swift */,
+				0011D17F039F4AFEA93CD778 /* PartsSheetFlowView.swift */,
+				04C9CA7455A24A53A45A88CE /* PartsRegionStepView.swift */,
+				EFE2EC263D7F43A1B5CD47BD /* PartsListStepView.swift */,
+				A2AC50E4089F45848A567AE2 /* PartsPaletteStepView.swift */,
 				385001072FB3A70D00F5DDE2 /* PatternHighlightView.swift */,
 				385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */,
 				3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */,
@@ -739,6 +763,14 @@
 				381060CD2FB3A70D00F5DDE2 /* GridDetectionBridge.m in Sources */,
 				384001022FB3A70D00F5DDE2 /* PatternCalibrationView.swift in Sources */,
 				384001122FB3A70D00F5DDE2 /* PatternModeSelectionSheet.swift in Sources */,
+				A8F51D5E0A724576A96C2AD6 /* BeadPartsSheet.swift in Sources */,
+				92A6D96EF23F40C8BA712E90 /* PartsBitmap.swift in Sources */,
+				B5910BC0E8754A1EBE531732 /* PartsDetector.swift in Sources */,
+				3D7C9714708F4CDEB057B94D /* PartsPaletteExtractor.swift in Sources */,
+				4F49E92EED50469FBB77E1EA /* PartsSheetFlowView.swift in Sources */,
+				9EADAAF39F6A4175B437D9D8 /* PartsRegionStepView.swift in Sources */,
+				E830B69F9EBC438AA6B3541F /* PartsListStepView.swift in Sources */,
+				C89345CFEC3449E38E26E89B /* PartsPaletteStepView.swift in Sources */,
 				385001082FB3A70D00F5DDE2 /* PatternHighlightView.swift in Sources */,
 				3850010A2FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift in Sources */,
 				3850010C2FB3A70D00F5DDE2 /* ColorPaletteBar.swift in Sources */,

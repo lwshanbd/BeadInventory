@@ -101,7 +101,11 @@ final class SDProjectRecord {
     var finishedImage: Data?      // 成品图数据（编码同 thumbnail，仅已执行项目使用）
     var completedDate: Date?      // 完成日期（用于日历展示）
     var colorSystemRaw: String?   // 色号体系，可选以兼容旧数据，默认为 MARD
-    var patternGridData: Data?    // JSON 编码后的 BeadPatternGrid（拼图模式网格数据）
+    var patternGridData: Data?    // JSON 编码后的 BeadPatternGrid（单图纸拼图模式的网格数据）
+    var partsSheetData: Data?     // JSON 编码后的 BeadPartsSheet（多零件模式 / 立体图纸）。
+                                  // 跟 patternGridData 是两套并存的数据：一个项目可能两种模式都标定过。
+                                  // 字节量级是 KB（几十个零件的 bbox + 十几条调色板），但仍然按 blob 待遇
+                                  // 处理 —— 取它必须走 propertiesToFetch 单列，不能顺手 fetch 整行。
     var displayThumbnail: Data?   // 列表用小图（CGImageSourceCreateThumbnailAtIndex 出 512px JPEG 0.85）。
                                   // 老数据 nil，由 ThumbnailMigrationCoordinator 后台 backfill；视图层在
                                   // 它还是 nil 时降级用 ImageDownsampler.downsampleToUIImage(thumbnail) 现场降级。
@@ -221,6 +225,44 @@ final class SDProjectRecord {
             AppLogger.shared.error(
                 "SDProjectRecord",
                 "patternGrid_decode_failed",
+                metadata: [
+                    "projectId": projectId.uuidString,
+                    "bytes": data.count,
+                    "error": "\(error)"
+                ]
+            )
+            return nil
+        }
+    }
+
+    /// 把 BeadPartsSheet 编码成持久化用的 JSON Data。语义同 `encodePatternGrid`：
+    /// 失败返回 nil + 记日志，调用方据此决定「不覆盖旧值」而不是写 nil 进去。
+    static func encodePartsSheet(_ sheet: BeadPartsSheet?, projectId: UUID) -> Data? {
+        guard let sheet else { return nil }
+        do {
+            return try JSONEncoder().encode(sheet)
+        } catch {
+            AppLogger.shared.error(
+                "SDProjectRecord",
+                "parts_sheet_encode_failed",
+                metadata: [
+                    "projectId": projectId.uuidString,
+                    "error": "\(error)"
+                ]
+            )
+            return nil
+        }
+    }
+
+    /// 从持久化 JSON Data 解码 BeadPartsSheet。语义同 `decodePatternGrid`。
+    static func decodePartsSheet(_ data: Data?, projectId: UUID) -> BeadPartsSheet? {
+        guard let data else { return nil }
+        do {
+            return try JSONDecoder().decode(BeadPartsSheet.self, from: data)
+        } catch {
+            AppLogger.shared.error(
+                "SDProjectRecord",
+                "parts_sheet_decode_failed",
                 metadata: [
                     "projectId": projectId.uuidString,
                     "bytes": data.count,

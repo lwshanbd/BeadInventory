@@ -76,6 +76,15 @@ actor ProjectImageLoader {
         return SDProjectRecord.decodePatternGrid(data, projectId: projectId)
     }
 
+    /// 多零件模式的图纸数据（零件框 / 调色板 / 格子标定）。同样是小字节，走后台的理由
+    /// 也一样 —— 它总是跟 `thumbnail` 一起被取。
+    func partsSheet(for projectId: UUID) -> BeadPartsSheet? {
+        guard let data = fetchColumn(projectId: projectId, keyPath: \.partsSheetData, event: "parts_sheet") else {
+            return nil
+        }
+        return SDProjectRecord.decodePartsSheet(data, projectId: projectId)
+    }
+
     /// 老数据没有 `displayThumbnail` 时的兜底：读原图 → 现场降级成小图。
     ///
     /// **只走 `ImageDownsampler`，永远不 `UIImage(data: raw)`** —— 后者会全分辨率解码

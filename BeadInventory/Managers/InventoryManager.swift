@@ -4253,6 +4253,33 @@ class InventoryManager: ObservableObject {
         }
     }
 
+    /// 同步取单个项目的多零件图纸数据。`propertiesToFetch` 限定单列的理由同上 ——
+    /// 不限定就会把同一行的原图 blob 一并物化。
+    ///
+    /// 视图层请走 `ProjectImageLoader.partsSheet(for:)`（后台 actor），这里留给
+    /// 需要在主线程同步拿到结果的调用方。
+    func fetchProjectPartsSheet(for projectId: UUID) -> BeadPartsSheet? {
+        guard let context = modelContext else {
+            logError("fetch_parts_sheet_no_context", metadata: ["projectId": projectId.uuidString])
+            return nil
+        }
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        descriptor.fetchLimit = 1
+        descriptor.propertiesToFetch = [\.partsSheetData]
+        do {
+            guard let sd = try context.fetch(descriptor).first else { return nil }
+            return SDProjectRecord.decodePartsSheet(sd.partsSheetData, projectId: projectId)
+        } catch {
+            logError("fetch_parts_sheet_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return nil
+        }
+    }
+
     /// 同步取单个项目的 displayThumbnail（列表用小图）。错误处理同上。
     /// **注意：视图层已不再走这里**，改走 `ProjectImageLoader.displayThumbnail(for:)`（后台 actor）。
     /// 本方法只剩备份导出 / history 快照捕获等主线程调用方。
@@ -4438,6 +4465,7 @@ class InventoryManager: ObservableObject {
         thumbnail: Data?? = nil,
         finishedImage: Data?? = nil,
         patternGridData: Data?? = nil,
+        partsSheetData: Data?? = nil,
         displayThumbnail: Data?? = nil
     ) -> Bool {
         guard !isUsingLocalFallbackMode else {
@@ -4460,6 +4488,9 @@ class InventoryManager: ObservableObject {
         }
         if case .some(let newGrid) = patternGridData {
             sd.patternGridData = newGrid
+        }
+        if case .some(let newParts) = partsSheetData {
+            sd.partsSheetData = newParts
         }
         if case .some(let newDisplay) = displayThumbnail {
             sd.displayThumbnail = newDisplay
@@ -4686,6 +4717,35 @@ class InventoryManager: ObservableObject {
         logInfo("project_pattern_grid_updated", metadata: [
             "projectId": projectId.uuidString,
             "hasGrid": grid != nil
+        ])
+    }
+
+    /// 更新项目的多零件图纸数据（立体图纸）。语义完全对齐 `updateProjectPatternGrid`：
+    /// 编码失败时**保留**旧值不覆盖，只有用户明确清空才写 nil。
+    ///
+    /// 没有对应的 `projectIDsWithPartsSheet` 存在性集合 —— 那套集合是为「列表每个 row
+    /// 都要知道有没有图」准备的，多零件数据只在进入该模式时读一次，多维护一个集合
+    /// 反而多一处会跟库漂移的状态。
+    func updateProjectPartsSheet(_ projectId: UUID, sheet: BeadPartsSheet?) {
+        guard projects.contains(where: { $0.id == projectId }) else { return }
+
+        let newData: Data??
+        if let sheet = sheet {
+            if let encoded = SDProjectRecord.encodePartsSheet(sheet, projectId: projectId) {
+                newData = .some(.some(encoded))
+            } else {
+                newData = .none // 编码失败，logger 已记录，保留旧值
+            }
+        } else {
+            newData = .some(nil) // 用户明确清空
+        }
+        if case .some = newData {
+            _setProjectBlobsDirectly(projectId: projectId, partsSheetData: newData)
+        }
+        logInfo("project_parts_sheet_updated", metadata: [
+            "projectId": projectId.uuidString,
+            "parts": sheet?.parts.count ?? 0,
+            "paletteEntries": sheet?.palette.count ?? 0
         ])
     }
 
