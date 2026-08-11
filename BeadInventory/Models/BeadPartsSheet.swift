@@ -44,16 +44,21 @@ enum PartCellFill: Codable, Equatable, Sendable {
 // MARK: - 全局网格标定
 
 /// 整张图纸所有零件共用同一个格距 —— 它们本来就是从同一张像素画上切下来的。
-/// 所以格子只标定一次，全图通用。单位是归一化的（占图宽 / 图高的比例）。
+/// 所以格子只量一次，全图通用。单位是归一化的（占图宽 / 图高的比例）。
+///
+/// **刻意没有「网格原点」这个字段。** 格距在这里只用来回答一个问题：
+/// 某个零件是几行几列。真正的格子边界由该零件自己的 bbox 均分得出
+/// （见 `BeadPart.gridSize`）—— bbox 本来就精确等于这个零件的外沿，
+/// 均分出来的线必然落在豆子边界上。用全局原点去推反而会让误差沿着整张图累积：
+/// 越往右下角偏得越多，而用户看到的正是最后那几个零件全错位。
+///
+/// 这也意味着用户量格子时不需要量得多准 —— 只要准到能把行列数四舍五入对就行。
 struct PartsGridCalibration: Codable, Equatable, Sendable {
     /// 一格的宽 / 高，占整张图宽 / 高的比例
     var cellWidth: Double
     var cellHeight: Double
-    /// 任意一条竖 / 横网格线的位置（不必是最左 / 最上那条，消费方对格距取模用）
-    var originX: Double
-    var originY: Double
 
-    /// 归一化格距 → 在给定尺寸下大约多少像素（只用于给用户显示）
+    /// 归一化格距 → 在给定尺寸下大约多少像素（只用于内部计算和调试）
     func cellPixelSize(in imageSize: CGSize) -> CGSize {
         CGSize(width: cellWidth * imageSize.width, height: cellHeight * imageSize.height)
     }
@@ -82,7 +87,12 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
     var bounds: CGRect
 
     // 以下是第 2 步（网格对齐 + 颜色识别）的产物，第 1 步一律为空。
-    var gridOrigin: PartGridIndex?
+
+    /// 网格实际覆盖的范围（归一化）。**不等于 `bounds`**：
+    /// bounds 是连通域外沿，带一圈抗锯齿毛边；这个是把格线贴到图像内容上之后
+    /// 得到的真正的 rows × cols 格区域（见 `PartsPitchEstimator.fitGrid`）。
+    /// nil 表示还没对齐过，此时退回用 bounds。
+    var gridRect: CGRect?
     var rows: Int
     var cols: Int
     /// `[row][col]`。没识别过时是空数组 —— 判断「有没有识别过」用 `hasCells`。
@@ -93,7 +103,7 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
         customName: String? = nil,
         rowBand: Int,
         bounds: CGRect,
-        gridOrigin: PartGridIndex? = nil,
+        gridRect: CGRect? = nil,
         rows: Int = 0,
         cols: Int = 0,
         cells: [[PartCellFill]] = []
@@ -102,13 +112,34 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
         self.customName = customName
         self.rowBand = rowBand
         self.bounds = bounds
-        self.gridOrigin = gridOrigin
+        self.gridRect = gridRect
         self.rows = rows
         self.cols = cols
         self.cells = cells
     }
 
     var hasCells: Bool { !cells.isEmpty }
+
+    /// 按格距把这个零件切成整数行列。
+    /// 四舍五入而不是取整：格距量得偏大偏小一点都会被拉回正确的整数上。
+    func gridSize(for calibration: PartsGridCalibration) -> (rows: Int, cols: Int) {
+        guard calibration.cellWidth > 0, calibration.cellHeight > 0 else { return (0, 0) }
+        let cols = Int((Double(bounds.width) / calibration.cellWidth).rounded())
+        let rows = Int((Double(bounds.height) / calibration.cellHeight).rounded())
+        return (rows: max(1, min(rows, 400)), cols: max(1, min(cols, 400)))
+    }
+
+    /// 第 (row, col) 格在整张图里的归一化矩形。均分的是 `gridRect`（贴过图像内容的），
+    /// 没对齐过时退回 `bounds`。
+    func cellRect(row: Int, col: Int) -> CGRect {
+        guard rows > 0, cols > 0 else { return .zero }
+        let area = gridRect ?? bounds
+        let w = area.width / CGFloat(cols)
+        let h = area.height / CGFloat(rows)
+        return CGRect(x: area.minX + CGFloat(col) * w,
+                      y: area.minY + CGFloat(row) * h,
+                      width: w, height: h)
+    }
 
     /// 列表里显示的名字。`order` 是它在清单里的位置（0-based）。
     func displayName(order: Int) -> String {

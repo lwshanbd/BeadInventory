@@ -47,7 +47,7 @@ struct PartsSheetFlowView: View {
 
     @State private var busy: String?
 
-    enum Step: Hashable { case list }
+    enum Step: Hashable { case list, cellSize }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -84,7 +84,16 @@ struct PartsSheetFlowView: View {
                             image: image,
                             roi: roi,
                             parts: $parts,
-                            onSave: { save() }
+                            onContinue: { path = [.list, .cellSize] }
+                        )
+                    }
+                case .cellSize:
+                    if let image {
+                        PartsCellSizeStepView(
+                            image: image,
+                            parts: parts,
+                            calibration: $calibration,
+                            onContinue: { save() }
                         )
                     }
                 }

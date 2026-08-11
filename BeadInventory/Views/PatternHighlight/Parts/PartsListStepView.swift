@@ -26,7 +26,7 @@ struct PartsListStepView: View {
     let image: UIImage
     let roi: CGRect
     @Binding var parts: [BeadPart]
-    let onSave: () -> Void
+    let onContinue: () -> Void
 
     @State private var selection: Set<UUID> = []
     @State private var thumbnails: [UUID: UIImage] = [:]
@@ -260,17 +260,12 @@ struct PartsListStepView: View {
                 .lineLimit(1)
             }
 
-            Button(action: onSave) {
-                Label("保存这 \(parts.count) 个零件", systemImage: "checkmark")
+            Button(action: onContinue) {
+                Label("下一步：量格子", systemImage: "grid")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .disabled(parts.isEmpty)
-
-            Text("下一步是量出一格有多大、再看每个格子是什么颜色，还在做。")
-                .font(.caption2)
-                .foregroundStyle(Theme.ColorToken.Text.tertiary)
-                .multilineTextAlignment(.center)
         }
         .padding()
         .background(.regularMaterial)
@@ -297,7 +292,7 @@ struct PartsListStepView: View {
         merged.bounds = union
         merged.rowBand = chosen.map(\.rowBand).min() ?? merged.rowBand
         // 合并后网格信息全部作废（框变了，行列数和格子内容都得重算）
-        merged.gridOrigin = nil
+        merged.gridRect = nil
         merged.rows = 0
         merged.cols = 0
         merged.cells = []
