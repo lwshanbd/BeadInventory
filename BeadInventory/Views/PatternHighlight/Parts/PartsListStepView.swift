@@ -29,6 +29,8 @@ struct PartsListStepView: View {
     let onContinue: () -> Void
     /// 这张图纸对应的项目。只用来找它的原图副本（「拼好了」要删的就是那个）。
     let projectId: UUID
+    /// 用户在这一屏补了张原图。调用方据此重新裁一次工作图。
+    let onSourceLoaded: () -> Void
 
     @State private var selection: Set<UUID> = []
     @State private var thumbnails: [UUID: UIImage] = [:]
@@ -71,6 +73,10 @@ struct PartsListStepView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            PatternSourceBanner(projectId: projectId) {
+                sourceBytes = PatternSourceStore.byteSize(for: projectId)
+                onSourceLoaded()
+            }
             preview
             Divider()
             partGrid
@@ -117,8 +123,10 @@ struct PartsListStepView: View {
     }
 
     /// 缩略图只在「零件集合真的变了」时重建 —— 选中态变化不该触发一次全量裁图。
+    /// 工作图本身也算：用户中途补了张原图，图换成高清的了，小图得跟着重裁，
+    /// 否则他选完原图看到的还是原来那些糊图，只会以为没生效。
     private var partsSignature: String {
-        parts.map { "\($0.id.uuidString)\($0.bounds)" }.joined()
+        "\(work.image.size)" + parts.map { "\($0.id.uuidString)\($0.bounds)" }.joined()
     }
 
     // MARK: - 上半：图上的框

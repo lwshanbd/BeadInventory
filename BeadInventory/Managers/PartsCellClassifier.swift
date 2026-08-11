@@ -56,24 +56,16 @@ enum PartsCellClassifier {
         var cellLabs: [[[LabColor?]]] = []      // [part][row][col]
         for (index, part) in parts.enumerated() {
             var updated = part
-            // 用户在「量格子」那屏手动调过的零件已经带着 gridRect 和行列数，
-            // 直接用他的结论 —— 自动重贴会把手动修正覆盖掉。
-            let rows: Int, cols: Int
-            if part.gridRect != nil, part.rows > 0, part.cols > 0 {
-                rows = part.rows
-                cols = part.cols
-            } else {
-                let fitted = PartsPitchEstimator.fitGrid(work: work, part: part, calibration: calibration)
-                rows = fitted?.rows ?? part.gridSize(for: calibration).rows
-                cols = fitted?.cols ?? part.gridSize(for: calibration).cols
-                updated.gridRect = fitted?.rect
-            }
-            updated.rows = rows
-            updated.cols = cols
+            // 全图一张网格：这里不再一个零件一个零件地重找格线，直接把零件吸到
+            // 用户在「量格子」那屏定下来的那张网格上。零件之间因此必然对得齐。
+            let grid = part.grid(for: calibration)
+            updated.gridRect = grid.rect
+            updated.rows = grid.rows
+            updated.cols = grid.cols
 
             let labs = sampleCells(work: work, part: updated)
             cellLabs.append(labs)
-            updated.cells = Array(repeating: Array(repeating: .empty, count: cols), count: rows)
+            updated.cells = Array(repeating: Array(repeating: .empty, count: grid.cols), count: grid.rows)
             fittedParts.append(updated)
             progress?(index + 1, parts.count)
         }

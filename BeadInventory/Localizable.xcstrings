@@ -11116,6 +11116,146 @@
         }
       }
     },
+    "看看别的零件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try another piece"
+          }
+        }
+      }
+    },
+    "黄框就是一格：拖框身挪位置，拖右下角的圆点改大小。空白处拖动是移动图片。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The yellow box is one cell. Drag the box to move it, drag the dot at its corner to resize. Drag anywhere else to pan the image."
+          }
+        }
+      }
+    },
+    "网格线要落在豆子和豆子的缝上。全图共用这一张网格，在哪个零件上调都一样。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The grid lines should sit in the seams between beads. The whole sheet shares this one grid, so it doesn't matter which piece you adjust it on."
+          }
+        }
+      }
+    },
+    "现在用的是压缩过的副本，放大到一颗豆子会糊。相册里还留着这张图纸的原图吗？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is a compressed copy, so a single bead looks blurry up close. Still have the original in your photo library?"
+          }
+        }
+      }
+    },
+    "这张图读不出来，换一张试试。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That image couldn't be read. Try another one."
+          }
+        }
+      }
+    },
+    "选原图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick Original"
+          }
+        }
+      }
+    },
+    "量格子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Measure the Grid"
+          }
+        }
+      }
+    },
+    "正在量…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Measuring…"
+          }
+        }
+      }
+    },
+    "推网格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nudge grid"
+          }
+        }
+      }
+    },
+    "自动对齐" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-align"
+          }
+        }
+      }
+    },
+    "重选格子大小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resize the cell"
+          }
+        }
+      }
+    },
+    "放大" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom"
+          }
+        }
+      }
+    },
+    "就用这个大小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use this size"
+          }
+        }
+      }
+    },
+    "对齐了，看每格什么颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aligned — check each cell's color"
+          }
+        }
+      }
+    },
     "零件清单" : {
       "localizations" : {
         "en" : {

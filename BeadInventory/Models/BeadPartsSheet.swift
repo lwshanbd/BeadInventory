@@ -43,24 +43,93 @@ enum PartCellFill: Codable, Equatable, Sendable {
 
 // MARK: - 全局网格标定
 
-/// 整张图纸所有零件共用同一个格距 —— 它们本来就是从同一张像素画上切下来的。
-/// 所以格子只量一次，全图通用。单位是归一化的（占图宽 / 图高的比例）。
+/// 整张图纸只有**一张网格**：所有零件都是从同一张像素画上切下来的，
+/// 格子多大、格线在哪，全图是同一个答案。这个类型就是那个答案。
 ///
-/// **刻意没有「网格原点」这个字段。** 格距在这里只用来回答一个问题：
-/// 某个零件是几行几列。真正的格子边界由该零件自己的 bbox 均分得出
-/// （见 `BeadPart.gridSize`）—— bbox 本来就精确等于这个零件的外沿，
-/// 均分出来的线必然落在豆子边界上。用全局原点去推反而会让误差沿着整张图累积：
-/// 越往右下角偏得越多，而用户看到的正是最后那几个零件全错位。
+/// ## 为什么连「格线在哪」也是全局的
 ///
-/// 这也意味着用户量格子时不需要量得多准 —— 只要准到能把行列数四舍五入对就行。
+/// 之前这里只有格距，格线位置由每个零件自己的 bbox 均分。结果就是用户抱怨的那件事：
+/// 「一个零件对齐了，换一个又对不上」—— bbox 是连通域外沿，带一圈抗锯齿毛边，
+/// 每个零件毛边多少不一样，均分出来的线自然一个零件一个样。用户于是得一个一个重新对，
+/// 而这些零件在原图上明明共用同一批格线。
+///
+/// 现在格线是一条条铺满整张图纸的直线：竖线在 `originX + k · cellWidth`，
+/// 横线在 `originY + k · cellHeight`。零件只是"这张网格上的一块矩形区域"，
+/// 由 `PartsGrid` 把它吸到最近的格线上。用户调一次，全图跟着变。
 struct PartsGridCalibration: Codable, Equatable, Sendable {
     /// 一格的宽 / 高，占整张图宽 / 高的比例
     var cellWidth: Double
     var cellHeight: Double
+    /// 任意一条竖格线 / 横格线的位置（归一化，相对整张图纸）。
+    /// 取哪一条无所谓 —— 网格是无限铺开的，差一整格是同一张网格。
+    var originX: Double
+    var originY: Double
+
+    init(cellWidth: Double, cellHeight: Double, originX: Double = 0, originY: Double = 0) {
+        self.cellWidth = cellWidth
+        self.cellHeight = cellHeight
+        self.originX = originX
+        self.originY = originY
+    }
+
+    // 全局格线是后加的字段。老数据（只有格距）解码时补 0 —— 0 也是一条合法的格线，
+    // 用户进「量格子」那屏会立刻被自动对齐refit 掉。合成的 init(from:) 遇到缺字段会直接抛，
+    // 所以这里必须手写。
+    private enum CodingKeys: String, CodingKey {
+        case cellWidth, cellHeight, originX, originY
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        cellWidth = try c.decode(Double.self, forKey: .cellWidth)
+        cellHeight = try c.decode(Double.self, forKey: .cellHeight)
+        originX = try c.decodeIfPresent(Double.self, forKey: .originX) ?? 0
+        originY = try c.decodeIfPresent(Double.self, forKey: .originY) ?? 0
+    }
+
+    var isUsable: Bool { cellWidth > 0 && cellHeight > 0 }
+
+    /// 把一个横坐标吸到最近的竖格线上
+    func snappedX(_ x: Double) -> Double {
+        guard cellWidth > 0 else { return x }
+        return originX + ((x - originX) / cellWidth).rounded() * cellWidth
+    }
+
+    /// 把一个纵坐标吸到最近的横格线上
+    func snappedY(_ y: Double) -> Double {
+        guard cellHeight > 0 else { return y }
+        return originY + ((y - originY) / cellHeight).rounded() * cellHeight
+    }
 
     /// 归一化格距 → 在给定尺寸下大约多少像素（只用于内部计算和调试）
     func cellPixelSize(in imageSize: CGSize) -> CGSize {
         CGSize(width: cellWidth * imageSize.width, height: cellHeight * imageSize.height)
+    }
+}
+
+// MARK: - 零件在全局网格上占的那块
+
+/// 某个零件落在全局网格上的整数格区域。
+///
+/// 四条边都吸到最近的格线上：零件的真实边界本来就在格线上，
+/// bbox 那一圈抗锯齿毛边（最多也就三分之一格）会被吸回去。
+struct PartsGrid: Equatable {
+    var rect: CGRect
+    var rows: Int
+    var cols: Int
+
+    init(covering bounds: CGRect, calibration: PartsGridCalibration) {
+        guard calibration.isUsable else {
+            rect = bounds; rows = 1; cols = 1
+            return
+        }
+        let cw = CGFloat(calibration.cellWidth)
+        let ch = CGFloat(calibration.cellHeight)
+        let x0 = CGFloat(calibration.snappedX(Double(bounds.minX)))
+        let y0 = CGFloat(calibration.snappedY(Double(bounds.minY)))
+        cols = max(1, min(400, Int(((bounds.maxX - x0) / cw).rounded())))
+        rows = max(1, min(400, Int(((bounds.maxY - y0) / ch).rounded())))
+        rect = CGRect(x: x0, y: y0, width: CGFloat(cols) * cw, height: CGFloat(rows) * ch)
     }
 }
 
@@ -120,13 +189,10 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
 
     var hasCells: Bool { !cells.isEmpty }
 
-    /// 按格距把这个零件切成整数行列。
-    /// 四舍五入而不是取整：格距量得偏大偏小一点都会被拉回正确的整数上。
-    func gridSize(for calibration: PartsGridCalibration) -> (rows: Int, cols: Int) {
-        guard calibration.cellWidth > 0, calibration.cellHeight > 0 else { return (0, 0) }
-        let cols = Int((Double(bounds.width) / calibration.cellWidth).rounded())
-        let rows = Int((Double(bounds.height) / calibration.cellHeight).rounded())
-        return (rows: max(1, min(rows, 400)), cols: max(1, min(cols, 400)))
+    /// 这个零件落在全局网格上的那块区域。全图共用一张网格，所以这里不带任何
+    /// 「这个零件自己的」参数 —— 换个零件看，格线还是那批格线。
+    func grid(for calibration: PartsGridCalibration) -> PartsGrid {
+        PartsGrid(covering: bounds, calibration: calibration)
     }
 
     /// 第 (row, col) 格在整张图里的归一化矩形。均分的是 `gridRect`（贴过图像内容的），

@@ -15,6 +15,9 @@ struct PartsRegionStepView: View {
     let image: UIImage
     @Binding var roi: CGRect
     let onContinue: () -> Void
+    /// 这张图纸对应的项目。只用来提示「还没有原图，要不要选一张」。
+    let projectId: UUID
+    let onSourceLoaded: () -> Void
 
     // 放大查看细节用。手势结构对齐 PatternCalibrationView：
     // 角点和框体的单指拖优先级更高，只有在它们的热区之外、且已经放大时才平移画布。
@@ -25,6 +28,7 @@ struct PartsRegionStepView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            PatternSourceBanner(projectId: projectId, onLoaded: onSourceLoaded)
             canvas
             footer
         }

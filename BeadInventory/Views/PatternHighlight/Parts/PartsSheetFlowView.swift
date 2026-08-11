@@ -64,7 +64,9 @@ struct PartsSheetFlowView: View {
                     PartsRegionStepView(
                         image: overview,
                         roi: $roi,
-                        onContinue: { runDetection() }
+                        onContinue: { runDetection() },
+                        projectId: project.id,
+                        onSourceLoaded: { Task { await reloadFromSource() } }
                     )
                 } else {
                     ContentUnavailableView(
@@ -94,7 +96,8 @@ struct PartsSheetFlowView: View {
                                 roi: roi,
                                 parts: $parts,
                                 onContinue: { path = [.list, .cellSize] },
-                                projectId: project.id
+                                projectId: project.id,
+                                onSourceLoaded: { Task { await reloadFromSource() } }
                             )
                         case .cellSize:
                             PartsCellSizeStepView(
@@ -174,15 +177,38 @@ struct PartsSheetFlowView: View {
     /// 也把首屏的解码代价压到最低。
     private static let overviewMaxPixel = 1600
 
-    /// 零件区高清版的长边上限。3600 是「一格三十来个像素」和「内存别失控」之间的折中：
-    /// 解码整图时会有一次约 20 MB 的瞬时峰值，裁完只留零件区那块（约一半），
-    /// 且只在多零件模式开着的时候常驻。
-    private static let workMaxPixel = 3600
+    /// 解码整张图纸时的像素上限。
+    ///
+    /// **原图没超过这个数就一个像素都不降 —— 直接用原图。** 早先这里是「长边压到 3600」，
+    /// 一张本来就不大的图纸也照砍，一格豆子白白少掉三分之一的像素。
+    /// 1200 万像素解出来约 48 MB，是一次瞬时峰值（裁完零件区就还回去），
+    /// 而且只在多零件模式开着时发生。真遇到几千万像素的扫描件才会按比例降。
+    private static let workPixelBudget = 12_000_000
+
+    /// 按原图实际大小决定解码尺寸：够小就用原图，太大才按预算等比缩。
+    private static func decodeMaxPixel(for data: Data) -> Int {
+        guard let native = ImageDownsampler.pixelSize(of: data) else { return 3600 }
+        let total = Double(native.width) * Double(native.height)
+        let long = Double(max(native.width, native.height))
+        guard total > Double(workPixelBudget) else { return Int(long.rounded(.up)) }
+        return max(1600, Int((long * (Double(workPixelBudget) / total).squareRoot()).rounded()))
+    }
 
     /// 已经裁到高清版的那块区域。用来判断「要不要重裁」，
     /// 不能拿 `work.region` 判 —— 低清兜底版的 region 是整张图，会被误认成没裁过。
     @State private var highResRegion: CGRect?
     @State private var upgradingWorkImage = false
+
+    /// 用户刚补了一张原图：整张的低清版和零件区的高清版都要重出一次，
+    /// 界面上立刻能看出变清楚了 —— 否则他选完图什么都没发生，只能怀疑是不是没选上。
+    private func reloadFromSource() async {
+        guard let data = PatternSourceStore.data(for: project.id) else { return }
+        if let low = ImageDownsampler.downsampleToUIImage(data, maxPixelSize: Self.overviewMaxPixel) {
+            overview = low
+        }
+        highResRegion = nil
+        await prepareWorkImage()
+    }
 
     /// 从原图裁出零件区的高清版，换掉低清兜底版。
     /// 失败就什么都不做 —— 低清版还在，流程照样往下走，只是图糊一点。
@@ -203,7 +229,8 @@ struct PartsSheetFlowView: View {
             // 实测这一整段（取字节 + 解码 + 裁切）只要 0.10s，所以它从来不是「慢」的来源；
             // 早先那次界面卡死是因为把它做成了进入下一屏的必需条件，失败就没有退路。
             autoreleasepool {
-                guard let full = ImageDownsampler.downsampleToUIImage(data, maxPixelSize: Self.workMaxPixel),
+                let maxPixel = Self.decodeMaxPixel(for: data)
+                guard let full = ImageDownsampler.downsampleToUIImage(data, maxPixelSize: maxPixel),
                       let cropped = PartsThumbnailMaker.crop(.whole(full), normalized: region) else { return nil }
                 return PartsWorkImage(image: cropped, region: region)
             }

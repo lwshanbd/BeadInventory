@@ -2,18 +2,32 @@
 //  PartsPitchEstimator.swift
 //  BeadInventory
 //
-//  多零件模式 - 猜一格有多大
+//  多零件模式 - 量出整张图纸的那张网格
 //
-//  用户最终要自己确认格子大小（他一眼就能看出网格线有没有落在豆子边界上），
-//  但不该让他从零开始量。这里先猜一个八九不离十的值，用户多数情况下只是点个头。
+//  用户最终要自己确认（他一眼就能看出网格线有没有落在豆子边界上），
+//  但不该让他从零开始量。这里先量一个八九不离十的，用户多数情况下只是点个头。
 //
-//  ## 做法：颜色突变曲线 → 自相关 → 取第一个够强的峰
+//  ## 一张图纸只有一张网格
 //
-//  图纸本身画了格线，所以「每列跟前一列的差异」这条曲线是周期性的，
-//  周期就是格距。自相关能把这个周期挑出来。
+//  图纸上几十个零件是从同一张像素画上切下来的，格子多大、格线在哪，全图是同一个答案。
+//  所以这里不按零件一个个量，而是**把所有零件圈在一起当成一张图量一次**：
+//  竖格线在每个零件里都出现在同样的相位上，叠在一起信号只会更强；零件之间的空白
+//  没有周期性，贡献接近零。量出来的结论 (`PartsGridCalibration`) 直接铺满整张图纸。
 //
-//  **关键是取「第一个够强的峰」而不是「最高的峰」**：自相关在周期的 2 倍、3 倍处
-//  同样会出峰，而且往往更高，直接取最大值会把格子认成两格并一格。
+//  早先是每个零件各量各的相位，于是「这个零件对齐了，换一个又对不上」——
+//  因为零件的 bbox 带一圈抗锯齿毛边，每个零件毛边多少不一样。用户得一个一个重对，
+//  而这些零件本来就共用同一批格线。
+//
+//  ## 做法：颜色突变曲线 → 自相关定周期 → 梳齿定相位
+//
+//  图纸本身画了格线，所以「每列跟前一列的差异」这条曲线是周期性的，周期就是格距。
+//
+//  **自相关要取「第一个够强的峰」而不是「最高的峰」**：周期的 2 倍、3 倍处同样会出峰，
+//  而且往往更高，直接取最大值会把两格认成一格。
+//
+//  周期定下来之后，再拿一把「梳子」（等距的一排线）在曲线上滑，找让所有齿都压在
+//  突变处的那个位置 —— 同时容许周期本身微调几个千分点，因为一张图上上百格累积下来，
+//  0.5% 的周期误差就是半格。
 //
 //  一开始试过另一条路 —— 穷举「这个零件横着是几格」，看那些分界线是不是都落在
 //  突变处，取平均分最高的。实测直接翻车：把一个四十几列的零件判成 3 列。
@@ -24,39 +38,60 @@ import UIKit
 
 enum PartsPitchEstimator {
 
-    /// 从若干个零件猜整张图纸的格距（归一化，占图宽 / 图高的比例）。
-    ///
-    /// - Parameter samples: 拿来量的零件。挑大的几个 —— 零件越大，格线越多，
-    ///   得分曲线的峰越尖锐。
-    /// - Returns: 一个零件都量不出来时返回 nil，由调用方给用户一个手动量的初值。
-    static func estimate(work: PartsWorkImage, parts: [BeadPart], sampleCount: Int = 5) -> PartsGridCalibration? {
-        let samples = parts
-            .sorted { $0.bounds.width * $0.bounds.height > $1.bounds.width * $1.bounds.height }
-            .prefix(sampleCount)
-        guard !samples.isEmpty else { return nil }
+    /// 分析用的工作分辨率。整个零件区一起看，所以比单个零件那会儿给得多。
+    private static let analysisPixels = 1_500_000
 
-        var widths: [Double] = []
-        var heights: [Double] = []
-        for part in samples {
-            guard let bitmap = PartsBitmap.make(from: work, roi: part.bounds, maxPixels: 400_000),
-                  bitmap.width >= 8, bitmap.height >= 8 else { continue }
-            let profiles = gradientProfiles(of: bitmap)
-            // 周期是像素数；bbox 精确等于 cols 格，所以四舍五入回整数格再反算格距，
-            // 这样每个零件给出的估计天然是自洽的。
-            if let period = fundamentalPeriod(profile: profiles.columns) {
-                let cols = max(1, Int((Double(bitmap.width) / period).rounded()))
-                widths.append(Double(part.bounds.width) / Double(cols))
-            }
-            if let period = fundamentalPeriod(profile: profiles.rows) {
-                let rows = max(1, Int((Double(bitmap.height) / period).rounded()))
-                heights.append(Double(part.bounds.height) / Double(rows))
-            }
-        }
-        guard let w = median(widths), let h = median(heights) else { return nil }
-        return PartsGridCalibration(cellWidth: w, cellHeight: h)
+    /// 量出整张图纸的网格：一格多大 + 格线在哪。
+    /// - Returns: 图上找不出规则格线时返回 nil，由调用方给用户一个手动量的初值。
+    static func estimateLattice(work: PartsWorkImage, parts: [BeadPart]) -> PartsGridCalibration? {
+        guard let bitmap = analysisBitmap(work: work, parts: parts) else { return nil }
+        let profiles = gradientProfiles(of: bitmap)
+        guard let px = fundamentalPeriod(profile: profiles.columns),
+              let py = fundamentalPeriod(profile: profiles.rows),
+              let x = refineLattice(profile: profiles.columns, pitch: px, allowPitchDrift: true),
+              let y = refineLattice(profile: profiles.rows, pitch: py, allowPitchDrift: true)
+        else { return nil }
+
+        let roi = bitmap.roi
+        return PartsGridCalibration(
+            cellWidth: x.pitch / Double(bitmap.width) * Double(roi.width),
+            cellHeight: y.pitch / Double(bitmap.height) * Double(roi.height),
+            originX: Double(roi.minX) + x.phase / Double(bitmap.width) * Double(roi.width),
+            originY: Double(roi.minY) + y.phase / Double(bitmap.height) * Double(roi.height)
+        )
+    }
+
+    /// 格距不动，只重新找格线的位置。
+    /// 用户手拉过格子大小之后按「自动对齐」走这条 —— 他量的大小不许被改掉。
+    static func fitOrigin(
+        work: PartsWorkImage, parts: [BeadPart], calibration: PartsGridCalibration
+    ) -> CGPoint? {
+        guard calibration.isUsable, let bitmap = analysisBitmap(work: work, parts: parts) else { return nil }
+        let roi = bitmap.roi
+        let pitchX = calibration.cellWidth / Double(roi.width) * Double(bitmap.width)
+        let pitchY = calibration.cellHeight / Double(roi.height) * Double(bitmap.height)
+        let profiles = gradientProfiles(of: bitmap)
+        guard let x = refineLattice(profile: profiles.columns, pitch: pitchX, allowPitchDrift: false),
+              let y = refineLattice(profile: profiles.rows, pitch: pitchY, allowPitchDrift: false)
+        else { return nil }
+        return CGPoint(
+            x: Double(roi.minX) + x.phase / Double(bitmap.width) * Double(roi.width),
+            y: Double(roi.minY) + y.phase / Double(bitmap.height) * Double(roi.height)
+        )
     }
 
     // MARK: - 内部
+
+    /// 把所有零件圈在一起裁一张图来量。零件之间的空白也在里面，但它不周期，不影响结论。
+    private static func analysisBitmap(work: PartsWorkImage, parts: [BeadPart]) -> PartsBitmap? {
+        guard var union = parts.first?.bounds else { return nil }
+        for part in parts.dropFirst() { union = union.union(part.bounds) }
+        let region = union.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard region.width > 0, region.height > 0 else { return nil }
+        guard let bitmap = PartsBitmap.make(from: work, roi: region, maxPixels: analysisPixels),
+              bitmap.width >= 32, bitmap.height >= 32 else { return nil }
+        return bitmap
+    }
 
     /// 横向 / 纵向的「颜色突变强度」曲线。
     /// `columns[x]` = 第 x 列跟第 x-1 列的整体差异；格线所在的列会明显更高。
@@ -131,107 +166,49 @@ enum PartsPitchEstimator {
         return Double(lag) + max(-0.5, min(0.5, offset))
     }
 
-    // MARK: - 把网格贴到零件上
-
-    /// 一个零件最终的网格：覆盖范围（归一化）+ 行列数。
-    struct FittedGrid: Equatable, Sendable {
-        var rect: CGRect
-        var rows: Int
-        var cols: Int
-    }
-
-    /// 给定格距，把网格**对齐到这个零件的图像内容上**。
+    /// 拿一把等距的梳子在曲线上滑，找齿全部压在突变处的那个位置。
     ///
-    /// 为什么不能直接拿零件的 bbox 均分：bbox 是连通域的外沿，
-    /// 而前景掩膜会把描边周围抗锯齿出来的那一两个像素也算进去。工作分辨率下一格才五六个
-    /// 像素，这一圈毛边就是三分之一格 —— 均分出来的线整排压在豆子中间，而且越往右
-    /// 偏得越多。实测就是这个现象。
-    ///
-    /// 所以这里在 bbox 附近搜一遍「起点 + 格距」，让所有格线尽量落在颜色突变的地方。
-    /// 格距允许在用户给的值上下浮动 6%：用户是用手指量的，本来就不可能精确。
-    /// - Parameters:
-    ///   - forcedCols/forcedRows: 用户在界面上手点过的格数。传了就用它，不再从格距反推 ——
-    ///     否则用户点 +1 之后这里又按 bbox 算回原来的数，按钮看起来像没反应。
-    static func fitGrid(
-        work: PartsWorkImage,
-        part: BeadPart,
-        calibration: PartsGridCalibration,
-        forcedCols: Int? = nil,
-        forcedRows: Int? = nil
-    ) -> FittedGrid? {
-        let cols = forcedCols ?? max(1, Int((Double(part.bounds.width) / calibration.cellWidth).rounded()))
-        let rows = forcedRows ?? max(1, Int((Double(part.bounds.height) / calibration.cellHeight).rounded()))
-
-        // 往外放两格再搜，保证真正的边界落在搜索范围里面
-        let margin = CGSize(width: calibration.cellWidth * 2, height: calibration.cellHeight * 2)
-        let expanded = part.bounds
-            .insetBy(dx: -margin.width, dy: -margin.height)
-            .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
-        guard let bitmap = PartsBitmap.make(from: work, roi: expanded, maxPixels: 400_000),
-              bitmap.width >= 16, bitmap.height >= 16 else { return nil }
-
-        let profiles = gradientProfiles(of: bitmap)
-        // 格距按「这个零件的 bbox ÷ 格数」算，而不是直接用全局值：
-        // 用户点 +1 改的就是格数，格距必须跟着走，否则线的疏密不变。
-        let cellW = forcedCols != nil ? Double(part.bounds.width) / Double(cols) : calibration.cellWidth
-        let cellH = forcedRows != nil ? Double(part.bounds.height) / Double(rows) : calibration.cellHeight
-        let pitchX = cellW / Double(expanded.width) * Double(bitmap.width)
-        let pitchY = cellH / Double(expanded.height) * Double(bitmap.height)
-        // 网格的起点应该就在零件左上角附近，允许它在正负一格半里找 ——
-        // 放开整个搜索窗口去找的话，得分最高的位置常常整片飘到零件外面（那里
-        // 有水印和图纸底纹的规则纹理，同样能刷出高分）。
-        let expectedX = Double(part.bounds.minX - expanded.minX) / Double(expanded.width) * Double(bitmap.width)
-        let expectedY = Double(part.bounds.minY - expanded.minY) / Double(expanded.height) * Double(bitmap.height)
-        guard let x = fitAxis(profile: profiles.columns, lines: cols, pitch: pitchX,
-                              expectedStart: expectedX, tolerance: pitchX * 1.5),
-              let y = fitAxis(profile: profiles.rows, lines: rows, pitch: pitchY,
-                              expectedStart: expectedY, tolerance: pitchY * 1.5) else { return nil }
-
-        let rect = CGRect(
-            x: expanded.minX + CGFloat(x.start / Double(bitmap.width)) * expanded.width,
-            y: expanded.minY + CGFloat(y.start / Double(bitmap.height)) * expanded.height,
-            width: CGFloat(x.pitch * Double(cols) / Double(bitmap.width)) * expanded.width,
-            height: CGFloat(y.pitch * Double(rows) / Double(bitmap.height)) * expanded.height
-        )
-        return FittedGrid(rect: rect, rows: rows, cols: cols)
-    }
-
-    /// 在一条曲线上找网格的**起点**，让 lines+1 条等距线尽量都落在峰上。
-    ///
-    /// **格距是给定的，这里不动它。** 早先允许它在给定值上下浮动 6%，理由是
-    /// 「用手指量的不可能准」；结果每个零件的格子大小都不一样，同一张图纸上
-    /// 一格到底多大变成了一件说不清的事。格距全图一个数，这里只解相位。
-    private static func fitAxis(
-        profile: [Double], lines: Int, pitch: Double,
-        expectedStart: Double, tolerance: Double
-    ) -> (start: Double, pitch: Double)? {
+    /// - Parameter allowPitchDrift: 是否容许齿距在给定值上下微调。
+    ///   自动量的时候要（自相关只能到零点几像素的精度，而整张图上百格累积下来
+    ///   千分之五的误差就是半格）；用户手拉过大小之后不要 —— 他量的多大就是多大。
+    /// - Returns: 齿距（像素）和相位（第一条线的位置，像素）。
+    private static func refineLattice(
+        profile: [Double], pitch: Double, allowPitchDrift: Bool
+    ) -> (pitch: Double, phase: Double)? {
         let n = profile.count
-        let span = pitch * Double(lines)
-        guard lines >= 1, pitch >= 2, span <= Double(n - 1) else { return nil }
+        guard pitch >= 3, Double(n) >= pitch * 4 else { return nil }
 
-        var best: (start: Double, score: Double)?
-        let lower = max(0, expectedStart - tolerance)
-        let upper = min(Double(n - 1) - span, expectedStart + tolerance)
-        guard lower <= upper else { return nil }
-        var start = lower
-        while start <= upper {
-            var total = 0.0
-            for k in 0...lines {
-                let x = Int((start + Double(k) * pitch).rounded())
-                let lo = max(0, x - 1), hi = min(n - 1, x + 1)
-                total += (lo...hi).map { profile[$0] }.max() ?? 0
+        var pitches: [Double] = [pitch]
+        if allowPitchDrift {
+            let step = max(0.02, pitch * 0.002)
+            var p = pitch * 0.97
+            pitches = []
+            while p <= pitch * 1.03 + 1e-9 {
+                pitches.append(p)
+                p += step
             }
-            let score = total / Double(lines + 1)
-            if best == nil || score > best!.score { best = (start, score) }
-            start += 0.25
+        }
+
+        var best: (pitch: Double, phase: Double, score: Double)?
+        for candidate in pitches {
+            let lines = Int(Double(n - 1) / candidate)
+            guard lines >= 3 else { continue }
+            var phase = 0.0
+            let phaseStep = max(0.1, candidate / 60)
+            while phase < candidate {
+                var total = 0.0
+                for k in 0...lines {
+                    let x = Int((phase + Double(k) * candidate).rounded())
+                    guard x >= 0, x <= n - 1 else { continue }
+                    let lo = max(0, x - 1), hi = min(n - 1, x + 1)
+                    total += (lo...hi).map { profile[$0] }.max() ?? 0
+                }
+                let score = total / Double(lines + 1)
+                if best == nil || score > best!.score { best = (candidate, phase, score) }
+                phase += phaseStep
+            }
         }
         guard let best else { return nil }
-        return (best.start, pitch)
-    }
-
-    private static func median(_ values: [Double]) -> Double? {
-        guard !values.isEmpty else { return nil }
-        let sorted = values.sorted()
-        return sorted[sorted.count / 2]
+        return (best.pitch, best.phase)
     }
 }
