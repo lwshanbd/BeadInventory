@@ -121,9 +121,9 @@ class BackupManager {
 
     @MainActor private func createBackupData(from manager: InventoryManager) -> [String: Any] {
         var data: [String: Any] = [:]
-        /// 图纸标定 / 多零件进度这次没读出来的项目。这些项目在备份里既没写数据也没写
-        /// `*Provided`，恢复时不会动 store 上的现值 —— 但备份本身是不全的，得留个痕迹。
-        var skippedBlobProjects: Set<UUID> = []
+        // 多零件进度这次没读出来的项目数。这些项目在备份里既没写数据也没写 `*Provided`，
+        // 恢复时不会动 store 上的现值 —— 但备份本身是不全的，得留个痕迹。
+        var unreadablePartsSheets = 0
 
         // 元数据
         data["backupDate"] = ISO8601DateFormatter().string(from: Date())
@@ -194,12 +194,14 @@ class BackupManager {
             if let displayThumbnail = manager.fetchProjectDisplayThumbnail(for: project.id) {
                 projectData["displayThumbnail"] = displayThumbnail.base64EncodedString()
             }
-            // 图纸标定数据：拼图网格（patternGrid）和多零件图纸（partsSheet）。
-            // 之前都不进备份 —— 用户换新手机从备份恢复，四角标定、每个零件的框和逐格色号、
-            // 拼豆板摆位全没了，只剩一张图。这两条都用跟 displayThumbnail 同型的
-            // `*Provided` 标志，老备份没这个字段 → restore 不动 store 上的现有值。
-            // 存原始字节（不解码再编码）：解不出来的数据不能在备份里被静默换成"没有"。
-            // 单图纸的 patternGrid **刻意不进备份**。
+            // 多零件图纸（partsSheet）进备份，单图纸的网格（patternGrid）**不进**。
+            //
+            // partsSheet 之前不进备份 —— 用户换新手机从备份恢复，每个零件的框、逐格色号、
+            // 拼豆板摆位全没了，只剩一张图。它用跟 displayThumbnail 同型的 `*Provided` 标志，
+            // 老备份没这个字段 → restore 不动 store 上的现有值；存的是原始字节（不解码再编码），
+            // 解不出来的数据不能在备份里被静默换成「没有」。
+            //
+            // patternGrid 则**刻意留在外面**（所以从备份恢复到新设备时，四角标定要重新做）。
             //
             // 上一版顺手把它加了进来（原是挂在这里的 S4 follow-up），实测的代价是：
             // 这台设备 2347 个项目里 2094 个有网格，备份文件从 548 MB 涨到 4.17 GB。
@@ -225,7 +227,7 @@ class BackupManager {
                     projectData["partsSheet"] = partsSheetData.base64EncodedString()
                 }
             case .failure:
-                skippedBlobProjects.insert(project.id)
+                unreadablePartsSheets += 1
             }
             projectData["beadUsage"] = project.beadUsage.map { usage in
                 [
@@ -284,9 +286,9 @@ class BackupManager {
             "purchaseRecordsCount": manager.purchaseRecords.count
         ]
 
-        if !skippedBlobProjects.isEmpty {
-            AppLogger.shared.warning("BackupManager", "backup_blobs_unreadable", metadata: [
-                "projects": skippedBlobProjects.count
+        if unreadablePartsSheets > 0 {
+            AppLogger.shared.warning("BackupManager", "backup_parts_sheets_unreadable", metadata: [
+                "projects": unreadablePartsSheets
             ])
         }
 

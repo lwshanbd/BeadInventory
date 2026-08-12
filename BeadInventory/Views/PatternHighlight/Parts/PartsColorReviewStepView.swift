@@ -2,7 +2,7 @@
 //  PartsColorReviewStepView.swift
 //  BeadInventory
 //
-//  多零件模式 · 第 ④ 屏 - 校色
+//  多零件模式 · 校色（第五屏；整条流程的屏序见 PartsSheetFlowView 的头注释）
 //
 //  拼豆是一颗一颗把豆子按进板子，所以用户只关心两件事：
 //  **这个色号要用多少颗**、**分别是哪几格**。这一屏就长成那个样子：

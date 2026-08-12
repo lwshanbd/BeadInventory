@@ -2,7 +2,7 @@
 //  PartsListStepView.swift
 //  BeadInventory
 //
-//  多零件模式 · 第 ② 屏 - 零件清单
+//  多零件模式 · 第二屏；屏序见 PartsSheetFlowView 头注释 - 零件清单
 //
 //  这一屏的验收标准只有两句话：
 //

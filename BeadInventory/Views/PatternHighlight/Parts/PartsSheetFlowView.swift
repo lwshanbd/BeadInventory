@@ -72,8 +72,6 @@ struct PartsSheetFlowView: View {
     /// 当代理判断「有没有东西要存」—— 用户在清单页把零件全删光恰好也是空，
     /// 那次删除于是静默地存不进去，下次进来零件原封不动全回来了。
     @State private var dirty = false
-    /// 上一次 `persist()` 没写进去。只用来拦住「关闭 / 完成」，**不驱动弹窗**（弹窗见 `prompt`）。
-    @State private var saveFailed = false
     /// 库里那份读不出来 → **禁止覆写**，直到用户明说要重做。
     ///
     /// 刻意跟 `prompt` 分开：它是「能不能写」的开关，不是一句提示。早先它同时充当
@@ -103,15 +101,20 @@ struct PartsSheetFlowView: View {
         case loadFailed
         /// 重新找零件会洗掉已有的成果。
         case confirmRedetect
-        /// 一句说明（判色有零件没看成 / 什么都没找到）。
-        case note(String)
+        /// 判色时有零件的框里取不到图。出路是回零件清单改那几个框。
+        case classifyNote(String)
+        /// 这块范围里一个零件都没找到。出路是**留在这一屏**把框挪一挪，
+        /// 所以刻意不跟上面那条共用 —— 标题和按钮都不一样，混用会出现
+        /// 「标题说有零件没看成、正文说一个也没找到」，而且默认按钮会把人送进一个空清单。
+        case detectFoundNothing
 
         var id: String {
             switch self {
             case .saveFailed: return "save"
             case .loadFailed: return "load"
             case .confirmRedetect: return "redetect"
-            case .note(let text): return "note:\(text)"
+            case .classifyNote(let text): return "note:\(text)"
+            case .detectFoundNothing: return "empty"
             }
         }
     }
@@ -272,12 +275,18 @@ struct PartsSheetFlowView: View {
                     primaryButton: .cancel(Text("取消")),
                     secondaryButton: .destructive(Text("重新找")) { runDetection() }
                 )
-            case .note(let text):
+            case .classifyNote(let text):
                 return Alert(
                     title: Text("有零件没看成"),
                     message: Text(text),
                     primaryButton: .default(Text("回零件清单")) { path = [.list] },
                     secondaryButton: .cancel(Text("知道了"))
+                )
+            case .detectFoundNothing:
+                return Alert(
+                    title: Text("这块范围里没找到零件"),
+                    message: Text("把框挪到有零件的那一片再试一次 —— 原来的零件还留着。"),
+                    dismissButton: .cancel(Text("知道了"))
                 )
             }
         }
@@ -529,9 +538,13 @@ struct PartsSheetFlowView: View {
             // 一个空零件清单，没有任何提示，也没有回头路。
             guard !detected.isEmpty else {
                 self.busy = nil
-                self.prompt = .note(String(
-                    localized: "这块范围里没找到零件。把框挪到有零件的那一片再试一次 —— 原来的零件还留着。"
-                ))
+                self.prompt = .detectFoundNothing
+                // 用户是特地圈了一块才按的按钮，这里一个都没找到，多半是框圈歪了 ——
+                // 但检测器自己退化时也是这个现象，留个带范围的日志才分得清。
+                AppLogger.shared.info("PartsSheet", "detect_found_nothing", metadata: [
+                    "projectId": project.id.uuidString,
+                    "roi": "\(currentROI)"
+                ])
                 return
             }
             self.parts = detected.map { BeadPart(rowBand: $0.rowBand, bounds: $0.bounds) }
@@ -584,7 +597,7 @@ struct PartsSheetFlowView: View {
                 // **不是**「这张图纸上没有豆子」。这时候写回去会把所有零件的格子清成空，
                 // 核对页只会显示「一共 0 颗」，用户完全不知道该改哪儿。
                 if result.unreadableParts == result.parts.count, !result.parts.isEmpty {
-                    self.prompt = .note(String(
+                    self.prompt = .classifyNote(String(
                         localized: "所有零件的框里都取不到图，一格颜色都没看出来。多半是框圈得太小，回零件清单改一改再来一次。"
                     ))
                     return
@@ -597,7 +610,7 @@ struct PartsSheetFlowView: View {
                 // 丢掉的必须是次要的那句。
                 let saved = self.persist()
                 if saved, result.unreadableParts > 0 {
-                    self.prompt = .note(String(
+                    self.prompt = .classifyNote(String(
                         localized: "有 \(result.unreadableParts) 个零件的框里取不到图，它们的格子是空的。回零件清单看看这几个框是不是太小了。"
                     ))
                 }
@@ -614,8 +627,8 @@ struct PartsSheetFlowView: View {
     /// 一个色号一个色号地核对，这是个能横跨好几天的活；中途退出去（甚至只是被电话打断）
     /// 就全部作废，没有人受得了。
     /// - Returns: 这次调用之后，内存里的东西是不是都已经在库里了。
-    ///   **调用方要用返回值判断，不要写完立刻去读 `saveFailed`** ——
-    ///   @State 写完同一轮读回来不保证拿到新值（同一个 PR 里 `DragSession` 就是栽在这上面）。
+    ///   **调用方一律用返回值判断，不要另存一个「上次失败了吗」的 @State 再读回来** ——
+    ///   @State 写完同一轮读回来不保证拿到新值（`PartsBoardStepView.DragSession` 就是栽在这上面）。
     @discardableResult
     private func persist() -> Bool {
         guard dirty else { return true }
@@ -623,9 +636,12 @@ struct PartsSheetFlowView: View {
         // 这时候写回去等于拿现在这份（多半是空的）把它永久盖掉。用户点过
         // 「重新做一遍」之后 overwriteBlocked 会被显式清掉。
         guard !overwriteBlocked else {
-            AppLogger.shared.warning("PartsSheet", "persist_blocked_unreadable", metadata: [
+            AppLogger.shared.error("PartsSheet", "persist_blocked_unreadable", metadata: [
                 "projectId": project.id.uuidString
             ])
+            // 再问一次，别让「关闭」变成一个既不响应也不解释的按钮 ——
+            // 一次点击要么有效果，要么有说法。
+            prompt = .loadFailed
             return false
         }
         let sheet = BeadPartsSheet(
@@ -643,12 +659,10 @@ struct PartsSheetFlowView: View {
         guard inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet) else {
             // 没写进去。这里绝不能算了 —— 用户手上这些东西全在内存里，
             // 而屏幕上跟存好了长得一模一样，他关掉就再也找不回来。
-            saveFailed = true
             prompt = .saveFailed
             return false
         }
         dirty = false
-        saveFailed = false
         return true
     }
 

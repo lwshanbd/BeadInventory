@@ -3030,7 +3030,7 @@ class InventoryManager: ObservableObject {
                 type: .projectDelete,
                 project: snapshotProject,
                 capturesImages: true,
-                partsSheetData: fetchProjectPartsSheetData(for: id)
+                partsSheetData: partsSheetDataForSnapshot(of: id)
             )
 
             // 删除项目只从记录中移除，不回退库存
@@ -3361,7 +3361,7 @@ class InventoryManager: ObservableObject {
             // 只取会被删行的父项目 —— 子项目和独立项目的行不删，图纸留在原行里。
             var parentPartsSheets: [UUID: Data] = [:]
             for parent in parentProjects {
-                if let data = fetchProjectPartsSheetData(for: parent.id) {
+                if let data = partsSheetDataForSnapshot(of: parent.id) {
                     parentPartsSheets[parent.id] = data
                 }
             }
@@ -3878,11 +3878,11 @@ class InventoryManager: ObservableObject {
         )
         // 多零件图纸不在 ProjectRecord 上，父项目和每个子项目都单独取（同 deleteProject）
         var partsSheets: [UUID: Data] = [:]
-        if let data = fetchProjectPartsSheetData(for: projectId) {
+        if let data = partsSheetDataForSnapshot(of: projectId) {
             partsSheets[projectId] = data
         }
         for child in children {
-            if let data = fetchProjectPartsSheetData(for: child.id) {
+            if let data = partsSheetDataForSnapshot(of: child.id) {
                 partsSheets[child.id] = data
             }
         }
@@ -4390,6 +4390,27 @@ class InventoryManager: ObservableObject {
     /// 只关心「有没有」的调用方用这个。**要往备份 / 快照里写的一律用 `...Result` 版**。
     func fetchProjectPartsSheetData(for projectId: UUID) -> Data? {
         try? fetchProjectPartsSheetDataResult(for: projectId).get()
+    }
+
+    /// 给「马上要删掉这一行」的路径用：取不到就明确说一声。
+    ///
+    /// 删除前拍快照时，「这个项目本来就没有多零件进度」和「这次没读出来」不能都变成 nil ——
+    /// 后者会让快照记成「没有」，行随即被删掉，**撤销也拿不回来，字节永久没了**，
+    /// 而全过程一句提示都没有。这跟备份导出那个洞是同一个（见 BackupManager 里的说明），
+    /// 只是这一半更狠：备份还能重做一份，删掉的行没有第二次机会。
+    ///
+    /// 刻意**不**因此阻断删除 —— 用户要删就是要删，为一次读失败把删除拦下来是防御过头。
+    /// 但要留下痕迹，出事时查得到。
+    private func partsSheetDataForSnapshot(of projectId: UUID) -> Data? {
+        switch fetchProjectPartsSheetDataResult(for: projectId) {
+        case .success(let data):
+            return data
+        case .failure:
+            logError("snapshot_parts_sheet_unreadable", metadata: [
+                "projectId": projectId.uuidString
+            ])
+            return nil
+        }
     }
 
     /// 把一份 partsSheet 的**原始字节**直接写回某个项目。
