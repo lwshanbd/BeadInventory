@@ -224,10 +224,12 @@ struct PartsListStepView: View {
                                 // 那个门槛是拿来挡误触的，而放大 4 倍之后正常的一拖在内容
                                 // 坐标里只剩四分之一，会被静默丢掉（实测就是这样：模式退出了，
                                 // 框却没建出来）。
-                                let movedFar = abs(value.translation.width) >= 10
-                                    && abs(value.translation.height) >= 10
-                                // **画完一个不退出**，接着画下一个。一张图纸漏几块是常事，
-                                // 每补一个都要重新点一次按钮纯属折腾；什么时候补完由用户自己说。
+                                //
+                                // 按**拖过的距离**算，不要求两个方向都够远：只有一颗豆高的
+                                // 扁长零件（一条边框、一行字）是真实存在的形状，拿
+                                // 「宽和高都得 ≥10」去卡，这种框会连个提示都没有地被丢掉。
+                                let movedFar = hypot(value.translation.width,
+                                                     value.translation.height) >= 10
                                 guard movedFar else { return }
                                 let drawn = CGRect(corner: content(value.startLocation, in: size),
                                                    to: content(value.location, in: size))
@@ -555,8 +557,7 @@ struct PartsListStepView: View {
     /// 贴着零件边缘去取，取到的全是描边的黑色，整块就会被判成背景。
     private func splitSelected() {
         guard selection.count == 1, let id = selection.first,
-              let index = parts.firstIndex(where: { $0.id == id }) else { return }
-        let target = parts[index]
+              let target = parts.first(where: { $0.id == id }) else { return }
         let padded = target.bounds
             .insetBy(dx: -target.bounds.width * 0.12, dy: -target.bounds.height * 0.12)
             .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
@@ -582,6 +583,9 @@ struct PartsListStepView: View {
                     splitFailed = true
                     return
                 }
+                // 检测跑在后台，这期间用户照样能删零件、合并、点别的框，
+                // 下标早就不是当初那个了 —— 必须按 id 重新定位（同 addPart）。
+                guard let index = parts.firstIndex(where: { $0.id == id }) else { return }
                 let replacements = mine.map {
                     BeadPart(rowBand: target.rowBand, bounds: $0.bounds)
                 }

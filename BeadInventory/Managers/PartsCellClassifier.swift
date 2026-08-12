@@ -64,6 +64,12 @@ enum PartsCellClassifier {
         var parts: [BeadPart]
         /// 这张图纸实际用到的颜色，按格数从多到少
         var palette: [PartsPaletteEntry]
+        /// 图根本没抠出来、一格都没看到的零件数。
+        ///
+        /// **必须单独报出来**：抠图失败和「这个零件确实全是背景」在 `cells` 上长得一模一样
+        /// （全是 `.empty`）。调用方不据此分流的话，用户看到的是一句「一共 0 颗」，
+        /// 而他没做错任何事，也不知道该改哪儿。
+        var unreadableParts: Int
     }
 
     /// 把每个零件切成格子并逐格判色。耗时在秒级，调用方请放后台。
@@ -93,6 +99,7 @@ enum PartsCellClassifier {
         // 第一趟：把每个零件切格、量出每格的平均色
         var fittedParts: [BeadPart] = []
         var cellLabs: [[[LabColor?]]] = []      // [part][row][col]
+        var unreadableParts = 0
         for (index, part) in parts.enumerated() {
             var updated = part
             // 全图一张网格：这里不再一个零件一个零件地重找格线，直接把零件吸到
@@ -102,7 +109,11 @@ enum PartsCellClassifier {
             updated.rows = grid.rows
             updated.cols = grid.cols
 
-            let labs = sampleCells(work: work, part: updated)
+            let sampled = sampleCells(work: work, part: updated)
+            if sampled == nil { unreadableParts += 1 }
+            let labs = sampled
+                ?? [[LabColor?]](repeating: [LabColor?](repeating: nil, count: max(grid.cols, 0)),
+                                 count: max(grid.rows, 0))
             cellLabs.append(labs)
             updated.cells = Array(repeating: Array(repeating: .empty, count: grid.cols), count: grid.rows)
             fittedParts.append(updated)
@@ -145,7 +156,7 @@ enum PartsCellClassifier {
                 matchDeltaE: entry.deltaE
             )
         }
-        return Result(parts: fittedParts, palette: palette)
+        return Result(parts: fittedParts, palette: palette, unreadableParts: unreadableParts)
     }
 
     // MARK: - 采样
@@ -159,11 +170,13 @@ enum PartsCellClassifier {
     ///
     /// 众数只认「这一格里最多的那个颜色」。描边再深也只占一圈，占不到一半，直接被无视；
     /// 网格差个几分之一格也不影响结论。
-    private static func sampleCells(work: PartsWorkImage, part: BeadPart) -> [[LabColor?]] {
+    /// - Returns: `nil` = 这个零件的图**根本没抠出来**（框太小 / 解码失败），一格都没看到。
+    ///   早先这里跟「看过了，每格都是背景」一样返回全 nil 的矩阵，两件事在数据上再也分不开。
+    private static func sampleCells(work: PartsWorkImage, part: BeadPart) -> [[LabColor?]]? {
         let area = part.gridRect ?? part.bounds
         guard part.rows > 0, part.cols > 0,
               let bitmap = PartsBitmap.make(from: work, roi: area, maxPixels: 600_000) else {
-            return Array(repeating: Array(repeating: nil, count: max(part.cols, 0)), count: max(part.rows, 0))
+            return nil
         }
         var result = [[LabColor?]](repeating: [LabColor?](repeating: nil, count: part.cols), count: part.rows)
         let cellW = Double(bitmap.width) / Double(part.cols)

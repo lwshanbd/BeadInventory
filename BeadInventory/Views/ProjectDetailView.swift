@@ -250,6 +250,7 @@ struct ProjectDetailView: View {
                 title: "成品图",
                 currentImage: data.flatMap { UIImage(data: $0) },
                 maxImageSize: 400, // 成品图使用更大尺寸
+                savesPatternSource: false, // 成品图是实物照片，不是图纸，别覆盖拼图模式的原图
                 onSave: { imageData in
                     inventoryManager.updateProjectFinishedImage(projectId, finishedImage: imageData)
                 }
@@ -779,6 +780,11 @@ struct ProjectImageEditorSheet: View {
     let title: String
     let currentImage: UIImage?
     var maxImageSize: CGFloat = 200
+    /// 这张图是不是「项目封面」——只有封面才该另存一份原图给拼图 / 多零件模式
+    /// （`PatternSourceStore`）。成品图是拼完的实物照片，跟图纸没有任何关系，存进去会被
+    /// 多零件模式当成图纸原图读出来，把已经标好的零件框和格子套到一张不相干的图上。
+    /// 默认 true：封面编辑器有好几个入口（详情页、计划项目页），漏传时保持原有行为。
+    var savesPatternSource: Bool = true
     let onSave: (Data?) -> Void
 
     @Environment(\.dismiss) var dismiss
@@ -960,8 +966,8 @@ struct ProjectImageEditorSheet: View {
                             onSave(imageData)
                             // 原图另存一份，只给拼图模式用；开关关着时 save 内部会直接跳过。
                             // 放在 onSave 之后：封面存成功才留原图，避免留下对不上号的孤儿文件。
-                            if let original = pickedOriginalData {
-                                PatternSourceStore.save(original, for: projectId)
+                            if savesPatternSource, let source = patternSourceData() {
+                                PatternSourceStore.save(source, for: projectId)
                             }
                             saveSuccessAt = Date()
                         }
@@ -1043,6 +1049,18 @@ struct ProjectImageEditorSheet: View {
             Text("这张图片无法处理，原有图片已保留。请重试或换一张图片。")
         }
         .presentationDetents([.medium, .large])
+    }
+
+    /// 另存给拼图 / 多零件模式的那份原图。取哪条只看**取景对不对得上封面**
+    /// （同 `ScanView.patternSourceData()`）：
+    ///   - 没裁过 → 用相册那份原始字节（没有二次编码，最干净）
+    ///   - 裁过   → 原始字节的构图已经不是封面那张了，改存裁完的全分辨率图。
+    ///     多零件模式的零件框、格子都是相对封面归一化的，构图一错整片框都会偏。
+    /// 两者都没有（用户只是打开 sheet 又保存）→ nil，不写。
+    private func patternSourceData() -> Data? {
+        guard PatternSourceStore.isEnabled else { return nil }
+        if editedImage == nil, let pickedOriginalData { return pickedOriginalData }
+        return editedImage?.jpegData(compressionQuality: 0.95)
     }
 
     /// 生成落盘用的图片数据。

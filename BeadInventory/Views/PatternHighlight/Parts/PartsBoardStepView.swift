@@ -60,8 +60,9 @@ struct PartsBoardStepView: View {
 
     /// 这一次拖动是在挪零件还是在平移画布。
     ///
-    /// 用引用类型存，**不能用 @State**：落指那一下要先判断「摸到零件没有」，
-    /// 紧接着在同一个回调里就得按这个判断分流。@State 写完立刻读回来不保证拿到新值，
+    /// **必须是引用类型**（外面这层 @State 只是拿来持有它，值本身不参与刷新）：
+    /// 落指那一下要先判断「摸到零件没有」，紧接着在同一个回调里就得按这个判断分流。
+    /// 要是把这些状态直接当成 @State 的值来存，写完立刻读回来不保证拿到新值，
     /// 而模拟器上整段拖动有时只来一个 onChanged —— 第一个事件被当成平移，
     /// 那一整次拖动就白拖了（零件纹丝不动，也没有任何提示）。
     @State private var session = DragSession()
@@ -111,7 +112,7 @@ struct PartsBoardStepView: View {
         }
     }
 
-    private struct Drag {
+    private struct Drag: Equatable {
         let placement: UUID
         let originCol: Int
         let originRow: Int
@@ -170,7 +171,7 @@ struct PartsBoardStepView: View {
 
                     Menu {
                         ForEach(BeadBoardSize.presets) { size in
-                            Button("\(size.label)") { addBoard(size: size) }
+                            Button(size.label) { addBoard(size: size) }
                         }
                     } label: {
                         Label("加一块", systemImage: "plus")
@@ -312,6 +313,14 @@ struct PartsBoardStepView: View {
         let radius = cell * 0.28
         let inset = min(0.8, cell * 0.08)
 
+        // 同色的豆子攒成一条 Path，最后一个色号画一次。
+        // 一颗一颗 fill 的话，一块排满的 104×104 就是八千次画调用 ——
+        // 而拖动时手指每挪一下整块板都要重画一遍，直接卡成幻灯片。
+        // 一块板上的色号顶多十几种，攒完之后画调用也就跟着降到十几次。
+        var fills: [String: Path] = [:]
+        // 轮廓要按「放不下 / 选中 / 普通」三种样式分开描，跟填充分两轮走
+        var contours: [(path: Path, color: Color, width: CGFloat)] = []
+
         for placement in board.placements {
             guard let footprint = footprints[placement.id] else { continue }
             let moving = drag?.placement == placement.id ? drag : nil
@@ -329,15 +338,16 @@ struct PartsBoardStepView: View {
             for bead in footprint.beads {
                 let rect = layout.cellRect(col: col + bead.col, row: row + bead.row)
                 guard rect.intersects(viewport) else { continue }
-                var color = colorCache[bead.key] ?? Theme.ColorToken.Surface.strong
+                let fillKey: String
                 if blocked {
-                    color = Theme.ColorToken.Status.error
+                    fillKey = Self.blockedFillKey
                 } else if let highlightKey, bead.key != highlightKey {
-                    color = Theme.ColorToken.Border.default
+                    fillKey = Self.dimmedFillKey
+                } else {
+                    fillKey = bead.key
                 }
-                context.fill(
-                    Path(roundedRect: rect.insetBy(dx: inset, dy: inset), cornerRadius: radius),
-                    with: .color(color)
+                fills[fillKey, default: Path()].addPath(
+                    Path(roundedRect: rect.insetBy(dx: inset, dy: inset), cornerRadius: radius)
                 )
 
                 if !footprint.hasBead(col: bead.col, row: bead.row - 1) {
@@ -363,7 +373,32 @@ struct PartsBoardStepView: View {
                 ? Theme.ColorToken.Status.error
                 : (isSelected ? Theme.ColorToken.Morandi.honey
                               : Theme.ColorToken.Text.primary.opacity(0.45))
-            context.stroke(contour, with: .color(outline), lineWidth: isSelected ? 2.5 : 1)
+            contours.append((path: contour, color: outline, width: isSelected ? 2.5 : 1))
+        }
+
+        // 先后顺序只有一处有讲究：零件之间本来就不会重叠，唯独拖到别人身上那一下会 ——
+        // 变红的那一份必须盖在上面，不然用户看不出是哪个零件放不下。
+        for (key, path) in fills where key != Self.blockedFillKey {
+            context.fill(path, with: .color(fillColor(for: key)))
+        }
+        if let blocked = fills[Self.blockedFillKey] {
+            context.fill(blocked, with: .color(fillColor(for: Self.blockedFillKey)))
+        }
+        for contour in contours {
+            context.stroke(contour.path, with: .color(contour.color), lineWidth: contour.width)
+        }
+    }
+
+    /// 攒填充用的两个假色号：拖到放不下的地方整个零件变红、高亮时别的色号压成灰。
+    /// 它们和真色号一样只是「一批同色的豆子」，所以走同一个分组。
+    private static let blockedFillKey = "#blocked"
+    private static let dimmedFillKey = "#dimmed"
+
+    private func fillColor(for key: String) -> Color {
+        switch key {
+        case Self.blockedFillKey: return Theme.ColorToken.Status.error
+        case Self.dimmedFillKey: return Theme.ColorToken.Border.default
+        default: return colorCache[key] ?? Theme.ColorToken.Surface.strong
         }
     }
 
@@ -718,42 +753,11 @@ struct PartsBoardStepView: View {
         var occupancies = boards.map { PartsBoardPacker.occupancy(of: $0, parts: parts) }
         var added = 0
 
-        for part in unplaced.sorted(by: { lhs, rhs in
-            let l = lhs.footprint(turns: 0), r = rhs.footprint(turns: 0)
-            return (l.height, l.width) > (r.height, r.width)
-        }) {
-            let candidates = [(0, part.footprint(turns: 0)), (1, part.footprint(turns: 1))]
-            var done = false
-            for index in boards.indices {
-                for candidate in candidates {
-                    guard let spot = PartsBoardPacker.firstFit(candidate.1, occupancy: occupancies[index])
-                    else { continue }
-                    boards[index].placements.append(PartPlacement(
-                        partId: part.id, col: spot.col, row: spot.row, turns: candidate.0
-                    ))
-                    occupancies[index].add(candidate.1, col: spot.col, row: spot.row)
-                    done = true
-                    break
-                }
-                if done { break }
-            }
-            if done { added += 1; continue }
-
-            var board = PartsBoard(size: size)
-            var occupancy = BoardOccupancy(cols: size.cols, rows: size.rows)
-            var landed = false
-            for candidate in candidates {
-                guard let spot = PartsBoardPacker.firstFit(candidate.1, occupancy: occupancy) else { continue }
-                board.placements.append(PartPlacement(
-                    partId: part.id, col: spot.col, row: spot.row, turns: candidate.0
-                ))
-                occupancy.add(candidate.1, col: spot.col, row: spot.row)
-                landed = true
-                break
-            }
-            if landed {
-                boards.append(board)
-                occupancies.append(occupancy)
+        // 摆放规矩（先大后小、先原方向后转 90°、先塞现有板再开新板）全在 packer 里，
+        // 跟进屏自动排走的是同一条路
+        for item in PartsBoardPacker.ordered(unplaced) {
+            if PartsBoardPacker.placeOne(item.part, footprint: item.footprint,
+                                         into: &boards, occupancies: &occupancies, size: size) != nil {
                 added += 1
             }
         }
@@ -765,37 +769,34 @@ struct PartsBoardStepView: View {
 
     /// 点了零件条里的一个零件：落到当前这块板上；这块满了就新开一块并切过去。
     private func place(_ part: BeadPart) {
-        let candidates = [(0, part.footprint(turns: 0)), (1, part.footprint(turns: 1))]
+        // 这里只认**当前这块板**（用户点的时候看着的就是它），所以不走 packer 的
+        // placeOne（那个会挨块板试过去）；「怎么摆」的规矩还是共用 packer 那一份。
+        let options = PartsBoardPacker.candidates(for: part)
 
-        if let board = currentBoard {
-            let occupancy = PartsBoardPacker.occupancy(of: board, parts: parts)
-            for candidate in candidates {
-                guard let spot = PartsBoardPacker.firstFit(candidate.1, occupancy: occupancy) else { continue }
-                let placement = PartPlacement(
-                    partId: part.id, col: spot.col, row: spot.row, turns: candidate.0
-                )
-                boards[boardIndex].placements.append(placement)
-                selection = placement.id
-                return
-            }
+        if let board = currentBoard,
+           let hit = PartsBoardPacker.fit(options, in: PartsBoardPacker.occupancy(of: board, parts: parts)) {
+            let placement = PartPlacement(
+                partId: part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
+            )
+            boards[boardIndex].placements.append(placement)
+            selection = placement.id
+            return
         }
 
         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
-        var board = PartsBoard(size: size)
-        let occupancy = BoardOccupancy(cols: size.cols, rows: size.rows)
-        for candidate in candidates {
-            guard let spot = PartsBoardPacker.firstFit(candidate.1, occupancy: occupancy) else { continue }
-            let placement = PartPlacement(
-                partId: part.id, col: spot.col, row: spot.row, turns: candidate.0
-            )
-            board.placements.append(placement)
-            boards.append(board)
-            switchTo(boards.count - 1)
-            selection = placement.id
-            flash(String(localized: "这块板放不下了，新开了一块"))
+        guard let hit = PartsBoardPacker.fit(options, in: BoardOccupancy(cols: size.cols, rows: size.rows)) else {
+            flash(String(localized: "这个零件比板子还大，换块大的试试"))
             return
         }
-        flash(String(localized: "这个零件比板子还大，换块大的试试"))
+        var board = PartsBoard(size: size)
+        let placement = PartPlacement(
+            partId: part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
+        )
+        board.placements.append(placement)
+        boards.append(board)
+        switchTo(boards.count - 1)
+        selection = placement.id
+        flash(String(localized: "这块板放不下了，新开了一块"))
     }
 
     private func addBoard(size: BeadBoardSize) {
@@ -908,7 +909,9 @@ struct PartsBoardStepView: View {
         current.deltaCol = session.deltaCol
         current.deltaRow = session.deltaRow
         current.valid = session.valid
-        drag = current
+        // 手指移动一像素就来一次 onChanged，但吸到格子上之后多半还是原来那一格。
+        // 只有真的换了格子、或者「放不放得下」变了才写 @State，否则整块板白重画一遍。
+        if drag != current { drag = current }
     }
 
     private func commitMove() {
@@ -970,12 +973,17 @@ struct PartsBoardStepView: View {
         }
     }
 
-    private func layout(for board: PartsBoard) -> BoardLayout {
+    /// zoom = 1 时一格多大（板子整个装进画布，四周留一点边）
+    private func baseCell(for board: PartsBoard) -> CGFloat {
         let padding: CGFloat = 12
         let available = CGSize(width: max(1, canvasSize.width - padding * 2),
                                height: max(1, canvasSize.height - padding * 2))
-        let base = min(available.width / CGFloat(max(board.cols, 1)),
-                       available.height / CGFloat(max(board.rows, 1)))
+        return min(available.width / CGFloat(max(board.cols, 1)),
+                   available.height / CGFloat(max(board.rows, 1)))
+    }
+
+    private func layout(for board: PartsBoard) -> BoardLayout {
+        let base = baseCell(for: board)
         let width = base * CGFloat(board.cols)
         let height = base * CGFloat(board.rows)
         let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
@@ -996,9 +1004,19 @@ struct PartsBoardStepView: View {
                        y: center.y + (point.y - pan.height - center.y) / zoom)
     }
 
+    /// 平移能走多远。按**板子**放大后的尺寸算，不按画布算：
+    /// 板子多半跟画布不是一个比例（50×52 这种长条最明显），放大 10 倍之后
+    /// 它仍然比画布窄 —— 按画布算的话手指能一路把整块板推出屏幕，眼前只剩一片空白。
+    /// 现在最多推到「板子那条边刚好贴着画布边」，板子始终在眼前。
     private func clampPan(_ offset: CGSize) -> CGSize {
-        let limitX = max(0, (zoom - 1) * canvasSize.width / 2)
-        let limitY = max(0, (zoom - 1) * canvasSize.height / 2)
+        var content = canvasSize
+        if let board = currentBoard {
+            let base = baseCell(for: board)
+            content = CGSize(width: base * CGFloat(board.cols) * zoom,
+                             height: base * CGFloat(board.rows) * zoom)
+        }
+        let limitX = max(0, (content.width - canvasSize.width) / 2)
+        let limitY = max(0, (content.height - canvasSize.height) / 2)
         return CGSize(width: min(max(offset.width, -limitX), limitX),
                       height: min(max(offset.height, -limitY), limitY))
     }

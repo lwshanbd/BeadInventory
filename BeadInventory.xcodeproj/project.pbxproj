@@ -25,7 +25,6 @@
 		E46A86EA878045BDB51AFCDC /* PartsColorReviewStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 752A5992A88D4CA5AE560EE6 /* PartsColorReviewStepView.swift */; };
 		235653D9702B471D9E9D2629 /* PartsPitchEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 327DB5D7D13B411B8671A0CB /* PartsPitchEstimator.swift */; };
 		072EA217923041DCB108912A /* PartsCellSizeStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C843ED2DE41D44569FBF43D9 /* PartsCellSizeStepView.swift */; };
-		3D7C9714708F4CDEB057B94D /* PartsPaletteExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E807D12FE0C343C79FF77A87 /* PartsPaletteExtractor.swift */; };
 		4F49E92EED50469FBB77E1EA /* PartsSheetFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0011D17F039F4AFEA93CD778 /* PartsSheetFlowView.swift */; };
 		9EADAAF39F6A4175B437D9D8 /* PartsRegionStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04C9CA7455A24A53A45A88CE /* PartsRegionStepView.swift */; };
 		E830B69F9EBC438AA6B3541F /* PartsListStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFE2EC263D7F43A1B5CD47BD /* PartsListStepView.swift */; };
@@ -176,7 +175,6 @@
 		752A5992A88D4CA5AE560EE6 /* PartsColorReviewStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsColorReviewStepView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsColorReviewStepView.swift; sourceTree = SOURCE_ROOT; };
 		327DB5D7D13B411B8671A0CB /* PartsPitchEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsPitchEstimator.swift; path = BeadInventory/Managers/PartsPitchEstimator.swift; sourceTree = SOURCE_ROOT; };
 		C843ED2DE41D44569FBF43D9 /* PartsCellSizeStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsCellSizeStepView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsCellSizeStepView.swift; sourceTree = SOURCE_ROOT; };
-		E807D12FE0C343C79FF77A87 /* PartsPaletteExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsPaletteExtractor.swift; path = BeadInventory/Managers/PartsPaletteExtractor.swift; sourceTree = SOURCE_ROOT; };
 		0011D17F039F4AFEA93CD778 /* PartsSheetFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsSheetFlowView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsSheetFlowView.swift; sourceTree = SOURCE_ROOT; };
 		04C9CA7455A24A53A45A88CE /* PartsRegionStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsRegionStepView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsRegionStepView.swift; sourceTree = SOURCE_ROOT; };
 		EFE2EC263D7F43A1B5CD47BD /* PartsListStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsListStepView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsListStepView.swift; sourceTree = SOURCE_ROOT; };
@@ -357,7 +355,6 @@
 				752A5992A88D4CA5AE560EE6 /* PartsColorReviewStepView.swift */,
 				327DB5D7D13B411B8671A0CB /* PartsPitchEstimator.swift */,
 				C843ED2DE41D44569FBF43D9 /* PartsCellSizeStepView.swift */,
-				E807D12FE0C343C79FF77A87 /* PartsPaletteExtractor.swift */,
 				0011D17F039F4AFEA93CD778 /* PartsSheetFlowView.swift */,
 				04C9CA7455A24A53A45A88CE /* PartsRegionStepView.swift */,
 				EFE2EC263D7F43A1B5CD47BD /* PartsListStepView.swift */,
@@ -796,7 +793,6 @@
 				E46A86EA878045BDB51AFCDC /* PartsColorReviewStepView.swift in Sources */,
 				235653D9702B471D9E9D2629 /* PartsPitchEstimator.swift in Sources */,
 				072EA217923041DCB108912A /* PartsCellSizeStepView.swift in Sources */,
-				3D7C9714708F4CDEB057B94D /* PartsPaletteExtractor.swift in Sources */,
 				4F49E92EED50469FBB77E1EA /* PartsSheetFlowView.swift in Sources */,
 				9EADAAF39F6A4175B437D9D8 /* PartsRegionStepView.swift in Sources */,
 				E830B69F9EBC438AA6B3541F /* PartsListStepView.swift in Sources */,

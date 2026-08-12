@@ -11876,6 +11876,176 @@
         }
       }
     },
+    "%lld / %lld 颗" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld / %2$lld pcs"
+          }
+        }
+      }
+    },
+    "这一步没存上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That step didn’t get saved"
+          }
+        }
+      }
+    },
+    "刚做的这些还没写进项目里，现在关掉就没了。先别关，接着往下走每一步都会再存一次。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What you just did hasn’t been written to the project yet — close now and it’s gone. Stay here; every following step saves again."
+          }
+        }
+      }
+    },
+    "仍然关闭" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close anyway"
+          }
+        }
+      }
+    },
+    "之前的进度这次打不开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t open your earlier progress"
+          }
+        }
+      }
+    },
+    "这个项目上次做的零件数据这次读不出来。建议先退出去，过一会儿再进来试试；现在就重做的话，原来那份会被这次的结果盖掉。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The piece data saved for this project can’t be read right now. Best to back out and try again later — if you redo it now, the old data will be overwritten."
+          }
+        }
+      }
+    },
+    "先退出去" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back out for now"
+          }
+        }
+      }
+    },
+    "重新做一遍" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start over"
+          }
+        }
+      }
+    },
+    "重新找一遍零件？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find the pieces again?"
+          }
+        }
+      }
+    },
+    "会按现在圈的范围重找一遍零件。已经量好的格子、判好的颜色、摆好的拼豆板都跟着作废，要从量格子重新走一遍。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The pieces will be found again using the region you’ve outlined now. The cell size, the colors, and the board layout all go with them — you’d start again from measuring the cells."
+          }
+        }
+      }
+    },
+    "重新找" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find again"
+          }
+        }
+      }
+    },
+    "有零件没看成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some pieces couldn’t be read"
+          }
+        }
+      }
+    },
+    "回零件清单" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to the piece list"
+          }
+        }
+      }
+    },
+    "所有零件的框里都取不到图，一格颜色都没看出来。多半是框圈得太小，回零件清单改一改再来一次。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No image could be read inside any of the piece boxes, so not a single color was picked up. The boxes are probably too small — fix them in the piece list and try again."
+          }
+        }
+      }
+    },
+    "有 %lld 个零件的框里取不到图，它们的格子是空的。回零件清单看看这几个框是不是太小了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No image could be read inside %lld of the piece boxes, so their cells are empty. Check whether those boxes are too small in the piece list."
+          }
+        }
+      }
+    },
+    "这里取不到颜色，换个地方点点看。要是哪儿都取不到，退回零件清单那屏，用上面的提示条补一张原图就清楚了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No color could be picked up here — try tapping somewhere else. If nowhere works, go back to the piece list and add the original photo from the banner there."
+          }
+        }
+      }
+    },
+    "原图只用在拼图模式里，用来看清每一格的颜色。列表和详情页仍然用压缩后的图；原图存在本机，不占 iCloud、不进备份。拼完之后可以在「多零件模式」的零件清单页点「拼好了」把它删掉。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The original is only used in pattern mode, to see each cell’s color clearly. Lists and detail pages still use the compressed image. The original stays on this device — no iCloud, no backup. When you’re done, delete it from the piece list in multi-piece mode via “All done”."
+          }
+        }
+      }
+    },
     "零件清单" : {
       "localizations" : {
         "en" : {

@@ -188,10 +188,14 @@ class HistoryManager: ObservableObject {
     ///   finishedImage 写进了 `project`。仅 updateProjectThumbnail / updateProjectFinishedImage
     ///   应该传 true；其它 metadata 改动一律 false（默认）。
     ///   undo 路径靠这个标志判断是否需要从 snapshot 还原图片，避免 metadata undo 把图清掉。
+    /// - Parameter partsSheetData: 多零件图纸的原始字节。它不在 `ProjectRecord` 上（只有
+    ///   SwiftData 列），所以跟 patternGrid 不同，得由调用方显式取来传进来。
+    ///   语义同 patternGrid 的 opt-in：只有 destructive 路径（行会被删）需要传。
     func recordProject(
         type: HistoryOperationType,
         project: ProjectRecord,
-        capturesImages: Bool = false
+        capturesImages: Bool = false,
+        partsSheetData: Data? = nil
     ) {
         // 撤回操作时不记录新的历史
         guard !isReverting else { return }
@@ -221,7 +225,8 @@ class HistoryManager: ObservableObject {
             capturesImages: capturesImages,
             patternGridData: SDProjectRecord.encodePatternGrid(project.patternGrid, projectId: project.id),
             completedDate: project.completedDate,
-            displayThumbnail: project.displayThumbnail
+            displayThumbnail: project.displayThumbnail,
+            partsSheetData: partsSheetData
         )
 
         let snapshotData = try? JSONEncoder().encode(snapshot)
@@ -338,12 +343,15 @@ class HistoryManager: ObservableObject {
     }
 
     /// 记录项目合并操作
+    /// - Parameter partsSheetDataByProjectId: 参与合并的项目里，行会被删掉那些的多零件图纸
+    ///   原始字节（同 `recordProject` 的 partsSheetData —— 它不在 ProjectRecord 上）。
     func recordProjectMerge(
         originalProjects: [ProjectRecord],
         newParentId: UUID?,
         isSimpleMerge: Bool,
         existingParentId: UUID?,
-        mergedName: String
+        mergedName: String,
+        partsSheetDataByProjectId: [UUID: Data] = [:]
     ) {
         // 撤回操作时不记录新的历史
         guard !isReverting else { return }
@@ -369,7 +377,8 @@ class HistoryManager: ObservableObject {
                 colorSystem: project.colorSystem,
                 patternGridData: SDProjectRecord.encodePatternGrid(project.patternGrid, projectId: project.id),
                 completedDate: project.completedDate,
-                displayThumbnail: project.displayThumbnail
+                displayThumbnail: project.displayThumbnail,
+                partsSheetData: partsSheetDataByProjectId[project.id]
             )
         }
 
@@ -397,9 +406,12 @@ class HistoryManager: ObservableObject {
     }
 
     /// 记录计划删除操作（包含父项目及其子项目）
+    /// - Parameter partsSheetDataByProjectId: 父项目和每个子项目的多零件图纸原始字节
+    ///   （同 `recordProject` 的 partsSheetData —— 它不在 ProjectRecord 上）。
     func recordPlanDelete(
         project: ProjectRecord,
-        children: [ProjectRecord]
+        children: [ProjectRecord],
+        partsSheetDataByProjectId: [UUID: Data] = [:]
     ) {
         // 撤回操作时不记录新的历史
         guard !isReverting else { return }
@@ -424,7 +436,8 @@ class HistoryManager: ObservableObject {
             colorSystem: project.colorSystem,
             patternGridData: SDProjectRecord.encodePatternGrid(project.patternGrid, projectId: project.id),
             completedDate: project.completedDate,
-            displayThumbnail: project.displayThumbnail
+            displayThumbnail: project.displayThumbnail,
+            partsSheetData: partsSheetDataByProjectId[project.id]
         )
 
         // 创建子项目快照
@@ -448,7 +461,8 @@ class HistoryManager: ObservableObject {
                 colorSystem: child.colorSystem,
                 patternGridData: SDProjectRecord.encodePatternGrid(child.patternGrid, projectId: child.id),
                 completedDate: child.completedDate,
-                displayThumbnail: child.displayThumbnail
+                displayThumbnail: child.displayThumbnail,
+                partsSheetData: partsSheetDataByProjectId[child.id]
             )
         }
 
@@ -740,7 +754,9 @@ class HistoryManager: ObservableObject {
                let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: beforeData) {
                 let project = restoreProject(from: snapshot)
                 manager.addProject(project)
-                return true
+                // 多零件进度写不回去就不算撤销成功 —— 项目回来了但零件全没，
+                // 报「已撤销」会让用户以为东西都在。
+                return restorePartsSheet(from: snapshot, into: manager)
             }
             return false
 
@@ -849,22 +865,26 @@ class HistoryManager: ObservableObject {
                 // 先恢复父项目
                 let parentProject = restoreProject(from: deleteSnapshot.deletedProject)
                 manager.addPlannedProject(parentProject)
+                var partsRestored = restorePartsSheet(from: deleteSnapshot.deletedProject, into: manager)
 
                 // 再恢复所有子项目
                 for childSnapshot in deleteSnapshot.deletedChildren {
                     let childProject = restoreProject(from: childSnapshot)
                     manager.addPlannedProject(childProject)
+                    // 先算再合并，别让 && 短路跳过后面几个子项目的还原
+                    let ok = restorePartsSheet(from: childSnapshot, into: manager)
+                    partsRestored = ok && partsRestored
                 }
 
                 print("[History] 恢复计划: \(parentProject.name) (包含 \(deleteSnapshot.deletedChildren.count) 个子项目)")
-                return true
+                return partsRestored
             }
 
             // 兼容旧格式（只有单个项目）
             if let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: beforeData) {
                 let project = restoreProject(from: snapshot)
                 manager.addPlannedProject(project)
-                return true
+                return restorePartsSheet(from: snapshot, into: manager)
             }
 
             return false
@@ -889,6 +909,16 @@ class HistoryManager: ObservableObject {
             }
             return false
         }
+    }
+
+    /// 项目行重建之后，把快照里的多零件图纸补写回去。
+    /// 它不在 `ProjectRecord` 上（只有 SwiftData 列），`addProject` / `addPlannedProject`
+    /// 带不过去，只能建完行再补一刀。
+    /// - Returns: 快照本来就没有多零件进度 → true（没东西要还原）；有但没写进去 → false。
+    @MainActor private func restorePartsSheet(from snapshot: ProjectSnapshot, into manager: InventoryManager) -> Bool {
+        guard let data = snapshot.partsSheetData else { return true }
+        guard let sheet = SDProjectRecord.decodePartsSheet(data, projectId: snapshot.id) else { return false }
+        return manager.updateProjectPartsSheet(snapshot.id, sheet: sheet)
     }
 
     private func restoreProject(from snapshot: ProjectSnapshot) -> ProjectRecord {

@@ -13,7 +13,7 @@
 //  本文件里所有几何量都是**归一化 (0~1)、相对整张源图左上角**的，和
 //  `GridCorners` 一致。理由：图纸会被降采样之后再分析（原图动辄十几 MB），
 //  存像素值就得跟着记「当时是哪个分辨率」，换一次分析分辨率全部作废。
-//  `workingImageSize` 只用来把归一化值翻译回「大约多少像素」给用户看。
+//  `workingImageSize` 记着当时那张图多大，供以后校验用（见该字段的注释）。
 //
 
 import Foundation
@@ -27,7 +27,7 @@ import CoreGraphics
 /// - `.code`     具体色号（按所在 sheet 的 `colorSystem` 解释）
 ///
 /// 「任意色」和「空」在图纸上都是浅色一片，肉眼就容易混，算法更容易混。
-/// 所以这两者不靠猜：用户在调色板那一屏亲自指认（见 `PartsPaletteEntry.Role`），
+/// 所以这两者不靠猜：用户在「底色和任意色」那一屏点图指认（见 `PartsBaseColorStepView`），
 /// 逐格分类只是把已确认的结论套上去。
 enum PartCellFill: Codable, Equatable, Sendable {
     case empty
@@ -100,11 +100,6 @@ struct PartsGridCalibration: Codable, Equatable, Sendable {
         guard cellHeight > 0 else { return y }
         return originY + ((y - originY) / cellHeight).rounded() * cellHeight
     }
-
-    /// 归一化格距 → 在给定尺寸下大约多少像素（只用于内部计算和调试）
-    func cellPixelSize(in imageSize: CGSize) -> CGSize {
-        CGSize(width: cellWidth * imageSize.width, height: cellHeight * imageSize.height)
-    }
 }
 
 // MARK: - 零件在全局网格上占的那块
@@ -135,12 +130,6 @@ struct PartsGrid: Equatable {
 
 // MARK: - 零件
 
-/// 零件左上角在全局网格里的整数格坐标
-struct PartGridIndex: Codable, Equatable, Sendable {
-    var col: Int
-    var row: Int
-}
-
 struct BeadPart: Identifiable, Codable, Equatable, Sendable {
     var id: UUID
     /// 用户起的名字（「左前腿」）。nil = 用自动编号。
@@ -149,8 +138,8 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
     /// 清单上的序号对不上，用户得挨个改名。名字留空、序号由列表位置现算，
     /// 怎么增删都不会错位。
     var customName: String?
-    /// 第几行零件（0-based）。图纸是按行排版的，保留行号后清单能按图纸原样分行显示，
-    /// 用户对得上号。
+    /// 第几行零件（0-based）。图纸是按行排版的，保留行号后清单能按图纸上的先后顺序排，
+    /// 用户对得上号（清单本身是自适应网格，不是一行一行铺的）。
     var rowBand: Int
     /// 归一化 bbox（相对整张源图）。第 1 步的产物，第 2 步标定后会 snap 到格边。
     var bounds: CGRect
@@ -158,8 +147,8 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
     // 以下是第 2 步（网格对齐 + 颜色识别）的产物，第 1 步一律为空。
 
     /// 网格实际覆盖的范围（归一化）。**不等于 `bounds`**：
-    /// bounds 是连通域外沿，带一圈抗锯齿毛边；这个是把格线贴到图像内容上之后
-    /// 得到的真正的 rows × cols 格区域（见 `PartsPitchEstimator.fitGrid`）。
+    /// bounds 是连通域外沿，带一圈抗锯齿毛边；这个是把它的四条边吸到全局格线上之后
+    /// 得到的真正的 rows × cols 格区域（见 `PartsGrid`）。
     /// nil 表示还没对齐过，此时退回用 bounds。
     var gridRect: CGRect?
     var rows: Int
@@ -195,7 +184,7 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
         PartsGrid(covering: bounds, calibration: calibration)
     }
 
-    /// 第 (row, col) 格在整张图里的归一化矩形。均分的是 `gridRect`（贴过图像内容的），
+    /// 第 (row, col) 格在整张图里的归一化矩形。均分的是 `gridRect`（四条边吸到全局格线之后的），
     /// 没对齐过时退回 `bounds`。
     func cellRect(row: Int, col: Int) -> CGRect {
         guard rows > 0, cols > 0 else { return .zero }
@@ -270,15 +259,16 @@ struct PartsPaletteEntry: Identifiable, Codable, Equatable, Sendable {
 struct BeadPartsSheet: Codable, Equatable, Sendable {
     /// 用户圈的零件区（排除掉顶部色号表、底部装配图），归一化
     var roi: CGRect
-    /// 做分析时那张图的尺寸（像素）。只用于把归一化值翻译成「大约多少像素」显示，
-    /// 以及换图后提示宽高比对不上。
+    /// 做分析时那张图的尺寸（像素）。存下来是为了以后能判断「换的这张图跟当初分析的
+    /// 不是一个宽高比」—— 目前只是记着，还没有哪一屏读它。
     var workingImageSize: CGSize
     var colorSystem: ColorSystem
     var parts: [BeadPart]
     var palette: [PartsPaletteEntry]
     /// 第 2 步的产物，第 1 步为 nil
     var calibration: PartsGridCalibration?
-    /// 用户给「任意色」最终指定的色号。nil = 还没定，扣库存时要先问。
+    /// 用户给「任意色」最终指定的色号。预留字段：目前只是存下来跟着图纸走，
+    /// 还没有哪一步会拿它去扣库存。
     var anyColorCode: String?
     /// 用户在图上指认的**底色**（`RRGGBB`）。每张图纸底色都不一样，
     /// 不先摘出去，那一大片空白会被硬套到最近的色号上。nil = 还没指认，判色时自己猜。
@@ -320,13 +310,4 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
         self.lastUpdatedAt = lastUpdatedAt
     }
 
-    /// 调色板里被指认为「任意色」的那一条（最多一条有意义，多条时取第一条）
-    var anyColorEntry: PartsPaletteEntry? {
-        palette.first { $0.role == .anyColor }
-    }
-
-    /// 调色板里代表「空」的条目
-    var emptyEntries: [PartsPaletteEntry] {
-        palette.filter { $0.role == .empty }
-    }
 }

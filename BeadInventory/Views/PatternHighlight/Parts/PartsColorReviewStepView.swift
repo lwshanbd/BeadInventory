@@ -165,9 +165,9 @@ struct PartsColorReviewStepView: View {
 
     private func countText(for group: Group) -> String {
         if let onSheet = legendCount(for: group.fill) {
-            return "\(group.count) / \(onSheet) 颗"
+            return String(localized: "\(group.count) / \(onSheet) 颗")
         }
-        return "\(group.count) 颗"
+        return String(localized: "\(group.count) 颗")
     }
 
     /// 图纸色号表里写的颗数。空白和任意色不在表里，所以没有。
@@ -509,10 +509,18 @@ struct PartsColorReviewStepView: View {
         selection.removeAll()
     }
 
+    /// 选色盘交回来的**永远是 mardCode** —— `ColorSelectionView` 不管传进去的
+    /// `colorSystem` 是什么，往 selection 里插的都是 `color.mardCode`。
+    /// 而这一屏 `cells` 里存的是 `displayCode(for: colorSystem)`（判色那步写进去的就是它）。
+    /// 直接把 mardCode 写回去的话，COCO / 漫漫这些非 MARD 图纸上用户改一次色号，
+    /// 就在格子里留下一个本体系查不到的码：色块变灰、自成一组、跟色号表的颗数也对不上，
+    /// 而且会跟着落盘。所以这里先翻回当前体系的显示码。
     private func applyPickedCode() {
-        guard let code = pickedCodes.sorted().first else { return }
-        apply(.code(code))
-        pickedCodes = []
+        defer { pickedCodes = [] }
+        guard let picked = pickedCodes.sorted().first,
+              let bead = inventoryManager.findColor(byMardCode: picked),
+              bead.hasCode(for: colorSystem) else { return }
+        apply(.code(bead.displayCode(for: colorSystem)))
     }
 }
 

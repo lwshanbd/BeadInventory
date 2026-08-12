@@ -2,7 +2,7 @@
 //  PartsCellSizeStepView.swift
 //  BeadInventory
 //
-//  多零件模式 · 第 ③ 屏 - 量格子
+//  多零件模式 · 量格子（第三屏；整条流程的屏序见 PartsSheetFlowView 的头注释）
 //
 //  这一屏只回答一个问题：**格子多大、格线在哪**。有了它，每个零件就能切成整数行列，
 //  「这个色号有多少颗、分别是哪几格」才有意义。
@@ -463,6 +463,10 @@ struct PartsCellSizeStepView: View {
         let cropped = await Task.detached(priority: .userInitiated) {
             PartsThumbnailMaker.crop(source, normalized: padded)
         }.value
+        // 裁这一下的工夫用户可能已经点了「看看别的零件」，或者高清工作图刚换上来 ——
+        // 那时上面的 `.task(id:)` 已经把这一轮取消了。不认取消的话，屏幕上显示的是
+        // 上一个零件的图，格线却是按新零件算的，用户对着错的图在标定。
+        guard !Task.isCancelled else { return }
         sampleImage = cropped
         sampleRegion = padded
         syncFrameToLattice()
@@ -521,8 +525,14 @@ struct PartsCellSizeStepView: View {
 
 /// 归一化坐标（相对整张图纸）↔ 屏幕点。
 ///
-/// 图片是 `.scaleEffect(zoom, anchor: .center).offset(pan)` 画出来的，
-/// 覆盖层不跟着缩放、自己算坐标 —— 手势拿到的永远是真实屏幕点，两边才对得上。
+/// **谁都不用 `scaleEffect`。** 图片和覆盖层各自按这里算出来的屏幕矩形直接摆
+/// （`.frame` + `.position`），放大只是算出一个更大的 frame。
+/// 用 scaleEffect 的话像素画会被图层变换双线性平滑掉，`.interpolation(.none)` 管不到它
+/// —— 而这一屏要看的恰恰是豆子边界（见本文件里 canvas 那段注释）；
+/// 手势拿到的也永远是真实屏幕点，两边这样才对得上。
+///
+/// `zoom` / `pan` 就是在这个换算里生效的：先按 `region → display` 摊平，
+/// 再绕画布中心放大 `zoom` 倍、平移 `pan`。
 struct PartsCanvasTransform {
     /// 画布上画的是整张图纸的哪一块
     let region: CGRect

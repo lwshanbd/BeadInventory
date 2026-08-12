@@ -4,12 +4,17 @@
 //
 //  多零件模式（立体图纸）- 整条流程的容器
 //
-//  两屏，一屏一件事：
+//  六屏，一屏一件事。顺序就是下面这个表，也就是 `Step` 的顺序 ——
+//  屏号只写在这里，各屏自己的文件里不再写「第 ③ 屏」，免得插一屏就得挨个改注释：
 //
-//      ① 圈零件区   把中间那一大块框住（排除顶部色号表 / 底部成品图）
-//      ② 零件清单   找出来的零件，能删、能合并、能拆开、能补、能改名
+//      圈零件区     把中间那一大块框住（排除顶部色号表 / 底部成品图）。这是根视图。
+//      零件清单     找出来的零件，能删、能合并、能拆开、能补、能改名
+//      量格子       定下全图共用的那一张网格：格子多大、格线在哪
+//      底色和任意色 在图上指认这两样「不是色号」的颜色，判色前必须先摘出去
+//      核对颜色     每个色号有多少颗、分别是哪几格，用户逐条校对
+//      拼豆板       零件分别摆在第几块板的第几格
 //
-//  ## 这里曾经有第三屏「图纸调色板」，已经删掉
+//  ## 这里曾经有一屏「图纸调色板」（排在零件清单后面），已经删掉
 //
 //  那一屏按像素占比列出图上的十几种颜色（「H7 占 10.6%」）让用户认领色号。
 //  它是错的：拼豆用户是一颗一颗放豆子的，「占 10.6%」对他没有任何意义，
@@ -60,7 +65,31 @@ struct PartsSheetFlowView: View {
 
     @State private var busy: String?
 
+    /// 这次会话真的改过东西。
+    ///
+    /// 后面几屏都是通过 binding 直接改这里的 @State，容器这边看不见「改了什么」，
+    /// 所以交出去的 binding 都包一层 `tracked` 来标记。早先是拿 `parts.isEmpty`
+    /// 当代理判断「有没有东西要存」—— 用户在清单页把零件全删光恰好也是空，
+    /// 那次删除于是静默地存不进去，下次进来零件原封不动全回来了。
+    @State private var dirty = false
+    /// 上一次 `persist()` 没写进去。写不进去必须让用户看见 —— 他手上这些东西只活在内存里。
+    @State private var saveFailed = false
+    /// 这个项目存过图纸数据，但这次读不出来。此时**禁止覆写**，除非用户明说要重做。
+    @State private var loadFailed = false
+    /// 「重新找零件会把已有的成果洗掉」的确认。
+    @State private var confirmRedetect = false
+    /// 判色之后要跟用户说的一句话（有零件没看成）。nil = 没什么要说的。
+    @State private var classifyNote: String?
+    /// 现在这批零件是按哪块零件区找出来的。用来判断「用户是不是只是退回来看看」。
+    @State private var detectedROI: CGRect?
+
     enum Step: Hashable { case list, cellSize, baseColor, review, board }
+
+    /// 把一个交给子屏的 binding 包成「改了就记一笔」。
+    private func tracked<Value>(_ binding: Binding<Value>) -> Binding<Value> {
+        Binding(get: { binding.wrappedValue },
+                set: { dirty = true; binding.wrappedValue = $0 })
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -71,8 +100,8 @@ struct PartsSheetFlowView: View {
                 } else if let overview {
                     PartsRegionStepView(
                         image: overview,
-                        roi: $roi,
-                        onContinue: { runDetection() },
+                        roi: tracked($roi),
+                        onContinue: { startDetection() },
                         projectId: project.id,
                         onSourceLoaded: { Task { await reloadFromSource() } }
                     )
@@ -88,10 +117,11 @@ struct PartsSheetFlowView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    // 关掉就是关掉，不是丢掉 —— 每一步的结果都已经存过了（见 persist）
+                    // 关掉就是关掉，不是丢掉 —— 每一步的结果都已经存过了（见 persist）。
+                    // 唯一的例外是这次真的没存进去：那就先别关，alert 会告诉他为什么。
                     Button("关闭") {
                         persist()
-                        dismiss()
+                        if !saveFailed { dismiss() }
                     }
                 }
             }
@@ -104,7 +134,7 @@ struct PartsSheetFlowView: View {
                     if step == .board {
                         PartsBoardStepView(
                             parts: parts,
-                            boards: $boards,
+                            boards: tracked($boards),
                             colorSystem: project.colorSystem,
                             onFinish: { save() }
                         )
@@ -115,7 +145,7 @@ struct PartsSheetFlowView: View {
                             PartsListStepView(
                                 work: work,
                                 roi: roi,
-                                parts: $parts,
+                                parts: tracked($parts),
                                 onContinue: {
                                     persist()
                                     path = [.list, .cellSize]
@@ -126,8 +156,8 @@ struct PartsSheetFlowView: View {
                         case .cellSize:
                             PartsCellSizeStepView(
                                 work: work,
-                                parts: $parts,
-                                calibration: $calibration,
+                                parts: tracked($parts),
+                                calibration: tracked($calibration),
                                 onContinue: {
                                     persist()
                                     path = [.list, .cellSize, .baseColor]
@@ -138,14 +168,14 @@ struct PartsSheetFlowView: View {
                                 work: work,
                                 roi: roi,
                                 calibration: calibration,
-                                emptyHex: $emptyHex,
-                                anyColorHex: $anyColorHex,
+                                emptyHex: tracked($emptyHex),
+                                anyColorHex: tracked($anyColorHex),
                                 onContinue: { runClassification() }
                             )
                         case .review:
                             PartsColorReviewStepView(
                                 work: work,
-                                parts: $parts,
+                                parts: tracked($parts),
                                 colorSystem: project.colorSystem,
                                 legendCounts: legendCounts,
                                 onFinish: {
@@ -183,6 +213,36 @@ struct PartsSheetFlowView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { persist() }
         }
+        // 存不上必须让他看见。五十几个零件框、几万格色号、拼豆板摆位，
+        // 存不进去就只活在内存里，而屏幕上看起来跟存好了一模一样。
+        .alert("这一步没存上", isPresented: $saveFailed) {
+            Button("知道了", role: .cancel) {}
+            Button("仍然关闭", role: .destructive) { dismiss() }
+        } message: {
+            Text("刚做的这些还没写进项目里，现在关掉就没了。先别关，接着往下走每一步都会再存一次。")
+        }
+        // 有进度但打不开：这时候接着往下做等于拿新结果盖掉旧的那份，得他自己点头。
+        .alert("之前的进度这次打不开", isPresented: $loadFailed) {
+            Button("先退出去", role: .cancel) { dismiss() }
+            Button("重新做一遍", role: .destructive) {}
+        } message: {
+            Text("这个项目上次做的零件数据这次读不出来。建议先退出去，过一会儿再进来试试；现在就重做的话，原来那份会被这次的结果盖掉。")
+        }
+        .alert("重新找一遍零件？", isPresented: $confirmRedetect) {
+            Button("取消", role: .cancel) {}
+            Button("重新找", role: .destructive) { runDetection() }
+        } message: {
+            Text("会按现在圈的范围重找一遍零件。已经量好的格子、判好的颜色、摆好的拼豆板都跟着作废，要从量格子重新走一遍。")
+        }
+        .alert("有零件没看成", isPresented: Binding(
+            get: { classifyNote != nil },
+            set: { if !$0 { classifyNote = nil } }
+        )) {
+            Button("回零件清单") { path = [.list] }
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(classifyNote ?? "")
+        }
     }
 
     // MARK: - 载入
@@ -190,12 +250,19 @@ struct PartsSheetFlowView: View {
     private func load() async {
         let id = project.id
         let loader = inventoryManager.imageLoader
+        let maxPixel = Self.overviewMaxPixel
         // 有原图就用原图 —— 它是上传时另存的全分辨率副本，只有这条流程会读（见 PatternSourceStore）。
         // 没有就退回 SwiftData 里那份压缩图，流程完全一样，只是一格豆子的像素少一半。
-        var data = PatternSourceStore.data(for: id)
+        //
+        // 读盘和解码都扔到后台：这个 View 是 @MainActor，而原图是几十 MB 的文件，
+        // `Data(contentsOf:)` 加解码放在主线程上，就是打开这个模式时界面先僵一下。
+        var data = await Task.detached(priority: .userInitiated) { PatternSourceStore.data(for: id) }.value
         if data == nil { data = await loader?.thumbnail(for: id) }
-        let saved = await loader?.partsSheet(for: id)
-        let low = data.flatMap { ImageDownsampler.downsampleToUIImage($0, maxPixelSize: Self.overviewMaxPixel) }
+        let bytes = data
+        let low = await Task.detached(priority: .userInitiated) {
+            bytes.flatMap { ImageDownsampler.downsampleToUIImage($0, maxPixelSize: maxPixel) }
+        }.value
+        let loaded = await loader?.partsSheet(for: id) ?? .missing
         guard !Task.isCancelled else { return }
 
         self.overview = low
@@ -203,7 +270,15 @@ struct PartsSheetFlowView: View {
         // 高清版是「更好」，不是「必需」—— 早先把它做成必需，一旦裁失败或者还没裁完，
         // 用户面对的就是一个永远转不完的 spinner，没有任何出路。
         if let low { self.work = .whole(low) }
-        if let saved {
+
+        switch loaded {
+        case .unreadable:
+            // 「读不出来」不等于「没做过」。当成没做过的话用户被扔回第一屏，
+            // 他以为要重来，一按「开始找零件」就把那份只是暂时打不开的数据永久盖掉。
+            self.loadFailed = true
+        case .missing:
+            break
+        case .loaded(let saved):
             self.roi = saved.roi
             self.parts = saved.parts
             self.palette = saved.palette
@@ -211,27 +286,40 @@ struct PartsSheetFlowView: View {
             self.anyColorCode = saved.anyColorCode
             self.emptyHex = saved.emptyHex
             self.anyColorHex = saved.anyColorHex
-            self.boards = saved.boards ?? []
+            self.detectedROI = saved.roi
+
+            // 剔掉指向已经不存在的零件的摆位。早先「重新找零件」只清标定不清板子，
+            // 存量数据里可能留着一板子孤儿：板上画不出任何东西，又因为 boards 非空
+            // 进不了自动排版，用户在那一屏完全没有出路。一个活的摆位都不剩 = 等于没摆过。
+            let liveIds = Set(saved.parts.map(\.id))
+            var live = (saved.boards ?? []).map { board -> PartsBoard in
+                var cleaned = board
+                cleaned.placements.removeAll { !liveIds.contains($0.partId) }
+                return cleaned
+            }
+            if live.allSatisfy(\.placements.isEmpty) { live = [] }
+            self.boards = live
+
+            // 上次做到哪儿，这次就从哪儿接着来。
+            //
+            // 之前只认「拆过零件 → 回到清单」这一档，于是判完色、改完色号退出去再进来，
+            // 落点还是零件清单 —— 而从清单往下走会重新判一遍色，用户改过的色号全被盖掉。
+            // 他看到的就是「填好的颜色不见了」。判过色的（格子里有内容）直接回到核对页。
+            //
+            // 已经开始摆板子的，直接回到板子那屏 —— 那时候用户是真拿着豆子在拼，
+            // 每次进来还要从核对颜色再点一下过去，纯属白点。
+            if !saved.parts.isEmpty, low != nil {
+                if !live.isEmpty {
+                    self.path = [.list, .cellSize, .baseColor, .review, .board]
+                } else {
+                    self.path = saved.parts.contains(where: \.hasCells)
+                        ? [.list, .cellSize, .baseColor, .review]
+                        : [.list]
+                }
+            }
         }
         self.didLoadOnce = true
 
-        // 上次做到哪儿，这次就从哪儿接着来。
-        //
-        // 之前只认「拆过零件 → 回到清单」这一档，于是判完色、改完色号退出去再进来，
-        // 落点还是零件清单 —— 而从清单往下走会重新判一遍色，用户改过的色号全被盖掉。
-        // 他看到的就是「填好的颜色不见了」。判过色的（格子里有内容）直接回到核对页。
-        //
-        // 已经开始摆板子的，直接回到板子那屏 —— 那时候用户是真拿着豆子在拼，
-        // 每次进来还要从核对颜色再点一下过去，纯属白点。
-        if let saved, !saved.parts.isEmpty, low != nil {
-            if !(saved.boards ?? []).isEmpty {
-                self.path = [.list, .cellSize, .baseColor, .review, .board]
-            } else {
-                self.path = saved.parts.contains(where: \.hasCells)
-                    ? [.list, .cellSize, .baseColor, .review]
-                    : [.list]
-            }
-        }
         // 高清版在后台换上去，换好之后界面自己刷新，用户不用等
         await prepareWorkImage()
     }
@@ -268,32 +356,51 @@ struct PartsSheetFlowView: View {
     /// 已经裁到高清版的那块区域。用来判断「要不要重裁」，
     /// 不能拿 `work.region` 判 —— 低清兜底版的 region 是整张图，会被误认成没裁过。
     @State private var highResRegion: CGRect?
-    @State private var upgradingWorkImage = false
+    /// 正在进行的那次高清升级。存着它是为了让别人**等得到**它，见 `prepareWorkImage`。
+    @State private var upgradeTask: Task<Void, Never>?
 
     /// 用户刚补了一张原图：整张的低清版和零件区的高清版都要重出一次，
     /// 界面上立刻能看出变清楚了 —— 否则他选完图什么都没发生，只能怀疑是不是没选上。
     private func reloadFromSource() async {
-        guard let data = PatternSourceStore.data(for: project.id) else { return }
-        if let low = ImageDownsampler.downsampleToUIImage(data, maxPixelSize: Self.overviewMaxPixel) {
+        let id = project.id
+        let maxPixel = Self.overviewMaxPixel
+        // 同 load()：读盘和解码都不放主线程，否则刚选完原图界面会僵住。
+        guard let data = await Task.detached(priority: .userInitiated, operation: {
+            PatternSourceStore.data(for: id)
+        }).value else { return }
+        if let low = await Task.detached(priority: .userInitiated, operation: {
+            ImageDownsampler.downsampleToUIImage(data, maxPixelSize: maxPixel)
+        }).value {
             overview = low
         }
         highResRegion = nil
         await prepareWorkImage()
     }
 
+    /// 确保高清工作图是当前零件区的那一版；已经在升级就**等它做完**。
+    ///
+    /// 「已经是最新」和「正在升级」不能共用一个 return：`runDetection` 全靠
+    /// `await prepareWorkImage()` 保证检测跑在高清图上。早先合成一个 return 之后，
+    /// 用户刚在提示条里补完原图就点「开始找零件」，检测跑的还是 1600px 的兜底版，
+    /// 而提示条这时已经消失 —— 他连「是不是没生效」都没法验证。
+    private func prepareWorkImage() async {
+        if let running = upgradeTask { await running.value }
+        guard highResRegion != roi else { return }
+        let task = Task { await upgradeWorkImage(region: roi) }
+        upgradeTask = task
+        await task.value
+        if upgradeTask == task { upgradeTask = nil }
+    }
+
     /// 从原图裁出零件区的高清版，换掉低清兜底版。
     /// 失败就什么都不做 —— 低清版还在，流程照样往下走，只是图糊一点。
-    private func prepareWorkImage() async {
-        guard highResRegion != roi, !upgradingWorkImage else { return }
-        upgradingWorkImage = true
-        defer { upgradingWorkImage = false }
-
+    private func upgradeWorkImage(region: CGRect) async {
         let id = project.id
         let loader = inventoryManager.imageLoader
-        var source = PatternSourceStore.data(for: id)
+        // 读盘放后台：原图是几十 MB 的文件，`Data(contentsOf:)` 在主线程上会卡住界面。
+        var source = await Task.detached(priority: .userInitiated) { PatternSourceStore.data(for: id) }.value
         if source == nil { source = await loader?.thumbnail(for: id) }
         guard let data = source else { return }
-        let region = roi
         let built = await Task.detached(priority: .userInitiated) { () -> PartsWorkImage? in
             // autoreleasepool：整图那份大 CGImage 用完立刻还回去，只留裁出来的那块。
             //
@@ -318,6 +425,24 @@ struct PartsSheetFlowView: View {
 
     // MARK: - 拆零件
 
+    /// 「开始找零件」这个按钮按下去之后的事。
+    ///
+    /// 第一屏是从后面任何一屏一路返回就能到的地方，而它唯一的主按钮就是「开始找零件」。
+    /// 直接重跑的话，判过色的几万格、摆好的拼豆板一声不响全没了。
+    private func startDetection() {
+        // 零件还在、零件区也没动过：他多半只是退回来看一眼框。送回零件清单，别重跑。
+        if !parts.isEmpty, detectedROI == roi {
+            path = [.list]
+            return
+        }
+        // 已经有产物了就先问一句，说清楚会丢什么。
+        if parts.contains(where: \.hasCells) || !boards.isEmpty {
+            confirmRedetect = true
+            return
+        }
+        runDetection()
+    }
+
     /// 找零件只有这一个入口，也没有任何可调的旋钮 —— 阈值是算法的事，不是用户要理解的东西。
     /// 结果不对，用户在清单页直接改图上的框（删 / 补 / 合并 / 拆开）；
     /// 要是连零件区都圈错了，返回上一屏挪一下框再点一次就是重来。
@@ -335,9 +460,14 @@ struct PartsSheetFlowView: View {
                 PartsDetector.detect(in: source, roi: currentROI, options: PartsDetectionOptions())
             }.value
             self.parts = detected.map { BeadPart(rowBand: $0.rowBand, bounds: $0.bounds) }
-            // 换了零件区就等于换了一张图纸，之前量的格子和判的色全部作废
+            // 换了零件区就等于换了一张图纸，之前量的格子、判的色、摆好的板子全部作废。
+            // 板子必须一起清：placement 指的是旧零件的 id，留着就是一板子孤儿 ——
+            // 板上画不出东西，又因为 boards 非空进不了自动排版，那一屏成了死胡同。
             self.calibration = nil
+            self.boards = []
+            self.detectedROI = currentROI
             self.busy = nil
+            self.dirty = true
             self.persist()
             if self.path.isEmpty { self.path = [.list] }
         }
@@ -372,10 +502,25 @@ struct PartsSheetFlowView: View {
                 }
             )
             await MainActor.run {
+                self.busy = nil
+                // 一个零件都没看成 = 图根本没抠出来（框太小 / 图坏了），
+                // **不是**「这张图纸上没有豆子」。这时候写回去会把所有零件的格子清成空，
+                // 核对页只会显示「一共 0 颗」，用户完全不知道该改哪儿。
+                if result.unreadableParts == result.parts.count, !result.parts.isEmpty {
+                    self.classifyNote = String(
+                        localized: "所有零件的框里都取不到图，一格颜色都没看出来。多半是框圈得太小，回零件清单改一改再来一次。"
+                    )
+                    return
+                }
                 self.parts = result.parts
                 self.palette = result.palette
-                self.busy = nil
+                self.dirty = true
                 self.persist()
+                if result.unreadableParts > 0 {
+                    self.classifyNote = String(
+                        localized: "有 \(result.unreadableParts) 个零件的框里取不到图，它们的格子是空的。回零件清单看看这几个框是不是太小了。"
+                    )
+                }
                 self.path = [.list, .cellSize, .baseColor, .review]
             }
         }
@@ -389,7 +534,11 @@ struct PartsSheetFlowView: View {
     /// 一个色号一个色号地核对，这是个能横跨好几天的活；中途退出去（甚至只是被电话打断）
     /// 就全部作废，没有人受得了。
     private func persist() {
-        guard !parts.isEmpty else { return }
+        guard dirty else { return }
+        // 进来的时候就没读出旧数据：那份字节还在库里，只是这次打不开。
+        // 这时候写回去等于拿现在这份（多半是空的）把它永久盖掉。用户点过
+        // 「重新做一遍」就不再拦（loadFailed 那时已经清掉）。
+        guard !loadFailed else { return }
         let sheet = BeadPartsSheet(
             roi: roi,
             workingImageSize: work?.image.size ?? .zero,
@@ -402,11 +551,17 @@ struct PartsSheetFlowView: View {
             anyColorHex: anyColorHex,
             boards: boards.isEmpty ? nil : boards
         )
-        inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet)
+        if inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet) {
+            dirty = false
+        } else {
+            // 没写进去。这里绝不能算了 —— 用户手上这些东西全在内存里，
+            // 而屏幕上跟存好了长得一模一样，他关掉就再也找不回来。
+            saveFailed = true
+        }
     }
 
     private func save() {
         persist()
-        dismiss()
+        if !saveFailed { dismiss() }
     }
 }

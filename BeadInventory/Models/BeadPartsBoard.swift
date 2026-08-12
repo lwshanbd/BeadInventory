@@ -43,8 +43,6 @@ struct BeadBoardSize: Hashable, Sendable, Identifiable {
         BeadBoardSize(cols: 100, rows: 100),
         BeadBoardSize(cols: 104, rows: 104)
     ]
-
-    static let fallback = BeadBoardSize(cols: 50, rows: 50)
 }
 
 // MARK: - 一个零件摆在板上
@@ -64,7 +62,9 @@ struct PartPlacement: Identifiable, Codable, Equatable, Sendable {
         self.partId = partId
         self.col = col
         self.row = row
-        self.turns = turns
+        // 转 4 次等于没转，所以只有 0~3 有意义。这里就归一化掉：
+        // 形状缓存是拿 turns 当键的，留着 4 的话同一个朝向会被当成两种形状白算一遍。
+        self.turns = ((turns % 4) + 4) % 4
     }
 }
 
@@ -126,7 +126,10 @@ struct PartFootprint: Sendable {
 
     /// 这一格（相对 `cells` 原点）是不是自己的豆子
     func hasBead(col: Int, row: Int) -> Bool {
-        occupied.contains(Self.key(col: col, row: row))
+        // 负坐标是常态（描轮廓要问「上面一格是不是自己」，板上点选也会算出负的相对坐标），
+        // 而 key 的位移编码把 -1 编成 65535，跟第 65535 行撞。零件的格子不可能是负的，直接挡掉。
+        guard col >= 0, row >= 0 else { return false }
+        return occupied.contains(Self.key(col: col, row: row))
     }
 
     private static func key(col: Int, row: Int) -> Int { (col << 16) | (row & 0xFFFF) }
@@ -263,6 +266,72 @@ enum PartsBoardPacker {
         return nil
     }
 
+    /// 一个零件的一种摆法
+    struct Candidate: Sendable {
+        let turns: Int
+        let footprint: PartFootprint
+    }
+
+    /// 这个零件可以怎么摆。先试原方向（跟图纸上看到的一致，用户好认），
+    /// 再试转 90°（细长件常常转过来才放得下）。
+    /// `footprint` 是已经算好的原方向形状 —— 算它要重建一整个旋转矩阵，能省则省。
+    static func candidates(for part: BeadPart, footprint: PartFootprint? = nil) -> [Candidate] {
+        [
+            Candidate(turns: 0, footprint: footprint ?? part.footprint(turns: 0)),
+            Candidate(turns: 1, footprint: part.footprint(turns: 1))
+        ]
+    }
+
+    /// 在一块板上找第一个放得下的摆法
+    static func fit(
+        _ candidates: [Candidate],
+        in occupancy: BoardOccupancy
+    ) -> (candidate: Candidate, col: Int, row: Int)? {
+        for candidate in candidates {
+            guard let spot = firstFit(candidate.footprint, occupancy: occupancy) else { continue }
+            return (candidate, spot.col, spot.row)
+        }
+        return nil
+    }
+
+    /// 把一个零件放到已有的板里第一块放得下的那块上；都放不下就新开一块。
+    ///
+    /// 「先塞现有的板、塞不下再开新板」这条规矩三个地方要用（进屏自动排、「自动排」按钮、
+    /// 手动点一个零件放上去），所以只写这一份 —— 抄三遍的话三份会各自漂移。
+    /// `occupancies` 跟 `boards` 一一对应，会跟着一起更新。
+    ///
+    /// - Returns: 落在第几块板上；连一整块空板都放不下（零件比板子还大）时返回 nil。
+    @discardableResult
+    static func placeOne(
+        _ part: BeadPart,
+        footprint: PartFootprint? = nil,
+        into boards: inout [PartsBoard],
+        occupancies: inout [BoardOccupancy],
+        size: BeadBoardSize
+    ) -> Int? {
+        let options = candidates(for: part, footprint: footprint)
+
+        for index in boards.indices {
+            guard let hit = fit(options, in: occupancies[index]) else { continue }
+            boards[index].placements.append(PartPlacement(
+                partId: part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
+            ))
+            occupancies[index].add(hit.candidate.footprint, col: hit.col, row: hit.row)
+            return index
+        }
+
+        var occupancy = BoardOccupancy(cols: size.cols, rows: size.rows)
+        guard let hit = fit(options, in: occupancy) else { return nil }
+        var board = PartsBoard(size: size)
+        board.placements.append(PartPlacement(
+            partId: part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
+        ))
+        occupancy.add(hit.candidate.footprint, col: hit.col, row: hit.row)
+        boards.append(board)
+        occupancies.append(occupancy)
+        return boards.count - 1
+    }
+
     /// 把 `parts` 全部铺到尺寸为 `size` 的板上，一块放不下就再开一块。
     /// 比板子还大的零件放不进去，会留在返回值的 `unplaced` 里 —— 这种情况用户
     /// 只能换更大的板，得让他看见，不能悄悄吞掉。
@@ -274,56 +343,24 @@ enum PartsBoardPacker {
         var occupancies: [BoardOccupancy] = []
         var unplaced: [UUID] = []
 
-        // 先大后小：大件先占位，小件才好往缝里塞
-        let ordered = parts
-            .map { (part: $0, footprint: $0.footprint(turns: 0)) }
-            .filter { !$0.footprint.isEmpty }
-            .sorted {
-                ($0.footprint.height, $0.footprint.width) > ($1.footprint.height, $1.footprint.width)
-            }
-
-        for item in ordered {
-            // 转 90° 之后可能才放得下（细长件）；先试原方向，保持跟图纸一致
-            let candidates: [(turns: Int, footprint: PartFootprint)] = [
-                (0, item.footprint),
-                (1, item.part.footprint(turns: 1))
-            ]
-
-            var done = false
-            for index in boards.indices {
-                for candidate in candidates {
-                    guard let spot = firstFit(candidate.footprint, occupancy: occupancies[index]) else { continue }
-                    boards[index].placements.append(PartPlacement(
-                        partId: item.part.id, col: spot.col, row: spot.row, turns: candidate.turns
-                    ))
-                    occupancies[index].add(candidate.footprint, col: spot.col, row: spot.row)
-                    done = true
-                    break
-                }
-                if done { break }
-            }
-            if done { continue }
-
-            var board = PartsBoard(size: size)
-            var occupancy = BoardOccupancy(cols: size.cols, rows: size.rows)
-            var landed = false
-            for candidate in candidates {
-                guard let spot = firstFit(candidate.footprint, occupancy: occupancy) else { continue }
-                board.placements.append(PartPlacement(
-                    partId: item.part.id, col: spot.col, row: spot.row, turns: candidate.turns
-                ))
-                occupancy.add(candidate.footprint, col: spot.col, row: spot.row)
-                landed = true
-                break
-            }
-            if landed {
-                boards.append(board)
-                occupancies.append(occupancy)
-            } else {
+        for item in ordered(parts) {
+            if placeOne(item.part, footprint: item.footprint,
+                        into: &boards, occupancies: &occupancies, size: size) == nil {
                 unplaced.append(item.part.id)
             }
         }
 
         return (boards, unplaced)
+    }
+
+    /// 摆放顺序：先大后小 —— 大件先占位，小件才好往缝里塞。
+    /// 形状先算好再排序，别放进比较器里：那样每比一次都要重建一遍旋转矩阵。
+    static func ordered(_ parts: [BeadPart]) -> [(part: BeadPart, footprint: PartFootprint)] {
+        parts
+            .map { (part: $0, footprint: $0.footprint(turns: 0)) }
+            .filter { !$0.footprint.isEmpty }
+            .sorted {
+                ($0.footprint.height, $0.footprint.width) > ($1.footprint.height, $1.footprint.width)
+            }
     }
 }

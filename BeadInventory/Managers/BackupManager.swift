@@ -191,6 +191,19 @@ class BackupManager {
             if let displayThumbnail = manager.fetchProjectDisplayThumbnail(for: project.id) {
                 projectData["displayThumbnail"] = displayThumbnail.base64EncodedString()
             }
+            // 图纸标定数据：拼图网格（patternGrid）和多零件图纸（partsSheet）。
+            // 之前都不进备份 —— 用户换新手机从备份恢复，四角标定、每个零件的框和逐格色号、
+            // 拼豆板摆位全没了，只剩一张图。这两条都用跟 displayThumbnail 同型的
+            // `*Provided` 标志，老备份没这个字段 → restore 不动 store 上的现有值。
+            // 存原始字节（不解码再编码）：解不出来的数据不能在备份里被静默换成"没有"。
+            projectData["patternGridProvided"] = true
+            if let patternGridData = manager.fetchProjectPatternGridData(for: project.id) {
+                projectData["patternGrid"] = patternGridData.base64EncodedString()
+            }
+            projectData["partsSheetProvided"] = true
+            if let partsSheetData = manager.fetchProjectPartsSheetData(for: project.id) {
+                projectData["partsSheet"] = partsSheetData.base64EncodedString()
+            }
             projectData["beadUsage"] = project.beadUsage.map { usage in
                 [
                     "colorCode": usage.colorCode,
@@ -419,6 +432,11 @@ class BackupManager {
         // 备份对 displayThumbnail 是否提供过的标志（按 project.id 跟踪），让 restoreProjectBlobsFromBackup
         // 知道老备份（field 不存在）跟新备份显式 nil 的区别。
         var displayProvidedById: [UUID: Bool] = [:]
+        // 图纸标定数据（拼图网格 / 多零件图纸）也走旁路 dict：它们不在 ProjectRecord 上
+        // （partsSheet 只有 SwiftData 列），只能直接交给 restoreProjectBlobsFromBackup。
+        // provided=false（老备份没这两个字段）时 restore 不动 store 上的现有值。
+        var gridById: [UUID: (data: Data?, provided: Bool)] = [:]
+        var partsById: [UUID: (data: Data?, provided: Bool)] = [:]
         if let projectsArray = json["projects"] as? [[String: Any]] {
             for projectDict in projectsArray {
                 guard let idString = projectDict["id"] as? String,
@@ -509,6 +527,14 @@ class BackupManager {
                 // 把 displayThumbnailProvided 标志记到旁路 dict，让 restore 路径能区分
                 // "老备份没字段" vs "新备份显式说没小图"
                 displayProvidedById[project.id] = displayThumbnailProvided
+                gridById[project.id] = (
+                    data: (projectDict["patternGrid"] as? String).flatMap { Data(base64Encoded: $0) },
+                    provided: projectDict["patternGridProvided"] as? Bool ?? false
+                )
+                partsById[project.id] = (
+                    data: (projectDict["partsSheet"] as? String).flatMap { Data(base64Encoded: $0) },
+                    provided: projectDict["partsSheetProvided"] as? Bool ?? false
+                )
                 restoredProjects.append(project)
             }
         }
@@ -614,9 +640,8 @@ class BackupManager {
         //   - 跳过 history 记录（restore 不应灌历史）
         //   - 跳过 updateProjectFinishedImage 的 `!isPlanned` 守卫
         //   - thumbnail / finishedImage 总是写（含 nil 清空：备份说没图就清旧图）
-        //   - patternGrid 仅在备份格式 round-trip 这个字段时写（v2.0.x 备份格式还没加，
-        //     先一律 `provided: false`，不动用户当前的网格标定。
-        //     S4 follow-up：把 patternGrid 加进备份导出 JSON）
+        //   - patternGrid / partsSheet 仅在备份带了对应字段时写（老备份 provided=false，
+        //     不动用户当前的网格标定和多零件进度）
         let entries = restoredProjects.map { project in
             // displayThumbnail：
             //   - 新备份显式带（provided=true）→ 用备份里的值，老备份的 stale displayThumbnail 会被清掉，
@@ -627,11 +652,15 @@ class BackupManager {
             let providedFromBackup = displayProvidedById[project.id] ?? false
             let effectiveProvided = true   // 老备份也强制让 store 清掉 displayThumbnail
             let effectiveDisplay: Data? = providedFromBackup ? project.displayThumbnail : nil
+            let grid = gridById[project.id] ?? (data: nil, provided: false)
+            let parts = partsById[project.id] ?? (data: nil, provided: false)
             return (id: project.id,
                     thumbnail: project.thumbnail,
                     finishedImage: project.finishedImage,
-                    patternGridData: nil as Data?,
-                    patternGridProvided: false,
+                    patternGridData: grid.data,
+                    patternGridProvided: grid.provided,
+                    partsSheetData: parts.data,
+                    partsSheetProvided: parts.provided,
                     displayThumbnail: effectiveDisplay,
                     displayThumbnailProvided: effectiveProvided)
         }

@@ -78,11 +78,22 @@ actor ProjectImageLoader {
 
     /// 多零件模式的图纸数据（零件框 / 调色板 / 格子标定）。同样是小字节，走后台的理由
     /// 也一样 —— 它总是跟 `thumbnail` 一起被取。
-    func partsSheet(for projectId: UUID) -> BeadPartsSheet? {
-        guard let data = fetchColumn(projectId: projectId, keyPath: \.partsSheetData, event: "parts_sheet") else {
-            return nil
+    ///
+    /// 返回三态而不是 `BeadPartsSheet?`：**「没做过」和「读不出来」不能是同一个答案。**
+    /// 调用方拿到 nil 就会把用户当成新用户扔回第一屏，而他一往下走就会用空白数据
+    /// 把那份只是暂时打不开的字节永久盖掉 —— 五十几个零件、几万格色号一次没了。
+    func partsSheet(for projectId: UUID) -> PartsSheetLoad {
+        switch fetchColumnResult(projectId: projectId, keyPath: \.partsSheetData, event: "parts_sheet") {
+        case .failure:
+            return .unreadable
+        case .success(.none):
+            return .missing
+        case .success(.some(let data)):
+            guard let sheet = SDProjectRecord.decodePartsSheet(data, projectId: projectId) else {
+                return .unreadable
+            }
+            return .loaded(sheet)
         }
-        return SDProjectRecord.decodePartsSheet(data, projectId: projectId)
     }
 
     /// 老数据没有 `displayThumbnail` 时的兜底：读原图 → 现场降级成小图。
@@ -170,6 +181,19 @@ actor ProjectImageLoader {
         keyPath: KeyPath<SDProjectRecord, Data?>,
         event: String
     ) -> Data? {
+        switch fetchColumnResult(projectId: projectId, keyPath: keyPath, event: event) {
+        case .success(let data): return data
+        case .failure: return nil
+        }
+    }
+
+    /// 同上，但把「fetch 抛错」留给调用方。取图那几条把抛错和无图一起压成 nil 是对的
+    /// （晚一点出图而已），要写回原地的那几条不行 —— 见 `partsSheet(for:)`。
+    private func fetchColumnResult(
+        projectId: UUID,
+        keyPath: KeyPath<SDProjectRecord, Data?>,
+        event: String
+    ) -> Result<Data?, Error> {
         var descriptor = FetchDescriptor<SDProjectRecord>(
             predicate: #Predicate { $0.id == projectId }
         )
@@ -177,7 +201,7 @@ actor ProjectImageLoader {
         descriptor.propertiesToFetch = [keyPath]
         do {
             let context = ModelContext(container)
-            return try context.fetch(descriptor).first?[keyPath: keyPath]
+            return .success(try context.fetch(descriptor).first?[keyPath: keyPath])
         } catch {
             // 把「SwiftData 抛错」和「真的没图」分开记 —— 否则 store 损坏看起来就像无图。
             AppLogger.shared.error("ProjectImageLoader", "fetch_failed", metadata: [
@@ -185,7 +209,21 @@ actor ProjectImageLoader {
                 "projectId": projectId.uuidString,
                 "error": "\(error)"
             ])
-            return nil
+            return .failure(error)
         }
     }
+}
+
+/// 读一份多零件图纸的结果。
+///
+/// `unreadable` 覆盖两种情况：fetch 抛错（store 忙 / 损坏）和 JSON 解不开。
+/// 两种都**有字节在库里**，只是这次没拿到 —— 调用方必须把它跟「库里就没有」分开对待，
+/// 否则会拿空白覆盖掉用户真实存在的进度。
+enum PartsSheetLoad: Sendable {
+    /// 库里就没有这份数据 —— 用户确实还没做过。
+    /// 刻意不叫 `none`：调用方多半写成 `?? .none`，那里跟 `Optional.none` 是分不清的。
+    case missing
+    case loaded(BeadPartsSheet)
+    /// 有字节但这次取不出来 / 解不开。**不能当成「没有」**，覆写要停下来问用户。
+    case unreadable
 }

@@ -209,6 +209,12 @@ struct ProjectSnapshot: Codable {
     /// 这样恢复的项目下次在列表里能立刻有小图（不用等迁移协调器重做）。旧 record 没这个字段；
     /// `decodeIfPresent → nil` 表示"还原后让迁移协调器现场 backfill"。
     let displayThumbnail: Data?
+    /// `SDProjectRecord.partsSheetData` 的原始字节。语义完全同 `patternGridData`：
+    /// 只有 destructive 路径（delete / planDelete / merge）会捕获，让 undo 重建行后
+    /// 能把多零件进度（零件框 / 逐格色号 / 拼豆板摆位）写回。不带它的话，
+    /// 用户误删一个排好版的项目，撤销回来的是一张白图。
+    /// 旧 record 没这个字段；`decodeIfPresent → nil` = 没有多零件进度可还原。
+    let partsSheetData: Data?
 
     // 自定义解码器，兼容旧数据
     init(from decoder: Decoder) throws {
@@ -236,9 +242,10 @@ struct ProjectSnapshot: Codable {
         patternGridData = try container.decodeIfPresent(Data.self, forKey: .patternGridData)
         completedDate = try container.decodeIfPresent(Date.self, forKey: .completedDate)
         displayThumbnail = try container.decodeIfPresent(Data.self, forKey: .displayThumbnail)
+        partsSheetData = try container.decodeIfPresent(Data.self, forKey: .partsSheetData)
     }
 
-    init(id: UUID, name: String, date: Date, totalBeads: Int, brandId: UUID?, isArchived: Bool, parentId: UUID?, isPlanned: Bool, executedDate: Date?, beadUsages: [BeadUsageSnapshot], thumbnail: Data? = nil, finishedImage: Data? = nil, colorSystem: ColorSystem = .mard, capturesImages: Bool? = nil, patternGridData: Data? = nil, completedDate: Date? = nil, displayThumbnail: Data? = nil) {
+    init(id: UUID, name: String, date: Date, totalBeads: Int, brandId: UUID?, isArchived: Bool, parentId: UUID?, isPlanned: Bool, executedDate: Date?, beadUsages: [BeadUsageSnapshot], thumbnail: Data? = nil, finishedImage: Data? = nil, colorSystem: ColorSystem = .mard, capturesImages: Bool? = nil, patternGridData: Data? = nil, completedDate: Date? = nil, displayThumbnail: Data? = nil, partsSheetData: Data? = nil) {
         self.id = id
         self.name = name
         self.date = date
@@ -256,6 +263,7 @@ struct ProjectSnapshot: Codable {
         self.patternGridData = patternGridData
         self.completedDate = completedDate
         self.displayThumbnail = displayThumbnail
+        self.partsSheetData = partsSheetData
     }
 }
 
