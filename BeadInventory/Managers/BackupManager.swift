@@ -199,22 +199,25 @@ class BackupManager {
             // 拼豆板摆位全没了，只剩一张图。这两条都用跟 displayThumbnail 同型的
             // `*Provided` 标志，老备份没这个字段 → restore 不动 store 上的现有值。
             // 存原始字节（不解码再编码）：解不出来的数据不能在备份里被静默换成"没有"。
-            // `*Provided` 必须跟着**取成功了**走，不能写死 true。
+            // 单图纸的 patternGrid **刻意不进备份**。
             //
-            // 这两个取数函数对「这个项目确实没有」和「fetch 抛了 / 没有 context /
-            // 本地兜底模式」原来返回同一个 nil。写死 true 的话，一次瞬时读失败会在备份里
-            // 变成一句「这个项目明确没有网格 / 没有零件数据」—— 恢复端照着这句话
-            // 把用户现有的四角标定和多零件进度**主动清掉**，而备份文件看上去完好无损。
+            // 上一版顺手把它加了进来（原是挂在这里的 S4 follow-up），实测的代价是：
+            // 这台设备 2347 个项目里 2094 个有网格，备份文件从 548 MB 涨到 4.17 GB。
+            // 而 `createBackupData` 是先在内存里拼出整个字典再一次性序列化的 ——
+            // 真机上这个量级不是「备份大了点」，是备份**根本写不出来**（OOM / 塞满磁盘），
+            // 用户那边的表现就是从此再也没有备份。缺一份可以重新标定的网格，
+            // 远好过一份永远生成失败的备份。
+            //
+            // 要加回来的前提是先把备份改成流式写盘、并且分块编码网格，不是再塞一个字段。
+            //
+            // partsSheet 留着：只有多零件项目才有，一份约 220 KB，量级完全不同。
+            //
+            // `partsSheetProvided` 必须跟着**取成功了**走，不能写死 true。
+            // 取数函数对「这个项目确实没有」和「fetch 抛了 / 没有 context / 本地兜底模式」
+            // 原来返回同一个 nil。写死 true 的话，一次瞬时读失败会在备份里变成一句
+            // 「这个项目明确没有零件数据」—— 恢复端照着这句话把用户的多零件进度
+            // **主动清掉**，而备份文件看上去完好无损。
             // 读不出来就两个键都不写，恢复端那条「老备份不动 store 现值」的分支正好接住。
-            switch manager.fetchProjectPatternGridDataResult(for: project.id) {
-            case .success(let patternGridData):
-                projectData["patternGridProvided"] = true
-                if let patternGridData {
-                    projectData["patternGrid"] = patternGridData.base64EncodedString()
-                }
-            case .failure:
-                skippedBlobProjects.insert(project.id)
-            }
             switch manager.fetchProjectPartsSheetDataResult(for: project.id) {
             case .success(let partsSheetData):
                 projectData["partsSheetProvided"] = true
