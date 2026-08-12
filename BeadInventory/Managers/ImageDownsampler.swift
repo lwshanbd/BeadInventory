@@ -84,6 +84,21 @@ enum ImageDownsampler {
         return jpeg
     }
 
+    /// 只读图头，拿原图有多少像素 —— 不解码，代价是几十微秒。
+    ///
+    /// 拼图模式要按「解码出来会占多少内存」决定降不降采样：源图小于预算时就用原图，
+    /// 别为了一个固定的长边上限把本来就够清楚的图纸砍糊了。
+    /// （EXIF 方向可能让宽高对调，但这里只用来算总像素，对调不影响。）
+    static nonisolated func pixelSize(of data: Data) -> CGSize? {
+        let options: [CFString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithData(data as CFData, options as CFDictionary),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0 else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
     /// 跟 downsample 一样，但返回 UIImage 而不是字节 —— 给「列表 row 没有 displayThumbnail
     /// 时直接用 fallback 显示」的路径用，省一次 JPEG encode + decode round-trip。
     ///

@@ -188,10 +188,14 @@ class HistoryManager: ObservableObject {
     ///   finishedImage 写进了 `project`。仅 updateProjectThumbnail / updateProjectFinishedImage
     ///   应该传 true；其它 metadata 改动一律 false（默认）。
     ///   undo 路径靠这个标志判断是否需要从 snapshot 还原图片，避免 metadata undo 把图清掉。
+    /// - Parameter partsSheetData: 多零件图纸的原始字节。它不在 `ProjectRecord` 上（只有
+    ///   SwiftData 列），所以跟 patternGrid 不同，得由调用方显式取来传进来。
+    ///   语义同 patternGrid 的 opt-in：只有 destructive 路径（行会被删）需要传。
     func recordProject(
         type: HistoryOperationType,
         project: ProjectRecord,
-        capturesImages: Bool = false
+        capturesImages: Bool = false,
+        partsSheetData: Data? = nil
     ) {
         // 撤回操作时不记录新的历史
         guard !isReverting else { return }
@@ -221,7 +225,8 @@ class HistoryManager: ObservableObject {
             capturesImages: capturesImages,
             patternGridData: SDProjectRecord.encodePatternGrid(project.patternGrid, projectId: project.id),
             completedDate: project.completedDate,
-            displayThumbnail: project.displayThumbnail
+            displayThumbnail: project.displayThumbnail,
+            partsSheetData: partsSheetData
         )
 
         let snapshotData = try? JSONEncoder().encode(snapshot)
@@ -338,12 +343,15 @@ class HistoryManager: ObservableObject {
     }
 
     /// 记录项目合并操作
+    /// - Parameter partsSheetDataByProjectId: 参与合并的项目里，行会被删掉那些的多零件图纸
+    ///   原始字节（同 `recordProject` 的 partsSheetData —— 它不在 ProjectRecord 上）。
     func recordProjectMerge(
         originalProjects: [ProjectRecord],
         newParentId: UUID?,
         isSimpleMerge: Bool,
         existingParentId: UUID?,
-        mergedName: String
+        mergedName: String,
+        partsSheetDataByProjectId: [UUID: Data] = [:]
     ) {
         // 撤回操作时不记录新的历史
         guard !isReverting else { return }
@@ -369,7 +377,8 @@ class HistoryManager: ObservableObject {
                 colorSystem: project.colorSystem,
                 patternGridData: SDProjectRecord.encodePatternGrid(project.patternGrid, projectId: project.id),
                 completedDate: project.completedDate,
-                displayThumbnail: project.displayThumbnail
+                displayThumbnail: project.displayThumbnail,
+                partsSheetData: partsSheetDataByProjectId[project.id]
             )
         }
 
@@ -397,9 +406,12 @@ class HistoryManager: ObservableObject {
     }
 
     /// 记录计划删除操作（包含父项目及其子项目）
+    /// - Parameter partsSheetDataByProjectId: 父项目和每个子项目的多零件图纸原始字节
+    ///   （同 `recordProject` 的 partsSheetData —— 它不在 ProjectRecord 上）。
     func recordPlanDelete(
         project: ProjectRecord,
-        children: [ProjectRecord]
+        children: [ProjectRecord],
+        partsSheetDataByProjectId: [UUID: Data] = [:]
     ) {
         // 撤回操作时不记录新的历史
         guard !isReverting else { return }
@@ -424,7 +436,8 @@ class HistoryManager: ObservableObject {
             colorSystem: project.colorSystem,
             patternGridData: SDProjectRecord.encodePatternGrid(project.patternGrid, projectId: project.id),
             completedDate: project.completedDate,
-            displayThumbnail: project.displayThumbnail
+            displayThumbnail: project.displayThumbnail,
+            partsSheetData: partsSheetDataByProjectId[project.id]
         )
 
         // 创建子项目快照
@@ -448,7 +461,8 @@ class HistoryManager: ObservableObject {
                 colorSystem: child.colorSystem,
                 patternGridData: SDProjectRecord.encodePatternGrid(child.patternGrid, projectId: child.id),
                 completedDate: child.completedDate,
-                displayThumbnail: child.displayThumbnail
+                displayThumbnail: child.displayThumbnail,
+                partsSheetData: partsSheetDataByProjectId[child.id]
             )
         }
 
@@ -611,6 +625,22 @@ class HistoryManager: ObservableObject {
         case failed
         /// 按需加载快照失败（fetch 抛错等）—— 可重试。
         case snapshotLoadFailed
+        /// 主体撤回成功，但附带的某样东西没能一起还原（目前只有多零件进度）。
+        ///
+        /// 必须跟 `failed` 分开：项目行这时**已经建回去了**，再报失败的话历史记录会留着，
+        /// 用户看到「撤回失败」再点一次 —— 而 `addProject` 不按 id 去重，
+        /// 于是列表里出现两个同 UUID 的项目。这条既消费掉记录，又如实说清缺了什么。
+        case partial(String)
+    }
+
+    /// `performRevert` 里攒下来的「主体成功了，但这样东西没跟上」。成功路径上被 `revert` 取走。
+    @MainActor private var revertWarning: String?
+
+    /// 给撤回过程中在别处（`InventoryManager` 的合并撤回）发现的「有东西没还原上」留话。
+    /// 那些路径同样已经把项目建回去了，所以只能补一句说明，不能把整次撤回判成失败。
+    @MainActor func noteRevertWarning(_ text: String) {
+        guard isReverting else { return }
+        revertWarning = text
     }
 
     /// 撤回一个操作
@@ -647,6 +677,7 @@ class HistoryManager: ObservableObject {
 
         // 设置撤回标志，防止撤回操作被记录为新的历史
         isReverting = true
+        revertWarning = nil
         let success = performRevert(record: record, manager: manager)
         isReverting = false
 
@@ -656,6 +687,10 @@ class HistoryManager: ObservableObject {
             snapshotCache.removeValue(forKey: record.id)
             saveData()
             print("[History] 撤回成功并删除记录: \(record.fullDescription)")
+            if let warning = revertWarning {
+                revertWarning = nil
+                return .partial(warning)
+            }
             return .success
         } else {
             print("[History] 撤回失败: \(record.fullDescription)")
@@ -740,6 +775,16 @@ class HistoryManager: ObservableObject {
                let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: beforeData) {
                 let project = restoreProject(from: snapshot)
                 manager.addProject(project)
+                // 项目行已经建回去了，所以这里一定算撤销成功 —— 返回 false 会把记录留着
+                // 让用户再点一次，而 addProject 不去重，点第二次就是两个同 id 的项目。
+                // 多零件进度没跟上就单独说一句，别让他以为东西都在。
+                if !restorePartsSheet(from: snapshot, into: manager) {
+                    revertWarning = String(localized: "项目回来了，但它的多零件进度没能一起还原。")
+                    // 批量撤回时这句话会被合并进汇总，日志是唯一能逐条查到的地方
+                    AppLogger.shared.error("History", "undo_parts_sheet_lost", metadata: [
+                        "projectId": snapshot.id.uuidString, "kind": "projectDelete"
+                    ])
+                }
                 return true
             }
             return false
@@ -849,14 +894,24 @@ class HistoryManager: ObservableObject {
                 // 先恢复父项目
                 let parentProject = restoreProject(from: deleteSnapshot.deletedProject)
                 manager.addPlannedProject(parentProject)
+                var missing = restorePartsSheet(from: deleteSnapshot.deletedProject, into: manager) ? 0 : 1
 
                 // 再恢复所有子项目
                 for childSnapshot in deleteSnapshot.deletedChildren {
                     let childProject = restoreProject(from: childSnapshot)
                     manager.addPlannedProject(childProject)
+                    if !restorePartsSheet(from: childSnapshot, into: manager) { missing += 1 }
                 }
 
                 print("[History] 恢复计划: \(parentProject.name) (包含 \(deleteSnapshot.deletedChildren.count) 个子项目)")
+                // 计划和子项目都已经建回去了 —— 理由同 .projectDelete 分支
+                if missing > 0 {
+                    revertWarning = String(localized: "计划回来了，但其中 \(missing) 个项目的多零件进度没能一起还原。")
+                    AppLogger.shared.error("History", "undo_parts_sheet_lost", metadata: [
+                        "projectId": deleteSnapshot.deletedProject.id.uuidString,
+                        "kind": "planDelete", "projects": missing
+                    ])
+                }
                 return true
             }
 
@@ -864,6 +919,12 @@ class HistoryManager: ObservableObject {
             if let snapshot = try? JSONDecoder().decode(ProjectSnapshot.self, from: beforeData) {
                 let project = restoreProject(from: snapshot)
                 manager.addPlannedProject(project)
+                if !restorePartsSheet(from: snapshot, into: manager) {
+                    revertWarning = String(localized: "项目回来了，但它的多零件进度没能一起还原。")
+                    AppLogger.shared.error("History", "undo_parts_sheet_lost", metadata: [
+                        "projectId": snapshot.id.uuidString, "kind": "planDeleteLegacy"
+                    ])
+                }
                 return true
             }
 
@@ -889,6 +950,21 @@ class HistoryManager: ObservableObject {
             }
             return false
         }
+    }
+
+    /// 项目行重建之后，把快照里的多零件图纸补写回去。
+    /// 它不在 `ProjectRecord` 上（只有 SwiftData 列），`addProject` / `addPlannedProject`
+    /// 带不过去，只能建完行再补一刀。
+    ///
+    /// 搬的是**原始字节**：快照可能是别的设备用新版本写的，解码再编码会把本版本
+    /// 不认识的字段悄悄抹掉；解码失败更会让一份完好的数据整个被丢弃。
+    /// 备份恢复和复制项目走的也是搬字节这条路。
+    ///
+    /// - Returns: 快照本来就没有多零件进度 → true（没东西要还原）；有但没写进去 → false。
+    ///   **注意失败不代表撤销失败** —— 项目行这时已经建好了，见调用处。
+    @MainActor private func restorePartsSheet(from snapshot: ProjectSnapshot, into manager: InventoryManager) -> Bool {
+        guard let data = snapshot.partsSheetData else { return true }
+        return manager.restoreProjectPartsSheetData(snapshot.id, data: data)
     }
 
     private func restoreProject(from snapshot: ProjectSnapshot) -> ProjectRecord {

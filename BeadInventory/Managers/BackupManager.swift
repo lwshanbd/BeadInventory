@@ -121,6 +121,9 @@ class BackupManager {
 
     @MainActor private func createBackupData(from manager: InventoryManager) -> [String: Any] {
         var data: [String: Any] = [:]
+        // 多零件进度这次没读出来的项目数。这些项目在备份里既没写数据也没写 `*Provided`，
+        // 恢复时不会动 store 上的现值 —— 但备份本身是不全的，得留个痕迹。
+        var unreadablePartsSheets = 0
 
         // 元数据
         data["backupDate"] = ISO8601DateFormatter().string(from: Date())
@@ -191,6 +194,41 @@ class BackupManager {
             if let displayThumbnail = manager.fetchProjectDisplayThumbnail(for: project.id) {
                 projectData["displayThumbnail"] = displayThumbnail.base64EncodedString()
             }
+            // 多零件图纸（partsSheet）进备份，单图纸的网格（patternGrid）**不进**。
+            //
+            // partsSheet 之前不进备份 —— 用户换新手机从备份恢复，每个零件的框、逐格色号、
+            // 拼豆板摆位全没了，只剩一张图。它用跟 displayThumbnail 同型的 `*Provided` 标志，
+            // 老备份没这个字段 → restore 不动 store 上的现有值；存的是原始字节（不解码再编码），
+            // 解不出来的数据不能在备份里被静默换成「没有」。
+            //
+            // patternGrid 则**刻意留在外面**（所以从备份恢复到新设备时，四角标定要重新做）。
+            //
+            // 上一版顺手把它加了进来（原是挂在这里的 S4 follow-up），实测的代价是：
+            // 这台设备 2347 个项目里 2094 个有网格，备份文件从 548 MB 涨到 4.17 GB。
+            // 而 `createBackupData` 是先在内存里拼出整个字典再一次性序列化的 ——
+            // 真机上这个量级不是「备份大了点」，是备份**根本写不出来**（OOM / 塞满磁盘），
+            // 用户那边的表现就是从此再也没有备份。缺一份可以重新标定的网格，
+            // 远好过一份永远生成失败的备份。
+            //
+            // 要加回来的前提是先把备份改成流式写盘、并且分块编码网格，不是再塞一个字段。
+            //
+            // partsSheet 留着：只有多零件项目才有，一份约 220 KB，量级完全不同。
+            //
+            // `partsSheetProvided` 必须跟着**取成功了**走，不能写死 true。
+            // 取数函数对「这个项目确实没有」和「fetch 抛了 / 没有 context / 本地兜底模式」
+            // 原来返回同一个 nil。写死 true 的话，一次瞬时读失败会在备份里变成一句
+            // 「这个项目明确没有零件数据」—— 恢复端照着这句话把用户的多零件进度
+            // **主动清掉**，而备份文件看上去完好无损。
+            // 读不出来就两个键都不写，恢复端那条「老备份不动 store 现值」的分支正好接住。
+            switch manager.fetchProjectPartsSheetDataResult(for: project.id) {
+            case .success(let partsSheetData):
+                projectData["partsSheetProvided"] = true
+                if let partsSheetData {
+                    projectData["partsSheet"] = partsSheetData.base64EncodedString()
+                }
+            case .failure:
+                unreadablePartsSheets += 1
+            }
             projectData["beadUsage"] = project.beadUsage.map { usage in
                 [
                     "colorCode": usage.colorCode,
@@ -247,6 +285,12 @@ class BackupManager {
             "customColorsCount": manager.customColors.count,
             "purchaseRecordsCount": manager.purchaseRecords.count
         ]
+
+        if unreadablePartsSheets > 0 {
+            AppLogger.shared.warning("BackupManager", "backup_parts_sheets_unreadable", metadata: [
+                "projects": unreadablePartsSheets
+            ])
+        }
 
         return data
     }
@@ -419,6 +463,11 @@ class BackupManager {
         // 备份对 displayThumbnail 是否提供过的标志（按 project.id 跟踪），让 restoreProjectBlobsFromBackup
         // 知道老备份（field 不存在）跟新备份显式 nil 的区别。
         var displayProvidedById: [UUID: Bool] = [:]
+        // 图纸标定数据（拼图网格 / 多零件图纸）也走旁路 dict：它们不在 ProjectRecord 上
+        // （partsSheet 只有 SwiftData 列），只能直接交给 restoreProjectBlobsFromBackup。
+        // provided=false（老备份没这两个字段）时 restore 不动 store 上的现有值。
+        var gridById: [UUID: (data: Data?, provided: Bool)] = [:]
+        var partsById: [UUID: (data: Data?, provided: Bool)] = [:]
         if let projectsArray = json["projects"] as? [[String: Any]] {
             for projectDict in projectsArray {
                 guard let idString = projectDict["id"] as? String,
@@ -509,6 +558,14 @@ class BackupManager {
                 // 把 displayThumbnailProvided 标志记到旁路 dict，让 restore 路径能区分
                 // "老备份没字段" vs "新备份显式说没小图"
                 displayProvidedById[project.id] = displayThumbnailProvided
+                gridById[project.id] = (
+                    data: (projectDict["patternGrid"] as? String).flatMap { Data(base64Encoded: $0) },
+                    provided: projectDict["patternGridProvided"] as? Bool ?? false
+                )
+                partsById[project.id] = (
+                    data: (projectDict["partsSheet"] as? String).flatMap { Data(base64Encoded: $0) },
+                    provided: projectDict["partsSheetProvided"] as? Bool ?? false
+                )
                 restoredProjects.append(project)
             }
         }
@@ -614,9 +671,8 @@ class BackupManager {
         //   - 跳过 history 记录（restore 不应灌历史）
         //   - 跳过 updateProjectFinishedImage 的 `!isPlanned` 守卫
         //   - thumbnail / finishedImage 总是写（含 nil 清空：备份说没图就清旧图）
-        //   - patternGrid 仅在备份格式 round-trip 这个字段时写（v2.0.x 备份格式还没加，
-        //     先一律 `provided: false`，不动用户当前的网格标定。
-        //     S4 follow-up：把 patternGrid 加进备份导出 JSON）
+        //   - patternGrid / partsSheet 仅在备份带了对应字段时写（老备份 provided=false，
+        //     不动用户当前的网格标定和多零件进度）
         let entries = restoredProjects.map { project in
             // displayThumbnail：
             //   - 新备份显式带（provided=true）→ 用备份里的值，老备份的 stale displayThumbnail 会被清掉，
@@ -627,11 +683,15 @@ class BackupManager {
             let providedFromBackup = displayProvidedById[project.id] ?? false
             let effectiveProvided = true   // 老备份也强制让 store 清掉 displayThumbnail
             let effectiveDisplay: Data? = providedFromBackup ? project.displayThumbnail : nil
+            let grid = gridById[project.id] ?? (data: nil, provided: false)
+            let parts = partsById[project.id] ?? (data: nil, provided: false)
             return (id: project.id,
                     thumbnail: project.thumbnail,
                     finishedImage: project.finishedImage,
-                    patternGridData: nil as Data?,
-                    patternGridProvided: false,
+                    patternGridData: grid.data,
+                    patternGridProvided: grid.provided,
+                    partsSheetData: parts.data,
+                    partsSheetProvided: parts.provided,
                     displayThumbnail: effectiveDisplay,
                     displayThumbnailProvided: effectiveProvided)
         }

@@ -10777,6 +10777,1337 @@
           }
         }
       }
+    },
+    "单图纸模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Single Pattern"
+          }
+        }
+      }
+    },
+    "一张平面图纸，逐格高亮对照着拼" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One flat pattern — highlight it cell by cell as you build"
+          }
+        }
+      }
+    },
+    "多零件模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Multi-Piece"
+          }
+        }
+      }
+    },
+    "一张图纸上排着几十个小零件，常见于立体拼图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dozens of small pieces laid out on one sheet — common for 3D builds"
+          }
+        }
+      }
+    },
+    "加载图纸…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading pattern…"
+          }
+        }
+      }
+    },
+    "项目还没有图纸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This project has no pattern yet"
+          }
+        }
+      }
+    },
+    "先在项目详情里加一张图纸，再回来用多零件模式。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a pattern image in the project details first, then come back to Multi-Piece."
+          }
+        }
+      }
+    },
+    "正在拆零件…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finding pieces…"
+          }
+        }
+      }
+    },
+    "正在读取图纸配色…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading the pattern's colors…"
+          }
+        }
+      }
+    },
+    "零件 %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Piece %lld"
+          }
+        }
+      }
+    },
+    "看看别的零件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try another piece"
+          }
+        }
+      }
+    },
+    "黄框就是一格：拖框身挪位置，拖右下角的圆点改大小。空白处拖动是移动图片。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The yellow box is one cell. Drag the box to move it, drag the dot at its corner to resize. Drag anywhere else to pan the image."
+          }
+        }
+      }
+    },
+    "网格线要落在豆子和豆子的缝上。全图共用这一张网格，在哪个零件上调都一样。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The grid lines should sit in the seams between beads. The whole sheet shares this one grid, so it doesn't matter which piece you adjust it on."
+          }
+        }
+      }
+    },
+    "现在用的是压缩过的副本，放大到一颗豆子会糊。相册里还留着这张图纸的原图吗？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is a compressed copy, so a single bead looks blurry up close. Still have the original in your photo library?"
+          }
+        }
+      }
+    },
+    "这张图读不出来，换一张试试。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That image couldn't be read. Try another one."
+          }
+        }
+      }
+    },
+    "选原图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick Original"
+          }
+        }
+      }
+    },
+    "量格子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Measure the Grid"
+          }
+        }
+      }
+    },
+    "正在量…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Measuring…"
+          }
+        }
+      }
+    },
+    "推网格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nudge grid"
+          }
+        }
+      }
+    },
+    "自动对齐" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-align"
+          }
+        }
+      }
+    },
+    "重选格子大小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resize the cell"
+          }
+        }
+      }
+    },
+    "放大" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom"
+          }
+        }
+      }
+    },
+    "就用这个大小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use this size"
+          }
+        }
+      }
+    },
+    "对齐了，看每格什么颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aligned — check each cell's color"
+          }
+        }
+      }
+    },
+    "有不对的点一下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap any cell that looks wrong"
+          }
+        }
+      }
+    },
+    "拖着框选" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag to select"
+          }
+        }
+      }
+    },
+    "选完了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done selecting"
+          }
+        }
+      }
+    },
+    "改成别的色号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change code"
+          }
+        }
+      }
+    },
+    "设为空" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark as empty"
+          }
+        }
+      }
+    },
+    "这类都改成…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change all to…"
+          }
+        }
+      }
+    },
+    "这类是任意色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All are any color"
+          }
+        }
+      }
+    },
+    "这类没有豆子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None of these are beads"
+          }
+        }
+      }
+    },
+    "已选 %lld 格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld selected"
+          }
+        }
+      }
+    },
+    "核对颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check the Colors"
+          }
+        }
+      }
+    },
+    "完成 · 一共 %lld 颗" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done · %lld beads in total"
+          }
+        }
+      }
+    },
+    "这个颜色一格也没有" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No cells in this color"
+          }
+        }
+      }
+    },
+    "上面换一个色号看看。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick another code above."
+          }
+        }
+      }
+    },
+    "未定色号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No code yet"
+          }
+        }
+      }
+    },
+    "这张图纸的颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colors on This Sheet"
+          }
+        }
+      }
+    },
+    "认出 %lld 颗" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld found"
+          }
+        }
+      }
+    },
+    "认出 %lld 颗，跟图纸写的一样" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld found — matches the sheet"
+          }
+        }
+      }
+    },
+    "认出 %lld 颗，图纸写 %lld 颗（差 %lld 颗）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld found, sheet says %2$lld (off by %3$lld)"
+          }
+        }
+      }
+    },
+    "还有 %lld 个没核对" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld left to check"
+          }
+        }
+      }
+    },
+    "每个色号都核对过了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every code has been checked"
+          }
+        }
+      }
+    },
+    "「%@」没问题，看下一个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” looks right — next"
+          }
+        }
+      }
+    },
+    "「%@」已核对" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” checked"
+          }
+        }
+      }
+    },
+    "底色和任意色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Background & Any Color"
+          }
+        }
+      }
+    },
+    "底色（空白）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Background (empty)"
+          }
+        }
+      }
+    },
+    "零件外面那一片，不用放豆子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The area around the pieces — no beads there"
+          }
+        }
+      }
+    },
+    "色号表里写「任意色」的那种豆子，没有就不用点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bead the sheet's table marks as “any color” — skip if there isn't one"
+          }
+        }
+      }
+    },
+    "用什么颜色的豆子拼都行" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Any bead color will do"
+          }
+        }
+      }
+    },
+    "现在点图上的**底色**" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now tap the **background** on the sheet"
+          }
+        }
+      }
+    },
+    "现在点图上的**任意色**豆子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now tap an **any color** bead on the sheet"
+          }
+        }
+      }
+    },
+    "开始判色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read the Colors"
+          }
+        }
+      }
+    },
+    "清掉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear"
+          }
+        }
+      }
+    },
+    "摆到拼豆板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lay out on boards"
+          }
+        }
+      }
+    },
+    "重新排一遍？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lay everything out again?"
+          }
+        }
+      }
+    },
+    "重新排" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lay out again"
+          }
+        }
+      }
+    },
+    "会按 %@ 的板子重新摆一遍，你手动挪过的位置就没了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Everything will be laid out again on %@ boards. Any pieces you moved by hand will be reset."
+          }
+        }
+      }
+    },
+    "加一块" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add board"
+          }
+        }
+      }
+    },
+    "%@ · 摆了 %lld 个零件 · %lld 颗豆子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · %lld pieces · %lld beads"
+          }
+        }
+      }
+    },
+    "板 %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Board %lld"
+          }
+        }
+      }
+    },
+    "全部重排成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lay out again as"
+          }
+        }
+      }
+    },
+    "把这块板清空" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear this board"
+          }
+        }
+      }
+    },
+    "删掉这块空板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this empty board"
+          }
+        }
+      }
+    },
+    "还没有板子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No boards yet"
+          }
+        }
+      }
+    },
+    "上面「加一块」挑一个尺寸。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap “Add board” above and pick a size."
+          }
+        }
+      }
+    },
+    "转 90°" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotate 90°"
+          }
+        }
+      }
+    },
+    "拿下来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take off"
+          }
+        }
+      }
+    },
+    "零件都摆上去了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every piece is on a board"
+          }
+        }
+      }
+    },
+    "还有 %lld 个没摆" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pieces left to place"
+          }
+        }
+      }
+    },
+    "自动排" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-arrange"
+          }
+        }
+      }
+    },
+    "拼完这块板可以在上面切到下一块。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When this board is done, switch to the next one above."
+          }
+        }
+      }
+    },
+    "只亮着「%@」，再点一下取消" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Showing “%@” only — tap again to clear"
+          }
+        }
+      }
+    },
+    "点一个颜色，板上只留它是亮的" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap a color to light up only its beads"
+          }
+        }
+      }
+    },
+    "这块板还什么都没摆。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing on this board yet."
+          }
+        }
+      }
+    },
+    "有 %lld 个零件比板子还大，换块大的试试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pieces are bigger than the board — try a larger one"
+          }
+        }
+      }
+    },
+    "排好了，一共 %lld 块板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done — %lld boards"
+          }
+        }
+      }
+    },
+    "又摆上去 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld more pieces placed"
+          }
+        }
+      }
+    },
+    "这些零件比板子还大，摆不进去" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These pieces are bigger than the board"
+          }
+        }
+      }
+    },
+    "这块板放不下了，新开了一块" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This board is full — started a new one"
+          }
+        }
+      }
+    },
+    "这个零件比板子还大，换块大的试试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This piece is bigger than the board — try a larger one"
+          }
+        }
+      }
+    },
+    "原地转不开，挪到旁边空地了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No room to rotate in place — moved to a free spot"
+          }
+        }
+      }
+    },
+    "转过来就放不下了，先挪开点别的" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It won’t fit rotated — move something else out of the way first"
+          }
+        }
+      }
+    },
+    "这儿放不下：零件之间要空一格，烫的时候才不会粘住" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doesn’t fit here: pieces need one empty cell between them so they don’t fuse when ironed"
+          }
+        }
+      }
+    },
+    "去摆拼豆板 · 一共 %lld 颗" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lay out on boards · %lld beads total"
+          }
+        }
+      }
+    },
+    "%lld / %lld 颗" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld / %2$lld pcs"
+          }
+        }
+      }
+    },
+    "这一步没存上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That step didn’t get saved"
+          }
+        }
+      }
+    },
+    "刚做的这些还没写进项目里，现在关掉就没了。先别关，接着往下走每一步都会再存一次。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What you just did hasn’t been written to the project yet — close now and it’s gone. Stay here; every following step saves again."
+          }
+        }
+      }
+    },
+    "仍然关闭" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close anyway"
+          }
+        }
+      }
+    },
+    "之前的进度这次打不开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t open your earlier progress"
+          }
+        }
+      }
+    },
+    "这个项目上次做的零件数据这次读不出来。建议先退出去，过一会儿再进来试试；现在就重做的话，原来那份会被这次的结果盖掉。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The piece data saved for this project can’t be read right now. Best to back out and try again later — if you redo it now, the old data will be overwritten."
+          }
+        }
+      }
+    },
+    "先退出去" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back out for now"
+          }
+        }
+      }
+    },
+    "重新做一遍" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start over"
+          }
+        }
+      }
+    },
+    "重新找一遍零件？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find the pieces again?"
+          }
+        }
+      }
+    },
+    "会按现在圈的范围重找一遍零件。已经量好的格子、判好的颜色、摆好的拼豆板都跟着作废，要从量格子重新走一遍。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The pieces will be found again using the region you’ve outlined now. The cell size, the colors, and the board layout all go with them — you’d start again from measuring the cells."
+          }
+        }
+      }
+    },
+    "重新找" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find again"
+          }
+        }
+      }
+    },
+    "有零件没看成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some pieces couldn’t be read"
+          }
+        }
+      }
+    },
+    "回零件清单" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to the piece list"
+          }
+        }
+      }
+    },
+    "所有零件的框里都取不到图，一格颜色都没看出来。多半是框圈得太小，回零件清单改一改再来一次。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No image could be read inside any of the piece boxes, so not a single color was picked up. The boxes are probably too small — fix them in the piece list and try again."
+          }
+        }
+      }
+    },
+    "有 %lld 个零件的框里取不到图，它们的格子是空的。回零件清单看看这几个框是不是太小了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No image could be read inside %lld of the piece boxes, so their cells are empty. Check whether those boxes are too small in the piece list."
+          }
+        }
+      }
+    },
+    "这里取不到颜色，换个地方点点看。要是哪儿都取不到，退回零件清单那屏，用上面的提示条补一张原图就清楚了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No color could be picked up here — try tapping somewhere else. If nowhere works, go back to the piece list and add the original photo from the banner there."
+          }
+        }
+      }
+    },
+    "原图只用在拼图模式里，用来看清每一格的颜色。列表和详情页仍然用压缩后的图；原图存在本机，不占 iCloud、不进备份。拼完之后可以在「多零件模式」的零件清单页点「拼好了」把它删掉。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The original is only used in pattern mode, to see each cell’s color clearly. Lists and detail pages still use the compressed image. The original stays on this device — no iCloud, no backup. When you’re done, delete it from the piece list in multi-piece mode via “All done”."
+          }
+        }
+      }
+    },
+    "项目回来了，但它的多零件进度没能一起还原。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The project is back, but its multi-piece progress couldn’t be restored with it."
+          }
+        }
+      }
+    },
+    "项目回来了，但其中 %lld 个项目的多零件进度没能一起还原。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The projects are back, but %lld of them lost their multi-piece progress."
+          }
+        }
+      }
+    },
+    "计划回来了，但其中 %lld 个项目的多零件进度没能一起还原。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The plan is back, but %lld of its projects lost their multi-piece progress."
+          }
+        }
+      }
+    },
+    "这块范围里没找到零件。把框挪到有零件的那一片再试一次 —— 原来的零件还留着。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No pieces were found in this region. Move the box over the pieces and try again — your existing pieces are still here."
+          }
+        }
+      }
+    },
+    "会按现在圈的范围重找一遍零件。已经找好的零件框、量好的格子、判好的颜色、摆好的拼豆板都跟着作废，要从头再走一遍。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The pieces will be found again using the region you’ve outlined now. The piece boxes you’ve adjusted, the cell size, the colors, and the board layout all go with them — you’d start over from the beginning."
+          }
+        }
+      }
+    },
+    "这块范围里没找到零件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No pieces found in this region"
+          }
+        }
+      }
+    },
+    "把框挪到有零件的那一片再试一次 —— 原来的零件还留着。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move the box over the pieces and try again — your existing pieces are still here."
+          }
+        }
+      }
+    },
+    "失败 %lld 条" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld failed"
+          }
+        }
+      }
+    },
+    "%lld 条的多零件进度没能一起还原" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld lost their multi-piece progress"
+          }
+        }
+      }
+    },
+    "成功撤回 %1$lld 条，其中 %2$@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undid %1$lld — of those, %2$@"
+          }
+        }
+      }
+    },
+    "这将用 %@ 的备份替换当前所有数据。此操作不可撤销。\n备份里不含拼图模式的网格标定，恢复后这部分需要重新标定。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This replaces all current data with the backup from %@. It can't be undone.\nThe backup doesn't include pattern-mode grid calibration — you'll need to calibrate those again afterwards."
+          }
+        }
+      }
+    },
+    "零件清单" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pieces"
+          }
+        }
+      }
+    },
+    "零件改名" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename Piece"
+          }
+        }
+      }
+    },
+    "名字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name"
+          }
+        }
+      }
+    },
+    "已选 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld selected"
+          }
+        }
+      }
+    },
+    "取消选择" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deselect"
+          }
+        }
+      }
+    },
+    "拆开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split"
+          }
+        }
+      }
+    },
+    "任意色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Any Color"
+          }
+        }
+      }
+    },
+    "空" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empty"
+          }
+        }
+      }
+    }
+,
+    "开始找零件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find Pieces"
+          }
+        }
+      }
+    },
+    "拖动方框，把中间这一片零件圈进去。上面的色号表和下面的成品图不用圈。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag the box so it covers the block of pieces in the middle. You don't need to include the color table above or the finished photo below."
+          }
+        }
+      }
+    },
+    "正在找零件…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finding pieces…"
+          }
+        }
+      }
+    },
+    "一个零件也没找到" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No pieces found"
+          }
+        }
+      }
+    },
+    "多半是上一步的框没圈到零件。回上一步把框挪一下再试；或者直接在图上拖出零件的位置，自己补一个。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The box in the previous step probably missed them. Go back and move it, or drag over a piece right here to add it yourself."
+          }
+        }
+      }
+    },
+    "找到 %lld 个零件。点一下可以选中，选中之后能删除、合并、拆开或者改名。\n有零件没被框住，直接在它上面拖一下就能补一个。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pieces found. Tap one to select it, then delete, merge, split or rename it.\nIf a piece has no box, just drag over it to add one."
+          }
+        }
+      }
+    },
+    "这块分不开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This one can't be split"
+          }
+        }
+      }
+    },
+    "在图上它是连成一整片的，找不到下刀的地方。如果确实是两个零件，可以先把它删掉，再在两块上各拖一个框出来。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the image it's one connected shape, with nowhere to cut. If it really is two pieces, delete it and drag a box over each of them."
+          }
+        }
+      }
+    },
+    "留空就用默认的编号。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leave it blank to use the default number."
+          }
+        }
+      }
+    },
+    "保存这 %lld 个零件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save These %lld Pieces"
+          }
+        }
+      }
+    },
+    "下一步是量出一格有多大、再看每个格子是什么颜色，还在做。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Measuring the cell size and reading each cell's color is still in progress."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

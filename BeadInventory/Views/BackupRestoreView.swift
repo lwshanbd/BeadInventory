@@ -53,7 +53,9 @@ struct BackupRestoreView: View {
                 Button("取消", role: .cancel) {}
             } message: {
                 if let backup = selectedBackup {
-                    Text("这将用 \(backup.formattedDate) 的备份替换当前所有数据。此操作不可撤销。")
+                    // 明说备份里没有网格标定：换新手机恢复完，用户会发现拼图模式的四角标定
+                    // 要重新做一遍 —— 与其让他几周后一个项目一个项目地发现，不如现在讲清楚。
+                    Text("这将用 \(backup.formattedDate) 的备份替换当前所有数据。此操作不可撤销。\n备份里不含拼图模式的网格标定，恢复后这部分需要重新标定。")
                 }
             }
             .confirmationDialog(

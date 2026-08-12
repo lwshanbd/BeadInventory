@@ -1319,10 +1319,12 @@ struct PlannedProjectDetailView: View {
     @State private var sortByQuantity = true
     @State private var showChildrenSection = true
     @State private var showPatternModePicker = false
-    /// 在模式选择页里选了「单图纸模式」，等它收起后再进下一页（见 openSinglePatternModeIfSelected）
+    /// 在模式选择页里选了哪种模式，等它收起后再进下一页（见 openPatternModeIfSelected）
     @State private var pendingSinglePatternMode = false
+    @State private var pendingMultiPartMode = false
     @State private var showPatternCalibration = false
     @State private var showPatternHighlight = false
+    @State private var showPartsSheetFlow = false
 
     // 获取当前项目的最新状态
     var currentProject: ProjectRecord? {
@@ -1386,8 +1388,15 @@ struct PlannedProjectDetailView: View {
         .sheet(isPresented: $showStockCheckSheet) { stockCheckSheet }
         .sheet(isPresented: $showEditSheet) { editSheet }
         .sheet(isPresented: $showThumbnailEditor) { thumbnailEditorSheet }
-        .sheet(isPresented: $showPatternModePicker, onDismiss: openSinglePatternModeIfSelected) {
-            PatternModeSelectionSheet(onSelectSinglePattern: { pendingSinglePatternMode = true })
+        .sheet(isPresented: $showPatternModePicker, onDismiss: openPatternModeIfSelected) {
+            PatternModeSelectionSheet(
+                onSelectSinglePattern: { pendingSinglePatternMode = true },
+                onSelectMultiPart: { pendingMultiPartMode = true }
+            )
+        }
+        .fullScreenCover(isPresented: $showPartsSheetFlow) {
+            PartsSheetFlowView(project: currentProject ?? project)
+                .environmentObject(inventoryManager)
         }
         .sheet(isPresented: $showPatternCalibration) {
             PatternCalibrationView(
@@ -1452,14 +1461,19 @@ struct PlannedProjectDetailView: View {
     }
 
     /// 单图纸模式沿用原来的分支：已标定过网格直接进高亮页，没标定先去标定页。
-    private func openSinglePatternModeIfSelected() {
-        guard pendingSinglePatternMode else { return }
-        pendingSinglePatternMode = false
-        let projectId = (currentProject ?? project).id
-        if inventoryManager.projectIDsWithPatternGrid.contains(projectId) {
-            showPatternHighlight = true
-        } else {
-            showPatternCalibration = true
+    /// 多零件模式只有一个入口，进去之后由流程页自己决定从圈区还是从清单开始。
+    private func openPatternModeIfSelected() {
+        if pendingSinglePatternMode {
+            pendingSinglePatternMode = false
+            let projectId = (currentProject ?? project).id
+            if inventoryManager.projectIDsWithPatternGrid.contains(projectId) {
+                showPatternHighlight = true
+            } else {
+                showPatternCalibration = true
+            }
+        } else if pendingMultiPartMode {
+            pendingMultiPartMode = false
+            showPartsSheetFlow = true
         }
     }
 

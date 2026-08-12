@@ -8,8 +8,7 @@
 //  通常是好几张零件图拼起来的，跟单图纸是两套用法，所以入口在这里分成两个
 //  选项：用户点「拼图模式」→ 先说清楚自己要拼的是哪一种，再进对应流程。
 //
-//  多零件模式目前只占位（点了不做任何事），等交互定下来再接。
-//
+
 
 import SwiftUI
 
@@ -18,6 +17,9 @@ struct PatternModeSelectionSheet: View {
     /// `sheet(onDismiss:)` 里——本页收起的同时再 present 下一个 sheet，
     /// SwiftUI 会把后者吞掉。
     let onSelectSinglePattern: () -> Void
+
+    /// 选「多零件模式」。跳转时机同上。
+    let onSelectMultiPart: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -54,10 +56,11 @@ struct PatternModeSelectionSheet: View {
                         icon: "cube.transparent",
                         tint: Theme.ColorToken.Morandi.mist,
                         title: "多零件模式",
-                        subtitle: "多零件模式常见于立体拼图图纸",
-                        showsChevron: false
+                        subtitle: "一张图纸上排着几十个小零件，常见于立体拼图",
+                        showsChevron: true
                     ) {
-                        // 占位：交互还没定，点了不做任何事。
+                        onSelectMultiPart()
+                        dismiss()
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.lg)
@@ -145,6 +148,6 @@ private struct PatternModeOptionCard: View {
 #Preview {
     Color.clear
         .sheet(isPresented: .constant(true)) {
-            PatternModeSelectionSheet(onSelectSinglePattern: {})
+            PatternModeSelectionSheet(onSelectSinglePattern: {}, onSelectMultiPart: {})
         }
 }

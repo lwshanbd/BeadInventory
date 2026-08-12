@@ -18,20 +18,27 @@ struct ProjectDetailView: View {
     @State private var showingThumbnailEditor = false
     @State private var showingFinishedImageEditor = false
     @State private var showingPatternModePicker = false
-    /// 在模式选择页里选了「单图纸模式」，等它收起后再进下一页（见 openSinglePatternModeIfSelected）
+    /// 在模式选择页里选了哪种模式，等它收起后再进下一页（见 openPatternModeIfSelected）
     @State private var pendingSinglePatternMode = false
+    @State private var pendingMultiPartMode = false
     @State private var showingPatternCalibration = false
     @State private var showingPatternHighlight = false
+    @State private var showingPartsSheetFlow = false
 
     /// 单图纸模式沿用原来的分支：已标定过网格直接进高亮页，没标定先去标定页。
-    private func openSinglePatternModeIfSelected() {
-        guard pendingSinglePatternMode else { return }
-        pendingSinglePatternMode = false
-        let projectId = (currentProject ?? project).id
-        if inventoryManager.projectIDsWithPatternGrid.contains(projectId) {
-            showingPatternHighlight = true
-        } else {
-            showingPatternCalibration = true
+    /// 多零件模式只有一个入口，进去之后由流程页自己决定从圈区还是从清单开始。
+    private func openPatternModeIfSelected() {
+        if pendingSinglePatternMode {
+            pendingSinglePatternMode = false
+            let projectId = (currentProject ?? project).id
+            if inventoryManager.projectIDsWithPatternGrid.contains(projectId) {
+                showingPatternHighlight = true
+            } else {
+                showingPatternCalibration = true
+            }
+        } else if pendingMultiPartMode {
+            pendingMultiPartMode = false
+            showingPartsSheetFlow = true
         }
     }
 
@@ -199,8 +206,15 @@ struct ProjectDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingPatternModePicker, onDismiss: openSinglePatternModeIfSelected) {
-            PatternModeSelectionSheet(onSelectSinglePattern: { pendingSinglePatternMode = true })
+        .sheet(isPresented: $showingPatternModePicker, onDismiss: openPatternModeIfSelected) {
+            PatternModeSelectionSheet(
+                onSelectSinglePattern: { pendingSinglePatternMode = true },
+                onSelectMultiPart: { pendingMultiPartMode = true }
+            )
+        }
+        .fullScreenCover(isPresented: $showingPartsSheetFlow) {
+            PartsSheetFlowView(project: currentProject ?? project)
+                .environmentObject(inventoryManager)
         }
         .sheet(isPresented: $showingPatternCalibration) {
             PatternCalibrationView(
@@ -236,6 +250,7 @@ struct ProjectDetailView: View {
                 title: "成品图",
                 currentImage: data.flatMap { UIImage(data: $0) },
                 maxImageSize: 400, // 成品图使用更大尺寸
+                savesPatternSource: false, // 成品图是实物照片，不是图纸，别覆盖拼图模式的原图
                 onSave: { imageData in
                     inventoryManager.updateProjectFinishedImage(projectId, finishedImage: imageData)
                 }
@@ -765,12 +780,21 @@ struct ProjectImageEditorSheet: View {
     let title: String
     let currentImage: UIImage?
     var maxImageSize: CGFloat = 200
+    /// 这张图是不是「项目封面」——只有封面才该另存一份原图给拼图 / 多零件模式
+    /// （`PatternSourceStore`）。成品图是拼完的实物照片，跟图纸没有任何关系，存进去会被
+    /// 多零件模式当成图纸原图读出来，把已经标好的零件框和格子套到一张不相干的图上。
+    /// 默认 true：封面编辑器有好几个入口（详情页、计划项目页），漏传时保持原有行为。
+    var savesPatternSource: Bool = true
     let onSave: (Data?) -> Void
 
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var inventoryManager: InventoryManager
 
     @State private var selectedPhotoItem: PhotosPickerItem?
+    /// 相册直接给的**原始文件字节**。压缩版照旧进 SwiftData 当封面，这一份另存到
+    /// `PatternSourceStore` 只给拼图模式用（见那个文件顶部的说明）。
+    /// 相机拍照 / 分享导入这些路径拿不到原始字节，就只能没有 —— 拼图模式会退回用压缩图。
+    @State private var pickedOriginalData: Data?
     @State private var editedImage: UIImage?
     @State private var isLoadingImage = false
     @State private var showingCropView = false
@@ -940,6 +964,11 @@ struct ProjectImageEditorSheet: View {
                                 return   // 不写库、不放成功反馈、不关闭 sheet
                             }
                             onSave(imageData)
+                            // 原图另存一份，只给拼图模式用；开关关着时 save 内部会直接跳过。
+                            // 放在 onSave 之后：封面存成功才留原图，避免留下对不上号的孤儿文件。
+                            if savesPatternSource, let source = patternSourceData() {
+                                PatternSourceStore.save(source, for: projectId)
+                            }
                             saveSuccessAt = Date()
                         }
                         dismiss()
@@ -956,6 +985,7 @@ struct ProjectImageEditorSheet: View {
                            let image = UIImage(data: data) {
                             await MainActor.run {
                                 imageToCrop = image
+                                pickedOriginalData = data
                                 isLoadingImage = false
                             }
                         } else {
@@ -1019,6 +1049,18 @@ struct ProjectImageEditorSheet: View {
             Text("这张图片无法处理，原有图片已保留。请重试或换一张图片。")
         }
         .presentationDetents([.medium, .large])
+    }
+
+    /// 另存给拼图 / 多零件模式的那份原图。取哪条只看**取景对不对得上封面**
+    /// （同 `ScanView.patternSourceData()`）：
+    ///   - 没裁过 → 用相册那份原始字节（没有二次编码，最干净）
+    ///   - 裁过   → 原始字节的构图已经不是封面那张了，改存裁完的全分辨率图。
+    ///     多零件模式的零件框、格子都是相对封面归一化的，构图一错整片框都会偏。
+    /// 两者都没有（用户只是打开 sheet 又保存）→ nil，不写。
+    private func patternSourceData() -> Data? {
+        guard PatternSourceStore.isEnabled else { return nil }
+        if editedImage == nil, let pickedOriginalData { return pickedOriginalData }
+        return editedImage?.jpegData(compressionQuality: 0.95)
     }
 
     /// 生成落盘用的图片数据。

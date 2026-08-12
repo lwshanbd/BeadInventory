@@ -417,6 +417,12 @@ struct HistoryView: View {
         switch historyManager.revert(record.id) {
         case .success:
             revertSuccessAt = Date()
+        case .partial(let warning):
+            // 主体撤回成功了，缺的那部分如实说 —— 不能报「撤回失败」，
+            // 那会让用户再点一次，而项目已经回来了（见 RevertOutcome.partial）。
+            revertSuccessAt = Date()
+            revertErrorMessage = warning
+            showingRevertError = true
         case .snapshotLoadFailed:
             // 可重试的瞬时失败：明确区分于「永久不可恢复」，引导用户重试。
             revertErrorMessage = "快照加载失败，请稍后重试"
@@ -435,10 +441,18 @@ struct HistoryView: View {
             .sorted { $0.timestamp > $1.timestamp }
         var successCount = 0
         var failureCount = 0
+        /// 撤回成功、但有东西没能一起还原的条数（目前只有多零件进度）。
+        var partialCount = 0
         for record in toRevert {
             switch historyManager.revert(record.id) {
             case .success:
                 successCount += 1
+            case .partial:
+                // partial 也是撤回成功（记录已消费、项目已回来），只是有东西没跟上。
+                // 逐条弹窗没有意义，但**也不能就这么算了**：记录已经被消费掉，
+                // 用户再也没有第二次机会知道这几条缺了什么。攒起来最后一起说。
+                successCount += 1
+                partialCount += 1
             case .failed, .snapshotLoadFailed:
                 failureCount += 1
             }
@@ -446,10 +460,16 @@ struct HistoryView: View {
         if successCount > 0 {
             revertSuccessAt = Date()
         }
-        if failureCount > 0 {
+        if failureCount > 0 || partialCount > 0 {
+            var parts: [String] = []
+            if failureCount > 0 { parts.append(String(localized: "失败 \(failureCount) 条")) }
+            if partialCount > 0 {
+                parts.append(String(localized: "\(partialCount) 条的多零件进度没能一起还原"))
+            }
+            let detail = parts.joined(separator: "，")
             revertErrorMessage = successCount > 0
-                ? "成功撤回 \(successCount) 条,失败 \(failureCount) 条"
-                : "全部 \(failureCount) 条撤回均失败"
+                ? String(localized: "成功撤回 \(successCount) 条，其中 \(detail)")
+                : String(localized: "全部 \(failureCount) 条撤回均失败")
             showingRevertError = true
         }
         withAnimation { sel.exit() }

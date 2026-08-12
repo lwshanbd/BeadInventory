@@ -3006,6 +3006,8 @@ class InventoryManager: ObservableObject {
     }
 
     func deleteProject(id: UUID) {
+        // 拼图模式的原图副本跟着项目走 —— 不删就永远留下一个谁也不会再读的孤儿文件
+        PatternSourceStore.remove(for: id)
         if let index = projects.firstIndex(where: { $0.id == id }) {
             let project = projects[index]
 
@@ -3022,7 +3024,14 @@ class InventoryManager: ObservableObject {
                 operation: "deleteProject",
                 snapshot: snapshotProject
             )
-            historyManager.recordProject(type: .projectDelete, project: snapshotProject, capturesImages: true)
+            // 多零件图纸不在 ProjectRecord 上（只有 SwiftData 列），单独取出来交给 history，
+            // 否则撤销回来的项目零件框、逐格色号、摆位全没了。
+            historyManager.recordProject(
+                type: .projectDelete,
+                project: snapshotProject,
+                capturesImages: true,
+                partsSheetData: partsSheetDataForSnapshot(of: id)
+            )
 
             // 删除项目只从记录中移除，不回退库存
             projects.remove(at: index)
@@ -3348,6 +3357,14 @@ class InventoryManager: ObservableObject {
                 )
                 return snap
             }
+            // 多零件图纸不在 ProjectRecord 上，只能单独取出来交给 history（同 deleteProject）。
+            // 只取会被删行的父项目 —— 子项目和独立项目的行不删，图纸留在原行里。
+            var parentPartsSheets: [UUID: Data] = [:]
+            for parent in parentProjects {
+                if let data = partsSheetDataForSnapshot(of: parent.id) {
+                    parentPartsSheets[parent.id] = data
+                }
+            }
             let originalProjects = allChildrenProjects + parentSnapshots
 
             // 创建新的父项目（继承第一个子项目的色号体系）
@@ -3385,7 +3402,8 @@ class InventoryManager: ObservableObject {
                 newParentId: newParentProject.id,
                 isSimpleMerge: false,
                 existingParentId: nil,
-                mergedName: newName
+                mergedName: newName,
+                partsSheetDataByProjectId: parentPartsSheets
             )
 
             return newParentProject.id
@@ -3454,6 +3472,7 @@ class InventoryManager: ObservableObject {
             }
 
             // 恢复所有原始项目的状态
+            var recreatedPartsSheets: [(id: UUID, data: Data)] = []
             for projectSnapshot in mergeSnapshot.originalProjects {
                 if let index = projects.firstIndex(where: { $0.id == projectSnapshot.id }) {
                     // 恢复 parentId
@@ -3484,6 +3503,11 @@ class InventoryManager: ObservableObject {
                         displayThumbnail: projectSnapshot.displayThumbnail
                     )
                     projects.append(restoredProject)
+                    // 多零件图纸走不了 SDProjectRecord(from:)（ProjectRecord 上没有这个字段），
+                    // 攒起来等 saveData 把行插进去之后再补写。
+                    if let partsData = projectSnapshot.partsSheetData {
+                        recreatedPartsSheets.append((id: projectSnapshot.id, data: partsData))
+                    }
                     // 同步 blob ID 集合（saveData 不更新这四个 Set）
                     if restoredProject.thumbnail != nil { projectIDsWithThumbnail.insert(restoredProject.id) }
                     if restoredProject.finishedImage != nil { projectIDsWithFinishedImage.insert(restoredProject.id) }
@@ -3494,6 +3518,24 @@ class InventoryManager: ObservableObject {
             }
 
             saveData()
+            // 行已经插进去了，这时候才能补写多零件图纸。
+            // 写不进去不能判成「撤回失败」—— 项目这时已经建回去了，判失败会让历史记录
+            // 留着被再点一次，而 addProject 不去重（见 RevertOutcome.partial）。
+            // 只能如实补一句说明。
+            var partsRestoreFailures = 0
+            for entry in recreatedPartsSheets {
+                if !_setProjectBlobsDirectly(projectId: entry.id, partsSheetData: .some(entry.data)) {
+                    partsRestoreFailures += 1
+                }
+            }
+            if partsRestoreFailures > 0 {
+                logError("merge_undo_parts_sheet_restore_failed", metadata: [
+                    "projects": partsRestoreFailures
+                ])
+                historyManager.noteRevertWarning(
+                    String(localized: "项目回来了，但其中 \(partsRestoreFailures) 个项目的多零件进度没能一起还原。")
+                )
+            }
             // 重建项目带 blob 副本残留在 manager.projects 里；持久化后 strip 回 metadata-only，
             // 同 addProject / duplicate 的语义，避免内存峰值堆积。
             for snap in mergeSnapshot.originalProjects {
@@ -3834,8 +3876,22 @@ class InventoryManager: ObservableObject {
             operation: "deletePlannedProject.parent",
             snapshot: snapshotParent
         )
+        // 多零件图纸不在 ProjectRecord 上，父项目和每个子项目都单独取（同 deleteProject）
+        var partsSheets: [UUID: Data] = [:]
+        if let data = partsSheetDataForSnapshot(of: projectId) {
+            partsSheets[projectId] = data
+        }
+        for child in children {
+            if let data = partsSheetDataForSnapshot(of: child.id) {
+                partsSheets[child.id] = data
+            }
+        }
         // 记录历史（在删除前），包含父项目和子项目
-        historyManager.recordPlanDelete(project: snapshotParent, children: snapshotChildren)
+        historyManager.recordPlanDelete(
+            project: snapshotParent,
+            children: snapshotChildren,
+            partsSheetDataByProjectId: partsSheets
+        )
 
         // 如果是父项目，也删除子项目
         if !children.isEmpty {
@@ -3887,6 +3943,11 @@ class InventoryManager: ObservableObject {
         let sourceThumbnail = fetchProjectThumbnailData(for: projectId)
         let sourceGrid = fetchProjectPatternGrid(for: projectId)
         let sourceGridData = sourceGrid.flatMap { SDProjectRecord.encodePatternGrid($0, projectId: newId) }
+        // 多零件图纸不在 ProjectRecord 上（只有 SwiftData 列），saveData 带不过去 ——
+        // 这里先取出来，落地后再用 _setProjectBlobsDirectly 补写到副本行。
+        // 不复制的话，用户复制一个已经排好零件、标好每格色号的计划，副本是空的。
+        // 直接搬原始字节：BeadPartsSheet 里不含项目 id，不需要解码重编。
+        let sourcePartsData = fetchProjectPartsSheetData(for: projectId)
         // 顺带复制源项目的 displayThumbnail；如果源没有就现场 downsample 源 thumbnail
         let sourceDisplay = fetchProjectDisplayThumbnail(for: projectId)
             ?? sourceThumbnail.flatMap { ImageDownsampler.downsample($0) }
@@ -3913,7 +3974,7 @@ class InventoryManager: ObservableObject {
         projects.insert(duplicatedProject, at: index + 1)
 
         // 如果是父项目，复制所有子项目（每个子项目也单独取自己的 blob）
-        var childCopies: [(record: ProjectRecord, thumbnail: Data?, gridData: Data?, displayThumbnail: Data?)] = []
+        var childCopies: [(record: ProjectRecord, thumbnail: Data?, gridData: Data?, partsData: Data?, displayThumbnail: Data?)] = []
         if isParentProject(projectId) {
             let children = childProjects(of: projectId)
             for child in children {
@@ -3930,6 +3991,7 @@ class InventoryManager: ObservableObject {
                 let childThumb = fetchProjectThumbnailData(for: child.id)
                 let childGrid = fetchProjectPatternGrid(for: child.id)
                 let childGridData = childGrid.flatMap { SDProjectRecord.encodePatternGrid($0, projectId: newChildId) }
+                let childPartsData = fetchProjectPartsSheetData(for: child.id)
                 let childDisplay = fetchProjectDisplayThumbnail(for: child.id)
                     ?? childThumb.flatMap { ImageDownsampler.downsample($0) }
                 let duplicatedChild = ProjectRecord(
@@ -3948,7 +4010,7 @@ class InventoryManager: ObservableObject {
                     displayThumbnail: childDisplay
                 )
                 projects.append(duplicatedChild)
-                childCopies.append((record: duplicatedChild, thumbnail: childThumb, gridData: childGridData, displayThumbnail: childDisplay))
+                childCopies.append((record: duplicatedChild, thumbnail: childThumb, gridData: childGridData, partsData: childPartsData, displayThumbnail: childDisplay))
             }
         }
 
@@ -3959,11 +4021,24 @@ class InventoryManager: ObservableObject {
         if sourceThumbnail != nil { projectIDsWithThumbnail.insert(newId) }
         if sourceGridData != nil { projectIDsWithPatternGrid.insert(newId) }
         if sourceDisplay != nil { projectIDsWithDisplayThumbnail.insert(newId) }
+        // partsSheetData 走不了 SDProjectRecord(from:)，落地后单独补写
+        if let sourcePartsData,
+           !_setProjectBlobsDirectly(projectId: newId, partsSheetData: .some(sourcePartsData)) {
+            // 副本会少掉多零件进度。源项目原封不动，用户重复制一次即可，
+            // 所以只留日志不打扰他 —— 但不能一声不响。
+            logError("duplicate_parts_sheet_copy_failed", metadata: ["projectId": newId.uuidString])
+        }
         stripBlobFromInMemoryProject(newId)
         for child in childCopies {
             if child.thumbnail != nil { projectIDsWithThumbnail.insert(child.record.id) }
             if child.gridData != nil { projectIDsWithPatternGrid.insert(child.record.id) }
             if child.displayThumbnail != nil { projectIDsWithDisplayThumbnail.insert(child.record.id) }
+            if let childPartsData = child.partsData,
+               !_setProjectBlobsDirectly(projectId: child.record.id, partsSheetData: .some(childPartsData)) {
+                logError("duplicate_parts_sheet_copy_failed", metadata: [
+                    "projectId": child.record.id.uuidString
+                ])
+            }
             stripBlobFromInMemoryProject(child.record.id)
         }
         projectBlobsRevision &+= 1
@@ -4000,6 +4075,8 @@ class InventoryManager: ObservableObject {
         let sourceThumbnail = fetchProjectThumbnailData(for: projectId)
         let sourceGrid = fetchProjectPatternGrid(for: projectId)
         let sourceGridData = sourceGrid.flatMap { SDProjectRecord.encodePatternGrid($0, projectId: newId) }
+        // 多零件图纸同 duplicatePlannedProject —— 不在 ProjectRecord 上，落地后单独补写
+        let sourcePartsData = fetchProjectPartsSheetData(for: projectId)
         let sourceDisplay = fetchProjectDisplayThumbnail(for: projectId)
             ?? sourceThumbnail.flatMap { ImageDownsampler.downsample($0) }
 
@@ -4024,7 +4101,7 @@ class InventoryManager: ObservableObject {
         projects.insert(duplicatedProject, at: 0)
 
         // 如果是父项目，复制所有子项目
-        var childCopies: [(record: ProjectRecord, thumbnail: Data?, gridData: Data?, displayThumbnail: Data?)] = []
+        var childCopies: [(record: ProjectRecord, thumbnail: Data?, gridData: Data?, partsData: Data?, displayThumbnail: Data?)] = []
         if isParentProject(projectId) {
             let children = childProjects(of: projectId)
             for child in children {
@@ -4041,6 +4118,7 @@ class InventoryManager: ObservableObject {
                 let childThumb = fetchProjectThumbnailData(for: child.id)
                 let childGrid = fetchProjectPatternGrid(for: child.id)
                 let childGridData = childGrid.flatMap { SDProjectRecord.encodePatternGrid($0, projectId: newChildId) }
+                let childPartsData = fetchProjectPartsSheetData(for: child.id)
                 let childDisplay = fetchProjectDisplayThumbnail(for: child.id)
                     ?? childThumb.flatMap { ImageDownsampler.downsample($0) }
                 let duplicatedChild = ProjectRecord(
@@ -4059,7 +4137,7 @@ class InventoryManager: ObservableObject {
                     displayThumbnail: childDisplay
                 )
                 projects.append(duplicatedChild)
-                childCopies.append((record: duplicatedChild, thumbnail: childThumb, gridData: childGridData, displayThumbnail: childDisplay))
+                childCopies.append((record: duplicatedChild, thumbnail: childThumb, gridData: childGridData, partsData: childPartsData, displayThumbnail: childDisplay))
             }
         }
 
@@ -4069,11 +4147,23 @@ class InventoryManager: ObservableObject {
         if sourceThumbnail != nil { projectIDsWithThumbnail.insert(newId) }
         if sourceGridData != nil { projectIDsWithPatternGrid.insert(newId) }
         if sourceDisplay != nil { projectIDsWithDisplayThumbnail.insert(newId) }
+        if let sourcePartsData,
+           !_setProjectBlobsDirectly(projectId: newId, partsSheetData: .some(sourcePartsData)) {
+            // 副本会少掉多零件进度。源项目原封不动，用户重复制一次即可，
+            // 所以只留日志不打扰他 —— 但不能一声不响。
+            logError("duplicate_parts_sheet_copy_failed", metadata: ["projectId": newId.uuidString])
+        }
         stripBlobFromInMemoryProject(newId)
         for child in childCopies {
             if child.thumbnail != nil { projectIDsWithThumbnail.insert(child.record.id) }
             if child.gridData != nil { projectIDsWithPatternGrid.insert(child.record.id) }
             if child.displayThumbnail != nil { projectIDsWithDisplayThumbnail.insert(child.record.id) }
+            if let childPartsData = child.partsData,
+               !_setProjectBlobsDirectly(projectId: child.record.id, partsSheetData: .some(childPartsData)) {
+                logError("duplicate_parts_sheet_copy_failed", metadata: [
+                    "projectId": child.record.id.uuidString
+                ])
+            }
             stripBlobFromInMemoryProject(child.record.id)
         }
         projectBlobsRevision &+= 1
@@ -4229,12 +4319,23 @@ class InventoryManager: ObservableObject {
         }
     }
 
-    /// 同步取单个项目的 BeadPatternGrid（拼图网格）。错误处理同上。
+    /// 取单列 blob 时「读不出来」的原因。
+    ///
+    /// 存在的理由只有一个：**「读失败」和「这个项目本来就没有」不能混成同一个 nil**。
+    /// 混了之后，备份导出会把一次瞬时读失败写成「这个项目明确没有网格」，
+    /// 恢复端照着这句话把用户现有的标定清掉 —— 备份文件看上去还是完整的。
+    enum BlobFetchFailure: Error {
+        case noContext
+        case fetchFailed(Error)
+    }
+
+    /// 同步取单个项目的 patternGridData **原始字节**（不解码），并区分读失败与真的没有。
+    /// 备份导出必须走这个版本；解码再编码等于把一份解不出来的网格静默换成「这个项目没有网格」。
     /// **round-10 review I1**：`propertiesToFetch = [\.patternGridData]` 限定单列。
-    func fetchProjectPatternGrid(for projectId: UUID) -> BeadPatternGrid? {
+    func fetchProjectPatternGridDataResult(for projectId: UUID) -> Result<Data?, BlobFetchFailure> {
         guard let context = modelContext else {
             logError("fetch_pattern_grid_no_context", metadata: ["projectId": projectId.uuidString])
-            return nil
+            return .failure(.noContext)
         }
         var descriptor = FetchDescriptor<SDProjectRecord>(
             predicate: #Predicate { $0.id == projectId }
@@ -4242,15 +4343,92 @@ class InventoryManager: ObservableObject {
         descriptor.fetchLimit = 1
         descriptor.propertiesToFetch = [\.patternGridData]
         do {
-            guard let sd = try context.fetch(descriptor).first else { return nil }
-            return SDProjectRecord.decodePatternGrid(sd.patternGridData, projectId: projectId)
+            return .success(try context.fetch(descriptor).first?.patternGridData)
         } catch {
             logError("fetch_pattern_grid_failed", metadata: [
                 "projectId": projectId.uuidString,
                 "error": "\(error)"
             ])
+            return .failure(.fetchFailed(error))
+        }
+    }
+
+    /// 只关心「有没有」的调用方用这个。**要往备份 / 快照里写的一律用 `...Result` 版**。
+    func fetchProjectPatternGridData(for projectId: UUID) -> Data? {
+        try? fetchProjectPatternGridDataResult(for: projectId).get()
+    }
+
+    /// 同步取单个项目的 BeadPatternGrid（拼图网格）。错误处理同上。
+    func fetchProjectPatternGrid(for projectId: UUID) -> BeadPatternGrid? {
+        SDProjectRecord.decodePatternGrid(fetchProjectPatternGridData(for: projectId), projectId: projectId)
+    }
+
+    /// 同步取单个项目的 partsSheetData **原始字节**（不解码），并区分读失败与真的没有。
+    /// 理由同 `fetchProjectPatternGridDataResult`。
+    /// `propertiesToFetch` 限定单列的理由：不限定就会把同一行的原图 blob 一并物化。
+    func fetchProjectPartsSheetDataResult(for projectId: UUID) -> Result<Data?, BlobFetchFailure> {
+        guard let context = modelContext else {
+            logError("fetch_parts_sheet_no_context", metadata: ["projectId": projectId.uuidString])
+            return .failure(.noContext)
+        }
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        descriptor.fetchLimit = 1
+        descriptor.propertiesToFetch = [\.partsSheetData]
+        do {
+            return .success(try context.fetch(descriptor).first?.partsSheetData)
+        } catch {
+            logError("fetch_parts_sheet_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return .failure(.fetchFailed(error))
+        }
+    }
+
+    /// 只关心「有没有」的调用方用这个。**要往备份 / 快照里写的一律用 `...Result` 版**。
+    func fetchProjectPartsSheetData(for projectId: UUID) -> Data? {
+        try? fetchProjectPartsSheetDataResult(for: projectId).get()
+    }
+
+    /// 给「马上要删掉这一行」的路径用：取不到就明确说一声。
+    ///
+    /// 删除前拍快照时，「这个项目本来就没有多零件进度」和「这次没读出来」不能都变成 nil ——
+    /// 后者会让快照记成「没有」，行随即被删掉，**撤销也拿不回来，字节永久没了**，
+    /// 而全过程一句提示都没有。这跟备份导出那个洞是同一个（见 BackupManager 里的说明），
+    /// 只是这一半更狠：备份还能重做一份，删掉的行没有第二次机会。
+    ///
+    /// 刻意**不**因此阻断删除 —— 用户要删就是要删，为一次读失败把删除拦下来是防御过头。
+    /// 但要留下痕迹，出事时查得到。
+    private func partsSheetDataForSnapshot(of projectId: UUID) -> Data? {
+        switch fetchProjectPartsSheetDataResult(for: projectId) {
+        case .success(let data):
+            return data
+        case .failure:
+            logError("snapshot_parts_sheet_unreadable", metadata: [
+                "projectId": projectId.uuidString
+            ])
             return nil
         }
+    }
+
+    /// 把一份 partsSheet 的**原始字节**直接写回某个项目。
+    ///
+    /// 撤销删除时用：字节是从快照里原样搬过来的，解码再编码会把本版本不认识的字段
+    /// 悄悄抹掉（快照可能是别的设备用新版本写的），而且解码失败会让一份完好的数据
+    /// 整个被丢弃。备份恢复和复制项目走的也是搬字节这条路，这里保持一致。
+    @discardableResult
+    func restoreProjectPartsSheetData(_ projectId: UUID, data: Data) -> Bool {
+        _setProjectBlobsDirectly(projectId: projectId, partsSheetData: .some(data))
+    }
+
+    /// 同步取单个项目的多零件图纸数据。
+    ///
+    /// 视图层请走 `ProjectImageLoader.partsSheet(for:)`（后台 actor），这里留给
+    /// 需要在主线程同步拿到结果的调用方。
+    func fetchProjectPartsSheet(for projectId: UUID) -> BeadPartsSheet? {
+        SDProjectRecord.decodePartsSheet(fetchProjectPartsSheetData(for: projectId), projectId: projectId)
     }
 
     /// 同步取单个项目的 displayThumbnail（列表用小图）。错误处理同上。
@@ -4438,6 +4616,7 @@ class InventoryManager: ObservableObject {
         thumbnail: Data?? = nil,
         finishedImage: Data?? = nil,
         patternGridData: Data?? = nil,
+        partsSheetData: Data?? = nil,
         displayThumbnail: Data?? = nil
     ) -> Bool {
         guard !isUsingLocalFallbackMode else {
@@ -4460,6 +4639,9 @@ class InventoryManager: ObservableObject {
         }
         if case .some(let newGrid) = patternGridData {
             sd.patternGridData = newGrid
+        }
+        if case .some(let newParts) = partsSheetData {
+            sd.partsSheetData = newParts
         }
         if case .some(let newDisplay) = displayThumbnail {
             sd.displayThumbnail = newDisplay
@@ -4553,9 +4735,9 @@ class InventoryManager: ObservableObject {
     /// 备份还原专用的批量 blob 写入。
     ///
     /// 语义：每个项目的 thumbnail / finishedImage **总是**按备份里的值写回，包括用 nil 清空
-    /// （备份明确说该项目无图，store 上还残留旧图就该清）。patternGrid **只在备份提供时**写
-    /// （`patternGridProvided == true` 才覆盖；当前备份 JSON 还没 round-trip 这个字段，
-    /// 调用方一律传 false，避免清掉用户当前的网格标定）。
+    /// （备份明确说该项目无图，store 上还残留旧图就该清）。patternGrid / partsSheet
+    /// **只在备份提供时**写（`*Provided == true` 才覆盖）—— 老备份没这两个字段，
+    /// 一律传 false，不动用户当前的网格标定和多零件进度。
     ///
     /// 历史处理：本路径**完全不**记录 history（恢复备份不是用户的"操作"，不应该出现在
     /// 撤销栈里，否则 458 项目级用户一次 restore 会灌进几百条 history entries）。
@@ -4573,12 +4755,13 @@ class InventoryManager: ObservableObject {
     @MainActor
     @discardableResult
     func restoreProjectBlobsFromBackup(
-        _ entries: [(id: UUID, thumbnail: Data?, finishedImage: Data?, patternGridData: Data?, patternGridProvided: Bool, displayThumbnail: Data?, displayThumbnailProvided: Bool)]
+        _ entries: [(id: UUID, thumbnail: Data?, finishedImage: Data?, patternGridData: Data?, patternGridProvided: Bool, partsSheetData: Data?, partsSheetProvided: Bool, displayThumbnail: Data?, displayThumbnailProvided: Bool)]
     ) -> RestoreBlobsResult {
         var failedIDs: [UUID] = []
         for entry in entries {
-            // patternGrid 仅在备份显式带值时写入；否则保留 store 上的旧网格。
+            // patternGrid / partsSheet 仅在备份显式带值时写入；否则保留 store 上的旧值。
             let gridArg: Data?? = entry.patternGridProvided ? .some(entry.patternGridData) : .none
+            let partsArg: Data?? = entry.partsSheetProvided ? .some(entry.partsSheetData) : .none
             // displayThumbnail：备份带就写（即使是 nil，也是显式声明"这条没有列表小图，
             // 让迁移协调器后续 backfill"）；备份没这个字段（老备份）→ 不动 store 旧值。
             let displayArg: Data?? = entry.displayThumbnailProvided ? .some(entry.displayThumbnail) : .none
@@ -4587,6 +4770,7 @@ class InventoryManager: ObservableObject {
                 thumbnail: .some(entry.thumbnail),
                 finishedImage: .some(entry.finishedImage),
                 patternGridData: gridArg,
+                partsSheetData: partsArg,
                 displayThumbnail: displayArg
             )
             if !ok { failedIDs.append(entry.id) }
@@ -4664,29 +4848,78 @@ class InventoryManager: ObservableObject {
     /// 加 history 会产生「dead undo」（用户以为可以撤回但其实无效）。
     /// 网格是校准元数据而不是用户内容，未来如果要做 grid undo，需要扩展 ProjectSnapshot
     /// 携带 patternGrid 字段并在 undo 分支里同时还原。
-    func updateProjectPatternGrid(_ projectId: UUID, grid: BeadPatternGrid?) {
-        guard projects.contains(where: { $0.id == projectId }) else { return }
+    ///
+    /// - Returns: `false` = 这次**没有**写进持久层（项目不存在 / 编码失败 / 本地兜底模式 /
+    ///   context 缺失 / save 抛错）。调用方拿到 false 说明用户这次的标定没保住，
+    ///   不要接着显示"已保存"。
+    @discardableResult
+    func updateProjectPatternGrid(_ projectId: UUID, grid: BeadPatternGrid?) -> Bool {
+        guard projects.contains(where: { $0.id == projectId }) else { return false }
 
         // 编码失败时**保留**原 patternGridData 不覆盖（保持原 saveData 同义语：
-        // 防止把云端最新值用 nil 覆盖造成全设备数据丢失）。这里通过把 .none 传给
-        // `_setProjectBlobsDirectly` 实现"不动该字段"。
-        let newData: Data??
+        // 防止把云端最新值用 nil 覆盖造成全设备数据丢失）。但"保留旧值"不等于"这次成功了"
+        // —— 直接返回 false，别再往下打成功日志。error 日志已由 encodePatternGrid 记。
+        let newData: Data?
         if let grid = grid {
-            if let encoded = SDProjectRecord.encodePatternGrid(grid, projectId: projectId) {
-                newData = .some(.some(encoded))
-            } else {
-                newData = .none // 编码失败，logger 已记录，保留旧值
+            guard let encoded = SDProjectRecord.encodePatternGrid(grid, projectId: projectId) else {
+                return false
             }
+            newData = encoded
         } else {
-            newData = .some(nil) // 用户明确清空
+            newData = nil // 用户明确清空
         }
-        if case .some = newData {
-            _setProjectBlobsDirectly(projectId: projectId, patternGridData: newData)
+        guard _setProjectBlobsDirectly(projectId: projectId, patternGridData: .some(newData)) else {
+            logError("project_pattern_grid_save_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "hasGrid": grid != nil
+            ])
+            return false
         }
         logInfo("project_pattern_grid_updated", metadata: [
             "projectId": projectId.uuidString,
             "hasGrid": grid != nil
         ])
+        return true
+    }
+
+    /// 更新项目的多零件图纸数据（立体图纸）。语义完全对齐 `updateProjectPatternGrid`：
+    /// 编码失败时**保留**旧值不覆盖，只有用户明确清空才写 nil。
+    ///
+    /// 没有对应的 `projectIDsWithPartsSheet` 存在性集合 —— 那套集合是为「列表每个 row
+    /// 都要知道有没有图」准备的，多零件数据只在进入该模式时读一次，多维护一个集合
+    /// 反而多一处会跟库漂移的状态。
+    ///
+    /// - Returns: `false` = 这次**没有**写进持久层。调用方（多零件流程每一步都在存进度）
+    ///   必须据此决定是否还能往下走 —— 静默失败的话用户以为零件、逐格色号、摆位都存住了，
+    ///   下次进来全没了。
+    @discardableResult
+    func updateProjectPartsSheet(_ projectId: UUID, sheet: BeadPartsSheet?) -> Bool {
+        guard projects.contains(where: { $0.id == projectId }) else { return false }
+
+        // 编码失败保留旧值不覆盖（同 updateProjectPatternGrid），但这次确实没写进去 →
+        // 直接返回 false，不打成功日志。error 日志已由 encodePartsSheet 记。
+        let newData: Data?
+        if let sheet = sheet {
+            guard let encoded = SDProjectRecord.encodePartsSheet(sheet, projectId: projectId) else {
+                return false
+            }
+            newData = encoded
+        } else {
+            newData = nil // 用户明确清空
+        }
+        guard _setProjectBlobsDirectly(projectId: projectId, partsSheetData: .some(newData)) else {
+            logError("project_parts_sheet_save_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "parts": sheet?.parts.count ?? 0
+            ])
+            return false
+        }
+        logInfo("project_parts_sheet_updated", metadata: [
+            "projectId": projectId.uuidString,
+            "parts": sheet?.parts.count ?? 0,
+            "paletteEntries": sheet?.palette.count ?? 0
+        ])
+        return true
     }
 
     /// 更新项目成品图（仅已执行项目）—— 直写 SwiftData。
