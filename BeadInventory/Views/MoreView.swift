@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import TipKit
 
 struct MoreView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
@@ -243,12 +242,6 @@ struct MoreView: View {
                         .buttonStyle(.plain)
                     }
                     .padding(.bottom, 18)
-
-                    // BackupTip — 紧贴数据相关分组之后，作为轻量提示出现
-                    TipView(BackupTip())
-                        .tipBackground(Theme.ColorToken.Surface.elevated)
-                        .padding(.horizontal, 18)
-                        .padding(.bottom, 18)
 
                     footerView
                         .padding(.top, 4)

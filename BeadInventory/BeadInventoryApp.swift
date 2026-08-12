@@ -10,7 +10,6 @@ import SwiftData
 import CloudKit
 import CoreData
 import Combine
-import TipKit
 
 @main
 struct BeadInventoryApp: App {
@@ -190,20 +189,6 @@ struct BeadInventoryApp: App {
 
         self.initialFatalErrorMessage = fatalErrorMessage
 
-        // 初始化 TipKit —— 移出 App.init 同步路径。Tips.configure 冷启动要做 datastore 磁盘
-        // 初始化（实测可达数百 ms），但它跟首帧无关（tips 是后续在具体页面按交互才弹），放在
-        // 首帧前同步跑只会拖长白屏。改到后台 utility 队列异步配置；TipKit 仅要求 configure
-        // 先于任意 tip 使用，启动后几百毫秒内不会触达任何 tip，延迟一拍无影响。
-        Task.detached(priority: .utility) {
-            do {
-                try Tips.configure([
-                    .displayFrequency(.daily),
-                    .datastoreLocation(.applicationDefault)
-                ])
-            } catch {
-                AppLogger.shared.error("TipKit", "初始化失败: \(error.localizedDescription)")
-            }
-        }
         AppLogger.shared.info("App", "app_init_completed")  // 启动耗时探针：App.init 同步段结束（首帧前）
     }
 
@@ -1274,7 +1259,8 @@ extension BeadInventoryApp {
 //
 //  ## 为什么需要它
 //
-//  白屏已经修过三轮（#51 CKContainer/TipKit、#52 history 开库、#57 InventoryManager 首次
+//  白屏已经修过三轮（#51 CKContainer/TipKit —— TipKit 已于 #66 整体移除、#52 history 开库、
+//  #57 InventoryManager 首次
 //  fetch），每轮都是「读代码找到一个主线程阻塞点 → 移走 → 宣布修好」，但用户仍然报障。
 //  根本问题是**从来没有人真正复现过它** —— 所有结论都建立在「这段代码看起来会阻塞」上，
 //  而不是「这就是白屏的原因」。这个文件的唯一目的就是把猜测换成可复现的现场。

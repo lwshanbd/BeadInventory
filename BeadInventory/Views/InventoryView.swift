@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import TipKit
 
 struct LowStockSheetItem: Identifiable {
     let id: UUID

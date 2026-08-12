@@ -93,7 +93,6 @@
 		D10000000000000000000001 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = D10000000000000000000021 /* MLXLMCommon */; };
 		D10000000000000000000002 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = D10000000000000000000022 /* MLXVLM */; };
 		D10000000000000000000003 /* Hub in Frameworks */ = {isa = PBXBuildFile; productRef = D10000000000000000000023 /* Hub */; };
-		D4FCE1C30D304A57B50A43F1 /* AppTips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 244719AA237A40FF87FA38A4 /* AppTips.swift */; };
 		DD0A1B01A0060001DEADBEEF /* DeductionItemRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0A1B01A0060002DEADBEEF /* DeductionItemRow.swift */; };
 		DE0D1C01A0050001DEADBEEF /* DeductionItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0D1C01A0050002DEADBEEF /* DeductionItem.swift */; };
 		DE0D1C03A0050001DEADBEEF /* DeductionResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0D1C03A0050002DEADBEEF /* DeductionResolver.swift */; };
@@ -142,7 +141,6 @@
 
 /* Begin PBXFileReference section */
 		101C8A44E38F4E17BB2A00F3 /* FAQView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FAQView.swift; sourceTree = "<group>"; };
-		244719AA237A40FF87FA38A4 /* AppTips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTips.swift; sourceTree = "<group>"; };
 		3806E5052F00F94200187AA7 /* AddInventoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddInventoryView.swift; sourceTree = "<group>"; };
 		3806E5072F00FB3900187AA7 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = InfoPlist.strings; sourceTree = "<group>"; };
 		3806E50B2F00FB4300187AA7 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = InfoPlist.strings; sourceTree = "<group>"; };
@@ -344,7 +342,6 @@
 				4CC5DB3B1DAD44CD8E0D1717 /* TutorialDetailView.swift */,
 				101C8A44E38F4E17BB2A00F3 /* FAQView.swift */,
 				EF254CDDEE254F02A6DD1202 /* TutorialContent.swift */,
-				244719AA237A40FF87FA38A4 /* AppTips.swift */,
 			);
 			path = HelpCenter;
 			sourceTree = "<group>";
@@ -666,7 +663,6 @@
 				4E228907D2F847A9AC5C12D1 /* TutorialDetailView.swift in Sources */,
 				BACDA9EDBD274C6A9923F797 /* FAQView.swift in Sources */,
 				3392EC89359E462CBEC9ED32 /* TutorialContent.swift in Sources */,
-				D4FCE1C30D304A57B50A43F1 /* AppTips.swift in Sources */,
 				937EF9B644E743C2A9AC8A78 /* EmptyStateView.swift in Sources */,
 				A01234560001 /* BeadInventoryApp.swift in Sources */,
 				A01234560002 /* ContentView.swift in Sources */,

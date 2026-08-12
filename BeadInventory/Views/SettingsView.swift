@@ -229,10 +229,6 @@ struct RecognitionSettingsScreen: View {
         }
         .onAppear {
             localModelManager.refreshDownloadedModels()
-            APISetupTip.hasConfiguredAPI = aiService.isConfigured
-        }
-        .onChange(of: aiService.isConfigured) { _, newValue in
-            APISetupTip.hasConfiguredAPI = newValue
         }
     }
 
@@ -429,7 +425,6 @@ struct RecognitionSettingsScreen: View {
                     testResult = nil
                     let result = await aiService.testConnection()
                     testResult = result
-                    APISetupTip.hasConfiguredAPI = aiService.isConfigured
                 }
             }
             .disabled(aiService.config.apiKey.isEmpty || isTesting)
