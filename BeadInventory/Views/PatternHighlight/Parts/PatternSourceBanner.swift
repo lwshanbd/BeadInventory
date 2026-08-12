@@ -66,7 +66,9 @@ struct PatternSourceBanner: View {
             }
         }
         .task {
-            needsSource = PatternSourceStore.isEnabled && !PatternSourceStore.exists(for: projectId)
+            // 不看那个「默认留不留」的设置：用户已经站在拼图模式里了，这一屏本来就
+            // 需要原图。上传时选了不留（或者当时压根没有原图）恰恰是最该提示的情况。
+            needsSource = !PatternSourceStore.exists(for: projectId)
         }
         .onChange(of: pickedItem) { _, item in
             guard let item else { return }

@@ -45,11 +45,15 @@ import UIKit
 
 enum PatternSourceStore {
 
-    /// 用户是否要保留原图。默认开。
-    /// 关掉之后新上传的图纸不再留原图，已经留下的不动（要删走「拼好了」）。
+    /// 上传图纸时**默认**要不要留原图。默认开。
+    ///
+    /// 只是初值：留不留是每张图各自的决定，上传那一屏有一个开关，用户按这张图会不会
+    /// 真的去拼来定（十张图纸里往往只有两三张会进拼图模式）。所以这里刻意不叫
+    /// `isEnabled`，也不再在 `save` 里当成一道闸门 —— 调用方已经拿到了用户的答复，
+    /// 存储层再拿一个全局设置去否决它，就成了「我明明勾了却没留下」。
     static let keepSourceDefaultsKey = "keepPatternSourceImage"
 
-    static var isEnabled: Bool {
+    static var keepsSourceByDefault: Bool {
         UserDefaults.standard.object(forKey: keepSourceDefaultsKey) as? Bool ?? true
     }
 
@@ -84,10 +88,10 @@ enum PatternSourceStore {
 
     // MARK: - 读写
 
-    /// 存一份原图。开关关着就什么都不做。
+    /// 存一份原图。要不要存由调用方决定（见 `keepsSourceByDefault`）。
     /// - Parameter data: 用户选的那张图的**原始字节**（相册选图能直接拿到）。
     static func save(_ data: Data, for projectId: UUID) {
-        guard isEnabled, let url = url(for: projectId) else { return }
+        guard let url = url(for: projectId) else { return }
         do {
             try data.write(to: url, options: .atomic)
             // 单个文件也标一次：目录属性在某些恢复路径下不会被继承

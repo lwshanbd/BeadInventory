@@ -795,6 +795,9 @@ struct ProjectImageEditorSheet: View {
     /// `PatternSourceStore` 只给拼图模式用（见那个文件顶部的说明）。
     /// 相机拍照 / 分享导入这些路径拿不到原始字节，就只能没有 —— 拼图模式会退回用压缩图。
     @State private var pickedOriginalData: Data?
+    /// 这一张要不要留原图。是每张图各自的决定，设置里那个开关只给初值
+    /// （同 `ScanView.keepPatternSource`）。
+    @State private var keepPatternSource = PatternSourceStore.keepsSourceByDefault
     @State private var editedImage: UIImage?
     @State private var isLoadingImage = false
     @State private var showingCropView = false
@@ -921,6 +924,35 @@ struct ProjectImageEditorSheet: View {
                         .padding(.horizontal)
                     }
 
+                    // 「这张要不要留原图」。跟识别图纸那一屏同一个决定、同一句话 ——
+                    // 只在那边有、这边没有的话，从详情页换封面就会又悄悄留下一份几十 MB。
+                    // 成品图不涉及拼图模式（savesPatternSource == false），不显示。
+                    if savesPatternSource, displayImage != nil {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Toggle(isOn: $keepPatternSource) {
+                                HStack(spacing: 6) {
+                                    Text("留一份原图给拼图模式")
+                                        .font(.caption)
+                                    if editedImage == nil, let bytes = pickedOriginalData?.count {
+                                        Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
+                                            .font(.caption2.monospacedDigit())
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                            .toggleStyle(.switch)
+                            .tint(Theme.ColorToken.Morandi.mauve)
+
+                            Text(keepPatternSource
+                                 ? "拼图模式要逐格看颜色，得用没压过的原图。存在本机，不占 iCloud，拼完可以删。"
+                                 : "不留。这张就不能进拼图模式了 —— 以后想拼，再去相册选一次这张图就行。")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.horizontal)
+                    }
+
                     // 移除按钮（仅当有当前图片时显示）
                     if currentImage != nil || editedImage != nil {
                         Button {
@@ -967,10 +999,16 @@ struct ProjectImageEditorSheet: View {
                                 return   // 不写库、不放成功反馈、不关闭 sheet
                             }
                             onSave(imageData)
-                            // 原图另存一份，只给拼图模式用；开关关着时 save 内部会直接跳过。
+                            // 原图另存一份，只给拼图模式用。
                             // 放在 onSave 之后：封面存成功才留原图，避免留下对不上号的孤儿文件。
-                            if savesPatternSource, let source = patternSourceData() {
-                                PatternSourceStore.save(source, for: projectId)
+                            if savesPatternSource {
+                                if let source = patternSourceData() {
+                                    PatternSourceStore.save(source, for: projectId)
+                                } else if editedImage != nil || pickedOriginalData != nil {
+                                    // 换了图却选了不留：旧的那份原图是**上一张**图的。留着比没有更糟 ——
+                                    // 拼图模式会拿它当这张图纸的原图，零件框和网格全套在别的图上。
+                                    PatternSourceStore.remove(for: projectId)
+                                }
                             }
                             saveSuccessAt = Date()
                         }
@@ -1061,7 +1099,7 @@ struct ProjectImageEditorSheet: View {
     ///     多零件模式的零件框、格子都是相对封面归一化的，构图一错整片框都会偏。
     /// 两者都没有（用户只是打开 sheet 又保存）→ nil，不写。
     private func patternSourceData() -> Data? {
-        guard PatternSourceStore.isEnabled else { return nil }
+        guard keepPatternSource else { return nil }
         if editedImage == nil, let pickedOriginalData { return pickedOriginalData }
         return PatternSourceStore.lossless(editedImage)
     }

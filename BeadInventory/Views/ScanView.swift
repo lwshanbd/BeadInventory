@@ -62,6 +62,12 @@ struct ScanView: View {
     /// 它和项目封面的取景不一样，而拼图模式所有坐标都是相对封面那张图归一化的，
     /// 拿构图不同的一张图去铺网格，零件框会整片错位。
     @State private var thumbnailWasCropped = false
+    /// 这一张要不要留原图。
+    ///
+    /// **是每张图各自的决定，不是一个全局开关。** 用户一次可能传十张图纸，只有其中
+    /// 两三张会真的进拼图模式去逐格对色号；剩下的留一份几十 MB 的原图纯属白占地方。
+    /// 设置里那个开关只决定这里的**初值**（见 `PatternSourceStore.keepsSourceByDefault`）。
+    @State private var keepPatternSource = PatternSourceStore.keepsSourceByDefault
 
     // 图片固定功能
     @State private var isImagePinned = false         // 是否固定图片在顶部
@@ -139,6 +145,8 @@ struct ScanView: View {
                                     isLoadingImage: $isLoadingImage,
                                     showingCropView: $showingCropView,
                                     isPinned: $isImagePinned,
+                                    keepPatternSource: $keepPatternSource,
+                                    originalByteCount: thumbnailWasCropped ? nil : pickedOriginalData?.count,
                                     hasRecognizedItems: !recognizedItems.isEmpty,
                                     onManualTap: { showingManualEntry = true }
                                 )
@@ -379,6 +387,7 @@ struct ScanView: View {
                     thumbnailImage = image
                     pickedOriginalData = data
                     thumbnailWasCropped = false
+                    keepPatternSource = PatternSourceStore.keepsSourceByDefault
                     isLoadingImage = false
                 }
             } catch {
@@ -414,9 +423,9 @@ struct ScanView: View {
     ///   - 裁过封面   → 原始字节的构图已经不是封面那张了，改存裁完的全分辨率图。
     ///     拼图模式所有几何量都是相对封面归一化的，构图一错整片零件框都会偏。
     ///
-    /// 开关关掉时返回 nil，一个字节都不写（`PatternSourceStore.save` 内部也会再挡一道）。
+    /// 用户在上传那一屏把「留原图」关掉时返回 nil，一个字节都不写。
     private func patternSourceData() -> Data? {
-        guard PatternSourceStore.isEnabled else { return nil }
+        guard keepPatternSource else { return nil }
         if !thumbnailWasCropped, let pickedOriginalData { return pickedOriginalData }
         return PatternSourceStore.lossless(thumbnailImage)
     }
@@ -940,6 +949,9 @@ struct ScanView: View {
         thumbnailImage = nil
         pickedOriginalData = nil
         thumbnailWasCropped = false
+        // 「留不留原图」是**这一张**的决定，不能带到下一张去 —— 上一张不留，
+        // 不代表下一张也不留。回到设置里那个默认值。
+        keepPatternSource = PatternSourceStore.keepsSourceByDefault
         isImagePinned = false
     }
 
@@ -1031,6 +1043,11 @@ struct ImageSelectionSection: View {
     @Binding var isLoadingImage: Bool
     @Binding var showingCropView: Bool
     @Binding var isPinned: Bool
+    /// 这一张要不要留原图（见 ScanView 里同名 State 的注释）
+    @Binding var keepPatternSource: Bool
+    /// 相册那份原始字节有多大。拿不到（拍照、裁过）就是 nil，那时不写数字，
+    /// 免得报一个还没编码出来、多半不准的大小。
+    var originalByteCount: Int?
     var hasRecognizedItems: Bool
     var onManualTap: (() -> Void)? = nil
 
@@ -1086,12 +1103,46 @@ struct ImageSelectionSection: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 }
+
+                keepSourceRow
             } else {
                 // 莫兰迪上传占位区域：虚线圆角 + mauve 图标块 + 三个动作按钮
                 emptyUploadZone
             }
         }
         .padding(.horizontal)
+    }
+
+    /// 「这张要不要留原图」。
+    ///
+    /// 摆在图的正下方，不藏进设置里 —— 十张图纸里往往只有两三张会真的进拼图模式，
+    /// 而一份原图动辄几十 MB。这个判断只有当着这张图的面才做得出来，事后在设置里
+    /// 翻一个全局开关既晚了也不对（那时候十张图已经全留下了）。
+    ///
+    /// 写出实际大小是因为它直接决定用户怎么选：「19.1 MB」和「留一份原图」不是一回事。
+    private var keepSourceRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle(isOn: $keepPatternSource) {
+                HStack(spacing: 6) {
+                    Text("留一份原图给拼图模式")
+                        .font(.caption)
+                    if let bytes = originalByteCount {
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
+                            .font(.caption2.monospacedDigit())
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .toggleStyle(.switch)
+            .tint(Theme.ColorToken.Morandi.mauve)
+
+            Text(keepPatternSource
+                 ? "拼图模式要逐格看颜色，得用没压过的原图。存在本机，不占 iCloud，拼完可以删。"
+                 : "不留。这张就不能进拼图模式了 —— 以后想拼，再去相册选一次这张图就行。")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     @ViewBuilder
