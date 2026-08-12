@@ -14,8 +14,11 @@
 //
 //  几十个零件是从同一张像素画上切下来的，格子多大、格线在哪，全图是同一个答案。
 //  所以这一屏调的**永远是那一张网格**（`PartsGridCalibration`，带全局格线位置），
-//  在哪个零件上调都一样，调完所有零件一起对齐 —— 「换一个看看」是用来验收的，
-//  不是让用户一个一个重调的。
+//  在哪个零件上调都一样，调完所有零件一起对齐。
+//
+//  但「一起对齐」不等于「一眼就能确认」：自动量出来的格距差千分之几，铺到某个零件上
+//  就偏了半格，而偏的是哪几个只有挨个看过去才知道。所以主按钮是「对齐了，看下一个」，
+//  一个零件一个零件地过；不想看完的随时可以「不看了，完成」。
 //
 //  早先格线位置是每个零件自己的 bbox 均分出来的，于是「这个对齐了、换一个又对不上」，
 //  用户得挨个重来。那是错的：bbox 带一圈抗锯齿毛边，每个零件毛边多少不一样。
@@ -274,13 +277,11 @@ struct PartsCellSizeStepView: View {
                             .foregroundColor(Theme.ColorToken.Text.tertiary)
                     }
                     Spacer()
-                    Button {
-                        sampleIndex = (sampleIndex + 1) % max(samples.count, 1)
-                    } label: {
-                        Label("看看别的零件", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.footnote)
-                    }
-                    .disabled(samples.count < 2)
+                    // 还剩几个要看。一个一个过的时候，「还有多少」是唯一会让人
+                    // 愿意继续按下去的信息 —— 不写的话按第三下就开始怀疑没有尽头。
+                    Text("\(sampleIndex + 1) / \(samples.count)")
+                        .font(.footnote.monospacedDigit())
+                        .foregroundColor(Theme.ColorToken.Text.tertiary)
                 }
             }
 
@@ -310,55 +311,88 @@ struct PartsCellSizeStepView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                HStack(spacing: Theme.Spacing.md) {
-                    Text("推网格")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.ColorToken.Text.secondary)
-                    nudgeButton("chevron.left") { nudge(dx: -1, dy: 0) }
-                    nudgeButton("chevron.right") { nudge(dx: 1, dy: 0) }
-                    nudgeButton("chevron.up") { nudge(dx: 0, dy: -1) }
-                    nudgeButton("chevron.down") { nudge(dx: 0, dy: 1) }
-                    Spacer()
-                    Button {
-                        Task { await autoAlign() }
-                    } label: {
-                        Label("自动对齐", systemImage: "wand.and.stars").font(.footnote)
+                HStack(alignment: .top, spacing: Theme.Spacing.lg) {
+                    nudgePad
+                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                        Text("网格线要落在豆子和豆子的缝上。全图共用这一张网格。")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.ColorToken.Text.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: Theme.Spacing.md) {
+                            Button {
+                                Task { await autoAlign() }
+                            } label: {
+                                Label("自动对齐", systemImage: "wand.and.stars").font(.footnote)
+                            }
+                            .disabled(estimating)
+                            Button {
+                                enterPicking()
+                            } label: {
+                                Label("重选格子大小", systemImage: "square.dashed.inset.filled")
+                                    .font(.footnote)
+                            }
+                            .disabled(estimating)
+                        }
                     }
-                    .disabled(estimating)
-                }
-
-                HStack(alignment: .firstTextBaseline) {
-                    Text("网格线要落在豆子和豆子的缝上。全图共用这一张网格，在哪个零件上调都一样。")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.ColorToken.Text.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: Theme.Spacing.sm)
-                    Button {
-                        enterPicking()
-                    } label: {
-                        Label("重选格子大小", systemImage: "square.dashed.inset.filled")
-                            .font(.footnote.weight(.medium))
-                    }
-                    .disabled(estimating)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
             }
 
-            Button(action: onContinue) {
-                Label("对齐了，看每格什么颜色", systemImage: "eyedropper")
+            // 一个零件一个零件地过：主按钮是「这个对了，换下一个」，不是「离开这一屏」。
+            // 自动量出来的网格在个别零件上偏一点是常事，而偏了的那几个只有挨个看过去
+            // 才发现得了 —— 早先主按钮直接跳去判色，用户看完第一个就走了。
+            Button {
+                if isLastSample { onContinue() } else { sampleIndex += 1 }
+            } label: {
+                Label(isLastSample ? "对齐了，看每格什么颜色" : "对齐了，看下一个",
+                      systemImage: isLastSample ? "eyedropper" : "arrow.right")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .disabled(calibration == nil || estimating || picking)
+
+            // 剩下的不想一个个看了，随时能走。最后一个零件上不显示 —— 那时它和上面
+            // 那个按钮是同一件事，摆两个只会让人以为有区别。
+            if !isLastSample {
+                Button("不看了，完成", action: onContinue)
+                    .font(.footnote)
+                    .foregroundColor(Theme.ColorToken.Text.secondary)
+                    .disabled(calibration == nil || estimating || picking)
+            }
         }
         .padding()
         .background(.regularMaterial)
     }
 
+    /// 是不是最后一个要看的零件
+    private var isLastSample: Bool { sampleIndex >= samples.count - 1 }
+
+    /// 方向键摆成十字。原先四个键排成一行，上下左右全靠图标区分 ——
+    /// 想往上推一格得先在四个一模一样的小圆里找哪个是「上」，找到了还按不准。
+    /// 摆成十字之后位置就是含义，手指按哪边网格就往哪边走。
+    private var nudgePad: some View {
+        VStack(spacing: 4) {
+            nudgeButton("chevron.up") { nudge(dx: 0, dy: -1) }
+            HStack(spacing: 4) {
+                nudgeButton("chevron.left") { nudge(dx: -1, dy: 0) }
+                Text("推\n网格")
+                    .font(.caption2)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                    .frame(width: 44, height: 44)
+                nudgeButton("chevron.right") { nudge(dx: 1, dy: 0) }
+            }
+            nudgeButton("chevron.down") { nudge(dx: 0, dy: 1) }
+        }
+    }
+
     private func nudgeButton(_ systemName: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.footnote.weight(.bold))
-                .frame(width: 36, height: 36)
+                .font(.subheadline.weight(.bold))
+                // 44pt 是 HIG 的最小点击目标。原先 36pt 四个挤在一行，实测就是按不准。
+                .frame(width: 44, height: 44)
                 .background(Theme.ColorToken.Surface.elevated)
                 .clipShape(Circle())
         }
