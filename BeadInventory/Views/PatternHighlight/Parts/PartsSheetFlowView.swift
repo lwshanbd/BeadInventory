@@ -55,9 +55,12 @@ struct PartsSheetFlowView: View {
     @State private var emptyHex: String?
     @State private var anyColorHex: String?
 
+    /// 零件摆在拼豆板上的位置。最后一屏的产物。
+    @State private var boards: [PartsBoard] = []
+
     @State private var busy: String?
 
-    enum Step: Hashable { case list, cellSize, baseColor, review }
+    enum Step: Hashable { case list, cellSize, baseColor, review, board }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -97,7 +100,16 @@ struct PartsSheetFlowView: View {
                 // 早先这里是 `if let work { ... }`，work 为 nil 就整页空白，
                 // 用户看到的是一块什么都没有的黑屏，不知道是在转还是坏了。
                 Group {
-                    if let work {
+                    // 拼豆板那屏只用格子数据，不用图 —— 图裁失败也不该把它挡在外面。
+                    if step == .board {
+                        PartsBoardStepView(
+                            parts: parts,
+                            boards: $boards,
+                            colorSystem: project.colorSystem,
+                            onFinish: { save() }
+                        )
+                        .environmentObject(inventoryManager)
+                    } else if let work {
                         switch step {
                         case .list:
                             PartsListStepView(
@@ -136,9 +148,14 @@ struct PartsSheetFlowView: View {
                                 parts: $parts,
                                 colorSystem: project.colorSystem,
                                 legendCounts: legendCounts,
-                                onFinish: { save() }
+                                onFinish: {
+                                    persist()
+                                    path = [.list, .cellSize, .baseColor, .review, .board]
+                                }
                             )
                             .environmentObject(inventoryManager)
+                        case .board:
+                            EmptyView()   // 上面已经拦掉了
                         }
                     } else {
                         ProgressView("正在准备图纸…")
@@ -194,6 +211,7 @@ struct PartsSheetFlowView: View {
             self.anyColorCode = saved.anyColorCode
             self.emptyHex = saved.emptyHex
             self.anyColorHex = saved.anyColorHex
+            self.boards = saved.boards ?? []
         }
         self.didLoadOnce = true
 
@@ -202,10 +220,17 @@ struct PartsSheetFlowView: View {
         // 之前只认「拆过零件 → 回到清单」这一档，于是判完色、改完色号退出去再进来，
         // 落点还是零件清单 —— 而从清单往下走会重新判一遍色，用户改过的色号全被盖掉。
         // 他看到的就是「填好的颜色不见了」。判过色的（格子里有内容）直接回到核对页。
+        //
+        // 已经开始摆板子的，直接回到板子那屏 —— 那时候用户是真拿着豆子在拼，
+        // 每次进来还要从核对颜色再点一下过去，纯属白点。
         if let saved, !saved.parts.isEmpty, low != nil {
-            self.path = saved.parts.contains(where: \.hasCells)
-                ? [.list, .cellSize, .baseColor, .review]
-                : [.list]
+            if !(saved.boards ?? []).isEmpty {
+                self.path = [.list, .cellSize, .baseColor, .review, .board]
+            } else {
+                self.path = saved.parts.contains(where: \.hasCells)
+                    ? [.list, .cellSize, .baseColor, .review]
+                    : [.list]
+            }
         }
         // 高清版在后台换上去，换好之后界面自己刷新，用户不用等
         await prepareWorkImage()
@@ -374,7 +399,8 @@ struct PartsSheetFlowView: View {
             calibration: calibration,
             anyColorCode: anyColorCode,
             emptyHex: emptyHex,
-            anyColorHex: anyColorHex
+            anyColorHex: anyColorHex,
+            boards: boards.isEmpty ? nil : boards
         )
         inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet)
     }

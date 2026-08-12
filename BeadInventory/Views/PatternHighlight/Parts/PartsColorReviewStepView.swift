@@ -345,7 +345,8 @@ struct PartsColorReviewStepView: View {
             .disabled(confirmed.contains(groupKey(selectedGroup)) && unconfirmed.isEmpty)
 
             Button(action: onFinish) {
-                Label("完成 · 一共 \(totalBeads) 颗", systemImage: "checkmark").frame(maxWidth: .infinity)
+                Label("去摆拼豆板 · 一共 \(totalBeads) 颗", systemImage: "square.grid.3x3")
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
         }

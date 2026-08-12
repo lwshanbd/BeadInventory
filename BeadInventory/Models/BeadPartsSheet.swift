@@ -286,6 +286,12 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
     /// 用户在图上指认的**任意色**（`RRGGBB`）。这个猜不出来 ——
     /// 它在图上就是一种普通豆子，「代表任意色」只写在色号表那一行字里。
     var anyColorHex: String?
+    /// 零件摆在拼豆板上的位置。最后一步的产物，之前的步骤都是 nil。
+    ///
+    /// 刻意用 Optional 而不是 `[PartsBoard] = []`：合成的 `init(from:)` 不认
+    /// 属性默认值，缺字段一律抛错 —— 那样所有存量图纸一进来就解不出来。
+    /// Optional 缺字段解成 nil，老数据照常打得开。
+    var boards: [PartsBoard]?
     var lastUpdatedAt: Date
 
     init(
@@ -298,6 +304,7 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
         anyColorCode: String? = nil,
         emptyHex: String? = nil,
         anyColorHex: String? = nil,
+        boards: [PartsBoard]? = nil,
         lastUpdatedAt: Date = Date()
     ) {
         self.roi = roi
@@ -309,6 +316,7 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
         self.anyColorCode = anyColorCode
         self.emptyHex = emptyHex
         self.anyColorHex = anyColorHex
+        self.boards = boards
         self.lastUpdatedAt = lastUpdatedAt
     }
 

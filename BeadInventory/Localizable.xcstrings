@@ -11566,6 +11566,316 @@
         }
       }
     },
+    "摆到拼豆板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lay out on boards"
+          }
+        }
+      }
+    },
+    "重新排一遍？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lay everything out again?"
+          }
+        }
+      }
+    },
+    "重新排" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lay out again"
+          }
+        }
+      }
+    },
+    "会按 %@ 的板子重新摆一遍，你手动挪过的位置就没了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Everything will be laid out again on %@ boards. Any pieces you moved by hand will be reset."
+          }
+        }
+      }
+    },
+    "加一块" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add board"
+          }
+        }
+      }
+    },
+    "%@ · 摆了 %lld 个零件 · %lld 颗豆子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · %lld pieces · %lld beads"
+          }
+        }
+      }
+    },
+    "板 %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Board %lld"
+          }
+        }
+      }
+    },
+    "全部重排成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lay out again as"
+          }
+        }
+      }
+    },
+    "把这块板清空" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear this board"
+          }
+        }
+      }
+    },
+    "删掉这块空板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this empty board"
+          }
+        }
+      }
+    },
+    "还没有板子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No boards yet"
+          }
+        }
+      }
+    },
+    "上面「加一块」挑一个尺寸。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap “Add board” above and pick a size."
+          }
+        }
+      }
+    },
+    "转 90°" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotate 90°"
+          }
+        }
+      }
+    },
+    "拿下来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take off"
+          }
+        }
+      }
+    },
+    "零件都摆上去了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every piece is on a board"
+          }
+        }
+      }
+    },
+    "还有 %lld 个没摆" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pieces left to place"
+          }
+        }
+      }
+    },
+    "自动排" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-arrange"
+          }
+        }
+      }
+    },
+    "拼完这块板可以在上面切到下一块。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When this board is done, switch to the next one above."
+          }
+        }
+      }
+    },
+    "只亮着「%@」，再点一下取消" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Showing “%@” only — tap again to clear"
+          }
+        }
+      }
+    },
+    "点一个颜色，板上只留它是亮的" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap a color to light up only its beads"
+          }
+        }
+      }
+    },
+    "这块板还什么都没摆。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing on this board yet."
+          }
+        }
+      }
+    },
+    "有 %lld 个零件比板子还大，换块大的试试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pieces are bigger than the board — try a larger one"
+          }
+        }
+      }
+    },
+    "排好了，一共 %lld 块板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done — %lld boards"
+          }
+        }
+      }
+    },
+    "又摆上去 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld more pieces placed"
+          }
+        }
+      }
+    },
+    "这些零件比板子还大，摆不进去" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These pieces are bigger than the board"
+          }
+        }
+      }
+    },
+    "这块板放不下了，新开了一块" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This board is full — started a new one"
+          }
+        }
+      }
+    },
+    "这个零件比板子还大，换块大的试试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This piece is bigger than the board — try a larger one"
+          }
+        }
+      }
+    },
+    "原地转不开，挪到旁边空地了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No room to rotate in place — moved to a free spot"
+          }
+        }
+      }
+    },
+    "转过来就放不下了，先挪开点别的" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It won’t fit rotated — move something else out of the way first"
+          }
+        }
+      }
+    },
+    "这儿放不下：零件之间要空一格，烫的时候才不会粘住" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doesn’t fit here: pieces need one empty cell between them so they don’t fuse when ironed"
+          }
+        }
+      }
+    },
+    "去摆拼豆板 · 一共 %lld 颗" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lay out on boards · %lld beads total"
+          }
+        }
+      }
+    },
     "零件清单" : {
       "localizations" : {
         "en" : {
