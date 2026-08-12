@@ -121,6 +121,9 @@ class BackupManager {
 
     @MainActor private func createBackupData(from manager: InventoryManager) -> [String: Any] {
         var data: [String: Any] = [:]
+        /// 图纸标定 / 多零件进度这次没读出来的项目。这些项目在备份里既没写数据也没写
+        /// `*Provided`，恢复时不会动 store 上的现值 —— 但备份本身是不全的，得留个痕迹。
+        var skippedBlobProjects: Set<UUID> = []
 
         // 元数据
         data["backupDate"] = ISO8601DateFormatter().string(from: Date())
@@ -196,13 +199,30 @@ class BackupManager {
             // 拼豆板摆位全没了，只剩一张图。这两条都用跟 displayThumbnail 同型的
             // `*Provided` 标志，老备份没这个字段 → restore 不动 store 上的现有值。
             // 存原始字节（不解码再编码）：解不出来的数据不能在备份里被静默换成"没有"。
-            projectData["patternGridProvided"] = true
-            if let patternGridData = manager.fetchProjectPatternGridData(for: project.id) {
-                projectData["patternGrid"] = patternGridData.base64EncodedString()
+            // `*Provided` 必须跟着**取成功了**走，不能写死 true。
+            //
+            // 这两个取数函数对「这个项目确实没有」和「fetch 抛了 / 没有 context /
+            // 本地兜底模式」原来返回同一个 nil。写死 true 的话，一次瞬时读失败会在备份里
+            // 变成一句「这个项目明确没有网格 / 没有零件数据」—— 恢复端照着这句话
+            // 把用户现有的四角标定和多零件进度**主动清掉**，而备份文件看上去完好无损。
+            // 读不出来就两个键都不写，恢复端那条「老备份不动 store 现值」的分支正好接住。
+            switch manager.fetchProjectPatternGridDataResult(for: project.id) {
+            case .success(let patternGridData):
+                projectData["patternGridProvided"] = true
+                if let patternGridData {
+                    projectData["patternGrid"] = patternGridData.base64EncodedString()
+                }
+            case .failure:
+                skippedBlobProjects.insert(project.id)
             }
-            projectData["partsSheetProvided"] = true
-            if let partsSheetData = manager.fetchProjectPartsSheetData(for: project.id) {
-                projectData["partsSheet"] = partsSheetData.base64EncodedString()
+            switch manager.fetchProjectPartsSheetDataResult(for: project.id) {
+            case .success(let partsSheetData):
+                projectData["partsSheetProvided"] = true
+                if let partsSheetData {
+                    projectData["partsSheet"] = partsSheetData.base64EncodedString()
+                }
+            case .failure:
+                skippedBlobProjects.insert(project.id)
             }
             projectData["beadUsage"] = project.beadUsage.map { usage in
                 [
@@ -260,6 +280,12 @@ class BackupManager {
             "customColorsCount": manager.customColors.count,
             "purchaseRecordsCount": manager.purchaseRecords.count
         ]
+
+        if !skippedBlobProjects.isEmpty {
+            AppLogger.shared.warning("BackupManager", "backup_blobs_unreadable", metadata: [
+                "projects": skippedBlobProjects.count
+            ])
+        }
 
         return data
     }

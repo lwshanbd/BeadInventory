@@ -12046,6 +12046,56 @@
         }
       }
     },
+    "项目回来了，但它的多零件进度没能一起还原。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The project is back, but its multi-piece progress couldn’t be restored with it."
+          }
+        }
+      }
+    },
+    "项目回来了，但其中 %lld 个项目的多零件进度没能一起还原。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The projects are back, but %lld of them lost their multi-piece progress."
+          }
+        }
+      }
+    },
+    "计划回来了，但其中 %lld 个项目的多零件进度没能一起还原。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The plan is back, but %lld of its projects lost their multi-piece progress."
+          }
+        }
+      }
+    },
+    "这块范围里没找到零件。把框挪到有零件的那一片再试一次 —— 原来的零件还留着。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No pieces were found in this region. Move the box over the pieces and try again — your existing pieces are still here."
+          }
+        }
+      }
+    },
+    "会按现在圈的范围重找一遍零件。已经找好的零件框、量好的格子、判好的颜色、摆好的拼豆板都跟着作废，要从头再走一遍。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The pieces will be found again using the region you’ve outlined now. The piece boxes you’ve adjusted, the cell size, the colors, and the board layout all go with them — you’d start over from the beginning."
+          }
+        }
+      }
+    },
     "零件清单" : {
       "localizations" : {
         "en" : {

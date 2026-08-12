@@ -417,6 +417,12 @@ struct HistoryView: View {
         switch historyManager.revert(record.id) {
         case .success:
             revertSuccessAt = Date()
+        case .partial(let warning):
+            // 主体撤回成功了，缺的那部分如实说 —— 不能报「撤回失败」，
+            // 那会让用户再点一次，而项目已经回来了（见 RevertOutcome.partial）。
+            revertSuccessAt = Date()
+            revertErrorMessage = warning
+            showingRevertError = true
         case .snapshotLoadFailed:
             // 可重试的瞬时失败：明确区分于「永久不可恢复」，引导用户重试。
             revertErrorMessage = "快照加载失败，请稍后重试"
@@ -437,7 +443,9 @@ struct HistoryView: View {
         var failureCount = 0
         for record in toRevert {
             switch historyManager.revert(record.id) {
-            case .success:
+            case .success, .partial:
+                // partial 也是撤回成功（记录已消费、项目已回来），只是有东西没跟上。
+                // 批量场景下逐条弹窗没有意义，单条撤回那条路会说清楚。
                 successCount += 1
             case .failed, .snapshotLoadFailed:
                 failureCount += 1

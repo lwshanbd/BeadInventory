@@ -3518,9 +3518,23 @@ class InventoryManager: ObservableObject {
             }
 
             saveData()
-            // 行已经插进去了，这时候才能补写多零件图纸
+            // 行已经插进去了，这时候才能补写多零件图纸。
+            // 写不进去不能判成「撤回失败」—— 项目这时已经建回去了，判失败会让历史记录
+            // 留着被再点一次，而 addProject 不去重（见 RevertOutcome.partial）。
+            // 只能如实补一句说明。
+            var partsRestoreFailures = 0
             for entry in recreatedPartsSheets {
-                _setProjectBlobsDirectly(projectId: entry.id, partsSheetData: .some(entry.data))
+                if !_setProjectBlobsDirectly(projectId: entry.id, partsSheetData: .some(entry.data)) {
+                    partsRestoreFailures += 1
+                }
+            }
+            if partsRestoreFailures > 0 {
+                logError("merge_undo_parts_sheet_restore_failed", metadata: [
+                    "projects": partsRestoreFailures
+                ])
+                historyManager.noteRevertWarning(
+                    String(localized: "项目回来了，但其中 \(partsRestoreFailures) 个项目的多零件进度没能一起还原。")
+                )
             }
             // 重建项目带 blob 副本残留在 manager.projects 里；持久化后 strip 回 metadata-only，
             // 同 addProject / duplicate 的语义，避免内存峰值堆积。
@@ -4008,16 +4022,22 @@ class InventoryManager: ObservableObject {
         if sourceGridData != nil { projectIDsWithPatternGrid.insert(newId) }
         if sourceDisplay != nil { projectIDsWithDisplayThumbnail.insert(newId) }
         // partsSheetData 走不了 SDProjectRecord(from:)，落地后单独补写
-        if let sourcePartsData {
-            _setProjectBlobsDirectly(projectId: newId, partsSheetData: .some(sourcePartsData))
+        if let sourcePartsData,
+           !_setProjectBlobsDirectly(projectId: newId, partsSheetData: .some(sourcePartsData)) {
+            // 副本会少掉多零件进度。源项目原封不动，用户重复制一次即可，
+            // 所以只留日志不打扰他 —— 但不能一声不响。
+            logError("duplicate_parts_sheet_copy_failed", metadata: ["projectId": newId.uuidString])
         }
         stripBlobFromInMemoryProject(newId)
         for child in childCopies {
             if child.thumbnail != nil { projectIDsWithThumbnail.insert(child.record.id) }
             if child.gridData != nil { projectIDsWithPatternGrid.insert(child.record.id) }
             if child.displayThumbnail != nil { projectIDsWithDisplayThumbnail.insert(child.record.id) }
-            if let childPartsData = child.partsData {
-                _setProjectBlobsDirectly(projectId: child.record.id, partsSheetData: .some(childPartsData))
+            if let childPartsData = child.partsData,
+               !_setProjectBlobsDirectly(projectId: child.record.id, partsSheetData: .some(childPartsData)) {
+                logError("duplicate_parts_sheet_copy_failed", metadata: [
+                    "projectId": child.record.id.uuidString
+                ])
             }
             stripBlobFromInMemoryProject(child.record.id)
         }
@@ -4127,16 +4147,22 @@ class InventoryManager: ObservableObject {
         if sourceThumbnail != nil { projectIDsWithThumbnail.insert(newId) }
         if sourceGridData != nil { projectIDsWithPatternGrid.insert(newId) }
         if sourceDisplay != nil { projectIDsWithDisplayThumbnail.insert(newId) }
-        if let sourcePartsData {
-            _setProjectBlobsDirectly(projectId: newId, partsSheetData: .some(sourcePartsData))
+        if let sourcePartsData,
+           !_setProjectBlobsDirectly(projectId: newId, partsSheetData: .some(sourcePartsData)) {
+            // 副本会少掉多零件进度。源项目原封不动，用户重复制一次即可，
+            // 所以只留日志不打扰他 —— 但不能一声不响。
+            logError("duplicate_parts_sheet_copy_failed", metadata: ["projectId": newId.uuidString])
         }
         stripBlobFromInMemoryProject(newId)
         for child in childCopies {
             if child.thumbnail != nil { projectIDsWithThumbnail.insert(child.record.id) }
             if child.gridData != nil { projectIDsWithPatternGrid.insert(child.record.id) }
             if child.displayThumbnail != nil { projectIDsWithDisplayThumbnail.insert(child.record.id) }
-            if let childPartsData = child.partsData {
-                _setProjectBlobsDirectly(projectId: child.record.id, partsSheetData: .some(childPartsData))
+            if let childPartsData = child.partsData,
+               !_setProjectBlobsDirectly(projectId: child.record.id, partsSheetData: .some(childPartsData)) {
+                logError("duplicate_parts_sheet_copy_failed", metadata: [
+                    "projectId": child.record.id.uuidString
+                ])
             }
             stripBlobFromInMemoryProject(child.record.id)
         }
@@ -4293,14 +4319,23 @@ class InventoryManager: ObservableObject {
         }
     }
 
-    /// 同步取单个项目的 patternGridData **原始字节**（不解码）。
-    /// 备份导出走这里：解码再编码等于把一份解不出来的网格静默换成"这个项目没有网格"，
-    /// 备份必须原样搬字节。
+    /// 取单列 blob 时「读不出来」的原因。
+    ///
+    /// 存在的理由只有一个：**「读失败」和「这个项目本来就没有」不能混成同一个 nil**。
+    /// 混了之后，备份导出会把一次瞬时读失败写成「这个项目明确没有网格」，
+    /// 恢复端照着这句话把用户现有的标定清掉 —— 备份文件看上去还是完整的。
+    enum BlobFetchFailure: Error {
+        case noContext
+        case fetchFailed(Error)
+    }
+
+    /// 同步取单个项目的 patternGridData **原始字节**（不解码），并区分读失败与真的没有。
+    /// 备份导出必须走这个版本；解码再编码等于把一份解不出来的网格静默换成「这个项目没有网格」。
     /// **round-10 review I1**：`propertiesToFetch = [\.patternGridData]` 限定单列。
-    func fetchProjectPatternGridData(for projectId: UUID) -> Data? {
+    func fetchProjectPatternGridDataResult(for projectId: UUID) -> Result<Data?, BlobFetchFailure> {
         guard let context = modelContext else {
             logError("fetch_pattern_grid_no_context", metadata: ["projectId": projectId.uuidString])
-            return nil
+            return .failure(.noContext)
         }
         var descriptor = FetchDescriptor<SDProjectRecord>(
             predicate: #Predicate { $0.id == projectId }
@@ -4308,14 +4343,19 @@ class InventoryManager: ObservableObject {
         descriptor.fetchLimit = 1
         descriptor.propertiesToFetch = [\.patternGridData]
         do {
-            return try context.fetch(descriptor).first?.patternGridData
+            return .success(try context.fetch(descriptor).first?.patternGridData)
         } catch {
             logError("fetch_pattern_grid_failed", metadata: [
                 "projectId": projectId.uuidString,
                 "error": "\(error)"
             ])
-            return nil
+            return .failure(.fetchFailed(error))
         }
+    }
+
+    /// 只关心「有没有」的调用方用这个。**要往备份 / 快照里写的一律用 `...Result` 版**。
+    func fetchProjectPatternGridData(for projectId: UUID) -> Data? {
+        try? fetchProjectPatternGridDataResult(for: projectId).get()
     }
 
     /// 同步取单个项目的 BeadPatternGrid（拼图网格）。错误处理同上。
@@ -4323,13 +4363,13 @@ class InventoryManager: ObservableObject {
         SDProjectRecord.decodePatternGrid(fetchProjectPatternGridData(for: projectId), projectId: projectId)
     }
 
-    /// 同步取单个项目的 partsSheetData **原始字节**（不解码）。理由同
-    /// `fetchProjectPatternGridData` —— 备份导出要原样搬字节。
-    /// `propertiesToFetch` 限定单列的理由同上：不限定就会把同一行的原图 blob 一并物化。
-    func fetchProjectPartsSheetData(for projectId: UUID) -> Data? {
+    /// 同步取单个项目的 partsSheetData **原始字节**（不解码），并区分读失败与真的没有。
+    /// 理由同 `fetchProjectPatternGridDataResult`。
+    /// `propertiesToFetch` 限定单列的理由：不限定就会把同一行的原图 blob 一并物化。
+    func fetchProjectPartsSheetDataResult(for projectId: UUID) -> Result<Data?, BlobFetchFailure> {
         guard let context = modelContext else {
             logError("fetch_parts_sheet_no_context", metadata: ["projectId": projectId.uuidString])
-            return nil
+            return .failure(.noContext)
         }
         var descriptor = FetchDescriptor<SDProjectRecord>(
             predicate: #Predicate { $0.id == projectId }
@@ -4337,14 +4377,29 @@ class InventoryManager: ObservableObject {
         descriptor.fetchLimit = 1
         descriptor.propertiesToFetch = [\.partsSheetData]
         do {
-            return try context.fetch(descriptor).first?.partsSheetData
+            return .success(try context.fetch(descriptor).first?.partsSheetData)
         } catch {
             logError("fetch_parts_sheet_failed", metadata: [
                 "projectId": projectId.uuidString,
                 "error": "\(error)"
             ])
-            return nil
+            return .failure(.fetchFailed(error))
         }
+    }
+
+    /// 只关心「有没有」的调用方用这个。**要往备份 / 快照里写的一律用 `...Result` 版**。
+    func fetchProjectPartsSheetData(for projectId: UUID) -> Data? {
+        try? fetchProjectPartsSheetDataResult(for: projectId).get()
+    }
+
+    /// 把一份 partsSheet 的**原始字节**直接写回某个项目。
+    ///
+    /// 撤销删除时用：字节是从快照里原样搬过来的，解码再编码会把本版本不认识的字段
+    /// 悄悄抹掉（快照可能是别的设备用新版本写的），而且解码失败会让一份完好的数据
+    /// 整个被丢弃。备份恢复和复制项目走的也是搬字节这条路，这里保持一致。
+    @discardableResult
+    func restoreProjectPartsSheetData(_ projectId: UUID, data: Data) -> Bool {
+        _setProjectBlobsDirectly(projectId: projectId, partsSheetData: .some(data))
     }
 
     /// 同步取单个项目的多零件图纸数据。

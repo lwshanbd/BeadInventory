@@ -72,18 +72,51 @@ struct PartsSheetFlowView: View {
     /// 当代理判断「有没有东西要存」—— 用户在清单页把零件全删光恰好也是空，
     /// 那次删除于是静默地存不进去，下次进来零件原封不动全回来了。
     @State private var dirty = false
-    /// 上一次 `persist()` 没写进去。写不进去必须让用户看见 —— 他手上这些东西只活在内存里。
+    /// 上一次 `persist()` 没写进去。只用来拦住「关闭 / 完成」，**不驱动弹窗**（弹窗见 `prompt`）。
     @State private var saveFailed = false
-    /// 这个项目存过图纸数据，但这次读不出来。此时**禁止覆写**，除非用户明说要重做。
-    @State private var loadFailed = false
-    /// 「重新找零件会把已有的成果洗掉」的确认。
-    @State private var confirmRedetect = false
-    /// 判色之后要跟用户说的一句话（有零件没看成）。nil = 没什么要说的。
-    @State private var classifyNote: String?
+    /// 库里那份读不出来 → **禁止覆写**，直到用户明说要重做。
+    ///
+    /// 刻意跟 `prompt` 分开：它是「能不能写」的开关，不是一句提示。早先它同时充当
+    /// alert 的 `isPresented`，于是「重新做一遍」那个按钮体是空的 `{}` —— 解锁靠的是
+    /// 关闭 alert 的副作用，一旦弹窗改成别的形式它就真成了空按钮。
+    @State private var overwriteBlocked = false
     /// 现在这批零件是按哪块零件区找出来的。用来判断「用户是不是只是退回来看看」。
     @State private var detectedROI: CGRect?
+    /// 工作图换过几次源。补完原图会 +1，让「零件区没变就不用重找」那条判断知道
+    /// 底下的图其实换了 —— 否则用户刚补完原图想重新识别，会被直接送去零件清单。
+    @State private var sourceGeneration = 0
+    /// 这批零件是在第几代工作图上找出来的。
+    @State private var detectedGeneration = 0
 
     enum Step: Hashable { case list, cellSize, baseColor, review, board }
+
+    /// 现在要跟用户说的那一句话。
+    ///
+    /// 四个弹窗平铺在同一个 view 上时，`runClassification` 能在同一轮里置起两个，
+    /// SwiftUI 只 present 一个、另一个的标志停在 true 却没有界面 —— 要是被吞的是
+    /// 「没存上」，`关闭` 和 `完成` 都会因为它停在 true 而**没反应也没有任何解释**。
+    /// 收成一个值之后，「同时只有一句话」变成类型层面的事实。
+    private enum Prompt: Identifiable {
+        /// 存不进去。手上这些东西只活在内存里，得拦住他别关。
+        case saveFailed
+        /// 库里有东西但打不开。接着做等于拿新的盖掉旧的，要他自己点头。
+        case loadFailed
+        /// 重新找零件会洗掉已有的成果。
+        case confirmRedetect
+        /// 一句说明（判色有零件没看成 / 什么都没找到）。
+        case note(String)
+
+        var id: String {
+            switch self {
+            case .saveFailed: return "save"
+            case .loadFailed: return "load"
+            case .confirmRedetect: return "redetect"
+            case .note(let text): return "note:\(text)"
+            }
+        }
+    }
+
+    @State private var prompt: Prompt?
 
     /// 把一个交给子屏的 binding 包成「改了就记一笔」。
     private func tracked<Value>(_ binding: Binding<Value>) -> Binding<Value> {
@@ -120,8 +153,7 @@ struct PartsSheetFlowView: View {
                     // 关掉就是关掉，不是丢掉 —— 每一步的结果都已经存过了（见 persist）。
                     // 唯一的例外是这次真的没存进去：那就先别关，alert 会告诉他为什么。
                     Button("关闭") {
-                        persist()
-                        if !saveFailed { dismiss() }
+                        if persist() { dismiss() }
                     }
                 }
             }
@@ -213,35 +245,41 @@ struct PartsSheetFlowView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { persist() }
         }
-        // 存不上必须让他看见。五十几个零件框、几万格色号、拼豆板摆位，
-        // 存不进去就只活在内存里，而屏幕上看起来跟存好了一模一样。
-        .alert("这一步没存上", isPresented: $saveFailed) {
-            Button("知道了", role: .cancel) {}
-            Button("仍然关闭", role: .destructive) { dismiss() }
-        } message: {
-            Text("刚做的这些还没写进项目里，现在关掉就没了。先别关，接着往下走每一步都会再存一次。")
-        }
-        // 有进度但打不开：这时候接着往下做等于拿新结果盖掉旧的那份，得他自己点头。
-        .alert("之前的进度这次打不开", isPresented: $loadFailed) {
-            Button("先退出去", role: .cancel) { dismiss() }
-            Button("重新做一遍", role: .destructive) {}
-        } message: {
-            Text("这个项目上次做的零件数据这次读不出来。建议先退出去，过一会儿再进来试试；现在就重做的话，原来那份会被这次的结果盖掉。")
-        }
-        .alert("重新找一遍零件？", isPresented: $confirmRedetect) {
-            Button("取消", role: .cancel) {}
-            Button("重新找", role: .destructive) { runDetection() }
-        } message: {
-            Text("会按现在圈的范围重找一遍零件。已经量好的格子、判好的颜色、摆好的拼豆板都跟着作废，要从量格子重新走一遍。")
-        }
-        .alert("有零件没看成", isPresented: Binding(
-            get: { classifyNote != nil },
-            set: { if !$0 { classifyNote = nil } }
-        )) {
-            Button("回零件清单") { path = [.list] }
-            Button("知道了", role: .cancel) {}
-        } message: {
-            Text(classifyNote ?? "")
+        // 一个弹窗口子，四种话轮流用它。见 Prompt 的注释。
+        .alert(item: $prompt) { prompt in
+            switch prompt {
+            // 存不上必须让他看见。五十几个零件框、几万格色号、拼豆板摆位，
+            // 存不进去就只活在内存里，而屏幕上看起来跟存好了一模一样。
+            case .saveFailed:
+                return Alert(
+                    title: Text("这一步没存上"),
+                    message: Text("刚做的这些还没写进项目里，现在关掉就没了。先别关，接着往下走每一步都会再存一次。"),
+                    primaryButton: .cancel(Text("知道了")),
+                    secondaryButton: .destructive(Text("仍然关闭")) { dismiss() }
+                )
+            // 有进度但打不开：接着做等于拿新结果盖掉旧的那份，得他自己点头。
+            case .loadFailed:
+                return Alert(
+                    title: Text("之前的进度这次打不开"),
+                    message: Text("这个项目上次做的零件数据这次读不出来。建议先退出去，过一会儿再进来试试；现在就重做的话，原来那份会被这次的结果盖掉。"),
+                    primaryButton: .cancel(Text("先退出去")) { dismiss() },
+                    secondaryButton: .destructive(Text("重新做一遍")) { overwriteBlocked = false }
+                )
+            case .confirmRedetect:
+                return Alert(
+                    title: Text("重新找一遍零件？"),
+                    message: Text("会按现在圈的范围重找一遍零件。已经找好的零件框、量好的格子、判好的颜色、摆好的拼豆板都跟着作废，要从头再走一遍。"),
+                    primaryButton: .cancel(Text("取消")),
+                    secondaryButton: .destructive(Text("重新找")) { runDetection() }
+                )
+            case .note(let text):
+                return Alert(
+                    title: Text("有零件没看成"),
+                    message: Text(text),
+                    primaryButton: .default(Text("回零件清单")) { path = [.list] },
+                    secondaryButton: .cancel(Text("知道了"))
+                )
+            }
         }
     }
 
@@ -262,7 +300,9 @@ struct PartsSheetFlowView: View {
         let low = await Task.detached(priority: .userInitiated) {
             bytes.flatMap { ImageDownsampler.downsampleToUIImage($0, maxPixelSize: maxPixel) }
         }.value
-        let loaded = await loader?.partsSheet(for: id) ?? .missing
+        // `?? .unreadable` 而不是 `.missing`：loader 为 nil 意味着连 modelContext 都没有，
+        // 那是「我根本没法读你的数据」—— 最不该被当成「这个项目本来就没做过」的情况。
+        let loaded = await loader?.partsSheet(for: id) ?? .unreadable
         guard !Task.isCancelled else { return }
 
         self.overview = low
@@ -275,7 +315,8 @@ struct PartsSheetFlowView: View {
         case .unreadable:
             // 「读不出来」不等于「没做过」。当成没做过的话用户被扔回第一屏，
             // 他以为要重来，一按「开始找零件」就把那份只是暂时打不开的数据永久盖掉。
-            self.loadFailed = true
+            self.overwriteBlocked = true
+            self.prompt = .loadFailed
         case .missing:
             break
         case .loaded(let saved):
@@ -284,6 +325,7 @@ struct PartsSheetFlowView: View {
             self.palette = saved.palette
             self.calibration = saved.calibration
             self.anyColorCode = saved.anyColorCode
+            self.detectedGeneration = sourceGeneration
             self.emptyHex = saved.emptyHex
             self.anyColorHex = saved.anyColorHex
             self.detectedROI = saved.roi
@@ -356,6 +398,9 @@ struct PartsSheetFlowView: View {
     /// 已经裁到高清版的那块区域。用来判断「要不要重裁」，
     /// 不能拿 `work.region` 判 —— 低清兜底版的 region 是整张图，会被误认成没裁过。
     @State private var highResRegion: CGRect?
+    /// 现在这份高清版是拿第几代源裁的。跟 `highResRegion` 一起比，缺一不可 ——
+    /// 用户补了原图之后区域没变但源变了，只比区域会以为「已经是最新的了」。
+    @State private var highResGeneration = -1
     /// 正在进行的那次高清升级。存着它是为了让别人**等得到**它，见 `prepareWorkImage`。
     @State private var upgradeTask: Task<Void, Never>?
 
@@ -373,20 +418,27 @@ struct PartsSheetFlowView: View {
         }).value {
             overview = low
         }
-        highResRegion = nil
+        // 换源用「代」来记，**不能靠清空 highResRegion**：清空之后
+        // `prepareWorkImage` 第一句会去等已经在跑的那次升级，而那次跑完又会把
+        // highResRegion 设回来，紧接着的判断就以为「已经是最新的了」——
+        // 用户刚补的原图于是永远不会被重新裁一次。
+        sourceGeneration += 1
         await prepareWorkImage()
     }
 
-    /// 确保高清工作图是当前零件区的那一版；已经在升级就**等它做完**。
+    /// 确保高清工作图是当前零件区、当前这一代源的那一版；已经在升级就**等它做完**。
     ///
     /// 「已经是最新」和「正在升级」不能共用一个 return：`runDetection` 全靠
     /// `await prepareWorkImage()` 保证检测跑在高清图上。早先合成一个 return 之后，
     /// 用户刚在提示条里补完原图就点「开始找零件」，检测跑的还是 1600px 的兜底版，
     /// 而提示条这时已经消失 —— 他连「是不是没生效」都没法验证。
     private func prepareWorkImage() async {
+        // 判断必须放在等待**之后**：等待期间那次升级会改 highResRegion / Generation。
         if let running = upgradeTask { await running.value }
-        guard highResRegion != roi else { return }
-        let task = Task { await upgradeWorkImage(region: roi) }
+        guard highResRegion != roi || highResGeneration != sourceGeneration else { return }
+        let region = roi
+        let generation = sourceGeneration
+        let task = Task { await upgradeWorkImage(region: region, generation: generation) }
         upgradeTask = task
         await task.value
         if upgradeTask == task { upgradeTask = nil }
@@ -394,7 +446,7 @@ struct PartsSheetFlowView: View {
 
     /// 从原图裁出零件区的高清版，换掉低清兜底版。
     /// 失败就什么都不做 —— 低清版还在，流程照样往下走，只是图糊一点。
-    private func upgradeWorkImage(region: CGRect) async {
+    private func upgradeWorkImage(region: CGRect, generation: Int) async {
         let id = project.id
         let loader = inventoryManager.imageLoader
         // 读盘放后台：原图是几十 MB 的文件，`Data(contentsOf:)` 在主线程上会卡住界面。
@@ -421,6 +473,7 @@ struct PartsSheetFlowView: View {
         }
         self.work = built
         self.highResRegion = region
+        self.highResGeneration = generation
     }
 
     // MARK: - 拆零件
@@ -430,14 +483,22 @@ struct PartsSheetFlowView: View {
     /// 第一屏是从后面任何一屏一路返回就能到的地方，而它唯一的主按钮就是「开始找零件」。
     /// 直接重跑的话，判过色的几万格、摆好的拼豆板一声不响全没了。
     private func startDetection() {
-        // 零件还在、零件区也没动过：他多半只是退回来看一眼框。送回零件清单，别重跑。
-        if !parts.isEmpty, detectedROI == roi {
+        // 零件还在、零件区没动过、底下的图也还是同一张：他多半只是退回来看一眼框。
+        // 送回零件清单，别重跑。
+        //
+        // 「图还是同一张」这条不能漏：用户在这一屏的提示条里补了张原图，正是想在清晰的图上
+        // 重新识别一次，这时候把他直接推去零件清单，他手里还是低清图上找出来的零件，
+        // 而唯一的出路是把框挪一个像素 —— 没人猜得到。
+        if !parts.isEmpty, detectedROI == roi, detectedGeneration == sourceGeneration {
             path = [.list]
             return
         }
-        // 已经有产物了就先问一句，说清楚会丢什么。
-        if parts.contains(where: \.hasCells) || !boards.isEmpty {
-            confirmRedetect = true
+        // 已经有零件了就先问一句，说清楚会丢什么。
+        //
+        // 门槛是「有零件」而不是「判过色」：零件清单页删 / 补 / 合并 / 拆开框，
+        // 在五十几个零件的图纸上就是半小时的活，它一样不能被一次误碰洗掉。
+        if !parts.isEmpty {
+            prompt = .confirmRedetect
             return
         }
         runDetection()
@@ -454,18 +515,34 @@ struct PartsSheetFlowView: View {
             await prepareWorkImage()
             guard let source = work else {
                 busy = nil
+                AppLogger.shared.error("PartsSheet", "detect_without_work_image", metadata: [
+                    "projectId": project.id.uuidString
+                ])
                 return
             }
+            let generation = sourceGeneration
             let detected = await Task.detached(priority: .userInitiated) {
                 PartsDetector.detect(in: source, roi: currentROI, options: PartsDetectionOptions())
             }.value
+            // 一个零件都没找到就**别写回去**。框拖到空白边距上是很容易的事，
+            // 而写回去等于把库里那份（可能是几天的活）换成一张空清单，用户面对的是
+            // 一个空零件清单，没有任何提示，也没有回头路。
+            guard !detected.isEmpty else {
+                self.busy = nil
+                self.prompt = .note(String(
+                    localized: "这块范围里没找到零件。把框挪到有零件的那一片再试一次 —— 原来的零件还留着。"
+                ))
+                return
+            }
             self.parts = detected.map { BeadPart(rowBand: $0.rowBand, bounds: $0.bounds) }
             // 换了零件区就等于换了一张图纸，之前量的格子、判的色、摆好的板子全部作废。
             // 板子必须一起清：placement 指的是旧零件的 id，留着就是一板子孤儿 ——
             // 板上画不出东西，又因为 boards 非空进不了自动排版，那一屏成了死胡同。
             self.calibration = nil
             self.boards = []
+            self.palette = []
             self.detectedROI = currentROI
+            self.detectedGeneration = generation
             self.busy = nil
             self.dirty = true
             self.persist()
@@ -507,19 +584,22 @@ struct PartsSheetFlowView: View {
                 // **不是**「这张图纸上没有豆子」。这时候写回去会把所有零件的格子清成空，
                 // 核对页只会显示「一共 0 颗」，用户完全不知道该改哪儿。
                 if result.unreadableParts == result.parts.count, !result.parts.isEmpty {
-                    self.classifyNote = String(
+                    self.prompt = .note(String(
                         localized: "所有零件的框里都取不到图，一格颜色都没看出来。多半是框圈得太小，回零件清单改一改再来一次。"
-                    )
+                    ))
                     return
                 }
                 self.parts = result.parts
                 self.palette = result.palette
                 self.dirty = true
-                self.persist()
-                if result.unreadableParts > 0 {
-                    self.classifyNote = String(
+                // 存不上会自己弹「这一步没存上」。那句话比「有几个零件没看成」要紧，
+                // 所以只在存住了的前提下才覆盖提示 —— 两句话抢同一个口子时，
+                // 丢掉的必须是次要的那句。
+                let saved = self.persist()
+                if saved, result.unreadableParts > 0 {
+                    self.prompt = .note(String(
                         localized: "有 \(result.unreadableParts) 个零件的框里取不到图，它们的格子是空的。回零件清单看看这几个框是不是太小了。"
-                    )
+                    ))
                 }
                 self.path = [.list, .cellSize, .baseColor, .review]
             }
@@ -533,12 +613,21 @@ struct PartsSheetFlowView: View {
     /// **每走完一步就存一次**，而不是等用户点「完成」。拆五十几个零件、量格子、
     /// 一个色号一个色号地核对，这是个能横跨好几天的活；中途退出去（甚至只是被电话打断）
     /// 就全部作废，没有人受得了。
-    private func persist() {
-        guard dirty else { return }
+    /// - Returns: 这次调用之后，内存里的东西是不是都已经在库里了。
+    ///   **调用方要用返回值判断，不要写完立刻去读 `saveFailed`** ——
+    ///   @State 写完同一轮读回来不保证拿到新值（同一个 PR 里 `DragSession` 就是栽在这上面）。
+    @discardableResult
+    private func persist() -> Bool {
+        guard dirty else { return true }
         // 进来的时候就没读出旧数据：那份字节还在库里，只是这次打不开。
         // 这时候写回去等于拿现在这份（多半是空的）把它永久盖掉。用户点过
-        // 「重新做一遍」就不再拦（loadFailed 那时已经清掉）。
-        guard !loadFailed else { return }
+        // 「重新做一遍」之后 overwriteBlocked 会被显式清掉。
+        guard !overwriteBlocked else {
+            AppLogger.shared.warning("PartsSheet", "persist_blocked_unreadable", metadata: [
+                "projectId": project.id.uuidString
+            ])
+            return false
+        }
         let sheet = BeadPartsSheet(
             roi: roi,
             workingImageSize: work?.image.size ?? .zero,
@@ -551,17 +640,19 @@ struct PartsSheetFlowView: View {
             anyColorHex: anyColorHex,
             boards: boards.isEmpty ? nil : boards
         )
-        if inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet) {
-            dirty = false
-        } else {
+        guard inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet) else {
             // 没写进去。这里绝不能算了 —— 用户手上这些东西全在内存里，
             // 而屏幕上跟存好了长得一模一样，他关掉就再也找不回来。
             saveFailed = true
+            prompt = .saveFailed
+            return false
         }
+        dirty = false
+        saveFailed = false
+        return true
     }
 
     private func save() {
-        persist()
-        if !saveFailed { dismiss() }
+        if persist() { dismiss() }
     }
 }
