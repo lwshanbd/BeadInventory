@@ -931,7 +931,7 @@ struct ProjectImageEditorSheet: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Toggle(isOn: $keepPatternSource) {
                                 HStack(spacing: 6) {
-                                    Text("留一份原图给拼图模式")
+                                    Text("保留原图")
                                         .font(.caption)
                                     if editedImage == nil, let bytes = pickedOriginalData?.count {
                                         Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
@@ -944,8 +944,8 @@ struct ProjectImageEditorSheet: View {
                             .tint(Theme.ColorToken.Morandi.mauve)
 
                             Text(keepPatternSource
-                                 ? "拼图模式要逐格看颜色，得用没压过的原图。存在本机，不占 iCloud，拼完可以删。"
-                                 : "不留。这张就不能进拼图模式了 —— 以后想拼，再去相册选一次这张图就行。")
+                                 ? "拼图模式需要原图才能看清每一格的颜色。原图保存在本机，不占用 iCloud，拼完后可以删除。"
+                                 : "这张图纸将无法使用拼图模式。以后需要时，可以在拼图模式里重新选择原图。")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)

@@ -11918,6 +11918,56 @@
         }
       }
     },
+    "保留原图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep original"
+          }
+        }
+      }
+    },
+    "拼图模式需要原图才能看清每一格的颜色。原图保存在本机，不占用 iCloud，拼完后可以删除。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pattern Mode needs the original to show the color of each cell. It stays on this device, doesn't use iCloud, and can be deleted once you're done."
+          }
+        }
+      }
+    },
+    "这张图纸将无法使用拼图模式。以后需要时，可以在拼图模式里重新选择原图。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pattern Mode won't be available for this pattern. You can pick the original again from Pattern Mode when you need it."
+          }
+        }
+      }
+    },
+    "上传图纸时默认保留原图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep original by default"
+          }
+        }
+      }
+    },
+    "这里设置的是默认值，每张图纸在上传时都可以单独选择是否保留原图。\n原图只用在拼图模式里，用来看清每一格的颜色。列表和详情页仍然用压缩后的图；原图存在本机，不占 iCloud、不进备份。拼完之后可以在「多零件模式」的零件清单页点「拼好了」把它删掉。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is the default; each pattern can keep or skip its original when you upload it.\nOriginals are only used in Pattern Mode, to show the color of each cell. Lists and detail pages still use the compressed image. Originals stay on this device, don't use iCloud, and aren't included in backups. Once a pattern is finished you can remove it from the piece list in Multi-Piece Mode."
+          }
+        }
+      }
+    },
     "零件清单" : {
       "localizations" : {
         "en" : {
