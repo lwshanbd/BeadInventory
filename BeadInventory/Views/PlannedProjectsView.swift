@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import TipKit
 import PhotosUI
 
 struct PlannedProjectsView: View {
@@ -199,7 +198,6 @@ struct PlannedProjectsView: View {
                                 needsCount: needsCount,
                                 readyCount: readyCount
                             )
-                            tipsBlock(planCount: plans.count)
                             // `ForEach` 必须直接是外层 LazyVStack 的 child。之前这里包了一层
                             // 普通 VStack，300 个计划会在第一次打开时全部建卡、同时启动全部
                             // ProjectThumbnailImage 任务；即使图片 I/O 不在主线程，数百次状态
@@ -495,21 +493,6 @@ struct PlannedProjectsView: View {
         .padding(.horizontal, 18)
         .padding(.top, 14)
         .padding(.bottom, 8)
-    }
-
-    // MARK: - Tips Block
-
-    @ViewBuilder
-    private func tipsBlock(planCount: Int) -> some View {
-        VStack(spacing: 8) {
-            if planCount >= 2 {
-                TipView(PlanMergeTip())
-                    .tipBackground(Theme.ColorToken.Surface.elevated)
-            }
-            TipView(ReplenishTip())
-                .tipBackground(Theme.ColorToken.Surface.elevated)
-        }
-        .padding(.horizontal, 18)
     }
 
     // MARK: - Plan List

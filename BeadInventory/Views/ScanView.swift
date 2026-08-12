@@ -8,7 +8,6 @@
 import SwiftUI
 import PhotosUI
 import UIKit
-import TipKit
 
 struct ScanView: View {
     enum Layout {
@@ -123,14 +122,6 @@ struct ScanView: View {
                 GeometryReader { geometry in
                     ScrollView {
                         VStack(spacing: 20) {
-                            TipView(ScanTip())
-                                .tipBackground(Theme.ColorToken.Surface.elevated)
-                                .padding(.horizontal)
-                            if !aiService.isConfigured {
-                                TipView(APISetupTip())
-                                    .tipBackground(Theme.ColorToken.Surface.elevated)
-                                    .padding(.horizontal)
-                            }
                             // 图片选择区域（当未固定时显示）
                             if !isImagePinned {
                                 ImageSelectionSection(
