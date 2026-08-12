@@ -47,7 +47,10 @@ struct PatternSourceBanner: View {
                     if loading {
                         ProgressView()
                     } else {
-                        PhotosPicker(selection: $pickedItem, matching: .images) {
+                        // `.current`：这一整条路的意义就是拿到没被动过的原始字节，
+                        // 默认的 `.automatic` 会把 HEIC 转码成 JPEG，等于白选一次。
+                        PhotosPicker(selection: $pickedItem, matching: .images,
+                                     preferredItemEncoding: .current) {
                             Text("选原图")
                                 .font(.footnote.weight(.medium))
                         }

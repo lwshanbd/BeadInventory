@@ -850,7 +850,10 @@ struct ProjectImageEditorSheet: View {
                     // 相册和拍照按钮
                     HStack(spacing: 12) {
                         // 从相册选择
-                        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        // `.current`：相册存的是什么就给什么字节，别把 HEIC 转码成 JPEG
+                        // （同 ScanView，理由见那边的注释）。
+                        PhotosPicker(selection: $selectedPhotoItem, matching: .images,
+                                     preferredItemEncoding: .current) {
                             HStack {
                                 Image(systemName: "photo.on.rectangle")
                                 Text("相册")
@@ -1060,7 +1063,7 @@ struct ProjectImageEditorSheet: View {
     private func patternSourceData() -> Data? {
         guard PatternSourceStore.isEnabled else { return nil }
         if editedImage == nil, let pickedOriginalData { return pickedOriginalData }
-        return editedImage?.jpegData(compressionQuality: 0.95)
+        return PatternSourceStore.lossless(editedImage)
     }
 
     /// 生成落盘用的图片数据。

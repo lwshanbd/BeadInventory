@@ -426,6 +426,9 @@ struct PartsCellSizeStepView: View {
     private func estimateIfNeeded() async {
         if let calibration, calibration.isUsable, calibration.originX > 0 || calibration.originY > 0 {
             estimating = false
+            // 早先横竖两个方向是分开量的，存下来的可能是个长方形。掰回正方形 ——
+            // 不掰的话用户在这一屏没有任何办法改：把手只能等比缩放，长方形缩放还是长方形。
+            if let fixed = squaredIfNeeded(calibration) { self.calibration = fixed }
             syncFrameToLattice()
             return
         }
@@ -444,12 +447,34 @@ struct PartsCellSizeStepView: View {
 
     private func fallbackCalibration() -> PartsGridCalibration? {
         guard let biggest = samples.first else { return nil }
+        let cell = Double(biggest.bounds.width) / 12
         return PartsGridCalibration(
-            cellWidth: Double(biggest.bounds.width) / 12,
-            cellHeight: Double(biggest.bounds.height) / 12,
+            cellWidth: cell,
+            cellHeight: cell * sheetAspect,
             originX: Double(biggest.bounds.minX),
             originY: Double(biggest.bounds.minY)
         )
+    }
+
+    /// 图纸整张的**像素**宽高比。
+    ///
+    /// 归一化坐标把宽和高各自摊到 0~1，所以图纸不是正方形时，同一个正方形在两个方向上的
+    /// 归一化长度并不相等：一格是正方形 ⟺ `cellHeight == cellWidth * sheetAspect`。
+    private var sheetAspect: Double {
+        guard work.region.width > 0, work.region.height > 0 else { return 1 }
+        let w = Double(work.image.size.width) / Double(work.region.width)
+        let h = Double(work.image.size.height) / Double(work.region.height)
+        guard w > 0, h > 0 else { return 1 }
+        return w / h
+    }
+
+    /// 已经是正方形就返回 nil（不白改一次、不白存一次），否则以宽为准掰成正方形。
+    private func squaredIfNeeded(_ c: PartsGridCalibration) -> PartsGridCalibration? {
+        let square = c.cellWidth * sheetAspect
+        guard square > 0, abs(c.cellHeight - square) > square * 0.005 else { return nil }
+        var fixed = c
+        fixed.cellHeight = square
+        return fixed
     }
 
     private func loadSample() async {

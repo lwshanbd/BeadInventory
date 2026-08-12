@@ -3893,6 +3893,11 @@ class InventoryManager: ObservableObject {
             partsSheetDataByProjectId: partsSheets
         )
 
+        // 原图副本跟着项目走（同 deleteProject）。漏掉这一句，删掉的每个计划都会在
+        // Application Support 里留一个谁也不会再读的大文件 —— 实测删 3 个计划留下 49 MB。
+        PatternSourceStore.remove(for: projectId)
+        for child in children { PatternSourceStore.remove(for: child.id) }
+
         // 如果是父项目，也删除子项目
         if !children.isEmpty {
             projects.removeAll { $0.parentId == projectId }

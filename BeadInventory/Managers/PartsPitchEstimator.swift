@@ -46,18 +46,17 @@ enum PartsPitchEstimator {
     static func estimateLattice(work: PartsWorkImage, parts: [BeadPart]) -> PartsGridCalibration? {
         guard let bitmap = analysisBitmap(work: work, parts: parts) else { return nil }
         let profiles = gradientProfiles(of: bitmap)
-        guard let px = fundamentalPeriod(profile: profiles.columns),
-              let py = fundamentalPeriod(profile: profiles.rows),
-              let x = refineLattice(profile: profiles.columns, pitch: px, allowPitchDrift: true),
-              let y = refineLattice(profile: profiles.rows, pitch: py, allowPitchDrift: true)
-        else { return nil }
+        // 横竖各量各的会量出 12.3 和 12.9 —— 一个长方形的「格子」。豆子是方的，
+        // 这种结果没有任何意义，而且用户在界面上救不回来（把手只能等比缩放，
+        // 长方形缩放还是长方形）。所以格距**一个数**，两个方向一起定。
+        guard let lattice = sharedLattice(columns: profiles.columns, rows: profiles.rows) else { return nil }
 
         let roi = bitmap.roi
         return PartsGridCalibration(
-            cellWidth: x.pitch / Double(bitmap.width) * Double(roi.width),
-            cellHeight: y.pitch / Double(bitmap.height) * Double(roi.height),
-            originX: Double(roi.minX) + x.phase / Double(bitmap.width) * Double(roi.width),
-            originY: Double(roi.minY) + y.phase / Double(bitmap.height) * Double(roi.height)
+            cellWidth: lattice.pitch / Double(bitmap.width) * Double(roi.width),
+            cellHeight: lattice.pitch / Double(bitmap.height) * Double(roi.height),
+            originX: Double(roi.minX) + lattice.phaseX / Double(bitmap.width) * Double(roi.width),
+            originY: Double(roi.minY) + lattice.phaseY / Double(bitmap.height) * Double(roi.height)
         )
     }
 
@@ -71,12 +70,12 @@ enum PartsPitchEstimator {
         let pitchX = calibration.cellWidth / Double(roi.width) * Double(bitmap.width)
         let pitchY = calibration.cellHeight / Double(roi.height) * Double(bitmap.height)
         let profiles = gradientProfiles(of: bitmap)
-        guard let x = refineLattice(profile: profiles.columns, pitch: pitchX, allowPitchDrift: false),
-              let y = refineLattice(profile: profiles.rows, pitch: pitchY, allowPitchDrift: false)
+        guard let x = refineLattice(profile: profiles.columns, pitch: pitchX),
+              let y = refineLattice(profile: profiles.rows, pitch: pitchY)
         else { return nil }
         return CGPoint(
-            x: Double(roi.minX) + x.phase / Double(bitmap.width) * Double(roi.width),
-            y: Double(roi.minY) + y.phase / Double(bitmap.height) * Double(roi.height)
+            x: Double(roi.minX) + x / Double(bitmap.width) * Double(roi.width),
+            y: Double(roi.minY) + y / Double(bitmap.height) * Double(roi.height)
         )
     }
 
@@ -166,49 +165,68 @@ enum PartsPitchEstimator {
         return Double(lag) + max(-0.5, min(0.5, offset))
     }
 
-    /// 拿一把等距的梳子在曲线上滑，找齿全部压在突变处的那个位置。
+    /// 横竖共用一个格距，各自有各自的相位。
     ///
-    /// - Parameter allowPitchDrift: 是否容许齿距在给定值上下微调。
-    ///   自动量的时候要（自相关只能到零点几像素的精度，而整张图上百格累积下来
-    ///   千分之五的误差就是半格）；用户手拉过大小之后不要 —— 他量的多大就是多大。
-    /// - Returns: 齿距（像素）和相位（第一条线的位置，像素）。
-    private static func refineLattice(
-        profile: [Double], pitch: Double, allowPitchDrift: Bool
-    ) -> (pitch: Double, phase: Double)? {
-        let n = profile.count
-        guard pitch >= 3, Double(n) >= pitch * 4 else { return nil }
-
-        var pitches: [Double] = [pitch]
-        if allowPitchDrift {
-            let step = max(0.02, pitch * 0.002)
-            var p = pitch * 0.97
-            pitches = []
-            while p <= pitch * 1.03 + 1e-9 {
-                pitches.append(p)
-                p += step
-            }
+    /// 候选格距取自两条曲线各自的基本周期（哪条更干净事先不知道，两个都试），
+    /// 每个候选上下微调几个千分点 —— 理由同 `refineLattice(allowPitchDrift:)`。
+    /// 评分是两个方向的和：只有横竖都压在突变处的那个格距才赢得过。
+    private static func sharedLattice(
+        columns: [Double], rows: [Double]
+    ) -> (pitch: Double, phaseX: Double, phaseY: Double)? {
+        var seeds: [Double] = []
+        for seed in [fundamentalPeriod(profile: columns), fundamentalPeriod(profile: rows)].compactMap({ $0 }) {
+            // 两条曲线量出来差不多时只留一个：搜索范围本来就覆盖 ±3%
+            guard !seeds.contains(where: { abs($0 - seed) < $0 * 0.01 }) else { continue }
+            seeds.append(seed)
         }
+        guard !seeds.isEmpty else { return nil }
 
-        var best: (pitch: Double, phase: Double, score: Double)?
-        for candidate in pitches {
-            let lines = Int(Double(n - 1) / candidate)
-            guard lines >= 3 else { continue }
-            var phase = 0.0
-            let phaseStep = max(0.1, candidate / 60)
-            while phase < candidate {
-                var total = 0.0
-                for k in 0...lines {
-                    let x = Int((phase + Double(k) * candidate).rounded())
-                    guard x >= 0, x <= n - 1 else { continue }
-                    let lo = max(0, x - 1), hi = min(n - 1, x + 1)
-                    total += (lo...hi).map { profile[$0] }.max() ?? 0
+        var best: (pitch: Double, phaseX: Double, phaseY: Double, score: Double)?
+        for seed in seeds {
+            let step = max(0.02, seed * 0.002)
+            var pitch = seed * 0.97
+            while pitch <= seed * 1.03 + 1e-9 {
+                defer { pitch += step }
+                guard let x = bestPhase(profile: columns, pitch: pitch),
+                      let y = bestPhase(profile: rows, pitch: pitch) else { continue }
+                let score = x.score + y.score
+                if best == nil || score > best!.score {
+                    best = (pitch, x.phase, y.phase, score)
                 }
-                let score = total / Double(lines + 1)
-                if best == nil || score > best!.score { best = (candidate, phase, score) }
-                phase += phaseStep
             }
         }
         guard let best else { return nil }
-        return (best.pitch, best.phase)
+        return (best.pitch, best.phaseX, best.phaseY)
+    }
+
+    /// 格距不动，只找相位。用户手拉过大小之后按「自动对齐」走这条 —— 他量的多大就是多大。
+    private static func refineLattice(profile: [Double], pitch: Double) -> Double? {
+        bestPhase(profile: profile, pitch: pitch)?.phase
+    }
+
+    /// 拿一把齿距为 `pitch` 的梳子在曲线上滑，找齿全部压在突变处的那个位置。
+    /// - Returns: 相位（第一条线的位置，像素）和它的得分；曲线装不下四格时返回 nil。
+    private static func bestPhase(profile: [Double], pitch: Double) -> (phase: Double, score: Double)? {
+        let n = profile.count
+        guard pitch >= 3, Double(n) >= pitch * 4 else { return nil }
+        let lines = Int(Double(n - 1) / pitch)
+        guard lines >= 3 else { return nil }
+
+        var best: (phase: Double, score: Double)?
+        var phase = 0.0
+        let phaseStep = max(0.1, pitch / 60)
+        while phase < pitch {
+            var total = 0.0
+            for k in 0...lines {
+                let x = Int((phase + Double(k) * pitch).rounded())
+                guard x >= 0, x <= n - 1 else { continue }
+                let lo = max(0, x - 1), hi = min(n - 1, x + 1)
+                total += (lo...hi).map { profile[$0] }.max() ?? 0
+            }
+            let score = total / Double(lines + 1)
+            if best == nil || score > best!.score { best = (phase, score) }
+            phase += phaseStep
+        }
+        return best
     }
 }

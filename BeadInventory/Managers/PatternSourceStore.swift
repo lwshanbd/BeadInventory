@@ -106,6 +106,20 @@ enum PatternSourceStore {
         }
     }
 
+    /// 没有原始字节可用时（裁过封面、相机拍的、Share Extension 传进来的）拿什么存。
+    ///
+    /// **PNG，无损。** 这里以前是 `jpegData(0.95)` —— 用户传一张 5.8 MB 的图纸，
+    /// 走裁剪那条路存下来只剩两三 MB，他在零件清单看到「留了一份原图，占 2.1 MB」，
+    /// 结论只能是「你还是压了我的图」。他是对的：0.95 也是有损，色块边界该糊还是糊，
+    /// 而这份图存在的唯一理由就是逐格看颜色。
+    ///
+    /// 拼豆图纸是大片纯色块，PNG 压得极好（实测 3640×5320 的图纸只有 207 KB）；
+    /// 真正会变大的是拍照进来的那种，而那种本来也没有原始字节可用。
+    /// 存不下就是存不下 —— 拼图模式退回用压缩图照常能走。
+    static func lossless(_ image: UIImage?) -> Data? {
+        image?.pngData()
+    }
+
     /// 取原图字节。没有就返回 nil，调用方退回用压缩图。
     static func data(for projectId: UUID) -> Data? {
         guard let url = url(for: projectId),

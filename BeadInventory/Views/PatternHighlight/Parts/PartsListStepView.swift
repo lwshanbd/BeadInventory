@@ -153,8 +153,11 @@ struct PartsListStepView: View {
                 )
 
                 if let draftRect {
+                    // 线宽要**除掉** zoom（同 PartsBoxOverlay）：这一层在 `.scaleEffect` 里面，
+                    // 写死 2pt 到 8 倍下就是屏幕上 16pt —— 补的零件本身才十来个像素宽，
+                    // 框比零件还粗，等于蒙着眼睛画。
                     Rectangle()
-                        .strokeBorder(Theme.ColorToken.Morandi.honey, lineWidth: 2)
+                        .strokeBorder(Theme.ColorToken.Morandi.honey, lineWidth: 1.5 / zoom)
                         .background(Rectangle().fill(Theme.ColorToken.Morandi.honey.opacity(0.2)))
                         .frame(width: draftRect.width, height: draftRect.height)
                         .position(x: draftRect.midX, y: draftRect.midY)

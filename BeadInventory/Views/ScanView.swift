@@ -418,9 +418,7 @@ struct ScanView: View {
     private func patternSourceData() -> Data? {
         guard PatternSourceStore.isEnabled else { return nil }
         if !thumbnailWasCropped, let pickedOriginalData { return pickedOriginalData }
-        // 相机拍的、Share Extension 传进来的、以及裁过的，都没有可用的原始字节，
-        // 只能按当前这张全分辨率图重新编一份。0.95 是「看不出退化」和「别太大」的折中。
-        return thumbnailImage?.jpegData(compressionQuality: 0.95)
+        return PatternSourceStore.lossless(thumbnailImage)
     }
 
     // MARK: - 主 body 的子片段（拆分以减轻类型检查复杂度）
@@ -1125,9 +1123,13 @@ struct ImageSelectionSection: View {
 
             HStack(spacing: Theme.Spacing.sm) {
                 // 相册（filled mauve）
+                // `.current` = 相册里存的是什么格式就给什么字节。默认的 `.automatic`
+                // 会把 HEIC 转码成 JPEG —— 那是一次有损重编码，而拼豆模式那份原图
+                // 要的就是「一个字节都没动过」。
                 PhotosPicker(
                     selection: $selectedPhotoItem,
                     matching: .images,
+                    preferredItemEncoding: .current,
                     photoLibrary: .shared()
                 ) {
                     Label("相册", systemImage: "photo.on.rectangle")
@@ -2399,7 +2401,8 @@ struct ThumbnailPreviewSection: View {
                 Spacer()
 
                 // 上传新封面按钮
-                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images,
+                             preferredItemEncoding: .current) {
                     HStack(spacing: 4) {
                         Image(systemName: "photo.badge.plus")
                         Text(thumbnailImage == nil ? "上传封面" : "更换")
