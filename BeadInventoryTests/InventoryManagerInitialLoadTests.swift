@@ -278,7 +278,7 @@ final class InventoryManagerInitialLoadTests: XCTestCase {
     ///
     /// **这条用例不是为了验证某一个修复，是为了兜住下一个。**
     /// 白屏已经修过三轮，每轮都是同一个形状：某个东西在首帧前同步跑 ——
-    ///   #51/#52: `CKContainer` 首次握手、`Tips.configure`、history 整表物化 snapshot blob
+    ///   #51/#52: `CKContainer` 首次握手、`Tips.configure`（TipKit，#66 已移除）、history 整表物化 snapshot blob
     ///   #57(本 PR): `InventoryManager` 首次 SwiftData 全表 fetch
     /// 每次都靠用户报障才发现。这条用例把「启动链路必须让出主线程」变成可自动回归的断言：
     /// 以后谁往 `App.init` 或 `RootView.onAppear` 里加了同步重活，这里直接红。
