@@ -11968,6 +11968,66 @@
         }
       }
     },
+    "对齐了，看下一个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aligned — next piece"
+          }
+        }
+      }
+    },
+    "不看了，完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip the rest"
+          }
+        }
+      }
+    },
+    "网格线要落在豆子和豆子的缝上。全图共用这一张网格。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grid lines should sit in the seams between beads. One grid is shared by the whole sheet."
+          }
+        }
+      }
+    },
+    "推\n网格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nudge\ngrid"
+          }
+        }
+      }
+    },
+    "这张图纸这次读不出来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't open this pattern right now"
+          }
+        }
+      }
+    },
+    "图还在项目里，只是这次打不开。退出去再进来试一次；一直这样的话，去详情页重新选一张。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The image is still on the project, it just won't open this time. Close and reopen; if it keeps happening, pick a new one from the project details."
+          }
+        }
+      }
+    },
     "零件清单" : {
       "localizations" : {
         "en" : {

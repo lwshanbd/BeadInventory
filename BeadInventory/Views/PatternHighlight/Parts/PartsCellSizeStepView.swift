@@ -77,6 +77,8 @@ struct PartsCellSizeStepView: View {
 
     @State private var canvasSize: CGSize = .zero
 
+    /// 拿来验收的零件，按面积从大到小最多十二个。大零件格线多、偏了最容易看出来；
+    /// 五十个零件全过一遍没人受得了，而全图共用一张网格，看完最大的这批就够下结论。
     private var samples: [BeadPart] {
         parts.sorted { $0.bounds.width * $0.bounds.height > $1.bounds.width * $1.bounds.height }
             .prefix(12).map { $0 }
@@ -402,7 +404,8 @@ struct PartsCellSizeStepView: View {
 
     // MARK: - 视图变换
 
-    /// 屏幕点 → 缩放前的画布点（`content(_:)` 的那一半逆变换）
+    /// 屏幕点 → 缩放前的画布点。只给捏合用：要把手指底下那一点钉在原地，
+    /// 得先知道它在「没缩放的画布」上是哪儿。
     private func unzoomed(_ point: CGPoint) -> CGPoint {
         guard zoom > 0 else { return point }
         let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
@@ -462,7 +465,14 @@ struct PartsCellSizeStepView: View {
             estimating = false
             // 早先横竖两个方向是分开量的，存下来的可能是个长方形。掰回正方形 ——
             // 不掰的话用户在这一屏没有任何办法改：把手只能等比缩放，长方形缩放还是长方形。
-            if let fixed = squaredIfNeeded(calibration) { self.calibration = fixed }
+            //
+            // **但已经判过色的不能动。** 掰正会改掉每个零件的 rows/cols（`writeBack`），
+            // 而 `part.cells` 还是按旧行列数存的：下游是 clamp 不是报错，所以结果不是崩，
+            // 是底下几行悄悄丢掉、每个格子的叠加层整体错位 —— 用户几天的核对成果。
+            // 这种项目要掰正得由他自己按「自动对齐」，那一下是他主动要求重量的。
+            if !parts.contains(where: \.hasCells), let fixed = squaredIfNeeded(calibration) {
+                self.calibration = fixed
+            }
             syncFrameToLattice()
             return
         }
@@ -522,7 +532,7 @@ struct PartsCellSizeStepView: View {
         let cropped = await Task.detached(priority: .userInitiated) {
             PartsThumbnailMaker.crop(source, normalized: padded)
         }.value
-        // 裁这一下的工夫用户可能已经点了「看看别的零件」，或者高清工作图刚换上来 ——
+        // 裁这一下的工夫用户可能已经点了「对齐了，看下一个」，或者零件区那一版刚换上来 ——
         // 那时上面的 `.task(id:)` 已经把这一轮取消了。不认取消的话，屏幕上显示的是
         // 上一个零件的图，格线却是按新零件算的，用户对着错的图在标定。
         guard !Task.isCancelled else { return }

@@ -177,8 +177,8 @@ struct PartsListStepView: View {
                 .stroke(Theme.ColorToken.Morandi.honey, lineWidth: addingPart ? 3 : 0)
                 .allowsHitTesting(false)
         )
-        // 必须裁：`scaleEffect` 只是画得更大，不会自己留在框里 ——
-        // 少了这一行，放大后的图会盖到导航栏和下面的缩略图上。
+        // 必须裁：图是按放大后的**最终尺寸** `.frame` + `.position` 摆的，本来就会超出这
+        // 340pt 的框 —— 少了这一行，放大后的图会盖到导航栏和下面的缩略图上。
         .clipped()
     }
 

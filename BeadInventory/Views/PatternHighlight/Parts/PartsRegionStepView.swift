@@ -120,7 +120,7 @@ struct PartsRegionStepView: View {
 // MARK: - 框外压暗
 
 /// 用四块半透明矩形围出「框外」，而不是 mask/blendMode —— 四个矩形在任何
-/// 渲染路径下的表现都一样，也不会跟外层的 scaleEffect 打架。
+/// 渲染路径下的表现都一样。
 private struct RegionDimOverlay: View {
     let roi: CGRect
     let displayRect: CGRect

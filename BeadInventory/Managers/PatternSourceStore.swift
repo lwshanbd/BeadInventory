@@ -35,7 +35,7 @@
 //
 //  ## 什么时候没有
 //
-//  很多时候都没有：开关关掉的、这个功能上线前就存在的项目、从别的设备同步过来的
+//  很多时候都没有：上传那一屏选了不留的、这个功能上线前就存在的项目、从别的设备同步过来的
 //  （它不同步）、用户点过「拼好了」的。所以**调用方必须能在没有原图时照常工作**，
 //  退回用 SwiftData 里那份压缩图，只是糊一点。
 //
@@ -119,9 +119,34 @@ enum PatternSourceStore {
     ///
     /// 拼豆图纸是大片纯色块，PNG 压得极好（实测 3640×5320 的图纸只有 207 KB）；
     /// 真正会变大的是拍照进来的那种，而那种本来也没有原始字节可用。
-    /// 存不下就是存不下 —— 拼图模式退回用压缩图照常能走。
+    ///
+    /// **编码前必须先把方向烘进位图。** PNG 不带 orientation 标签，而 UIKit 不会替你转 ——
+    /// 相机拍出来的 UIImage 是 `.right`，直接 `pngData()` 存下来就是躺倒的。原来的
+    /// `jpegData(0.95)` 写了 EXIF 方向、读取端也应用了，换成 PNG 才暴露出来。
+    /// 后果不是「看着歪」：多零件模式所有几何量都相对封面归一化，源图躺了整片零件框都对不上。
+    /// 封面那条链路（`ProjectImageEncoder`）早就在做这件事，理由写在那边同一处。
     static func lossless(_ image: UIImage?) -> Data? {
-        image?.pngData()
+        guard let image else { return nil }
+        let upright: UIImage
+        if image.imageOrientation == .up {
+            upright = image
+        } else {
+            let format = UIGraphicsImageRendererFormat.default()
+            format.scale = 1
+            upright = UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+                image.draw(in: CGRect(origin: .zero, size: image.size))
+            }
+        }
+        guard let data = upright.pngData() else {
+            // 用户是明确勾了「保留原图」才走到这儿的。编不出来就得看得见 ——
+            // 调用方会因为拿到 nil 而什么都不存，屏幕上却跟存好了一模一样。
+            AppLogger.shared.error("PatternSource", "lossless_encode_failed", metadata: [
+                "pixelSize": "\(image.size)",
+                "orientation": "\(image.imageOrientation.rawValue)"
+            ])
+            return nil
+        }
+        return data
     }
 
     /// 取原图字节。没有就返回 nil，调用方退回用压缩图。
