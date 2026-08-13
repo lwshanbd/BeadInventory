@@ -10,18 +10,21 @@
 //  验收标准是眼睛：网格线必须落在豆子和豆子的缝上。所以主体是一个零件的大图 +
 //  铺在上面的网格线，对没对齐一眼就知道，不需要用户去理解任何数值。
 //
-//  ## 全图只有一张网格
+//  ## 格距全图共用，格线位置一个零件一个
 //
-//  几十个零件是从同一张像素画上切下来的，格子多大、格线在哪，全图是同一个答案。
-//  所以这一屏调的**永远是那一张网格**（`PartsGridCalibration`，带全局格线位置），
-//  在哪个零件上调都一样，调完所有零件一起对齐。
+//  同一张纸上豆子一样大，所以**格距只有一个数**，在哪个零件上调都一样。
 //
-//  但「一起对齐」不等于「一眼就能确认」：自动量出来的格距差千分之几，铺到某个零件上
-//  就偏了半格，而偏的是哪几个只有挨个看过去才知道。所以主按钮是「对齐了，看下一个」，
-//  一个零件一个零件地过；不想看完的随时可以「不看了，完成」。
+//  **格线位置不是。** 图纸上的零件是各画各的 —— 零件 A 的格线和零件 B 的格线压根不属于
+//  同一批。早先整张图共用一个相位，于是「这个对齐了、换一个又对不上」，怎么推都推不好，
+//  因为它数学上就不成立。现在是：格距由用户定（加减号一次 0.1 像素），
+//  然后拿这个格距**一个零件一个零件地找它自己的格线**（`PartsPitchEstimator.fitOrigin`）。
 //
-//  早先格线位置是每个零件自己的 bbox 均分出来的，于是「这个对齐了、换一个又对不上」，
-//  用户得挨个重来。那是错的：bbox 带一圈抗锯齿毛边，每个零件毛边多少不一样。
+//  所以主按钮是「对齐了，看下一个」：翻到哪个零件就先按当前格距给它对一次，
+//  用户看到的是已经对好的，只需要点头或者微调。不想看完的随时「不看了，完成」——
+//  没翻到过的那些会在离开这一屏之前一起对完。
+//
+//  更早还试过「每个零件拿自己的 bbox 均分」。那个是错的：bbox 带一圈抗锯齿毛边，
+//  每个零件毛边多少不一样，均分出来的格线跟豆子缝没有关系。要按图上的周期信号去找。
 //
 //  ## 两个状态，一次只看一样东西
 //
@@ -61,8 +64,7 @@ struct PartsCellSizeStepView: View {
     @State private var estimating = true
     /// 是不是正在重选一格的大小。true 时只显示黄框，不显示网格线。
     @State private var picking = false
-    /// 上一次「全图重新对齐」用的是多大的格子。用来判断格距有没有变过 ——
-    /// 见 `realignAllIfCellSizeChanged`。
+    /// 上一次「按当前格距给所有零件定位」用的是多大的格子。
     @State private var alignedAtCellWidth: Double?
 
     @State private var zoom: CGFloat = 1
@@ -92,10 +94,22 @@ struct PartsCellSizeStepView: View {
         return samples[min(sampleIndex, samples.count - 1)]
     }
 
-    /// 当前零件落在全局网格上的那块（行列数就是从这儿来的）
+    /// 当前零件用的那张标定：**全局格距 + 这个零件自己的相位**。
+    ///
+    /// 图纸上的零件是各画各的，格线不共用（用户拿真实图纸确认过）。所以格距全图一个数、
+    /// 相位一个零件一个。`frameOrigin` 就是当前这个零件的相位。
+    private var sampleCalibration: PartsGridCalibration? {
+        guard let calibration, calibration.isUsable else { return nil }
+        var c = calibration
+        c.originX = Double(frameOrigin.x)
+        c.originY = Double(frameOrigin.y)
+        return c
+    }
+
+    /// 当前零件落在它自己那张网格上的那块（行列数就是从这儿来的）
     private var grid: PartsGrid? {
-        guard let sample, let calibration, calibration.isUsable else { return nil }
-        return PartsGrid(covering: sample.bounds, calibration: calibration)
+        guard let sample, let c = sampleCalibration else { return nil }
+        return PartsGrid(covering: sample.bounds, calibration: c)
     }
 
     /// 黄框在整张图纸上的归一化矩形
@@ -126,11 +140,9 @@ struct PartsCellSizeStepView: View {
         // 工作图也算进 id：进来时先拿到的是低清兜底版，高清版在后台裁好之后才换上来。
         .task(id: "\(sampleIndex)|\(work.image.size)") { await loadSample() }
         .task { await estimateIfNeeded() }
-        .onChange(of: frameOrigin) { _, new in
-            calibration?.originX = Double(new.x)
-            calibration?.originY = Double(new.y)
-            writeBack()
-        }
+        // 推格线只动当前这个零件 —— 别的零件有它们自己的格线，凭什么跟着走
+        .onChange(of: frameOrigin) { _, _ in writeBackCurrentPart() }
+        // 格距是全图共用的，改了所有零件都要重算；但各自的相位保持不变
         .onChange(of: calibration) { _, _ in writeBack() }
     }
 
@@ -304,7 +316,7 @@ struct PartsCellSizeStepView: View {
                     Button {
                         picking = false
                         resetView()
-                        Task { await realignAllIfCellSizeChanged() }
+                        if let sample { Task { await refit(part: sample) } }
                     } label: {
                         Label("就用这个大小", systemImage: "checkmark")
                             .font(.footnote.weight(.medium))
@@ -320,7 +332,7 @@ struct PartsCellSizeStepView: View {
                 HStack(alignment: .top, spacing: Theme.Spacing.lg) {
                     nudgePad
                     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        Text("网格线要落在豆子和豆子的缝上。")
+                        Text("网格线要落在豆子和豆子的缝上。每个零件各有各的格线。")
                             .font(.footnote)
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -371,8 +383,13 @@ struct PartsCellSizeStepView: View {
                 // 翻页之前先把「这个大小」应用到整张图纸 —— 否则用户在这个零件上调准了，
                 // 下一个零件还是按旧格线画的，他会以为白调了。
                 Task {
-                    await realignAllIfCellSizeChanged()
-                    if isLastSample { onContinue() } else { sampleIndex += 1 }
+                    if isLastSample {
+                        // 走到判色之前，用户没翻到过的那些零件也得按这个格距对一遍
+                        await refitAllParts()
+                        onContinue()
+                    } else {
+                        sampleIndex += 1
+                    }
                 }
             } label: {
                 Label(isLastSample ? "对齐了，看每格什么颜色" : "对齐了，看下一个",
@@ -386,7 +403,12 @@ struct PartsCellSizeStepView: View {
             // 剩下的不想一个个看了，随时能走。最后一个零件上不显示 —— 那时它和上面
             // 那个按钮是同一件事，摆两个只会让人以为有区别。
             if !isLastSample {
-                Button("不看了，完成", action: onContinue)
+                Button("不看了，完成") {
+                    Task {
+                        await refitAllParts()
+                        onContinue()
+                    }
+                }
                     .font(.footnote)
                     .foregroundColor(Theme.ColorToken.Text.secondary)
                     .disabled(calibration == nil || estimating || picking)
@@ -615,6 +637,10 @@ struct PartsCellSizeStepView: View {
         sampleImage = cropped
         sampleRegion = padded
         syncFrameToLattice()
+        // 翻到一个零件就先按当前格距给它对一次 —— 用户翻过来看到的应该是已经对好的，
+        // 而不是「上一个零件的格线平移过来」。它有自己的格线，跟别的零件没关系。
+        guard !Task.isCancelled else { return }
+        await refit(part: sample)
     }
 
     /// 把黄框摆到零件正中那一格。
@@ -623,8 +649,14 @@ struct PartsCellSizeStepView: View {
     /// 左上角那一格多半压在零件外面的空白上，框里一片粉，看不出格子边界对没对齐。
     private func syncFrameToLattice() {
         guard let sample, let calibration, calibration.isUsable else { return }
-        frameOrigin = CGPoint(x: calibration.snappedX(Double(sample.bounds.midX)),
-                              y: calibration.snappedY(Double(sample.bounds.midY)))
+        // 这个零件已经有自己的格线了就用它自己的；没有才从全局那份推一格出来当起点。
+        var base = calibration
+        if let rect = sample.gridRect {
+            base.originX = Double(rect.minX)
+            base.originY = Double(rect.minY)
+        }
+        frameOrigin = CGPoint(x: base.snappedX(Double(sample.bounds.midX)),
+                              y: base.snappedY(Double(sample.bounds.midY)))
     }
 
     /// 格子大小改过之后，拿这个新尺寸把**整张图纸**的格线重新找一遍。
@@ -637,23 +669,53 @@ struct PartsCellSizeStepView: View {
     /// - 格距没变就没什么可重算的，每按一次「看下一个」都重跑一遍纯属让人等；
     /// - 而且这里只重找相位。用户拿方向键手推过格线的话，再跑一次自动定相位会把他
     ///   刚推的推回去 —— 大小没变时绝不能碰。
-    private func realignAllIfCellSizeChanged() async {
+    /// 拿当前格距，把**每个零件**各自的格线重新找一遍。
+    ///
+    /// 只找相位，不动格距 —— 格距是用户定的。某个零件找不出来（太小、装不下四格，
+    /// 或者图上没有周期信号）就保持它现在的格线不动，总好过跳到一个瞎猜的地方。
+    private func refitAllParts() async {
         guard let calibration, calibration.isUsable else { return }
-        guard alignedAtCellWidth != calibration.cellWidth else { return }
         let source = work
         let snapshot = parts
         estimating = true
-        let fitted = await Task.detached(priority: .userInitiated) {
-            PartsPitchEstimator.fitOrigin(work: source, parts: snapshot, calibration: calibration)
+        let fitted = await Task.detached(priority: .userInitiated) { () -> [UUID: CGPoint] in
+            var found: [UUID: CGPoint] = [:]
+            // 判过色的跳过，理由同 `refit(part:)`
+            for part in snapshot where !part.hasCells {
+                if let origin = PartsPitchEstimator.fitOrigin(
+                    work: source, bounds: part.bounds, calibration: calibration
+                ) {
+                    found[part.id] = origin
+                }
+            }
+            return found
         }.value
         estimating = false
+        for index in parts.indices {
+            let id = parts[index].id
+            applyGrid(to: index, phase: fitted[id] ?? phase(of: parts[index]), calibration: calibration)
+        }
         alignedAtCellWidth = calibration.cellWidth
-        // 找不到就保持原样：格距是用户定的，位置维持现状总好过跳到一个瞎猜的地方。
-        guard let fitted else { return }
-        self.calibration?.originX = Double(fitted.x)
-        self.calibration?.originY = Double(fitted.y)
         syncFrameToLattice()
-        writeBack()
+    }
+
+    /// 单独给一个零件按当前格距定位。翻到它的时候跑这一下，用户看到的就是已经对好的。
+    ///
+    /// 已经判过色的零件不动 —— 改 `gridRect` 会连带改行列数，而 `cells` 还是按旧行列数
+    /// 存的，结果是用户核对过的颜色整片错位（同 `squaredIfNeeded`）。那种项目要重对，
+    /// 得他自己按「自动对齐」。
+    private func refit(part: BeadPart) async {
+        guard !part.hasCells else { return }
+        guard let calibration, calibration.isUsable,
+              let index = parts.firstIndex(where: { $0.id == part.id }) else { return }
+        let source = work
+        let bounds = part.bounds
+        let origin = await Task.detached(priority: .userInitiated) {
+            PartsPitchEstimator.fitOrigin(work: source, bounds: bounds, calibration: calibration)
+        }.value
+        guard let origin, parts.indices.contains(index), parts[index].id == part.id else { return }
+        applyGrid(to: index, phase: origin, calibration: calibration)
+        syncFrameToLattice()
     }
 
     /// 重新自动量一次整张图纸的网格 —— 格子多大、格线在哪一起重来。
@@ -685,15 +747,36 @@ struct PartsCellSizeStepView: View {
         writeBack()
     }
 
-    /// 把这张网格套到**每一个**零件上。判色那步直接用这里的结论，不再自己去贴格线。
+    /// 格距变了：每个零件按**它自己那条格线**重算一遍。判色那步直接用这里的结论。
     private func writeBack() {
         guard let calibration, calibration.isUsable else { return }
         for index in parts.indices {
-            let grid = PartsGrid(covering: parts[index].bounds, calibration: calibration)
-            parts[index].gridRect = grid.rect
-            parts[index].rows = grid.rows
-            parts[index].cols = grid.cols
+            applyGrid(to: index, phase: phase(of: parts[index]), calibration: calibration)
         }
+    }
+
+    /// 只重算当前这个零件 —— 推格线是针对眼前这一个的。
+    private func writeBackCurrentPart() {
+        guard let sample, let c = sampleCalibration,
+              let index = parts.firstIndex(where: { $0.id == sample.id }) else { return }
+        applyGrid(to: index, phase: CGPoint(x: c.originX, y: c.originY), calibration: c)
+    }
+
+    /// 这个零件现在的格线在哪。对过的就是它 `gridRect` 的左上角；没对过的退回全局那份。
+    private func phase(of part: BeadPart) -> CGPoint {
+        if let rect = part.gridRect { return CGPoint(x: rect.minX, y: rect.minY) }
+        guard let calibration else { return .zero }
+        return CGPoint(x: calibration.originX, y: calibration.originY)
+    }
+
+    private func applyGrid(to index: Int, phase: CGPoint, calibration: PartsGridCalibration) {
+        var c = calibration
+        c.originX = Double(phase.x)
+        c.originY = Double(phase.y)
+        let grid = PartsGrid(covering: parts[index].bounds, calibration: c)
+        parts[index].gridRect = grid.rect
+        parts[index].rows = grid.rows
+        parts[index].cols = grid.cols
     }
 }
 

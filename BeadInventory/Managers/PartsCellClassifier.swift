@@ -102,12 +102,20 @@ enum PartsCellClassifier {
         var unreadableParts = 0
         for (index, part) in parts.enumerated() {
             var updated = part
-            // 全图一张网格：这里不再一个零件一个零件地重找格线，直接把零件吸到
-            // 用户在「量格子」那屏定下来的那张网格上。零件之间因此必然对得齐。
-            let grid = part.grid(for: calibration)
-            updated.gridRect = grid.rect
-            updated.rows = grid.rows
-            updated.cols = grid.cols
+            // 「量格子」那屏已经给这个零件定好格线了（格距全图共用，相位一个零件一个 ——
+            // 图纸上零件是各画各的）。这里必须**照用**，不能再拿全局标定重吸一遍：
+            // 那样会把用户刚在那一屏对好的位置整片洗掉。
+            // 没定过的（用户跳过了那一屏）才退回全局标定。
+            if let rect = part.gridRect, part.rows > 0, part.cols > 0 {
+                updated.gridRect = rect
+            } else {
+                let grid = part.grid(for: calibration)
+                updated.gridRect = grid.rect
+                updated.rows = grid.rows
+                updated.cols = grid.cols
+            }
+            let grid = PartsGrid(rect: updated.gridRect ?? part.bounds,
+                                 rows: updated.rows, cols: updated.cols)
 
             let sampled = sampleCells(work: work, part: updated)
             if sampled == nil { unreadableParts += 1 }

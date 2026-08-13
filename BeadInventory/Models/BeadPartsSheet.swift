@@ -113,6 +113,12 @@ struct PartsGrid: Equatable {
     var rows: Int
     var cols: Int
 
+    init(rect: CGRect, rows: Int, cols: Int) {
+        self.rect = rect
+        self.rows = rows
+        self.cols = cols
+    }
+
     init(covering bounds: CGRect, calibration: PartsGridCalibration) {
         guard calibration.isUsable else {
             rect = bounds; rows = 1; cols = 1

@@ -63,12 +63,40 @@ enum PartsPitchEstimator {
         )
     }
 
-    /// 格距不动，只重新找格线的位置。
-    /// 用户手拉过格子大小之后按「自动对齐」走这条 —— 他量的大小不许被改掉。
+    /// 单个零件分析用的工作分辨率。一个零件比整片零件区小得多，给这么多就够梳齿用了；
+    /// 五十几个零件要挨个跑，再高就等得住人了。
+    private static let partAnalysisPixels = 200_000
+
+    /// 用给定的格距，**单独**给一个零件找它自己的格线位置。
+    ///
+    /// 图纸上的零件是各画各的：零件 A 的格线和零件 B 的格线压根不属于同一批
+    /// （用户拿真实图纸确认过）。格距是共用的 —— 同一张纸上豆子一样大；相位不是。
+    /// 所以整张图一个相位这件事从一开始就不成立，只能一个零件一个零件地定。
+    ///
+    /// - Returns: 这个零件太小（装不下四格）或者图上没有周期信号时返回 nil，
+    ///   调用方保持它现在的格线不动。
+    static func fitOrigin(
+        work: PartsWorkImage, bounds: CGRect, calibration: PartsGridCalibration
+    ) -> CGPoint? {
+        guard calibration.isUsable else { return nil }
+        let region = bounds.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard region.width > 0, region.height > 0,
+              let bitmap = PartsBitmap.make(from: work, roi: region, maxPixels: partAnalysisPixels),
+              bitmap.width >= 16, bitmap.height >= 16 else { return nil }
+        return fitPhase(in: bitmap, calibration: calibration)
+    }
+
+    /// 格距不动，只重新找格线的位置（整片零件区一起看）。
     static func fitOrigin(
         work: PartsWorkImage, parts: [BeadPart], calibration: PartsGridCalibration
     ) -> CGPoint? {
         guard calibration.isUsable, let bitmap = analysisBitmap(work: work, parts: parts) else { return nil }
+        return fitPhase(in: bitmap, calibration: calibration)
+    }
+
+    private static func fitPhase(
+        in bitmap: PartsBitmap, calibration: PartsGridCalibration
+    ) -> CGPoint? {
         let roi = bitmap.roi
         let pitchX = calibration.cellWidth / Double(roi.width) * Double(bitmap.width)
         let pitchY = calibration.cellHeight / Double(roi.height) * Double(bitmap.height)
