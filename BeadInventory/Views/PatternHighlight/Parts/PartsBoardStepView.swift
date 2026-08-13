@@ -78,6 +78,8 @@ struct PartsBoardStepView: View {
     @State private var noteToken = UUID()
     @State private var repackTarget: BeadBoardSize?
     @State private var didAutoPack = false
+    /// 外屏投影状态。只读一个「连上没有」，画什么由 publishToExternalDisplay 送过去。
+    @ObservedObject private var cast = BoardCastSession.shared
 
     private enum Tab: Hashable { case parts, colors }
 
@@ -191,10 +193,19 @@ struct PartsBoardStepView: View {
             }
 
             if let board = currentBoard {
-                Text("\(board.size.label) · 摆了 \(board.placements.count) 个零件 · \(beadCount(of: board)) 颗豆子")
-                    .font(.caption.monospacedDigit())
-                    .foregroundColor(Theme.ColorToken.Text.secondary)
-                    .padding(.horizontal, Theme.Spacing.lg)
+                HStack(spacing: Theme.Spacing.sm) {
+                    Text("\(board.size.label) · 摆了 \(board.placements.count) 个零件 · \(beadCount(of: board)) 颗豆子")
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(Theme.ColorToken.Text.secondary)
+                    // 接了电视 / 投影仪之后第一件想确认的就是「到底投上了没有」——
+                    // 而人多半站在电视那头，手机上得有个准信。
+                    if cast.externalConnected {
+                        Label("投屏中", systemImage: "tv")
+                            .font(.caption2.weight(.medium))
+                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                    }
+                }
+                .padding(.horizontal, Theme.Spacing.lg)
             }
         }
         .padding(.vertical, Theme.Spacing.sm)

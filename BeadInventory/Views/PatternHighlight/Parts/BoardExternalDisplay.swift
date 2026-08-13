@@ -82,10 +82,12 @@ struct BoardExternalDisplayView: View {
 
 /// 外屏连上 / 断开时，系统拿这个类来建那个窗口。
 ///
-/// 注册走 `AppDelegate.application(_:configurationForConnecting:options:)`，不写进
-/// Info.plist —— 这个 App 是 SwiftUI 生命周期，Info.plist 里一旦出现 scene manifest，
-/// 主场景也得跟着一起声明，等于把 SwiftUI 自己管的那套接管过来。代码里只认这一个角色，
-/// 别的角色原样放行，主界面完全不受影响。
+/// 注册写在 **Info.plist** 的 `UISceneConfigurations` 里，不走 AppDelegate ——
+/// 这个 App 是 SwiftUI 生命周期，`UIApplicationDelegateAdaptor` 上的
+/// `configurationForConnecting` 会被 SwiftUI 自己那个 app delegate 截住，压根轮不到我们
+/// （实测：接上电视仍然是纯镜像）。写进 plist 之后 UIKit 建场景时直接查表，不经过任何 delegate。
+///
+/// plist 里**只声明外屏这一个角色**：主场景仍然由 SwiftUI 自己管，不去碰它。
 final class BoardExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
 
@@ -95,6 +97,7 @@ final class BoardExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegat
         window.rootViewController = UIHostingController(rootView: BoardExternalDisplayView())
         window.isHidden = false
         self.window = window
+        BoardCastSession.shared.externalConnected = true
         AppLogger.shared.info("ExternalDisplay", "connected", metadata: [
             "size": "\(windowScene.screen.bounds.size)"
         ])
@@ -102,6 +105,7 @@ final class BoardExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegat
 
     func sceneDidDisconnect(_ scene: UIScene) {
         window = nil
+        BoardCastSession.shared.externalConnected = false
         AppLogger.shared.info("ExternalDisplay", "disconnected", metadata: [:])
     }
 }

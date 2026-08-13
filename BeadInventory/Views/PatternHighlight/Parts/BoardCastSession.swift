@@ -30,6 +30,11 @@ final class BoardCastSession: ObservableObject {
 
     /// 外屏现在该画的那块板。nil = 手机上没开着拼豆板。
     @Published private(set) var content: Content?
+    /// 外屏（电视 / 投影仪）连上了没有。
+    ///
+    /// 拼豆板那一屏据此显示「投屏中」—— 用户接了 AirPlay 之后第一件想确认的就是
+    /// 「到底投上了没有」，而他多半人在电视那头，手机屏幕上得有个准信。
+    @Published var externalConnected = false
 
     struct Content {
         let board: PartsBoard

@@ -11,28 +11,8 @@ import CloudKit
 import CoreData
 import Combine
 
-/// 只为一件事存在：把外接屏幕那个场景注册上（见 `BoardExternalDisplaySceneDelegate`）。
-///
-/// SwiftUI 生命周期没有声明外屏场景的口子，而写进 Info.plist 的话主场景也得跟着一起
-/// 声明，等于把 SwiftUI 自己管的那套接管过来。这里只认外屏那一个角色，别的原样放行。
-final class BeadInventoryAppDelegate: NSObject, UIApplicationDelegate {
-    func application(
-        _ application: UIApplication,
-        configurationForConnecting connectingSceneSession: UISceneSession,
-        options: UIScene.ConnectionOptions
-    ) -> UISceneConfiguration {
-        let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
-        if connectingSceneSession.role == .windowExternalDisplayNonInteractive {
-            config.delegateClass = BoardExternalDisplaySceneDelegate.self
-        }
-        return config
-    }
-}
-
 @main
 struct BeadInventoryApp: App {
-    @UIApplicationDelegateAdaptor(BeadInventoryAppDelegate.self) private var appDelegate
-
     let modelContainer: ModelContainer
 
     @StateObject private var inventoryManager: InventoryManager
