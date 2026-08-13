@@ -162,6 +162,16 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
     /// `[row][col]`。没识别过时是空数组 —— 判断「有没有识别过」用 `hasCells`。
     var cells: [[PartCellFill]]
 
+    /// 用户在「量格子」那屏亲手点过「对齐了」。
+    ///
+    /// 点过之后这个零件的网格就锁住：之后再改格距、再按自动对齐，都只作用在还没确认过的
+    /// 零件上，不回头动它。图纸上的零件是各画各的，用户一个一个对过来，对好的那几个不该
+    /// 因为后面调了一下又被推走 —— 那样他永远收敛不了。
+    ///
+    /// **Optional 是为了老数据**：合成的 `init(from:)` 对 Optional 用 decodeIfPresent，
+    /// 缺字段解出 nil（等于没确认过）；写成非 Optional 的 Bool 会让所有存量图纸解码直接抛。
+    var gridConfirmed: Bool?
+
     init(
         id: UUID = UUID(),
         customName: String? = nil,
@@ -170,7 +180,8 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
         gridRect: CGRect? = nil,
         rows: Int = 0,
         cols: Int = 0,
-        cells: [[PartCellFill]] = []
+        cells: [[PartCellFill]] = [],
+        gridConfirmed: Bool? = nil
     ) {
         self.id = id
         self.customName = customName
@@ -180,9 +191,13 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
         self.rows = rows
         self.cols = cols
         self.cells = cells
+        self.gridConfirmed = gridConfirmed
     }
 
     var hasCells: Bool { !cells.isEmpty }
+
+    /// 用户亲手确认过这个零件的网格
+    var isGridConfirmed: Bool { gridConfirmed == true }
 
     /// 这个零件落在全局网格上的那块区域。全图共用一张网格，所以这里不带任何
     /// 「这个零件自己的」参数 —— 换个零件看，格线还是那批格线。

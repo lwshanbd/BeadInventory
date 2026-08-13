@@ -10,6 +10,16 @@ import SwiftUI
 struct ColorSelectionView: View {
     @Binding var selectedColors: Set<String>
     var colorSystem: ColorSystem = .mard
+    /// 优先列在最上面的一组颜色。多零件模式核对颜色时传进来的是
+    /// **上一步 AI 读图纸色号表得出的、这张图确实用到的那十几个色号**。
+    ///
+    /// 判色一定会判错，而用户要改成的那个正确色号，几乎一定就在图纸自己的色号表里 ——
+    /// 让他从这十几个里挑，而不是在四百多个色号里翻着找。
+    /// 空数组时列表跟平常完全一样。
+    var suggestedColors: [BeadColor] = []
+    /// 打开时定位到哪个色号所在的系列。上面那组里没有要找的色号时
+    /// （AI 连色号表都读漏了），从当前色号的邻居开始翻最省事。
+    var focusColor: BeadColor? = nil
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
@@ -19,10 +29,38 @@ struct ColorSelectionView: View {
 
     @State private var selectedSeries: String
 
-    init(selectedColors: Binding<Set<String>>, colorSystem: ColorSystem = .mard) {
+    init(selectedColors: Binding<Set<String>>,
+         colorSystem: ColorSystem = .mard,
+         suggestedColors: [BeadColor] = [],
+         focusColor: BeadColor? = nil) {
         self._selectedColors = selectedColors
         self.colorSystem = colorSystem
-        self._selectedSeries = State(initialValue: colorSystem.defaultSeries)
+        self.suggestedColors = suggestedColors
+        self.focusColor = focusColor
+        let initial = focusColor.map { Self.series(for: $0, in: colorSystem) } ?? colorSystem.defaultSeries
+        self._selectedSeries = State(initialValue: initial)
+    }
+
+    /// 上面那组实际画出来的几行：去重，并且只留在当前体系里有码的
+    /// （查不到码的画出来是一行没有色号的空壳）。
+    private var suggestions: [BeadColor] {
+        var seen = Set<String>()
+        return suggestedColors.filter { color in
+            guard color.hasCode(for: colorSystem) else { return false }
+            return seen.insert(color.mardCode).inserted
+        }
+    }
+
+    /// 一个颜色属于系列选择器里的哪一系。纯函数（只看色号本身），
+    /// 逻辑跟 `colorsInSeries` 的过滤保持一致，所以能在 init 里就算出来。
+    private static func series(for color: BeadColor, in system: ColorSystem) -> String {
+        if color.mardCode.hasPrefix("#") { return "#" }
+        let code = color.displayCode(for: system)
+        if code.hasPrefix("ZG") { return "ZG" }
+        for prefix in system.standardPrefixes where prefix != "ZG" {
+            if code.hasPrefix(prefix) { return prefix }
+        }
+        return "其他"
     }
 
     /// 当前色号体系下的颜色总数
@@ -137,7 +175,41 @@ struct ColorSelectionView: View {
                 // 颜色列表
                 ScrollView {
                     LazyVStack(spacing: 8) {
-                        ForEach(colorsInSeries) { color in
+                        // 这张图纸自己用到的那几个色号排在最前面。判色判错时要改成的
+                        // 那一个基本都在这里 —— 不管现在切到哪个系列都一直留着，
+                        // 用户翻到别的系列时也不用滚回来找。
+                        if !suggestions.isEmpty {
+                            HStack(spacing: 6) {
+                                Image(systemName: "sparkles")
+                                    .font(.caption)
+                                Text("AI 识别的颜色")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                Text("这张图纸用到的 \(suggestions.count) 色")
+                                    .font(.caption)
+                                Spacer()
+                            }
+                            .foregroundColor(Theme.ColorToken.Text.secondary)
+                            .padding(.top, 4)
+
+                            ForEach(suggestions) { color in
+                                ColorSelectRow(
+                                    color: color,
+                                    colorSystem: colorSystem,
+                                    isSelected: selectedColors.contains(color.mardCode),
+                                    onToggle: {
+                                        toggleColor(color.mardCode)
+                                    }
+                                )
+                            }
+
+                            Divider()
+                                .padding(.vertical, 4)
+                        }
+
+                        // 上面列过的不再重复一遍
+                        let shown = Set(suggestions.map(\.mardCode))
+                        ForEach(colorsInSeries.filter { !shown.contains($0.mardCode) }) { color in
                             ColorSelectRow(
                                 color: color,
                                 colorSystem: colorSystem,

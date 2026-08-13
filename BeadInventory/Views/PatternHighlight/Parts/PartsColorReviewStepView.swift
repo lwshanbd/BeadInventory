@@ -25,6 +25,9 @@ struct PartsColorReviewStepView: View {
     /// 只作参照：核对时用户能直接比对「我认出 2,887 颗，图纸写的是 3,006 颗」，
     /// 差得多就说明这个色号还得再看看。
     let legendCounts: [String: Int]
+    /// 核对完一个色号点「看下一个」时调一下 —— 把这一屏改过的色号立刻落盘。
+    /// 不然辛辛苦苦对完几百格，手一滑点了返回就全没了（改动只落在内存里的 parts 上）。
+    let onConfirmGroup: () -> Void
     let onFinish: () -> Void
 
     @EnvironmentObject var inventoryManager: InventoryManager
@@ -72,8 +75,13 @@ struct PartsColorReviewStepView: View {
         // 才换上来。不跟着重裁的话，用户看到的一直是一格十来个像素的马赛克。
         .task(id: "\(groupKey(selectedGroup))|\(work.image.size)") { await loadSwatches() }
         .sheet(isPresented: $showingCodePicker, onDismiss: applyPickedCode) {
-            ColorSelectionView(selectedColors: $pickedCodes, colorSystem: colorSystem)
-                .environmentObject(inventoryManager)
+            ColorSelectionView(
+                selectedColors: $pickedCodes,
+                colorSystem: colorSystem,
+                suggestedColors: patternColors,
+                focusColor: currentGroupColor
+            )
+            .environmentObject(inventoryManager)
         }
         .sheet(isPresented: $showingPalette) {
             PartsPaletteSheet(
@@ -400,9 +408,30 @@ struct PartsColorReviewStepView: View {
     private func confirmCurrentGroup() {
         confirmed.insert(groupKey(selectedGroup))
         selection.removeAll()
+        // 每核对完一个色号就落一次盘：这一屏的修改一直只在内存里的 parts 上，
+        // 之前要走到「去摆拼豆板」才存。用户对完一个点「看下一个」，就当是存盘点。
+        onConfirmGroup()
         if let next = unconfirmed.first {
             select(next.fill)
         }
+    }
+
+    /// 这张图纸自己用到的那些颜色 —— 上一步 AI 读色号表读出来的（`legendCounts` 的来源）。
+    ///
+    /// 判色判错时，用户要改成的那个正确色号几乎一定就在这十几个里面：图纸上就摆着
+    /// 这么多种豆子。选色盘把它们排在最前面，用户不用再去四百多个色号里翻。
+    /// 按图纸写的颗数从多到少排，跟上面那条色号栏一个顺序。
+    private var patternColors: [BeadColor] {
+        legendCounts
+            .sorted { $0.value > $1.value }
+            .compactMap { bead(for: $0.key) }
+    }
+
+    /// 当前正在核对的这一组是哪颗豆子。只用来决定选色盘打开时停在哪个系列 ——
+    /// 万一 AI 连色号表都读漏了，从判成的这个色号的邻居开始翻最省事。
+    private var currentGroupColor: BeadColor? {
+        guard case .code(let code) = selectedGroup else { return nil }
+        return bead(for: code)
     }
 
     private func groupKey(_ fill: PartCellFill) -> String {

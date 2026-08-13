@@ -203,6 +203,7 @@ struct PartsSheetFlowView: View {
                                 work: work,
                                 parts: tracked($parts),
                                 calibration: tracked($calibration),
+                                onConfirmPart: { persist() },
                                 onContinue: {
                                     persist()
                                     path = [.list, .cellSize, .baseColor]
@@ -223,6 +224,7 @@ struct PartsSheetFlowView: View {
                                 parts: tracked($parts),
                                 colorSystem: project.colorSystem,
                                 legendCounts: legendCounts,
+                                onConfirmGroup: { persist() },
                                 onFinish: {
                                     persist()
                                     path = [.list, .cellSize, .baseColor, .review, .board]
@@ -385,11 +387,19 @@ struct PartsSheetFlowView: View {
         await prepareWorkImage()
     }
 
-    /// 上一步 AI 读色号表得到的「每个色号多少颗」。核对颜色那屏拿它当参照。
+    /// 上一步 AI 读色号表得到的「这张图纸每个色号多少颗」。核对颜色那屏拿它当参照，
+    /// 也拿它当「改色号时优先给哪几个候选」的依据 —— 图纸上就用了这么些颜色。
     /// 同一个色号被记了多次时相加 —— 表格识别偶尔会把一个色号拆成两行。
+    ///
+    /// **key 必须翻成当前体系的显示码**：`beadUsage.colorCode` 存的是 canonical mardCode
+    /// （ScanView.recognizeImage 的约定），而核对页格子里存的是 `displayCode(for: colorSystem)`。
+    /// 不翻这一道，COCO / 卡卡这些非 MARD 图纸上两边永远对不上 —— 色号胶囊上那句
+    /// 「认出 X 颗 / 图纸写 Y 颗」于是一个字都不显示，用户没有任何参照物判断判色对不对。
     private var legendCounts: [String: Int] {
         project.beadUsage.reduce(into: [:]) { result, usage in
-            result[usage.colorCode, default: 0] += usage.quantity
+            let key = inventoryManager.findColor(byMardCode: usage.colorCode)?
+                .displayCode(for: project.colorSystem) ?? usage.colorCode
+            result[key, default: 0] += usage.quantity
         }
     }
 
