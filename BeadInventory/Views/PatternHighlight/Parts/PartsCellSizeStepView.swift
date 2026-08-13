@@ -245,14 +245,14 @@ struct PartsCellSizeStepView: View {
             Text("它已经判好的颜色、在拼豆板上的位置都会一起没掉。")
         }
         .confirmationDialog(
-            "清掉判好的颜色，重新对格子？",
+            "重新对格子大小？",
             isPresented: $unlockingPitch,
             titleVisibility: .visible
         ) {
-            Button("清掉，我要改格子", role: .destructive) { clearCellsForRegrid() }
+            Button("清掉颜色，重新对", role: .destructive) { clearCellsForRegrid() }
             Button("取消", role: .cancel) { unlockingPitch = false }
         } message: {
-            Text("格子大小一改，已经核对好的颜色就跟格子对不上了，只能重判一次。框和位置不动。")
+            Text("判好的颜色会清掉，之后要再判一次。框和位置不动。")
         }
     }
 
@@ -474,9 +474,15 @@ struct PartsCellSizeStepView: View {
                         // 判过色的零件改不了格距（改了行列数，已经核对好的颜色会整片错位），
                         // 所以下面那几个按钮是灰的。灰着不说话是最难受的一种 ——
                         // 用户会以为 App 坏了，而不是「这里本来就不让改」。
+                        // 锁住时这句话只回答一件事：**现在能做什么**。
+                        // 「这个已经判过色了，格子大小暂时改不了 —— 改了颜色会整片错位」
+                        // 是在讲系统内部出了什么事，用户要的是「我能干嘛、代价是什么」。
+                        // 「每个零件各有各的格线」在单图纸模式下也是废话：一共就一张图纸。
                         Text(pitchLocked
-                             ? "这个已经判过色了，格子大小暂时改不了 —— 改了颜色会整片错位。推格线还能用。"
-                             : "网格线要落在豆子和豆子的缝上。每个零件各有各的格线。")
+                             ? "颜色判好了：推格线可以，改格子大小要重判一次。"
+                             : (samples.count > 1
+                                ? "网格线要落在豆子和豆子的缝上。每个零件各有各的格线。"
+                                : "网格线要落在豆子和豆子的缝上。"))
                             .font(.footnote)
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -494,7 +500,7 @@ struct PartsCellSizeStepView: View {
                             Button(role: .destructive) {
                                 unlockingPitch = true
                             } label: {
-                                Label("清掉颜色，重新对格子", systemImage: "arrow.counterclockwise")
+                                Label("重新对格子大小", systemImage: "arrow.counterclockwise")
                                     .font(.footnote)
                             }
                         }
