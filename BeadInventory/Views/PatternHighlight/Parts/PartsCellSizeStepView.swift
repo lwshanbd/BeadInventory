@@ -1054,7 +1054,8 @@ struct PartsCanvasTransform {
 
 // MARK: - 网格线
 
-private struct CellGridOverlay: View {
+/// 单图纸模式的量格子屏用的是同一套画法（`SinglePatternGridStepView`），所以不是 private。
+struct CellGridOverlay: View {
     let grid: PartsGrid
     let transform: PartsCanvasTransform
 
@@ -1085,7 +1086,8 @@ private struct CellGridOverlay: View {
 
 // MARK: - 「一格」那个框
 
-private struct CellFrameOverlay: View {
+/// 同 `CellGridOverlay`：两种模式共用。
+struct CellFrameOverlay: View {
     /// 已经换算好的屏幕矩形
     let rect: CGRect
 

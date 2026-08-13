@@ -1322,8 +1322,7 @@ struct PlannedProjectDetailView: View {
     /// 在模式选择页里选了哪种模式，等它收起后再进下一页（见 openPatternModeIfSelected）
     @State private var pendingSinglePatternMode = false
     @State private var pendingMultiPartMode = false
-    @State private var showPatternCalibration = false
-    @State private var showPatternHighlight = false
+    @State private var showSinglePatternFlow = false
     @State private var showPartsSheetFlow = false
 
     // 获取当前项目的最新状态
@@ -1398,20 +1397,9 @@ struct PlannedProjectDetailView: View {
             PartsSheetFlowView(project: currentProject ?? project)
                 .environmentObject(inventoryManager)
         }
-        .sheet(isPresented: $showPatternCalibration) {
-            PatternCalibrationView(
-                project: currentProject ?? project,
-                onComplete: {
-                    showPatternHighlight = true
-                }
-            )
-            .environmentObject(inventoryManager)
-        }
-        .fullScreenCover(isPresented: $showPatternHighlight) {
-            if let p = inventoryManager.projects.first(where: { $0.id == project.id }) {
-                PatternHighlightView(project: p)
-                    .environmentObject(inventoryManager)
-            }
+        .fullScreenCover(isPresented: $showSinglePatternFlow) {
+            SinglePatternFlowView(project: currentProject ?? project)
+                .environmentObject(inventoryManager)
         }
         .onChange(of: currentProject?.isPlanned) { _, isPlanned in
             if isPlanned == false { dismiss() }
@@ -1460,17 +1448,12 @@ struct PlannedProjectDetailView: View {
         .padding(.horizontal)
     }
 
-    /// 单图纸模式沿用原来的分支：已标定过网格直接进高亮页，没标定先去标定页。
-    /// 多零件模式只有一个入口，进去之后由流程页自己决定从圈区还是从清单开始。
+    /// 两种模式都只有一个入口：进去之后由流程页自己决定从第一屏开始，
+    /// 还是接着上次的进度（对过网格的直接进「照着拼」）。
     private func openPatternModeIfSelected() {
         if pendingSinglePatternMode {
             pendingSinglePatternMode = false
-            let projectId = (currentProject ?? project).id
-            if inventoryManager.projectIDsWithPatternGrid.contains(projectId) {
-                showPatternHighlight = true
-            } else {
-                showPatternCalibration = true
-            }
+            showSinglePatternFlow = true
         } else if pendingMultiPartMode {
             pendingMultiPartMode = false
             showPartsSheetFlow = true

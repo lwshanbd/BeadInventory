@@ -70,6 +70,13 @@ enum PartsCellClassifier {
         /// （全是 `.empty`）。调用方不据此分流的话，用户看到的是一句「一共 0 颗」，
         /// 而他没做错任何事，也不知道该改哪儿。
         var unreadableParts: Int
+        /// 每一格**图上真实的颜色**（`[零件][行][列]`，取不到的格子是 nil）。
+        ///
+        /// 单图纸模式拿它给 OCR 做交叉校验：格子里印着的色号字样认出来之后，要跟这一格
+        /// 实际是什么颜色对一下才敢采纳（见 `SinglePatternClassifier`）。
+        /// 光靠 `cells` 是不够的 —— 那里存的是聚类之后配好的色号，
+        /// 拿它去校验 OCR 等于让算法自己给自己背书。
+        var cellLabs: [[[LabColor?]]]
     }
 
     /// 把每个零件切成格子并逐格判色。耗时在秒级，调用方请放后台。
@@ -164,7 +171,8 @@ enum PartsCellClassifier {
                 matchDeltaE: entry.deltaE
             )
         }
-        return Result(parts: fittedParts, palette: palette, unreadableParts: unreadableParts)
+        return Result(parts: fittedParts, palette: palette,
+                      unreadableParts: unreadableParts, cellLabs: cellLabs)
     }
 
     // MARK: - 采样
