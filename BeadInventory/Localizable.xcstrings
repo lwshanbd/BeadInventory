@@ -12028,6 +12028,36 @@
         }
       }
     },
+    "删掉这个零件？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this piece?"
+          }
+        }
+      }
+    },
+    "它已经判好的颜色、在拼豆板上的位置都会一起没掉。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its colors and its place on the pegboard go with it."
+          }
+        }
+      }
+    },
+    "网格线要落在豆子和豆子的缝上。每个零件各有各的格线。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grid lines should sit in the seams between beads. Each piece has its own grid."
+          }
+        }
+      }
+    },
     "零件清单" : {
       "localizations" : {
         "en" : {

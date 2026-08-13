@@ -67,6 +67,9 @@ struct PartsCellSizeStepView: View {
     @State private var picking = false
     /// 上一次「按当前格距给所有零件定位」用的是多大的格子。
     @State private var alignedAtCellWidth: Double?
+    /// 正要删掉的那个零件。删一个零件会连带丢掉它已经判好的颜色和摆好的位置，
+    /// 而这一屏是一下就能点到的，所以问一句。
+    @State private var deletingPart: BeadPart?
 
     @State private var zoom: CGFloat = 1
     @State private var lastZoom: CGFloat = 1
@@ -83,17 +86,14 @@ struct PartsCellSizeStepView: View {
 
     @State private var canvasSize: CGSize = .zero
 
-    /// 要过一遍的零件：**全部**，按面积从大到小排。
+    /// 要过一遍的零件：**全部，就按零件清单的顺序**。
     ///
-    /// 这里以前只取最大的十二个，理由是「全图共用一张网格，看完最大的这批就够下结论」。
-    /// 那个理由随着格线改成一个零件一个已经不成立了 —— 后面那些零件各有各的格线，
-    /// 自动对出来对不对没有任何人看过。要过就得全过，不想过有「不看了，完成」。
-    ///
-    /// 大的排前面：格线多、偏了最容易看出来，格距也只有在这种零件上才判断得准。
-    /// 半路按「不看了」的用户，至少已经看过最能说明问题的那几个。
-    private var samples: [BeadPart] {
-        parts.sorted { $0.bounds.width * $0.bounds.height > $1.bounds.width * $1.bounds.height }
-    }
+    /// 这里以前只取最大的十二个（理由是「全图共用一张网格，看完最大的就够下结论」），
+    /// 后来改成全部但按面积排。两个都是错的：
+    /// - 只看十二个 —— 格线改成一个零件一个之后，剩下那些各有各的格线，没人看过；
+    /// - 按面积排 —— 用户看到的编号一路乱跳（第一个是「零件 43」），跟零件清单对不上号，
+    ///   而「大零件先看」这点好处在每个零件都要过一遍之后根本不存在。
+    private var samples: [BeadPart] { parts }
 
     private var sample: BeadPart? {
         guard !samples.isEmpty else { return nil }
@@ -150,6 +150,26 @@ struct PartsCellSizeStepView: View {
         .onChange(of: frameOrigin) { _, _ in writeBackCurrentPart() }
         // 格距是全图共用的，改了所有零件都要重算；但各自的相位保持不变
         .onChange(of: calibration) { _, _ in writeBack() }
+        .confirmationDialog(
+            "删掉这个零件？",
+            isPresented: Binding(get: { deletingPart != nil },
+                                 set: { if !$0 { deletingPart = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("删掉", role: .destructive) { deleteCurrentPart() }
+            Button("取消", role: .cancel) { deletingPart = nil }
+        } message: {
+            Text("它已经判好的颜色、在拼豆板上的位置都会一起没掉。")
+        }
+    }
+
+    /// 删掉当前这个零件。删完停在原地 —— 后面那个会顶上来，正好接着看。
+    private func deleteCurrentPart() {
+        guard let target = deletingPart,
+              let index = parts.firstIndex(where: { $0.id == target.id }) else { return }
+        parts.remove(at: index)
+        deletingPart = nil
+        sampleIndex = min(sampleIndex, max(0, samples.count - 1))
     }
 
     // MARK: - 画布
@@ -291,10 +311,7 @@ struct PartsCellSizeStepView: View {
         VStack(spacing: Theme.Spacing.md) {
             if let sample {
                 HStack(spacing: Theme.Spacing.sm) {
-                    // 名字按它在**零件清单**里的位置算，不是按这一屏的翻页序号 ——
-                    // 这一屏是按面积排的，拿翻页序号当名字的话「零件 1」在两屏指的
-                    // 不是同一个零件，用户对不上号。
-                    Text(sample.displayName(order: parts.firstIndex(where: { $0.id == sample.id }) ?? sampleIndex))
+                    Text(sample.displayName(order: sampleIndex))
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(Theme.ColorToken.Text.primary)
                     if let grid {
@@ -303,6 +320,15 @@ struct PartsCellSizeStepView: View {
                             .foregroundColor(Theme.ColorToken.Text.tertiary)
                     }
                     Spacer()
+                    // 一个一个过的时候才发现「这块根本不是零件」（水印、一行字）是常事，
+                    // 而这一屏原来只能退回零件清单去删，回来又得从头翻。
+                    Button(role: .destructive) {
+                        deletingPart = sample
+                    } label: {
+                        Image(systemName: "trash").font(.footnote)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(Theme.ColorToken.Status.error)
                     // 还剩几个要看。一个一个过的时候，「还有多少」是唯一会让人
                     // 愿意继续按下去的信息 —— 不写的话按第三下就开始怀疑没有尽头。
                     Text("\(sampleIndex + 1) / \(samples.count)")
@@ -385,29 +411,44 @@ struct PartsCellSizeStepView: View {
                 }
             }
 
-            // 一个零件一个零件地过：主按钮是「这个对了，换下一个」，不是「离开这一屏」。
-            // 自动量出来的网格在个别零件上偏一点是常事，而偏了的那几个只有挨个看过去
-            // 才发现得了 —— 早先主按钮直接跳去判色，用户看完第一个就走了。
-            Button {
-                // 翻页之前先把「这个大小」应用到整张图纸 —— 否则用户在这个零件上调准了，
-                // 下一个零件还是按旧格线画的，他会以为白调了。
-                Task {
-                    if isLastSample {
-                        // 走到判色之前，用户没翻到过的那些零件也得按这个格距对一遍
-                        await refitAllParts()
-                        onContinue()
-                    } else {
-                        sampleIndex += 1
-                    }
+            HStack(spacing: Theme.Spacing.sm) {
+                // 翻过头了要能回去看一眼。四十九个零件一路按下来，发现上一个其实没对好
+                // 却只能一路走到底再重进，是这一屏最容易把人逼疯的地方。
+                Button {
+                    sampleIndex -= 1
+                } label: {
+                    // 只定宽不定高：高度让 `.controlSize(.large)` 跟右边主按钮一起给，
+                    // 写死 44 高会比主按钮高出一截。
+                    Image(systemName: "arrow.left")
+                        .font(.subheadline.weight(.bold))
+                        .frame(width: 24)
                 }
-            } label: {
-                Label(isLastSample ? "对齐了，看每格什么颜色" : "对齐了，看下一个",
-                      systemImage: isLastSample ? "eyedropper" : "arrow.right")
-                    .frame(maxWidth: .infinity)
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(sampleIndex == 0 || estimating || picking)
+
+                // 一个零件一个零件地过：主按钮是「这个对了，换下一个」，不是「离开这一屏」。
+                // 自动量出来的网格在个别零件上偏一点是常事，而偏了的那几个只有挨个看过去
+                // 才发现得了 —— 早先主按钮直接跳去判色，用户看完第一个就走了。
+                Button {
+                    Task {
+                        if isLastSample {
+                            // 走到判色之前，用户没翻到过的那些零件也得按这个格距对一遍
+                            await refitAllParts()
+                            onContinue()
+                        } else {
+                            sampleIndex += 1
+                        }
+                    }
+                } label: {
+                    Label(isLastSample ? "对齐了，看每格什么颜色" : "对齐了，看下一个",
+                          systemImage: isLastSample ? "eyedropper" : "arrow.right")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(calibration == nil || estimating || picking)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(calibration == nil || estimating || picking)
 
             // 剩下的不想一个个看了，随时能走。最后一个零件上不显示 —— 那时它和上面
             // 那个按钮是同一件事，摆两个只会让人以为有区别。
