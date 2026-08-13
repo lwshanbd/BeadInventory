@@ -1,6 +1,36 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "在手机上摆好拼豆板，这里就会显示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lay out a board on your phone and it will show up here"
+          }
+        }
+      }
+    },
+    "第 %lld / %lld 块" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Board %1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "投屏中" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On TV"
+          }
+        }
+      }
+    },
     "好" : {
       "localizations" : {
         "en" : {

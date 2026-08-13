@@ -78,7 +78,9 @@ struct PartsBoardStepView: View {
     @State private var noteToken = UUID()
     @State private var repackTarget: BeadBoardSize?
     @State private var didAutoPack = false
-    /// 外屏投影状态。只读一个「连上没有」，画什么由 publishToExternalDisplay 送过去。
+    /// 外屏投影状态。这一屏只用得着「连上没有」（画什么是 publishToExternalDisplay 送出去的），
+    /// 但 `@ObservedObject` 订阅的是整个对象，所以每次送板子也会让这一屏重画一遍。
+    /// 送板子只发生在离散的编辑动作上（拖动过程中不送），所以不在手势的热路径上。
     @ObservedObject private var cast = BoardCastSession.shared
 
     private enum Tab: Hashable { case parts, colors }
@@ -141,12 +143,17 @@ struct PartsBoardStepView: View {
             colorCache = makeColorCache()
             autoPackIfNeeded()
         }
-        .task(id: shapeSignature) { footprints = makeFootprints() }
-        // 接了电视 / 投影仪的话，把当前这块板送过去（没接就没人读，见 BoardCastSession）。
+        // 送外屏必须跟在 footprints 算完之后 —— 外屏只有形状可画，没形状的摆放会被整个跳过
+        // （见 BoardCanvas 里那句 `guard let footprint`）。这两件事分开写过一次，
+        // 结果是新摆的零件在电视上根本不出现、重排一遍电视上整块空白。
+        .task(id: shapeSignature) {
+            footprints = makeFootprints()
+            publishToExternalDisplay()
+        }
+        // 形状没变、只是挪了位置或者换了高亮，也要重送。
         // 拖动过程中的临时状态不送 —— 外屏是给人抬头看「板子现在长什么样」的，
-        // 跟着手指抖没有意义。
+        // 跟着手指抖没有意义；但手一松、位置定下来就必须送过去。
         .onChange(of: castSignature) { _, _ in publishToExternalDisplay() }
-        .onAppear { publishToExternalDisplay() }
         .onDisappear { BoardCastSession.shared.stop() }
         .task(id: noteToken) {
             guard note != nil else { return }
@@ -567,6 +574,16 @@ struct PartsBoardStepView: View {
         key == "#any" ? String(localized: "任意色") : key
     }
 
+    /// 高亮是给「当前这块板」选的，板上没这个色号了就得取消掉。
+    ///
+    /// 不取消的话：板上每颗豆子都不匹配，于是**整块板压成一片灰**（投到电视上就是一整面灰墙，
+    /// 看着像崩了）；而色号条是按当前板算的，那个 chip 已经不在了 ——
+    /// 提示还写着「再点一下取消」，却没有东西可以点。用户得随便选个别的颜色再取消才出得来。
+    private func dropHighlightIfGone() {
+        guard let key = highlightKey else { return }
+        if !boardColors.contains(where: { $0.key == key }) { highlightKey = nil }
+    }
+
     /// 形状缓存的失效条件：只跟「哪个零件、转了几次」有关。
     /// 位置故意不算进来 —— 拖动时每挪一格都重算一遍所有零件的形状，会直接卡住。
     private var shapeSignature: String {
@@ -628,6 +645,7 @@ struct PartsBoardStepView: View {
         boards = packed.boards
         boardIndex = 0
         selection = nil
+        highlightKey = nil
         resetView()
         flash(packed.unplaced.isEmpty
               ? String(localized: "排好了，一共 \(packed.boards.count) 块板")
@@ -697,6 +715,7 @@ struct PartsBoardStepView: View {
         guard boards.indices.contains(index) else { return }
         boardIndex = index
         selection = nil
+        dropHighlightIfGone()
         resetView()
     }
 
@@ -704,6 +723,7 @@ struct PartsBoardStepView: View {
         guard boards.indices.contains(boardIndex) else { return }
         boards[boardIndex].placements = []
         selection = nil
+        highlightKey = nil
     }
 
     private func removeCurrentBoard() {
@@ -752,6 +772,7 @@ struct PartsBoardStepView: View {
         guard let id = selection, boards.indices.contains(boardIndex) else { return }
         boards[boardIndex].placements.removeAll { $0.id == id }
         selection = nil
+        dropHighlightIfGone()
         tab = .parts
     }
 
@@ -841,9 +862,20 @@ struct PartsBoardStepView: View {
 
     // MARK: - 画布坐标
 
-    /// 送到外屏的东西变了没有。板子换了、零件形状变了、高亮换了色号才要重送。
+    /// 送到外屏的东西变了没有。
+    ///
+    /// **位置必须算进来**：挪一个零件只改 `col`/`row`，别的什么都不变
+    /// （见 `commitMove`）。这里要是复用 `shapeSignature`，用户拖完一个零件放下，
+    /// 电视上那个零件就一直停在旧位置 —— 而他正抬头照着电视摆豆子。
+    /// `shapeSignature` 故意不含位置是为了别在拖动时重算形状，两者要求正相反，不能共用。
+    ///
+    /// 只看当前这块板：送出去的本来就只有它。
     private var castSignature: String {
-        "\(boardIndex)|\(boards.count)|\(highlightKey ?? "")|\(shapeSignature)|\(colorCache.count)"
+        var signature = "\(boardIndex)|\(boards.count)|\(highlightKey ?? "")|\(colorCache.count)"
+        for placement in currentBoard?.placements ?? [] {
+            signature += "|\(placement.id)@\(placement.col),\(placement.row),\(placement.turns)"
+        }
+        return signature
     }
 
     private func publishToExternalDisplay() {

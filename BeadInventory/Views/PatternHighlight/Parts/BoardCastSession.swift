@@ -13,7 +13,7 @@
 //  但 AirPlay 默认是镜像 —— 电视上出现的是一台竖着的手机，板子仍然只占中间一小条，
 //  两边全是黑边，等于没投。所以这里走 iOS 的**外接屏幕专用场景**
 //  （`UIWindowSceneSessionRoleExternalDisplayNonInteractive`）：App 给外屏一份自己的画面，
-//  横着铺满整块屏幕，而手机上该点什么还点什么。YouTube 投视频是同一套机制。
+//  横着铺满整块屏幕，而手机上该点什么还点什么。视频类 App 投屏时走的是类似的思路。
 //
 //  ## 它只是一块白板
 //
@@ -28,7 +28,8 @@ import SwiftUI
 final class BoardCastSession: ObservableObject {
     static let shared = BoardCastSession()
 
-    /// 外屏现在该画的那块板。nil = 手机上没开着拼豆板。
+    /// 外屏现在该画的那块板。
+    /// nil = 手机那边现在没有板子可给：要么没开着拼豆板那一屏，要么开着但一块板都还没有。
     @Published private(set) var content: Content?
     /// 外屏（电视 / 投影仪）连上了没有。
     ///
@@ -42,15 +43,16 @@ final class BoardCastSession: ObservableObject {
         let colorCache: [String: Color]
         /// 手机上选了只看某个色号时，外屏也只亮那个 —— 用户抬头找的就是它
         let highlightKey: String?
-        /// 第几块 / 共几块。拼的人需要知道自己在哪一块上。
+        /// 第几块（**从 0 数起**，显示的时候记得 +1）/ 共几块。拼的人需要知道自己在哪一块上。
         let boardIndex: Int
         let boardCount: Int
     }
 
     private init() {}
 
-    /// 调用方（拼豆板那一屏）自己判断「有没有变」再调，所以这里不再比一次 ——
-    /// 里面装着几十个零件的形状，比一遍比直接赋值还贵。
+    /// 这里不比「有没有变」—— 里面装着几十个零件的形状，比一遍比直接赋值还贵。
+    /// 判断的责任在调用方：`PartsBoardStepView` 的 `castSignature`。
+    /// 改那个 signature 的时候记得，漏掉一项的代价是电视上停着一块过期的板。
     func update(_ content: Content) {
         self.content = content
     }
