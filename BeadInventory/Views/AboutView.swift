@@ -109,10 +109,6 @@ struct AboutView: View {
                         .font(.custom("Georgia-BoldItalic", size: 30))
                         .foregroundStyle(Theme.ColorToken.Morandi.rose)
                         .tracking(0.5)
-                    Text("慢慢拼，慢慢爱，每一颗豆都是给你的")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
-                        .padding(.top, 2)
                 }
                 Spacer(minLength: 0)
             }
@@ -250,7 +246,7 @@ struct AboutView: View {
                     icon: "star",
                     iconColor: Theme.ColorToken.Morandi.mist,
                     title: "评分 & 反馈",
-                    subtitle: "去 App Store 留下你的脚印 ✦",
+                    subtitle: "给个评分，帮我改进",
                     action: { requestAppReview() }
                 )
                 BIListRow(

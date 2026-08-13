@@ -1072,7 +1072,7 @@ struct ImageSelectionSection: View {
             .padding(.top, 4)
 
             VStack(spacing: 4) {
-                Text("放一张色号表给小豆吃")
+                Text("选一张图纸开始识别")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.ColorToken.Text.primary)
                 Text("支持表格、色号统计、拼图等图纸")

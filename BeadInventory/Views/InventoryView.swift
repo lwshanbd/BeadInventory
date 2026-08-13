@@ -258,12 +258,7 @@ struct InventoryView: View {
 
             // Hero row：Wordmark + 右侧统计
             HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Wordmark(size: 32, beadColor: flavor.color)
-                    Text("今天给小豆豆们点个名 ✦")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.ColorToken.Text.secondary)
-                }
+                Wordmark(size: 32, beadColor: flavor.color)
                 Spacer()
                 if snapshot.brandId != nil {
                     VStack(alignment: .trailing, spacing: 2) {
