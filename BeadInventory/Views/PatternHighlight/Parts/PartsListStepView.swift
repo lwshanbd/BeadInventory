@@ -469,9 +469,10 @@ struct PartsListStepView: View {
 
         let newPart = BeadPart(rowBand: rowBand(forMidY: inImage.midY), bounds: inImage)
         insertSorted(newPart)
-        // 只留刚画的这一个高亮：图上五十几个框，用橙色标出「这个是我刚补的」才有意义，
-        // 一路累加下去到第三个就分不清哪个是新的了。
-        selection = [newPart.id]
+        // 画完不选中它。选中态是给「我要对这个零件动手」准备的（删除 / 合并 / 拆开 / 改名），
+        // 而刚画完的下一步几乎总是接着画下一个 —— 留一个橙色高亮框压在图上，既挡着看，
+        // 又得先点一下取消。下面的缩略图仍然滚过去，用户看得见它加进来了。
+        selection.removeAll()
         lastTappedOnImage = newPart.id
         // **画完一个就退出补零件状态。**
         //
@@ -560,7 +561,10 @@ struct PartsListStepView: View {
                 parts = next.sorted {
                     $0.rowBand != $1.rowBand ? $0.rowBand < $1.rowBand : $0.bounds.minX < $1.bounds.minX
                 }
-                selection = Set(replacements.map(\.id))
+                // 拆完不选中拆出来的那几个（同 addPart）：拆开是为了「这两块本来就是两个」，
+                // 不是为了接着对它们动手，而多选着好几个反而挡住了看拆得对不对。
+                selection.removeAll()
+                lastTappedOnImage = replacements.first?.id
             }
         }
     }
