@@ -61,6 +61,14 @@ struct PartsCellSizeStepView: View {
     let onConfirmPart: () -> Void
     let onContinue: () -> Void
 
+    // 单图纸模式（`SinglePatternFlowView`）对的是**整张图纸**，它把整张图纸当成一个
+    // 「零件」交给这一屏 —— 量格子这件事两种模式一模一样，没有理由再写一份。
+    // 下面两个开关只改称呼和一个按钮，算法一个字都不分叉。
+    /// 这一屏在对什么。nil = 「零件 N」+「第几 / 共几个」（多零件）。
+    var subjectLabel: LocalizedStringKey?
+    /// 能不能删掉当前这个。单图纸不能：删掉整张图纸没有任何意义。
+    var allowsDelete = true
+
     /// 当前正在看哪个零件（按面积从大到小）。大零件格线多，最容易看出没对齐。
     @State private var sampleIndex = 0
     @State private var sampleImage: UIImage?
@@ -290,7 +298,10 @@ struct PartsCellSizeStepView: View {
                         .position(x: geo.size.width / 2, y: geo.size.height / 2)
                 }
             }
-            .onAppear { canvasSize = geo.size }
+            .onAppear {
+                canvasSize = geo.size
+                focusIfTooDense()
+            }
             .onChange(of: geo.size) { _, new in canvasSize = new }
         }
         .clipped()
@@ -380,7 +391,7 @@ struct PartsCellSizeStepView: View {
         VStack(spacing: Theme.Spacing.md) {
             if let sample {
                 HStack(spacing: Theme.Spacing.sm) {
-                    Text(sample.displayName(order: sampleIndex))
+                    Text(subjectLabel ?? LocalizedStringKey(sample.displayName(order: sampleIndex)))
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(Theme.ColorToken.Text.primary)
                     // 对过的打个勾。用户翻回来时要能一眼看出「这个我确认过了」——
@@ -396,20 +407,25 @@ struct PartsCellSizeStepView: View {
                             .foregroundColor(Theme.ColorToken.Text.tertiary)
                     }
                     Spacer()
-                    // 一个一个过的时候才发现「这块根本不是零件」（水印、一行字）是常事，
-                    // 而这一屏原来只能退回零件清单去删，回来又得从头翻。
-                    Button(role: .destructive) {
-                        deletingPart = sample
-                    } label: {
-                        Image(systemName: "trash").font(.footnote)
+                    if allowsDelete {
+                        // 一个一个过的时候才发现「这块根本不是零件」（水印、一行字）是常事，
+                        // 而这一屏原来只能退回零件清单去删，回来又得从头翻。
+                        Button(role: .destructive) {
+                            deletingPart = sample
+                        } label: {
+                            Image(systemName: "trash").font(.footnote)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(Theme.ColorToken.Status.error)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundColor(Theme.ColorToken.Status.error)
                     // 还剩几个要看。一个一个过的时候，「还有多少」是唯一会让人
                     // 愿意继续按下去的信息 —— 不写的话按第三下就开始怀疑没有尽头。
-                    Text("\(sampleIndex + 1) / \(samples.count)")
-                        .font(.footnote.monospacedDigit())
-                        .foregroundColor(Theme.ColorToken.Text.tertiary)
+                    // 只有一个的时候不写：「1 / 1」只会让用户去找另外那些。
+                    if samples.count > 1 {
+                        Text("\(sampleIndex + 1) / \(samples.count)")
+                            .font(.footnote.monospacedDigit())
+                            .foregroundColor(Theme.ColorToken.Text.tertiary)
+                    }
                 }
             }
 
@@ -778,10 +794,35 @@ struct PartsCellSizeStepView: View {
         sampleImage = cropped
         sampleRegion = padded
         syncFrameToLattice()
+        focusIfTooDense()
         // 翻到一个零件就先按当前格距给它对一次 —— 用户翻过来看到的应该是已经对好的，
         // 而不是「上一个零件的格线平移过来」。它有自己的格线，跟别的零件没关系。
         guard !Task.isCancelled else { return }
         await refit(part: sample)
+    }
+
+    /// 一格在屏幕上太小就先替用户放大到看得清。
+    ///
+    /// 零件一般十来格，铺满画布之后一格二三十点，本来就够看；单图纸模式把**整张图纸**
+    /// 当成一个零件送进来，铺满之后一格只剩四五个点 —— 几百条格线糊成一片色，
+    /// 而这一屏的验收标准恰恰是「线有没有落在豆子的缝上」。看不清就等于没法验收，
+    /// 用户只能对着一片糊按「对齐了」。
+    ///
+    /// 门槛卡在 10 点：零件基本碰不到，碰到的都是真的看不清。
+    private func focusIfTooDense() {
+        guard zoom == 1, let calibration, calibration.isUsable,
+              displayRect.width > 0, sampleRegion.width > 0, canvasSize.width > 0 else { return }
+        let cellPoints = CGFloat(calibration.cellWidth) / sampleRegion.width * displayRect.width
+        guard cellPoints > 0, cellPoints < 10 else { return }
+        zoom = max(1, min(16, 18 / cellPoints))
+        lastZoom = zoom
+        // 对准零件正中：边角多半是留白，看不出对没对齐
+        let flat = PartsCanvasTransform(region: sampleRegion, display: displayRect,
+                                        size: canvasSize, zoom: zoom, pan: .zero)
+        let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+        let target = flat.screen(CGPoint(x: sampleRegion.midX, y: sampleRegion.midY))
+        pan = clampPan(CGSize(width: center.x - target.x, height: center.y - target.y))
+        lastPan = pan
     }
 
     /// 把黄框摆到零件正中那一格。

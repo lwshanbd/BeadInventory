@@ -63,4 +63,9 @@ struct BeadPatternGrid: Codable, Equatable, Sendable {
     /// 用户在图上指认的底色（`RRGGBB`）。判色时先把这一片摘出去，
     /// 否则整片空白会被硬套到最近的色号上（理由见 `PartsBaseColorStepView` 的头注释）。
     var emptyHex: String? = nil
+
+    /// 用户在「量格子」那屏亲手点过「对齐了」。语义完全同 `BeadPart.gridConfirmed` ——
+    /// 那一屏是跟多零件模式共用的，锁不跟着存下来的话，下次进来它会当成「没人对过」，
+    /// 一进屏就按当前格距把用户对好的格线重新拟合一遍。
+    var gridConfirmed: Bool? = nil
 }

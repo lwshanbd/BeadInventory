@@ -8,7 +8,8 @@
 //  屏号只写在这里，各屏自己的文件里不再写「第 ③ 屏」，免得插一屏就得挨个改注释：
 //
 //      裁图纸    把图纸上真正是格子的那一块框住（排除色号表、留白、水印）。这是根视图。
-//      量格子    把框的两个角对到网格最外圈，确认横竖各多少格。框里等分 = 整张的网格。
+//      量格子    定一格多大、格线落在哪。**这一屏就是多零件那一屏**（PartsCellSizeStepView），
+//               整张图纸当成那一个「零件」送进去 —— 量格子这件事两种模式没有区别。
 //      底色      在图上点一下哪一片是留白。判色前必须先把它摘出去。
 //      核对颜色  每个色号有多少颗、分别是哪几格，用户逐条校对
 //      照着拼    点一个色号，图上只亮它那些格子
@@ -155,17 +156,24 @@ struct SinglePatternFlowView: View {
                     if let work {
                         switch step {
                         case .grid:
-                            SinglePatternGridStepView(
+                            // **就是多零件那一屏**（`PartsCellSizeStepView`）。量格子这件事
+                            // 两种模式一模一样：定一个格距，让算法把格线拟合到图上，用户验收。
+                            // 单图纸只是把「整张图纸」当成那一个零件送进去。
+                            //
+                            // 自己另写一份的下场已经付过学费了：写出来的两条坑
+                            // （徒手拖框定格距、让用户填横竖多少格）在那个文件的头注释里
+                            // 白纸黑字写着「不要再回去」，而我两条都踩了。
+                            PartsCellSizeStepView(
                                 work: work,
-                                roi: tracked($roi),
-                                sheet: tracked($sheet),
+                                parts: sheetParts,
                                 calibration: tracked($calibration),
+                                onConfirmPart: { persist() },
                                 onContinue: {
                                     persist()
                                     path = [.grid, .baseColor]
-                                    // 框在这一屏可能被拖动过，高清工作图要按新范围重裁一次
-                                    Task { await prepareWorkImage() }
-                                }
+                                },
+                                subjectLabel: "整张图纸",
+                                allowsDelete: false
                             )
                         case .baseColor:
                             PartsBaseColorStepView(
@@ -336,7 +344,8 @@ struct SinglePatternFlowView: View {
             colorSystem: project.colorSystem,
             roi: roi,
             calibration: calibration,
-            emptyHex: emptyHex
+            emptyHex: emptyHex,
+            gridConfirmed: sheet.gridConfirmed
         )
     }
 
@@ -420,7 +429,8 @@ struct SinglePatternFlowView: View {
                 gridRect: area,
                 rows: grid.rows,
                 cols: grid.cols,
-                cells: fills
+                cells: fills,
+                gridConfirmed: grid.gridConfirmed
             )
 
             // 上次做到哪儿，这次就从哪儿接着来。判过色的直接进「照着拼」——
