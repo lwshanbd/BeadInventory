@@ -441,11 +441,15 @@ struct PartsListStepView: View {
         var merged = chosen[0]
         merged.bounds = union
         merged.rowBand = chosen.map(\.rowBand).min() ?? merged.rowBand
-        // 合并后网格信息全部作废（框变了，行列数和格子内容都得重算）
+        // 合并后网格信息全部作废（框变了，行列数和格子内容都得重算）。
+        // **「已对齐」这个标记必须跟着一起清**：它是沿用 chosen[0] 来的，而合并出来的是
+        // 一个全新的框，从来没人对过。留着的话「量格子」那屏会把它当成用户确认过的锁住，
+        // 自动对齐一律绕开 —— 它就永远停在 0×0 格，而屏幕上还打着一个绿勾。
         merged.gridRect = nil
         merged.rows = 0
         merged.cols = 0
         merged.cells = []
+        merged.gridConfirmed = nil
 
         var remaining = parts.filter { !selection.contains($0.id) }
         remaining.append(merged)

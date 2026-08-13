@@ -10,9 +10,13 @@
 //  验收标准是眼睛：网格线必须落在豆子和豆子的缝上。所以主体是一个零件的大图 +
 //  铺在上面的网格线，对没对齐一眼就知道，不需要用户去理解任何数值。
 //
-//  ## 格距全图共用，格线位置一个零件一个
+//  ## 格距默认全图共用，格线位置一个零件一个；对好的零件连格距一起锁
 //
-//  同一张纸上豆子一样大，所以**格距只有一个数**，在哪个零件上调都一样。
+//  同一张纸上豆子一样大，所以**还没对过的零件共用一个格距**，在其中任何一个上调都一样。
+//  但用户点过「对齐了」的零件会连格距带格线一起锁住（`isLocked` / `ownCalibration`）：
+//  它当时按多大的格子对好的就一直是多大，在它身上调加减号也只改它自己
+//  （`setCellPitch`）。不这样的话，他挨个对了二十个零件，在第二十一个上动一下就把
+//  前二十个全推走了。
 //
 //  **格线位置不是。** 图纸上的零件是各画各的 —— 零件 A 的格线和零件 B 的格线压根不属于
 //  同一批。早先整张图共用一个相位，于是「这个对齐了、换一个又对不上」，怎么推都推不好，
@@ -52,6 +56,9 @@ struct PartsCellSizeStepView: View {
     /// 可写：这屏定下来的网格要写回每一个零件
     @Binding var parts: [BeadPart]
     @Binding var calibration: PartsGridCalibration?
+    /// 对完一个零件点「对齐了，看下一个」时调一下 —— 把这一屏的进度立刻落盘。
+    /// 不然对了半天中途退出去，对好的网格全丢。
+    let onConfirmPart: () -> Void
     let onContinue: () -> Void
 
     /// 当前正在看哪个零件（按面积从大到小）。大零件格线多，最容易看出没对齐。
@@ -100,16 +107,77 @@ struct PartsCellSizeStepView: View {
         return samples[min(sampleIndex, samples.count - 1)]
     }
 
-    /// 当前零件用的那张标定：**全局格距 + 这个零件自己的相位**。
+    /// 当前零件用的那张标定：格距 + 这个零件自己的相位（`frameOrigin`）。
     ///
-    /// 图纸上的零件是各画各的，格线不共用（用户拿真实图纸确认过）。所以格距全图一个数、
-    /// 相位一个零件一个。`frameOrigin` 就是当前这个零件的相位。
+    /// 图纸上的零件是各画各的，格线不共用（用户拿真实图纸确认过）。默认拿全局那个格距，
+    /// **但用户已经点过「对齐了」的零件用它自己的** —— 它当时是按多大的格子对好的，
+    /// 之后在别的零件上把格距推到哪里都跟它无关。
+    ///
+    /// 这一条不只是显示问题。屏幕上的格线、黄框、「一格多少像素」、以及用户在这个零件上
+    /// 再动一下时写回去的值，全都从这里来。这里要是取了全局格距，用户翻回一个对好的零件，
+    /// 看到的就是别处调出来的数字和按那个数字画的格线 —— 他只要再碰一下，
+    /// 这个零件就真的被改成那个格距了。锁住数据而不锁住这里，等于没锁。
     private var sampleCalibration: PartsGridCalibration? {
-        guard let calibration, calibration.isUsable else { return nil }
-        var c = calibration
+        guard let sample else { return nil }
+        var c: PartsGridCalibration
+        if let own = ownCalibration(of: sample) {
+            c = own
+        } else {
+            guard let calibration, calibration.isUsable else { return nil }
+            c = calibration
+        }
         c.originX = Double(frameOrigin.x)
         c.originY = Double(frameOrigin.y)
         return c
+    }
+
+    /// 这个零件自己那套格距，从它已经定好的网格反推（格距 = 网格宽 ÷ 列数）。
+    ///
+    /// **锁住的零件一律走这里，判过色的也算**（曾经把判过色的排除在外，那是个会毁数据的
+    /// 洞）：`writeBackCurrentPart` 是本文件唯一不查锁的写入路径，而它拿的就是这个函数的
+    /// 结论。判过色的零件要是在这儿退回全局格距，用户从核对页退回「量格子」——
+    /// 光是进屏幕，`syncFrameToLattice` 改一下 `frameOrigin` 就会触发一次写回 ——
+    /// 它的 rows/cols 当场按全局格距重算，而 `cells` 还是老形状，几天的核对成果整片错位。
+    ///
+    /// 反过来，从零件自己的网格反推格距之后，同样的写回算出来的还是同一张网格
+    /// （`PartsGrid(covering:)` 保证 `rect.width == cols * cellWidth`），写回变成幂等的，
+    /// 那个洞就不存在了。
+    private func ownCalibration(of part: BeadPart) -> PartsGridCalibration? {
+        guard isLocked(part),
+              let rect = part.gridRect, part.rows > 0, part.cols > 0,
+              rect.width > 0, rect.height > 0 else { return nil }
+        return PartsGridCalibration(
+            cellWidth: Double(rect.width) / Double(part.cols),
+            cellHeight: Double(rect.height) / Double(part.rows),
+            originX: Double(rect.minX),
+            originY: Double(rect.minY)
+        )
+    }
+
+    /// 改格距的唯一入口，替掉了「直接给 `calibration` 赋值」。
+    ///
+    /// - 当前零件是用户确认过、**还没判色**的：**只改它自己**，全局那个数一动不动。
+    ///   所以在这个零件上调加减号是有反应的（不然锁住就成了按钮失灵），而后面还没对的
+    ///   零件也不会被这一下带偏 —— 它们等的是全局那个数。
+    /// - 否则：改全局，`onChange(of: calibration)` 里的 `writeBack` 会带动所有还没锁的零件。
+    ///
+    /// 这里的条件**不能**图省事写成 `ownCalibration(of:) != nil` —— 那个现在把判过色的
+    /// 零件也算进来了（见它的注释），而改判过色零件的格距会连行列数一起改，`cells` 当场错位。
+    /// 判过色的零件在这一屏根本不该改格距，界面上那几个按钮也是禁用的。
+    private func setCellPitch(width: Double, height: Double) {
+        if let sample, sample.isGridConfirmed, !sample.hasCells,
+           let index = parts.firstIndex(where: { $0.id == sample.id }) {
+            let own = PartsGridCalibration(cellWidth: width, cellHeight: height,
+                                           originX: Double(frameOrigin.x),
+                                           originY: Double(frameOrigin.y))
+            applyGrid(to: index, phase: frameOrigin, calibration: own)
+            return
+        }
+        calibration = PartsGridCalibration(
+            cellWidth: width, cellHeight: height,
+            originX: calibration?.originX ?? Double(frameOrigin.x),
+            originY: calibration?.originY ?? Double(frameOrigin.y)
+        )
     }
 
     /// 当前零件落在它自己那张网格上的那块（行列数就是从这儿来的）
@@ -118,11 +186,11 @@ struct PartsCellSizeStepView: View {
         return PartsGrid(covering: sample.bounds, calibration: c)
     }
 
-    /// 黄框在整张图纸上的归一化矩形
+    /// 黄框在整张图纸上的归一化矩形。同样用当前零件那套格距（见 `sampleCalibration`）。
     private var frameRect: CGRect? {
-        guard let calibration, calibration.isUsable else { return nil }
+        guard let c = sampleCalibration, c.isUsable else { return nil }
         return CGRect(x: frameOrigin.x, y: frameOrigin.y,
-                      width: CGFloat(calibration.cellWidth), height: CGFloat(calibration.cellHeight))
+                      width: CGFloat(c.cellWidth), height: CGFloat(c.cellHeight))
     }
 
     private var displayRect: CGRect {
@@ -144,11 +212,16 @@ struct PartsCellSizeStepView: View {
         .navigationTitle("量格子")
         .navigationBarTitleDisplayMode(.inline)
         // 工作图也算进 id：进来时先拿到的是低清兜底版，高清版在后台裁好之后才换上来。
-        .task(id: "\(sampleIndex)|\(work.image.size)") { await loadSample() }
+        // 认零件的 **id** 而不是下标：删掉一个非末尾的零件时下标不变，后面那个顶上来 ——
+        // 只认下标的话这一句不会重跑，画布上留着的还是已经删掉那个零件的图，
+        // 而 `sample` 已经指向顶上来的那一个。接着按「对齐了」，确认标记就盖到了
+        // 一个用户根本没看过的零件上，从此自动对齐再也不管它。
+        .task(id: "\(sample?.id.uuidString ?? "")|\(work.image.size)") { await loadSample() }
         .task { await estimateIfNeeded() }
         // 推格线只动当前这个零件 —— 别的零件有它们自己的格线，凭什么跟着走
         .onChange(of: frameOrigin) { _, _ in writeBackCurrentPart() }
-        // 格距是全图共用的，改了所有零件都要重算；但各自的相位保持不变
+        // 全局格距改了，**还没锁住的**零件都要重算；但各自的相位保持不变。
+        // 锁住的那些由 writeBack 自己绕开（对好的零件不该被后面的调整推走）。
         .onChange(of: calibration) { _, _ in writeBack() }
         .confirmationDialog(
             "删掉这个零件？",
@@ -297,12 +370,8 @@ struct PartsCellSizeStepView: View {
         let scaleX = (dragStartCell.width + d.width) / dragStartCell.width
         let scaleY = (dragStartCell.height + d.height) / dragStartCell.height
         let scale = max(0.2, min(5, (scaleX + scaleY) / 2))
-        calibration = PartsGridCalibration(
-            cellWidth: Double(dragStartCell.width * scale),
-            cellHeight: Double(dragStartCell.height * scale),
-            originX: Double(frameOrigin.x),
-            originY: Double(frameOrigin.y)
-        )
+        setCellPitch(width: Double(dragStartCell.width * scale),
+                     height: Double(dragStartCell.height * scale))
     }
 
     // MARK: - 底部
@@ -314,6 +383,13 @@ struct PartsCellSizeStepView: View {
                     Text(sample.displayName(order: sampleIndex))
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(Theme.ColorToken.Text.primary)
+                    // 对过的打个勾。用户翻回来时要能一眼看出「这个我确认过了」——
+                    // 也才解释得了为什么后面调格距它没跟着动。
+                    if sample.isGridConfirmed {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.footnote)
+                            .foregroundColor(Theme.ColorToken.Status.success)
+                    }
                     if let grid {
                         Text("\(grid.cols) × \(grid.rows) 格")
                             .font(.footnote.monospacedDigit())
@@ -367,7 +443,12 @@ struct PartsCellSizeStepView: View {
                 HStack(alignment: .top, spacing: Theme.Spacing.lg) {
                     nudgePad
                     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        Text("网格线要落在豆子和豆子的缝上。每个零件各有各的格线。")
+                        // 判过色的零件改不了格距（改了行列数，已经核对好的颜色会整片错位），
+                        // 所以下面那几个按钮是灰的。灰着不说话是最难受的一种 ——
+                        // 用户会以为 App 坏了，而不是「这里本来就不让改」。
+                        Text(pitchLocked
+                             ? "这个零件已经判过色了，格子大小改不了 —— 改了颜色会整片错位。推格线还能用。"
+                             : "网格线要落在豆子和豆子的缝上。每个零件各有各的格线。")
                             .font(.footnote)
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -389,7 +470,7 @@ struct PartsCellSizeStepView: View {
                                 .frame(minWidth: 78)
                             nudgeButton("plus") { changeCellPixels(by: Self.cellPixelStep) }
                         }
-                        .disabled(estimating || calibration == nil)
+                        .disabled(estimating || calibration == nil || pitchLocked)
 
                         HStack(spacing: Theme.Spacing.md) {
                             Button {
@@ -397,14 +478,14 @@ struct PartsCellSizeStepView: View {
                             } label: {
                                 Label("自动对齐", systemImage: "wand.and.stars").font(.footnote)
                             }
-                            .disabled(estimating)
+                            .disabled(estimating || pitchLocked)
                             Button {
                                 enterPicking()
                             } label: {
                                 Label("重选格子大小", systemImage: "square.dashed.inset.filled")
                                     .font(.footnote)
                             }
-                            .disabled(estimating)
+                            .disabled(estimating || pitchLocked)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -432,11 +513,16 @@ struct PartsCellSizeStepView: View {
                 // 才发现得了 —— 早先主按钮直接跳去判色，用户看完第一个就走了。
                 Button {
                     Task {
+                        // 先记下「这个我亲手对过了」：从此再改格距、再自动对齐都不动它。
+                        confirmCurrentPart()
                         if isLastSample {
                             // 走到判色之前，用户没翻到过的那些零件也得按这个格距对一遍
                             await refitAllParts()
                             onContinue()
                         } else {
+                            // 对完一个存一个。四十九个零件是能横跨好几天的活，
+                            // 不能等走到最后一个才落盘。
+                            onConfirmPart()
                             sampleIndex += 1
                         }
                     }
@@ -538,6 +624,14 @@ struct PartsCellSizeStepView: View {
     /// 用户想拖框身永远拖成改大小，也就成了「这个框根本动不了」。
     private func enterPicking() {
         picking = true
+        // **这里不解锁。** 曾经在这解过，理由是「锁着的话『就用这个大小』会被 `refit` 挡掉，
+        // 用户拉了半天的框一点没落地」—— 有了 `setCellPitch` 之后那个理由就不成立了：
+        // 拖把手走的是 `resize → setCellPitch`，对确认过的零件直接写它自己的网格，
+        // 尺寸照样落地；被 `refit` 挡掉的只是自动重找相位，推格线随时可以补。
+        //
+        // 而解锁的代价很实在：解开的一瞬间 `ownCalibration` 就返回 nil，黄框改按**全局**
+        // 格距画 —— 正好是用户刚刚特地走开的那个数字。这一屏又没有「取消」出口，
+        // 于是点进来只想看一眼的人，出去时确认和绿勾都没了。
         guard let frameRect, displayRect.width > 0, sampleRegion.width > 0 else { return }
         let cellPoints = frameRect.width / sampleRegion.width * displayRect.width
         guard cellPoints > 0 else { return }
@@ -615,9 +709,11 @@ struct PartsCellSizeStepView: View {
 
     /// 一格现在是多少源图像素。故意保留小数：自动量出来的格距本来就是 12.4 这种，
     /// 四舍五入到整数会凭空引入 5% 的误差，而这一屏存在的意义就是消掉这点误差。
+    ///
+    /// 走 `sampleCalibration` 而不是全局那份 —— 用户确认过的零件要显示**它自己**的格距。
     private var cellPixels: Double {
-        guard let calibration else { return 0 }
-        return calibration.cellWidth * sheetPixelWidth
+        guard let c = sampleCalibration ?? calibration else { return 0 }
+        return c.cellWidth * sheetPixelWidth
     }
 
     /// 写到小数点后两位：步长是 0.1，只显示一位的话用户看不出自己停在 20.03 还是 20.0，
@@ -637,15 +733,10 @@ struct PartsCellSizeStepView: View {
 
     /// 加减号：一格的边长加 / 减一步。豆子是方的，所以高跟着宽走。
     private func changeCellPixels(by delta: Double) {
-        guard let calibration, sheetPixelWidth > 0 else { return }
+        guard sheetPixelWidth > 0 else { return }
         let next = max(2, cellPixels + delta)
         let width = next / sheetPixelWidth
-        self.calibration = PartsGridCalibration(
-            cellWidth: width,
-            cellHeight: width * sheetAspect,
-            originX: calibration.originX,
-            originY: calibration.originY
-        )
+        setCellPitch(width: width, height: width * sheetAspect)
     }
 
     /// 图纸整张的**像素**宽高比。
@@ -698,12 +789,22 @@ struct PartsCellSizeStepView: View {
     /// 这不改变网格本身 —— 格线是无限铺开的，挑哪一格显示都一样。挑中间那格是因为
     /// 左上角那一格多半压在零件外面的空白上，框里一片粉，看不出格子边界对没对齐。
     private func syncFrameToLattice() {
-        guard let sample, let calibration, calibration.isUsable else { return }
-        // 这个零件已经有自己的格线了就用它自己的；没有才从全局那份推一格出来当起点。
-        var base = calibration
-        if let rect = sample.gridRect {
-            base.originX = Double(rect.minX)
-            base.originY = Double(rect.minY)
+        guard let sample else { return }
+        // 确认过的零件整套（格距 + 格线）都用它自己的；否则拿全局格距，
+        // 格线位置能用它自己的就用它自己的，没有才从全局那份推一格出来当起点。
+        //
+        // 这里不能图省事用 `sampleCalibration` —— 那个要读 `frameOrigin`，
+        // 而这个函数就是负责算 `frameOrigin` 的。
+        var base: PartsGridCalibration
+        if let own = ownCalibration(of: sample) {
+            base = own
+        } else {
+            guard let calibration, calibration.isUsable else { return }
+            base = calibration
+            if let rect = sample.gridRect {
+                base.originX = Double(rect.minX)
+                base.originY = Double(rect.minY)
+            }
         }
         frameOrigin = CGPoint(x: base.snappedX(Double(sample.bounds.midX)),
                               y: base.snappedY(Double(sample.bounds.midY)))
@@ -730,8 +831,8 @@ struct PartsCellSizeStepView: View {
         estimating = true
         let fitted = await Task.detached(priority: .userInitiated) { () -> [UUID: CGPoint] in
             var found: [UUID: CGPoint] = [:]
-            // 判过色的跳过，理由同 `refit(part:)`
-            for part in snapshot where !part.hasCells {
+            // 锁住的跳过，理由同 `refit(part:)`
+            for part in snapshot where !(part.isGridConfirmed || part.hasCells) {
                 if let origin = PartsPitchEstimator.fitOrigin(
                     work: source, bounds: part.bounds, calibration: calibration
                 ) {
@@ -741,7 +842,11 @@ struct PartsCellSizeStepView: View {
             return found
         }.value
         estimating = false
-        for index in parts.indices {
+        // 这里以前对**所有**零件都 applyGrid（锁住的靠 `phase(of:)` 保住相位）。
+        // 那是不够的：applyGrid 会拿当前格距重算 rows/cols，格距一改，
+        // 用户对好的零件行列数当场变掉，判过色的连 cells 都跟着错位。相位没被推走，
+        // 但网格已经不是他确认的那张了。锁住的就整个别碰。
+        for index in parts.indices where !isLocked(parts[index]) {
             let id = parts[index].id
             applyGrid(to: index, phase: fitted[id] ?? phase(of: parts[index]), calibration: calibration)
         }
@@ -751,19 +856,27 @@ struct PartsCellSizeStepView: View {
 
     /// 单独给一个零件按当前格距定位。翻到它的时候跑这一下，用户看到的就是已经对好的。
     ///
-    /// 已经判过色的零件不动 —— 改 `gridRect` 会连带改行列数，而 `cells` 还是按旧行列数
-    /// 存的，结果是用户核对过的颜色整片错位（同 `squaredIfNeeded`）。那种项目要重对，
-    /// 得他自己按「自动对齐」。
+    /// 已经锁住的零件不动：
+    /// - 判过色的 —— 改 `gridRect` 会连带改行列数，而 `cells` 还是按旧行列数存的，
+    ///   结果是用户核对过的颜色整片错位（同 `squaredIfNeeded`）；
+    /// - 用户点过「对齐了」的 —— 他翻回来看一眼，看到的必须还是自己对好的那张网格，
+    ///   而不是被当场重对了一遍。要重对，旁边的「自动对齐」随时可以按。
     private func refit(part: BeadPart) async {
-        guard !part.hasCells else { return }
+        guard !isLocked(part) else { return }
         guard let calibration, calibration.isUsable,
-              let index = parts.firstIndex(where: { $0.id == part.id }) else { return }
+              parts.contains(where: { $0.id == part.id }) else { return }
         let source = work
         let bounds = part.bounds
         let origin = await Task.detached(priority: .userInitiated) {
             PartsPitchEstimator.fitOrigin(work: source, bounds: bounds, calibration: calibration)
         }.value
-        guard let origin, parts.indices.contains(index), parts[index].id == part.id else { return }
+        // 锁要在 await **之后**再查一次：找相位这一下是后台跑的，这期间用户可能已经
+        // 点了「对齐了」翻到下一个零件。只按开头那次判断就把结果写回去，等于拿一份
+        // 过期的计算覆盖掉用户刚刚亲手确认的网格。顺便按 id 重取下标 —— 这期间
+        // 零件也可能被删掉，老下标会指到别人身上。
+        guard !Task.isCancelled, let origin,
+              let index = parts.firstIndex(where: { $0.id == part.id }),
+              !isLocked(parts[index]) else { return }
         applyGrid(to: index, phase: origin, calibration: calibration)
         syncFrameToLattice()
     }
@@ -781,13 +894,24 @@ struct PartsCellSizeStepView: View {
         let measured = await Task.detached(priority: .userInitiated) {
             PartsPitchEstimator.estimateLattice(work: source, parts: snapshot)
         }.value
-        if let measured {
-            self.calibration = measured
-        } else {
-            let fitted = await Task.detached(priority: .userInitiated) {
+        var fitted: CGPoint?
+        if measured == nil {
+            fitted = await Task.detached(priority: .userInitiated) {
                 PartsPitchEstimator.fitOrigin(work: source, parts: snapshot, calibration: calibration)
             }.value
-            guard let fitted else { return }
+            // 什么都没量出来：**锁原样留着**。解锁必须等到确实有结果，
+            // 否则一次失败的「自动对齐」会悄悄把用户对好的零件重新暴露给后面的全局改动 ——
+            // 屏幕上什么都没发生，他不会知道这个零件已经不受保护了。
+            guard fitted != nil else { return }
+        }
+        // 按了这个就是「你帮我重弄这一个」，那当前零件的确认作废 —— 不然它锁着，
+        // 这一下对它完全没反应，而按钮看起来跟能用一模一样。重弄完他再点一次
+        // 「对齐了」重新确认就是。必须赶在下面动 `calibration` 之前解，
+        // 那一下会触发 `writeBack`，而 `writeBack` 绕开所有锁着的零件。
+        releaseCurrentPartLock()
+        if let measured {
+            self.calibration = measured
+        } else if let fitted {
             self.calibration?.originX = Double(fitted.x)
             self.calibration?.originY = Double(fitted.y)
         }
@@ -797,12 +921,54 @@ struct PartsCellSizeStepView: View {
         writeBack()
     }
 
-    /// 格距变了：每个零件按**它自己那条格线**重算一遍。判色那步直接用这里的结论。
+    /// 格距变了：**还没对好的**零件按它自己那条格线重算一遍。判色那步直接用这里的结论。
+    ///
+    /// 已经点过「对齐了」的一律不动 —— 用户挨个对了二十个零件，在第二十一个上动一下
+    /// 加减号就把前二十个全推走，是这一屏最伤人的事：越往后调越乱，
+    /// 而他根本不知道自己刚毁了什么。
     private func writeBack() {
         guard let calibration, calibration.isUsable else { return }
-        for index in parts.indices {
+        // 锁住的一个都不碰，**包括当前正在看的这个**。
+        //
+        // 这里曾经给「当前零件」开过一个例外，理由是「用户就是在它身上调的加减号，
+        // 不动等于按了没反应」。那个理由现在由 `setCellPitch` 承担了 —— 在确认过的零件上
+        // 调格距只改它自己、根本不碰全局这个数，所以这个例外既用不上，又会在别的路径
+        // （比如自动对齐改了全局格距）把用户对好的零件顺手推走。
+        for index in parts.indices where !isLocked(parts[index]) {
             applyGrid(to: index, phase: phase(of: parts[index]), calibration: calibration)
         }
+    }
+
+    /// 这个零件的网格锁住了没有：自动重算（翻到它时的自动对齐、改全局格距、离开前的兜底）
+    /// 一律绕开。判过色的一并算锁住 —— 那时候改行列数比推走格线还严重。
+    private func isLocked(_ part: BeadPart) -> Bool {
+        part.isGridConfirmed || part.hasCells
+    }
+
+    /// 当前这个零件的**格距**能不能改。判过色的不能：改格距会连行列数一起改，
+    /// 而 `cells` 还是按老行列数存的，用户核对好的颜色会整片错位。
+    ///
+    /// 这一条必须反映到界面上（那三个按钮是灰的 + 旁边一句说明）。光在代码里挡住是不够的 ——
+    /// 改格距的两条路（`setCellPitch` 走全局分支、`writeBack` 又绕开锁住的零件）合起来的
+    /// 效果是「数字在动、格线在动、一个字节没写」，用户完全看不出自己白按了。
+    ///
+    /// 注意只锁格距。推格线仍然可用：那是平移，不改行列数，`cells` 不会错位，
+    /// 而「这个零件的网格整体偏了半格」恰恰是判完色最可能想回来修的事。
+    private var pitchLocked: Bool {
+        sample?.hasCells == true
+    }
+
+    /// 记下「这个零件我亲手对过了」。点主按钮往下走的时候调。
+    private func confirmCurrentPart() {
+        guard let sample, let index = parts.firstIndex(where: { $0.id == sample.id }) else { return }
+        parts[index].gridConfirmed = true
+    }
+
+    /// 解掉当前零件的锁。只在用户明确要求重弄这一个的时候调（自动对齐、重选格子大小）。
+    private func releaseCurrentPartLock() {
+        guard let sample, sample.isGridConfirmed,
+              let index = parts.firstIndex(where: { $0.id == sample.id }) else { return }
+        parts[index].gridConfirmed = nil
     }
 
     /// 只重算当前这个零件 —— 推格线是针对眼前这一个的。
