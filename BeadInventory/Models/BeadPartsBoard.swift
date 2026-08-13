@@ -37,7 +37,7 @@ struct BeadBoardSize: Hashable, Sendable, Identifiable {
 
     static let presets: [BeadBoardSize] = [
         BeadBoardSize(cols: 50, rows: 50),
-        BeadBoardSize(cols: 50, rows: 52),
+        BeadBoardSize(cols: 52, rows: 52),
         BeadBoardSize(cols: 75, rows: 75),
         BeadBoardSize(cols: 78, rows: 78),
         BeadBoardSize(cols: 100, rows: 100),
