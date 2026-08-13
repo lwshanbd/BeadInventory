@@ -11918,6 +11918,146 @@
         }
       }
     },
+    "保留原图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep original"
+          }
+        }
+      }
+    },
+    "拼图模式需要原图才能看清每一格的颜色。原图保存在本机，不占用 iCloud，拼完后可以删除。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pattern Mode needs the original to show the color of each cell. It stays on this device, doesn't use iCloud, and can be deleted once you're done."
+          }
+        }
+      }
+    },
+    "这张图纸将无法使用拼图模式。以后需要时，可以在拼图模式里重新选择原图。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pattern Mode won't be available for this pattern. You can pick the original again from Pattern Mode when you need it."
+          }
+        }
+      }
+    },
+    "上传图纸时默认保留原图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep original by default"
+          }
+        }
+      }
+    },
+    "这里设置的是默认值，每张图纸在上传时都可以单独选择是否保留原图。\n原图只用在拼图模式里，用来看清每一格的颜色。列表和详情页仍然用压缩后的图；原图存在本机，不占 iCloud、不进备份。拼完之后可以在「多零件模式」的零件清单页点「拼好了」把它删掉。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is the default; each pattern can keep or skip its original when you upload it.\nOriginals are only used in Pattern Mode, to show the color of each cell. Lists and detail pages still use the compressed image. Originals stay on this device, don't use iCloud, and aren't included in backups. Once a pattern is finished you can remove it from the piece list in Multi-Piece Mode."
+          }
+        }
+      }
+    },
+    "对齐了，看下一个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aligned — next piece"
+          }
+        }
+      }
+    },
+    "不看了，完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip the rest"
+          }
+        }
+      }
+    },
+    "网格线要落在豆子和豆子的缝上。全图共用这一张网格。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grid lines should sit in the seams between beads. One grid is shared by the whole sheet."
+          }
+        }
+      }
+    },
+    "推\n网格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nudge\ngrid"
+          }
+        }
+      }
+    },
+    "这张图纸这次读不出来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't open this pattern right now"
+          }
+        }
+      }
+    },
+    "图还在项目里，只是这次打不开。退出去再进来试一次；一直这样的话，去详情页重新选一张。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The image is still on the project, it just won't open this time. Close and reopen; if it keeps happening, pick a new one from the project details."
+          }
+        }
+      }
+    },
+    "删掉这个零件？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this piece?"
+          }
+        }
+      }
+    },
+    "它已经判好的颜色、在拼豆板上的位置都会一起没掉。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its colors and its place on the pegboard go with it."
+          }
+        }
+      }
+    },
+    "网格线要落在豆子和豆子的缝上。每个零件各有各的格线。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grid lines should sit in the seams between beads. Each piece has its own grid."
+          }
+        }
+      }
+    },
     "零件清单" : {
       "localizations" : {
         "en" : {

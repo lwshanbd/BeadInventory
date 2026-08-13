@@ -37,13 +37,14 @@ struct PartsSheetFlowView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
-    /// 整张图纸的低清版，只给第一屏「圈零件区」用 —— 那屏本来就只要看个大概。
+    /// 整张图纸那一版，给第一屏「圈零件区」用。
     @State private var overview: UIImage?
+    /// 有字节但解不出图。跟「这个项目本来就没有图」是两回事，说法也不一样。
+    @State private var imageUnreadable = false
     /// 零件区的高清版。圈完区之后现裁，后面所有步骤（找零件 / 量格子 / 判色 / 抠格子）都用它。
     ///
-    /// 之前整条流程都跑在「整张图长边压到 2000px」上：图纸是竖长条，2000 全给了高度，
-    /// 宽度只剩八百多，零件区又只占其中一半，一格豆子最后只有十来个像素 —— 肉眼可见的糊。
-    /// 同样的内存预算，全花在真正要看的那块上，一格能到三十来个像素。
+    /// 单独裁一版而不是直接用整图那份：零件区往往只占整张图的一半，把预算全花在真正要看的
+    /// 那块上，一格豆子的像素能翻好几倍 —— 而量格子、判色、核对色号看的全是这一块。
     @State private var work: PartsWorkImage?
     @State private var didLoadOnce = false
 
@@ -140,6 +141,15 @@ struct PartsSheetFlowView: View {
                         onContinue: { startDetection() },
                         projectId: project.id,
                         onSourceLoaded: { Task { await reloadFromSource() } }
+                    )
+                } else if imageUnreadable {
+                    // 「读不出来」不等于「没有」—— 这跟 partsSheet 那边 `.unreadable` /
+                    // `.missing` 分开处理是同一件事，图片这条路当初漏了。报成「还没有图纸」
+                    // 的话用户跑去详情页，图明明就在那儿，然后他没有任何下一步可走。
+                    ContentUnavailableView(
+                        "这张图纸这次读不出来",
+                        systemImage: "photo.badge.exclamationmark",
+                        description: Text("图还在项目里，只是这次打不开。退出去再进来试一次；一直这样的话，去详情页重新选一张。")
                     )
                 } else {
                     ContentUnavailableView(
@@ -297,7 +307,6 @@ struct PartsSheetFlowView: View {
     private func load() async {
         let id = project.id
         let loader = inventoryManager.imageLoader
-        let maxPixel = Self.overviewMaxPixel
         // 有原图就用原图 —— 它是上传时另存的全分辨率副本，只有这条流程会读（见 PatternSourceStore）。
         // 没有就退回 SwiftData 里那份压缩图，流程完全一样，只是一格豆子的像素少一半。
         //
@@ -307,7 +316,7 @@ struct PartsSheetFlowView: View {
         if data == nil { data = await loader?.thumbnail(for: id) }
         let bytes = data
         let low = await Task.detached(priority: .userInitiated) {
-            bytes.flatMap { ImageDownsampler.downsampleToUIImage($0, maxPixelSize: maxPixel) }
+            bytes.flatMap { ImageDownsampler.downsampleToUIImage($0, maxPixelSize: Self.decodeMaxPixel(for: $0, budget: Self.overviewPixelBudget)) }
         }.value
         // `?? .unreadable` 而不是 `.missing`：loader 为 nil 意味着连 modelContext 都没有，
         // 那是「我根本没法读你的数据」—— 最不该被当成「这个项目本来就没做过」的情况。
@@ -315,7 +324,8 @@ struct PartsSheetFlowView: View {
         guard !Task.isCancelled else { return }
 
         self.overview = low
-        // 先用低清版兜底，保证后面每一屏立刻有图可用。
+        self.imageUnreadable = (bytes != nil && low == nil)
+        // 先拿整张图那一版兜底，保证后面每一屏立刻有图可用。
         // 高清版是「更好」，不是「必需」—— 早先把它做成必需，一旦裁失败或者还没裁完，
         // 用户面对的就是一个永远转不完的 spinner，没有任何出路。
         if let low { self.work = .whole(low) }
@@ -375,10 +385,6 @@ struct PartsSheetFlowView: View {
         await prepareWorkImage()
     }
 
-    /// 整张图纸的低清版长边上限。这一版只给「圈零件区」看轮廓，1600 足够，
-    /// 也把首屏的解码代价压到最低。
-    private static let overviewMaxPixel = 1600
-
     /// 上一步 AI 读色号表得到的「每个色号多少颗」。核对颜色那屏拿它当参照。
     /// 同一个色号被记了多次时相加 —— 表格识别偶尔会把一个色号拆成两行。
     private var legendCounts: [String: Int] {
@@ -387,25 +393,37 @@ struct PartsSheetFlowView: View {
         }
     }
 
-    /// 解码整张图纸时的像素上限。
+    /// 整张图纸那一版的像素预算。**这一版会一直留在内存里**（第一屏随时要用），
+    /// 所以给的是「够铺满画布」的量，不是原图。1200 万像素解出来约 48 MB。
     ///
-    /// **原图没超过这个数就一个像素都不降 —— 直接用原图。** 早先这里是「长边压到 3600」，
-    /// 一张本来就不大的图纸也照砍，一格豆子白白少掉三分之一的像素。
-    /// 1200 万像素解出来约 48 MB，是一次瞬时峰值（裁完零件区就还回去），
-    /// 而且只在多零件模式开着时发生。真遇到几千万像素的扫描件才会按比例降。
-    private static let workPixelBudget = 12_000_000
+    /// 主要给圈零件区那屏用（整张图在手机上撑死一千多点宽，1200 万像素是它的四五倍），
+    /// 同时也是后面几屏的兜底 —— 零件区那一版裁好之前，它们先拿这张顶着。
+    ///
+    /// 这里以前是写死「长边砍到 1600」，理由是「圈零件区只要看个轮廓」。那是错的：
+    /// 3600×5200 的图纸砍成 1108×1600 再铺满 1320×1911 的画布，用户进多零件模式第一眼
+    /// 看到的就是一张放大过的低清图 —— 而他刚刚才特地保留了原图。
+    private static let overviewPixelBudget = 12_000_000
+
+    /// 零件区那一版的像素预算。**这一版决定用户能不能看清一颗豆子**：量格子、判色、
+    /// 核对色号全靠它，放大之后一格有多少像素就是这里定的。
+    ///
+    /// 所以给得很高 —— 常见的图纸和手机照片（4800 万像素以内）**一个像素都不降**。
+    /// 解码峰值确实大，但只是瞬时的：`upgradeWorkImage` 把零件区重画成一张独立位图，
+    /// 整图那份当场还回去，常驻的只有零件区那块（**重画那一步不能省**，理由见那里）。
+    /// 上限仍然留着，免得几亿像素的扫描件把 App 撑爆。
+    private static let workPixelBudget = 60_000_000
 
     /// 按原图实际大小决定解码尺寸：够小就用原图，太大才按预算等比缩。
-    private static func decodeMaxPixel(for data: Data) -> Int {
+    private static func decodeMaxPixel(for data: Data, budget: Int) -> Int {
         guard let native = ImageDownsampler.pixelSize(of: data) else { return 3600 }
         let total = Double(native.width) * Double(native.height)
         let long = Double(max(native.width, native.height))
-        guard total > Double(workPixelBudget) else { return Int(long.rounded(.up)) }
-        return max(1600, Int((long * (Double(workPixelBudget) / total).squareRoot()).rounded()))
+        guard total > Double(budget) else { return Int(long.rounded(.up)) }
+        return max(1600, Int((long * (Double(budget) / total).squareRoot()).rounded()))
     }
 
     /// 已经裁到高清版的那块区域。用来判断「要不要重裁」，
-    /// 不能拿 `work.region` 判 —— 低清兜底版的 region 是整张图，会被误认成没裁过。
+    /// 不能拿 `work.region` 判 —— 兜底那版的 region 是整张图，会被误认成没裁过。
     @State private var highResRegion: CGRect?
     /// 现在这份高清版是拿第几代源裁的。跟 `highResRegion` 一起比，缺一不可 ——
     /// 用户补了原图之后区域没变但源变了，只比区域会以为「已经是最新的了」。
@@ -413,17 +431,16 @@ struct PartsSheetFlowView: View {
     /// 正在进行的那次高清升级。存着它是为了让别人**等得到**它，见 `prepareWorkImage`。
     @State private var upgradeTask: Task<Void, Never>?
 
-    /// 用户刚补了一张原图：整张的低清版和零件区的高清版都要重出一次，
+    /// 用户刚补了一张原图：整张那一版和零件区那一版都要重出一次，
     /// 界面上立刻能看出变清楚了 —— 否则他选完图什么都没发生，只能怀疑是不是没选上。
     private func reloadFromSource() async {
         let id = project.id
-        let maxPixel = Self.overviewMaxPixel
         // 同 load()：读盘和解码都不放主线程，否则刚选完原图界面会僵住。
         guard let data = await Task.detached(priority: .userInitiated, operation: {
             PatternSourceStore.data(for: id)
         }).value else { return }
         if let low = await Task.detached(priority: .userInitiated, operation: {
-            ImageDownsampler.downsampleToUIImage(data, maxPixelSize: maxPixel)
+            ImageDownsampler.downsampleToUIImage(data, maxPixelSize: Self.decodeMaxPixel(for: data, budget: Self.overviewPixelBudget))
         }).value {
             overview = low
         }
@@ -453,8 +470,8 @@ struct PartsSheetFlowView: View {
         if upgradeTask == task { upgradeTask = nil }
     }
 
-    /// 从原图裁出零件区的高清版，换掉低清兜底版。
-    /// 失败就什么都不做 —— 低清版还在，流程照样往下走，只是图糊一点。
+    /// 从原图裁出零件区那一版（零件区只占整张图一小块，同样的像素预算全花在这儿），
+    /// 换掉兜底的整图版。失败就什么都不做 —— 兜底那版还在，流程照样往下走。
     private func upgradeWorkImage(region: CGRect, generation: Int) async {
         let id = project.id
         let loader = inventoryManager.imageLoader
@@ -463,15 +480,24 @@ struct PartsSheetFlowView: View {
         if source == nil { source = await loader?.thumbnail(for: id) }
         guard let data = source else { return }
         let built = await Task.detached(priority: .userInitiated) { () -> PartsWorkImage? in
-            // autoreleasepool：整图那份大 CGImage 用完立刻还回去，只留裁出来的那块。
-            //
             // 实测这一整段（取字节 + 解码 + 裁切）只要 0.10s，所以它从来不是「慢」的来源；
             // 早先那次界面卡死是因为把它做成了进入下一屏的必需条件，失败就没有退路。
             autoreleasepool {
-                let maxPixel = Self.decodeMaxPixel(for: data)
+                let maxPixel = Self.decodeMaxPixel(for: data, budget: Self.workPixelBudget)
                 guard let full = ImageDownsampler.downsampleToUIImage(data, maxPixelSize: maxPixel),
                       let cropped = PartsThumbnailMaker.crop(.whole(full), normalized: region) else { return nil }
-                return PartsWorkImage(image: cropped, region: region)
+                // **必须重画一份。** `CGImage.cropping(to:)` 不复制像素，它跟整图共享
+                // data provider —— 只要裁剪结果活着，整图那份解码就一直躺在内存里。
+                // 而解码是 `kCGImageSourceShouldCacheImmediately`，6000 万像素就是 240 MB，
+                // 会在多零件模式整个会话期间常驻（autoreleasepool 对此无能为力）。
+                // 重画一次之后留下的只有零件区那块，整图当场就能还回去。
+                let format = UIGraphicsImageRendererFormat.default()
+                format.scale = 1
+                format.opaque = true
+                let detached = UIGraphicsImageRenderer(size: cropped.size, format: format).image { _ in
+                    cropped.draw(in: CGRect(origin: .zero, size: cropped.size))
+                }
+                return PartsWorkImage(image: detached, region: region)
             }
         }.value
         guard let built else {

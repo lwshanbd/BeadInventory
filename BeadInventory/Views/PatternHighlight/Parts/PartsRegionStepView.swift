@@ -37,24 +37,31 @@ struct PartsRegionStepView: View {
     private var canvas: some View {
         GeometryReader { geo in
             let display = Self.aspectFitRect(imageSize: image.size, in: geo.size)
+            // 整层不用 scaleEffect：那是把已经栅格化的一张图整体拉大，放大看到的
+            // 永远是画布分辨率下的那张，用户特地留的原图一个像素都用不上。
+            // 改成按最终尺寸摆图 + 覆盖层自己算屏幕坐标（同「零件清单」「量格子」）。
+            let transform = PartsCanvasTransform(
+                region: CGRect(x: 0, y: 0, width: 1, height: 1),
+                display: display, size: geo.size, zoom: viewScale, pan: viewOffset
+            )
+            let box = transform.screenRect(CGRect(x: 0, y: 0, width: 1, height: 1))
             ZStack(alignment: .topLeading) {
                 Color.black.opacity(0.05)
 
                 Image(uiImage: image)
                     .resizable()
-                    .scaledToFit()
-                    .frame(width: geo.size.width, height: geo.size.height)
+                    .interpolation(box.width >= image.size.width ? .none : .high)
+                    .frame(width: box.width, height: box.height)
+                    .position(x: box.midX, y: box.midY)
 
-                RegionDimOverlay(roi: roi, displayRect: display)
+                RegionDimOverlay(roi: roi, displayRect: box)
                     .allowsHitTesting(false)
 
-                RegionBodyDragHandle(roi: $roi, displayRect: display)
+                RegionBodyDragHandle(roi: $roi, displayRect: box)
 
-                RegionCornerHandle(corner: .topLeft, roi: $roi, displayRect: display)
-                RegionCornerHandle(corner: .bottomRight, roi: $roi, displayRect: display)
+                RegionCornerHandle(corner: .topLeft, roi: $roi, displayRect: box)
+                RegionCornerHandle(corner: .bottomRight, roi: $roi, displayRect: box)
             }
-            .scaleEffect(viewScale, anchor: .center)
-            .offset(viewOffset)
             .gesture(
                 SimultaneousGesture(
                     MagnificationGesture()
@@ -63,16 +70,24 @@ struct PartsRegionStepView: View {
                     DragGesture(minimumDistance: 10)
                         .onChanged { value in
                             guard viewScale > 1.05 else { return }
-                            viewOffset = CGSize(
+                            viewOffset = clampPan(CGSize(
                                 width: lastViewOffset.width + value.translation.width,
                                 height: lastViewOffset.height + value.translation.height
-                            )
+                            ), in: geo.size)
                         }
                         .onEnded { _ in lastViewOffset = viewOffset }
                 )
             )
         }
         .clipped()
+    }
+
+    /// 夹住平移，别让图被拖出画布（同零件清单那屏）
+    private func clampPan(_ offset: CGSize, in size: CGSize) -> CGSize {
+        let limitX = max(0, (viewScale - 1) * size.width / 2)
+        let limitY = max(0, (viewScale - 1) * size.height / 2)
+        return CGSize(width: min(max(offset.width, -limitX), limitX),
+                      height: min(max(offset.height, -limitY), limitY))
     }
 
     private var footer: some View {
@@ -105,7 +120,7 @@ struct PartsRegionStepView: View {
 // MARK: - 框外压暗
 
 /// 用四块半透明矩形围出「框外」，而不是 mask/blendMode —— 四个矩形在任何
-/// 渲染路径下的表现都一样，也不会跟外层的 scaleEffect 打架。
+/// 渲染路径下的表现都一样。
 private struct RegionDimOverlay: View {
     let roi: CGRect
     let displayRect: CGRect

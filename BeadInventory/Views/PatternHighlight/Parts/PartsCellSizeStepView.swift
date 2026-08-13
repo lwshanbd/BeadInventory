@@ -10,15 +10,22 @@
 //  验收标准是眼睛：网格线必须落在豆子和豆子的缝上。所以主体是一个零件的大图 +
 //  铺在上面的网格线，对没对齐一眼就知道，不需要用户去理解任何数值。
 //
-//  ## 全图只有一张网格
+//  ## 格距全图共用，格线位置一个零件一个
 //
-//  几十个零件是从同一张像素画上切下来的，格子多大、格线在哪，全图是同一个答案。
-//  所以这一屏调的**永远是那一张网格**（`PartsGridCalibration`，带全局格线位置），
-//  在哪个零件上调都一样，调完所有零件一起对齐 —— 「换一个看看」是用来验收的，
-//  不是让用户一个一个重调的。
+//  同一张纸上豆子一样大，所以**格距只有一个数**，在哪个零件上调都一样。
 //
-//  早先格线位置是每个零件自己的 bbox 均分出来的，于是「这个对齐了、换一个又对不上」，
-//  用户得挨个重来。那是错的：bbox 带一圈抗锯齿毛边，每个零件毛边多少不一样。
+//  **格线位置不是。** 图纸上的零件是各画各的 —— 零件 A 的格线和零件 B 的格线压根不属于
+//  同一批。早先整张图共用一个相位，于是「这个对齐了、换一个又对不上」，怎么推都推不好，
+//  因为它数学上就不成立。现在是：格距由用户定（加减号一次 0.1 像素），
+//  然后拿这个格距**一个零件一个零件地找它自己的格线**（`PartsPitchEstimator.fitOrigin`）。
+//
+//  所以主按钮是「对齐了，看下一个」，**所有零件都要过一遍**（大的排前面，格线多最容易
+//  看出偏没偏）：翻到哪个零件就先按当前格距给它对一次，用户看到的是已经对好的，
+//  只需要点头或者微调。不想看完的随时「不看了，完成」—— 没翻到过的那些会在离开
+//  这一屏之前一起对完，只是没人拿眼睛验过。
+//
+//  更早还试过「每个零件拿自己的 bbox 均分」。那个是错的：bbox 带一圈抗锯齿毛边，
+//  每个零件毛边多少不一样，均分出来的格线跟豆子缝没有关系。要按图上的周期信号去找。
 //
 //  ## 两个状态，一次只看一样东西
 //
@@ -58,6 +65,11 @@ struct PartsCellSizeStepView: View {
     @State private var estimating = true
     /// 是不是正在重选一格的大小。true 时只显示黄框，不显示网格线。
     @State private var picking = false
+    /// 上一次「按当前格距给所有零件定位」用的是多大的格子。
+    @State private var alignedAtCellWidth: Double?
+    /// 正要删掉的那个零件。删一个零件会连带丢掉它已经判好的颜色和摆好的位置，
+    /// 而这一屏是一下就能点到的，所以问一句。
+    @State private var deletingPart: BeadPart?
 
     @State private var zoom: CGFloat = 1
     @State private var lastZoom: CGFloat = 1
@@ -74,20 +86,36 @@ struct PartsCellSizeStepView: View {
 
     @State private var canvasSize: CGSize = .zero
 
-    private var samples: [BeadPart] {
-        parts.sorted { $0.bounds.width * $0.bounds.height > $1.bounds.width * $1.bounds.height }
-            .prefix(12).map { $0 }
-    }
+    /// 要过一遍的零件：**全部，就按零件清单的顺序**。
+    ///
+    /// 这里以前只取最大的十二个（理由是「全图共用一张网格，看完最大的就够下结论」），
+    /// 后来改成全部但按面积排。两个都是错的：
+    /// - 只看十二个 —— 格线改成一个零件一个之后，剩下那些各有各的格线，没人看过；
+    /// - 按面积排 —— 用户看到的编号一路乱跳（第一个是「零件 43」），跟零件清单对不上号，
+    ///   而「大零件先看」这点好处在每个零件都要过一遍之后根本不存在。
+    private var samples: [BeadPart] { parts }
 
     private var sample: BeadPart? {
         guard !samples.isEmpty else { return nil }
         return samples[min(sampleIndex, samples.count - 1)]
     }
 
-    /// 当前零件落在全局网格上的那块（行列数就是从这儿来的）
+    /// 当前零件用的那张标定：**全局格距 + 这个零件自己的相位**。
+    ///
+    /// 图纸上的零件是各画各的，格线不共用（用户拿真实图纸确认过）。所以格距全图一个数、
+    /// 相位一个零件一个。`frameOrigin` 就是当前这个零件的相位。
+    private var sampleCalibration: PartsGridCalibration? {
+        guard let calibration, calibration.isUsable else { return nil }
+        var c = calibration
+        c.originX = Double(frameOrigin.x)
+        c.originY = Double(frameOrigin.y)
+        return c
+    }
+
+    /// 当前零件落在它自己那张网格上的那块（行列数就是从这儿来的）
     private var grid: PartsGrid? {
-        guard let sample, let calibration, calibration.isUsable else { return nil }
-        return PartsGrid(covering: sample.bounds, calibration: calibration)
+        guard let sample, let c = sampleCalibration else { return nil }
+        return PartsGrid(covering: sample.bounds, calibration: c)
     }
 
     /// 黄框在整张图纸上的归一化矩形
@@ -118,12 +146,30 @@ struct PartsCellSizeStepView: View {
         // 工作图也算进 id：进来时先拿到的是低清兜底版，高清版在后台裁好之后才换上来。
         .task(id: "\(sampleIndex)|\(work.image.size)") { await loadSample() }
         .task { await estimateIfNeeded() }
-        .onChange(of: frameOrigin) { _, new in
-            calibration?.originX = Double(new.x)
-            calibration?.originY = Double(new.y)
-            writeBack()
-        }
+        // 推格线只动当前这个零件 —— 别的零件有它们自己的格线，凭什么跟着走
+        .onChange(of: frameOrigin) { _, _ in writeBackCurrentPart() }
+        // 格距是全图共用的，改了所有零件都要重算；但各自的相位保持不变
         .onChange(of: calibration) { _, _ in writeBack() }
+        .confirmationDialog(
+            "删掉这个零件？",
+            isPresented: Binding(get: { deletingPart != nil },
+                                 set: { if !$0 { deletingPart = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("删掉", role: .destructive) { deleteCurrentPart() }
+            Button("取消", role: .cancel) { deletingPart = nil }
+        } message: {
+            Text("它已经判好的颜色、在拼豆板上的位置都会一起没掉。")
+        }
+    }
+
+    /// 删掉当前这个零件。删完停在原地 —— 后面那个会顶上来，正好接着看。
+    private func deleteCurrentPart() {
+        guard let target = deletingPart,
+              let index = parts.firstIndex(where: { $0.id == target.id }) else { return }
+        parts.remove(at: index)
+        deletingPart = nil
+        sampleIndex = min(sampleIndex, max(0, samples.count - 1))
     }
 
     // MARK: - 画布
@@ -274,13 +320,20 @@ struct PartsCellSizeStepView: View {
                             .foregroundColor(Theme.ColorToken.Text.tertiary)
                     }
                     Spacer()
-                    Button {
-                        sampleIndex = (sampleIndex + 1) % max(samples.count, 1)
+                    // 一个一个过的时候才发现「这块根本不是零件」（水印、一行字）是常事，
+                    // 而这一屏原来只能退回零件清单去删，回来又得从头翻。
+                    Button(role: .destructive) {
+                        deletingPart = sample
                     } label: {
-                        Label("看看别的零件", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.footnote)
+                        Image(systemName: "trash").font(.footnote)
                     }
-                    .disabled(samples.count < 2)
+                    .buttonStyle(.plain)
+                    .foregroundColor(Theme.ColorToken.Status.error)
+                    // 还剩几个要看。一个一个过的时候，「还有多少」是唯一会让人
+                    // 愿意继续按下去的信息 —— 不写的话按第三下就开始怀疑没有尽头。
+                    Text("\(sampleIndex + 1) / \(samples.count)")
+                        .font(.footnote.monospacedDigit())
+                        .foregroundColor(Theme.ColorToken.Text.tertiary)
                 }
             }
 
@@ -298,6 +351,7 @@ struct PartsCellSizeStepView: View {
                     Button {
                         picking = false
                         resetView()
+                        if let sample { Task { await refit(part: sample) } }
                     } label: {
                         Label("就用这个大小", systemImage: "checkmark")
                             .font(.footnote.weight(.medium))
@@ -310,55 +364,138 @@ struct PartsCellSizeStepView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                HStack(spacing: Theme.Spacing.md) {
-                    Text("推网格")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.ColorToken.Text.secondary)
-                    nudgeButton("chevron.left") { nudge(dx: -1, dy: 0) }
-                    nudgeButton("chevron.right") { nudge(dx: 1, dy: 0) }
-                    nudgeButton("chevron.up") { nudge(dx: 0, dy: -1) }
-                    nudgeButton("chevron.down") { nudge(dx: 0, dy: 1) }
-                    Spacer()
-                    Button {
-                        Task { await autoAlign() }
-                    } label: {
-                        Label("自动对齐", systemImage: "wand.and.stars").font(.footnote)
-                    }
-                    .disabled(estimating)
-                }
+                HStack(alignment: .top, spacing: Theme.Spacing.lg) {
+                    nudgePad
+                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                        Text("网格线要落在豆子和豆子的缝上。每个零件各有各的格线。")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.ColorToken.Text.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                HStack(alignment: .firstTextBaseline) {
-                    Text("网格线要落在豆子和豆子的缝上。全图共用这一张网格，在哪个零件上调都一样。")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.ColorToken.Text.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: Theme.Spacing.sm)
-                    Button {
-                        enterPicking()
-                    } label: {
-                        Label("重选格子大小", systemImage: "square.dashed.inset.filled")
-                            .font(.footnote.weight(.medium))
+                        // 一格多少像素，加减号一次动 0.1 个像素。
+                        //
+                        // **必须摆在这一屏**（整张网格铺在零件上的这一屏），不能塞进
+                        // 「重选格子大小」里 —— 那屏只显示一格。一格看着严丝合缝，
+                        // 铺到第四十格照样偏出去半格；格距准不准只有看着整片格线才判断得了，
+                        // 那就得能一边看着整片一边调。
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Text("一格")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.ColorToken.Text.secondary)
+                            nudgeButton("minus") { changeCellPixels(by: -Self.cellPixelStep) }
+                            Text(cellPixelsText)
+                                .font(.footnote.monospacedDigit())
+                                .foregroundStyle(Theme.ColorToken.Text.primary)
+                                .frame(minWidth: 78)
+                            nudgeButton("plus") { changeCellPixels(by: Self.cellPixelStep) }
+                        }
+                        .disabled(estimating || calibration == nil)
+
+                        HStack(spacing: Theme.Spacing.md) {
+                            Button {
+                                Task { await autoAlign() }
+                            } label: {
+                                Label("自动对齐", systemImage: "wand.and.stars").font(.footnote)
+                            }
+                            .disabled(estimating)
+                            Button {
+                                enterPicking()
+                            } label: {
+                                Label("重选格子大小", systemImage: "square.dashed.inset.filled")
+                                    .font(.footnote)
+                            }
+                            .disabled(estimating)
+                        }
                     }
-                    .disabled(estimating)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
             }
 
-            Button(action: onContinue) {
-                Label("对齐了，看每格什么颜色", systemImage: "eyedropper")
-                    .frame(maxWidth: .infinity)
+            HStack(spacing: Theme.Spacing.sm) {
+                // 翻过头了要能回去看一眼。四十九个零件一路按下来，发现上一个其实没对好
+                // 却只能一路走到底再重进，是这一屏最容易把人逼疯的地方。
+                Button {
+                    sampleIndex -= 1
+                } label: {
+                    // 只定宽不定高：高度让 `.controlSize(.large)` 跟右边主按钮一起给，
+                    // 写死 44 高会比主按钮高出一截。
+                    Image(systemName: "arrow.left")
+                        .font(.subheadline.weight(.bold))
+                        .frame(width: 24)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(sampleIndex == 0 || estimating || picking)
+
+                // 一个零件一个零件地过：主按钮是「这个对了，换下一个」，不是「离开这一屏」。
+                // 自动量出来的网格在个别零件上偏一点是常事，而偏了的那几个只有挨个看过去
+                // 才发现得了 —— 早先主按钮直接跳去判色，用户看完第一个就走了。
+                Button {
+                    Task {
+                        if isLastSample {
+                            // 走到判色之前，用户没翻到过的那些零件也得按这个格距对一遍
+                            await refitAllParts()
+                            onContinue()
+                        } else {
+                            sampleIndex += 1
+                        }
+                    }
+                } label: {
+                    Label(isLastSample ? "对齐了，看每格什么颜色" : "对齐了，看下一个",
+                          systemImage: isLastSample ? "eyedropper" : "arrow.right")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(calibration == nil || estimating || picking)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(calibration == nil || estimating || picking)
+
+            // 剩下的不想一个个看了，随时能走。最后一个零件上不显示 —— 那时它和上面
+            // 那个按钮是同一件事，摆两个只会让人以为有区别。
+            if !isLastSample {
+                Button("不看了，完成") {
+                    Task {
+                        await refitAllParts()
+                        onContinue()
+                    }
+                }
+                    .font(.footnote)
+                    .foregroundColor(Theme.ColorToken.Text.secondary)
+                    .disabled(calibration == nil || estimating || picking)
+            }
         }
         .padding()
         .background(.regularMaterial)
     }
 
+    /// 是不是最后一个要看的零件
+    private var isLastSample: Bool { sampleIndex >= samples.count - 1 }
+
+    /// 方向键摆成十字。原先四个键排成一行，上下左右全靠图标区分 ——
+    /// 想往上推一格得先在四个一模一样的小圆里找哪个是「上」，找到了还按不准。
+    /// 摆成十字之后位置就是含义，手指按哪边网格就往哪边走。
+    private var nudgePad: some View {
+        VStack(spacing: 4) {
+            nudgeButton("chevron.up") { nudge(dx: 0, dy: -1) }
+            HStack(spacing: 4) {
+                nudgeButton("chevron.left") { nudge(dx: -1, dy: 0) }
+                Text("推\n网格")
+                    .font(.caption2)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                    .frame(width: 44, height: 44)
+                nudgeButton("chevron.right") { nudge(dx: 1, dy: 0) }
+            }
+            nudgeButton("chevron.down") { nudge(dx: 0, dy: 1) }
+        }
+    }
+
     private func nudgeButton(_ systemName: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.footnote.weight(.bold))
-                .frame(width: 36, height: 36)
+                .font(.subheadline.weight(.bold))
+                // 44pt 是 HIG 的最小点击目标。原先 36pt 四个挤在一行，实测就是按不准。
+                .frame(width: 44, height: 44)
                 .background(Theme.ColorToken.Surface.elevated)
                 .clipShape(Circle())
         }
@@ -368,7 +505,8 @@ struct PartsCellSizeStepView: View {
 
     // MARK: - 视图变换
 
-    /// 屏幕点 → 缩放前的画布点（`content(_:)` 的那一半逆变换）
+    /// 屏幕点 → 缩放前的画布点。只给捏合用：要把手指底下那一点钉在原地，
+    /// 得先知道它在「没缩放的画布」上是哪儿。
     private func unzoomed(_ point: CGPoint) -> CGPoint {
         guard zoom > 0 else { return point }
         let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
@@ -426,7 +564,20 @@ struct PartsCellSizeStepView: View {
     private func estimateIfNeeded() async {
         if let calibration, calibration.isUsable, calibration.originX > 0 || calibration.originY > 0 {
             estimating = false
+            // 早先横竖两个方向是分开量的，存下来的可能是个长方形。掰回正方形 ——
+            // 不掰的话用户在这一屏没有任何办法改：把手只能等比缩放，长方形缩放还是长方形。
+            //
+            // **但已经判过色的不能动。** 掰正会改掉每个零件的 rows/cols（`writeBack`），
+            // 而 `part.cells` 还是按旧行列数存的：下游是 clamp 不是报错，所以结果不是崩，
+            // 是底下几行悄悄丢掉、每个格子的叠加层整体错位 —— 用户几天的核对成果。
+            // 这种项目要掰正得由他自己按「自动对齐」，那一下是他主动要求重量的。
+            if !parts.contains(where: \.hasCells), let fixed = squaredIfNeeded(calibration) {
+                self.calibration = fixed
+            }
             syncFrameToLattice()
+            // 存下来的那份相位就是按这个格距定的（甚至可能是用户手推过的），
+            // 不记一笔的话第一次按「看下一个」会被当成「格距变了」，把它自动推回去。
+            alignedAtCellWidth = self.calibration?.cellWidth
             return
         }
         let source = work
@@ -438,18 +589,84 @@ struct PartsCellSizeStepView: View {
         // 宁可给个明显不对的初值让用户去拉，也不要空着让他面对一张没有网格线的图。
         calibration = measured ?? fallbackCalibration()
         estimating = false
+        // 刚量出来的相位就是配这个格距的，不用再重对一遍
+        alignedAtCellWidth = calibration?.cellWidth
         syncFrameToLattice()
         writeBack()
     }
 
     private func fallbackCalibration() -> PartsGridCalibration? {
         guard let biggest = samples.first else { return nil }
+        let cell = Double(biggest.bounds.width) / 12
         return PartsGridCalibration(
-            cellWidth: Double(biggest.bounds.width) / 12,
-            cellHeight: Double(biggest.bounds.height) / 12,
+            cellWidth: cell,
+            cellHeight: cell * sheetAspect,
             originX: Double(biggest.bounds.minX),
             originY: Double(biggest.bounds.minY)
         )
+    }
+
+    /// 整张图纸有多少像素宽。加减号要按**源图像素**动，不能按屏幕点 ——
+    /// 屏幕上一格多大取决于当前放大了几倍，那是个跟图纸无关的数。
+    private var sheetPixelWidth: Double {
+        guard work.region.width > 0 else { return 0 }
+        return Double(work.image.size.width) / Double(work.region.width)
+    }
+
+    /// 一格现在是多少源图像素。故意保留小数：自动量出来的格距本来就是 12.4 这种，
+    /// 四舍五入到整数会凭空引入 5% 的误差，而这一屏存在的意义就是消掉这点误差。
+    private var cellPixels: Double {
+        guard let calibration else { return 0 }
+        return calibration.cellWidth * sheetPixelWidth
+    }
+
+    /// 写到小数点后两位：步长是 0.1，只显示一位的话用户看不出自己停在 20.03 还是 20.0，
+    /// 而他要找的那个值恰恰藏在这一位里。
+    private var cellPixelsText: String {
+        let px = cellPixels
+        guard px > 0 else { return "—" }
+        return String(format: "%.2f 像素", px)
+    }
+
+    /// 加减号一次动多少源图像素。
+    ///
+    /// **0.1 而不是 1。** 一个像素太粗了：自动量出来的是 20.03 这种数，整数步只能在
+    /// 19.03 / 20.03 / 21.03 之间跳，而对的那个值就在它们中间。粗调有拖把手和自动对齐，
+    /// 这两个按钮是用来收尾的。
+    private static let cellPixelStep = 0.1
+
+    /// 加减号：一格的边长加 / 减一步。豆子是方的，所以高跟着宽走。
+    private func changeCellPixels(by delta: Double) {
+        guard let calibration, sheetPixelWidth > 0 else { return }
+        let next = max(2, cellPixels + delta)
+        let width = next / sheetPixelWidth
+        self.calibration = PartsGridCalibration(
+            cellWidth: width,
+            cellHeight: width * sheetAspect,
+            originX: calibration.originX,
+            originY: calibration.originY
+        )
+    }
+
+    /// 图纸整张的**像素**宽高比。
+    ///
+    /// 归一化坐标把宽和高各自摊到 0~1，所以图纸不是正方形时，同一个正方形在两个方向上的
+    /// 归一化长度并不相等：一格是正方形 ⟺ `cellHeight == cellWidth * sheetAspect`。
+    private var sheetAspect: Double {
+        guard work.region.width > 0, work.region.height > 0 else { return 1 }
+        let w = Double(work.image.size.width) / Double(work.region.width)
+        let h = Double(work.image.size.height) / Double(work.region.height)
+        guard w > 0, h > 0 else { return 1 }
+        return w / h
+    }
+
+    /// 已经是正方形就返回 nil（不白改一次、不白存一次），否则以宽为准掰成正方形。
+    private func squaredIfNeeded(_ c: PartsGridCalibration) -> PartsGridCalibration? {
+        let square = c.cellWidth * sheetAspect
+        guard square > 0, abs(c.cellHeight - square) > square * 0.005 else { return nil }
+        var fixed = c
+        fixed.cellHeight = square
+        return fixed
     }
 
     private func loadSample() async {
@@ -463,13 +680,17 @@ struct PartsCellSizeStepView: View {
         let cropped = await Task.detached(priority: .userInitiated) {
             PartsThumbnailMaker.crop(source, normalized: padded)
         }.value
-        // 裁这一下的工夫用户可能已经点了「看看别的零件」，或者高清工作图刚换上来 ——
+        // 裁这一下的工夫用户可能已经点了「对齐了，看下一个」，或者零件区那一版刚换上来 ——
         // 那时上面的 `.task(id:)` 已经把这一轮取消了。不认取消的话，屏幕上显示的是
         // 上一个零件的图，格线却是按新零件算的，用户对着错的图在标定。
         guard !Task.isCancelled else { return }
         sampleImage = cropped
         sampleRegion = padded
         syncFrameToLattice()
+        // 翻到一个零件就先按当前格距给它对一次 —— 用户翻过来看到的应该是已经对好的，
+        // 而不是「上一个零件的格线平移过来」。它有自己的格线，跟别的零件没关系。
+        guard !Task.isCancelled else { return }
+        await refit(part: sample)
     }
 
     /// 把黄框摆到零件正中那一格。
@@ -478,8 +699,73 @@ struct PartsCellSizeStepView: View {
     /// 左上角那一格多半压在零件外面的空白上，框里一片粉，看不出格子边界对没对齐。
     private func syncFrameToLattice() {
         guard let sample, let calibration, calibration.isUsable else { return }
-        frameOrigin = CGPoint(x: calibration.snappedX(Double(sample.bounds.midX)),
-                              y: calibration.snappedY(Double(sample.bounds.midY)))
+        // 这个零件已经有自己的格线了就用它自己的；没有才从全局那份推一格出来当起点。
+        var base = calibration
+        if let rect = sample.gridRect {
+            base.originX = Double(rect.minX)
+            base.originY = Double(rect.minY)
+        }
+        frameOrigin = CGPoint(x: base.snappedX(Double(sample.bounds.midX)),
+                              y: base.snappedY(Double(sample.bounds.midY)))
+    }
+
+    /// 格子大小改过之后，拿这个新尺寸把**整张图纸**的格线重新找一遍。
+    ///
+    /// 用户在一个零件上把格子调准了，剩下几十个零件不会自己变准 —— 它们的格子位置是
+    /// 从同一张全局网格推出来的（`PartsGrid` 把 bounds 吸到全局格线上），格距一变，
+    /// 那批格线该落在哪儿就得重算。不重算的话用户看到的是「我明明调对了，下一个还是偏」。
+    ///
+    /// 只在**格子大小**变过时才跑：
+    /// - 格距没变就没什么可重算的，每按一次「看下一个」都重跑一遍纯属让人等；
+    /// - 而且这里只重找相位。用户拿方向键手推过格线的话，再跑一次自动定相位会把他
+    ///   刚推的推回去 —— 大小没变时绝不能碰。
+    /// 拿当前格距，把**每个零件**各自的格线重新找一遍。
+    ///
+    /// 只找相位，不动格距 —— 格距是用户定的。某个零件找不出来（太小、装不下四格，
+    /// 或者图上没有周期信号）就保持它现在的格线不动，总好过跳到一个瞎猜的地方。
+    private func refitAllParts() async {
+        guard let calibration, calibration.isUsable else { return }
+        let source = work
+        let snapshot = parts
+        estimating = true
+        let fitted = await Task.detached(priority: .userInitiated) { () -> [UUID: CGPoint] in
+            var found: [UUID: CGPoint] = [:]
+            // 判过色的跳过，理由同 `refit(part:)`
+            for part in snapshot where !part.hasCells {
+                if let origin = PartsPitchEstimator.fitOrigin(
+                    work: source, bounds: part.bounds, calibration: calibration
+                ) {
+                    found[part.id] = origin
+                }
+            }
+            return found
+        }.value
+        estimating = false
+        for index in parts.indices {
+            let id = parts[index].id
+            applyGrid(to: index, phase: fitted[id] ?? phase(of: parts[index]), calibration: calibration)
+        }
+        alignedAtCellWidth = calibration.cellWidth
+        syncFrameToLattice()
+    }
+
+    /// 单独给一个零件按当前格距定位。翻到它的时候跑这一下，用户看到的就是已经对好的。
+    ///
+    /// 已经判过色的零件不动 —— 改 `gridRect` 会连带改行列数，而 `cells` 还是按旧行列数
+    /// 存的，结果是用户核对过的颜色整片错位（同 `squaredIfNeeded`）。那种项目要重对，
+    /// 得他自己按「自动对齐」。
+    private func refit(part: BeadPart) async {
+        guard !part.hasCells else { return }
+        guard let calibration, calibration.isUsable,
+              let index = parts.firstIndex(where: { $0.id == part.id }) else { return }
+        let source = work
+        let bounds = part.bounds
+        let origin = await Task.detached(priority: .userInitiated) {
+            PartsPitchEstimator.fitOrigin(work: source, bounds: bounds, calibration: calibration)
+        }.value
+        guard let origin, parts.indices.contains(index), parts[index].id == part.id else { return }
+        applyGrid(to: index, phase: origin, calibration: calibration)
+        syncFrameToLattice()
     }
 
     /// 重新自动量一次整张图纸的网格 —— 格子多大、格线在哪一起重来。
@@ -505,19 +791,42 @@ struct PartsCellSizeStepView: View {
             self.calibration?.originX = Double(fitted.x)
             self.calibration?.originY = Double(fitted.y)
         }
+        // 这一下本来就是「格距和相位一起重来」，重对过了
+        alignedAtCellWidth = self.calibration?.cellWidth
         syncFrameToLattice()
         writeBack()
     }
 
-    /// 把这张网格套到**每一个**零件上。判色那步直接用这里的结论，不再自己去贴格线。
+    /// 格距变了：每个零件按**它自己那条格线**重算一遍。判色那步直接用这里的结论。
     private func writeBack() {
         guard let calibration, calibration.isUsable else { return }
         for index in parts.indices {
-            let grid = PartsGrid(covering: parts[index].bounds, calibration: calibration)
-            parts[index].gridRect = grid.rect
-            parts[index].rows = grid.rows
-            parts[index].cols = grid.cols
+            applyGrid(to: index, phase: phase(of: parts[index]), calibration: calibration)
         }
+    }
+
+    /// 只重算当前这个零件 —— 推格线是针对眼前这一个的。
+    private func writeBackCurrentPart() {
+        guard let sample, let c = sampleCalibration,
+              let index = parts.firstIndex(where: { $0.id == sample.id }) else { return }
+        applyGrid(to: index, phase: CGPoint(x: c.originX, y: c.originY), calibration: c)
+    }
+
+    /// 这个零件现在的格线在哪。对过的就是它 `gridRect` 的左上角；没对过的退回全局那份。
+    private func phase(of part: BeadPart) -> CGPoint {
+        if let rect = part.gridRect { return CGPoint(x: rect.minX, y: rect.minY) }
+        guard let calibration else { return .zero }
+        return CGPoint(x: calibration.originX, y: calibration.originY)
+    }
+
+    private func applyGrid(to index: Int, phase: CGPoint, calibration: PartsGridCalibration) {
+        var c = calibration
+        c.originX = Double(phase.x)
+        c.originY = Double(phase.y)
+        let grid = PartsGrid(covering: parts[index].bounds, calibration: c)
+        parts[index].gridRect = grid.rect
+        parts[index].rows = grid.rows
+        parts[index].cols = grid.cols
     }
 }
 

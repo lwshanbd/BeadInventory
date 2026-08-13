@@ -137,33 +137,35 @@ struct PartsListStepView: View {
                 imageSize: roiImage?.size ?? CGSize(width: 1, height: 1),
                 in: geo.size
             )
+            let transform = PartsCanvasTransform(region: roi, display: display,
+                                                 size: geo.size, zoom: zoom, pan: pan)
             ZStack(alignment: .topLeading) {
                 if let roiImage {
+                    // 按放大后的**最终尺寸**摆图，不用 scaleEffect（同「量格子」那屏）。
+                    // scaleEffect 是图层变换：图先按画布大小栅格化，再整层拉大 8 倍 ——
+                    // 放大的是那张已经缩小过的栅格，用户特地留的原图一个像素都用不上。
+                    let box = transform.screenRect(roi)
                     Image(uiImage: roiImage)
                         .resizable()
-                        .scaledToFit()
-                        .frame(width: geo.size.width, height: geo.size.height)
+                        // 放大到超过原图分辨率时用最近邻，豆子边界是硬的；
+                        // 缩小时用默认插值，否则 1 像素的格线会抖成摩尔纹。
+                        .interpolation(box.width >= roiImage.size.width ? .none : .high)
+                        .frame(width: box.width, height: box.height)
+                        .position(x: box.midX, y: box.midY)
                 }
-                PartsBoxOverlay(
-                    parts: parts,
-                    roi: roi,
-                    selection: selection,
-                    displayRect: display,
-                    zoom: zoom
-                )
+                PartsBoxOverlay(parts: parts, selection: selection, transform: transform)
 
                 if let draftRect {
                     Rectangle()
-                        .strokeBorder(Theme.ColorToken.Morandi.honey, lineWidth: 2)
+                        .strokeBorder(Theme.ColorToken.Morandi.honey, lineWidth: 1.5)
                         .background(Rectangle().fill(Theme.ColorToken.Morandi.honey.opacity(0.2)))
                         .frame(width: draftRect.width, height: draftRect.height)
                         .position(x: draftRect.midX, y: draftRect.midY)
                         .allowsHitTesting(false)
                 }
+
+                gestureCatcher(in: geo.size, transform: transform)
             }
-            .scaleEffect(zoom, anchor: .center)
-            .offset(pan)
-            .overlay(gestureCatcher(in: geo.size, displayRect: display))
         }
         // 图纸是竖长的，240pt 高只剩不到 180pt 宽，五十几个框挤成一团看不清谁是谁。
         // 340pt 是「图上看得清 + 下面还能露出两行缩略图」的折中。
@@ -175,18 +177,17 @@ struct PartsListStepView: View {
                 .stroke(Theme.ColorToken.Morandi.honey, lineWidth: addingPart ? 3 : 0)
                 .allowsHitTesting(false)
         )
-        // 必须裁：`scaleEffect` 只是画得更大，不会自己留在框里 ——
-        // 少了这一行，放大后的图会盖到导航栏和下面的缩略图上。
+        // 必须裁：图是按放大后的**最终尺寸** `.frame` + `.position` 摆的，本来就会超出这
+        // 340pt 的框 —— 少了这一行，放大后的图会盖到导航栏和下面的缩略图上。
         .clipped()
     }
 
-    /// 手势层。**故意挂在没被缩放的那一层上**，自己做逆变换。
+    /// 手势层。触点永远是**真实屏幕点**，靠 `transform` 换成图纸上的归一化坐标。
     ///
-    /// 一开始是把手势直接挂在 `.scaleEffect` 之后的视图上，指望 SwiftUI 把触点映射回
+    /// 一开始是把手势挂在 `.scaleEffect` 之后的视图上，指望 SwiftUI 把触点映射回
     /// 内容坐标系 —— 实测不是：放大到 4 倍再拖框，框会落到别的零件上。
-    /// 与其去猜 `scaleEffect` 和手势坐标系的关系，不如让触点始终是**容器坐标**，
-    /// 自己换回内容坐标。这样是确定的。
-    private func gestureCatcher(in size: CGSize, displayRect: CGRect) -> some View {
+    /// 现在整层都不用 scaleEffect 了，画和摸在同一套坐标里，不需要再猜。
+    private func gestureCatcher(in size: CGSize, transform: PartsCanvasTransform) -> some View {
         // 点选、单指拖、捏合必须并进同一个 SimultaneousGesture：分开挂的话
         // DragGesture 会把 tap 整个吃掉，点零件变成没反应。
         Color.clear
@@ -199,14 +200,12 @@ struct PartsListStepView: View {
                                 // 补零件时不响应点选：一次拖动结束时点选手势也会跟着触发，
                                 // 于是画完一个框会连带选中旁边一个（实测「已选 2 个」）。
                                 guard !addingPart else { return }
-                                toggleHit(at: content(value.location, in: size), displayRect: displayRect)
+                                toggleHit(atNormalized: transform.normalized(value.location))
                             },
                         DragGesture(minimumDistance: addingPart ? 12 : 4)
                             .onChanged { value in
                                 if addingPart {
-                                    draftRect = CGRect(corner: content(value.startLocation, in: size),
-                                                       to: content(value.location, in: size))
-                                        .intersection(displayRect)
+                                    draftRect = CGRect(corner: value.startLocation, to: value.location)
                                 } else {
                                     pan = clampPan(CGSize(
                                         width: lastPan.width + value.translation.width,
@@ -220,28 +219,22 @@ struct PartsListStepView: View {
                                     return
                                 }
                                 draftRect = nil
-                                // 「够不够大」按**手指在屏幕上划了多远**算，不能按内容坐标 ——
-                                // 那个门槛是拿来挡误触的，而放大 4 倍之后正常的一拖在内容
-                                // 坐标里只剩四分之一，会被静默丢掉（实测就是这样：模式退出了，
-                                // 框却没建出来）。
-                                //
-                                // 按**拖过的距离**算，不要求两个方向都够远：只有一颗豆高的
-                                // 扁长零件（一条边框、一行字）是真实存在的形状，拿
-                                // 「宽和高都得 ≥10」去卡，这种框会连个提示都没有地被丢掉。
+                                // 「够不够大」按**手指在屏幕上划了多远**算：那个门槛是拿来挡
+                                // 误触的。不要求两个方向都够远 —— 只有一颗豆高的扁长零件
+                                // （一条边框、一行字）是真实存在的形状，拿「宽和高都得 ≥10」
+                                // 去卡，这种框会连个提示都没有地被丢掉。
                                 let movedFar = hypot(value.translation.width,
                                                      value.translation.height) >= 10
                                 guard movedFar else { return }
-                                let drawn = CGRect(corner: content(value.startLocation, in: size),
-                                                   to: content(value.location, in: size))
-                                    .intersection(displayRect)
-                                addPart(fromDisplayRect: drawn, displayRect: displayRect)
+                                addPart(from: transform.normalized(value.startLocation),
+                                        to: transform.normalized(value.location))
                             }
                     ),
                     MagnifyGesture()
                         .onChanged { value in
                             if pinchContentAnchor == nil {
                                 pinchScreenPoint = value.startLocation
-                                pinchContentAnchor = content(value.startLocation, in: size)
+                                pinchContentAnchor = unzoomed(value.startLocation, in: size)
                             }
                             guard let anchor = pinchContentAnchor else { return }
                             zoom = max(1, min(8, lastZoom * value.magnification))
@@ -261,10 +254,9 @@ struct PartsListStepView: View {
             )
     }
 
-    /// 屏幕（容器）坐标 → 内容坐标。
-    /// `scaleEffect(z, anchor: .center)` 后接 `offset(pan)` 把内容点 C 画到
-    /// `S = 中心 + (C - 中心) * z + pan`，这里做的是它的逆。
-    private func content(_ point: CGPoint, in size: CGSize) -> CGPoint {
+    /// 屏幕点 → 缩放前的画布点。只给捏合用：捏合要把手指底下那一点钉在原地，
+    /// 得先知道它在「没缩放的画布」上是哪儿。
+    private func unzoomed(_ point: CGPoint, in size: CGSize) -> CGPoint {
         guard zoom > 0 else { return point }
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
         return CGPoint(x: center.x + (point.x - pan.width - center.x) / zoom,
@@ -279,28 +271,14 @@ struct PartsListStepView: View {
                       height: min(max(offset.height, -limitY), limitY))
     }
 
-    private func toggleHit(at point: CGPoint, displayRect: CGRect) {
-        guard displayRect.width > 0, displayRect.height > 0 else { return }
-        let n = CGPoint(
-            x: (point.x - displayRect.minX) / displayRect.width,
-            y: (point.y - displayRect.minY) / displayRect.height
-        )
+    /// - Parameter n: 点在整张图纸上的归一化坐标（零件的 bounds 也是这套坐标）
+    private func toggleHit(atNormalized n: CGPoint) {
         // 命中多个（框互相重叠）时取面积最小的那个 —— 用户点的多半是压在上面的小零件。
-        let hits = parts.filter { relative($0.bounds).contains(n) }
+        let hits = parts.filter { $0.bounds.contains(n) }
         guard let hit = hits.min(by: { $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height })
         else { return }
         toggle(hit.id)
         lastTappedOnImage = selection.contains(hit.id) ? hit.id : nil
-    }
-
-    private func relative(_ bounds: CGRect) -> CGRect {
-        guard roi.width > 0, roi.height > 0 else { return .zero }
-        return CGRect(
-            x: (bounds.minX - roi.minX) / roi.width,
-            y: (bounds.minY - roi.minY) / roi.height,
-            width: bounds.width / roi.width,
-            height: bounds.height / roi.height
-        )
     }
 
     // MARK: - 下半：缩略图清单
@@ -482,31 +460,19 @@ struct PartsListStepView: View {
     /// 用户拖个大概就行：先按拖出来的框立刻插进清单（马上看得见，不用等），
     /// 再在后台于这个框里跑一次连通域，把框收缩到那块零件的实际边界。
     /// 框里什么都没有（拖到空白处）就保持原样，不弹错——用户自己看得见框住了什么。
-    private func addPart(fromDisplayRect drawn: CGRect, displayRect: CGRect) {
-        guard displayRect.width > 0, displayRect.height > 0 else { return }
-        // 这里只挡退化矩形；「是不是误触」由调用方按屏幕位移判断（放大之后
-        // 内容坐标里的尺寸会缩水，拿它当门槛会把正常操作也挡掉）。
-        guard drawn.width > 0, drawn.height > 0 else { return }
-
-        let relative = CGRect(
-            x: (drawn.minX - displayRect.minX) / displayRect.width,
-            y: (drawn.minY - displayRect.minY) / displayRect.height,
-            width: drawn.width / displayRect.width,
-            height: drawn.height / displayRect.height
-        )
-        // 预览图画的是 ROI 裁出来那块，换算回整张图的归一化坐标
-        let inImage = CGRect(
-            x: roi.minX + relative.minX * roi.width,
-            y: roi.minY + relative.minY * roi.height,
-            width: relative.width * roi.width,
-            height: relative.height * roi.height
-        )
+    /// 两个角点（整张图纸的归一化坐标）→ 一个新零件。夹在零件区里：
+    /// 框外面本来就不该有零件，手指滑出去也不算数。
+    private func addPart(from a: CGPoint, to b: CGPoint) {
+        let inImage = CGRect(corner: a, to: b).intersection(roi)
+        // 这里只挡退化矩形；「是不是误触」由调用方按屏幕位移判断。
+        guard inImage.width > 0, inImage.height > 0 else { return }
 
         let newPart = BeadPart(rowBand: rowBand(forMidY: inImage.midY), bounds: inImage)
         insertSorted(newPart)
-        // 只留刚画的这一个高亮：图上五十几个框，用橙色标出「这个是我刚补的」才有意义，
-        // 一路累加下去到第三个就分不清哪个是新的了。
-        selection = [newPart.id]
+        // 画完不选中它。选中态是给「我要对这个零件动手」准备的（删除 / 合并 / 拆开 / 改名），
+        // 而刚画完的下一步几乎总是接着画下一个 —— 留一个橙色高亮框压在图上，既挡着看，
+        // 又得先点一下取消。下面的缩略图仍然滚过去，用户看得见它加进来了。
+        selection.removeAll()
         lastTappedOnImage = newPart.id
         // **画完一个就退出补零件状态。**
         //
@@ -595,7 +561,10 @@ struct PartsListStepView: View {
                 parts = next.sorted {
                     $0.rowBand != $1.rowBand ? $0.rowBand < $1.rowBand : $0.bounds.minX < $1.bounds.minX
                 }
-                selection = Set(replacements.map(\.id))
+                // 拆完不选中拆出来的那几个（同 addPart）：拆开是为了「这两块本来就是两个」，
+                // 不是为了接着对它们动手，而多选着好几个反而挡住了看拆得对不对。
+                selection.removeAll()
+                lastTappedOnImage = replacements.first?.id
             }
         }
     }
@@ -618,29 +587,15 @@ struct PartsListStepView: View {
 
 private struct PartsBoxOverlay: View {
     let parts: [BeadPart]
-    let roi: CGRect
     let selection: Set<UUID>
-    let displayRect: CGRect
-    /// 当前缩放。框线和编号要**除掉**它，否则放大 4 倍时编号也变成 4 倍，
-    /// 一个数字就能把整个零件盖住。
-    let zoom: CGFloat
+    /// 归一化坐标 → 真实屏幕点。整层不再走 scaleEffect，所以线宽、字号都是
+    /// **屏幕上的实际大小**，不用再除以缩放。
+    let transform: PartsCanvasTransform
 
     var body: some View {
         Canvas { context, _ in
-            guard roi.width > 0, roi.height > 0 else { return }
             for (index, part) in parts.enumerated() {
-                let rel = CGRect(
-                    x: (part.bounds.minX - roi.minX) / roi.width,
-                    y: (part.bounds.minY - roi.minY) / roi.height,
-                    width: part.bounds.width / roi.width,
-                    height: part.bounds.height / roi.height
-                )
-                let r = CGRect(
-                    x: displayRect.minX + rel.minX * displayRect.width,
-                    y: displayRect.minY + rel.minY * displayRect.height,
-                    width: rel.width * displayRect.width,
-                    height: rel.height * displayRect.height
-                )
+                let r = transform.screenRect(part.bounds)
                 // 选中的框换个颜色，不是加粗。图纸底色是浅粉、豆子里又有大片白，
                 // 原先「选中 = 白框 + 白色蒙版」在上面几乎看不出来 ——
                 // 用户补完一个零件，界面上没有任何地方告诉他「刚画的是这个、它选中了」。
@@ -650,27 +605,25 @@ private struct PartsBoxOverlay: View {
                 if selected {
                     context.fill(Path(roundedRect: r, cornerRadius: 2), with: .color(.orange.opacity(0.3)))
                 }
-                context.stroke(Path(roundedRect: r, cornerRadius: 2 / zoom),
+                context.stroke(Path(roundedRect: r, cornerRadius: 2),
                                with: .color(stroke),
-                               lineWidth: (selected ? 2.5 : 1) / zoom)
+                               lineWidth: selected ? 2.5 : 1)
 
                 // 序号贴在框的左上角外侧；框太靠上时贴内侧，免得跑出画面。
                 //
                 // 小框不画号：一张图上五十几个零件，全画出来数字会叠成一团反而谁都看不清。
                 // 小零件靠「点一下高亮」认领 —— 点图上的框或点下面的缩略图，两边同时高亮。
-                // 「够大才画号」按**屏幕上**的尺寸判断，所以门槛也要跟着缩放走
-                let bigEnough = min(r.width, r.height) * zoom >= 16
+                let bigEnough = min(r.width, r.height) >= 16
                 guard bigEnough || selected else { continue }
                 let badge = Text("\(index + 1)")
-                    .font(.system(size: 9 / zoom, weight: .bold))
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(Color.black)
-                let badgeY = r.minY > displayRect.minY + 8 / zoom ? r.minY - 5 / zoom : r.minY + 5 / zoom
+                let badgeY = r.minY > 8 ? r.minY - 5 : r.minY + 5
                 context.fill(
-                    Path(ellipseIn: CGRect(x: r.minX - 6 / zoom, y: badgeY - 6 / zoom,
-                                           width: 13 / zoom, height: 13 / zoom)),
+                    Path(ellipseIn: CGRect(x: r.minX - 6, y: badgeY - 6, width: 13, height: 13)),
                     with: .color(selected ? .orange : .cyan)
                 )
-                context.draw(badge, at: CGPoint(x: r.minX + 0.5 / zoom, y: badgeY))
+                context.draw(badge, at: CGPoint(x: r.minX + 0.5, y: badgeY))
             }
         }
     }

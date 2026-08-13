@@ -13,7 +13,8 @@
 //  所以这里直接把出路摆在他面前：相册里还有原图就选一下，立刻变清楚。
 //  没有也不拦着，提示条不挡路，流程照走。
 //
-//  开关关掉的用户不显示 —— 他已经明确说了不要留原图，再劝一次就是骚扰。
+//  设置里那个「默认留不留」不参与判断：用户已经站在拼图模式里了，这一屏本来就需要原图。
+//  上传时选了不留（或者当时压根没有原图）恰恰是最该提示的情况。
 //
 
 import SwiftUI
@@ -47,7 +48,10 @@ struct PatternSourceBanner: View {
                     if loading {
                         ProgressView()
                     } else {
-                        PhotosPicker(selection: $pickedItem, matching: .images) {
+                        // `.current`：这一整条路的意义就是拿到没被动过的原始字节，
+                        // 默认的 `.automatic` 会把 HEIC 转码成 JPEG，等于白选一次。
+                        PhotosPicker(selection: $pickedItem, matching: .images,
+                                     preferredItemEncoding: .current) {
                             Text("选原图")
                                 .font(.footnote.weight(.medium))
                         }
@@ -63,7 +67,9 @@ struct PatternSourceBanner: View {
             }
         }
         .task {
-            needsSource = PatternSourceStore.isEnabled && !PatternSourceStore.exists(for: projectId)
+            // 不看那个「默认留不留」的设置：用户已经站在拼图模式里了，这一屏本来就
+            // 需要原图。上传时选了不留（或者当时压根没有原图）恰恰是最该提示的情况。
+            needsSource = !PatternSourceStore.exists(for: projectId)
         }
         .onChange(of: pickedItem) { _, item in
             guard let item else { return }

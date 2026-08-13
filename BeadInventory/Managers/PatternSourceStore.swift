@@ -35,7 +35,7 @@
 //
 //  ## 什么时候没有
 //
-//  很多时候都没有：开关关掉的、这个功能上线前就存在的项目、从别的设备同步过来的
+//  很多时候都没有：上传那一屏选了不留的、这个功能上线前就存在的项目、从别的设备同步过来的
 //  （它不同步）、用户点过「拼好了」的。所以**调用方必须能在没有原图时照常工作**，
 //  退回用 SwiftData 里那份压缩图，只是糊一点。
 //
@@ -45,11 +45,15 @@ import UIKit
 
 enum PatternSourceStore {
 
-    /// 用户是否要保留原图。默认开。
-    /// 关掉之后新上传的图纸不再留原图，已经留下的不动（要删走「拼好了」）。
+    /// 上传图纸时**默认**要不要留原图。默认开。
+    ///
+    /// 只是初值：留不留是每张图各自的决定，上传那一屏有一个开关，用户按这张图会不会
+    /// 真的去拼来定（十张图纸里往往只有两三张会进拼图模式）。所以这里刻意不叫
+    /// `isEnabled`，也不再在 `save` 里当成一道闸门 —— 调用方已经拿到了用户的答复，
+    /// 存储层再拿一个全局设置去否决它，就成了「我明明勾了却没留下」。
     static let keepSourceDefaultsKey = "keepPatternSourceImage"
 
-    static var isEnabled: Bool {
+    static var keepsSourceByDefault: Bool {
         UserDefaults.standard.object(forKey: keepSourceDefaultsKey) as? Bool ?? true
     }
 
@@ -84,10 +88,10 @@ enum PatternSourceStore {
 
     // MARK: - 读写
 
-    /// 存一份原图。开关关着就什么都不做。
+    /// 存一份原图。要不要存由调用方决定（见 `keepsSourceByDefault`）。
     /// - Parameter data: 用户选的那张图的**原始字节**（相册选图能直接拿到）。
     static func save(_ data: Data, for projectId: UUID) {
-        guard isEnabled, let url = url(for: projectId) else { return }
+        guard let url = url(for: projectId) else { return }
         do {
             try data.write(to: url, options: .atomic)
             // 单个文件也标一次：目录属性在某些恢复路径下不会被继承
@@ -104,6 +108,45 @@ enum PatternSourceStore {
                 "projectId": projectId.uuidString, "error": "\(error)"
             ])
         }
+    }
+
+    /// 没有原始字节可用时（裁过封面、相机拍的、Share Extension 传进来的）拿什么存。
+    ///
+    /// **PNG，无损。** 这里以前是 `jpegData(0.95)` —— 用户传一张 5.8 MB 的图纸，
+    /// 走裁剪那条路存下来只剩两三 MB，他在零件清单看到「留了一份原图，占 2.1 MB」，
+    /// 结论只能是「你还是压了我的图」。他是对的：0.95 也是有损，色块边界该糊还是糊，
+    /// 而这份图存在的唯一理由就是逐格看颜色。
+    ///
+    /// 拼豆图纸是大片纯色块，PNG 压得极好（实测 3640×5320 的图纸只有 207 KB）；
+    /// 真正会变大的是拍照进来的那种，而那种本来也没有原始字节可用。
+    ///
+    /// **编码前必须先把方向烘进位图。** PNG 不带 orientation 标签，而 UIKit 不会替你转 ——
+    /// 相机拍出来的 UIImage 是 `.right`，直接 `pngData()` 存下来就是躺倒的。原来的
+    /// `jpegData(0.95)` 写了 EXIF 方向、读取端也应用了，换成 PNG 才暴露出来。
+    /// 后果不是「看着歪」：多零件模式所有几何量都相对封面归一化，源图躺了整片零件框都对不上。
+    /// 封面那条链路（`ProjectImageEncoder`）早就在做这件事，理由写在那边同一处。
+    static func lossless(_ image: UIImage?) -> Data? {
+        guard let image else { return nil }
+        let upright: UIImage
+        if image.imageOrientation == .up {
+            upright = image
+        } else {
+            let format = UIGraphicsImageRendererFormat.default()
+            format.scale = 1
+            upright = UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+                image.draw(in: CGRect(origin: .zero, size: image.size))
+            }
+        }
+        guard let data = upright.pngData() else {
+            // 用户是明确勾了「保留原图」才走到这儿的。编不出来就得看得见 ——
+            // 调用方会因为拿到 nil 而什么都不存，屏幕上却跟存好了一模一样。
+            AppLogger.shared.error("PatternSource", "lossless_encode_failed", metadata: [
+                "pixelSize": "\(image.size)",
+                "orientation": "\(image.imageOrientation.rawValue)"
+            ])
+            return nil
+        }
+        return data
     }
 
     /// 取原图字节。没有就返回 nil，调用方退回用压缩图。

@@ -795,6 +795,12 @@ struct ProjectImageEditorSheet: View {
     /// `PatternSourceStore` 只给拼图模式用（见那个文件顶部的说明）。
     /// 相机拍照 / 分享导入这些路径拿不到原始字节，就只能没有 —— 拼图模式会退回用压缩图。
     @State private var pickedOriginalData: Data?
+    /// 这一张要不要留原图。是每张图各自的决定，设置里那个开关只给初值
+    /// （同 `ScanView.keepPatternSource`）。打开这一屏时会按库里到底有没有那份文件校正 ——
+    /// 不校正的话，一个存着 20 MB 原图的项目可能显示「关」，反过来也一样。
+    @State private var keepPatternSource = PatternSourceStore.keepsSourceByDefault
+    /// 库里已经有这个项目的原图。决定开关的初值，也决定要不要显示这一行。
+    @State private var storedSourceExists = false
     @State private var editedImage: UIImage?
     @State private var isLoadingImage = false
     @State private var showingCropView = false
@@ -850,7 +856,10 @@ struct ProjectImageEditorSheet: View {
                     // 相册和拍照按钮
                     HStack(spacing: 12) {
                         // 从相册选择
-                        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        // `.current`：相册存的是什么就给什么字节，别把 HEIC 转码成 JPEG
+                        // （同 ScanView，理由见那边的注释）。
+                        PhotosPicker(selection: $selectedPhotoItem, matching: .images,
+                                     preferredItemEncoding: .current) {
                             HStack {
                                 Image(systemName: "photo.on.rectangle")
                                 Text("相册")
@@ -918,6 +927,40 @@ struct ProjectImageEditorSheet: View {
                         .padding(.horizontal)
                     }
 
+                    // 「这张要不要留原图」。跟识别图纸那一屏同一个决定、同一句话 ——
+                    // 只在那边有、这边没有的话，从详情页换封面就会又悄悄留下一份几十 MB。
+                    // 成品图不涉及拼图模式（savesPatternSource == false），不显示。
+                    //
+                    // 只在**真的有得选**的时候才出现：换了图（要不要留这张新的），或者库里
+                    // 已经有一份（要不要删掉）。都没有的话这个开关无论怎么拨都不会发生任何事，
+                    // 摆在那儿就是个骗人的开关。
+                    if savesPatternSource, displayImage != nil,
+                       editedImage != nil || pickedOriginalData != nil || storedSourceExists {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Toggle(isOn: $keepPatternSource) {
+                                HStack(spacing: 6) {
+                                    Text("保留原图")
+                                        .font(.caption)
+                                    if editedImage == nil, let bytes = pickedOriginalData?.count {
+                                        Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
+                                            .font(.caption2.monospacedDigit())
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                            .toggleStyle(.switch)
+                            .tint(Theme.ColorToken.Morandi.mauve)
+
+                            Text(keepPatternSource
+                                 ? "拼图模式需要原图才能看清每一格的颜色。原图保存在本机，不占用 iCloud，拼完后可以删除。"
+                                 : "这张图纸将无法使用拼图模式。以后需要时，可以在拼图模式里重新选择原图。")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.horizontal)
+                    }
+
                     // 移除按钮（仅当有当前图片时显示）
                     if currentImage != nil || editedImage != nil {
                         Button {
@@ -964,10 +1007,22 @@ struct ProjectImageEditorSheet: View {
                                 return   // 不写库、不放成功反馈、不关闭 sheet
                             }
                             onSave(imageData)
-                            // 原图另存一份，只给拼图模式用；开关关着时 save 内部会直接跳过。
+                            // 原图另存一份，只给拼图模式用。
                             // 放在 onSave 之后：封面存成功才留原图，避免留下对不上号的孤儿文件。
-                            if savesPatternSource, let source = patternSourceData() {
-                                PatternSourceStore.save(source, for: projectId)
+                            if savesPatternSource {
+                                if let source = patternSourceData() {
+                                    PatternSourceStore.save(source, for: projectId)
+                                } else if !keepPatternSource {
+                                    // 用户明说不留：删掉库里那份。换了图的话它是**上一张**图的，
+                                    // 留着比没有更糟（拼图模式会拿它当这张图纸的原图，零件框和网格
+                                    // 全套在别的图上）；没换图的话，删掉正是他拨这个开关的目的。
+                                    //
+                                    // 判据是 `!keepPatternSource` 而不是「有没有新图」：
+                                    // `patternSourceData()` 返回 nil 有两个完全不同的原因 ——
+                                    // 用户不留，以及 PNG 编不出来。拿「有没有新图」当判据的话，
+                                    // 开关开着但编码失败会走进删除分支：旧的删了、新的没写、还报成功。
+                                    PatternSourceStore.remove(for: projectId)
+                                }
                             }
                             saveSuccessAt = Date()
                         }
@@ -1048,6 +1103,10 @@ struct ProjectImageEditorSheet: View {
         } message: {
             Text("这张图片无法处理，原有图片已保留。请重试或换一张图片。")
         }
+        .task {
+            storedSourceExists = PatternSourceStore.exists(for: projectId)
+            if storedSourceExists { keepPatternSource = true }
+        }
         .presentationDetents([.medium, .large])
     }
 
@@ -1058,9 +1117,9 @@ struct ProjectImageEditorSheet: View {
     ///     多零件模式的零件框、格子都是相对封面归一化的，构图一错整片框都会偏。
     /// 两者都没有（用户只是打开 sheet 又保存）→ nil，不写。
     private func patternSourceData() -> Data? {
-        guard PatternSourceStore.isEnabled else { return nil }
+        guard keepPatternSource else { return nil }
         if editedImage == nil, let pickedOriginalData { return pickedOriginalData }
-        return editedImage?.jpegData(compressionQuality: 0.95)
+        return PatternSourceStore.lossless(editedImage)
     }
 
     /// 生成落盘用的图片数据。
