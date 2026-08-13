@@ -63,6 +63,8 @@ struct PartsSheetFlowView: View {
 
     /// 零件摆在拼豆板上的位置。最后一屏的产物。
     @State private var boards: [PartsBoard] = []
+    /// 这套板子是按哪一档松紧排的。跟 `boards` 一起存，理由见 `BeadPartsSheet.boardSpacing`。
+    @State private var boardSpacing: BoardSpacing?
 
     @State private var busy: String?
 
@@ -180,6 +182,7 @@ struct PartsSheetFlowView: View {
                         PartsBoardStepView(
                             parts: parts,
                             boards: tracked($boards),
+                            boardSpacing: tracked($boardSpacing),
                             colorSystem: project.colorSystem,
                             onFinish: { save() }
                         )
@@ -362,6 +365,13 @@ struct PartsSheetFlowView: View {
             }
             if live.allSatisfy(\.placements.isEmpty) { live = [] }
             self.boards = live
+            // 老图纸的 `.tight` 在这里一次性落定，别留给下游每次读的时候再推一遍 ——
+            // 那样「nil」就同时是「没排过」和「老数据」两个意思，判一次漏一次。
+            // 落定之后 nil 只剩一个意思：还没排过，用用户偏好。
+            //
+            // 板子清空了就等于没排过，那一档也跟着作废：留着的话下次进去自动排会照着
+            // 一套已经不存在的板子的松紧排，而不是用户当前的偏好。
+            self.boardSpacing = live.isEmpty ? nil : (saved.boardSpacing ?? .tight)
 
             // 上次做到哪儿，这次就从哪儿接着来。
             //
@@ -596,6 +606,7 @@ struct PartsSheetFlowView: View {
             // 板上画不出东西，又因为 boards 非空进不了自动排版，那一屏成了死胡同。
             self.calibration = nil
             self.boards = []
+            self.boardSpacing = nil
             self.palette = []
             self.detectedROI = currentROI
             self.detectedGeneration = generation
@@ -697,7 +708,8 @@ struct PartsSheetFlowView: View {
             anyColorCode: anyColorCode,
             emptyHex: emptyHex,
             anyColorHex: anyColorHex,
-            boards: boards.isEmpty ? nil : boards
+            boards: boards.isEmpty ? nil : boards,
+            boardSpacing: boards.isEmpty ? nil : boardSpacing
         )
         guard inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet) else {
             // 没写进去。这里绝不能算了 —— 用户手上这些东西全在内存里，

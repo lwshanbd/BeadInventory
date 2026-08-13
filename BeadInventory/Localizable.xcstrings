@@ -11582,6 +11582,146 @@
         }
       }
     },
+    "零件之间留多宽" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spacing between parts"
+          }
+        }
+      }
+    },
+    "紧凑" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tight"
+          }
+        }
+      }
+    },
+    "宽松" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loose"
+          }
+        }
+      }
+    },
+    "零件之间空一格，板边也用满，一块板放得最多" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One cell between parts, board edge used fully — fits the most per board"
+          }
+        }
+      }
+    },
+    "零件之间空一格，板子最外面一圈留空" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One cell between parts, outer ring of the board left empty"
+          }
+        }
+      }
+    },
+    "零件之间空两格，板子最外面一圈留空" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Two cells between parts, outer ring of the board left empty"
+          }
+        }
+      }
+    },
+    "这儿放不下：板子最外面一圈留空，豆子不能压上去" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Won't fit here — the board's outer ring stays empty"
+          }
+        }
+      }
+    },
+    "这儿放不下：伸到板子外面去了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Won't fit here — it hangs off the board"
+          }
+        }
+      }
+    },
+    "这儿放不下：这一档零件之间要空两格，先把旁边的挪开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Won't fit here — this setting needs two cells between parts. Move the neighbour first"
+          }
+        }
+      }
+    },
+    "按%@间距排好了，一共 %lld 块板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done at %1$@ spacing — %2$lld boards"
+          }
+        }
+      }
+    },
+    "按%@间距排了 %lld 块板，还有 %lld 个没摆下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld boards at %1$@ spacing — %3$lld pieces didn't fit"
+          }
+        }
+      }
+    },
+    "有 %lld 个零件在%@间距下放不进去，退一档或者换块大的板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld pieces don't fit at %2$@ spacing — go one step tighter, or use a bigger board"
+          }
+        }
+      }
+    },
+    "接下来摆的零件按%@间距放" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pieces you place from now on use %@ spacing"
+          }
+        }
+      }
+    },
+    "会按 %@ 的板子、%@间距重新摆一遍，你手动挪过的位置就没了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Everything will be laid out again on %1$@ boards at %2$@ spacing. Any pieces you moved by hand will be reset."
+          }
+        }
+      }
+    },
     "又摆上去 %lld 个" : {
       "localizations" : {
         "en" : {

@@ -8,12 +8,17 @@
 //  手上是一块**固定格数的拼豆板**，一块放不下就分几次烫。所以还差最后一层：
 //  这些零件分别摆在第几块板的第几格。
 //
-//  ## 为什么零件之间必须空一格
+//  ## 为什么零件之间必须空格
 //
 //  拼豆是要拿熨斗烫的，挨着的两颗豆子烫完就连成一片。两个零件在板上贴着放，
 //  烫完得拿剪刀分开 —— 那一刀下去边缘就毁了。所以这里的「放得下」不是
 //  「豆子不重叠」，而是**任意两个零件的豆子之间至少隔一格**（斜着挨着也算挨着，
 //  拼豆板上斜角的两颗豆子是碰得到的）。
+//
+//  一格是**底线**，不是唯一答案：剪刀下得开不开、板子拿在手上顺不顺手，
+//  这是买了什么剪刀、拼多大件的人自己知道的事。所以留多宽由用户选，
+//  见 `BoardSpacing` —— 但没有「零间距」这一档：贴着摆当然摆得下，
+//  只是烫完连成一片、那一刀下去边缘就毁了。
 //
 //  ## 坐标约定
 //
@@ -43,6 +48,65 @@ struct BeadBoardSize: Hashable, Sendable, Identifiable {
         BeadBoardSize(cols: 100, rows: 100),
         BeadBoardSize(cols: 104, rows: 104)
     ]
+}
+
+// MARK: - 摆得多松
+
+/// 零件之间、以及零件跟板子边缘之间留多宽。
+///
+/// 三档不是三个算法参数，是三种**动手时的打算**：一块板多塞几个，还是留出下剪刀
+/// 和拿板子的余地。所以名字和说明都按「手上会不一样在哪儿」写，不写格数以外的东西。
+///
+/// 为什么最紧的一档仍然是一格：烫的时候挨着的豆子会连成一片（见文件头），
+/// 「零间距」不是一个更省地方的选项，是一个拼完得报废的选项。
+///
+/// **加第四档之前先看这里**：`rawValue` 会跟着图纸存进 `BeadPartsSheet`，而
+/// `BackupManager` 是带着图纸原始字节跨设备走的。合成的 Decodable 遇到不认识的
+/// rawValue 会**抛**（不像 `@AppStorage` 那样退回默认值），一抛就是整张图纸解不出来
+/// —— 用户丢的是零件和色号，不是一个装饰性字段。真要加，得先给这个字段写个
+/// 认不出就当 nil 的自定义 `init(from:)`。
+enum BoardSpacing: String, CaseIterable, Codable, Sendable, Identifiable {
+    /// 零件之间空一格，板子边上也用满 —— 一块板放得最多。
+    case tight
+    /// 零件之间空一格，板子最外面一圈留空。
+    case standard
+    /// 零件之间空两格，板子最外面一圈也留空。
+    case loose
+
+    var id: String { rawValue }
+
+    /// 两个零件的豆子之间至少空几格
+    var gap: Int {
+        switch self {
+        case .tight, .standard: return 1
+        case .loose: return 2
+        }
+    }
+
+    /// 板子四周留几行/几列不放豆子
+    var margin: Int {
+        switch self {
+        case .tight: return 0
+        case .standard, .loose: return 1
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .tight: return String(localized: "紧凑")
+        case .standard: return String(localized: "默认")
+        case .loose: return String(localized: "宽松")
+        }
+    }
+
+    /// 菜单里跟在名字后面的一句话。说的是选了它板子上会变成什么样，不是它怎么算的。
+    var detail: String {
+        switch self {
+        case .tight: return String(localized: "零件之间空一格，板边也用满，一块板放得最多")
+        case .standard: return String(localized: "零件之间空一格，板子最外面一圈留空")
+        case .loose: return String(localized: "零件之间空两格，板子最外面一圈留空")
+        }
+    }
 }
 
 // MARK: - 一个零件摆在板上
@@ -189,20 +253,42 @@ extension BeadPart {
 // MARK: - 板上哪些格被占了
 
 /// 板子的占位表。存的不是「有豆子」，而是「**不能再放豆子**」——
-/// 每颗豆子连同它周围一圈（含斜角）都记上，这样「放得下」直接查表就行，
-/// 空一格的规矩自然而然被满足（见文件头）。
+/// 每颗豆子连同它周围 `spacing.gap` 圈（含斜角）都记上，这样「放得下」直接查表就行，
+/// 空格子的规矩自然而然被满足（见文件头）。
+///
+/// 边上要留的那一圈也是这么处理的：建表时就把它标成「占了」。这样「放得下吗」
+/// 只有 `canPlace` 一处判定，自动排、点零件条落位、拖动校验全都走它 ——
+/// 少判一处就是一条能钻的缝，而钻进去的后果要等用户拼到那儿才发现。
+///
+/// （`firstFit` 的扫描范围和 `blockedByEdge` 另有一份 margin 算术，那两处一个是为了
+/// 少扫、一个是为了分辨失败原因，都不参与判定。margin 要是哪天不再是 0/1，这三处一起改。）
 struct BoardOccupancy: Sendable {
     let cols: Int
     let rows: Int
+    let spacing: BoardSpacing
     private var blocked: [Bool]
 
-    init(cols: Int, rows: Int) {
+    /// 板子上真正能放豆子的范围（去掉四周留边之后）
+    var usableCols: Int { cols - 2 * spacing.margin }
+    var usableRows: Int { rows - 2 * spacing.margin }
+
+    init(cols: Int, rows: Int, spacing: BoardSpacing) {
         self.cols = max(1, cols)
         self.rows = max(1, rows)
+        self.spacing = spacing
         blocked = Array(repeating: false, count: self.cols * self.rows)
+
+        let margin = spacing.margin
+        guard margin > 0 else { return }
+        for r in 0..<self.rows {
+            for c in 0..<self.cols
+            where r < margin || c < margin || r >= self.rows - margin || c >= self.cols - margin {
+                blocked[r * self.cols + c] = true
+            }
+        }
     }
 
-    /// 零件矩阵左上角放在 (col, row) 时，豆子是不是都落在板内、且都不挨着别的零件
+    /// 零件矩阵左上角放在 (col, row) 时，豆子是不是都落在可用范围内、且都不挨着别的零件
     func canPlace(_ footprint: PartFootprint, col: Int, row: Int) -> Bool {
         guard !footprint.isEmpty else { return false }
         for bead in footprint.beads {
@@ -214,10 +300,24 @@ struct BoardOccupancy: Sendable {
         return true
     }
 
-    mutating func add(_ footprint: PartFootprint, col: Int, row: Int) {
+    /// 放不下是因为顶到了板子的边（板外，或者边上留的那一圈），而不是挨着了别的零件。
+    /// 两种情况下用户该做的事完全不同 —— 一个是「往里挪」，一个是「先挪开别的」，
+    /// 所以拖动失败时得分得清，不能都甩一句「这儿放不下」。
+    func blockedByEdge(_ footprint: PartFootprint, col: Int, row: Int) -> Bool {
+        let margin = spacing.margin
         for bead in footprint.beads {
-            for dr in -1...1 {
-                for dc in -1...1 {
+            let c = col + bead.col
+            let r = row + bead.row
+            if c < margin || r < margin || c >= cols - margin || r >= rows - margin { return true }
+        }
+        return false
+    }
+
+    mutating func add(_ footprint: PartFootprint, col: Int, row: Int) {
+        let gap = spacing.gap
+        for bead in footprint.beads {
+            for dr in -gap...gap {
+                for dc in -gap...gap {
                     let c = col + bead.col + dc
                     let r = row + bead.row + dr
                     guard c >= 0, r >= 0, c < cols, r < rows else { continue }
@@ -235,10 +335,18 @@ struct BoardOccupancy: Sendable {
 /// 用的是「从上到下、从左到右找第一个放得下的地方」，零件按高矮排过序。
 /// 不追求最优装箱：多塞进去一两个零件的收益，远不如「排出来的样子跟图纸上
 /// 差不多、用户一眼认得出哪个是哪个」重要 —— 而且他随时能自己拖。
+///
+/// 留多宽（`BoardSpacing`）由调用方给，这里不挑也不猜：它是用户选的，
+/// 而且必须跟拖动校验用的是同一档，否则自动排出来的样子一拖就变成非法的。
 enum PartsBoardPacker {
     /// 板上已经摆了的东西占了哪些格。`ignoring` 用来在拖某个零件时把它自己排除掉。
-    static func occupancy(of board: PartsBoard, parts: [BeadPart], ignoring: UUID? = nil) -> BoardOccupancy {
-        var occupancy = BoardOccupancy(cols: board.cols, rows: board.rows)
+    static func occupancy(
+        of board: PartsBoard,
+        parts: [BeadPart],
+        spacing: BoardSpacing,
+        ignoring: UUID? = nil
+    ) -> BoardOccupancy {
+        var occupancy = BoardOccupancy(cols: board.cols, rows: board.rows, spacing: spacing)
         for placement in board.placements where placement.id != ignoring {
             guard let part = parts.first(where: { $0.id == placement.partId }) else { continue }
             occupancy.add(part.footprint(turns: placement.turns), col: placement.col, row: placement.row)
@@ -246,16 +354,23 @@ enum PartsBoardPacker {
         return occupancy
     }
 
-    /// 在这块板上找第一个放得下的位置（返回的是零件矩阵左上角该放哪儿）
+    /// 在这块板上找第一个放得下的位置（返回的是零件矩阵左上角该放哪儿）。
+    /// 扫的范围是**去掉留边之后**那一块 —— 留边里的格子建表时就标死了，
+    /// 扫进去只是白扫一遍。
+    ///
+    /// 但底下那两个 `usable` 判断松不得：换回 `<= occupancy.rows` 的话，
+    /// 50 行的板配 49 高的零件、margin 为 1，下面那个区间会变成 `1...0` —— 直接崩，
+    /// 不是返回 nil。
     static func firstFit(
         _ footprint: PartFootprint,
         occupancy: BoardOccupancy
     ) -> (col: Int, row: Int)? {
         guard !footprint.isEmpty,
-              footprint.width <= occupancy.cols,
-              footprint.height <= occupancy.rows else { return nil }
-        for r in 0...(occupancy.rows - footprint.height) {
-            for c in 0...(occupancy.cols - footprint.width) {
+              footprint.width <= occupancy.usableCols,
+              footprint.height <= occupancy.usableRows else { return nil }
+        let margin = occupancy.spacing.margin
+        for r in margin...(occupancy.rows - margin - footprint.height) {
+            for c in margin...(occupancy.cols - margin - footprint.width) {
                 let col = c - footprint.minCol
                 let row = r - footprint.minRow
                 if occupancy.canPlace(footprint, col: col, row: row) {
@@ -309,7 +424,8 @@ enum PartsBoardPacker {
         footprint: PartFootprint? = nil,
         into boards: inout [PartsBoard],
         occupancies: inout [BoardOccupancy],
-        size: BeadBoardSize
+        size: BeadBoardSize,
+        spacing: BoardSpacing
     ) -> Int? {
         let options = candidates(for: part, footprint: footprint)
 
@@ -322,7 +438,7 @@ enum PartsBoardPacker {
             return index
         }
 
-        var occupancy = BoardOccupancy(cols: size.cols, rows: size.rows)
+        var occupancy = BoardOccupancy(cols: size.cols, rows: size.rows, spacing: spacing)
         guard let hit = fit(options, in: occupancy) else { return nil }
         var board = PartsBoard(size: size)
         board.placements.append(PartPlacement(
@@ -339,15 +455,16 @@ enum PartsBoardPacker {
     /// 只能换更大的板，得让他看见，不能悄悄吞掉。
     static func pack(
         parts: [BeadPart],
-        size: BeadBoardSize
+        size: BeadBoardSize,
+        spacing: BoardSpacing
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
         var boards: [PartsBoard] = []
         var occupancies: [BoardOccupancy] = []
         var unplaced: [UUID] = []
 
         for item in ordered(parts) {
-            if placeOne(item.part, footprint: item.footprint,
-                        into: &boards, occupancies: &occupancies, size: size) == nil {
+            if placeOne(item.part, footprint: item.footprint, into: &boards,
+                        occupancies: &occupancies, size: size, spacing: spacing) == nil {
                 unplaced.append(item.part.id)
             }
         }

@@ -303,6 +303,13 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
     /// 属性默认值，缺字段一律抛错 —— 那样所有存量图纸一进来就解不出来。
     /// Optional 缺字段解成 nil，老数据照常打得开。
     var boards: [PartsBoard]?
+    /// `boards` 是按哪一档松紧排出来的。
+    ///
+    /// 必须跟着图纸走，不能只当成一个 App 设置：拖动校验用的松紧要是跟当初排版用的
+    /// 对不上，用户会撞见一块「自己排出来的样子、自己却拖不回去」的板。
+    /// 同样是 Optional（理由见 `boards`）；老图纸解出 nil —— 当年只有一种排法，
+    /// 那一档现在叫 `BoardSpacing.tight`。
+    var boardSpacing: BoardSpacing?
     var lastUpdatedAt: Date
 
     init(
@@ -316,6 +323,7 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
         emptyHex: String? = nil,
         anyColorHex: String? = nil,
         boards: [PartsBoard]? = nil,
+        boardSpacing: BoardSpacing? = nil,
         lastUpdatedAt: Date = Date()
     ) {
         self.roi = roi
@@ -328,6 +336,7 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
         self.emptyHex = emptyHex
         self.anyColorHex = anyColorHex
         self.boards = boards
+        self.boardSpacing = boardSpacing
         self.lastUpdatedAt = lastUpdatedAt
     }
 
