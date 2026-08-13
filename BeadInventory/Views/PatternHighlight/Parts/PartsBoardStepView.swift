@@ -140,6 +140,12 @@ struct PartsBoardStepView: View {
             autoPackIfNeeded()
         }
         .task(id: shapeSignature) { footprints = makeFootprints() }
+        // 接了电视 / 投影仪的话，把当前这块板送过去（没接就没人读，见 BoardCastSession）。
+        // 拖动过程中的临时状态不送 —— 外屏是给人抬头看「板子现在长什么样」的，
+        // 跟着手指抖没有意义。
+        .onChange(of: castSignature) { _, _ in publishToExternalDisplay() }
+        .onAppear { publishToExternalDisplay() }
+        .onDisappear { BoardCastSession.shared.stop() }
         .task(id: noteToken) {
             guard note != nil else { return }
             try? await Task.sleep(for: .seconds(4))
@@ -239,7 +245,8 @@ struct PartsBoardStepView: View {
 
                 if let board = currentBoard {
                     Canvas { context, size in
-                        draw(board: board, in: context, canvas: size)
+                        renderer(for: board).draw(in: context, canvas: size,
+                                                  layout: layout(for: board))
                     }
                 } else {
                     ContentUnavailableView(
@@ -269,137 +276,6 @@ struct PartsBoardStepView: View {
         }
         .clipped()
         .animation(.easeInOut(duration: 0.2), value: note)
-    }
-
-    private func draw(board: PartsBoard, in context: GraphicsContext, canvas size: CGSize) {
-        let layout = layout(for: board)
-        let cell = layout.cell
-        guard cell > 0 else { return }
-        let viewport = CGRect(origin: .zero, size: size)
-
-        context.fill(
-            Path(roundedRect: layout.rect, cornerRadius: 6),
-            with: .color(Theme.ColorToken.Surface.elevated)
-        )
-        context.stroke(
-            Path(roundedRect: layout.rect, cornerRadius: 6),
-            with: .color(Theme.ColorToken.Border.default),
-            lineWidth: 1
-        )
-
-        // 格线。每 5 格一条深的 —— 拼的时候要数「往右第几格」，
-        // 没有参照线的话在一片 100×100 里数到第几格全靠运气。
-        if cell >= 2.5 {
-            var minor = Path()
-            var major = Path()
-            for c in 0...board.cols {
-                let x = layout.rect.minX + CGFloat(c) * cell
-                var path = Path()
-                path.move(to: CGPoint(x: x, y: layout.rect.minY))
-                path.addLine(to: CGPoint(x: x, y: layout.rect.maxY))
-                if c % 5 == 0 { major.addPath(path) } else { minor.addPath(path) }
-            }
-            for r in 0...board.rows {
-                let y = layout.rect.minY + CGFloat(r) * cell
-                var path = Path()
-                path.move(to: CGPoint(x: layout.rect.minX, y: y))
-                path.addLine(to: CGPoint(x: layout.rect.maxX, y: y))
-                if r % 5 == 0 { major.addPath(path) } else { minor.addPath(path) }
-            }
-            context.stroke(minor, with: .color(Theme.ColorToken.Border.divider), lineWidth: 0.5)
-            context.stroke(major, with: .color(Theme.ColorToken.Border.default), lineWidth: 1)
-        }
-
-        let radius = cell * 0.28
-        let inset = min(0.8, cell * 0.08)
-
-        // 同色的豆子攒成一条 Path，最后一个色号画一次。
-        // 一颗一颗 fill 的话，一块排满的 104×104 就是八千次画调用 ——
-        // 而拖动时手指每挪一下整块板都要重画一遍，直接卡成幻灯片。
-        // 一块板上的色号顶多十几种，攒完之后画调用也就跟着降到十几次。
-        var fills: [String: Path] = [:]
-        // 轮廓要按「放不下 / 选中 / 普通」三种样式分开描，跟填充分两轮走
-        var contours: [(path: Path, color: Color, width: CGFloat)] = []
-
-        for placement in board.placements {
-            guard let footprint = footprints[placement.id] else { continue }
-            let moving = drag?.placement == placement.id ? drag : nil
-            let col = placement.col + (moving?.deltaCol ?? 0)
-            let row = placement.row + (moving?.deltaRow ?? 0)
-            let blocked = moving.map { !$0.valid } ?? false
-
-            // 沿着这个零件的外沿描一圈。
-            //
-            // 少了它，用户根本分不出零件的边界：这类图纸的零件几乎都是
-            // 「深色描边 + 浅色填充」，两个零件隔着一格摆在一起，看上去就是连成一片的 ——
-            // 明明一格都没挨着，用户看到的却是「你把零件叠一起了」。
-            // 框住整个外接矩形也不行：零件是不规则的，矩形会盖到邻居身上，更像叠了。
-            var contour = Path()
-            for bead in footprint.beads {
-                let rect = layout.cellRect(col: col + bead.col, row: row + bead.row)
-                guard rect.intersects(viewport) else { continue }
-                let fillKey: String
-                if blocked {
-                    fillKey = Self.blockedFillKey
-                } else if let highlightKey, bead.key != highlightKey {
-                    fillKey = Self.dimmedFillKey
-                } else {
-                    fillKey = bead.key
-                }
-                fills[fillKey, default: Path()].addPath(
-                    Path(roundedRect: rect.insetBy(dx: inset, dy: inset), cornerRadius: radius)
-                )
-
-                if !footprint.hasBead(col: bead.col, row: bead.row - 1) {
-                    contour.move(to: CGPoint(x: rect.minX, y: rect.minY))
-                    contour.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-                }
-                if !footprint.hasBead(col: bead.col, row: bead.row + 1) {
-                    contour.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-                    contour.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-                }
-                if !footprint.hasBead(col: bead.col - 1, row: bead.row) {
-                    contour.move(to: CGPoint(x: rect.minX, y: rect.minY))
-                    contour.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-                }
-                if !footprint.hasBead(col: bead.col + 1, row: bead.row) {
-                    contour.move(to: CGPoint(x: rect.maxX, y: rect.minY))
-                    contour.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-                }
-            }
-
-            let isSelected = selection == placement.id || moving != nil
-            let outline: Color = blocked
-                ? Theme.ColorToken.Status.error
-                : (isSelected ? Theme.ColorToken.Morandi.honey
-                              : Theme.ColorToken.Text.primary.opacity(0.45))
-            contours.append((path: contour, color: outline, width: isSelected ? 2.5 : 1))
-        }
-
-        // 先后顺序只有一处有讲究：零件之间本来就不会重叠，唯独拖到别人身上那一下会 ——
-        // 变红的那一份必须盖在上面，不然用户看不出是哪个零件放不下。
-        for (key, path) in fills where key != Self.blockedFillKey {
-            context.fill(path, with: .color(fillColor(for: key)))
-        }
-        if let blocked = fills[Self.blockedFillKey] {
-            context.fill(blocked, with: .color(fillColor(for: Self.blockedFillKey)))
-        }
-        for contour in contours {
-            context.stroke(contour.path, with: .color(contour.color), lineWidth: contour.width)
-        }
-    }
-
-    /// 攒填充用的两个假色号：拖到放不下的地方整个零件变红、高亮时别的色号压成灰。
-    /// 它们和真色号一样只是「一批同色的豆子」，所以走同一个分组。
-    private static let blockedFillKey = "#blocked"
-    private static let dimmedFillKey = "#dimmed"
-
-    private func fillColor(for key: String) -> Color {
-        switch key {
-        case Self.blockedFillKey: return Theme.ColorToken.Status.error
-        case Self.dimmedFillKey: return Theme.ColorToken.Border.default
-        default: return colorCache[key] ?? Theme.ColorToken.Surface.strong
-        }
     }
 
     private var gestureCatcher: some View {
@@ -954,47 +830,43 @@ struct PartsBoardStepView: View {
 
     // MARK: - 画布坐标
 
-    private struct BoardLayout {
-        let rect: CGRect
-        let cell: CGFloat
-
-        func cellRect(col: Int, row: Int) -> CGRect {
-            CGRect(x: rect.minX + CGFloat(col) * cell,
-                   y: rect.minY + CGFloat(row) * cell,
-                   width: cell, height: cell)
-        }
-
-        /// 零件真正占地方的那一块在屏幕上的位置（不含四周的空白边）
-        func boundingRect(of footprint: PartFootprint, col: Int, row: Int) -> CGRect {
-            CGRect(x: rect.minX + CGFloat(col + footprint.minCol) * cell,
-                   y: rect.minY + CGFloat(row + footprint.minRow) * cell,
-                   width: CGFloat(footprint.width) * cell,
-                   height: CGFloat(footprint.height) * cell)
-        }
+    /// 送到外屏的东西变了没有。板子换了、零件形状变了、高亮换了色号才要重送。
+    private var castSignature: String {
+        "\(boardIndex)|\(boards.count)|\(highlightKey ?? "")|\(shapeSignature)|\(colorCache.count)"
     }
 
-    /// zoom = 1 时一格多大（板子整个装进画布，四周留一点边）
-    private func baseCell(for board: PartsBoard) -> CGFloat {
-        let padding: CGFloat = 12
-        let available = CGSize(width: max(1, canvasSize.width - padding * 2),
-                               height: max(1, canvasSize.height - padding * 2))
-        return min(available.width / CGFloat(max(board.cols, 1)),
-                   available.height / CGFloat(max(board.rows, 1)))
+    private func publishToExternalDisplay() {
+        guard let board = currentBoard else {
+            BoardCastSession.shared.stop()
+            return
+        }
+        BoardCastSession.shared.update(.init(
+            board: board,
+            footprints: footprints,
+            colorCache: colorCache,
+            highlightKey: highlightKey,
+            boardIndex: boardIndex,
+            boardCount: boards.count
+        ))
     }
 
-    private func layout(for board: PartsBoard) -> BoardLayout {
-        let base = baseCell(for: board)
-        let width = base * CGFloat(board.cols)
-        let height = base * CGFloat(board.rows)
-        let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
-        let origin = CGPoint(x: (canvasSize.width - width) / 2, y: (canvasSize.height - height) / 2)
-        let rect = CGRect(
-            x: center.x + (origin.x - center.x) * zoom + pan.width,
-            y: center.y + (origin.y - center.y) * zoom + pan.height,
-            width: width * zoom,
-            height: height * zoom
+    /// 这一屏当前要画的东西。板子的画法在 `BoardCanvas.swift`，跟外接屏幕共用一份。
+    private func renderer(for board: PartsBoard) -> BoardCanvasRenderer {
+        BoardCanvasRenderer(
+            board: board,
+            footprints: footprints,
+            colorCache: colorCache,
+            highlightKey: highlightKey,
+            selection: selection,
+            moving: drag.map {
+                .init(placement: $0.placement, deltaCol: $0.deltaCol,
+                      deltaRow: $0.deltaRow, valid: $0.valid)
+            }
         )
-        return BoardLayout(rect: rect, cell: base * zoom)
+    }
+
+    private func layout(for board: PartsBoard) -> BoardCanvasLayout {
+        .fitting(board, in: canvasSize, zoom: zoom, pan: pan)
     }
 
     private func unzoomed(_ point: CGPoint) -> CGPoint {
@@ -1011,9 +883,8 @@ struct PartsBoardStepView: View {
     private func clampPan(_ offset: CGSize) -> CGSize {
         var content = canvasSize
         if let board = currentBoard {
-            let base = baseCell(for: board)
-            content = CGSize(width: base * CGFloat(board.cols) * zoom,
-                             height: base * CGFloat(board.rows) * zoom)
+            let fitted = BoardCanvasLayout.fitting(board, in: canvasSize)
+            content = CGSize(width: fitted.rect.width * zoom, height: fitted.rect.height * zoom)
         }
         let limitX = max(0, (content.width - canvasSize.width) / 2)
         let limitY = max(0, (content.height - canvasSize.height) / 2)
