@@ -395,6 +395,13 @@ struct PartsSheetFlowView: View {
     /// （ScanView.recognizeImage 的约定），而核对页格子里存的是 `displayCode(for: colorSystem)`。
     /// 不翻这一道，COCO / 卡卡这些非 MARD 图纸上两边永远对不上 —— 色号胶囊上那句
     /// 「认出 X 颗 / 图纸写 Y 颗」于是一个字都不显示，用户没有任何参照物判断判色对不对。
+    ///
+    /// **有一种情况翻不对，暂时没有干净的解法**：那个约定的另一半是「AI 没匹配上时存的是
+    /// 原始字符串」。非 MARD 图纸上，一个恰好长得像合法 MARD 码的原始串会在这里查到
+    /// **另一个颜色**，然后被翻成那个颜色的本体系码，于是图纸上某个色号会显示一个
+    /// 来路不明但看着很确定的对照数。在这个调用点上，原始串和真 mardCode 无法区分 ——
+    /// 要根治得在扫描那步给 beadUsage 记一个「匹配上了没有」的标记。
+    /// 查不到色号的那一支反而是安全的：key 原样留着，匹配不上任何一组，只是不显示对照数。
     private var legendCounts: [String: Int] {
         project.beadUsage.reduce(into: [:]) { result, usage in
             let key = inventoryManager.findColor(byMardCode: usage.colorCode)?
