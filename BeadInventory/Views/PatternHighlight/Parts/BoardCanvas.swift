@@ -71,8 +71,11 @@ struct BoardCanvasRenderer {
     let footprints: [UUID: PartFootprint]
     /// 色号 → 颜色
     let colorCache: [String: Color]
-    /// 只高亮这一个色号，别的压成灰。nil = 全都正常显示。
-    var highlightKey: String?
+    /// 只高亮这些色号，别的压成灰。空集 = 全都正常显示。
+    ///
+    /// 是集合不是单个：单图纸模式的高亮页可以同时点亮好几个色号（手上抓了两种豆子
+    /// 一起拼是常事），而这块画布是两种模式共用的。多零件那边传一个就是一个。
+    var highlightKeys: Set<String> = []
     var selection: UUID?
     var moving: Moving?
 
@@ -145,7 +148,7 @@ struct BoardCanvasRenderer {
                 let fillKey: String
                 if blocked {
                     fillKey = BoardCanvasRenderer.blockedFillKey
-                } else if let highlightKey, bead.key != highlightKey {
+                } else if !highlightKeys.isEmpty, !highlightKeys.contains(bead.key) {
                     fillKey = BoardCanvasRenderer.dimmedFillKey
                 } else {
                     fillKey = bead.key

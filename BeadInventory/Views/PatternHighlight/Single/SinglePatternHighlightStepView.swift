@@ -15,6 +15,16 @@
 //  所以图和高亮层各自按 `PartsCanvasTransform` 算出来的屏幕矩形直接摆
 //  （同「量格子」「找零件」那几屏）。
 //
+//  ## 投到电视 / 投影仪
+//
+//  接了外屏就把整张图纸送过去（`BoardCastSession`），手机上点亮哪几个色号，
+//  电视上就只亮哪几个。送过去的形式是「一张图纸 = 一块板 + 一个占满全板的零件」——
+//  跟拼豆板共用同一套画法（`BoardCanvas`），不另写一份。
+//
+//  **电视上画的是格子，不是这张图片。** 图片放大了是像素画，投到 65 寸上一格豆子
+//  糊成一坨；而画格子是矢量的，多大都清楚，还能把没选中的色号整体压成灰。
+//  用户抬头要看的是「下一颗红色在第几行第几个」，不是图纸的照片。
+//
 
 import SwiftUI
 
@@ -29,6 +39,13 @@ struct SinglePatternHighlightStepView: View {
     let onFinish: () -> Void
 
     @EnvironmentObject var inventoryManager: InventoryManager
+    @ObservedObject private var cast = BoardCastSession.shared
+
+    /// 送外屏用的那份「整张图纸当成一块板」。**算一次存着** ——
+    /// 它要遍历几万格，每次点色号都重算一遍就是每次点击卡一下。
+    @State private var castBoard: PartsBoard?
+    @State private var castFootprints: [UUID: PartFootprint] = [:]
+    @State private var castColors: [String: Color] = [:]
 
     @State private var highlightedCodes: Set<String> = []
     @State private var guideMode: GuideMode = .off
@@ -96,6 +113,16 @@ struct SinglePatternHighlightStepView: View {
         VStack(spacing: 0) {
             mismatchBanner
             canvas
+            // 接了电视 / 投影仪之后第一件想确认的就是「到底投上了没有」——
+            // 而人多半站在电视那头，手机上得有个准信。
+            if cast.externalConnected {
+                Label("投屏中 · 电视上跟着高亮", systemImage: "tv")
+                    .font(.caption2.weight(.medium))
+                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.top, Theme.Spacing.xs)
+            }
             ColorPaletteBar(entries: entries, highlightedCodes: $highlightedCodes)
         }
         .navigationTitle(currentProject.name)
@@ -134,6 +161,12 @@ struct SinglePatternHighlightStepView: View {
             }
         }
         .task(id: "\(work.image.size)|\(grid.rows)x\(grid.cols)") { await load() }
+        // 格子内容变了（用户回核对页改过色号）就重算一次送外屏的那份
+        .task(id: castSignature) { await rebuildCast() }
+        .onChange(of: highlightedCodes) { _, _ in publishToExternalDisplay() }
+        // 离开这一屏就把电视上的东西撤掉：留着的话用户已经走了，电视上还停着一张
+        // 他不再看的图纸 —— 而这一屏是被 push 上来的，退出去是很随手的动作。
+        .onDisappear { BoardCastSession.shared.stop() }
         .sheet(isPresented: $showingDiffSheet) {
             ValidationDiffSheet(
                 diffs: GridValidator.mismatches(grid: grid, beadUsage: currentProject.beadUsage),
@@ -265,6 +298,55 @@ struct SinglePatternHighlightStepView: View {
         guard !Task.isCancelled else { return }
         image = cropped
         region = padded.width > 0 ? padded : CGRect(x: 0, y: 0, width: 1, height: 1)
+    }
+
+    // MARK: - 投到电视 / 投影仪
+
+    /// 送外屏的那份东西什么时候要重算。**只看格子本身**（尺寸 + 每格什么色号），
+    /// 不含高亮 —— 高亮变了只要重发一次，不用把几万格重算一遍。
+    private var castSignature: String {
+        "\(grid.rows)x\(grid.cols)|\(grid.lastCalibratedAt.timeIntervalSince1970)"
+    }
+
+    /// 整张图纸打包成「一块板 + 一个占满全板的零件」。
+    /// 几万格的遍历放后台：主线程上做，用户点进这一屏时界面会僵一下。
+    private func rebuildCast() async {
+        guard grid.rows > 0, grid.cols > 0, grid.cellColorCodes.count == grid.rows else {
+            castBoard = nil
+            BoardCastSession.shared.stop()
+            return
+        }
+        let codes = grid.cellColorCodes
+        let built = await Task.detached(priority: .userInitiated) { () -> (PartsBoard, PartFootprint) in
+            let cells: [[PartCellFill]] = codes.map { row in
+                row.map { code in
+                    guard let code, !code.isEmpty else { return PartCellFill.empty }
+                    return .code(code)
+                }
+            }
+            let placement = PartPlacement(partId: UUID(), col: 0, row: 0)
+            let board = PartsBoard(
+                size: BeadBoardSize(cols: codes.first?.count ?? 0, rows: codes.count),
+                placements: [placement]
+            )
+            return (board, PartFootprint(cells: cells))
+        }.value
+        guard !Task.isCancelled, let placementId = built.0.placements.first?.id else { return }
+        castBoard = built.0
+        castFootprints = [placementId: built.1]
+        castColors = Dictionary(uniqueKeysWithValues: entries.map { ($0.code, $0.color) })
+        publishToExternalDisplay()
+    }
+
+    private func publishToExternalDisplay() {
+        guard let castBoard else { return }
+        BoardCastSession.shared.update(.init(
+            board: castBoard,
+            footprints: castFootprints,
+            colorCache: castColors,
+            highlightKeys: highlightedCodes,
+            caption: String(localized: "整张图纸 · \(castBoard.cols) × \(castBoard.rows) 格")
+        ))
     }
 
     private func boundingBox(of corners: GridCorners) -> CGRect {
