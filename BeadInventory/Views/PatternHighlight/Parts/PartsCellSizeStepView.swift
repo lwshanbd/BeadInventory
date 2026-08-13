@@ -19,9 +19,10 @@
 //  因为它数学上就不成立。现在是：格距由用户定（加减号一次 0.1 像素），
 //  然后拿这个格距**一个零件一个零件地找它自己的格线**（`PartsPitchEstimator.fitOrigin`）。
 //
-//  所以主按钮是「对齐了，看下一个」：翻到哪个零件就先按当前格距给它对一次，
-//  用户看到的是已经对好的，只需要点头或者微调。不想看完的随时「不看了，完成」——
-//  没翻到过的那些会在离开这一屏之前一起对完。
+//  所以主按钮是「对齐了，看下一个」，**所有零件都要过一遍**（大的排前面，格线多最容易
+//  看出偏没偏）：翻到哪个零件就先按当前格距给它对一次，用户看到的是已经对好的，
+//  只需要点头或者微调。不想看完的随时「不看了，完成」—— 没翻到过的那些会在离开
+//  这一屏之前一起对完，只是没人拿眼睛验过。
 //
 //  更早还试过「每个零件拿自己的 bbox 均分」。那个是错的：bbox 带一圈抗锯齿毛边，
 //  每个零件毛边多少不一样，均分出来的格线跟豆子缝没有关系。要按图上的周期信号去找。
@@ -82,11 +83,16 @@ struct PartsCellSizeStepView: View {
 
     @State private var canvasSize: CGSize = .zero
 
-    /// 拿来验收的零件，按面积从大到小最多十二个。大零件格线多、偏了最容易看出来；
-    /// 五十个零件全过一遍没人受得了，而全图共用一张网格，看完最大的这批就够下结论。
+    /// 要过一遍的零件：**全部**，按面积从大到小排。
+    ///
+    /// 这里以前只取最大的十二个，理由是「全图共用一张网格，看完最大的这批就够下结论」。
+    /// 那个理由随着格线改成一个零件一个已经不成立了 —— 后面那些零件各有各的格线，
+    /// 自动对出来对不对没有任何人看过。要过就得全过，不想过有「不看了，完成」。
+    ///
+    /// 大的排前面：格线多、偏了最容易看出来，格距也只有在这种零件上才判断得准。
+    /// 半路按「不看了」的用户，至少已经看过最能说明问题的那几个。
     private var samples: [BeadPart] {
         parts.sorted { $0.bounds.width * $0.bounds.height > $1.bounds.width * $1.bounds.height }
-            .prefix(12).map { $0 }
     }
 
     private var sample: BeadPart? {
@@ -285,7 +291,10 @@ struct PartsCellSizeStepView: View {
         VStack(spacing: Theme.Spacing.md) {
             if let sample {
                 HStack(spacing: Theme.Spacing.sm) {
-                    Text(sample.displayName(order: sampleIndex))
+                    // 名字按它在**零件清单**里的位置算，不是按这一屏的翻页序号 ——
+                    // 这一屏是按面积排的，拿翻页序号当名字的话「零件 1」在两屏指的
+                    // 不是同一个零件，用户对不上号。
+                    Text(sample.displayName(order: parts.firstIndex(where: { $0.id == sample.id }) ?? sampleIndex))
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(Theme.ColorToken.Text.primary)
                     if let grid {
