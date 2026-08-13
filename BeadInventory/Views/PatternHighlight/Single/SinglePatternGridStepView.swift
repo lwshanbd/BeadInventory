@@ -4,50 +4,55 @@
 //
 //  单图纸模式 · 量格子（第二屏；整条流程的屏序见 SinglePatternFlowView 的头注释）
 //
-//  这一屏只回答一个问题：**格子多大、格线在哪**。答对了，图纸就被切成整数行列，
-//  「这个色号有多少颗、分别是哪几格」才有意义。
+//  这一屏定下整张图纸的格子：**方框框住的那一块，横竖各切成多少格**。
 //
-//  验收标准是眼睛：网格线要落在豆子和豆子的缝上。所以主体就是图纸放大之后的样子 +
-//  铺在上面的网格线，对没对齐一眼就知道，不需要用户去理解任何数值。
+//  ## 为什么是「框 + 格数」，不是「格距 + 相位」
 //
-//  ## 这里不再让用户填「多少行、多少列」
+//  上一版是照搬多零件那屏的做法：量出一个格距，让格线以这个格距无限铺开，用户推相位。
+//  在零件上没问题（一个零件十来格），在整张图纸上是错的 ——
 //
-//  上一版这一屏（`PatternCalibrationView`，已删）的主输入是两个数字框：行、列。
-//  用户得**数清楚**这张图纸横竖各有多少格 —— 一张 60×80 的图纸，数一遍要好几分钟，
-//  数错一格整张图全错，而且错在哪儿他自己看不出来（网格会均匀地偏一点点）。
+//    格距只要差 1%，铺到第 30 格就偏出去三分之一格，第 60 格偏出去大半格。
+//    而用户能看见的只有屏幕上那七八列：**局部对得严丝合缝，整张已经歪了**。
+//    他按下「对齐了」，到核对颜色那屏才发现每一格都取了相邻四格的一角。
 //
-//  现在反过来：用户只调「一格多大」，行列数由格子大小和框住的范围**算出来**。
-//  一格是屏幕上看得见的东西，对没对齐也是看得见的；行列数不用他关心。
+//  现在反过来：网格的外框**就是用户拖的那个方框**，里面等分。于是
 //
-//  ## 两个状态，一次只看一样东西
+//    - 画在屏幕上的网格、判色时切的格子、核对页抠的每一格，**是同一个矩形等分出来的**，
+//      三者在数学上不可能对不上（上一版它们各自从格距推，就有对不上的空间）；
+//    - 误差不再累积。框的两个角对准了，中间每一条线自动就对；
+//    - 用户能验：把框的角拖到网格最外圈那一格的外角上 —— 这是他一眼能判断的事，
+//      而「格距是不是 32.02 像素」不是。
 //
-//    看网格   默认。整片网格铺在图纸上，用来判断对没对齐；方向键整体推格线。
-//    重选格子 点「重选格子大小」进入。**网格线全部隐藏**，只剩一个黄框 ——
-//             要精调一格的大小时，满屏的网格线只会碍事。
+//  ## 用户要做的两件事
 //
-//  这两条，以及「加减号一次动 0.1 像素」「不用 scaleEffect 放大」的理由，
-//  跟多零件模式那屏是同一套，见 `PartsCellSizeStepView` 的头注释。
+//    对角   把方框的左上 / 右下两个角拖到网格最外圈。「看左上角 / 看右下角」两个按钮
+//           直接把画面跳过去放大 —— 不给这个，用户只能自己在放大的图上找角，
+//           而歪掉的恰恰就是他没看到的那一头。
+//    数对   横竖各多少格。数是自动量出来的，用户**不用去数** —— 只在最后一条线明显
+//           偏了半格时点一下 ±1（差一格是最常见的偏差，也一眼看得出来）。
 //
 
 import SwiftUI
 
 struct SinglePatternGridStepView: View {
     let work: PartsWorkImage
-    /// 用户裁出来的图纸范围（归一化，相对整张源图）
-    let roi: CGRect
+    /// 网格的外框 = 用户拖的方框。这一屏可以接着改它 —— 上一屏是粗框，这里对角。
+    @Binding var roi: CGRect
     /// 整张图纸当成一块。量出来的行列 / 格子范围直接写回它。
     @Binding var sheet: BeadPart
+    /// 存盘用的格子标定。这一屏**由框和格数推出来**，不再是它推网格。
     @Binding var calibration: PartsGridCalibration?
     let onContinue: () -> Void
 
-    @State private var image: UIImage?
-    /// 画布上画的是整张图纸的哪一块（归一化）
-    @State private var region: CGRect = .zero
-    /// 黄框（也就是「一格」）的左上角，归一化。它同时**就是**格线的位置：拖它 = 整张网格跟着走。
-    @State private var frameOrigin: CGPoint = .zero
+    @State private var cols = 0
+    @State private var rows = 0
     @State private var estimating = true
-    /// 是不是正在重选一格的大小。true 时只显示黄框，不显示网格线。
-    @State private var picking = false
+
+    @State private var image: UIImage?
+    /// 画布上画的是整张图纸的哪一块（归一化）。就是工作图自己那块，
+    /// 它比方框大一圈 —— 不然用户没法把框往外拖。
+    @State private var region: CGRect = .zero
+    @State private var canvasSize: CGSize = .zero
 
     @State private var zoom: CGFloat = 1
     @State private var lastZoom: CGFloat = 1
@@ -57,34 +62,14 @@ struct SinglePatternGridStepView: View {
     @State private var pinchContentAnchor: CGPoint?
 
     /// 这一次单指拖动在干什么。落指的位置决定，中途不变。
-    private enum DragMode { case pan, move, resize }
+    private enum DragMode { case pan, topLeft, bottomRight }
     @State private var dragMode: DragMode?
-    @State private var dragStartOrigin: CGPoint = .zero
-    @State private var dragStartCell: CGSize = .zero
+    @State private var dragStartROI: CGRect = .zero
 
-    @State private var canvasSize: CGSize = .zero
-
-    /// 当前这张网格：全局格距 + 用户推到的格线位置
-    private var activeCalibration: PartsGridCalibration? {
-        guard let calibration, calibration.isUsable else { return nil }
-        var c = calibration
-        c.originX = Double(frameOrigin.x)
-        c.originY = Double(frameOrigin.y)
-        return c
-    }
-
-    /// 图纸落在这张网格上的那块（行列数就是从这儿来的）
-    private var grid: PartsGrid? {
-        guard let c = activeCalibration else { return nil }
-        return PartsGrid(covering: roi, calibration: c)
-    }
-
-    /// 黄框在整张图纸上的归一化矩形
-    private var frameRect: CGRect? {
-        guard let calibration, calibration.isUsable else { return nil }
-        return CGRect(x: frameOrigin.x, y: frameOrigin.y,
-                      width: CGFloat(calibration.cellWidth), height: CGFloat(calibration.cellHeight))
-    }
+    /// 框的最小边长（归一化）。再小就不是一张图纸了，也容易误拖成一个点。
+    private static let minSide: CGFloat = 0.02
+    /// 行列数的上下限。上限跟 `PartsGrid` 一致 —— 再多的格子逐格判色也扛不住。
+    private static let countRange = 1...400
 
     private var displayRect: CGRect {
         PartsRegionStepView.aspectFitRect(
@@ -97,6 +82,12 @@ struct SinglePatternGridStepView: View {
                              size: canvasSize, zoom: zoom, pan: pan)
     }
 
+    /// 屏幕上画的网格。**外框就是 roi，里面等分** —— 跟判色、核对页用的是同一套。
+    private var grid: PartsGrid? {
+        guard rows > 0, cols > 0, roi.width > 0, roi.height > 0 else { return nil }
+        return PartsGrid(rect: roi, rows: rows, cols: cols)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             canvas
@@ -105,9 +96,10 @@ struct SinglePatternGridStepView: View {
         .navigationTitle("量格子")
         .navigationBarTitleDisplayMode(.inline)
         // 工作图也算进 id：进来时先拿到的是低清兜底版，高清版在后台裁好之后才换上来。
-        .task(id: "\(roi)|\(work.image.size)") { await load() }
-        .onChange(of: frameOrigin) { _, _ in writeBack() }
-        .onChange(of: calibration) { _, _ in writeBack() }
+        .task(id: "\(work.image.size)|\(work.region)") { await load() }
+        .onChange(of: roi) { _, _ in writeBack() }
+        .onChange(of: cols) { _, _ in writeBack() }
+        .onChange(of: rows) { _, _ in writeBack() }
     }
 
     // MARK: - 画布
@@ -120,24 +112,20 @@ struct SinglePatternGridStepView: View {
                 if let image, canvasSize.width > 0, region.width > 0 {
                     // 按放大后的尺寸直接摆图，**不用 scaleEffect** —— 那是图层变换，
                     // 放大走双线性平滑，`.interpolation(.none)` 管不到它，而这一屏
-                    // 要看的恰恰是豆子边界（同 PartsCellSizeStepView）。
+                    // 要看的恰恰是豆子边界。
                     let box = transform.screenRect(region)
                     Image(uiImage: image)
                         .resizable()
                         .interpolation(.none)
                         .frame(width: box.width, height: box.height)
                         .position(x: box.midX, y: box.midY)
-                }
 
-                if region.width > 0, canvasSize.width > 0 {
-                    if let grid, !picking {
+                    if let grid, !estimating {
                         CellGridOverlay(grid: grid, transform: transform)
                             .allowsHitTesting(false)
                     }
-                    if picking, let frameRect, !estimating {
-                        CellFrameOverlay(rect: transform.screenRect(frameRect))
-                            .allowsHitTesting(false)
-                    }
+                    GridFrameOverlay(rect: transform.screenRect(roi))
+                        .allowsHitTesting(false)
                 }
 
                 gestureCatcher
@@ -159,8 +147,8 @@ struct SinglePatternGridStepView: View {
         .clipped()
     }
 
-    /// 落指的位置决定这一拖是「挪格子」「改大小」还是「移动图片」——
-    /// 用户不用先切模式，也不会出现「想移动图片结果把格子拽跑了」。
+    /// 落指的位置决定这一拖是「拖角」还是「移动图片」——
+    /// 用户不用先切模式，也不会出现「想移动图片结果把框拽跑了」。
     private var gestureCatcher: some View {
         Color.clear
             .contentShape(Rectangle())
@@ -170,12 +158,8 @@ struct SinglePatternGridStepView: View {
                         .onChanged { value in
                             if dragMode == nil { beginDrag(at: value.startLocation) }
                             switch dragMode {
-                            case .move:
-                                let d = transform.normalizedDelta(value.translation)
-                                frameOrigin = CGPoint(x: dragStartOrigin.x + d.width,
-                                                      y: dragStartOrigin.y + d.height)
-                            case .resize:
-                                resize(by: value.translation)
+                            case .topLeft, .bottomRight:
+                                dragCorner(to: value.location)
                             default:
                                 pan = clampPan(CGSize(width: lastPan.width + value.translation.width,
                                                       height: lastPan.height + value.translation.height))
@@ -192,7 +176,7 @@ struct SinglePatternGridStepView: View {
                                 pinchContentAnchor = unzoomed(value.startLocation)
                             }
                             guard let anchor = pinchContentAnchor else { return }
-                            zoom = max(1, min(16, lastZoom * value.magnification))
+                            zoom = max(1, min(24, lastZoom * value.magnification))
                             let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
                             pan = clampPan(CGSize(
                                 width: pinchScreenPoint.x - center.x - (anchor.x - center.x) * zoom,
@@ -209,121 +193,68 @@ struct SinglePatternGridStepView: View {
     }
 
     private func beginDrag(at point: CGPoint) {
-        guard picking, let frameRect else {
+        let box = transform.screenRect(roi)
+        // 44pt 是 HIG 的最小点击目标；角点本身画成 26pt，热区给足
+        let hit: CGFloat = 44
+        if hypot(point.x - box.minX, point.y - box.minY) <= hit {
+            dragMode = .topLeft
+        } else if hypot(point.x - box.maxX, point.y - box.maxY) <= hit {
+            dragMode = .bottomRight
+        } else {
             dragMode = .pan
             return
         }
-        let screen = transform.screenRect(frameRect)
-        let corner = CGPoint(x: screen.maxX, y: screen.maxY)
-        if hypot(point.x - corner.x, point.y - corner.y) <= 34 {
-            dragMode = .resize
-            dragStartCell = CGSize(width: frameRect.width, height: frameRect.height)
-        } else if screen.insetBy(dx: -8, dy: -8).contains(point) {
-            dragMode = .move
-            dragStartOrigin = frameOrigin
-        } else {
-            dragMode = .pan
-        }
+        dragStartROI = roi
     }
 
-    /// 右下角把手：左上角钉住不动，只改大小。豆子是方的，横竖按同一个比例走。
-    private func resize(by translation: CGSize) {
-        guard dragStartCell.width > 0, dragStartCell.height > 0 else { return }
-        let d = transform.normalizedDelta(translation)
-        let scaleX = (dragStartCell.width + d.width) / dragStartCell.width
-        let scaleY = (dragStartCell.height + d.height) / dragStartCell.height
-        let scale = max(0.2, min(5, (scaleX + scaleY) / 2))
-        calibration = PartsGridCalibration(
-            cellWidth: Double(dragStartCell.width * scale),
-            cellHeight: Double(dragStartCell.height * scale),
-            originX: Double(frameOrigin.x),
-            originY: Double(frameOrigin.y)
-        )
+    private func dragCorner(to point: CGPoint) {
+        let n = transform.normalized(point)
+        let unit = CGRect(x: 0, y: 0, width: 1, height: 1)
+        switch dragMode {
+        case .topLeft:
+            let x = min(max(n.x, 0), dragStartROI.maxX - Self.minSide)
+            let y = min(max(n.y, 0), dragStartROI.maxY - Self.minSide)
+            roi = CGRect(x: x, y: y,
+                         width: dragStartROI.maxX - x, height: dragStartROI.maxY - y).intersection(unit)
+        case .bottomRight:
+            let x = max(min(n.x, 1), dragStartROI.minX + Self.minSide)
+            let y = max(min(n.y, 1), dragStartROI.minY + Self.minSide)
+            roi = CGRect(x: dragStartROI.minX, y: dragStartROI.minY,
+                         width: x - dragStartROI.minX, height: y - dragStartROI.minY).intersection(unit)
+        default:
+            break
+        }
     }
 
     // MARK: - 底部
 
     private var footer: some View {
         VStack(spacing: Theme.Spacing.md) {
-            if picking {
-                HStack(spacing: Theme.Spacing.md) {
-                    Text("放大")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.ColorToken.Text.secondary)
-                    nudgeButton("minus.magnifyingglass") { zoomBy(1 / 1.6) }
-                    nudgeButton("plus.magnifyingglass") { zoomBy(1.6) }
-                    Text(String(format: "%.0f×", zoom))
-                        .font(.footnote.monospacedDigit())
-                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
-                    Spacer()
-                    Button {
-                        picking = false
-                        resetView()
-                        Task { await autoAlign(keepingCellSize: true) }
-                    } label: {
-                        Label("就用这个大小", systemImage: "checkmark")
-                            .font(.footnote.weight(.medium))
-                    }
+            HStack(spacing: Theme.Spacing.lg) {
+                countStepper(title: "横", value: $cols)
+                countStepper(title: "竖", value: $rows)
+            }
+
+            Text("把方框的两个角拖到网格最外圈那一格的外角上，中间的线会自动等分。最后一条线偏了半格，就把格数 ±1。")
+                .font(.footnote)
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: Theme.Spacing.md) {
+                // 歪掉的永远是没看到的那一头，所以这两个按钮不是方便，是必需
+                Button { focus(on: CGPoint(x: roi.minX, y: roi.minY)) } label: {
+                    Label("看左上角", systemImage: "arrow.up.left").font(.footnote)
                 }
-
-                Text("黄框就是一格：拖框身挪位置，拖右下角的圆点改大小。空白处拖动是移动图片。")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.ColorToken.Text.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                HStack(alignment: .top, spacing: Theme.Spacing.lg) {
-                    nudgePad
-                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        HStack(spacing: Theme.Spacing.sm) {
-                            // 行列数是**算出来的**，摆在这儿只是让用户对一眼图纸上写的尺寸。
-                            // 它不是输入框：没有人会去数四十几个格子（见头注释）。
-                            if let grid {
-                                Text("\(grid.cols) × \(grid.rows) 格")
-                                    .font(.subheadline.monospacedDigit().weight(.medium))
-                                    .foregroundColor(Theme.ColorToken.Text.primary)
-                            }
-                            Spacer()
-                        }
-
-                        Text("网格线要落在豆子和豆子的缝上。")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.ColorToken.Text.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        // 一格多少像素，加减号一次动 0.1 个像素。**必须摆在这一屏**
-                        // （整片网格铺着的这一屏）：一格看着严丝合缝，铺到第四十格照样偏出去半格。
-                        HStack(spacing: Theme.Spacing.sm) {
-                            Text("一格")
-                                .font(.footnote)
-                                .foregroundStyle(Theme.ColorToken.Text.secondary)
-                            nudgeButton("minus") { changeCellPixels(by: -Self.cellPixelStep) }
-                            Text(cellPixelsText)
-                                .font(.footnote.monospacedDigit())
-                                .foregroundStyle(Theme.ColorToken.Text.primary)
-                                .frame(minWidth: 78)
-                            nudgeButton("plus") { changeCellPixels(by: Self.cellPixelStep) }
-                        }
-                        .disabled(estimating || calibration == nil)
-
-                        HStack(spacing: Theme.Spacing.md) {
-                            Button {
-                                Task { await autoAlign(keepingCellSize: false) }
-                            } label: {
-                                Label("自动对齐", systemImage: "wand.and.stars").font(.footnote)
-                            }
-                            .disabled(estimating)
-                            Button {
-                                enterPicking()
-                            } label: {
-                                Label("重选格子大小", systemImage: "square.dashed.inset.filled")
-                                    .font(.footnote)
-                            }
-                            .disabled(estimating)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                Button { focus(on: CGPoint(x: roi.maxX, y: roi.maxY)) } label: {
+                    Label("看右下角", systemImage: "arrow.down.right").font(.footnote)
                 }
+                Button {
+                    Task { await estimate() }
+                } label: {
+                    Label("重新量", systemImage: "wand.and.stars").font(.footnote)
+                }
+                .disabled(estimating)
             }
 
             Button(action: onContinue) {
@@ -332,30 +263,35 @@ struct SinglePatternGridStepView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(calibration == nil || estimating || picking)
+            .disabled(estimating || grid == nil)
         }
         .padding()
         .background(.regularMaterial)
     }
 
-    /// 方向键摆成十字：位置就是含义，手指按哪边网格就往哪边走。
-    private var nudgePad: some View {
-        VStack(spacing: 4) {
-            nudgeButton("chevron.up") { nudge(dx: 0, dy: -1) }
-            HStack(spacing: 4) {
-                nudgeButton("chevron.left") { nudge(dx: -1, dy: 0) }
-                Text("推\n网格")
-                    .font(.caption2)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
-                    .frame(width: 44, height: 44)
-                nudgeButton("chevron.right") { nudge(dx: 1, dy: 0) }
+    private func countStepper(title: LocalizedStringKey, value: Binding<Int>) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Text(title)
+                .font(.footnote)
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
+            stepButton("minus") {
+                value.wrappedValue = max(Self.countRange.lowerBound, value.wrappedValue - 1)
             }
-            nudgeButton("chevron.down") { nudge(dx: 0, dy: 1) }
+            Text("\(value.wrappedValue)")
+                .font(.title3.monospacedDigit().weight(.medium))
+                .foregroundStyle(Theme.ColorToken.Text.primary)
+                .frame(minWidth: 44)
+            stepButton("plus") {
+                value.wrappedValue = min(Self.countRange.upperBound, value.wrappedValue + 1)
+            }
+            Text("格")
+                .font(.footnote)
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
         }
+        .disabled(estimating)
     }
 
-    private func nudgeButton(_ systemName: String, action: @escaping () -> Void) -> some View {
+    private func stepButton(_ systemName: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.subheadline.weight(.bold))
@@ -384,184 +320,89 @@ struct SinglePatternGridStepView: View {
                       height: min(max(offset.height, -limitY), limitY))
     }
 
-    private func zoomBy(_ factor: CGFloat) {
-        zoom = max(1, min(16, zoom * factor))
-        lastZoom = zoom
-        pan = clampPan(pan)
-        lastPan = pan
+    /// 一格在屏幕上太小就先替用户放大到看得清。整张图纸铺满手机屏时一格只有五六个点，
+    /// 而这一屏要判断的是「线有没有落在缝上」，看不清就等于没法验收。
+    private func focusIfTooDense() {
+        guard zoom == 1, let grid, displayRect.width > 0, region.width > 0, canvasSize.width > 0 else { return }
+        let cellPoints = roi.width / CGFloat(grid.cols) / region.width * displayRect.width
+        guard cellPoints > 0, cellPoints < 12 else { return }
+        setZoom(min(24, 20 / cellPoints), centeredOn: CGPoint(x: roi.minX, y: roi.minY))
     }
 
-    private func resetView() {
-        zoom = 1; lastZoom = 1
-        pan = .zero; lastPan = .zero
+    /// 把图纸上某个点挪到屏幕正中，并放大到一格看得清。
+    private func focus(on point: CGPoint) {
+        guard let grid, displayRect.width > 0, region.width > 0, canvasSize.width > 0 else { return }
+        let cellPoints = roi.width / CGFloat(grid.cols) / region.width * displayRect.width
+        let target = cellPoints > 0 ? max(zoom, min(24, 34 / cellPoints)) : zoom
+        withAnimation(.easeInOut(duration: 0.25)) {
+            setZoom(target, centeredOn: point)
+        }
     }
 
-    /// 进「重选格子大小」：自动放大到一格有近百点，手指才够得着，再把框挪到屏幕正中。
-    /// 不这么做的话一格在屏幕上只有十来点 —— 把手的热区比整个框还大，
-    /// 用户想拖框身永远拖成改大小，也就成了「这个框根本动不了」。
-    private func enterPicking() {
-        picking = true
-        guard let frameRect, displayRect.width > 0, region.width > 0 else { return }
-        let cellPoints = frameRect.width / region.width * displayRect.width
-        guard cellPoints > 0 else { return }
-        zoom = max(1, min(16, 90 / cellPoints))
+    private func setZoom(_ newZoom: CGFloat, centeredOn point: CGPoint) {
+        zoom = max(1, newZoom)
         lastZoom = zoom
         let flat = PartsCanvasTransform(region: region, display: displayRect,
                                         size: canvasSize, zoom: zoom, pan: .zero)
         let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
-        let box = flat.screenRect(frameRect)
-        pan = clampPan(CGSize(width: center.x - box.midX, height: center.y - box.midY))
+        let screen = flat.screen(point)
+        pan = clampPan(CGSize(width: center.x - screen.x, height: center.y - screen.y))
         lastPan = pan
     }
 
     // MARK: - 逻辑
 
-    /// 方向键：整张网格一次推一个**源图像素**，跟屏幕缩放无关。
-    private func nudge(dx: Int, dy: Int) {
-        guard let image, image.size.width > 0, image.size.height > 0, region.width > 0 else { return }
-        frameOrigin.x += CGFloat(dx) / image.size.width * region.width
-        frameOrigin.y += CGFloat(dy) / image.size.height * region.height
-    }
-
     private func load() async {
-        resetView()
         let source = work
-        // 四周留一点余量，让用户看得见图纸最外圈那一格是不是也被网格线切到了
-        let padded = roi
-            .insetBy(dx: -roi.width * 0.04, dy: -roi.height * 0.04)
-            .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        let visible = source.region
         let cropped = await Task.detached(priority: .userInitiated) {
-            PartsThumbnailMaker.crop(source, normalized: padded)
+            PartsThumbnailMaker.crop(source, normalized: visible)
         }.value
         guard !Task.isCancelled else { return }
         image = cropped
-        region = padded
-        await estimateIfNeeded()
+        region = visible
+
+        // 已经有格数了（上次做过 / 这次量过）就照用，**不重新量** ——
+        // 重量一次就等于把用户上次对好的角和格数推翻一遍。
+        if sheet.rows > 0, sheet.cols > 0, calibration?.isUsable == true {
+            rows = sheet.rows
+            cols = sheet.cols
+            estimating = false
+            focusIfTooDense()
+            return
+        }
+        await estimate()
         focusIfTooDense()
     }
 
-    /// 一格在屏幕上太小就先替用户放大到看得清。
+    /// 量一次「一格多大」，换算成框里横竖各多少格。
     ///
-    /// 一张 60×80 的图纸铺满手机屏幕时，一格只有五六个点，几百条格线糊成一片色 ——
-    /// 而这一屏的验收标准恰恰是「格线有没有落在豆子的缝上」。看不清就等于没法验收，
-    /// 用户只能对着一片糊按「对齐了」。所以进来就放大到一格十几点、对准图纸正中；
-    /// 想看整张随时捏回去。
-    private func focusIfTooDense() {
-        guard zoom == 1, let calibration, calibration.isUsable,
-              displayRect.width > 0, region.width > 0, canvasSize.width > 0 else { return }
-        let cellPoints = CGFloat(calibration.cellWidth) / region.width * displayRect.width
-        guard cellPoints > 0, cellPoints < 10 else { return }
-        zoom = min(16, 16 / cellPoints)
-        lastZoom = zoom
-        // 对准图纸正中：边角多半是留白，看不出对没对齐
-        let flat = PartsCanvasTransform(region: region, display: displayRect,
-                                        size: canvasSize, zoom: zoom, pan: .zero)
-        let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
-        let target = flat.screen(CGPoint(x: roi.midX, y: roi.midY))
-        pan = clampPan(CGSize(width: center.x - target.x, height: center.y - target.y))
-        lastPan = pan
-    }
-
-    private func estimateIfNeeded() async {
-        if let calibration, calibration.isUsable {
-            estimating = false
-            // 早先横竖两个方向是分开量的，存下来的可能是个长方形。掰回正方形 ——
-            // 不掰的话用户在这一屏没有任何办法改：把手只能等比缩放。
-            //
-            // **已经判过色的不能动**：掰正会改掉行列数，而 `cells` 还是按旧行列数存的，
-            // 结果不是崩，是底下几行悄悄丢掉、整片错位 —— 用户核对过的成果。
-            if !sheet.hasCells, let fixed = squaredIfNeeded(calibration) {
-                self.calibration = fixed
-            }
-            syncFrameToLattice()
-            return
-        }
+    /// 只用来**给个初值**：格数是整数，量出来的格距差个百分之一也还是同一个整数，
+    /// 所以这一步不准也不要紧 —— 真正定生死的是框的两个角（见文件头）。
+    private func estimate() async {
         let source = work
-        let region = roi
+        let box = roi
+        estimating = true
         let measured = await Task.detached(priority: .userInitiated) {
-            // 整张图纸当成一块来量：竖格线在每一列上都出现在同样的相位，叠起来信号最强。
             PartsPitchEstimator.estimateLattice(
-                work: source, parts: [BeadPart(rowBand: 0, bounds: region)]
+                work: source, parts: [BeadPart(rowBand: 0, bounds: box)]
             )
         }.value
         guard !Task.isCancelled else { return }
-        // 一个都没量出来时给个保底值：按横向 40 格算。宁可给个明显不对的初值让用户去拉，
-        // 也不要空着让他面对一张没有网格线的图。
-        calibration = measured ?? fallbackCalibration()
         estimating = false
-        syncFrameToLattice()
+        // 量不出来（图上没有规则格线）时按横 30 格给个明显能看出对不对的初值，
+        // 总好过空着让用户面对一张没有网格线的图。
+        let fallback = Double(box.width) / 30
+        let cw = measured.map(\.cellWidth) ?? fallback
+        let ch = measured.map(\.cellHeight) ?? fallback * aspectOfCellHeight
+        cols = clampCount(Double(box.width) / max(cw, 1e-6))
+        rows = clampCount(Double(box.height) / max(ch, 1e-6))
         writeBack()
     }
 
-    private func fallbackCalibration() -> PartsGridCalibration? {
-        guard roi.width > 0 else { return nil }
-        let cell = Double(roi.width) / 40
-        return PartsGridCalibration(
-            cellWidth: cell,
-            cellHeight: cell * sheetAspect,
-            originX: Double(roi.minX),
-            originY: Double(roi.minY)
-        )
-    }
-
-    /// 把黄框摆到图纸正中那一格。
-    ///
-    /// 这不改变网格本身 —— 格线是无限铺开的，挑哪一格显示都一样。挑中间那格是因为
-    /// 边角那一格多半压在留白上，框里一片空，看不出格子边界对没对齐。
-    ///
-    /// **格线位置以已经对好的那份为准**（`sheet.gridRect` 的左上角就是它）。
-    /// 拿全局标定里那个原始相位重新摆一次的话，用户上一屏刚推好的对齐当场作废 ——
-    /// 表现就是「我明明对齐了，返回去又不齐了」。
-    private func syncFrameToLattice() {
-        guard let calibration, calibration.isUsable else { return }
-        var base = calibration
-        if let rect = sheet.gridRect, sheet.rows > 0, sheet.cols > 0 {
-            base.originX = Double(rect.minX)
-            base.originY = Double(rect.minY)
-        }
-        frameOrigin = CGPoint(x: base.snappedX(Double(roi.midX)),
-                              y: base.snappedY(Double(roi.midY)))
-    }
-
-    /// 整张图纸有多少像素宽。加减号按**源图像素**动，不能按屏幕点 ——
-    /// 屏幕上一格多大取决于当前放大了几倍，那是个跟图纸无关的数。
-    private var sheetPixelWidth: Double {
-        guard work.region.width > 0 else { return 0 }
-        return Double(work.image.size.width) / Double(work.region.width)
-    }
-
-    /// 一格现在是多少源图像素。故意保留小数：量出来的格距本来就是 12.4 这种，
-    /// 四舍五入到整数会凭空引入 5% 的误差，而这一屏存在的意义就是消掉这点误差。
-    private var cellPixels: Double {
-        guard let calibration else { return 0 }
-        return calibration.cellWidth * sheetPixelWidth
-    }
-
-    private var cellPixelsText: String {
-        let px = cellPixels
-        guard px > 0 else { return "—" }
-        return String(format: "%.2f 像素", px)
-    }
-
-    /// 加减号一次动多少源图像素。0.1 而不是 1 —— 整数步只能在 19.03 / 20.03 / 21.03
-    /// 之间跳，而对的那个值就在它们中间。粗调有把手和自动对齐，这两个按钮是收尾用的。
-    private static let cellPixelStep = 0.1
-
-    private func changeCellPixels(by delta: Double) {
-        guard let calibration, sheetPixelWidth > 0 else { return }
-        let next = max(2, cellPixels + delta)
-        let width = next / sheetPixelWidth
-        self.calibration = PartsGridCalibration(
-            cellWidth: width,
-            cellHeight: width * sheetAspect,
-            originX: calibration.originX,
-            originY: calibration.originY
-        )
-    }
-
-    /// 图纸整张的**像素**宽高比。归一化坐标把宽和高各自摊到 0~1，所以图纸不是正方形时，
-    /// 一格是正方形 ⟺ `cellHeight == cellWidth * sheetAspect`。
-    private var sheetAspect: Double {
+    /// 图纸整张的像素宽高比。归一化坐标把宽和高各自摊到 0~1，所以
+    /// 一格是正方形 ⟺ `cellHeight == cellWidth * 这个比值`。
+    private var aspectOfCellHeight: Double {
         guard work.region.width > 0, work.region.height > 0 else { return 1 }
         let w = Double(work.image.size.width) / Double(work.region.width)
         let h = Double(work.image.size.height) / Double(work.region.height)
@@ -569,72 +410,60 @@ struct SinglePatternGridStepView: View {
         return w / h
     }
 
-    /// 已经是正方形就返回 nil（不白改一次、不白存一次），否则以宽为准掰成正方形。
-    private func squaredIfNeeded(_ c: PartsGridCalibration) -> PartsGridCalibration? {
-        let square = c.cellWidth * sheetAspect
-        guard square > 0, abs(c.cellHeight - square) > square * 0.005 else { return nil }
-        var fixed = c
-        fixed.cellHeight = square
-        return fixed
+    private func clampCount(_ value: Double) -> Int {
+        let rounded = Int(value.rounded())
+        return min(max(rounded, Self.countRange.lowerBound), Self.countRange.upperBound)
     }
 
-    /// 重新自动对一次。
+    /// 把这一屏的结论写回图纸：格子范围**就是方框**，行列就是这两个数。
     ///
-    /// - Parameter keepingCellSize: 用户刚手拉完一格的大小 → 只重找格线位置，
-    ///   他量的多大就是多大。「自动对齐」按钮走的是 false：**连格距一起重量** ——
-    ///   手拉的格子哪怕只大 1%，铺到第四十格就偏出去小半格，这时候光挪位置救不回来。
-    ///   既然他按了那个按钮，就是「你帮我弄好」，不能留一个连按几次都没反应的死角。
-    private func autoAlign(keepingCellSize: Bool) async {
-        guard let current = calibration, current.isUsable else { return }
-        let source = work
-        let area = roi
-        let parts = [BeadPart(rowBand: 0, bounds: area)]
-        estimating = true
-        defer { estimating = false }
-
-        if !keepingCellSize,
-           let measured = await Task.detached(priority: .userInitiated, operation: {
-               PartsPitchEstimator.estimateLattice(work: source, parts: parts)
-           }).value {
-            calibration = measured
-            syncFrameToLattice()
-            writeBack()
-            return
-        }
-        // 量不出来（或者用户要求保留自己拉的大小）时只对位置，至少别把现有的弄坏
-        let fitted = await Task.detached(priority: .userInitiated) {
-            PartsPitchEstimator.fitOrigin(work: source, parts: parts, calibration: current)
-        }.value
-        guard let fitted else { return }
-        calibration?.originX = Double(fitted.x)
-        calibration?.originY = Double(fitted.y)
-        syncFrameToLattice()
-        writeBack()
-    }
-
-    /// 把这一屏的结论写回图纸：整数行列、以及网格实际盖住的那块范围。
+    /// `calibration` 在这里是**推出来的**（框宽 ÷ 格数），存下来只是为了让下次进来知道
+    /// 一格多大；它不再反过来决定网格 —— 上一版就是让它决定网格，才有了
+    /// 「画的和切的对不上」（见文件头）。
     ///
-    /// **行列数一变就把判过的颜色扔掉。** 那些格子是按旧的行列数存的，换一张网格之后
-    /// 它们描述的已经不是眼前这张图了；留着的话下游是 clamp 不是报错 ——
-    /// 结果不是崩，是底下几行悄悄丢掉、每一格的颜色整体错位，而用户什么提示都没有。
-    /// 扔掉不会让他白干：从这一屏往下走本来就要重新判一次色。
-    ///
-    /// 重新进来（格距和格线都是存下来那份）算出来的行列数跟存的一模一样，
-    /// 所以这条不会在「只是回来看一眼」的时候误伤。
+    /// 行列数一变就把判过的颜色扔掉：那些格子是按旧行列数存的，留着的话下游是 clamp
+    /// 不是报错，结果不是崩，是每一格的颜色整体错位，而用户什么提示都没有。
     private func writeBack() {
-        guard let grid, let aligned = activeCalibration else { return }
-        // 相位（用户推到的那条格线）**要写回 calibration** —— 存盘的是它，不是屏幕上这个黄框。
-        // 只写进 sheet.gridRect 的话，下次进来拿旧相位重新摆一次，用户对好的位置当场作废。
-        // 这一句会再触发一次 onChange(calibration) → writeBack，但那时值已经相等，不会再写。
-        if calibration?.originX != aligned.originX || calibration?.originY != aligned.originY {
-            calibration = aligned
-        }
-        sheet.bounds = roi
-        sheet.gridRect = grid.rect
-        if sheet.hasCells, sheet.rows != grid.rows || sheet.cols != grid.cols {
+        guard rows > 0, cols > 0, roi.width > 0, roi.height > 0 else { return }
+        if sheet.hasCells, sheet.rows != rows || sheet.cols != cols {
             sheet.cells = []
         }
-        sheet.rows = grid.rows
-        sheet.cols = grid.cols
+        sheet.bounds = roi
+        sheet.gridRect = roi
+        sheet.rows = rows
+        sheet.cols = cols
+        calibration = PartsGridCalibration(
+            cellWidth: Double(roi.width) / Double(cols),
+            cellHeight: Double(roi.height) / Double(rows),
+            originX: Double(roi.minX),
+            originY: Double(roi.minY)
+        )
+    }
+}
+
+// MARK: - 外框
+
+/// 网格的外框 + 两个可以拖的角。框身不给拖 —— 这一屏要的是把角对准，
+/// 整体挪框是上一屏的事，两个动作放一起只会互相误触。
+private struct GridFrameOverlay: View {
+    let rect: CGRect
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .strokeBorder(Theme.ColorToken.Morandi.honey, lineWidth: 2)
+                .frame(width: max(rect.width, 4), height: max(rect.height, 4))
+                .position(x: rect.midX, y: rect.midY)
+
+            corner.position(x: rect.minX, y: rect.minY)
+            corner.position(x: rect.maxX, y: rect.maxY)
+        }
+    }
+
+    private var corner: some View {
+        Circle()
+            .fill(Theme.ColorToken.Status.error.opacity(0.9))
+            .frame(width: 26, height: 26)
+            .overlay(Circle().stroke(Color.white, lineWidth: 2))
     }
 }

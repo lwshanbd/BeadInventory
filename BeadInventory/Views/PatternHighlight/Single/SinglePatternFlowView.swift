@@ -8,7 +8,7 @@
 //  屏号只写在这里，各屏自己的文件里不再写「第 ③ 屏」，免得插一屏就得挨个改注释：
 //
 //      裁图纸    把图纸上真正是格子的那一块框住（排除色号表、留白、水印）。这是根视图。
-//      量格子    一格多大、格线在哪。行列数由它算出来，不用用户去数。
+//      量格子    把框的两个角对到网格最外圈，确认横竖各多少格。框里等分 = 整张的网格。
 //      底色      在图上点一下哪一片是留白。判色前必须先把它摘出去。
 //      核对颜色  每个色号有多少颗、分别是哪几格，用户逐条校对
 //      照着拼    点一个色号，图上只亮它那些格子
@@ -157,12 +157,14 @@ struct SinglePatternFlowView: View {
                         case .grid:
                             SinglePatternGridStepView(
                                 work: work,
-                                roi: roi,
+                                roi: tracked($roi),
                                 sheet: tracked($sheet),
                                 calibration: tracked($calibration),
                                 onContinue: {
                                     persist()
                                     path = [.grid, .baseColor]
+                                    // 框在这一屏可能被拖动过，高清工作图要按新范围重裁一次
+                                    Task { await prepareWorkImage() }
                                 }
                             )
                         case .baseColor:
@@ -459,6 +461,10 @@ struct SinglePatternFlowView: View {
     /// 核对色号、放大高亮全靠它。所以给得很高 —— 常见的图纸和手机照片一个像素都不降。
     private static let workPixelBudget = 60_000_000
 
+    /// 高清工作图在框外多留多少（占框边长的比例）。给「量格子」那屏拖角用 ——
+    /// 框拖到工作图之外就没有像素可看了，那正是用户要对准的地方。
+    private static let workMargin: CGFloat = 0.08
+
     private static func decodeMaxPixel(for data: Data, budget: Int) -> Int {
         guard let native = ImageDownsampler.pixelSize(of: data) else { return 3600 }
         let total = Double(native.width) * Double(native.height)
@@ -513,11 +519,16 @@ struct SinglePatternFlowView: View {
         var source = await Task.detached(priority: .userInitiated) { PatternSourceStore.data(for: id) }.value
         if source == nil { source = await loader?.thumbnail(for: id) }
         guard let data = source else { return }
+        // 裁的时候四周多留一圈：「量格子」那屏要让用户把框的角往外拖，
+        // 而框外一个像素都没有的话，他拖出去看到的是一片空白 —— 也就没法对准。
+        let padded = region
+            .insetBy(dx: -region.width * Self.workMargin, dy: -region.height * Self.workMargin)
+            .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
         let built = await Task.detached(priority: .userInitiated) { () -> PartsWorkImage? in
             autoreleasepool {
                 let maxPixel = Self.decodeMaxPixel(for: data, budget: Self.workPixelBudget)
                 guard let full = ImageDownsampler.downsampleToUIImage(data, maxPixelSize: maxPixel),
-                      let cropped = PartsThumbnailMaker.crop(.whole(full), normalized: region) else { return nil }
+                      let cropped = PartsThumbnailMaker.crop(.whole(full), normalized: padded) else { return nil }
                 // **必须重画一份。** `CGImage.cropping(to:)` 不复制像素，它跟整图共享
                 // data provider —— 只要裁剪结果活着，整图那份解码就一直躺在内存里
                 // （6000 万像素 = 240 MB，会在整个会话期间常驻）。
@@ -527,7 +538,7 @@ struct SinglePatternFlowView: View {
                 let detached = UIGraphicsImageRenderer(size: cropped.size, format: format).image { _ in
                     cropped.draw(in: CGRect(origin: .zero, size: cropped.size))
                 }
-                return PartsWorkImage(image: detached, region: region)
+                return PartsWorkImage(image: detached, region: padded)
             }
         }.value
         guard let built else {
