@@ -63,6 +63,8 @@ struct PartsSheetFlowView: View {
 
     /// 零件摆在拼豆板上的位置。最后一屏的产物。
     @State private var boards: [PartsBoard] = []
+    /// 这套板子是按哪一档松紧排的。跟 `boards` 一起存，理由见 `BeadPartsSheet.boardSpacing`。
+    @State private var boardSpacing: BoardSpacing?
 
     @State private var busy: String?
 
@@ -180,6 +182,7 @@ struct PartsSheetFlowView: View {
                         PartsBoardStepView(
                             parts: parts,
                             boards: tracked($boards),
+                            boardSpacing: tracked($boardSpacing),
                             colorSystem: project.colorSystem,
                             onFinish: { save() }
                         )
@@ -362,6 +365,9 @@ struct PartsSheetFlowView: View {
             }
             if live.allSatisfy(\.placements.isEmpty) { live = [] }
             self.boards = live
+            // 板子清空了就等于没排过，那一档也跟着作废 —— 留着的话下次进去会拿一档
+            // 谁都没选过的松紧去校验拖动。
+            self.boardSpacing = live.isEmpty ? nil : saved.boardSpacing
 
             // 上次做到哪儿，这次就从哪儿接着来。
             //
@@ -596,6 +602,7 @@ struct PartsSheetFlowView: View {
             // 板上画不出东西，又因为 boards 非空进不了自动排版，那一屏成了死胡同。
             self.calibration = nil
             self.boards = []
+            self.boardSpacing = nil
             self.palette = []
             self.detectedROI = currentROI
             self.detectedGeneration = generation
@@ -697,7 +704,8 @@ struct PartsSheetFlowView: View {
             anyColorCode: anyColorCode,
             emptyHex: emptyHex,
             anyColorHex: anyColorHex,
-            boards: boards.isEmpty ? nil : boards
+            boards: boards.isEmpty ? nil : boards,
+            boardSpacing: boards.isEmpty ? nil : boardSpacing
         )
         guard inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet) else {
             // 没写进去。这里绝不能算了 —— 用户手上这些东西全在内存里，
