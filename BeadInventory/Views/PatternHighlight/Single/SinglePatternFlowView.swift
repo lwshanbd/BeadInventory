@@ -558,50 +558,50 @@ struct SinglePatternFlowView: View {
 
     // MARK: - 逐格判色
 
+    /// 判色跟多零件模式**走的是同一个函数**（`PartsCellClassifier`）：
+    /// 每格取众数色 → 聚成十几类 → 一类整体配一个色号。整张图纸就是「一个零件」。
+    ///
+    /// 这里曾经在它上面加过一层逐格 OCR（图纸格子里多半印着「14」「28」这样的色号），
+    /// 已经删掉：慢，而且用户要的不是「再多一个会出错的来源」——
+    /// 判错了在核对页两下就能改，那才是这条流程的解法。
     private func runClassification() {
         guard let work, let calibration, calibration.isUsable else { return }
         let snapshot = sheet
+        let area = sheet.gridRect ?? sheet.bounds
         let colorSystem = project.colorSystem
         let legend = project.beadUsage.map(\.colorCode)
         let colors = inventoryManager.beadColors
         let base = emptyHex
         busy = String(localized: "正在看每格什么颜色…")
 
-        Task {
-            let result = await SinglePatternClassifier.classify(
+        Task.detached(priority: .userInitiated) {
+            let result = PartsCellClassifier.classify(
                 work: work,
-                sheet: snapshot,
+                parts: [snapshot],
+                roi: area,
                 calibration: calibration,
                 colorSystem: colorSystem,
                 legendCodes: legend,
                 availableColors: colors,
                 emptyHex: base,
-                progress: { phase in
-                    Task { @MainActor in busy = Self.busyText(for: phase) }
-                }
+                // 单图纸没有「任意色」这一档：它是立体图纸色号表里的一行字，
+                // 平面图纸上不存在。
+                anyColorHex: nil
             )
-            self.busy = nil
-            // 一格都没看到 = 图根本没抠出来（框太小 / 图坏了），**不是**「这张图纸上没有豆子」。
-            // 写回去的话核对页只会显示「一共 0 颗」，用户完全不知道该改哪儿。
-            guard !result.unreadable else {
-                self.prompt = .classifyFailed
-                return
+            await MainActor.run {
+                self.busy = nil
+                // 一格都没看到 = 图根本没抠出来（框太小 / 图坏了），
+                // **不是**「这张图纸上没有豆子」。写回去的话核对页只会显示「一共 0 颗」，
+                // 用户完全不知道该改哪儿。
+                guard let judged = result.parts.first, result.unreadableParts == 0 else {
+                    self.prompt = .classifyFailed
+                    return
+                }
+                self.sheet = judged
+                self.dirty = true
+                guard self.persist() else { return }   // 存不上会自己弹「这一步没存上」
+                self.path = [.grid, .baseColor, .review]
             }
-            self.sheet = result.sheet
-            self.dirty = true
-            guard self.persist() else { return }   // 存不上会自己弹「这一步没存上」
-            self.path = [.grid, .baseColor, .review]
-        }
-    }
-
-    private static func busyText(for phase: SinglePatternClassifier.Phase) -> String {
-        switch phase {
-        case .colors:
-            return String(localized: "正在看每格什么颜色…")
-        case .probing:
-            return String(localized: "正在看图纸上有没有印色号…")
-        case .reading(let done, let total):
-            return String(localized: "正在认格子里的色号…（\(done)/\(total)）")
         }
     }
 

@@ -21,7 +21,6 @@
 		B5910BC0E8754A1EBE531732 /* PartsDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40AD7A4DA3740AEA95FBFB0 /* PartsDetector.swift */; };
 		742CABBB67C84E879D0C8929 /* PatternSourceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C06B9CB4E6143D0B320D6BF /* PatternSourceStore.swift */; };
 		0192B273267745CD9E5F453E /* PartsCellClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FA79A55AFD4B0FBE87F286 /* PartsCellClassifier.swift */; };
-		A1B2C3D400000000000000B1 /* SinglePatternClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000000000000A1 /* SinglePatternClassifier.swift */; };
 		A1B2C3D400000000000000B2 /* SinglePatternFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000000000000A2 /* SinglePatternFlowView.swift */; };
 		A1B2C3D400000000000000B3 /* SinglePatternGridStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000000000000A3 /* SinglePatternGridStepView.swift */; };
 		A1B2C3D400000000000000B4 /* SinglePatternHighlightStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000000000000A4 /* SinglePatternHighlightStepView.swift */; };
@@ -172,7 +171,6 @@
 		F40AD7A4DA3740AEA95FBFB0 /* PartsDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsDetector.swift; path = BeadInventory/Managers/PartsDetector.swift; sourceTree = SOURCE_ROOT; };
 		9C06B9CB4E6143D0B320D6BF /* PatternSourceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternSourceStore.swift; path = BeadInventory/Managers/PatternSourceStore.swift; sourceTree = SOURCE_ROOT; };
 		52FA79A55AFD4B0FBE87F286 /* PartsCellClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsCellClassifier.swift; path = BeadInventory/Managers/PartsCellClassifier.swift; sourceTree = SOURCE_ROOT; };
-		A1B2C3D400000000000000A1 /* SinglePatternClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SinglePatternClassifier.swift; path = BeadInventory/Managers/SinglePatternClassifier.swift; sourceTree = SOURCE_ROOT; };
 		A1B2C3D400000000000000A2 /* SinglePatternFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SinglePatternFlowView.swift; path = BeadInventory/Views/PatternHighlight/Single/SinglePatternFlowView.swift; sourceTree = SOURCE_ROOT; };
 		A1B2C3D400000000000000A3 /* SinglePatternGridStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SinglePatternGridStepView.swift; path = BeadInventory/Views/PatternHighlight/Single/SinglePatternGridStepView.swift; sourceTree = SOURCE_ROOT; };
 		A1B2C3D400000000000000A4 /* SinglePatternHighlightStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SinglePatternHighlightStepView.swift; path = BeadInventory/Views/PatternHighlight/Single/SinglePatternHighlightStepView.swift; sourceTree = SOURCE_ROOT; };
@@ -355,7 +353,6 @@
 				F40AD7A4DA3740AEA95FBFB0 /* PartsDetector.swift */,
 				9C06B9CB4E6143D0B320D6BF /* PatternSourceStore.swift */,
 				52FA79A55AFD4B0FBE87F286 /* PartsCellClassifier.swift */,
-				A1B2C3D400000000000000A1 /* SinglePatternClassifier.swift */,
 				A1B2C3D400000000000000A2 /* SinglePatternFlowView.swift */,
 				A1B2C3D400000000000000A3 /* SinglePatternGridStepView.swift */,
 				A1B2C3D400000000000000A4 /* SinglePatternHighlightStepView.swift */,
@@ -793,7 +790,6 @@
 				B5910BC0E8754A1EBE531732 /* PartsDetector.swift in Sources */,
 				742CABBB67C84E879D0C8929 /* PatternSourceStore.swift in Sources */,
 				0192B273267745CD9E5F453E /* PartsCellClassifier.swift in Sources */,
-				A1B2C3D400000000000000B1 /* SinglePatternClassifier.swift in Sources */,
 				A1B2C3D400000000000000B2 /* SinglePatternFlowView.swift in Sources */,
 				A1B2C3D400000000000000B3 /* SinglePatternGridStepView.swift in Sources */,
 				A1B2C3D400000000000000B4 /* SinglePatternHighlightStepView.swift in Sources */,

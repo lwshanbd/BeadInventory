@@ -508,10 +508,19 @@ struct SinglePatternGridStepView: View {
     ///
     /// 这不改变网格本身 —— 格线是无限铺开的，挑哪一格显示都一样。挑中间那格是因为
     /// 边角那一格多半压在留白上，框里一片空，看不出格子边界对没对齐。
+    ///
+    /// **格线位置以已经对好的那份为准**（`sheet.gridRect` 的左上角就是它）。
+    /// 拿全局标定里那个原始相位重新摆一次的话，用户上一屏刚推好的对齐当场作废 ——
+    /// 表现就是「我明明对齐了，返回去又不齐了」。
     private func syncFrameToLattice() {
         guard let calibration, calibration.isUsable else { return }
-        frameOrigin = CGPoint(x: calibration.snappedX(Double(roi.midX)),
-                              y: calibration.snappedY(Double(roi.midY)))
+        var base = calibration
+        if let rect = sheet.gridRect, sheet.rows > 0, sheet.cols > 0 {
+            base.originX = Double(rect.minX)
+            base.originY = Double(rect.minY)
+        }
+        frameOrigin = CGPoint(x: base.snappedX(Double(roi.midX)),
+                              y: base.snappedY(Double(roi.midY)))
     }
 
     /// 整张图纸有多少像素宽。加减号按**源图像素**动，不能按屏幕点 ——
@@ -613,7 +622,13 @@ struct SinglePatternGridStepView: View {
     /// 重新进来（格距和格线都是存下来那份）算出来的行列数跟存的一模一样，
     /// 所以这条不会在「只是回来看一眼」的时候误伤。
     private func writeBack() {
-        guard let grid else { return }
+        guard let grid, let aligned = activeCalibration else { return }
+        // 相位（用户推到的那条格线）**要写回 calibration** —— 存盘的是它，不是屏幕上这个黄框。
+        // 只写进 sheet.gridRect 的话，下次进来拿旧相位重新摆一次，用户对好的位置当场作废。
+        // 这一句会再触发一次 onChange(calibration) → writeBack，但那时值已经相等，不会再写。
+        if calibration?.originX != aligned.originX || calibration?.originY != aligned.originY {
+            calibration = aligned
+        }
         sheet.bounds = roi
         sheet.gridRect = grid.rect
         if sheet.hasCells, sheet.rows != grid.rows || sheet.cols != grid.cols {
