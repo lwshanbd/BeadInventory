@@ -325,7 +325,7 @@ struct PartsCellSizeStepView: View {
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        // 一格多少像素，加减号一次动一个像素。
+                        // 一格多少像素，加减号一次动 0.1 个像素。
                         //
                         // **必须摆在这一屏**（整张网格铺在零件上的这一屏），不能塞进
                         // 「重选格子大小」里 —— 那屏只显示一格。一格看着严丝合缝，
@@ -335,12 +335,12 @@ struct PartsCellSizeStepView: View {
                             Text("一格")
                                 .font(.footnote)
                                 .foregroundStyle(Theme.ColorToken.Text.secondary)
-                            nudgeButton("minus") { changeCellPixels(by: -1) }
+                            nudgeButton("minus") { changeCellPixels(by: -Self.cellPixelStep) }
                             Text(cellPixelsText)
                                 .font(.footnote.monospacedDigit())
                                 .foregroundStyle(Theme.ColorToken.Text.primary)
-                                .frame(minWidth: 64)
-                            nudgeButton("plus") { changeCellPixels(by: 1) }
+                                .frame(minWidth: 78)
+                            nudgeButton("plus") { changeCellPixels(by: Self.cellPixelStep) }
                         }
                         .disabled(estimating || calibration == nil)
 
@@ -548,13 +548,22 @@ struct PartsCellSizeStepView: View {
         return calibration.cellWidth * sheetPixelWidth
     }
 
+    /// 写到小数点后两位：步长是 0.1，只显示一位的话用户看不出自己停在 20.03 还是 20.0，
+    /// 而他要找的那个值恰恰藏在这一位里。
     private var cellPixelsText: String {
         let px = cellPixels
         guard px > 0 else { return "—" }
-        return String(format: px == px.rounded() ? "%.0f 像素" : "%.1f 像素", px)
+        return String(format: "%.2f 像素", px)
     }
 
-    /// 加减号：一格的边长加 / 减一个源图像素。豆子是方的，所以高跟着宽走。
+    /// 加减号一次动多少源图像素。
+    ///
+    /// **0.1 而不是 1。** 一个像素太粗了：自动量出来的是 20.03 这种数，整数步只能在
+    /// 19.03 / 20.03 / 21.03 之间跳，而对的那个值就在它们中间。粗调有拖把手和自动对齐，
+    /// 这两个按钮是用来收尾的。
+    private static let cellPixelStep = 0.1
+
+    /// 加减号：一格的边长加 / 减一步。豆子是方的，所以高跟着宽走。
     private func changeCellPixels(by delta: Double) {
         guard let calibration, sheetPixelWidth > 0 else { return }
         let next = max(2, cellPixels + delta)
