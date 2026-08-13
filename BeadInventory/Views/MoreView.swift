@@ -285,7 +285,7 @@ struct MoreView: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("你好，啃豆人 ✦")
+                Text("我的数据")
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(Theme.ColorToken.Text.primary)
                 Text("已记录 \(totalBeadsCount) 颗 · 完成 \(completedProjectsCount) 件作品")
@@ -294,10 +294,6 @@ struct MoreView: View {
             }
 
             Spacer(minLength: 8)
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(Theme.ColorToken.Text.tertiary)
         }
         .padding(16)
         .background(
@@ -344,7 +340,7 @@ struct MoreView: View {
     private var footerView: some View {
         HStack(spacing: 6) {
             BeadView(color: Theme.ColorToken.Morandi.latte, size: 12)
-            Text("啃豆小仓 v\(appVersion) · 慢慢拼，慢慢爱")
+            Text("啃豆小仓 v\(appVersion)")
                 .font(.caption2)
                 .foregroundColor(Theme.ColorToken.Text.tertiary)
         }

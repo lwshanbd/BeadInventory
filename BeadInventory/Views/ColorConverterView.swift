@@ -161,7 +161,7 @@ struct ColorConverterView: View {
 
     private var suggestionsBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("✦ 试试搜这些")
+            Text("试试搜这些")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.ColorToken.Text.secondary)
                 .padding(.leading, 22)
