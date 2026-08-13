@@ -61,6 +61,9 @@ struct PartsCellSizeStepView: View {
     @State private var estimating = true
     /// 是不是正在重选一格的大小。true 时只显示黄框，不显示网格线。
     @State private var picking = false
+    /// 上一次「全图重新对齐」用的是多大的格子。用来判断格距有没有变过 ——
+    /// 见 `realignAllIfCellSizeChanged`。
+    @State private var alignedAtCellWidth: Double?
 
     @State private var zoom: CGFloat = 1
     @State private var lastZoom: CGFloat = 1
@@ -301,6 +304,7 @@ struct PartsCellSizeStepView: View {
                     Button {
                         picking = false
                         resetView()
+                        Task { await realignAllIfCellSizeChanged() }
                     } label: {
                         Label("就用这个大小", systemImage: "checkmark")
                             .font(.footnote.weight(.medium))
@@ -316,10 +320,30 @@ struct PartsCellSizeStepView: View {
                 HStack(alignment: .top, spacing: Theme.Spacing.lg) {
                     nudgePad
                     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        Text("网格线要落在豆子和豆子的缝上。全图共用这一张网格。")
+                        Text("网格线要落在豆子和豆子的缝上。")
                             .font(.footnote)
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+
+                        // 一格多少像素，加减号一次动一个像素。
+                        //
+                        // **必须摆在这一屏**（整张网格铺在零件上的这一屏），不能塞进
+                        // 「重选格子大小」里 —— 那屏只显示一格。一格看着严丝合缝，
+                        // 铺到第四十格照样偏出去半格；格距准不准只有看着整片格线才判断得了，
+                        // 那就得能一边看着整片一边调。
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Text("一格")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.ColorToken.Text.secondary)
+                            nudgeButton("minus") { changeCellPixels(by: -1) }
+                            Text(cellPixelsText)
+                                .font(.footnote.monospacedDigit())
+                                .foregroundStyle(Theme.ColorToken.Text.primary)
+                                .frame(minWidth: 64)
+                            nudgeButton("plus") { changeCellPixels(by: 1) }
+                        }
+                        .disabled(estimating || calibration == nil)
+
                         HStack(spacing: Theme.Spacing.md) {
                             Button {
                                 Task { await autoAlign() }
@@ -344,7 +368,12 @@ struct PartsCellSizeStepView: View {
             // 自动量出来的网格在个别零件上偏一点是常事，而偏了的那几个只有挨个看过去
             // 才发现得了 —— 早先主按钮直接跳去判色，用户看完第一个就走了。
             Button {
-                if isLastSample { onContinue() } else { sampleIndex += 1 }
+                // 翻页之前先把「这个大小」应用到整张图纸 —— 否则用户在这个零件上调准了，
+                // 下一个零件还是按旧格线画的，他会以为白调了。
+                Task {
+                    await realignAllIfCellSizeChanged()
+                    if isLastSample { onContinue() } else { sampleIndex += 1 }
+                }
             } label: {
                 Label(isLastSample ? "对齐了，看每格什么颜色" : "对齐了，看下一个",
                       systemImage: isLastSample ? "eyedropper" : "arrow.right")
@@ -474,6 +503,9 @@ struct PartsCellSizeStepView: View {
                 self.calibration = fixed
             }
             syncFrameToLattice()
+            // 存下来的那份相位就是按这个格距定的（甚至可能是用户手推过的），
+            // 不记一笔的话第一次按「看下一个」会被当成「格距变了」，把它自动推回去。
+            alignedAtCellWidth = self.calibration?.cellWidth
             return
         }
         let source = work
@@ -485,6 +517,8 @@ struct PartsCellSizeStepView: View {
         // 宁可给个明显不对的初值让用户去拉，也不要空着让他面对一张没有网格线的图。
         calibration = measured ?? fallbackCalibration()
         estimating = false
+        // 刚量出来的相位就是配这个格距的，不用再重对一遍
+        alignedAtCellWidth = calibration?.cellWidth
         syncFrameToLattice()
         writeBack()
     }
@@ -497,6 +531,39 @@ struct PartsCellSizeStepView: View {
             cellHeight: cell * sheetAspect,
             originX: Double(biggest.bounds.minX),
             originY: Double(biggest.bounds.minY)
+        )
+    }
+
+    /// 整张图纸有多少像素宽。加减号要按**源图像素**动，不能按屏幕点 ——
+    /// 屏幕上一格多大取决于当前放大了几倍，那是个跟图纸无关的数。
+    private var sheetPixelWidth: Double {
+        guard work.region.width > 0 else { return 0 }
+        return Double(work.image.size.width) / Double(work.region.width)
+    }
+
+    /// 一格现在是多少源图像素。故意保留小数：自动量出来的格距本来就是 12.4 这种，
+    /// 四舍五入到整数会凭空引入 5% 的误差，而这一屏存在的意义就是消掉这点误差。
+    private var cellPixels: Double {
+        guard let calibration else { return 0 }
+        return calibration.cellWidth * sheetPixelWidth
+    }
+
+    private var cellPixelsText: String {
+        let px = cellPixels
+        guard px > 0 else { return "—" }
+        return String(format: px == px.rounded() ? "%.0f 像素" : "%.1f 像素", px)
+    }
+
+    /// 加减号：一格的边长加 / 减一个源图像素。豆子是方的，所以高跟着宽走。
+    private func changeCellPixels(by delta: Double) {
+        guard let calibration, sheetPixelWidth > 0 else { return }
+        let next = max(2, cellPixels + delta)
+        let width = next / sheetPixelWidth
+        self.calibration = PartsGridCalibration(
+            cellWidth: width,
+            cellHeight: width * sheetAspect,
+            originX: calibration.originX,
+            originY: calibration.originY
         )
     }
 
@@ -551,6 +618,35 @@ struct PartsCellSizeStepView: View {
                               y: calibration.snappedY(Double(sample.bounds.midY)))
     }
 
+    /// 格子大小改过之后，拿这个新尺寸把**整张图纸**的格线重新找一遍。
+    ///
+    /// 用户在一个零件上把格子调准了，剩下几十个零件不会自己变准 —— 它们的格子位置是
+    /// 从同一张全局网格推出来的（`PartsGrid` 把 bounds 吸到全局格线上），格距一变，
+    /// 那批格线该落在哪儿就得重算。不重算的话用户看到的是「我明明调对了，下一个还是偏」。
+    ///
+    /// 只在**格子大小**变过时才跑：
+    /// - 格距没变就没什么可重算的，每按一次「看下一个」都重跑一遍纯属让人等；
+    /// - 而且这里只重找相位。用户拿方向键手推过格线的话，再跑一次自动定相位会把他
+    ///   刚推的推回去 —— 大小没变时绝不能碰。
+    private func realignAllIfCellSizeChanged() async {
+        guard let calibration, calibration.isUsable else { return }
+        guard alignedAtCellWidth != calibration.cellWidth else { return }
+        let source = work
+        let snapshot = parts
+        estimating = true
+        let fitted = await Task.detached(priority: .userInitiated) {
+            PartsPitchEstimator.fitOrigin(work: source, parts: snapshot, calibration: calibration)
+        }.value
+        estimating = false
+        alignedAtCellWidth = calibration.cellWidth
+        // 找不到就保持原样：格距是用户定的，位置维持现状总好过跳到一个瞎猜的地方。
+        guard let fitted else { return }
+        self.calibration?.originX = Double(fitted.x)
+        self.calibration?.originY = Double(fitted.y)
+        syncFrameToLattice()
+        writeBack()
+    }
+
     /// 重新自动量一次整张图纸的网格 —— 格子多大、格线在哪一起重来。
     ///
     /// 刻意**连格距一起重量**：用户手拉的格子哪怕只大了 1%，铺到第四十格就偏出去
@@ -574,6 +670,8 @@ struct PartsCellSizeStepView: View {
             self.calibration?.originX = Double(fitted.x)
             self.calibration?.originY = Double(fitted.y)
         }
+        // 这一下本来就是「格距和相位一起重来」，重对过了
+        alignedAtCellWidth = self.calibration?.cellWidth
         syncFrameToLattice()
         writeBack()
     }
