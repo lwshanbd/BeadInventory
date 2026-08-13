@@ -201,7 +201,21 @@ enum PartsPitchEstimator {
     /// 候选格距取自两条曲线各自的基本周期（哪条更干净事先不知道，两个都试），
     /// 每个候选上下微调几个千分点 —— 自相关只能到零点几像素的精度，而整张图上百格累积
     /// 下来千分之五的误差就是半格。
-    /// 评分是两个方向的和：只有横竖都压在突变处的那个格距才赢得过。
+    ///
+    /// ## 还要试候选的整数分之一，并且**优先取最细的那个**
+    ///
+    /// 很多平面图纸每 5 格画一条粗黑线。那条线又粗又黑，自相关的最强峰因此落在
+    /// 「5 格」上 —— 实测一张 30×30 的图纸被判成 5×5 格、一格 150 像素。
+    /// 用户拿加减号（一次 0.1 像素）是修不回来的。
+    ///
+    /// 分不出来的原因是**平均分选不出基频**：5 格那把梳子的齿全压在粗线上，分很高；
+    /// 1 格那把梳子六分之一的齿在粗线上、其余在细线上，平均反而更低。两把梳子都「对」，
+    /// 只是一把是另一把的子集。
+    ///
+    /// 所以判据换成「**每一条齿都压在突变处**」（看最弱的那几条齿，见 `bestPhase` 的
+    /// `weakest`）：格距减半的话，一半的齿会落在格子中间拿负分，直接出局；
+    /// 而 5 格那把和 1 格那把都全中，这时取**最小**的那个 —— 它才是基频。
+    /// 图纸没画粗线时，分之一的候选全都过不了这一关，行为跟以前一模一样。
     private static func sharedLattice(
         columns: [Double], rows: [Double]
     ) -> (pitch: Double, phaseX: Double, phaseY: Double)? {
@@ -213,9 +227,22 @@ enum PartsPitchEstimator {
         }
         guard !seeds.isEmpty else { return nil }
 
-        var best: (pitch: Double, phaseX: Double, phaseY: Double, score: Double)?
+        // 候选 = 每个基本周期本身 + 它的 1/2 ~ 1/8。
+        // 一格小于 4 像素就不试了：那个分辨率下「格线」和「格子中间」本来就分不开。
+        var candidates: [Double] = []
         for seed in seeds {
+            for divisor in 1...8 {
+                let pitch = seed / Double(divisor)
+                guard pitch >= 4 else { break }
+                guard !candidates.contains(where: { abs($0 - pitch) < $0 * 0.01 }) else { continue }
+                candidates.append(pitch)
+            }
+        }
+
+        var scored: [(pitch: Double, phaseX: Double, phaseY: Double, score: Double, weakest: Double)] = []
+        for seed in candidates {
             let step = max(0.02, seed * 0.002)
+            var best: (pitch: Double, phaseX: Double, phaseY: Double, score: Double, weakest: Double)?
             var pitch = seed * 0.97
             while pitch <= seed * 1.03 + 1e-9 {
                 defer { pitch += step }
@@ -223,11 +250,20 @@ enum PartsPitchEstimator {
                       let y = bestPhase(profile: rows, pitch: pitch) else { continue }
                 let score = x.score + y.score
                 if best == nil || score > best!.score {
-                    best = (pitch, x.phase, y.phase, score)
+                    best = (pitch, x.phase, y.phase, score, min(x.weakest, y.weakest))
                 }
             }
+            if let best { scored.append(best) }
         }
-        guard let best else { return nil }
+        guard !scored.isEmpty else { return nil }
+
+        // 每条齿都压在突变处的那些里，取最细的 —— 它是基频，粗的那些是它的整数倍。
+        // 门槛给 0.1 个标准差：曲线已经标准化过（0 是平均水平），压在真格线上的
+        // 至少也得比平均高一点点。
+        if let finest = scored.filter({ $0.weakest > 0.1 }).min(by: { $0.pitch < $1.pitch }) {
+            return (finest.pitch, finest.phaseX, finest.phaseY)
+        }
+        guard let best = scored.max(by: { $0.score < $1.score }) else { return nil }
         return (best.pitch, best.phaseX, best.phaseY)
     }
 
@@ -237,27 +273,40 @@ enum PartsPitchEstimator {
     }
 
     /// 拿一把齿距为 `pitch` 的梳子在曲线上滑，找齿全部压在突变处的那个位置。
-    /// - Returns: 相位（第一条线的位置，像素）和它的得分；曲线装不下四格时返回 nil。
-    private static func bestPhase(profile: [Double], pitch: Double) -> (phase: Double, score: Double)? {
+    /// - Returns: 相位（第一条线的位置，像素）、平均分，以及**最弱的那几条齿**有多弱
+    ///   （十分位数）。后者用来判断「是不是每一条齿都压在了突变处」——
+    ///   平均分高只说明多数齿压对了，而格距取成两倍时正好有一半的齿落在格子中间
+    ///   （见 `sharedLattice`）。曲线装不下四格时返回 nil。
+    private static func bestPhase(
+        profile: [Double], pitch: Double
+    ) -> (phase: Double, score: Double, weakest: Double)? {
         let n = profile.count
         guard pitch >= 3, Double(n) >= pitch * 4 else { return nil }
         let lines = Int(Double(n - 1) / pitch)
         guard lines >= 3 else { return nil }
 
-        var best: (phase: Double, score: Double)?
+        var best: (phase: Double, score: Double, weakest: Double)?
         var phase = 0.0
         let phaseStep = max(0.1, pitch / 60)
+        var teeth: [Double] = []
+        teeth.reserveCapacity(lines + 1)
         while phase < pitch {
-            var total = 0.0
+            defer { phase += phaseStep }
+            teeth.removeAll(keepingCapacity: true)
             for k in 0...lines {
                 let x = Int((phase + Double(k) * pitch).rounded())
                 guard x >= 0, x <= n - 1 else { continue }
                 let lo = max(0, x - 1), hi = min(n - 1, x + 1)
-                total += (lo...hi).map { profile[$0] }.max() ?? 0
+                teeth.append((lo...hi).map { profile[$0] }.max() ?? 0)
             }
-            let score = total / Double(lines + 1)
-            if best == nil || score > best!.score { best = (phase, score) }
-            phase += phaseStep
+            guard !teeth.isEmpty else { continue }
+            let score = teeth.reduce(0, +) / Double(teeth.count)
+            guard best == nil || score > best!.score else { continue }
+            // 十分位数而不是最小值：图纸边上那一条格线常常被裁掉一半，
+            // 拿最小值当判据的话，一条弱齿就能把一个完全正确的格距否掉。
+            let sorted = teeth.sorted()
+            let weakest = sorted[max(0, Int(Double(sorted.count) * 0.1) - 1)]
+            best = (phase, score, weakest)
         }
         return best
     }

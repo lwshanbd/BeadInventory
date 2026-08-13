@@ -77,6 +77,9 @@ struct SinglePatternFlowView: View {
     /// 工作图换过几次源。补完原图会 +1，让「裁切范围没变就不用重裁」那条判断知道
     /// 底下的图其实换了。
     @State private var sourceGeneration = 0
+    /// 这次打开时，图纸源图的**真实像素尺寸**。存进网格里，下次进来拿它认「图换没换过」。
+    /// 用原图尺寸而不是解码出来那张的尺寸：后者取决于当时的像素预算，换个预算就对不上了。
+    @State private var sourcePixelSize: CGSize = .zero
 
     enum Step: Hashable { case grid, baseColor, review, highlight }
 
@@ -90,6 +93,8 @@ struct SinglePatternFlowView: View {
         case confirmRecrop
         /// 判色时图根本没抠出来。
         case classifyFailed
+        /// 图纸换过了，之前对好的网格对不上新图。
+        case imageChanged
 
         var id: String {
             switch self {
@@ -97,6 +102,7 @@ struct SinglePatternFlowView: View {
             case .loadFailed: return "load"
             case .confirmRecrop: return "recrop"
             case .classifyFailed: return "classify"
+            case .imageChanged: return "changed"
             }
         }
     }
@@ -274,6 +280,12 @@ struct SinglePatternFlowView: View {
                     message: Text("一格颜色都没看出来，多半是框圈得太小或者位置不对。回第一屏把框重新拖一下再来一次。"),
                     dismissButton: .default(Text("回去改框")) { path = [] }
                 )
+            case .imageChanged:
+                return Alert(
+                    title: Text("这张图纸换过了"),
+                    message: Text("之前对好的网格和判好的颜色是按上一张图对的，跟现在这张对不上。从头走一遍：框住图纸、量格子、判色。"),
+                    dismissButton: .default(Text("知道了"))
+                )
             }
         }
     }
@@ -340,7 +352,8 @@ struct SinglePatternFlowView: View {
             cols: sheet.cols,
             cellColorCodes: codeMatrix,
             lastCalibratedAt: Date(),
-            sourceImageSize: overview?.size ?? .zero,
+            // 存原图的真实像素尺寸 —— 下次进来拿它认「图换没换过」（见 load）
+            sourceImageSize: sourcePixelSize == .zero ? (overview?.size ?? .zero) : sourcePixelSize,
             colorSystem: project.colorSystem,
             roi: roi,
             calibration: calibration,
@@ -392,6 +405,7 @@ struct SinglePatternFlowView: View {
         var data = await Task.detached(priority: .userInitiated) { PatternSourceStore.data(for: id) }.value
         if data == nil { data = await loader?.thumbnail(for: id) }
         let bytes = data
+        let native = bytes.flatMap { ImageDownsampler.pixelSize(of: $0) } ?? .zero
         let low = await Task.detached(priority: .userInitiated) {
             bytes.flatMap {
                 ImageDownsampler.downsampleToUIImage($0, maxPixelSize: Self.decodeMaxPixel(for: $0, budget: Self.overviewPixelBudget))
@@ -403,6 +417,7 @@ struct SinglePatternFlowView: View {
         guard !Task.isCancelled else { return }
 
         self.overview = low
+        self.sourcePixelSize = native
         self.imageUnreadable = (bytes != nil && low == nil)
         // 先拿整张图那一版兜底，保证后面每一屏立刻有图可用。高清版是「更好」，不是「必需」。
         if let low { self.work = .whole(low) }
@@ -414,6 +429,25 @@ struct SinglePatternFlowView: View {
         case .missing:
             break
         case .loaded(let grid):
+            // 换过图就把旧网格整份作废。网格是**归一化到那张图**的：换一张图，
+            // 框、格距、每一格的颜色描述的都是另一张画，留着只会让用户对着新图
+            // 看到一张对不上的老网格 —— 而且格子还因为「已判过色」被锁着改不了，
+            // 他能得出的唯一结论是「我新加的图没了」。
+            //
+            // 只对新流程写的数据判断（`roi != nil`）：老数据的 sourceImageSize 记的是
+            // 当年那张压缩图的尺寸，拿原图尺寸去比一定不等，会把存量用户的网格全清掉。
+            if grid.roi != nil, native != .zero, grid.sourceImageSize != .zero,
+               grid.sourceImageSize != native {
+                AppLogger.shared.info("SinglePattern", "grid_discarded_image_changed", metadata: [
+                    "projectId": id.uuidString,
+                    "stored": "\(grid.sourceImageSize)",
+                    "now": "\(native)"
+                ])
+                self.prompt = .imageChanged
+                self.didLoadOnce = true
+                await prepareWorkImage()
+                return
+            }
             let area = Self.boundingBox(of: grid.corners)
             self.roi = grid.roi ?? area
             self.calibration = grid.calibration
@@ -573,6 +607,12 @@ struct SinglePatternFlowView: View {
             prompt = .confirmRecrop
             return
         }
+        // 「整张图纸」这一块的范围**就是用户框的那一块**。这一句不能少：
+        // 量格子那一屏（跟多零件共用）是照着 `bounds` 裁图、量格距、定行列的，
+        // bounds 还是初值 .zero 的话，它拿到的是一块零面积的图 ——
+        // 画布空白、格数空白、加减号点了也没有任何反应。
+        sheet.bounds = roi
+        dirty = true
         path = [.grid]
         Task { await prepareWorkImage() }
     }

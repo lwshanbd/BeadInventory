@@ -85,6 +85,8 @@ struct PartsCellSizeStepView: View {
     /// 正要删掉的那个零件。删一个零件会连带丢掉它已经判好的颜色和摆好的位置，
     /// 而这一屏是一下就能点到的，所以问一句。
     @State private var deletingPart: BeadPart?
+    /// 正要为了改格子清掉这一块判好的颜色。见 `pitchLocked` 旁边那个按钮。
+    @State private var unlockingPitch = false
 
     @State private var zoom: CGFloat = 1
     @State private var lastZoom: CGFloat = 1
@@ -241,6 +243,16 @@ struct PartsCellSizeStepView: View {
             Button("取消", role: .cancel) { deletingPart = nil }
         } message: {
             Text("它已经判好的颜色、在拼豆板上的位置都会一起没掉。")
+        }
+        .confirmationDialog(
+            "清掉判好的颜色，重新对格子？",
+            isPresented: $unlockingPitch,
+            titleVisibility: .visible
+        ) {
+            Button("清掉，我要改格子", role: .destructive) { clearCellsForRegrid() }
+            Button("取消", role: .cancel) { unlockingPitch = false }
+        } message: {
+            Text("格子大小一改，已经核对好的颜色就跟格子对不上了，只能重判一次。框和位置不动。")
         }
     }
 
@@ -463,11 +475,29 @@ struct PartsCellSizeStepView: View {
                         // 所以下面那几个按钮是灰的。灰着不说话是最难受的一种 ——
                         // 用户会以为 App 坏了，而不是「这里本来就不让改」。
                         Text(pitchLocked
-                             ? "这个零件已经判过色了，格子大小改不了 —— 改了颜色会整片错位。推格线还能用。"
+                             ? "这个已经判过色了，格子大小暂时改不了 —— 改了颜色会整片错位。推格线还能用。"
                              : "网格线要落在豆子和豆子的缝上。每个零件各有各的格线。")
                             .font(.footnote)
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+
+                        // 灰按钮必须给一条出路。
+                        //
+                        // 用户回到这一屏，十有八九就是因为格子不对；而判过色之后
+                        // 「一格多少像素」「自动对齐」「重选格子大小」全是灰的 ——
+                        // 他手里于是一件能改格子的工具都没有，只剩「这几个按钮是摆设」这一个结论。
+                        // 单图纸模式尤其致命：只有一块，没有别的零件可以退而求其次。
+                        //
+                        // 所以把代价明说出来，让他自己决定：清掉这一块的颜色，格子就能改了。
+                        // 反正往下走本来就要重判一次色。
+                        if pitchLocked {
+                            Button(role: .destructive) {
+                                unlockingPitch = true
+                            } label: {
+                                Label("清掉颜色，重新对格子", systemImage: "arrow.counterclockwise")
+                                    .font(.footnote)
+                            }
+                        }
 
                         // 一格多少像素，加减号一次动 0.1 个像素。
                         //
@@ -997,6 +1027,17 @@ struct PartsCellSizeStepView: View {
     /// 而「这个零件的网格整体偏了半格」恰恰是判完色最可能想回来修的事。
     private var pitchLocked: Bool {
         sample?.hasCells == true
+    }
+
+    /// 清掉这一块判好的颜色，把格距的锁解开 —— 用户明说要改格子时才走这条。
+    /// 立刻落盘：这一屏别的改动都是当场存的，唯独这一下不存的话，
+    /// 用户改完格子退出去，回来看到的是「颜色还在、格子又变了」的一堆错位。
+    private func clearCellsForRegrid() {
+        guard let sample, let index = parts.firstIndex(where: { $0.id == sample.id }) else { return }
+        parts[index].cells = []
+        parts[index].gridConfirmed = nil
+        unlockingPitch = false
+        onConfirmPart()
     }
 
     /// 记下「这个零件我亲手对过了」。点主按钮往下走的时候调。
