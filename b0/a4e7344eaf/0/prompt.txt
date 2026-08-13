@@ -1,0 +1,512 @@
+你能不能给我总结一下现在的图片储存逻辑？
+
+1. 分别储存在什么地方？
+2. 有怎样的图片？
+3. 什么地方压缩了？什么地方没压缩？
+
+---
+
+你觉得现在的图片处理方式合理吗？
+
+---
+
+我不担心这个东西占用用户的体积，我就担心在需要加载数据或者写数据的时候，会因为数据量太大导致整个数据库的变动。
+
+我担心的是这个，这会产生影响吗？
+
+---
+
+修改一下。 等一下，你给我讲讲什么叫“输入都是库总字节数”呀？我要是有一万张图片，就是一万张图片都要整一下吗？
+
+---
+
+全量 VACUUM是干啥的？
+
+---
+
+这个过程能不能不弄图片？
+
+---
+
+我这么跟你说吧，我们最近几次虽然做了很多修改，但是那个用户点开还是崩溃。我们最后实在定位不出原因来，然后用户就卸载重装了，相当于数据丢了，他就只是恢复了数据。
+
+所以我觉得这个问题还是挺严重的，你觉得呢？
+
+---
+
+用户是他妈的在自己导出的 CSV 里自己导入的，和你的这些备份屁关系都没有
+
+---
+
+我个人建议你先出一个完整的修复方案，我交给codex二审，审过了你再做修改。你的方案应该包括产生的原因、结果、如何修复。最好包含具体的问题代码位置
+
+---
+
+二审结论：不建议按报告原样实施。
+“先补观测、不要继续猜根因”的方向正确，但 D3 与 D5 存在 P0 级遗漏；尤其恢复模式目前不具备安全的写入语义。
+我按 `main@6f0e1de` 审了源码与 PR #48、#51/#52、#55、#57–#60 的历史；未使用工作区已有的未提交改动。
+
+* D1 基本成立：`ModelContainer` 确在 [`BeadInventoryApp.swift` (line 37)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventoryApp.swift:37) 的同步启动段，而存量瘦身只能在 `.active` 后、再等 5 秒才开始。
+但应改写为“瘦身/回填这条补救路径不可达”，不能说所有 PR 产出对该用户投递率为零；例如之前将首帧读库移出主线程的代码本身仍会生效。用户持续崩溃说明原“根因已解决”的结论不成立，但尚不足以严格证伪 H3——前提是该用户的存量图片从未有机会跑到瘦身。
+* 报告遗漏了一个更危险的启动后候选：每周自动备份也在首帧后约 5 秒运行。它在主线程逐项目读取原图、把全库图片 base64 放入字典、序列化并同步写文件；而迁移器也在这个窗口启动。见 [`BackupManager.swift` (line 51)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupManager.swift:51) 与 [`ThumbnailMigrationCoordinator.swift` (line 280)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/ThumbnailMigrationCoordinator.swift:280)。
+更关键的是，代码注释称“峰值约一张图”，但整个 `[String: Any]` 会保留所有项目的 base64 字符串，随后还会再生成完整 `jsonData`，实际峰值是整份备份量级。这是“出首帧后约 5 秒仍闪退/卡死”的强候选，必须升为 P0；不能把阶段 2 定义成低风险。
+* D5 不能通过：`cloudKitDatabase: .none` 不等于只读。现有 `localFallbackConfiguration` 本身就是可写容器；`saveData()` 的禁止写入，依赖的是 `InventoryManager.isUsingLocalFallbackMode` 这个“用户放弃等待”的内存状态，二者并未绑定。见 [`InventoryManager.swift`](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/InventoryManager.swift)。
+因而“只读降级”与“立即瘦身写盘”本身矛盾；且 `.none` 仍要打开同一个 SQLite/WAL，若 H1 成立，它甚至到不了恢复 UI。恢复要拆成两种状态：
+   1. 无写入救援模式：内存容器启动，只提供诊断、备份取回和人工恢复入口；
+   2. 明确授权的修复模式：仅在原 store 已能打开、已有可验证备份时运行；它不是只读，必须明确 CloudKit 同步与冲突策略。
+在完成这个设计前，阶段 3 应冻结。
+* D3 的判断正确但低估了问题。通用导入器不解析图片；此外自动备份写的是 `brandStocks`，通用导入器读的是 `stocks`，两套 JSON 并不兼容。备份还遗漏 `patternGrid` 和撤销历史。直接复用 `restoreBackup` 也不合适：它是“替换全部数据”的恢复流程，不是通用导入。见 [`BackupManager.swift`](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupManager.swift) 和 [`ImportFullDataView.swift`](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Views/ImportFullDataView.swift)。
+应新建带 `formatVersion` 的专用备份格式和专用恢复入口，并做完整 round-trip 测试；是否承诺恢复撤销历史也要明确写进产品语义。
+* Q4：不应立刻开 `UIFileSharingEnabled`。两个 plist 键同时开启后，Files 会暴露整个 `Documents` 目录，而不只是 `WeeklyBackups`；当前代码还会在该目录寻找 HuggingFace 本地模型。先迁移/隔离这些文件，或先采用应用内 `ShareLink`。Apple 对这两个键组合的行为有明确说明：[Launch Services Keys](https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/LaunchServicesKeys.html)。gzip 也不能解决构建时内存峰值；正确方向是“manifest + 二进制图片文件”的 ZIP/archive，按需导出、流式写入，而不是巨型 base64 JSON。
+* D2 应保留，但实现需要更严谨。日志在 Caches、异步缓冲，确实极易在早崩时丢失。启动标记应独立放在 `Application Support/LaunchDiagnostics/`；当前删库代码只删除 `default.store` 与其 WAL/SHM，不会冲突。标记应原子写入并同步落盘；仅 `Data.write` 不能等同于持久化保证，`FileHandle.synchronize()` 才是 Foundation 明确的落盘同步 API。[Apple 文档](https://developer.apple.com/documentation/foundation/filehandle/synchronize%28%29)
+同时不要上传原始 `AppLogger` 文件：其中可能含项目名/错误文本。远程上报只发送白名单结构化字段。
+
+对报告中的问题，简答如下：
+
+* Q1：立场正确。漏掉的更快手段是把 MetricKit 加入第一阶段，再在下一次成功启动时上传诊断；系统将 watchdog 作为独立终止类别，适合验证这类 SIGKILL，但它不能替代启动前的持久化面包屑。[CrashDiagnostic](https://developer.apple.com/documentation/metrickit/crashdiagnostic)
+* Q2：不可复用现有 fallback 写保护；恢复模式方案需重写。
+* Q3：`Application Support/LaunchDiagnostics` 安全；记录“最后成功落盘的阶段”，不要表述为“确定死在该阶段”。
+* Q5：H1/H2/H3 目前不应排序。新增候选至少包括：5 秒自动备份与迁移并发、schema/store 元数据迁移、磁盘/文件保护状态、以及容器已打开后但 `.active` 前的启动工作。
+* Q6：连续 2 次只适用于完全无写入的救援界面；必须按“同一 build、同一阶段、短时间窗口”计数，并在 `.active` 后再经过一段稳定期才清零。否则正好会漏掉当前 5 秒后的备份/迁移崩溃。
+
+我建议的新顺序是：先隔离启动期自动全量备份风险 → 加持久化阶段标记、Store/WAL 指标、MetricKit/受控远程上报 → 完成可验证的专用备份 archive 与恢复 → 最后才设计恢复模式和针对真实遥测的根因修复。
+本次仅审阅，未修改任何文件。
+
+---
+
+更新报告，我再让他复审
+
+---
+
+二审结论：v3 比上一版扎实很多，F3 的文件暴露问题、F5/D5 的恢复模式写入冲突都已正确修正。
+但我仍不建议按 v3 直接进入阶段 1 实现；需先修正以下 3 个 P0 设计点。
+
+1. F1 是“已确证的高危机制”，不是“已确证的本案根因”
+
+[`BackupManager.swift` (line 51)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupManager.swift:51) 的确会在主线程累积全库 base64，并再次生成完整 JSON；它还会与缩略图迁移“可能重叠”。因此必须优先消除。
+但应收紧这些表述：
+
+* “2.6 倍 / 15 GB”是合理估算，不是可由源码严格证明的峰值上界；SwiftData 的对象缓存、桥接和序列化实现都可能改变实际倍数。
+* “不同于原 IPS 的 jetsam，因此解释所有现象”不成立。没有该次崩溃时备份已开始的阶段记录，H0 仍是候选，不能宣布为实际死因。
+* 两个 5 秒延迟来自不同生命周期钩子，准确表述是“可重叠”，不是保证同时发生。
+
+建议把 F1 改名为“启动期自动备份存在可重复触发的 OOM/卡顿机制”，把“该用户实际死因”保留为 H0。
+
+2. N1 的“两次失败才熔断”不能打断崩溃循环
+
+若首次自动备份就导致 jetsam，用户仍会再经历一次同样的高风险启动，才会熔断。这不符合“下一次启动必须能活下来”的目标。
+建议采用独立状态，而不是提前写 `lastBackupDateKey`：
+
+* 真正开始生成 archive 前写入 `automaticBackupInProgress`；
+* 下次启动发现其残留时，立即禁止本周的自动重试，显示“自动备份暂停，可在稳定运行后手动重试”；
+* 仅成功完成并原子提交 archive 后，清除该状态并更新最后成功日期；
+* 明确区分“用户取消/进入后台”“磁盘不足”“序列化失败”“进程中断”。
+
+另外，目前备份使用未保存引用的 `Task`，生命周期中没有像迁移器那样停止它。阶段 1 必须让任务可取消，并在 `.inactive` / `.background` 时取消和复查资格；不要把 `AppBackgroundTaskManager` 当作保护措施，它不解决 OOM，也不能自动取消长任务。
+
+3. N5 是阶段 1 的阻塞项，不能留作开放问题
+
+“后台流式写入”解决内存，不自动解决备份一致性。主线程元数据快照后，用户或 CloudKit 可能修改同一项目；若图片和 metadata 来自不同版本，恢复后可能得到逻辑不一致的项目。
+阶段 1 前需定义并验收：
+
+* archive 写入临时文件，所有条目与 manifest 哈希完成后才原子改名；任何 `.partial` 文件不可恢复、不可计入备份列表；
+* 每个图片和 `patternGrid` 有校验和；
+* 明确一致性模型：能否取得同一持久化快照；若不能，产品是否接受“逐记录一致、非全库同一时刻”的备份；
+* 迁移与备份必须由同一个调度器互斥，不能只靠“检查一下是否在运行”。
+
+其他需要改正的点：
+
+* §6 “编码器已封顶 1.2 MB”不准确。[`ProjectImageEncoder.swift` (line 70)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/ProjectImageEncoder.swift:70) 将 1.2 MB 定义为 best-effort target，不是硬上限；源码明确允许未达到预算但更小的结果。应改为“新写入路径有 1.2 MB 目标，非硬上限”。
+* F2 的 MetricKit API 名称应调整。iOS 17 目标上应实现 `MXMetricManager` / `MXMetricManagerSubscriber`，消费 `MXDiagnosticPayload` 中的 `MXAppLaunchDiagnostic`、`MXCrashDiagnostic`，并用 `MXAppExitMetric` 的 watchdog 与 memory-resource 计数辅助分类；不要写成 `MXMetricManager + CrashDiagnostic` 的混搭。MetricKit 诊断是延迟投递，持久化启动标记仍是主证据。[MXMetricManagerSubscriber](https://developer.apple.com/documentation/metrickit/mxmetricmanagersubscriber), [MXAppExitMetric](https://developer.apple.com/documentation/metrickit/mxappexitmetric)
+* N2 我部分同意：不要按迁移完成与否禁止备份。但“图片总量阈值”只能决定调度策略，不能让大库永久失去自动备份；正确做法是避开冷启动、等待稳定空闲窗口、可取消、互斥、可恢复。
+* N4 同意“新写新格式、旧格式只读、不批量转换”。补充：跨格式统一保留策略，并测试旧格式恢复时明确提示其不含 `patternGrid` / 撤销历史。
+* F3 维持“不启用文件共享”的结论正确。`ShareLink` 需要健康运行的 App；未来无写入救援界面应能直接分享既有 archive，才能覆盖普通容器无法打开的用户。
+
+建议的验收测试补充为：
+
+* 残留 `automaticBackupInProgress` 后，下一次启动绝不再自动启动备份；
+* 大库下备份与迁移不会并行；
+* 中断产生的 archive 不会被列出或恢复；
+* 新 archive 全字段 round-trip，含图片字节、`patternGrid`，以及旧格式兼容边界；
+* 自动备份不在首帧后 5 秒的启动关键窗口执行。
+
+综上：v3 的调查方向可通过，但阶段 1 应先解决“N1 单次残留即抑制自动重试”和“N5 一致性/原子 archive”后再实施。未修改代码。
+
+---
+
+结论
+v4 的证据链已基本成立，且已正确吸收上一轮的关键修正；尤其 F1 已降为待验证候选 H0，而非直接断定本案根因。但我建议暂不进入编码阶段，先补齐以下 4 个 P0 设计点。
+
+1. 阶段划分自相矛盾。§3.1.6 把“流式二进制 archive”列为阶段 1 的 F1 修复，§4 也要求阶段 1 验收 archive 原子性；但 §7 又把新 archive 全量 round-trip 放在阶段 3。
+哨兵只能阻断第二次危险重试，不能消除第一次自动 JSON 备份的 OOM 风险。请明确：阶段 1 是完整交付新 archive，还是在其完成前彻底不触发旧自动备份。
+2. `automaticBackupInProgress` 必须定义成持久化状态机，不能只是一枚布尔值。进程被杀时无法记录“这是进程中断”；下次只能保守判定为“未正常结束”。状态至少应含 attempt ID、所属周、阶段、时间和结束原因；正常取消/磁盘不足/序列化错误要清理或改为 deferred，残留则只抑制该周，手动成功后才清除。否则会出现永久停备或意外自动重试。
+3. 目前只定义了“备份写出”的原子性，没有定义恢复的原子性。现有恢复会先写主体数据、再逐条写 blob，过程中失败会留下半恢复状态。[BackupManager.swift (line 601)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupManager.swift:601) 即是这种分段落盘。新方案必须规定：验证完整 archive、版本、哈希、条目数量和解压上限后才开始替换；恢复失败时保留旧数据或具备可恢复日志。还应覆盖 ZIP 路径穿越、压缩炸弹、损坏 archive 与中断恢复测试。
+4. F5 的救援界面必须在创建 `ModelContainer` 之前分支。当前容器在 `App.init()` 同步创建，[BeadInventoryApp.swift (line 37)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/BeadInventoryApp.swift:37) 至 [第 169 行 (line 169)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/BeadInventoryApp.swift:169)，且失败路径会尝试删库重建。若先开库，救援 UI 仍可能永远到不了。救援路径应只读启动标记与既有 archive，不创建主容器、`InventoryManager`，也不进入自动删库链。
+
+其余建议：
+
+* §4 的“一致性模型”仍是真正的阶段 1 阻塞项。校验和只能证明字节未损坏，不能证明 metadata 与图片属于同一逻辑版本；需要产品明确接受“逐记录一致”还是要求全库一致快照。
+* 后台备份不能把 `@MainActor` 的 `InventoryManager` 直接带进 detached task。应在主线程生成轻量 DTO，再用后台 `ModelContext` 按记录读取和写 archive；当前取图接口明确是主线程同步 SwiftData fetch。[InventoryManager.swift (line 4007)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/InventoryManager.swift:4007)
+* `flushNow()` 可行，但须防止在 logger 自身串行队列中 `queue.sync` 造成死锁。[AppLogger.swift (line 21)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/AppLogger.swift:21)
+* 验收项 6 应改为测量“全进程峰值内存、主线程图片 blob 常驻量、首帧/交互响应时间”的量化阈值；不能笼统要求主线程内存不随项目数线性增长，因为 metadata 快照本身也会增长。
+* 摘要中的“永久丢失”建议标作用户已确认事实；仅从源码不能排除仍有 iCloud 或设备完整备份可恢复的可能。
+* 不开启 `UIFileSharingEnabled` 的结论正确：配合原地打开会暴露整个 Documents，而非仅备份文件。[Apple 文档](https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/LaunchServicesKeys.html)
+
+源码与历史归因均已复核：F1 调用链、base64/JSON 双重累积、未托管任务、旧备份/导入格式不相交，以及 `730cd29` 引入无损 PNG 写入导致的膨胀，描述准确。
+工作区未改动。
+
+---
+
+停用啥玩意？
+
+---
+
+我们先本地测试？这些东西稳定之前我们不交付客户。我觉得你是不是可以写代码了。
+
+---
+
+提交
+
+---
+
+给我计划我去复审
+
+---
+
+结论
+这项实验值得做，但计划目前不应直接执行。有三个 P0 会让结果失效或污染测试床；修正后，我赞成“模拟器做斜率扫描 + 真机做少量验证”的路线。
+
+1. `N=0` 定义与测试床矛盾。计划保留 669 项真实库、清理的却只有 `ChaosSeed-*`，所以 N=0 并不是空库，不能用来扣除 App 基线。应二选一：
+   * 用全新、专用的 `iPhone 17 Pro Max` 模拟器，N=0 才是空库；
+   * 保留 669 项库，但将变量改名为“新增 N”，报告总图片字节，并另跑一组真正空库基线。
+2. 每轮必须终止进程并等待明确完成信号。`simctl launch` 会立即返回，连续 launch 不能可靠地替换一个仍在运行进程的启动参数。并且灌数/清理启动后，现有自动备份仍会在约 5 秒后触发。[BackupManager.swift (line 51)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupManager.swift:51)
+需要增加 DEBUG-only 的 `-DisableAutomaticBackup`，在清理和灌数阶段与 `-DisableThumbnailMigration` 一起启用；每步等持久化 `seed_completed` / `cleanup_completed` / `benchmark_completed` 结果，再 `simctl terminate`，才进入下一次带不同参数的启动。
+3. 200 条并非“约 2 GB 图”。当前种子每条必有一张原图、20% 另有 `finishedImage`，一半另有 display thumbnail。[BeadInventoryApp.swift (line 1448)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/BeadInventoryApp.swift:1448) 因此应以本轮实际读取的三个 blob 字段总字节数为横轴，而非项目数或“10 MB × N”估算。每轮把 `thumbnail`、`finishedImage`、`displayThumbnail` 的数量与原始字节数写入结果。
+
+还需要调整测量解释：
+
+* 四个检查点能说明边界处的 footprint，不能单独归因“写盘造成了多少内存”。`backupData` 和 `jsonData` 在 `performBackup()` 返回前仍可能存活。[BackupManager.swift (line 84)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupManager.swift:84) 增加“函数返回后、下一轮 RunLoop 后”的检查点；若要归因临时分配，用 Instruments Allocations/VM Tracker 或 signpost 辅助。
+* 50 ms 采样得到的是近似高水位，短峰值可能漏掉。结果应注明采样周期，并以“观测到的最大值”表述。
+* 用单调时钟记录 `performBackup()` wall time；它是主线程不可响应时长。报告 `Δfootprint = 备份窗口峰值 − 备份开始前值`，再除以实际 blob 总字节数。
+* Q1 建议改为“在该 fixture 的测量范围内拟合线性关系”，报告斜率、R²、三次结果范围；源码已能证明 base64 累积结构，实验验证的是实际实现的量级。
+
+对待决项的建议：
+
+* **N1：同意。**先模拟器全量扫斜率；随后真机至少做空库与高负载两点。模拟器不能证实 jetsam，这个边界写得正确。
+* **N2：不要先锁死 200。**先跑 25 条 pilot，按实际总 blob 字节与初始斜率决定上限；若发生中断，记录为有效结果。
+* **N3：暂不混入本实验。**恢复应另开实验，使用已生成 archive 和独立目标库，否则会混淆 F1 结论。
+* **N4：建议保留。**仅 `#if DEBUG`、名称改为通用测试开关、每次启用写日志即可；它对隔离冷启动任务很有价值。
+
+另外，若继续使用 669 项真实测试床，快照不应只复制 App Group store；自动备份文件在 App 自身 `Documents/WeeklyBackups`，备份日期在 App 自身偏好中。至少同时快照 App Group 和 App Data 容器。诊断代码确认 store 优先位于 App Group，这一判断是正确的。[LaunchDiagnostics.swift (line 102)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/LaunchDiagnostics.swift:102)
+iCloud 对照组也要谨慎：当前 seeder 会拒绝 CloudKit 开启时灌数，除非显式放行，以免把大 blob 推到真实 iCloud。[BeadInventoryApp.swift (line 1413)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/BeadInventoryApp.swift:1413) 没有专用测试账号/环境时，不应把“云端开启”列为本轮必跑项。
+未改动代码。
+
+---
+
+结论
+v2 已解决上一轮的主要方法问题；我认可 M1 的独立开关设计，也认可新 fixture 与三字段横轴。但仍有 3 个 P0，补上后才建议执行。
+
+1. 不能用普通 Debug 构建测量后外推生产行为。Debug 的 `-Onone` 会改变对象释放时机、内存峰值和 Q4 时长，恰好影响本实验的核心指标。
+应使用一个不发布的 `F1_BENCHMARK` 配置/方案：保留接近 Release 的 Swift 优化，并仅以编译标记纳入探针；不要以 `#if DEBUG` 构建的数值作为最终结论。
+2. `wait_for_log(seed_completed)` 不是足够可靠的完成信号。既有事件写入的是异步、可轮转的缓存日志，[AppLogger.swift (line 123)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/AppLogger.swift:123) 可能读到上一次遗留事件，也可能在被杀前未刷盘。
+每次启动应传入唯一 run ID；基准探针用单独、原子落盘的结构化结果文件记录 `started`、六个检查点、当前观测最大值和 `completed`。这样中途终止才真能按 §7 作为有效结果留证。
+3. 新模拟器首次灌数前必须明确关闭 CloudKit。默认配置会视为 iCloud 启用，而 seeder 会直接拒绝灌数。[BeadInventoryApp.swift (line 1413)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/BeadInventoryApp.swift:1413)
+同理，外部 `defaults delete` 不应是唯一复位依据；增加 DEBUG-only 的“重置 weekly backup 状态”步骤并回报 run ID，避免因 simulator 偏好域路径问题导致假阴性。
+
+还应写入计划的两点：
+
+* T2 应改写。对已给定 blob 字节数，图片“是否可压缩”不会改变 base64 的扩张关系；噪声 PNG 的意义是构造“每像素字节较高”的合成 fixture，并非真实用户库的全局上界。
+* 每轮应从同一份空白 fixture 还原，或至少清理上一轮的 `WeeklyBackups` 并检查可用磁盘。现有逻辑会保留最多 8 份 GB 级 JSON，且反复 delete 会留下 SQLite 空闲页/WAL，影响后续运行的磁盘与缓存状态。
+
+对待决项：
+
+* **M1：认可。**迁移关闭、备份开启是合法且必要的测量组合；我此前所说“通用名”不是要求合并为一个开关。
+* **M2：需要。**并列报告 store、WAL 与三字段 blob 总字节；但 F1 拟合仍只用三字段字节，不能把 store 字节直接换算成内存阈值。
+* **M3：25 条足够做 smoke/pilot。**它与 N=0 可给出初始斜率；通过后再按实际字节和磁盘余量决定是否升到 50/100/200。
+
+补齐以上内容后，我会批准按该计划开展测量。未改动代码。
+
+---
+
+你来定。可以开始工作了
+
+---
+
+提交这批仪器代码,再去查反常?
+
+---
+
+下一步咋办？
+
+---
+
+开始
+
+---
+
+A
+
+---
+
+继续
+
+---
+
+好
+
+---
+
+送复审
+
+---
+
+结论
+不批准将这批作为 F1 修复合并或发布。
+13 个测试及 Release + `F1_BENCHMARK` 构建均已独立通过；流式写出器的结构方向正确。但它尚未进入生产自动备份，且恢复/校验存在 P0 缺口。
+最关键的问题：
+
+* **R1：不能声称 F1 已在生产消除。**生产仍调用旧 JSON `performBackup()`；新 writer 仅在实验编译条件和启动参数下运行。[BackupManager.swift (line 128)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupManager.swift:128)
+状态机只能阻止第二次循环，第一次仍可能 OOM/卡死。可保留本分支验证，但下一批必须在修完下列 P0 后把自动备份切到新格式；旧 JSON 仅保留读取兼容。
+* R3：恢复日志目前不可靠。`defer { RestoreJournal.finish() }` 会在读取 blob 抛错时也删除日志；而逐条写 blob 的失败返回值被忽略。结果是“metadata 已替换、部分 blob 写失败”仍可能被标成完成。[BackupArchive.swift (line 618)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:618)
+必须只在 metadata 与全部 blob 成功后清日志，并把 blob 失败转为错误；在实现启动残留检测前，不应开放恢复入口。
+* 归档校验不能满足“不可信文件”承诺。`manifest.json` 无大小上限即整体读入；没有项目数、blob 总数、总字节上限；且 `validate()` 后 `apply()` 会按路径重新读取外部目录，文件可在两步间被替换（TOCTOU）。[BackupArchive.swift (line 441)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:441)
+应先复制到 App 控制的 staging 目录再校验/应用，限制 manifest、条目数和总量，并要求 `formatVersion == 1`，不能只拒绝大于 1 的版本。
+* **“逐记录一致”并未实现。**当前先快照全库 metadata，再按字段、分时读取 blob；用户修改项目时可得到旧 metadata 与新图片，甚至同一项目的多张图片来自不同时刻。`ProjectImageLoader` 还把“无 blob”和“读取失败”都返回 `nil`，writer 会静默当成无图；`patternGrid` 编码也用 `try?` 静默跳过。[BackupArchive.swift (line 235)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:235)
+应失败即终止备份，或把语义降为明确的 best-effort；不能写入 `per-record`。
+
+测量结论也需收窄：采样器在 App 初始化启动且从未停止，所以“观测最大值 1,331 / 540 MB”涵盖开库、首屏、后台任务等整个进程生命周期，不能归因给备份。检查点 66→67 MB 可以支持“新 writer 不累积全库 base64”，但不能支持表中的全局 `observed max` 对比。[F1BenchmarkRecorder.swift (line 232)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/F1BenchmarkRecorder.swift:232)
+对 R2/R4/R5/R6：
+
+* R2：不可接受。“每周再崩一次”不是可发布的降级。至少应有稳定会话中的手动重试/解除入口；更根本是尽快让安全 writer 接管自动路径。
+* **R4：同意。**新格式若是完整快照，缺失 blob 就应显式清空。
+* R5：64 MB 可作为单条初始上限，但必须增加 manifest、项目数和总 blob 上限。
+* **R6：目录适合作为内部归档格式。**单文件 ZIP/导出应作为独立运输层设计，不要现在为 ShareLink 匆忙改变核心格式。
+
+另外，writer 在提交前会先删同名既有 archive；应改为唯一名称或安全替换，不能为了原子提交先毁掉旧备份。[BackupArchive.swift (line 312)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:312)
+你记录的删库目录错误和 `.inactive` 导致迁移不可达均成立；删库修复应保持独立、单独评审。
+未改动代码。
+
+---
+
+都可以，你自己来决定
+
+---
+
+直接开下一批
+
+---
+
+送复审
+
+---
+
+结论：方向正确，生产自动备份已真正切到流式归档；但我建议先修完下列两项再合并。不能标为“P0 全部清零”。
+
+1. 项目在快照后被删除，会被写成“项目还在、四张图都没有”。
+metadata 已先取快照，随后 `blobs(for:)` 找不到行时返回全 `nil`；恢复又按“字段缺失即显式清空”处理。结果是一份内部自相矛盾的备份，恢复会复活已删除项目但丢失其图片。应将“行消失”作为可重试失败抛出，让本次保留为 `.partial`，而不是编码为无图。见 [ProjectImageLoader.swift (line 176)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/ProjectImageLoader.swift:176)、[BackupArchive.swift (line 254)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:254)。
+2. 恢复残留目前只记日志，没有真正通知用户。
+启动代码注释称“暴露给 UI”，实际只写 `AppLogger`。若 metadata 已替换、blob 恢复中断，用户仍会在不知情下继续使用半恢复库。应在备份/恢复页面展示持久横幅，明确指出哪份归档和中断阶段，并引导“重新恢复该归档”；成功完成后再清除提示。见 [BeadInventoryApp.swift (line 85)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/BeadInventoryApp.swift:85)。
+
+其余结论：
+
+* R1/R2/R3 的主体处置成立：生产调用走 `performArchiveBackup`，旧 JSON 写出已被编译条件隔离；手动备份可以解除当周抑制；恢复日志也只在完整成功后清除。
+* TOCTOU staging 可以暂缓：我确认目前没有 `.beadbackup` 的 `fileImporter`、URL 导入或 Documents 文件共享配置；恢复入口只来自 App 私有 `WeeklyBackups` 列表。导入功能上线前必须完成 staging copy + 校验后从不可变私有副本应用。
+* 但导入前还要补一个限额顺序问题：当前总字节数/条目数是在 `Data(contentsOf:)` 和 SHA-256 后才检查，恶意归档仍可诱导大量 I/O 与哈希。应在读 blob 前预检 `count + 1` 和 `total + actual`。见 [BackupArchive.swift (line 540)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:540)。
+* “峰值恒为单张图”已不准确：写出一次会持有一个项目的四个 blob，恢复也先读四个 blob；理论上可达 `4 × 64 MB`。这仍消除了“随项目总数线性增长”的 F1 形状，但报告和注释应改为“受单项目 blob 总量约束”，并补恢复路径峰值测量。见 [BackupArchive.swift (line 193)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:193)、[BackupArchive.swift (line 734)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:734)。
+* 旧 JSON 恢复仍会整份 `Data(contentsOf:)`，所以“列表不 OOM”已修，但用户点旧备份恢复仍有旧风险；这是可接受的明确遗留项，但应在 UI 对旧格式提示，或列为下一批必做。
+* 新增的“立即备份 / 抑制提示”等字符串仍是硬编码中文，应补入 `Localizable.xcstrings`。
+
+验证完成：
+
+* `BackupArchiveValidationTests` + `BackupArchiveRoundTripTests`：15/15 通过。
+* `Release + F1_BENCHMARK`、iPhone 17 Pro Max 模拟器：构建通过。
+* `git diff --check main...HEAD` 无空白错误。
+* 未改动你的工作区文件。
+
+度量口径也同意收窄：70 MB 是该窗口、该采样条件下的观测值，不是模拟器 jetsam 证据；但“去掉全库 base64 累积，因而不再随项目总数线性增长”的结构性结论成立。
+
+---
+
+导入导出你要怎么做？
+
+---
+
+结论：package 方案通过，ZIP 不必现在做；但原设计不能直接开工。 先补三条约束，否则会重新引入数据不可恢复或磁盘耗尽风险。
+
+1. 旧 JSON 不应提供“导出”按钮。
+方案同时说“旧 JSON 可导出”与“旧 JSON 不可导入”，这会产出一份用户带得走、重装后却用不回来的“备份”，直接违背唯一验收标准。旧格式本身还漏过 `patternGrid`。
+建议：仅允许导出 `.archiveV1`；旧行显示“请先立即生成新版完整备份”，完成后再导出新版。
+2. 不能递归 `copyItem` 整个外部 package。
+manifest 的“声明总量”不可信；目录还可以塞入 manifest 未引用的 200 GB 文件或大量条目。先整体复制再校验，正是资源耗尽入口。当前校验器只验证 manifest 引用的 blob，不负责发现这类额外文件。见 [BackupArchive.swift (line 529)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:529)。
+应改为“按清单、带上限的流式 staging”：
+
+```
+选择外部 package
+→ 受 security scope 保护，读取有大小上限的 manifest
+→ 仅用它生成“复制计划”（不信任结论）
+→ 显示替换确认
+→ 逐个复制 manifest 与被引用 blob 到 stage.partial
+   - 仅常规文件，拒绝所有 symlink
+   - 每项和累计实际字节在复制前/复制中限额
+   - 拒绝额外路径、未知条目、目录层级
+→ 完整 validate(staging)
+→ apply(staging)
+```
+
+确认应放在“轻量预检后、422 MB 复制前”，而非复制完成后。磁盘预检也应以源文件的实际大小为准，并预留至少“staging 一份 + 恢复写入一份 + 安全余量”的空间，不可只看 manifest 声明值。
+3. staging 不能在失败时立即删除。
+`apply` 中断后，`RestoreJournal` 会指向 staging 归档，以便用户重跑恢复。见 [BackupArchive.swift (line 702)](/Users/baodi/Documents/GitHub.nosync/BeadInventory/BeadInventory/Managers/BackupArchive.swift:702)。因此：
+   * 校验失败、用户取消：删 staging；
+   * apply 成功且 journal 清除：删 staging；
+   * apply 抛错或进程被杀：保留 staging，直到重试成功或用户明确放弃。
+否则刚补好的“半恢复可重试”机制会因归档被删而失效。
+
+对 §1 的具体建议：
+
+* 选择 A：package。Apple 将 `com.apple.package` 定义为“以单一文件形式呈现的目录”，适合 Files / iCloud Drive / AirDrop 的 Apple-only 场景。[Apple 文档](https://developer.apple.com/documentation/uniformtypeidentifiers/uttypepackage)
+* UTI 除 `com.apple.package` 外，还应声明 `public.content`；后者是 AirDrop 可共享文档所需的语义。[Apple UTI 指南](https://developer.apple.com/documentation/uniformtypeidentifiers/defining-file-and-data-types-for-your-app)
+* 不需要现在加 `CFBundleDocumentTypes`：当前只有应用内 picker，并没有“从 Files 直接打开 App”的路由处理。先只注册 exported UTI、扩展名和本地化类型描述即可。
+* 不建议裸用 `ShareLink(item: URL)`。做一个 `BackupExport: Transferable`，使用 `FileRepresentation(exportedContentType: .beadInventoryBackup, shouldAllowToOpenInPlace: false)`，明确传输的是该 package，且接收方拿副本而非原归档。Apple 也建议大文件使用精确内容类型的 `FileRepresentation`。[Apple 文档](https://developer.apple.com/documentation/coretransferable/filerepresentation)
+* `fileImporter` 的 security scope 要仅覆盖 source 的预检与复制，并严格成对释放。 [Apple 文档](https://developer.apple.com/documentation/photosui/photospicker/fileimporter%28ispresented%3Aallowedcontenttypes%3Aoncompletion%3A%29)
+
+对待裁决的回答：
+
+* Q1：package。 除非近期确有 Android、网页上传或非 Apple 客户端需求。
+* Q2：不做 metadata-only backup。 若以后做，只能叫“数据摘要/报表”，文件名与 UI 都不能含“备份”。
+* Q3：需要提示，但不做伪进度。 ShareLink 只能证明“已交给系统”，不能证明 iCloud 已上传完成。文案应提示用户在 Files 中确认 package 已出现、且 iCloud 不再显示等待上传，再卸载 App。
+* Q4：建议一次性、可关闭的卡片，不要启动弹窗。 在首次成功生成新版归档后提示“创建一份 App 外副本”；除非能验证回流，否则不要把“点过分享”记成“已保护”。
+
+验收测试还应增加：
+
+* 外部 package 含未引用超大文件、超深目录、任意 symlink；
+* manifest 谎报总量、blob 在复制途中增长；
+* staging 后源文件被替换；
+* staging 完成后杀进程、`apply` 中途杀进程，确认重启后仍能重试；
+* 真机手工链路：iCloud Drive 导出 → 删除 App → 重装 → 导入 → 全字段与 blob SHA-256 比对。
+
+注：本地工作区当前已前进到 `89c6bad`；其中此前指出的“项目消失编码为空图”、恢复残留提示，以及总量读前检查都已落地。
+
+---
+
+继续
+
+---
+
+补那几个验收测试
+
+---
+
+整批送复审
+
+---
+
+结论：本批不能合并；P0-2 实际上尚未完成。 package/UTI、只导出新格式、恢复日志保留 staging 的方向都正确，但外部导入现在仍有一个可被绕过的资源上限。
+
+* P0：`copyItem` 会先完整复制、后检查。
+`makePlan` 后外部 blob 若被替换成超大文件或目录，`copyItem` 会先搬完全部内容；`landed` 检查发生在返回后。当前“源变大”测试用 200 KB 验证的是事后拒绝，不是复制过程受限。应改为固定块大小的 `FileHandle` 流式复制：每次写前检查单条、累计和磁盘上限；同时在复制前重新拒绝 symlink、目录和非普通文件。manifest 应保存预检时读取的有上限原始字节，直接写入 staging，避免它在确认后被替换。
+* P1：staging 前缺少项目数/blob 数限制。
+`makePlan` 遍历全部项目与 blob，但 `maxProjects` / `maxBlobCount` 仅在 staging 后的 `validate()` 执行。恶意 manifest 可先让用户确认并复制数十万个小文件，最后才被拒绝。应在 `makePlan` 同步执行同样的 count 预检；同时限制 brands、stocks、purchase records 及嵌套 items，避免 32 MB manifest 解码膨胀。
+* P1：422 MB 的复制与校验没有明确移出 UI actor。
+`performImport()` 从 SwiftUI 的 `Task` 直接同步调用 `materialize` 和 `validate`，且两者都是阻塞 I/O / 哈希。导入时进度遮罩很可能不刷新，Files/iCloud 慢时直接卡住界面。复制、预检、校验应放到明确的后台执行器；只有 `BackupArchiveReader.apply` 保留主线程的 SwiftData 写入。
+
+其余复审结论：
+
+* `com.apple.package + public.content`、不加 `CFBundleDocumentTypes`、`FileRepresentation(...openInPlace: false)` 都正确；Apple 也要求 package 文档同时具备内容语义以用于 AirDrop。[Apple UTI 文档](https://developer.apple.com/documentation/uniformtypeidentifiers/defining-file-and-data-types-for-your-app)
+* 禁止导出旧 JSON 是正确修复，避免制造“带得走却导不回来”的伪备份。
+* `RestoreJournal` 指向 staging 时不删除的生命周期处理正确，相关测试有价值。
+* 可注入限额的测试让步同意；建议封装成内部 `Limits` 值类型，不要改成运行时可配置。
+* 另有 P2：进程若在 staging rename 后、`apply()` 前被杀，会留下未被 journal 引用的 staging；启动时应删除 ImportStaging 下无 journal 引用的成品/`.partial`。UTI 的中文描述也应补 `InfoPlist.strings` 英文版本。
+
+验证：当前 HEAD 的 29 个指定测试通过，Release + `F1_BENCHMARK` 构建通过，未修改工作区。
+
+---
+
+送复审
+
+---
+
+真机手工链路ok了。下一步是啥
+
+---
+
+E — 删库兜底找错目录。 这个从第一天就挂着。ModelConfiguration.groupContainer 默认 .automatic,store 在 App Group 容器,而兜底删的是 App 自身 Application Support —— 删了个空气,然后对着原封不动的损坏库重开容器。最后一道恢复防线是失效的。要么修,要么明确接受并记录。它是破坏性操作,一直等你评审。 请你讲讲这是在噶吗
+
+---
+
+那你觉得现在的代码可以提一个pr了吗
+
+---
+
+开始
+
+---
+
+你push然后开pr。
+
+---
+
+/pr-dual-review
+
+---
+
+开工
+
+---
+
+推送
+
+---
+
+/pr-dual-review
+
+---
+
+动手
+
+---
+
+你能不能派subagent查一下？
+
+---
+
+推送 54315f8，然后再送一轮双审
+
+---
+
+我的建议是，你看看怎么改，然后你开subagent审一下，然后交给codex mcp审一下，然后再开始改。不要再拆东墙补西墙了
+
+---
+
+B
+
+---
+
+“修复 F2 要给 ArchivedBeadUsage 加 id，这是格式变更（formatVersion 1 → 2）。写出器才落地两个提交、读取器已经会拒绝未知版本，现在改是最便宜的时刻，以后只会更贵。但它意味着已经生成的新格式备份需要兼容处理。”啥意思？过去的用户的数据会发生什么变化？
+
+---
+
+继续
+
+---
+
+我们真的需要哈希吗？当然我们需要保证这些东西尽量准确，但我更希望给用户的是一个相对完整、流畅的 App。你不需要搞什么哈希校验这些东西，我不知道你在干嘛。
+
+说实话，你能告诉我现在我们的目的是什么吗？我不知道你整这么复杂是干什么，一遍又一遍把这个问题搞得这么复杂，我真的不理解我们究竟在做什么。说实话，整个 PR 我不知道我们到底是要干什么。
+
+---
+
+我觉得你可以这样做：我想请你在复审的时候，明确地告诉 reviewer 我们这个目的是什么，可以吗？
+
+你不要把其他跟这个 PR 无关的东西牵扯出来，导致范围越来越大。我当然知道这个 App 的代码里可能这个地方有问题、那个地方有点小问题，但你不能把所有跟这个东西相关的问题都合到这一个 PR 里。
+
+这个修改已经到了 5000 多行了，有必要搞得这么麻烦吗？
+
+---
+
+周一恢复到一半，恢复到一半没电关机，我们就是一个个人开发的 APP，我们需要考虑到这种他妈屌毛情况吗？
+
+是审稿人（reviewer）没动脑子，还是你也没动脑子？你能不能正常一点呀？
+
+用户闪退的时候，是因为他妈的用户突然没电了导致他闪退吗？不是吧。
+
+你能不能把主干最 baseline 的东西做好了，把这个 PR 做得小一点，可以吗？
