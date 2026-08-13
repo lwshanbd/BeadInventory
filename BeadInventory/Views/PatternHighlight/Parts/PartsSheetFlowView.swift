@@ -365,9 +365,13 @@ struct PartsSheetFlowView: View {
             }
             if live.allSatisfy(\.placements.isEmpty) { live = [] }
             self.boards = live
-            // 板子清空了就等于没排过，那一档也跟着作废 —— 留着的话下次进去会拿一档
-            // 谁都没选过的松紧去校验拖动。
-            self.boardSpacing = live.isEmpty ? nil : saved.boardSpacing
+            // 老图纸的 `.tight` 在这里一次性落定，别留给下游每次读的时候再推一遍 ——
+            // 那样「nil」就同时是「没排过」和「老数据」两个意思，判一次漏一次。
+            // 落定之后 nil 只剩一个意思：还没排过，用用户偏好。
+            //
+            // 板子清空了就等于没排过，那一档也跟着作废：留着的话下次进去自动排会照着
+            // 一套已经不存在的板子的松紧排，而不是用户当前的偏好。
+            self.boardSpacing = live.isEmpty ? nil : (saved.boardSpacing ?? .tight)
 
             // 上次做到哪儿，这次就从哪儿接着来。
             //

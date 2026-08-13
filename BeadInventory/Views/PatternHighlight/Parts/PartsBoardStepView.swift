@@ -49,7 +49,11 @@ struct PartsBoardStepView: View {
     /// 上次用的板子尺寸。同一个人手上的板子基本不会换，记着就不用每次重选。
     @AppStorage("partsBoardCols") private var savedCols = 50
     @AppStorage("partsBoardRows") private var savedRows = 50
-    /// 上次选的松紧。同理 —— 剪刀和习惯不会天天变。只在**还没排过**的板子上作数。
+    /// 上次**亲手选**的松紧。同理 —— 剪刀和习惯不会天天变。只在还没排过的板子上作数。
+    ///
+    /// 只有用户在松紧菜单里点了某一档才写这里。换板子尺寸不写：那不是在选松紧，
+    /// 而老图纸的 `spacing` 解析出来是 `.tight`，跟着写的话用户换块大板子就把自己
+    /// 在别的图纸上选的档洗成紧凑了，而且屏幕上一个字都不会提。
     @AppStorage("partsBoardSpacing") private var preferredSpacing: BoardSpacing = .standard
 
     @State private var boardIndex = 0
@@ -100,15 +104,24 @@ struct PartsBoardStepView: View {
     private struct RepackTarget: Equatable {
         var size: BeadBoardSize
         var spacing: BoardSpacing
+        /// 用户在这次操作里**亲手选了松紧**。只改板子尺寸时是 false ——
+        /// 那种情况下 `spacing` 是这张图纸原本就带的，把它写回全局偏好等于
+        /// 拿一张老图纸的 `.tight` 覆盖掉用户在别处选的档（见 `preferredSpacing`）。
+        var pickedSpacing: Bool
     }
 
     /// 这一屏所有「放得下吗」的判断都得用这一档 —— 自动排、点零件条落位、拖动校验。
     ///
     /// 排过的板子认板子自己带的那一档，**不认用户当前偏好**：偏好可能是他在别的图纸上
-    /// 改的，拿它去校验会让用户拖不回自己刚刚排出来的位置。没这个字段的老图纸算 `.tight` ——
-    /// 加松紧档位之前就只有那一种排法。
+    /// 改的，拿它去校验会让用户拖不回自己刚刚排出来的位置。
+    ///
+    /// `boardSpacing == nil` 只有一个意思：**还没排过**，那就听偏好的。老图纸的
+    /// `.tight` 在 `PartsSheetFlowView.load` 里就落定了，不在这儿推 —— 早先这里写成
+    /// `boards.isEmpty ? preferredSpacing : .tight`，于是「有没有板子」和「哪一档」
+    /// 缠在一起：`pack()` 排出零块板时（零件全比板子大）状态变成「没板子却有档位」，
+    /// 松紧菜单从此点了没反应。
     private var spacing: BoardSpacing {
-        boardSpacing ?? (boards.isEmpty ? preferredSpacing : .tight)
+        boardSpacing ?? preferredSpacing
     }
 
     /// 一次拖动的现场。见 `session` 的注释。
@@ -272,13 +285,18 @@ struct PartsBoardStepView: View {
                         // 悄悄推翻。所以换档就是一次「全部重排」，走同一个确认弹窗。
                         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
                         if boards.contains(where: { !$0.placements.isEmpty }) {
-                            repackTarget = RepackTarget(size: size, spacing: option)
-                        } else {
-                            preferredSpacing = option
-                            // 空板也要跟着改：不然屏幕上打着勾的是一档，
-                            // 手动往这块空板上放零件时守的还是另一档。
-                            if !boards.isEmpty { boardSpacing = option }
+                            repackTarget = RepackTarget(size: size, spacing: option, pickedSpacing: true)
+                            return
                         }
+                        // 板上什么都没摆，没什么可重排的，直接改。
+                        preferredSpacing = option
+                        // 空板也要跟着改：不然屏幕上打着勾的是一档，
+                        // 手动往这块空板上放零件时守的还是另一档。
+                        if !boards.isEmpty { boardSpacing = option }
+                        // 这一支不重排，屏幕上那块空板前后一模一样。不说一句的话，
+                        // 用户唯一能看到的证据是下次打开菜单时那个勾 ——
+                        // 一次点击要么有效果，要么有说法。
+                        flash(String(localized: "接下来摆的零件按\(option.label)间距放"))
                     } label: {
                         if option == spacing {
                             Label(option.label, systemImage: "checkmark")
@@ -291,7 +309,9 @@ struct PartsBoardStepView: View {
             }
             Section("全部重排成") {
                 ForEach(BeadBoardSize.presets) { size in
-                    Button(size.label) { repackTarget = RepackTarget(size: size, spacing: spacing) }
+                    Button(size.label) {
+                        repackTarget = RepackTarget(size: size, spacing: spacing, pickedSpacing: false)
+                    }
                 }
             }
             if let board = currentBoard, !board.placements.isEmpty {
@@ -682,11 +702,24 @@ struct PartsBoardStepView: View {
         let used = spacing
         let packed = PartsBoardPacker.pack(parts: parts.filter(\.hasCells), size: size, spacing: used)
         boards = packed.boards
-        boardSpacing = used
+        // 一块板都没排出来（零件全都放不进去）就是「还没排过」，那一档不能落定 ——
+        // 落定了 `spacing` 就不再听偏好，用户在菜单里换档会变成点了没反应。
+        boardSpacing = packed.boards.isEmpty ? nil : used
         boardIndex = 0
         if !packed.unplaced.isEmpty {
-            flash(String(localized: "有 \(packed.unplaced.count) 个零件比板子还大，换块大的试试"))
+            flash(unplacedNote(packed.unplaced.count, spacing: used))
         }
+    }
+
+    /// 「有几个零件没摆上去」该怎么说。
+    ///
+    /// 紧凑档放不下就是真的比板子大，只能换板。但默认/宽松档的可用区比板子小一圈，
+    /// 一个 49 宽的零件在 50×50 板上紧凑放得下、默认放不下 —— 这时候让用户去买大板子
+    /// 是把他往最贵的那条路上推，而最便宜的出路（退一档，板子不用换）反倒没人告诉他。
+    private func unplacedNote(_ count: Int, spacing: BoardSpacing) -> String {
+        spacing == .tight
+            ? String(localized: "有 \(count) 个零件比板子还大，换块大的试试")
+            : String(localized: "有 \(count) 个零件在\(spacing.label)间距下放不进去，退一档或者换块大的板")
     }
 
     private func repackAll() {
@@ -694,27 +727,29 @@ struct PartsBoardStepView: View {
         repackTarget = nil
         savedCols = target.size.cols
         savedRows = target.size.rows
-        preferredSpacing = target.spacing
+        // 只有用户亲手选了松紧才动偏好，理由见 `preferredSpacing` 和 `RepackTarget.pickedSpacing`。
+        // 写在确认之后：弹窗上点「取消」不该改任何东西。
+        if target.pickedSpacing { preferredSpacing = target.spacing }
         let packed = PartsBoardPacker.pack(parts: parts.filter(\.hasCells),
                                            size: target.size, spacing: target.spacing)
         boards = packed.boards
-        boardSpacing = target.spacing
+        boardSpacing = packed.boards.isEmpty ? nil : target.spacing
         boardIndex = 0
         selection = nil
         highlightKey = nil
         resetView()
-        // 说清「按哪一档排的」：换松紧最直观的反馈就是板数变了几块，
+        // 说清「按哪一档排的、排成几块」：换松紧最直观的反馈就是板数变了几块，
         // 而看到板数之前用户得先确认自己换的那一档真的生效了。
+        // 有摆不下的也照样报板数 —— 这一下是销毁性的（手动挪的位置全没了），
+        // 只说坏消息不说结果的话，用户不知道自己现在手上还剩什么。
         flash(packed.unplaced.isEmpty
               ? String(localized: "按\(target.spacing.label)间距排好了，一共 \(packed.boards.count) 块板")
-              : String(localized: "有 \(packed.unplaced.count) 个零件比板子还大，换块大的试试"))
+              : String(localized: "按\(target.spacing.label)间距排了 \(packed.boards.count) 块板，还有 \(packed.unplaced.count) 个没摆下"))
     }
 
     /// 把还没摆的零件接着往板上放：先塞现有的板，塞不下再开新的。
     private func fillRemaining() {
         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
-        // 先读下来再动 boards：`spacing` 在还没有板子时读的是用户偏好，一旦
-        // placeOne 开了第一块板，同一个表达式就会改口去读板子自己的那一档（此刻还是 nil）。
         let used = spacing
         var occupancies = boards.map { PartsBoardPacker.occupancy(of: $0, parts: parts, spacing: used) }
         var added = 0
@@ -731,7 +766,7 @@ struct PartsBoardStepView: View {
 
         flash(added > 0
               ? String(localized: "又摆上去 \(added) 个")
-              : String(localized: "这些零件比板子还大，摆不进去"))
+              : unplacedNote(unplaced.count, spacing: used))
     }
 
     /// 点了零件条里的一个零件：落到当前这块板上；这块满了就新开一块并切过去。
@@ -739,7 +774,6 @@ struct PartsBoardStepView: View {
         // 这里只认**当前这块板**（用户点的时候看着的就是它），所以不走 packer 的
         // placeOne（那个会挨块板试过去）；「怎么摆」的规矩还是共用 packer 那一份。
         let options = PartsBoardPacker.candidates(for: part)
-        // 理由同 fillRemaining：下面可能新开一块板，读在前面才不会中途改口。
         let used = spacing
 
         if let board = currentBoard,
@@ -756,7 +790,7 @@ struct PartsBoardStepView: View {
         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
         guard let hit = PartsBoardPacker.fit(
             options, in: BoardOccupancy(cols: size.cols, rows: size.rows, spacing: used)) else {
-            flash(String(localized: "这个零件比板子还大，换块大的试试"))
+            flash(unplacedNote(1, spacing: used))
             return
         }
         var board = PartsBoard(size: size)
