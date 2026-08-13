@@ -85,7 +85,7 @@ struct SinglePatternHighlightStepView: View {
                 counts[code, default: 0] += 1
             }
         }
-        let legend = Set(currentProject.beadUsage.map(\.colorCode))
+        let legend = Set(legendUsage.map(\.colorCode))
         return counts
             .map {
                 ColorPaletteBar.Entry(code: $0.key, count: $0.value,
@@ -93,6 +93,34 @@ struct SinglePatternHighlightStepView: View {
                                       color: color(for: $0.key))
             }
             .sorted { $0.count > $1.count }
+    }
+
+    /// 图纸色号表，**色号翻成当前体系的显示码之后**的样子。
+    ///
+    /// `beadUsage.colorCode` 存的是 canonical mardCode，而格子里存的是显示码。
+    /// 不翻这一道的话，卡卡 / COCO 这类非 MARD 图纸上两边一个都对不上：
+    /// 每个色号都被判成「表上没有」（底下全是虚线圈），顶上那条「跟图纸写的对不上」
+    /// 会把所有色号一并算进去 —— 而其实一个都没错。
+    private var legendUsage: [BeadUsage] {
+        currentProject.beadUsage.map { usage in
+            BeadUsage(id: usage.id,
+                      colorCode: displayCode(for: usage.colorCode),
+                      brandId: usage.brandId,
+                      quantity: usage.quantity,
+                      isDeducted: usage.isDeducted)
+        }
+    }
+
+    private func displayCode(for canonical: String) -> String {
+        inventoryManager.findColor(byMardCode: canonical)?
+            .displayCode(for: currentProject.colorSystem) ?? canonical
+    }
+
+    /// 显示码 → 色号表里那个 canonical 码。写回项目时必须翻回去：
+    /// `updatePlannedProjectUsage` 是按 colorCode 精确匹配的，对不上就**什么都不做也不报错** ——
+    /// 用户点了「采纳网格数」之后毫无反应，而他没有任何办法知道为什么。
+    private func canonicalCode(for display: String) -> String {
+        currentProject.beadUsage.first { displayCode(for: $0.colorCode) == display }?.colorCode ?? display
     }
 
     /// 色号 → 色库里那颗豆子的颜色。
@@ -169,10 +197,11 @@ struct SinglePatternHighlightStepView: View {
         .onDisappear { BoardCastSession.shared.stop() }
         .sheet(isPresented: $showingDiffSheet) {
             ValidationDiffSheet(
-                diffs: GridValidator.mismatches(grid: grid, beadUsage: currentProject.beadUsage),
+                diffs: GridValidator.mismatches(grid: grid, beadUsage: legendUsage),
                 onAdoptGridForCode: { code, gridCount in
+                    // 界面上是显示码，库里存的是 canonical 码，写回去要翻回来（见 canonicalCode）
                     inventoryManager.updatePlannedProjectUsage(currentProject.id,
-                                                               colorCode: code,
+                                                               colorCode: canonicalCode(for: code),
                                                                newQuantity: gridCount)
                 }
             )
@@ -183,7 +212,7 @@ struct SinglePatternHighlightStepView: View {
 
     @ViewBuilder
     private var mismatchBanner: some View {
-        let mismatches = GridValidator.mismatches(grid: grid, beadUsage: currentProject.beadUsage)
+        let mismatches = GridValidator.mismatches(grid: grid, beadUsage: legendUsage)
         if !mismatches.isEmpty && !dismissedBanner {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")

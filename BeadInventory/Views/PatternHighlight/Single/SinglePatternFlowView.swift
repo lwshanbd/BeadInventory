@@ -184,6 +184,9 @@ struct SinglePatternFlowView: View {
                                 parts: sheetParts,
                                 colorSystem: project.colorSystem,
                                 legendCounts: legendCounts,
+                                // 核对完一个色号就落盘。一张图纸几千格，
+                                // 对到一半退出去不该白对（同多零件模式）。
+                                onConfirmGroup: { persist() },
                                 onFinish: {
                                     persist()
                                     path = [.grid, .baseColor, .review, .highlight]
@@ -302,9 +305,16 @@ struct SinglePatternFlowView: View {
     }
 
     /// 上一步 AI 读色号表得到的「每个色号多少颗」。核对颜色那屏拿它当参照。
+    ///
+    /// **key 要翻成当前体系的显示码**：`beadUsage.colorCode` 存的是 canonical mardCode，
+    /// 而格子里存的是显示码，不翻的话卡卡 / COCO 图纸上两边一个都对不上，
+    /// 「认出 X 颗 / 图纸写 Y 颗」的后半截一个字都不显示。
+    /// 详细的坑（包括翻不对的那一种）见 `PartsSheetFlowView.legendCounts`。
     private var legendCounts: [String: Int] {
         project.beadUsage.reduce(into: [:]) { result, usage in
-            result[usage.colorCode, default: 0] += usage.quantity
+            let key = inventoryManager.findColor(byMardCode: usage.colorCode)?
+                .displayCode(for: project.colorSystem) ?? usage.colorCode
+            result[key, default: 0] += usage.quantity
         }
     }
 
