@@ -43,9 +43,20 @@ struct PartsBaseColorStepView: View {
     @Binding var anyColorHex: String?
     let onContinue: () -> Void
 
+    /// 要不要问「任意色」。单图纸模式不要：任意色是立体图纸色号表里的一行字，
+    /// 平面图纸上没有这个概念，摆在那儿只会让用户去猜自己是不是漏点了什么。
+    var showsAnyColor: Bool = true
+    /// 「底色」那一行的副标题。单图纸上底色是格子之外的留白，不是「零件外面」。
+    var emptyHint: LocalizedStringKey = "零件外面那一片，不用放豆子"
+    var title: LocalizedStringKey = "底色和任意色"
+
     private enum Slot { case empty, anyColor }
 
     @State private var armed: Slot = .anyColor
+
+    /// 这一点要指认哪一个。不显示任意色时永远是底色 —— 用 `armed` 的初值去迁就
+    /// 两种模式，只会在某次改初值时静默把单图纸的点击全喂给一个看不见的槽。
+    private var activeSlot: Slot { showsAnyColor ? armed : .empty }
     /// 上一次点图没取到颜色时要说的那句话。nil = 一切正常。
     @State private var note: String?
     @State private var image: UIImage?
@@ -73,7 +84,7 @@ struct PartsBaseColorStepView: View {
             canvas
             footer
         }
-        .navigationTitle("底色和任意色")
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         // 工作图也算进 id：低清兜底版换成高清版之后要重裁，否则取色取的是糊图
         .task(id: "\(work.image.size)") { await load() }
@@ -149,17 +160,19 @@ struct PartsBaseColorStepView: View {
             slotRow(
                 slot: .empty,
                 title: String(localized: "底色（空白）"),
-                hint: String(localized: "零件外面那一片，不用放豆子"),
+                hint: emptyHint,
                 hex: emptyHex
             )
-            slotRow(
-                slot: .anyColor,
-                title: String(localized: "任意色"),
-                hint: anyColorHex == nil
-                    ? String(localized: "色号表里写「任意色」的那种豆子，没有就不用点")
-                    : String(localized: "用什么颜色的豆子拼都行"),
-                hex: anyColorHex
-            )
+            if showsAnyColor {
+                slotRow(
+                    slot: .anyColor,
+                    title: String(localized: "任意色"),
+                    hint: anyColorHex == nil
+                        ? "色号表里写「任意色」的那种豆子，没有就不用点"
+                        : "用什么颜色的豆子拼都行",
+                    hex: anyColorHex
+                )
+            }
 
             if let note {
                 Text(note)
@@ -168,7 +181,7 @@ struct PartsBaseColorStepView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text(armed == .empty
+                Text(activeSlot == .empty
                      ? "现在点图上的**底色**"
                      : "现在点图上的**任意色**豆子")
                     .font(.footnote)
@@ -185,7 +198,7 @@ struct PartsBaseColorStepView: View {
         .background(.regularMaterial)
     }
 
-    private func slotRow(slot: Slot, title: String, hint: String, hex: String?) -> some View {
+    private func slotRow(slot: Slot, title: String, hint: LocalizedStringKey, hex: String?) -> some View {
         Button {
             armed = slot
         } label: {
@@ -228,11 +241,11 @@ struct PartsBaseColorStepView: View {
             .padding(Theme.Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
-                    .fill(armed == slot ? Theme.ColorToken.Morandi.honey.opacity(0.15) : Color.clear)
+                    .fill(activeSlot == slot ? Theme.ColorToken.Morandi.honey.opacity(0.15) : Color.clear)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
-                    .stroke(armed == slot ? Theme.ColorToken.Morandi.honey : Color.clear, lineWidth: 1.5)
+                    .stroke(activeSlot == slot ? Theme.ColorToken.Morandi.honey : Color.clear, lineWidth: 1.5)
             )
         }
         .buttonStyle(.plain)
@@ -270,11 +283,11 @@ struct PartsBaseColorStepView: View {
             guard let hex else {
                 // 屏幕上正写着「现在点图上的任意色豆子」，用户照做了。
                 // 静默 return 的话他只会一直点，什么都不发生。
-                note = String(localized: "这里取不到颜色，换个地方点点看。要是哪儿都取不到，退回零件清单那屏，用上面的提示条补一张原图就清楚了。")
+                note = String(localized: "这里取不到颜色，换个地方点点看。要是哪儿都取不到，退回第一屏，用上面的提示条补一张原图就清楚了。")
                 return
             }
             note = nil
-            switch armed {
+            switch activeSlot {
             case .empty: emptyHex = hex
             case .anyColor: anyColorHex = hex
             }

@@ -76,6 +76,26 @@ actor ProjectImageLoader {
         return SDProjectRecord.decodePatternGrid(data, projectId: projectId)
     }
 
+    /// 同 `patternGrid(for:)`，但把「没做过」和「读不出来」分开。
+    ///
+    /// 单图纸流程要拿它决定**能不能覆写**：网格里存着用户一个色号一个色号核对过的
+    /// 几千格结果，跟多零件那份是同一量级的活。只拿到 nil 的话，流程会把用户当成
+    /// 新用户扔回第一屏，而他往下走一步就用新结果把那份只是暂时打不开的字节永久盖掉。
+    /// 理由和三态本身都同 `partsSheet(for:)`。
+    func patternGridLoad(for projectId: UUID) -> PatternGridLoad {
+        switch fetchColumnResult(projectId: projectId, keyPath: \.patternGridData, event: "pattern_grid") {
+        case .failure:
+            return .unreadable
+        case .success(.none):
+            return .missing
+        case .success(.some(let data)):
+            guard let grid = SDProjectRecord.decodePatternGrid(data, projectId: projectId) else {
+                return .unreadable
+            }
+            return .loaded(grid)
+        }
+    }
+
     /// 多零件模式的图纸数据（零件框 / 调色板 / 格子标定）。同样是小字节，走后台的理由
     /// 也一样 —— 它总是跟 `thumbnail` 一起被取。
     ///
@@ -225,5 +245,13 @@ enum PartsSheetLoad: Sendable {
     case missing
     case loaded(BeadPartsSheet)
     /// 有字节但这次取不出来 / 解不开。**不能当成「没有」**，覆写要停下来问用户。
+    case unreadable
+}
+
+/// 读一份单图纸网格的结果。三态的理由完全同 `PartsSheetLoad` ——
+/// 网格里同样存着用户逐格核对过的成果，「读不出来」当成「没做过」一样会把它盖掉。
+enum PatternGridLoad: Sendable {
+    case missing
+    case loaded(BeadPatternGrid)
     case unreadable
 }

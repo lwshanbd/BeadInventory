@@ -35,7 +35,7 @@ struct BoardExternalDisplayView: View {
                                 board: content.board,
                                 footprints: content.footprints,
                                 colorCache: content.colorCache,
-                                highlightKey: content.highlightKey
+                                highlightKeys: content.highlightKeys
                             )
                             // padding 交给外面那层 .padding(24) —— 这里再留一次的话
                             // 每边就是 48pt 死边，而这块屏幕存在的意义就是铺满。
@@ -54,7 +54,10 @@ struct BoardExternalDisplayView: View {
                     Image(systemName: "square.grid.3x3")
                         .font(.system(size: 64))
                         .foregroundStyle(.white.opacity(0.35))
-                    Text("在手机上摆好拼豆板，这里就会显示")
+                    // 两种模式都会走到这儿（多零件的拼豆板、单图纸的高亮页），
+                    // 所以这句话不能只提其中一个 —— 用户按着提示去开另一个，
+                    // 只会得出「投屏坏了」的结论。
+                    Text("在手机上打开拼图模式，这里就会跟着显示")
                         .font(.title3)
                         .foregroundStyle(.white.opacity(0.7))
                 }
@@ -62,12 +65,12 @@ struct BoardExternalDisplayView: View {
         }
     }
 
-    /// 底下一行：第几块板、正在只看哪个色号。
-    /// 拼的人抬头看的就这两件事 —— 我拼的是哪一块，现在该找哪个颜色。
+    /// 底下一行：我在哪儿、现在该找哪个颜色。
+    /// 拼的人抬头看的就这两件事（左边那句由手机那边给：多零件是第几块板，单图纸是多少格）。
     private func caption(for content: BoardCastSession.Content) -> some View {
         HStack(spacing: 20) {
-            Text("第 \(content.boardIndex + 1) / \(content.boardCount) 块")
-            if let key = content.highlightKey {
+            Text(content.caption)
+            ForEach(content.highlightKeys.sorted(), id: \.self) { key in
                 HStack(spacing: 8) {
                     // fallback 跟板子上用的是同一个（BoardCanvas 的 fillColor）——
                     // 两边不一样的话，同一个色号在图例上和板子上会是两个颜色，

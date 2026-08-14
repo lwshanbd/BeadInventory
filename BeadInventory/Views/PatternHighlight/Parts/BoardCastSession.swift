@@ -2,7 +2,7 @@
 //  BoardCastSession.swift
 //  BeadInventory
 //
-//  拼豆板往外接屏幕上投的那份状态
+//  往外接屏幕上投的那份状态（多零件的拼豆板 / 单图纸的整张图纸都走这里）
 //
 //  ## 为什么要有它
 //
@@ -17,9 +17,15 @@
 //
 //  ## 它只是一块白板
 //
-//  这里刻意不放任何逻辑：拼豆板那一屏在显示的时候把「现在该画什么」写进来，
+//  这里刻意不放任何逻辑：手机上那一屏在显示的时候把「现在该画什么」写进来，
 //  外屏那个窗口读出来画。谁都不知道对方存不存在 —— 没接外屏时这里的写入没人读，
-//  没打开拼豆板时外屏显示一句「在手机上打开拼豆板」。
+//  手机上没打开对应那一屏时外屏显示一句话告诉用户去哪儿开。
+//
+//  ## 单图纸也是「一块板」
+//
+//  单图纸模式送过来的是**整张图纸当成一块板、一个占满全板的「零件」**。
+//  形状上它跟拼豆板没有区别（都是「哪一格放哪个色号」），画法因此完全共用 ——
+//  为它另写一套渲染，只会在改高亮规则时漏掉一边，而用户是对着电视拼的，一眼就看得出来。
 //
 
 import SwiftUI
@@ -33,7 +39,7 @@ final class BoardCastSession: ObservableObject {
     @Published private(set) var content: Content?
     /// 外屏（电视 / 投影仪）连上了没有。
     ///
-    /// 拼豆板那一屏据此显示「投屏中」—— 用户接了 AirPlay 之后第一件想确认的就是
+    /// 手机那一屏据此显示「投屏中」—— 用户接了 AirPlay 之后第一件想确认的就是
     /// 「到底投上了没有」，而他多半人在电视那头，手机屏幕上得有个准信。
     @Published var externalConnected = false
 
@@ -41,17 +47,17 @@ final class BoardCastSession: ObservableObject {
         let board: PartsBoard
         let footprints: [UUID: PartFootprint]
         let colorCache: [String: Color]
-        /// 手机上选了只看某个色号时，外屏也只亮那个 —— 用户抬头找的就是它
-        let highlightKey: String?
-        /// 第几块（**从 0 数起**，显示的时候记得 +1）/ 共几块。拼的人需要知道自己在哪一块上。
-        let boardIndex: Int
-        let boardCount: Int
+        /// 手机上选了只看哪几个色号，外屏也只亮它们 —— 用户抬头找的就是它
+        let highlightKeys: Set<String>
+        /// 外屏底下那一行左边写什么。多零件是「第 3 / 7 块」，单图纸是图纸有多少格。
+        /// 由手机那边给现成的句子：这里不知道自己在为哪种模式服务，也不该知道。
+        let caption: String
     }
 
     private init() {}
 
     /// 这里不比「有没有变」—— 里面装着几十个零件的形状，比一遍比直接赋值还贵。
-    /// 判断的责任在调用方：`PartsBoardStepView` 的 `castSignature`。
+    /// 判断的责任在调用方（`PartsBoardStepView.castSignature` / `SinglePatternHighlightStepView`）。
     /// 改那个 signature 的时候记得，漏掉一项的代价是电视上停着一块过期的板。
     func update(_ content: Content) {
         self.content = content
