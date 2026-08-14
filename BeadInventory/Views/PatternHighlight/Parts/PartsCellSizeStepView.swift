@@ -61,6 +61,20 @@ struct PartsCellSizeStepView: View {
     let onConfirmPart: () -> Void
     let onContinue: () -> Void
 
+    // 单图纸模式（`SinglePatternFlowView`）对的是**整张图纸**，它把整张图纸当成一个
+    // 「零件」交给这一屏 —— 量格子这件事两种模式一模一样，没有理由再写一份。
+    // 下面两个开关只改称呼和一个按钮，算法一个字都不分叉。
+    /// 这一屏在对什么。nil = 「零件 N」+「第几 / 共几个」（多零件）。
+    var subjectLabel: LocalizedStringKey?
+    /// 能不能删掉当前这个。单图纸不能：删掉整张图纸没有任何意义。
+    var allowsDelete = true
+    /// 「清掉颜色重新对格子」到底会清掉多少。**默认按多零件说实话**：
+    /// 那边「再判一次」走的是 `runClassification()`，它重判**整张图纸的每一个零件**
+    /// 并整个替换 `parts` —— 只说「清掉这一个」是骗人，四十九个零件手工核对过的
+    /// 颜色会一起没。单图纸只有一块，所以那边传自己的说法。
+    var regridCost: LocalizedStringKey =
+        "这个零件判好的颜色会清掉。之后重判一次会把**整张图纸所有零件**的颜色一起重判。框和位置不动。"
+
     /// 当前正在看哪个零件（按面积从大到小）。大零件格线多，最容易看出没对齐。
     @State private var sampleIndex = 0
     @State private var sampleImage: UIImage?
@@ -77,6 +91,8 @@ struct PartsCellSizeStepView: View {
     /// 正要删掉的那个零件。删一个零件会连带丢掉它已经判好的颜色和摆好的位置，
     /// 而这一屏是一下就能点到的，所以问一句。
     @State private var deletingPart: BeadPart?
+    /// 正要为了改格子清掉这一块判好的颜色。见 `pitchLocked` 旁边那个按钮。
+    @State private var unlockingPitch = false
 
     @State private var zoom: CGFloat = 1
     @State private var lastZoom: CGFloat = 1
@@ -234,6 +250,16 @@ struct PartsCellSizeStepView: View {
         } message: {
             Text("它已经判好的颜色、在拼豆板上的位置都会一起没掉。")
         }
+        .confirmationDialog(
+            "重新对格子大小？",
+            isPresented: $unlockingPitch,
+            titleVisibility: .visible
+        ) {
+            Button("清掉颜色，重新对", role: .destructive) { clearCellsForRegrid() }
+            Button("取消", role: .cancel) { unlockingPitch = false }
+        } message: {
+            Text(regridCost)
+        }
     }
 
     /// 删掉当前这个零件。删完停在原地 —— 后面那个会顶上来，正好接着看。
@@ -290,7 +316,10 @@ struct PartsCellSizeStepView: View {
                         .position(x: geo.size.width / 2, y: geo.size.height / 2)
                 }
             }
-            .onAppear { canvasSize = geo.size }
+            .onAppear {
+                canvasSize = geo.size
+                focusIfTooDense()
+            }
             .onChange(of: geo.size) { _, new in canvasSize = new }
         }
         .clipped()
@@ -380,7 +409,7 @@ struct PartsCellSizeStepView: View {
         VStack(spacing: Theme.Spacing.md) {
             if let sample {
                 HStack(spacing: Theme.Spacing.sm) {
-                    Text(sample.displayName(order: sampleIndex))
+                    Text(subjectLabel ?? LocalizedStringKey(sample.displayName(order: sampleIndex)))
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(Theme.ColorToken.Text.primary)
                     // 对过的打个勾。用户翻回来时要能一眼看出「这个我确认过了」——
@@ -396,20 +425,25 @@ struct PartsCellSizeStepView: View {
                             .foregroundColor(Theme.ColorToken.Text.tertiary)
                     }
                     Spacer()
-                    // 一个一个过的时候才发现「这块根本不是零件」（水印、一行字）是常事，
-                    // 而这一屏原来只能退回零件清单去删，回来又得从头翻。
-                    Button(role: .destructive) {
-                        deletingPart = sample
-                    } label: {
-                        Image(systemName: "trash").font(.footnote)
+                    if allowsDelete {
+                        // 一个一个过的时候才发现「这块根本不是零件」（水印、一行字）是常事，
+                        // 而这一屏原来只能退回零件清单去删，回来又得从头翻。
+                        Button(role: .destructive) {
+                            deletingPart = sample
+                        } label: {
+                            Image(systemName: "trash").font(.footnote)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(Theme.ColorToken.Status.error)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundColor(Theme.ColorToken.Status.error)
                     // 还剩几个要看。一个一个过的时候，「还有多少」是唯一会让人
                     // 愿意继续按下去的信息 —— 不写的话按第三下就开始怀疑没有尽头。
-                    Text("\(sampleIndex + 1) / \(samples.count)")
-                        .font(.footnote.monospacedDigit())
-                        .foregroundColor(Theme.ColorToken.Text.tertiary)
+                    // 只有一个的时候不写：「1 / 1」只会让用户去找另外那些。
+                    if samples.count > 1 {
+                        Text("\(sampleIndex + 1) / \(samples.count)")
+                            .font(.footnote.monospacedDigit())
+                            .foregroundColor(Theme.ColorToken.Text.tertiary)
+                    }
                 }
             }
 
@@ -446,12 +480,36 @@ struct PartsCellSizeStepView: View {
                         // 判过色的零件改不了格距（改了行列数，已经核对好的颜色会整片错位），
                         // 所以下面那几个按钮是灰的。灰着不说话是最难受的一种 ——
                         // 用户会以为 App 坏了，而不是「这里本来就不让改」。
+                        // 锁住时这句话只回答一件事：**现在能做什么**。
+                        // 「这个已经判过色了，格子大小暂时改不了 —— 改了颜色会整片错位」
+                        // 是在讲系统内部出了什么事，用户要的是「我能干嘛、代价是什么」。
+                        // 「每个零件各有各的格线」在单图纸模式下也是废话：一共就一张图纸。
                         Text(pitchLocked
-                             ? "这个零件已经判过色了，格子大小改不了 —— 改了颜色会整片错位。推格线还能用。"
-                             : "网格线要落在豆子和豆子的缝上。每个零件各有各的格线。")
+                             ? "颜色判好了：推格线可以，改格子大小要重判一次。"
+                             : (samples.count > 1
+                                ? "网格线要落在豆子和豆子的缝上。每个零件各有各的格线。"
+                                : "网格线要落在豆子和豆子的缝上。"))
                             .font(.footnote)
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+
+                        // 灰按钮必须给一条出路。
+                        //
+                        // 用户回到这一屏，十有八九就是因为格子不对；而判过色之后
+                        // 「一格多少像素」「自动对齐」「重选格子大小」全是灰的 ——
+                        // 他手里于是一件能改格子的工具都没有，只剩「这几个按钮是摆设」这一个结论。
+                        // 单图纸模式尤其致命：只有一块，没有别的零件可以退而求其次。
+                        //
+                        // 所以把代价明说出来，让他自己决定：清掉这一块的颜色，格子就能改了。
+                        // 反正往下走本来就要重判一次色。
+                        if pitchLocked {
+                            Button(role: .destructive) {
+                                unlockingPitch = true
+                            } label: {
+                                Label("重新对格子大小", systemImage: "arrow.counterclockwise")
+                                    .font(.footnote)
+                            }
+                        }
 
                         // 一格多少像素，加减号一次动 0.1 个像素。
                         //
@@ -687,6 +745,9 @@ struct PartsCellSizeStepView: View {
         alignedAtCellWidth = calibration?.cellWidth
         syncFrameToLattice()
         writeBack()
+        // 第一次量整张图纸时，`loadSample` 里那一次对焦跑在 calibration 还没算出来的时候，
+        // 什么都没做。不在这儿补一次的话，用户第一眼看到的正是这个函数存在的理由：一片糊。
+        focusIfTooDense()
     }
 
     private func fallbackCalibration() -> PartsGridCalibration? {
@@ -778,10 +839,35 @@ struct PartsCellSizeStepView: View {
         sampleImage = cropped
         sampleRegion = padded
         syncFrameToLattice()
+        focusIfTooDense()
         // 翻到一个零件就先按当前格距给它对一次 —— 用户翻过来看到的应该是已经对好的，
         // 而不是「上一个零件的格线平移过来」。它有自己的格线，跟别的零件没关系。
         guard !Task.isCancelled else { return }
         await refit(part: sample)
+    }
+
+    /// 一格在屏幕上太小就先替用户放大到看得清。
+    ///
+    /// 零件一般十来格，铺满画布之后一格二三十点，本来就够看；单图纸模式把**整张图纸**
+    /// 当成一个零件送进来，铺满之后一格只剩四五个点 —— 几百条格线糊成一片色，
+    /// 而这一屏的验收标准恰恰是「线有没有落在豆子的缝上」。看不清就等于没法验收，
+    /// 用户只能对着一片糊按「对齐了」。
+    ///
+    /// 门槛卡在 10 点：零件基本碰不到，碰到的都是真的看不清。
+    private func focusIfTooDense() {
+        guard zoom == 1, let calibration, calibration.isUsable,
+              displayRect.width > 0, sampleRegion.width > 0, canvasSize.width > 0 else { return }
+        let cellPoints = CGFloat(calibration.cellWidth) / sampleRegion.width * displayRect.width
+        guard cellPoints > 0, cellPoints < 10 else { return }
+        zoom = max(1, min(16, 18 / cellPoints))
+        lastZoom = zoom
+        // 对准零件正中：边角多半是留白，看不出对没对齐
+        let flat = PartsCanvasTransform(region: sampleRegion, display: displayRect,
+                                        size: canvasSize, zoom: zoom, pan: .zero)
+        let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+        let target = flat.screen(CGPoint(x: sampleRegion.midX, y: sampleRegion.midY))
+        pan = clampPan(CGSize(width: center.x - target.x, height: center.y - target.y))
+        lastPan = pan
     }
 
     /// 把黄框摆到零件正中那一格。
@@ -958,6 +1044,23 @@ struct PartsCellSizeStepView: View {
         sample?.hasCells == true
     }
 
+    /// 清掉这一块判好的颜色，把格距的锁解开 —— 用户明说要改格子时才走这条。
+    /// 立刻落盘：这一屏别的改动都是当场存的，唯独这一下不存的话，
+    /// 用户改完格子退出去，回来看到的是「颜色还在、格子又变了」的一堆错位。
+    private func clearCellsForRegrid() {
+        guard let sample, let index = parts.firstIndex(where: { $0.id == sample.id }) else { return }
+        // 改一次写回一次。连着两次 `parts[index].x = y` 是两轮 get→mutate→set，
+        // 而单图纸模式那边的 binding getter 是从 @State 现拼出来的 ——
+        // 第二次拿到的可能还是旧值，把第一次清掉的格子又装回去
+        // （同 `PartsBoardStepView.DragSession` 栽过的那一次）。
+        var updated = parts[index]
+        updated.cells = []
+        updated.gridConfirmed = nil
+        parts[index] = updated
+        unlockingPitch = false
+        onConfirmPart()
+    }
+
     /// 记下「这个零件我亲手对过了」。点主按钮往下走的时候调。
     private func confirmCurrentPart() {
         guard let sample, let index = parts.firstIndex(where: { $0.id == sample.id }) else { return }
@@ -1054,7 +1157,8 @@ struct PartsCanvasTransform {
 
 // MARK: - 网格线
 
-private struct CellGridOverlay: View {
+/// 网格线的画法。跟「一格」那个黄框（`CellFrameOverlay`）分开，两者不会同时出现。
+struct CellGridOverlay: View {
     let grid: PartsGrid
     let transform: PartsCanvasTransform
 
@@ -1085,7 +1189,8 @@ private struct CellGridOverlay: View {
 
 // MARK: - 「一格」那个框
 
-private struct CellFrameOverlay: View {
+/// 同 `CellGridOverlay`：两种模式共用。
+struct CellFrameOverlay: View {
     /// 已经换算好的屏幕矩形
     let rect: CGRect
 

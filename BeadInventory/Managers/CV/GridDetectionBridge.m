@@ -2,7 +2,8 @@
 //  GridDetectionBridge.m
 //  BeadInventory
 //
-//  OpenCV 算法的 Obj-C 包装。Swift 侧用 GridDetectionService 调用。
+//  OpenCV 算法的 Obj-C 包装。**当前没有任何 Swift 调用方** ——
+//  原来的 GridDetectionService 已随单图纸模式重构删除，网格现在由 PartsPitchEstimator 量。
 //
 
 #import "GridDetectionBridge.h"

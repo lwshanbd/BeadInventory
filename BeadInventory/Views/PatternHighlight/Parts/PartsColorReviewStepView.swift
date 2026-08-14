@@ -30,6 +30,13 @@ struct PartsColorReviewStepView: View {
     let onConfirmGroup: () -> Void
     let onFinish: () -> Void
 
+    /// 有没有「任意色」这一档。单图纸模式没有（理由见 `PartsBaseColorStepView.showsAnyColor`），
+    /// 那一档的按钮也就不该出现 —— 点了会在图纸上留下一种它根本不该有的格子。
+    var allowsAnyColor: Bool = true
+    /// 主按钮怎么说。多零件的下一步是摆拼豆板，单图纸的下一步是照着高亮拼。
+    var finishTitle: (Int) -> Text = { Text("去摆拼豆板 · 一共 \($0) 颗") }
+    var finishIcon: String = "square.grid.3x3"
+
     @EnvironmentObject var inventoryManager: InventoryManager
 
     @State private var selectedGroup: PartCellFill = .empty
@@ -194,7 +201,8 @@ struct PartsColorReviewStepView: View {
 
     private var cellGrid: some View {
         ScrollView {
-            let refs = cells(of: selectedGroup)
+            let all = cells(of: selectedGroup)
+            let refs = Array(all.prefix(Self.maxDisplayedCells))
             if refs.isEmpty {
                 ContentUnavailableView(
                     "这个颜色一格也没有",
@@ -223,6 +231,18 @@ struct PartsColorReviewStepView: View {
                     }
                 }
                 .padding(Theme.Spacing.lg)
+
+                if all.count > refs.count {
+                    // 铺出来的没有全部，就把这件事说清楚 —— 少铺几格不是错，
+                    // 让用户以为「这个色号只有三千格」才是。
+                    Text("这个色号一共 \(all.count) 格，上面只铺出前 \(refs.count) 格。下面那三个按钮在没选中任何一格时，作用于全部 \(all.count) 格。")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, Theme.Spacing.lg)
+                        .padding(.bottom, Theme.Spacing.lg)
+                }
             }
         }
         .scrollDisabled(marquee)
@@ -318,14 +338,16 @@ struct PartsColorReviewStepView: View {
                 }
                 .buttonStyle(.bordered)
 
-                Button {
-                    if selection.isEmpty { selectWholeGroup() }
-                    apply(.anyColor)
-                } label: {
-                    Label(selection.isEmpty ? "这类是任意色" : "任意色", systemImage: "wand.and.stars")
-                        .frame(maxWidth: .infinity)
+                if allowsAnyColor {
+                    Button {
+                        if selection.isEmpty { selectWholeGroup() }
+                        apply(.anyColor)
+                    } label: {
+                        Label(selection.isEmpty ? "这类是任意色" : "任意色", systemImage: "wand.and.stars")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
 
                 Button {
                     if selection.isEmpty { selectWholeGroup() }
@@ -353,8 +375,12 @@ struct PartsColorReviewStepView: View {
             .disabled(confirmed.contains(groupKey(selectedGroup)) && unconfirmed.isEmpty)
 
             Button(action: onFinish) {
-                Label("去摆拼豆板 · 一共 \(totalBeads) 颗", systemImage: "square.grid.3x3")
-                    .frame(maxWidth: .infinity)
+                Label {
+                    finishTitle(totalBeads)
+                } icon: {
+                    Image(systemName: finishIcon)
+                }
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
         }
@@ -500,16 +526,22 @@ struct PartsColorReviewStepView: View {
     /// 把当前这一组的格子从图纸上原样抠出来。
     /// 用真实像素而不是画一个平均色的方块 —— 平均色是算法自己的结论，
     /// 拿它给用户看等于让算法自证清白；原图才能露出「这格其实压在两颗豆子之间」这种错。
+    /// 最多铺多少格。
+    ///
+    /// 这里曾经封顶 1500，被拿掉过一次 —— 当时的理由是对的：H7 有 2901 格，
+    /// 第 1501 格往后全是灰底空方块，用户看到的是「一大堆不知道为什么存在的空白格」，
+    /// 而且那些格子照样能选、能改。**那个坑现在靠说清楚来避免**（见 `cellGrid` 里那句话），
+    /// 而且整类操作依然覆盖全部格子。
+    ///
+    /// 重新封顶是因为单图纸模式：一张平面图纸动辄七万格，光「空」这一类就有五万多，
+    /// 五万张小图 + 五万个列表项，用户等的是几十秒的白屏，而他要看的东西前两屏就看完了。
+    /// 3000 挑得比任何一个零件模式下见过的色号都大，多零件那边实际不会被它挡到。
+    private static let maxDisplayedCells = 3000
+
     private func loadSwatches() async {
-        let refs = cells(of: selectedGroup)
+        let refs = Array(cells(of: selectedGroup).prefix(Self.maxDisplayedCells))
         let snapshot = parts
         let source = work
-        // 这一组有多少格就抠多少格。
-        //
-        // 这里曾经封顶 1500 个，理由是「再多用户也不会一个个看」—— 结果 H7 有 2901 格，
-        // 第 1501 格往后全是灰底空方块，用户看到的是「一大堆不知道为什么存在的空白格」，
-        // 而且那些格子还照样能被选中、被改。抠一格只是对已解码的大图取个子矩形，
-        // 几千次也是毫秒级，本来就不值得为它牺牲正确性。
         let built = await Task.detached(priority: .userInitiated) { () -> [CellRef: UIImage] in
             var result: [CellRef: UIImage] = [:]
             for ref in refs {

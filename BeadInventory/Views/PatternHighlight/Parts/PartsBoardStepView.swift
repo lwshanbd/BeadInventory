@@ -1010,9 +1010,8 @@ struct PartsBoardStepView: View {
             board: board,
             footprints: footprints,
             colorCache: colorCache,
-            highlightKey: highlightKey,
-            boardIndex: boardIndex,
-            boardCount: boards.count
+            highlightKeys: highlightKey.map { [$0] } ?? [],
+            caption: String(localized: "第 \(boardIndex + 1) / \(boards.count) 块")
         ))
     }
 
@@ -1022,7 +1021,7 @@ struct PartsBoardStepView: View {
             board: board,
             footprints: footprints,
             colorCache: colorCache,
-            highlightKey: highlightKey,
+            highlightKeys: highlightKey.map { [$0] } ?? [],
             selection: selection,
             moving: drag.map {
                 .init(placement: $0.placement, deltaCol: $0.deltaCol,

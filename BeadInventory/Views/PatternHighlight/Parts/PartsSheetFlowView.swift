@@ -24,8 +24,8 @@
 //  正确的顺序是：量出一格多大 → 每个零件切成 rows × cols → 每格判一个色号 →
 //  按色号把格子摆出来让用户校对。色号认领这件事属于那一屏，不该提前到这里。
 //
-//  刻意不复用 `PatternCalibrationView`：那一页是为「整张图一个大网格」设计的，
-//  两套心智模型挤一屏用户会不知道该点哪个。
+//  单图纸模式（`SinglePatternFlowView`）走的是同一套屏：量格子、底色、核对颜色三屏
+//  是共用的代码，只是它没有「零件」这一层，所以少了「零件清单」和「拼豆板」两屏。
 //
 
 import SwiftUI
@@ -244,17 +244,20 @@ struct PartsSheetFlowView: View {
                     }
                 }
             }
-            .overlay {
-                if let busy {
-                    ZStack {
-                        Color.black.opacity(0.25).ignoresSafeArea()
-                        ProgressView(busy)
-                            .padding(Theme.Spacing.lg)
-                            .background(.regularMaterial)
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
-                    }
-                    .transition(.opacity)
+        }
+        // **盖在整个 NavigationStack 上，不是盖在根视图上。** 判色是从「底色和任意色」
+        // 那一屏按下去的，而那一屏是被 push 上来的 —— 转圈要是挂在根视图上，就整个被压在
+        // 底下看不见：用户按完「开始判色」屏幕上什么都没发生，几十秒里他只能反复按。
+        .overlay {
+            if let busy {
+                ZStack {
+                    Color.black.opacity(0.25).ignoresSafeArea()
+                    ProgressView(busy)
+                        .padding(Theme.Spacing.lg)
+                        .background(.regularMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
                 }
+                .transition(.opacity)
             }
         }
         .task { await load() }

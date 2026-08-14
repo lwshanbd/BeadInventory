@@ -81,28 +81,38 @@ struct BoardHighlightStage {
     /// 于是 casing 只从两边露出来一点。为什么非得两道：
     ///
     /// 这条线得压在豆子**上面**（高亮那片同色豆子几乎连成一块，压底下就整条没了），
-    /// 所以它身下可能是三种东西：板底、压暗的豆子、以及**用户随便选中的那个色号**。
+    /// 所以它身下可能是三种东西：板底、压暗的豆子、以及**用户随便点亮的那些色号**。
     /// 一个灰色赢不了这三样 —— 灰色本身就是色号：M15 `#757D7B` 亮度 0.480、
     /// H4 `#89858C` 亮度 0.529，跟原来那条中灰粗线撞个正着，抓着这类色号一点高亮，
     /// 整片高亮区一根格线都数不出来。H 系是描边阴影用的灰黑白主力，不是冷门色号。
     ///
-    /// 两道各管一头，就不存在同时输：
-    /// - `gridCore`（窄、在中间）跟**板底**反着来。板上绝大多数地方是板底和压暗的豆子，
-    ///   平时看到的就是这一道，粗细跟以前差不多。
-    /// - `gridCasing`（宽、露在两边）跟**高亮豆子**反着来。高亮豆子按定义在板底的另一端
-    ///   （亮豆子配黑台面、暗豆子配白台面），所以 core 输的地方一定是 casing 赢的地方。
+    /// 两道分踩色域两端（0.06 配 0.88，或者 0.14 配 0.96），所以不管身下是什么亮度 L，
+    /// 两道里较好的那道至少也差 0.41（最差是 L 落在两道正中间的时候）。
+    /// 这跟点亮了几个色号、点的是哪几个都无关 —— 用户同时点白色和黑色也一样成立。
     ///
-    /// 结果是线上任意一点至少有一道跟身下差 0.44 以上：板底上是一道干净的亮线（或暗线），
-    /// 中灰豆子上是深边夹亮芯，纯白豆子上 core 化掉了、剩两条细的深色边框住那条线。
+    /// 分工是：`gridCore`（窄、在中间）跟板底反着来，板上绝大多数地方是板底和压暗的豆子，
+    /// 平时看到的就是这一道；`gridCasing`（宽、露在两边）在 core 化掉的地方接手。
+    /// 于是板底上是一道干净的亮线（或暗线），中灰豆子上是深边夹亮芯，
+    /// 纯白豆子上 core 没了、剩两条细的深色边把那条线框出来。
     let gridCasing: Color
     let gridCore: Color
     /// 零件外沿（选中和放不下另有颜色，不走这里）
     let contour: Color
 
-    init(highlight: Color) {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        UIColor(highlight).getRed(&r, green: &g, blue: &b, alpha: &a)
-        let luminance = 0.299 * r + 0.587 * g + 0.114 * b
+    /// `highlights` 是这一屏点亮的那些色号的颜色。空集不该建舞台，调用方拦在外面。
+    ///
+    /// 点亮好几个色号时（单图纸模式支持，手上抓着两种豆子一起拼是常事）按**平均亮度**
+    /// 选台面：台面只有一面，只能站在这一把豆子整体的反面。用户要是同时点了纯白和纯黑，
+    /// 台面必然贴着其中一个 —— 这个没得选，一块板底躲不开色域两端。
+    /// 但格线不受影响，两道分踩两端，见 `gridCasing` / `gridCore`。
+    init(highlights: [Color]) {
+        var total: CGFloat = 0
+        for highlight in highlights {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            UIColor(highlight).getRed(&r, green: &g, blue: &b, alpha: &a)
+            total += 0.299 * r + 0.587 * g + 0.114 * b
+        }
+        let luminance = total / CGFloat(max(highlights.count, 1))
 
         if luminance > 0.5 {
             // 亮豆子 → 压黑的台面
@@ -139,8 +149,11 @@ struct BoardCanvasRenderer {
     let footprints: [UUID: PartFootprint]
     /// 色号 → 颜色
     let colorCache: [String: Color]
-    /// 只高亮这一个色号，别的压成灰。nil = 全都正常显示。
-    var highlightKey: String?
+    /// 只高亮这些色号，别的压成灰。空集 = 全都正常显示。
+    ///
+    /// 是集合不是单个：单图纸模式的高亮页可以同时点亮好几个色号（手上抓了两种豆子
+    /// 一起拼是常事），而这块画布是两种模式共用的。多零件那边传一个就是一个。
+    var highlightKeys: Set<String> = []
     var selection: UUID?
     var moving: Moving?
 
@@ -149,7 +162,9 @@ struct BoardCanvasRenderer {
         guard cell > 0 else { return }
         let viewport = CGRect(origin: .zero, size: size)
 
-        let stage = highlightKey.map { BoardHighlightStage(highlight: beadColor(for: $0)) }
+        let stage = highlightKeys.isEmpty
+            ? nil
+            : BoardHighlightStage(highlights: highlightKeys.map { beadColor(for: $0) })
 
         context.fill(
             Path(roundedRect: layout.rect, cornerRadius: 6),
@@ -232,8 +247,8 @@ struct BoardCanvasRenderer {
                 var isHighlighted = false
                 if blocked {
                     fillKey = BoardCanvasRenderer.blockedFillKey
-                } else if let highlightKey {
-                    isHighlighted = bead.key == highlightKey
+                } else if !highlightKeys.isEmpty {
+                    isHighlighted = highlightKeys.contains(bead.key)
                     fillKey = isHighlighted ? bead.key : BoardCanvasRenderer.dimmedFillKey
                 } else {
                     fillKey = bead.key

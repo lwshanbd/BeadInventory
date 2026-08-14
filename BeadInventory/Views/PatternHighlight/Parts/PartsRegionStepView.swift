@@ -19,8 +19,15 @@ struct PartsRegionStepView: View {
     let projectId: UUID
     let onSourceLoaded: () -> Void
 
-    // 放大查看细节用。手势结构对齐 PatternCalibrationView：
-    // 角点和框体的单指拖优先级更高，只有在它们的热区之外、且已经放大时才平移画布。
+    // 单图纸模式圈的是「整张图纸」而不是「一堆零件」，除了这两句话之外一模一样：
+    // 一个框、两个角、框外压暗、放大看细节。为它复制一份两百行的手势代码，
+    // 只会让以后每次改手势都要改两个地方（而且必然漏一个）。
+    var hint: LocalizedStringKey = "拖动方框，把中间这一片零件圈进去。上面的色号表和下面的成品图不用圈。"
+    var actionTitle: LocalizedStringKey = "开始找零件"
+    var actionIcon: String = "square.on.square.dashed"
+
+    // 放大查看细节用。角点和框体的单指拖优先级更高，
+    // 只有在它们的热区之外、且已经放大时才平移画布。
     @State private var viewScale: CGFloat = 1.0
     @State private var lastViewScale: CGFloat = 1.0
     @State private var viewOffset: CGSize = .zero
@@ -92,14 +99,14 @@ struct PartsRegionStepView: View {
 
     private var footer: some View {
         VStack(spacing: Theme.Spacing.md) {
-            Text("拖动方框，把中间这一片零件圈进去。上面的色号表和下面的成品图不用圈。")
+            Text(hint)
                 .font(.footnote)
                 .foregroundStyle(Theme.ColorToken.Text.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
             Button(action: onContinue) {
-                Label("开始找零件", systemImage: "square.on.square.dashed")
+                Label(actionTitle, systemImage: actionIcon)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
