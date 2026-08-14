@@ -1,0 +1,165 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "323035d539d2",
+  "session_id": "7450e00e-9e75-4781-920f-9fcf4802c975",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-14T23:03:12.303493Z",
+  "branch": "claude/board-highlight-polish",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [
+    "BeadInventory/Views/ProjectDetailView.swift"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5",
+  "turn_id": "b832fb074c1e",
+  "token_usage": {
+    "input_tokens": 856,
+    "cache_creation_tokens": 1675826,
+    "cache_read_tokens": 167289727,
+    "output_tokens": 462812,
+    "api_call_count": 388
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01HK95E4oYP987iSv4D4Z8RQ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "pr-dual-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b832fb074c1e",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1193,
+        "end": 1194,
+        "entry_ids": [
+          "150a784c-f3fa-49a8-aed8-4548bbe0bc2d"
+        ],
+        "tool_use_id": "toolu_01HK95E4oYP987iSv4D4Z8RQ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01HK95E4oYP987iSv4D4Z8RQ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: pr-dual-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01GcjbKUqBT6WqaLCj52ZBKd",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "pr-review-toolkit:review-pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b832fb074c1e",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1198,
+        "end": 1199,
+        "entry_ids": [
+          "72b0d1fa-4410-4e5e-8a5d-77cf5c7d4967"
+        ],
+        "tool_use_id": "toolu_01GcjbKUqBT6WqaLCj52ZBKd"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01GcjbKUqBT6WqaLCj52ZBKd"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: pr-review-toolkit:review-pr",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01Mtyk784sucoNvzd4cb6o2W",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "pr-dual-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b832fb074c1e",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1636,
+        "end": 1637,
+        "entry_ids": [
+          "8e831cb7-71d5-4079-aa1c-d4472ef6fc44"
+        ],
+        "tool_use_id": "toolu_01Mtyk784sucoNvzd4cb6o2W"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Mtyk784sucoNvzd4cb6o2W"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: pr-dual-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01QoBnAgG7H6XEtpYV2r1msP",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "pr-review-toolkit:review-pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b832fb074c1e",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1641,
+        "end": 1642,
+        "entry_ids": [
+          "e39c4003-908e-4906-909c-620a330a3385"
+        ],
+        "tool_use_id": "toolu_01QoBnAgG7H6XEtpYV2r1msP"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01QoBnAgG7H6XEtpYV2r1msP"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: pr-review-toolkit:review-pr",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 10
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-14T23:03:12.157182Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 1805,
+    "human_modified": 19,
+    "human_removed": 0,
+    "total_committed": 1805,
+    "total_lines_changed": 3302,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
