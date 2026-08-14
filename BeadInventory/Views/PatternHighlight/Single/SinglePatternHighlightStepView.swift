@@ -33,6 +33,8 @@ struct SinglePatternHighlightStepView: View {
     let work: PartsWorkImage
     /// 已经判好色的网格。四角 / 行列 / 每格色号都在里面。
     let grid: BeadPatternGrid
+    /// 图纸内容改过几次。**送外屏那份的重算信号就是它** —— 见 `castSignature`。
+    let revision: Int
     /// 「重新对一遍」——退回第一屏。
     let onRecalibrate: () -> Void
     /// 「完成」——存好，关掉整个流程。
@@ -331,10 +333,15 @@ struct SinglePatternHighlightStepView: View {
 
     // MARK: - 投到电视 / 投影仪
 
-    /// 送外屏的那份东西什么时候要重算。**只看格子本身**（尺寸 + 每格什么色号），
-    /// 不含高亮 —— 高亮变了只要重发一次，不用把几万格重算一遍。
+    /// 送外屏的那份东西什么时候要重算。**格子改过才算**，高亮不算 ——
+    /// 高亮变了只要重发一次，不用把几万格重建一遍。
+    ///
+    /// 这里曾经拿 `grid.lastCalibratedAt` 当信号，而那是 `currentGrid` 每次求值现取的
+    /// `Date()`：父视图任何一次 body 重算都会让它变，于是几万格被反复重建 ——
+    /// 正好是「算一次存着」想避免的事，而且重建结果还会被 `Task.isCancelled` 静默丢掉，
+    /// 手机上「投屏中」照常亮着，电视可能一直空白。
     private var castSignature: String {
-        "\(grid.rows)x\(grid.cols)|\(grid.lastCalibratedAt.timeIntervalSince1970)"
+        "\(revision)|\(grid.rows)x\(grid.cols)"
     }
 
     /// 整张图纸打包成「一块板 + 一个占满全板的零件」。

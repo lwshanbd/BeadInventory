@@ -80,6 +80,10 @@ struct SinglePatternFlowView: View {
     /// 这次打开时，图纸源图的**真实像素尺寸**。存进网格里，下次进来拿它认「图换没换过」。
     /// 用原图尺寸而不是解码出来那张的尺寸：后者取决于当时的像素预算，换个预算就对不上了。
     @State private var sourcePixelSize: CGSize = .zero
+    /// 图纸内容改过几次。**给「送外屏的那份要不要重算」用。**
+    /// 不能拿 `currentGrid` 里的 `lastCalibratedAt` 当信号 —— 那是每次求值现取的 `Date()`，
+    /// 父视图任何一次 body 重算都会让它变，于是几万格被反复重建（正好是它想避免的事）。
+    @State private var revision = 0
 
     enum Step: Hashable { case grid, baseColor, review, highlight }
 
@@ -95,6 +99,8 @@ struct SinglePatternFlowView: View {
         case classifyFailed
         /// 图纸换过了，之前对好的网格对不上新图。
         case imageChanged
+        /// 还没量过格子就按了「开始判色」。
+        case needsGrid
 
         var id: String {
             switch self {
@@ -103,6 +109,7 @@ struct SinglePatternFlowView: View {
             case .confirmRecrop: return "recrop"
             case .classifyFailed: return "classify"
             case .imageChanged: return "changed"
+            case .needsGrid: return "needsGrid"
             }
         }
     }
@@ -111,7 +118,7 @@ struct SinglePatternFlowView: View {
 
     private func tracked<Value>(_ binding: Binding<Value>) -> Binding<Value> {
         Binding(get: { binding.wrappedValue },
-                set: { dirty = true; binding.wrappedValue = $0 })
+                set: { dirty = true; revision &+= 1; binding.wrappedValue = $0 })
     }
 
     var body: some View {
@@ -179,7 +186,8 @@ struct SinglePatternFlowView: View {
                                     path = [.grid, .baseColor]
                                 },
                                 subjectLabel: "整张图纸",
-                                allowsDelete: false
+                                allowsDelete: false,
+                                regridCost: "判好的颜色会清掉，之后要再判一次。框和位置不动。"
                             )
                         case .baseColor:
                             PartsBaseColorStepView(
@@ -268,17 +276,19 @@ struct SinglePatternFlowView: View {
                     // 说了作废就真的作废。留着的话，用户要是没走完「判色」那一步就退出去，
                     // 存进库里的会是「新的格子范围 + 旧的那批颜色」—— 高亮出来整片错位，
                     // 而他刚刚才点头同意的是「重走一遍」。
-                    secondaryButton: .destructive(Text("接着改")) {
-                        sheet.cells = []
-                        dirty = true
-                        path = [.grid]
-                    }
+                    secondaryButton: .destructive(Text("接着改")) { beginRecrop() }
                 )
             case .classifyFailed:
                 return Alert(
                     title: Text("这块范围里取不到图"),
                     message: Text("一格颜色都没看出来，多半是框圈得太小或者位置不对。回第一屏把框重新拖一下再来一次。"),
                     dismissButton: .default(Text("回去改框")) { path = [] }
+                )
+            case .needsGrid:
+                return Alert(
+                    title: Text("还没量过格子"),
+                    message: Text("得先定下一格多大、格线落在哪，才知道每一格是什么颜色。"),
+                    dismissButton: .default(Text("去量格子")) { path = [.grid] }
                 )
             case .imageChanged:
                 return Alert(
@@ -299,6 +309,7 @@ struct SinglePatternFlowView: View {
                 project: project,
                 work: work,
                 grid: grid,
+                revision: revision,
                 onRecalibrate: { path = [] },
                 onFinish: { save() }
             )
@@ -326,7 +337,8 @@ struct SinglePatternFlowView: View {
         )
     }
 
-    /// 上一步 AI 读色号表得到的「每个色号多少颗」。核对颜色那屏拿它当参照。
+    /// 图纸色号表里写的「每个色号多少颗」（`beadUsage`，扫描图纸时就有了）。
+    /// 核对颜色那屏拿它当参照。
     ///
     /// **key 要翻成当前体系的显示码**：`beadUsage.colorCode` 存的是 canonical mardCode，
     /// 而格子里存的是显示码，不翻的话卡卡 / COCO 图纸上两边一个都对不上，
@@ -347,7 +359,10 @@ struct SinglePatternFlowView: View {
         let area = sheet.gridRect ?? sheet.bounds
         guard area.width > 0, area.height > 0 else { return nil }
         return BeadPatternGrid(
-            corners: legacyCorners ?? Self.corners(of: area),
+            // 老四角**只在还没用新流程重对过时**才作数。无条件用它的话：
+            // 老项目重新量完格子，corners 仍是老的（可能是梯形）而 rows/cols/cells 是新的
+            // —— 高亮整片偏，而且下次 load 会把这对错角固化进 gridRect，再怎么重量都修不回来。
+            corners: (calibration == nil ? legacyCorners : nil) ?? Self.corners(of: area),
             rows: sheet.rows,
             cols: sheet.cols,
             cellColorCodes: codeMatrix,
@@ -365,7 +380,12 @@ struct SinglePatternFlowView: View {
     /// `cells` → 存盘用的色号矩阵。空格写 nil（`BeadPatternGrid` 从第一版起就是这么约定的，
     /// 高亮、跟色号表对账、备份都按这个读）。
     private var codeMatrix: [[String?]] {
-        guard sheet.rows > 0, sheet.cols > 0 else { return [] }
+        // **没判过色就写空矩阵。** 写一份 rows×cols 的全 nil 回去，下次 `fills(from:)`
+        // 会把它读成一整片 `.empty` —— `hasCells` 于是为真，量格子那屏当成「判过色了」
+        // 把格距锁死，脚注还写着「颜色判好了」，而用户一次色都没判过。
+        // 复现只要三步：量格子 → 关掉 → 再进来。而「重新对格子大小」清空之后再存，
+        // 又写回同一张矩阵 —— 唯一的出路自己把自己锁上了。
+        guard sheet.hasCells, sheet.rows > 0, sheet.cols > 0 else { return [] }
         var matrix = [[String?]](repeating: [String?](repeating: nil, count: sheet.cols), count: sheet.rows)
         for r in 0..<min(sheet.rows, sheet.cells.count) {
             for c in 0..<min(sheet.cols, sheet.cells[r].count) {
@@ -436,8 +456,7 @@ struct SinglePatternFlowView: View {
             //
             // 只对新流程写的数据判断（`roi != nil`）：老数据的 sourceImageSize 记的是
             // 当年那张压缩图的尺寸，拿原图尺寸去比一定不等，会把存量用户的网格全清掉。
-            if grid.roi != nil, native != .zero, grid.sourceImageSize != .zero,
-               grid.sourceImageSize != native {
+            if grid.roi != nil, Self.looksLikeAnotherImage(stored: grid.sourceImageSize, now: native) {
                 AppLogger.shared.info("SinglePattern", "grid_discarded_image_changed", metadata: [
                     "projectId": id.uuidString,
                     "stored": "\(grid.sourceImageSize)",
@@ -483,12 +502,35 @@ struct SinglePatternFlowView: View {
         await prepareWorkImage()
     }
 
+    /// 存下来那张图跟现在这张，是不是**两张不同的图**。
+    ///
+    /// **比宽高比，不比像素尺寸。** 同一张图纸在这个 App 里有两份：原图和压缩图，
+    /// 尺寸差着好几倍，而这两份谁在手上会变 —— 用户在提示条里补了原图、
+    /// 从备份恢复（原图不进备份）、换一台设备。拿尺寸直接比，这几种情况全都会被
+    /// 判成「图纸换过了」，然后把用户几天的网格和颜色丢掉；而图纸根本没换。
+    ///
+    /// 宽高比在两份之间是稳定的（等比降采样），所以它认得出「真换了一张」，
+    /// 也不会被「换了一份副本」骗到。代价是同宽高比的另一张图认不出来 ——
+    /// 那种漏判用户自己按「重新对一遍」就能解决，而误判是不可逆的数据丢失。
+    private static func looksLikeAnotherImage(stored: CGSize, now: CGSize) -> Bool {
+        guard stored.width > 0, stored.height > 0, now.width > 0, now.height > 0 else { return false }
+        let a = stored.width / stored.height
+        let b = now.width / now.height
+        return abs(a - b) > max(a, b) * 0.02
+    }
+
     /// 存下来的色号矩阵 → 内存里的格子。行列对不上就当没判过 ——
     /// 拿一个尺寸不符的矩阵往下走，只会让每一格的颜色整体错位。
     private static func fills(from grid: BeadPatternGrid) -> [[PartCellFill]] {
         guard grid.rows > 0, grid.cols > 0,
               grid.cellColorCodes.count == grid.rows,
               grid.cellColorCodes.allSatisfy({ $0.count == grid.cols }) else { return [] }
+        // 整张全是 nil = 「量过格子但还没判色」，不是「判过色，每一格都是空的」。
+        // 分不开的话 `hasCells` 会为真，格距被锁死（见 `codeMatrix`）。
+        // 存量里已经写坏的那些行靠这一句自愈。
+        guard grid.cellColorCodes.contains(where: { $0.contains { $0?.isEmpty == false } }) else {
+            return []
+        }
         return grid.cellColorCodes.map { row in
             row.map { code in
                 guard let code, !code.isEmpty else { return PartCellFill.empty }
@@ -538,6 +580,9 @@ struct SinglePatternFlowView: View {
         }).value {
             overview = low
         }
+        // 补完原图，「现在这张图多大」就变了。不跟着更新的话，这一整轮做出来的网格
+        // 会记着压缩图的尺寸，下次进来跟原图一比 —— 「这张图纸换过了」，全丢。
+        if let native = ImageDownsampler.pixelSize(of: data) { sourcePixelSize = native }
         sourceGeneration += 1
         await prepareWorkImage()
     }
@@ -607,11 +652,20 @@ struct SinglePatternFlowView: View {
             prompt = .confirmRecrop
             return
         }
+        beginRecrop()
+    }
+
+    /// 拿当前这个框开始（重新）量格子。**两条路必须走同一段代码** ——
+    /// 确认弹窗那一支曾经只清了颜色就跳过去，结果用户明明同意了「重走一遍」，
+    /// 量格子量的还是**旧框**（工作图也还是旧区域那一版），存下去是「新 roi + 旧 corners」。
+    private func beginRecrop() {
         // 「整张图纸」这一块的范围**就是用户框的那一块**。这一句不能少：
         // 量格子那一屏（跟多零件共用）是照着 `bounds` 裁图、量格距、定行列的，
         // bounds 还是初值 .zero 的话，它拿到的是一块零面积的图 ——
         // 画布空白、格数空白、加减号点了也没有任何反应。
         sheet.bounds = roi
+        // 换了框就等于换了一张网格：之前判的颜色和「对齐了」那个锁都不再作数。
+        if sheet.bounds != sheet.gridRect { sheet.gridConfirmed = nil }
         dirty = true
         path = [.grid]
         Task { await prepareWorkImage() }
@@ -626,7 +680,17 @@ struct SinglePatternFlowView: View {
     /// 已经删掉：慢，而且用户要的不是「再多一个会出错的来源」——
     /// 判错了在核对页两下就能改，那才是这条流程的解法。
     private func runClassification() {
-        guard let work, let calibration, calibration.isUsable else { return }
+        guard let work else { return }   // 屏幕上正显示「正在准备图纸…」，这个按钮还看不见
+        // 老数据的 calibration 是空的，而 load 会按「有豆子的格子」把用户直接送到照着拼；
+        // 他往回翻到底色按下去，静默 return 的话就是一个永远没有反应的按钮。
+        guard let calibration, calibration.isUsable else {
+            AppLogger.shared.error("SinglePattern", "classify_without_calibration", metadata: [
+                "projectId": project.id.uuidString,
+                "hasCalibration": calibration != nil ? "1" : "0"
+            ])
+            prompt = .needsGrid
+            return
+        }
         let snapshot = sheet
         let area = sheet.gridRect ?? sheet.bounds
         let colorSystem = project.colorSystem
@@ -660,6 +724,7 @@ struct SinglePatternFlowView: View {
                 }
                 self.sheet = judged
                 self.dirty = true
+                self.revision &+= 1
                 guard self.persist() else { return }   // 存不上会自己弹「这一步没存上」
                 self.path = [.grid, .baseColor, .review]
             }

@@ -68,6 +68,12 @@ struct PartsCellSizeStepView: View {
     var subjectLabel: LocalizedStringKey?
     /// 能不能删掉当前这个。单图纸不能：删掉整张图纸没有任何意义。
     var allowsDelete = true
+    /// 「清掉颜色重新对格子」到底会清掉多少。**默认按多零件说实话**：
+    /// 那边「再判一次」走的是 `runClassification()`，它重判**整张图纸的每一个零件**
+    /// 并整个替换 `parts` —— 只说「清掉这一个」是骗人，四十九个零件手工核对过的
+    /// 颜色会一起没。单图纸只有一块，所以那边传自己的说法。
+    var regridCost: LocalizedStringKey =
+        "这个零件判好的颜色会清掉。之后重判一次会把**整张图纸所有零件**的颜色一起重判。框和位置不动。"
 
     /// 当前正在看哪个零件（按面积从大到小）。大零件格线多，最容易看出没对齐。
     @State private var sampleIndex = 0
@@ -252,7 +258,7 @@ struct PartsCellSizeStepView: View {
             Button("清掉颜色，重新对", role: .destructive) { clearCellsForRegrid() }
             Button("取消", role: .cancel) { unlockingPitch = false }
         } message: {
-            Text("判好的颜色会清掉，之后要再判一次。框和位置不动。")
+            Text(regridCost)
         }
     }
 
@@ -739,6 +745,9 @@ struct PartsCellSizeStepView: View {
         alignedAtCellWidth = calibration?.cellWidth
         syncFrameToLattice()
         writeBack()
+        // 第一次量整张图纸时，`loadSample` 里那一次对焦跑在 calibration 还没算出来的时候，
+        // 什么都没做。不在这儿补一次的话，用户第一眼看到的正是这个函数存在的理由：一片糊。
+        focusIfTooDense()
     }
 
     private func fallbackCalibration() -> PartsGridCalibration? {
@@ -1040,8 +1049,14 @@ struct PartsCellSizeStepView: View {
     /// 用户改完格子退出去，回来看到的是「颜色还在、格子又变了」的一堆错位。
     private func clearCellsForRegrid() {
         guard let sample, let index = parts.firstIndex(where: { $0.id == sample.id }) else { return }
-        parts[index].cells = []
-        parts[index].gridConfirmed = nil
+        // 改一次写回一次。连着两次 `parts[index].x = y` 是两轮 get→mutate→set，
+        // 而单图纸模式那边的 binding getter 是从 @State 现拼出来的 ——
+        // 第二次拿到的可能还是旧值，把第一次清掉的格子又装回去
+        // （同 `PartsBoardStepView.DragSession` 栽过的那一次）。
+        var updated = parts[index]
+        updated.cells = []
+        updated.gridConfirmed = nil
+        parts[index] = updated
         unlockingPitch = false
         onConfirmPart()
     }
@@ -1142,7 +1157,7 @@ struct PartsCanvasTransform {
 
 // MARK: - 网格线
 
-/// 单图纸模式的量格子屏用的是同一套画法（`SinglePatternGridStepView`），所以不是 private。
+/// 网格线的画法。跟「一格」那个黄框（`CellFrameOverlay`）分开，两者不会同时出现。
 struct CellGridOverlay: View {
     let grid: PartsGrid
     let transform: PartsCanvasTransform
