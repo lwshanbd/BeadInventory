@@ -72,7 +72,7 @@ struct BoardExternalDisplayView: View {
             Text(content.caption)
             ForEach(content.highlightKeys.sorted(), id: \.self) { key in
                 HStack(spacing: 8) {
-                    // fallback 跟板子上用的是同一个（BoardCanvas 的 fillColor）——
+                    // fallback 跟板子上用的是同一个（BoardCanvas 的 beadColor）——
                     // 两边不一样的话，同一个色号在图例上和板子上会是两个颜色，
                     // 而图例正是用户抬头要查的那个东西。
                     Circle()
