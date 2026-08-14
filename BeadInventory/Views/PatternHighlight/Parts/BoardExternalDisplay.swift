@@ -69,7 +69,7 @@ struct BoardExternalDisplayView: View {
             Text("第 \(content.boardIndex + 1) / \(content.boardCount) 块")
             if let key = content.highlightKey {
                 HStack(spacing: 8) {
-                    // fallback 跟板子上用的是同一个（BoardCanvas 的 fillColor）——
+                    // fallback 跟板子上用的是同一个（BoardCanvas 的 beadColor）——
                     // 两边不一样的话，同一个色号在图例上和板子上会是两个颜色，
                     // 而图例正是用户抬头要查的那个东西。
                     Circle()

@@ -64,7 +64,10 @@ struct BoardCanvasLayout {
 /// 所以高亮期间板底整个翻到跟高亮色相反的那一端：这一屏只有一个任务，
 /// 就是让那一个色号跳出来，别的都让路。
 ///
-/// 亮度用的是 0.299/0.587/0.114 感知加权，跟 `BIColorSwatch` 判「字压黑还是压白」同一套。
+/// 亮度用的是 0.299/0.587/0.114 感知加权。`BIColorSwatch` 判「字压黑还是压白」用的是同一个
+/// 公式，但阈值是 0.6 不是这里的 0.5：那边要的是文字读得清（偏向压黑字），
+/// 这里要的是把整个色域一刀切成两半，好让下面那条粗线的两道颜色一定各站一边。
+///
 /// 舞台色刻意写死不走 Theme：它要对抗的是**用户选的那颗豆子**，不是 App 的色彩模式 ——
 /// 跟着主题走的话，浅色模式挑浅色豆子这个最难的组合恰好一点都没改善。
 struct BoardHighlightStage {
@@ -72,9 +75,27 @@ struct BoardHighlightStage {
     let board: Color
     /// 压暗的豆子（不是高亮那个色号的）
     let dimmed: Color
-    /// 格线：细的、每 5 格那条粗的
+    /// 细格线
     let gridMinor: Color
-    let gridMajor: Color
+    /// 每 5 格那条粗线的两道：先描宽的 `gridCasing`，再把窄的 `gridCore` 压在中间，
+    /// 于是 casing 只从两边露出来一点。为什么非得两道：
+    ///
+    /// 这条线得压在豆子**上面**（高亮那片同色豆子几乎连成一块，压底下就整条没了），
+    /// 所以它身下可能是三种东西：板底、压暗的豆子、以及**用户随便选中的那个色号**。
+    /// 一个灰色赢不了这三样 —— 灰色本身就是色号：M15 `#757D7B` 亮度 0.480、
+    /// H4 `#89858C` 亮度 0.529，跟原来那条中灰粗线撞个正着，抓着这类色号一点高亮，
+    /// 整片高亮区一根格线都数不出来。H 系是描边阴影用的灰黑白主力，不是冷门色号。
+    ///
+    /// 两道各管一头，就不存在同时输：
+    /// - `gridCore`（窄、在中间）跟**板底**反着来。板上绝大多数地方是板底和压暗的豆子，
+    ///   平时看到的就是这一道，粗细跟以前差不多。
+    /// - `gridCasing`（宽、露在两边）跟**高亮豆子**反着来。高亮豆子按定义在板底的另一端
+    ///   （亮豆子配黑台面、暗豆子配白台面），所以 core 输的地方一定是 casing 赢的地方。
+    ///
+    /// 结果是线上任意一点至少有一道跟身下差 0.44 以上：板底上是一道干净的亮线（或暗线），
+    /// 中灰豆子上是深边夹亮芯，纯白豆子上 core 化掉了、剩两条细的深色边框住那条线。
+    let gridCasing: Color
+    let gridCore: Color
     /// 零件外沿（选中和放不下另有颜色，不走这里）
     let contour: Color
 
@@ -85,18 +106,20 @@ struct BoardHighlightStage {
 
         if luminance > 0.5 {
             // 亮豆子 → 压黑的台面
-            board     = Color(white: 0.10)
-            dimmed    = Color(white: 0.26)
-            gridMinor = Color(white: 0.20)
-            gridMajor = Color(white: 0.52)
-            contour   = Color(white: 1.0).opacity(0.55)
+            board      = Color(white: 0.10)
+            dimmed     = Color(white: 0.26)
+            gridMinor  = Color(white: 0.20)
+            gridCore   = Color(white: 0.88)   // 对着 0.10 的板底
+            gridCasing = Color(white: 0.06)   // 对着亮度 > 0.5 的豆子
+            contour    = Color(white: 1.0).opacity(0.55)
         } else {
             // 暗豆子 → 提亮的台面
-            board     = Color(white: 0.95)
-            dimmed    = Color(white: 0.78)
-            gridMinor = Color(white: 0.86)
-            gridMajor = Color(white: 0.48)
-            contour   = Color(white: 0.0).opacity(0.45)
+            board      = Color(white: 0.95)
+            dimmed     = Color(white: 0.78)
+            gridMinor  = Color(white: 0.86)
+            gridCore   = Color(white: 0.14)   // 对着 0.95 的板底
+            gridCasing = Color(white: 0.96)   // 对着亮度 ≤ 0.5 的豆子
+            contour    = Color(white: 0.0).opacity(0.45)
         }
     }
 }
@@ -126,7 +149,7 @@ struct BoardCanvasRenderer {
         guard cell > 0 else { return }
         let viewport = CGRect(origin: .zero, size: size)
 
-        let stage = highlightKey.map { BoardHighlightStage(highlight: fillColor(for: $0)) }
+        let stage = highlightKey.map { BoardHighlightStage(highlight: beadColor(for: $0)) }
 
         context.fill(
             Path(roundedRect: layout.rect, cornerRadius: 6),
@@ -134,16 +157,17 @@ struct BoardCanvasRenderer {
         )
         context.stroke(
             Path(roundedRect: layout.rect, cornerRadius: 6),
-            with: .color(stage?.gridMajor ?? Theme.ColorToken.Border.default),
+            with: .color(stage?.gridCore ?? Theme.ColorToken.Border.default),
             lineWidth: 1
         )
 
         // 格线。每 5 格一条深的 —— 拼的时候要数「往右第几格」，
         // 没有参照线的话在一片 100×100 里数到第几格全靠运气。
         //
-        // 细线画在豆子**底下**，粗线画在豆子**上面**（见下面 drawMajorGrid 的调用点）。
-        // 高亮时那一片同色豆子几乎连成一块，粗线要是也压在底下就整条看不见了 ——
-        // 而恰恰是这时候用户最需要数格子：他正抓着一把豆子找第几行第几列。
+        // 细线永远画在豆子**底下**。粗线**只有高亮的时候**才改到豆子**上面**去
+        // （见下面填充之后那一段）：高亮那片同色豆子几乎连成一块，粗线压在底下就整条没了 ——
+        // 而恰恰是这时候用户最需要数格子，他正抓着一把豆子找第几行第几列。
+        // 没高亮的时候不动它：那一屏用户看的是图纸本身，格线不该压进豆子的颜色里。
         var minorGrid = Path()
         var majorGrid = Path()
         if cell >= 2.5 {
@@ -164,6 +188,11 @@ struct BoardCanvasRenderer {
             context.stroke(minorGrid,
                            with: .color(stage?.gridMinor ?? Theme.ColorToken.Border.divider),
                            lineWidth: 0.5)
+            if stage == nil {
+                context.stroke(majorGrid,
+                               with: .color(Theme.ColorToken.Border.default),
+                               lineWidth: 1)
+            }
         }
 
         let radius = cell * 0.28
@@ -241,21 +270,23 @@ struct BoardCanvasRenderer {
             contours.append((path: contour, color: outline, width: isSelected ? 2.5 : 1))
         }
 
-        // 先后顺序只有一处有讲究：零件之间本来就不会重叠，唯独拖到别人身上那一下会 ——
+        // 几批填充之间的先后只有一处有讲究：零件之间本来就不会重叠，唯独拖到别人身上那一下会 ——
         // 变红的那一份必须盖在上面，不然用户看不出是哪个零件放不下。
+        // （填充和格线谁在上面另有讲究，见上面建格线 Path 的地方。）
         for (key, path) in fills where key != BoardCanvasRenderer.blockedFillKey {
-            context.fill(path, with: .color(stage.map { fillColor(for: key, stage: $0) }
-                                            ?? fillColor(for: key)))
+            context.fill(path, with: .color(fillColor(for: key, stage: stage)))
         }
         if let blocked = fills[BoardCanvasRenderer.blockedFillKey] {
-            context.fill(blocked, with: .color(fillColor(for: BoardCanvasRenderer.blockedFillKey)))
+            context.fill(blocked,
+                         with: .color(fillColor(for: BoardCanvasRenderer.blockedFillKey, stage: stage)))
         }
 
-        // 每 5 格那条粗线画在豆子上面，理由见上面建 Path 的地方。
-        if cell >= 2.5 {
-            context.stroke(majorGrid,
-                           with: .color(stage?.gridMajor ?? Theme.ColorToken.Border.default),
-                           lineWidth: stage == nil ? 1 : 1.2)
+        // 高亮时，每 5 格那条粗线补描在豆子上面，一宽一窄两道（理由见 `BoardHighlightStage`）。
+        // 没高亮的时候这条线已经在豆子底下画过了，这里不再动它。
+        // `majorGrid` 在 cell < 2.5 时是空的，描空 Path 本身就是空操作。
+        if let stage {
+            context.stroke(majorGrid, with: .color(stage.gridCasing), lineWidth: 2)
+            context.stroke(majorGrid, with: .color(stage.gridCore), lineWidth: 1.2)
         }
 
         for contour in contours {
@@ -268,20 +299,22 @@ struct BoardCanvasRenderer {
     static let blockedFillKey = "#blocked"
     static let dimmedFillKey = "#dimmed"
 
-    private func fillColor(for key: String) -> Color {
-        switch key {
-        case BoardCanvasRenderer.blockedFillKey: return Theme.ColorToken.Status.error
-        case BoardCanvasRenderer.dimmedFillKey: return Theme.ColorToken.Border.default
-        default: return colorCache[key] ?? Theme.ColorToken.Surface.strong
-        }
+    /// 色号 → 这颗豆子本来的颜色。查不到给个中性块，别在板上留一片空的。
+    private func beadColor(for key: String) -> Color {
+        colorCache[key] ?? Theme.ColorToken.Surface.strong
     }
 
-    /// 高亮期间的取色：压暗的那批交给舞台，真色号照原样画。
+    /// 攒填充用的 key → 真正画上去的颜色。`stage` 为 nil 就是没高亮的普通视图。
     ///
-    /// 压暗色**不能**再用 `Border.default` —— 那正好是每 5 格那条粗线的颜色，
-    /// 一大片压暗的豆子铺开，粗线就化在里面了（用户报的「分割线很不明显」就是这么来的）。
-    private func fillColor(for key: String, stage: BoardHighlightStage) -> Color {
-        key == BoardCanvasRenderer.dimmedFillKey ? stage.dimmed : fillColor(for: key)
+    /// 压暗色只有高亮时才会攒出来，所以走到那一支时 `stage` 一定在。它**不能**退回
+    /// `Border.default` —— 那正好是没高亮时每 5 格那条粗线的颜色，一大片压暗的豆子铺开，
+    /// 粗线就化在里面了（用户报的「分割线很不明显」就是这么来的）。
+    private func fillColor(for key: String, stage: BoardHighlightStage?) -> Color {
+        switch key {
+        case BoardCanvasRenderer.blockedFillKey: return Theme.ColorToken.Status.error
+        case BoardCanvasRenderer.dimmedFillKey: return stage?.dimmed ?? beadColor(for: key)
+        default: return beadColor(for: key)
+        }
     }
 
 }
