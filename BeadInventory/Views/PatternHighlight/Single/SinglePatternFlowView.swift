@@ -215,16 +215,17 @@ struct SinglePatternFlowView: View {
                                 parts: sheetParts,
                                 colorSystem: project.colorSystem,
                                 legendCounts: legendCounts,
-                                // 核对完一个色号就落盘。一张图纸几千格，
-                                // 对到一半退出去不该白对（同多零件模式）。
-                                onConfirmGroup: { persist() },
+                                // 核对完一个色号、在图纸上擦 / 补完格子都立刻落盘。
+                                // 一张图纸几千格，对到一半退出去不该白对（同多零件模式）。
+                                onPersist: { persist() },
                                 onFinish: {
                                     persist()
                                     path = [.grid, .baseColor, .review, .highlight]
                                 },
                                 allowsAnyColor: false,
                                 finishTitle: { Text("开始拼 · 一共 \($0) 颗") },
-                                finishIcon: "wand.and.rays"
+                                finishIcon: "wand.and.rays",
+                                subjectLabel: String(localized: "整张图纸")
                             )
                             .environmentObject(inventoryManager)
                         case .highlight:

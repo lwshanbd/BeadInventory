@@ -183,13 +183,14 @@ struct PartsSheetFlowView: View {
                     // 拼豆板那屏只用格子数据，不用图 —— 图裁失败也不该把它挡在外面。
                     if step == .board {
                         PartsBoardStepView(
-                            parts: parts,
+                            parts: tracked($parts),
                             // 给它图不等于要求它有图：拿到了就能点开零件跟图纸原图对一眼，
                             // 没拿到（裁失败）这一屏照常摆板子。
                             work: work,
                             boards: tracked($boards),
                             boardSpacing: tracked($boardSpacing),
                             colorSystem: project.colorSystem,
+                            onPersist: { persist() },
                             onFinish: { save() }
                         )
                         .environmentObject(inventoryManager)
@@ -237,7 +238,7 @@ struct PartsSheetFlowView: View {
                                 parts: tracked($parts),
                                 colorSystem: project.colorSystem,
                                 legendCounts: legendCounts,
-                                onConfirmGroup: { persist() },
+                                onPersist: { persist() },
                                 onFinish: {
                                     persist()
                                     path = [.list, .cellSize, .baseColor, .review, .board]

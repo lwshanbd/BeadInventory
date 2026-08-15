@@ -37,7 +37,10 @@
 import SwiftUI
 
 struct PartsBoardStepView: View {
-    let parts: [BeadPart]
+    /// 可写：板上的零件也能一格一格地擦 / 补（见 `brushTarget`）。
+    /// 真拼起来才发现「这块边上多认了一颗」是常事，那时候用户手上正抓着豆子，
+    /// 让他退回核对页去找那一格是不现实的。
+    @Binding var parts: [BeadPart]
     /// 图纸本身。**可以是 nil** —— 这一屏只靠格子数据就能画板子，图裁失败不该把用户
     /// 挡在最后一步外面（见 PartsSheetFlowView 的 navigationDestination）。
     /// 有图的时候多一件事能做：点板上的零件，把图纸上原来那块抠出来对一眼。
@@ -46,6 +49,8 @@ struct PartsBoardStepView: View {
     /// 这套板子是按哪一档松紧排的。nil = 还没排过（或者是没这个字段的老图纸）。
     @Binding var boardSpacing: BoardSpacing?
     let colorSystem: ColorSystem
+    /// 擦 / 补完格子立刻落盘 —— 那是对图纸本身的修改，不能等到「完成」那一下。
+    let onPersist: () -> Void
     let onFinish: () -> Void
 
     @EnvironmentObject var inventoryManager: InventoryManager
@@ -104,6 +109,15 @@ struct PartsBoardStepView: View {
     @State private var originals: [UUID: PartOriginalSheet.Original] = [:]
     /// 正在对照原图的那个零件
     @State private var inspecting: BeadPart?
+    /// 正在图纸上擦 / 补格子的那个零件
+    @State private var brushTarget: BrushTarget?
+    /// 格子被改过几回。形状缓存、颜色表、送外屏都得跟着重来 ——
+    /// `shapeSignature` 只认「哪个零件、转了几次」，格子里的内容变了它是看不见的。
+    @State private var cellsRevision = 0
+
+    private struct BrushTarget: Identifiable {
+        let id: UUID
+    }
 
     @State private var note: String?
     @State private var noteToken = UUID()
@@ -219,6 +233,20 @@ struct PartsBoardStepView: View {
             guard note != nil else { return }
             try? await Task.sleep(for: .seconds(4))
             if !Task.isCancelled { note = nil }
+        }
+        .sheet(item: $brushTarget) { target in
+            PartCellBrushView(
+                work: work,
+                partId: target.id,
+                parts: $parts,
+                colorSystem: colorSystem,
+                subject: name(of: target.id),
+                onCommit: {
+                    onPersist()
+                    afterCellsChanged(target.id)
+                }
+            )
+            .environmentObject(inventoryManager)
         }
         .sheet(item: $inspecting) { part in
             PartOriginalSheet(
@@ -520,6 +548,13 @@ struct PartsBoardStepView: View {
             HStack(spacing: Theme.Spacing.sm) {
                 Button { rotateSelected() } label: {
                     Label("转 90°", systemImage: "rotate.right").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
+                // 真拼起来才发现「这块边上多认了一颗」「这儿明明该有一颗」是常事。
+                // 那一刻用户手上抓着豆子对着板子，退回核对页去几万格里找那一格是不现实的。
+                Button { brushTarget = BrushTarget(id: placement.partId) } label: {
+                    Label("改格子", systemImage: "eraser").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
 
@@ -906,10 +941,13 @@ struct PartsBoardStepView: View {
 
     /// 形状缓存的失效条件：只跟「哪个零件、转了几次」有关。
     /// 位置故意不算进来 —— 拖动时每挪一格都重算一遍所有零件的形状，会直接卡住。
+    ///
+    /// 擦 / 补格子改的是格子内容，这里看不见，所以带上 `cellsRevision` 那个计数。
+    /// 直接去数格子是不行的：这一句每渲染一帧都要算一次，而单图纸模式一张图纸七万格。
     private var shapeSignature: String {
         boards.flatMap { board in
             board.placements.map { "\($0.id)|\($0.partId)|\($0.turns)" }
-        }.joined(separator: ",")
+        }.joined(separator: ",") + "#\(cellsRevision)"
     }
 
     private func makeFootprints() -> [UUID: PartFootprint] {
@@ -1123,6 +1161,55 @@ struct PartsBoardStepView: View {
         }
     }
 
+    /// 一个零件的格子被改过之后，板上跟着要处理的事。
+    ///
+    /// 擦掉几格只会让零件变小，怎么摆都还成立；**补上几格不是** —— 它可能一下子
+    /// 顶到板边、或者跟旁边那个零件贴上（贴着的两个零件烫完连成一片，那一刀下去
+    /// 边缘就毁了，见 BeadPartsBoard.swift）。这时候不能装作没事：
+    ///
+    /// - 原地还放得下 → 什么都不做，最理想。
+    /// - 原地放不下、板上还有空地 → 挪过去，并且说一句（同 `rotateSelected`）。
+    /// - 哪儿都放不下 → **留在原地**，说清楚它现在跟旁边挨上了。悄悄拿下来的话，
+    ///   用户刚补完一格，零件就从板上消失了，他不知道发生了什么。
+    /// - 一颗豆子都不剩了 → 从板上拿下来。板上画不出任何东西的摆放留着只会占地方。
+    private func afterCellsChanged(_ partId: UUID) {
+        cellsRevision += 1
+        colorCache = makeColorCache()
+        footprints = makeFootprints()
+
+        guard let part = parts.first(where: { $0.id == partId }) else { return }
+
+        if part.beadCount == 0 {
+            let wasPlaced = boards.contains { $0.placements.contains { $0.partId == partId } }
+            for index in boards.indices {
+                boards[index].placements.removeAll { $0.partId == partId }
+            }
+            if wasPlaced {
+                selection = nil
+                footprints = makeFootprints()
+                dropHighlightIfGone()
+                flash(String(localized: "这一块一颗豆子都不剩了，已经从板上拿下来"))
+            }
+            return
+        }
+
+        guard boards.indices.contains(boardIndex),
+              let index = boards[boardIndex].placements.firstIndex(where: { $0.partId == partId })
+        else { return }
+        let placement = boards[boardIndex].placements[index]
+        let footprint = part.footprint(turns: placement.turns)
+        let occupancy = PartsBoardPacker.occupancy(of: boards[boardIndex], parts: parts,
+                                                   spacing: spacing, ignoring: placement.id)
+        if occupancy.canPlace(footprint, col: placement.col, row: placement.row) { return }
+        if let spot = PartsBoardPacker.firstFit(footprint, occupancy: occupancy) {
+            boards[boardIndex].placements[index].col = spot.col
+            boards[boardIndex].placements[index].row = spot.row
+            flash(String(localized: "补上的格子在原地放不下，挪到旁边空地了"))
+        } else {
+            flash(String(localized: "补上的格子跟旁边挨上了，自己挪一下（挨着烫完会连成一片）"))
+        }
+    }
+
     private func takeOffSelected() {
         guard let id = selection, boards.indices.contains(boardIndex) else { return }
         boards[boardIndex].placements.removeAll { $0.id == id }
@@ -1245,7 +1332,7 @@ struct PartsBoardStepView: View {
     ///
     /// 只看当前这块板：送出去的本来就只有它。
     private var castSignature: String {
-        var signature = "\(boardIndex)|\(boards.count)|\(highlightKey ?? "")|\(colorCache.count)"
+        var signature = "\(boardIndex)|\(boards.count)|\(highlightKey ?? "")|\(colorCache.count)|\(cellsRevision)"
         for placement in currentBoard?.placements ?? [] {
             signature += "|\(placement.id)@\(placement.col),\(placement.row),\(placement.turns)"
         }
