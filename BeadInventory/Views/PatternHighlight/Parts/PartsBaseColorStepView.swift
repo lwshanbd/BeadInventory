@@ -31,6 +31,16 @@
 //
 //  没有任意色的图纸直接跳过：那一行留空就是了。
 //
+//  ## 这一屏是「已经判过色」之后一路返回必经的地方
+//
+//  核对颜色是下一屏，用户从那儿按返回（或者不小心划回来）就落在这里。这时候屏幕上
+//  唯一那个主按钮要是「开始判色」，他就只有一条路：再判一遍 —— 而判色是从头重算每一格，
+//  他几天来一格一格改过的色号当场全没。用户报的就是这件事。
+//
+//  所以判过色之后主按钮换成「回核对颜色」（原样回去，什么都不重算），重判降成下面一行
+//  小字，并且由外面再问一句才真的跑（见各 flow 的 `requestClassification`）。
+//  重判仍然留着：用户特地退回这一屏，多半就是因为底色 / 任意色指认错了要重来。
+//
 
 import SwiftUI
 
@@ -49,6 +59,13 @@ struct PartsBaseColorStepView: View {
     /// 「底色」那一行的副标题。单图纸上底色是格子之外的留白，不是「零件外面」。
     var emptyHint: LocalizedStringKey = "零件外面那一片，不用放豆子"
     var title: LocalizedStringKey = "底色和任意色"
+
+    /// 已经判过色了 —— 用户是从核对页退回来的，不是第一次走到这一屏。
+    /// 为真时主按钮变成「回核对颜色」，重判退成一行小字（理由见文件头注释）。
+    var hasExistingColors: Bool = false
+    /// 「不重判，原样回核对颜色」。`hasExistingColors` 为真时必须给 ——
+    /// 给不出来的话主按钮就没有落点，用户又只剩重判那一条路。
+    var onKeepExisting: (() -> Void)?
 
     private enum Slot { case empty, anyColor }
 
@@ -188,11 +205,30 @@ struct PartsBaseColorStepView: View {
                     .foregroundStyle(Theme.ColorToken.Morandi.honey)
             }
 
-            Button(action: onContinue) {
-                Label("开始判色", systemImage: "eyedropper")
-                    .frame(maxWidth: .infinity)
+            if hasExistingColors, let onKeepExisting {
+                // 从核对页返回落到这一屏时，用户九成九是想回去接着核对。
+                // 主按钮就是那件事，而且什么都不重算。
+                Button(action: onKeepExisting) {
+                    Label("回核对颜色", systemImage: "checklist")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+
+                // 重判仍然留着（底色指认错了就得重来），但降成一行小字，
+                // 并且写清楚代价 —— 一样大的两个按钮并排放，误按的就是丢东西的那个。
+                Button(action: onContinue) {
+                    Text("重新判色（核对时改过的色号会清掉）")
+                        .font(.footnote)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.ColorToken.Status.error)
+            } else {
+                Button(action: onContinue) {
+                    Label("开始判色", systemImage: "eyedropper")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
         }
         .padding()
         .background(.regularMaterial)

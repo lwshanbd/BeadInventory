@@ -104,6 +104,8 @@ struct PartsSheetFlowView: View {
         case loadFailed
         /// 重新找零件会洗掉已有的成果。
         case confirmRedetect
+        /// 重新判色会洗掉用户在核对页一格一格改过的色号。
+        case confirmReclassify
         /// 判色时有零件的框里取不到图。出路是回零件清单改那几个框。
         case classifyNote(String)
         /// 这块范围里一个零件都没找到。出路是**留在这一屏**把框挪一挪，
@@ -116,6 +118,7 @@ struct PartsSheetFlowView: View {
             case .saveFailed: return "save"
             case .loadFailed: return "load"
             case .confirmRedetect: return "redetect"
+            case .confirmReclassify: return "reclassify"
             case .classifyNote(let text): return "note:\(text)"
             case .detectFoundNothing: return "empty"
             }
@@ -222,7 +225,10 @@ struct PartsSheetFlowView: View {
                                 calibration: calibration,
                                 emptyHex: tracked($emptyHex),
                                 anyColorHex: tracked($anyColorHex),
-                                onContinue: { runClassification() }
+                                onContinue: { requestClassification() },
+                                hasExistingColors: hasClassified,
+                                // 原样回去，一格都不重算。
+                                onKeepExisting: { path = [.list, .cellSize, .baseColor, .review] }
                             )
                         case .review:
                             PartsColorReviewStepView(
@@ -295,6 +301,15 @@ struct PartsSheetFlowView: View {
                     message: Text("会按现在圈的范围重找一遍零件。已经找好的零件框、量好的格子、判好的颜色、摆好的拼豆板都跟着作废，要从头再走一遍。"),
                     primaryButton: .cancel(Text("取消")),
                     secondaryButton: .destructive(Text("重新找")) { runDetection() }
+                )
+            // 判色是从头重算每一格，用户在核对页一格一格改过的色号会被整片盖掉 ——
+            // 那是几天的活，而触发它只要在这一屏点一下。
+            case .confirmReclassify:
+                return Alert(
+                    title: Text("重新判一遍颜色？"),
+                    message: Text("会照现在的底色和任意色重看一遍每一格，你在核对页改过的色号全部作废，要重新核对一遍。只是想接着核对的话点「取消」，再点上面那个「回核对颜色」。"),
+                    primaryButton: .cancel(Text("取消")),
+                    secondaryButton: .destructive(Text("重新判色")) { runClassification() }
                 )
             case .classifyNote(let text):
                 return Alert(
@@ -624,6 +639,22 @@ struct PartsSheetFlowView: View {
     }
 
     // MARK: - 逐格判色
+
+    /// 已经判过色了。核对页的修改全落在 `parts` 的格子里，所以「有格子」就等于
+    /// 「这儿有东西可丢」。
+    private var hasClassified: Bool { parts.contains(where: \.hasCells) }
+
+    /// 「开始判色 / 重新判色」这个按钮按下去之后的事。
+    ///
+    /// 判色是从头重算每一格 —— 第一次走到这儿这正是用户要的，但从核对页返回之后
+    /// 再按一次，用户一格一格改过的色号会被整片盖掉。所以判过色的先问一句。
+    private func requestClassification() {
+        if hasClassified {
+            prompt = .confirmReclassify
+            return
+        }
+        runClassification()
+    }
 
     private func runClassification() {
         guard let work, let calibration else { return }

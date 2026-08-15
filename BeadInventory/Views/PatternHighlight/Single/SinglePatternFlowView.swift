@@ -101,6 +101,8 @@ struct SinglePatternFlowView: View {
         case imageChanged
         /// 还没量过格子就按了「开始判色」。
         case needsGrid
+        /// 重新判色会洗掉用户在核对页一格一格改过的色号。
+        case confirmReclassify
 
         var id: String {
             switch self {
@@ -110,6 +112,7 @@ struct SinglePatternFlowView: View {
             case .classifyFailed: return "classify"
             case .imageChanged: return "changed"
             case .needsGrid: return "needsGrid"
+            case .confirmReclassify: return "reclassify"
             }
         }
     }
@@ -197,10 +200,13 @@ struct SinglePatternFlowView: View {
                                 emptyHex: tracked($emptyHex),
                                 // 单图纸没有「任意色」这一档，所以这个 binding 永远不会被写。
                                 anyColorHex: .constant(nil),
-                                onContinue: { runClassification() },
+                                onContinue: { requestClassification() },
                                 showsAnyColor: false,
                                 emptyHint: "图纸上没有豆子的那一片留白",
-                                title: "底色"
+                                title: "底色",
+                                hasExistingColors: sheet.hasCells,
+                                // 原样回去，一格都不重算。
+                                onKeepExisting: { path = [.grid, .baseColor, .review] }
                             )
                         case .review:
                             PartsColorReviewStepView(
@@ -289,6 +295,14 @@ struct SinglePatternFlowView: View {
                     title: Text("还没量过格子"),
                     message: Text("得先定下一格多大、格线落在哪，才知道每一格是什么颜色。"),
                     dismissButton: .default(Text("去量格子")) { path = [.grid] }
+                )
+            // 判色是从头重算每一格，用户在核对页一格一格改过的色号会被整片盖掉。
+            case .confirmReclassify:
+                return Alert(
+                    title: Text("重新判一遍颜色？"),
+                    message: Text("会照现在的底色重看一遍每一格，你在核对页改过的色号全部作废，要重新核对一遍。只是想接着核对的话点「取消」，再点上面那个「回核对颜色」。"),
+                    primaryButton: .cancel(Text("取消")),
+                    secondaryButton: .destructive(Text("重新判色")) { runClassification() }
                 )
             case .imageChanged:
                 return Alert(
@@ -679,6 +693,18 @@ struct SinglePatternFlowView: View {
     /// 这里曾经在它上面加过一层逐格 OCR（图纸格子里多半印着「14」「28」这样的色号），
     /// 已经删掉：慢，而且用户要的不是「再多一个会出错的来源」——
     /// 判错了在核对页两下就能改，那才是这条流程的解法。
+    /// 「开始判色 / 重新判色」这个按钮按下去之后的事。
+    ///
+    /// 判色是从头重算每一格 —— 第一次走到这儿这正是用户要的，但从核对页返回之后
+    /// 再按一次，用户一格一格改过的色号会被整片盖掉。所以判过色的先问一句。
+    private func requestClassification() {
+        if sheet.hasCells {
+            prompt = .confirmReclassify
+            return
+        }
+        runClassification()
+    }
+
     private func runClassification() {
         guard let work else { return }   // 屏幕上正显示「正在准备图纸…」，这个按钮还看不见
         // 老数据的 calibration 是空的，而 load 会按「有豆子的格子」把用户直接送到照着拼；
