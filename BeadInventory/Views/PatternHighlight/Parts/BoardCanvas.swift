@@ -154,6 +154,13 @@ struct BoardCanvasRenderer {
     /// 是集合不是单个：单图纸模式的高亮页可以同时点亮好几个色号（手上抓了两种豆子
     /// 一起拼是常事），而这块画布是两种模式共用的。多零件那边传一个就是一个。
     var highlightKeys: Set<String> = []
+    /// 每个摆放身上写的编号（摆放 id → 写什么）。空 = 不写。
+    ///
+    /// 写的是零件在**清单里的序号**，跟「零件清单」那屏图上的号、缩略图上的号是同一个 ——
+    /// 排到板上之后零件就脱离图纸了，板上一块灰蓝色的方块到底是图纸上哪一块，
+    /// 不写号就只能靠形状猜。号跟着零件上板，用户才对得回去。
+    /// 单图纸模式整张图就一个「零件」，没有号可写，传空。
+    var labels: [UUID: String] = [:]
     var selection: UUID?
     var moving: Moving?
 
@@ -225,6 +232,8 @@ struct BoardCanvasRenderer {
         var fills: [String: Path] = [:]
         // 轮廓要按「放不下 / 选中 / 普通」三种样式分开描，跟填充分两轮走
         var contours: [(path: Path, color: Color, width: CGFloat)] = []
+        // 编号最后画：它必须压在豆子和轮廓上面，不然一个都看不见
+        var badges: [(box: CGRect, text: String, selected: Bool)] = []
 
         for placement in board.placements {
             guard let footprint = footprints[placement.id] else { continue }
@@ -283,6 +292,14 @@ struct BoardCanvasRenderer {
                 : (isSelected ? Theme.ColorToken.Morandi.honey
                               : stage?.contour ?? Theme.ColorToken.Text.primary.opacity(0.45))
             contours.append((path: contour, color: outline, width: isSelected ? 2.5 : 1))
+
+            if let text = labels[placement.id], !footprint.isEmpty {
+                badges.append((
+                    box: layout.boundingRect(of: footprint, col: col, row: row),
+                    text: text,
+                    selected: isSelected
+                ))
+            }
         }
 
         // 几批填充之间的先后只有一处有讲究：零件之间本来就不会重叠，唯独拖到别人身上那一下会 ——
@@ -306,6 +323,64 @@ struct BoardCanvasRenderer {
 
         for contour in contours {
             context.stroke(contour.path, with: .color(contour.color), lineWidth: contour.width)
+        }
+
+        drawBadges(badges, in: context, cell: cell, stage: stage)
+    }
+
+    /// 把编号写在每个零件正中间。
+    ///
+    /// 位置取零件外接矩形的中心：贴左上角的话，零件之间只隔一格，号会压到邻居身上 ——
+    /// 而这个号存在的意义正是「分清谁是谁」。不规则零件的中心偶尔落在镂空里，
+    /// 那反而更好认（不挡豆子）。
+    ///
+    /// **装不下就不写**（除非它是选中的那个）：一块 100×100 的板缩在手机上，
+    /// 一格才三四个点，五十几个号会叠成一团糊，比不写还糟。用户捏一下放大就出来了；
+    /// 而选中的那个不管多小都写 —— 他刚点了它，屏幕上必须回答「这是几号」。
+    private func drawBadges(
+        _ badges: [(box: CGRect, text: String, selected: Bool)],
+        in context: GraphicsContext,
+        cell: CGFloat,
+        stage: BoardHighlightStage?
+    ) {
+        guard !badges.isEmpty else { return }
+        // 跟着格子大小走：放大之后号也跟着大，不然一块放大 8 倍的板上还是那个米粒大的号。
+        let preferred = min(max(cell * 1.7, 10), 20)
+
+        for badge in badges {
+            let fill: Color = badge.selected
+                ? Theme.ColorToken.Morandi.honey
+                : (stage?.board ?? Theme.ColorToken.Surface.background).opacity(0.88)
+            let ink: Color = badge.selected
+                ? .black
+                : (stage?.gridCore ?? Theme.ColorToken.Text.primary)
+
+            // 先按理想字号试，装不下再退到最小可读的 10pt；还装不下就只有选中的那个硬写。
+            var drawn: (text: GraphicsContext.ResolvedText, pill: CGRect)?
+            for size in [preferred, 10] where drawn == nil {
+                let resolved = context.resolve(
+                    Text(badge.text).font(.system(size: size, weight: .bold)).foregroundStyle(ink)
+                )
+                let measured = resolved.measure(in: CGSize(width: 400, height: 400))
+                let pill = CGRect(
+                    x: badge.box.midX - measured.width / 2 - size * 0.28,
+                    y: badge.box.midY - measured.height / 2 - size * 0.1,
+                    width: measured.width + size * 0.56,
+                    height: measured.height + size * 0.2
+                )
+                if pill.width <= badge.box.width, pill.height <= badge.box.height {
+                    drawn = (resolved, pill)
+                } else if size == 10, badge.selected {
+                    drawn = (resolved, pill)
+                }
+            }
+            guard let drawn else { continue }
+
+            context.fill(
+                Path(roundedRect: drawn.pill, cornerRadius: drawn.pill.height / 2),
+                with: .color(fill)
+            )
+            context.draw(drawn.text, at: CGPoint(x: badge.box.midX, y: badge.box.midY), anchor: .center)
         }
     }
 

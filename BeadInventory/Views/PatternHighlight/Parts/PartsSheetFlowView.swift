@@ -181,6 +181,9 @@ struct PartsSheetFlowView: View {
                     if step == .board {
                         PartsBoardStepView(
                             parts: parts,
+                            // 给它图不等于要求它有图：拿到了就能点开零件跟图纸原图对一眼，
+                            // 没拿到（裁失败）这一屏照常摆板子。
+                            work: work,
                             boards: tracked($boards),
                             boardSpacing: tracked($boardSpacing),
                             colorSystem: project.colorSystem,

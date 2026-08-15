@@ -38,6 +38,10 @@ import SwiftUI
 
 struct PartsBoardStepView: View {
     let parts: [BeadPart]
+    /// 图纸本身。**可以是 nil** —— 这一屏只靠格子数据就能画板子，图裁失败不该把用户
+    /// 挡在最后一步外面（见 PartsSheetFlowView 的 navigationDestination）。
+    /// 有图的时候多一件事能做：点板上的零件，把图纸上原来那块抠出来对一眼。
+    var work: PartsWorkImage?
     @Binding var boards: [PartsBoard]
     /// 这套板子是按哪一档松紧排的。nil = 还没排过（或者是没这个字段的老图纸）。
     @Binding var boardSpacing: BoardSpacing?
@@ -87,6 +91,14 @@ struct PartsBoardStepView: View {
     /// 形状不该跟着重算。
     @State private var footprints: [UUID: PartFootprint] = [:]
     @State private var colorCache: [String: Color] = [:]
+    /// 零件 id → 它在清单里排第几（1-based）。板上写的号、零件条上写的号都是它，
+    /// 跟「零件清单」那屏图上的号是同一个 —— 三处不一致的话，这个号就没法用来对图纸了。
+    @State private var partOrder: [UUID: Int] = [:]
+    /// 从图纸上抠下来的零件原样。按需裁（用户点到哪个才裁哪个），裁过的留着 ——
+    /// 五十几个零件全裁一遍要几百毫秒，而用户一次只看一个。
+    @State private var originals: [UUID: UIImage] = [:]
+    /// 正在对照原图的那个零件
+    @State private var inspecting: BeadPart?
 
     @State private var note: String?
     @State private var noteToken = UUID()
@@ -180,8 +192,12 @@ struct PartsBoardStepView: View {
         }
         .task {
             colorCache = makeColorCache()
+            partOrder = Dictionary(uniqueKeysWithValues: parts.enumerated().map { ($1.id, $0 + 1) })
             autoPackIfNeeded()
         }
+        // 选中谁就把谁的原图抠出来。抠在后台：高清工作图上一块零件几十万像素，
+        // 主线程上裁，用户点一下零件界面就顿一下。
+        .task(id: selectedPartId) { await loadOriginal(for: selectedPartId) }
         // 送外屏必须跟在 footprints 算完之后 —— 外屏只有形状可画，没形状的摆放会被整个跳过
         // （见 BoardCanvas 里那句 `guard let footprint`）。这两件事分开写过一次，
         // 结果是新摆的零件在电视上根本不出现、重排一遍电视上整块空白。
@@ -198,6 +214,20 @@ struct PartsBoardStepView: View {
             guard note != nil else { return }
             try? await Task.sleep(for: .seconds(4))
             if !Task.isCancelled { note = nil }
+        }
+        .sheet(item: $inspecting) { part in
+            PartOriginalSheet(
+                title: name(of: part.id),
+                order: partOrder[part.id] ?? 0,
+                // 判「改过名没有」跟 displayName 用同一把尺（都要去掉空白），
+                // 否则名字里只打了个空格时，标题退回「零件 10」而这一行以为它有名字。
+                showsOrder: part.customName?.trimmingCharacters(in: .whitespaces).isEmpty == false,
+                original: originals[part.id],
+                hasSource: work != nil,
+                footprint: part.footprint(turns: 0),
+                colors: colorCache,
+                placement: placementInfo(of: part.id)
+            )
         }
         .alert("重新排一遍？", isPresented: Binding(
             get: { repackTarget != nil },
@@ -457,12 +487,29 @@ struct PartsBoardStepView: View {
         .background(.regularMaterial)
     }
 
+    /// 选中一个零件之后：左边告诉他「这是几号、图纸上长什么样」，右边是能对它做的事。
+    ///
+    /// 左边那一坨整个可点，点开是大图对照。板上的零件是一片纯色方块（判色的产物），
+    /// 跟图纸上那块带描边、带渐变的画差得很远 —— 摆错了位置、拿错了零件，
+    /// 只看板子是看不出来的，得跟原图对一眼。
     private func selectedActions(_ placement: PartPlacement) -> some View {
         HStack(spacing: Theme.Spacing.sm) {
-            Text(name(of: placement.partId))
-                .font(.footnote.weight(.medium))
-                .foregroundColor(Theme.ColorToken.Text.primary)
-                .lineLimit(1)
+            Button { inspect(placement.partId) } label: {
+                HStack(spacing: Theme.Spacing.sm) {
+                    originalThumb(placement.partId)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(name(of: placement.partId))
+                            .font(.footnote.weight(.medium))
+                            .foregroundColor(Theme.ColorToken.Text.primary)
+                            .lineLimit(1)
+                        Label("看原图", systemImage: "photo")
+                            .font(.caption2)
+                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 
             Spacer(minLength: Theme.Spacing.sm)
 
@@ -524,21 +571,64 @@ struct PartsBoardStepView: View {
     private func trayCell(_ part: BeadPart) -> some View {
         let footprint = part.footprint(turns: 0)
         return VStack(spacing: 2) {
-            PartShapeThumbnail(footprint: footprint, colors: colorCache)
-                .frame(width: 48, height: 48)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
-                        .fill(Theme.ColorToken.Surface.subtle)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
-                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-                )
+            ZStack(alignment: .topLeading) {
+                PartShapeThumbnail(footprint: footprint, colors: colorCache)
+                    .frame(width: 48, height: 48)
+                // 零件条上也写号：条里挑一个放上去、板上出现一个号，两边是同一个数字，
+                // 用户才知道刚放上去的是哪一个。
+                orderBadge(part.id, size: 9)
+                    .padding(3)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
+                    .fill(Theme.ColorToken.Surface.subtle)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
+                    .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+            )
             Text("\(footprint.width)×\(footprint.height)")
                 .font(.caption2.monospacedDigit())
                 .foregroundColor(Theme.ColorToken.Text.secondary)
         }
         .contentShape(Rectangle())
+    }
+
+    /// 编号胶囊。跟「零件清单」那屏缩略图上那个长一样 —— 同一个号在两屏之间
+    /// 换个样子出现，用户就得先确认「这两个号是不是一回事」。
+    private func orderBadge(_ partId: UUID, size: CGFloat) -> some View {
+        Text("\(partOrder[partId] ?? 0)")
+            .font(.system(size: size, weight: .bold))
+            .foregroundStyle(Theme.ColorToken.Text.onAccent)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(Theme.ColorToken.Morandi.mauve))
+    }
+
+    /// 选中的零件在图纸上原来那块。还没抠出来（或者这次没有图）就先画识别出来的形状 ——
+    /// 这一格永远有东西，不会闪一个空框。
+    private func originalThumb(_ partId: UUID) -> some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
+                .fill(Theme.ColorToken.Surface.subtle)
+
+            if let image = originals[partId] {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(1)
+            } else if let part = parts.first(where: { $0.id == partId }) {
+                PartShapeThumbnail(footprint: part.footprint(turns: 0), colors: colorCache)
+                    .padding(3)
+            }
+
+            orderBadge(partId, size: 9).padding(2)
+        }
+        .frame(width: 42, height: 42)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
+                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
     }
 
     /// 这块板上用到的颜色。点一下只剩它是亮的 —— 抓一把 H7 的时候，
@@ -616,6 +706,58 @@ struct PartsBoardStepView: View {
     private var unplaced: [BeadPart] {
         let placed = placedIds
         return parts.filter { !placed.contains($0.id) && $0.beadCount > 0 }
+    }
+
+    /// 当前选中的是哪个零件（选中态挂在「摆放」上，这里翻成零件）
+    private var selectedPartId: UUID? {
+        guard let id = selection else { return nil }
+        return currentBoard?.placements.first(where: { $0.id == id })?.partId
+    }
+
+    /// 板上每个摆放身上写的号。零件已经不在图纸上了，号是它跟图纸之间唯一的线。
+    private func labels(for board: PartsBoard) -> [UUID: String] {
+        var result: [UUID: String] = [:]
+        for placement in board.placements {
+            guard let order = partOrder[placement.partId] else { continue }
+            result[placement.id] = "\(order)"
+        }
+        return result
+    }
+
+    /// 这个零件摆在第几块板上、转了几次。没摆上板时是 nil。
+    private func placementInfo(of partId: UUID) -> PartOriginalSheet.Placement? {
+        for (index, board) in boards.enumerated() {
+            guard let hit = board.placements.first(where: { $0.partId == partId }) else { continue }
+            return PartOriginalSheet.Placement(boardNumber: index + 1, turns: hit.turns)
+        }
+        return nil
+    }
+
+    /// 打开大图对照。原图还没抠出来就现抠一次 —— 用户点得比后台裁图快是常事
+    /// （选中那一下才开始裁），少了这一句，手快的人打开就只有一个形状图，
+    /// 而且不关掉重来就再也不会变。
+    private func inspect(_ partId: UUID) {
+        guard let part = parts.first(where: { $0.id == partId }) else { return }
+        inspecting = part
+        if originals[partId] == nil {
+            Task { await loadOriginal(for: partId) }
+        }
+    }
+
+    /// 把这个零件在图纸上原来那块抠出来。四周留 6% 余量，跟零件清单那屏的小图一个裁法 ——
+    /// 两屏裁得不一样的话，用户会以为自己看的是两个零件。
+    private func loadOriginal(for partId: UUID?) async {
+        guard let partId, originals[partId] == nil, let work,
+              let part = parts.first(where: { $0.id == partId }) else { return }
+        let bounds = part.bounds
+        let source = work
+        let cropped = await Task.detached(priority: .userInitiated) {
+            PartsThumbnailMaker.crop(source, normalized: bounds.insetBy(
+                dx: -bounds.width * 0.06, dy: -bounds.height * 0.06
+            ))
+        }.value
+        guard !Task.isCancelled, let cropped else { return }
+        originals[partId] = cropped
     }
 
     private func name(of partId: UUID) -> String {
@@ -1011,7 +1153,8 @@ struct PartsBoardStepView: View {
             footprints: footprints,
             colorCache: colorCache,
             highlightKeys: highlightKey.map { [$0] } ?? [],
-            caption: String(localized: "第 \(boardIndex + 1) / \(boards.count) 块")
+            caption: String(localized: "第 \(boardIndex + 1) / \(boards.count) 块"),
+            labels: labels(for: board)
         ))
     }
 
@@ -1022,6 +1165,7 @@ struct PartsBoardStepView: View {
             footprints: footprints,
             colorCache: colorCache,
             highlightKeys: highlightKey.map { [$0] } ?? [],
+            labels: labels(for: board),
             selection: selection,
             moving: drag.map {
                 .init(placement: $0.placement, deltaCol: $0.deltaCol,
@@ -1072,7 +1216,10 @@ struct PartsBoardStepView: View {
 
 /// 直接按格子画，不去原图上抠 —— 这里要认的是「零件长什么形状」，
 /// 而形状就在 cells 里，抠图反而糊。
-private struct PartShapeThumbnail: View {
+///
+/// 对照弹窗（`PartOriginalSheet`）里画「识别出来的样子」用的也是它：
+/// 那一屏就是要拿这张图跟图纸原图并排比，两张不是同一套画法的话比出来的差别不作数。
+struct PartShapeThumbnail: View {
     let footprint: PartFootprint
     let colors: [String: Color]
 

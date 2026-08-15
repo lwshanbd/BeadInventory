@@ -35,7 +35,8 @@ struct BoardExternalDisplayView: View {
                                 board: content.board,
                                 footprints: content.footprints,
                                 colorCache: content.colorCache,
-                                highlightKeys: content.highlightKeys
+                                highlightKeys: content.highlightKeys,
+                                labels: content.labels
                             )
                             // padding 交给外面那层 .padding(24) —— 这里再留一次的话
                             // 每边就是 48pt 死边，而这块屏幕存在的意义就是铺满。
