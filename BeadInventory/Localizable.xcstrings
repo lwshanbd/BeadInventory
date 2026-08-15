@@ -11342,6 +11342,76 @@
         }
       }
     },
+    "回核对颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to Checking Colors"
+          }
+        }
+      }
+    },
+    "重新判一遍颜色？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read all the colors again?"
+          }
+        }
+      }
+    },
+    "重新判色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read Them Again"
+          }
+        }
+      }
+    },
+    "重新判色（核对时改过的色号会清掉）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read the colors again (your corrections will be cleared)"
+          }
+        }
+      }
+    },
+    "会照现在的底色和任意色重看一遍每一格，你在核对页改过的色号全部作废，要重新核对一遍。只是想接着核对的话点「取消」，再点上面那个「回核对颜色」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every square gets read again using the background and any-color beads you picked. Every color code you corrected while checking is thrown away, and you start checking over. If you only meant to carry on checking, tap Cancel, then tap Back to Checking Colors."
+          }
+        }
+      }
+    },
+    "会照现在的底色重看一遍每一格，你在核对页改过的色号全部作废，要重新核对一遍。只是想接着核对的话点「取消」，再点上面那个「回核对颜色」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every square gets read again using the background color you picked. Every color code you corrected while checking is thrown away, and you start checking over. If you only meant to carry on checking, tap Cancel, then tap Back to Checking Colors."
+          }
+        }
+      }
+    },
+    "改了底色要重新判色才生效，直接回去看还是原来那批颜色。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A new background color only takes effect after the colors are read again — go straight back and you will see the same colors as before."
+          }
+        }
+      }
+    },
     "清掉" : {
       "localizations" : {
         "en" : {
