@@ -94,9 +94,14 @@ struct PartsBoardStepView: View {
     /// 零件 id → 它在清单里排第几（1-based）。板上写的号、零件条上写的号都是它，
     /// 跟「零件清单」那屏图上的号是同一个 —— 三处不一致的话，这个号就没法用来对图纸了。
     @State private var partOrder: [UUID: Int] = [:]
-    /// 从图纸上抠下来的零件原样。按需裁（用户点到哪个才裁哪个），裁过的留着 ——
-    /// 五十几个零件全裁一遍要几百毫秒，而用户一次只看一个。
-    @State private var originals: [UUID: UIImage] = [:]
+    /// 从图纸上抠下来的零件原样，连同它现在处于哪一步。
+    ///
+    /// 选中谁就裁谁（不是点开弹窗才裁），裁过的留着不清 —— 一次会话最多五十几张，
+    /// 而且每张都只是原图上的一块（`CGImage.cropping` 跟底图共用像素），不额外占内存。
+    ///
+    /// **状态必须存进来，不能只存图**：只存 `UIImage?` 的话，「还在裁」和「裁不出来」
+    /// 都是 nil，屏幕上只能都画成转圈 —— 而后者是等到天亮也不会出来的。见 `PartOriginalSheet.Original`。
+    @State private var originals: [UUID: PartOriginalSheet.Original] = [:]
     /// 正在对照原图的那个零件
     @State private var inspecting: BeadPart?
 
@@ -222,8 +227,7 @@ struct PartsBoardStepView: View {
                 // 判「改过名没有」跟 displayName 用同一把尺（都要去掉空白），
                 // 否则名字里只打了个空格时，标题退回「零件 10」而这一行以为它有名字。
                 showsOrder: part.customName?.trimmingCharacters(in: .whitespaces).isEmpty == false,
-                original: originals[part.id],
-                hasSource: work != nil,
+                original: originalState(of: part.id),
                 footprint: part.footprint(turns: 0),
                 colors: colorCache,
                 placement: placementInfo(of: part.id)
@@ -529,24 +533,33 @@ struct PartsBoardStepView: View {
         }
     }
 
-    /// 图纸上原来那块，尽量画大。还没抠出来（或者这次没有图）就画识别出来的形状 ——
-    /// 这块地方永远有东西，不会空一大片。
+    /// 图纸上原来那块，尽量画大。
     ///
-    /// 点一下开对照弹窗（原图和识别结果并排）：这里只有一张图，
-    /// 「两边像不像」还得那一屏才比得了。
+    /// **原图没到位时画的是识别结果，那就必须说出来。** 退回去画的
+    /// `PartShapeThumbnail` 跟对照弹窗里标着「识别出来的样子」的是同一个 view，也跟
+    /// 板子本身来自同一份 `cells` —— 不说明的话，用户为了核对「板上这块 = 图纸上那块」
+    /// 点开它，看到的是同一份数据画的第二张图，两边**永远**一致。判错的零件会被读成
+    /// 「核对通过」，然后照着它穿真豆子。这个功能存在的理由正是暴露识别错误，
+    /// 让它自我确认比不做还糟。
+    ///
+    /// 所以角上那句话跟着状态走：有原图才说「点开对照」，没有就说清楚现在画的是什么、
+    /// 还要不要等。
     private func partPreview(_ placement: PartPlacement) -> some View {
-        Button { inspect(placement.partId) } label: {
+        let state = originalState(of: placement.partId)
+        return Button { inspect(placement.partId) } label: {
             ZStack(alignment: .bottomTrailing) {
                 RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
                     .fill(Theme.ColorToken.Surface.subtle)
 
-                if let image = originals[placement.partId] {
+                if case .ready(let image) = state {
                     GeometryReader { geo in
                         // 放大到超过原图分辨率时用最近邻，豆子边界是硬的；缩小时用默认插值，
-                        // 否则一像素宽的格线会抖成摩尔纹（同零件清单那屏）。
+                        // 否则一像素宽的格线会抖成摩尔纹。比的是图**真正画出来那块**的宽
+                        // （`scaledToFit` 之后竖长的图只占中间一条），不是容器的宽。
+                        let drawn = min(geo.size.width, geo.size.height * aspect(of: image))
                         Image(uiImage: image)
                             .resizable()
-                            .interpolation(geo.size.width >= image.size.width ? .none : .high)
+                            .interpolation(drawn >= image.size.width ? .none : .high)
                             .scaledToFit()
                             .frame(width: geo.size.width, height: geo.size.height)
                     }
@@ -556,7 +569,7 @@ struct PartsBoardStepView: View {
                         .padding(Theme.Spacing.sm)
                 }
 
-                Label(work == nil ? "看识别结果" : "点开对照", systemImage: "rectangle.on.rectangle")
+                Label(previewCaption(state).text, systemImage: previewCaption(state).icon)
                     .font(.caption2.weight(.medium))
                     .foregroundColor(Theme.ColorToken.Text.secondary)
                     .padding(.horizontal, Theme.Spacing.sm)
@@ -768,22 +781,40 @@ struct PartsBoardStepView: View {
         return nil
     }
 
-    /// 打开大图对照。原图还没抠出来就现抠一次 —— 用户点得比后台裁图快是常事
-    /// （选中那一下才开始裁），少了这一句，手快的人打开就只有一个形状图，
-    /// 而且不关掉重来就再也不会变。
+    /// 打开大图对照。
+    ///
+    /// 这里**不再补裁一次**：能点开这个按钮就说明零件已经选中了，选中那一下的
+    /// `.task(id: selectedPartId)` 早就在裁；而 `originals` 是 @State，裁完这一屏
+    /// 连同弹窗都会跟着重画。补的那一刀只会让同一块被并发裁两遍。
     private func inspect(_ partId: UUID) {
-        guard let part = parts.first(where: { $0.id == partId }) else { return }
-        inspecting = part
-        if originals[partId] == nil {
-            Task { await loadOriginal(for: partId) }
+        guard let part = parts.first(where: { $0.id == partId }) else {
+            // 200pt 的大按钮点了没反应是最难受的一种坏 —— 至少要说一句、留一行日志。
+            AppLogger.shared.warning("PartsBoard", "inspect_part_missing", metadata: [
+                "partId": partId.uuidString
+            ])
+            flash(String(localized: "这块对不上任何零件了，回零件清单重新拆一次"))
+            return
         }
+        inspecting = part
     }
 
-    /// 把这个零件在图纸上原来那块抠出来。四周留 6% 余量，跟零件清单那屏的小图一个裁法 ——
-    /// 两屏裁得不一样的话，用户会以为自己看的是两个零件。
+    /// 把这个零件在图纸上原来那块抠出来。四周留 6% 余量，跟零件清单那屏的小图一个裁法
+    /// （`PartsThumbnailMaker.make`）—— 两屏裁得不一样的话，用户会以为自己看的是两个零件。
+    ///
+    /// **抠不出来要记成 `.unavailable`，不能一声不响地返回。** 裁失败是确定性的
+    /// （同一张工作图、同一块 bounds，重开几次都是同一个结果），静默返回的话
+    /// `originals[partId]` 停在 nil，屏幕上就是一个永远转下去的圈，而用户不知道该不该等。
+    /// 顺带记一条日志：裁跑在后台，nil 本身不带原因，不记的话事后无从查起。
     private func loadOriginal(for partId: UUID?) async {
-        guard let partId, originals[partId] == nil, let work,
-              let part = parts.first(where: { $0.id == partId }) else { return }
+        guard let partId, let part = parts.first(where: { $0.id == partId }) else { return }
+        if case .some(.ready) = originals[partId] { return }
+        // 这次根本没有图纸可抠：立刻定论，别让用户等一个不会来的东西。
+        guard let work else {
+            originals[partId] = .unavailable
+            return
+        }
+
+        originals[partId] = .loading
         let bounds = part.bounds
         let source = work
         let cropped = await Task.detached(priority: .userInitiated) {
@@ -791,8 +822,49 @@ struct PartsBoardStepView: View {
                 dx: -bounds.width * 0.06, dy: -bounds.height * 0.06
             ))
         }.value
-        guard !Task.isCancelled, let cropped else { return }
-        originals[partId] = cropped
+
+        // 取消 ≠ 失败：用户换选了别的零件而已，把这条退回「没试过」，下次选中重来。
+        guard !Task.isCancelled else {
+            if case .some(.loading) = originals[partId] { originals[partId] = nil }
+            return
+        }
+        guard let cropped else {
+            originals[partId] = .unavailable
+            AppLogger.shared.warning("PartsBoard", "part_original_crop_failed", metadata: [
+                "partId": partId.uuidString,
+                "bounds": "\(bounds)",
+                "region": "\(source.region)",
+                "workSize": "\(source.image.size)"
+            ])
+            return
+        }
+        originals[partId] = .ready(cropped)
+    }
+
+    /// 大图角上写什么。三种状态三句话：只有真拿到图纸原图时才敢说「对照」，
+    /// 另外两种都得先讲清楚现在画的是识别结果。
+    private func previewCaption(_ state: PartOriginalSheet.Original)
+    -> (text: String, icon: String) {
+        switch state {
+        case .ready:
+            return (String(localized: "点开对照"), "rectangle.on.rectangle")
+        case .loading:
+            return (String(localized: "图纸原图还在抠，这是识别结果"), "clock")
+        case .unavailable:
+            return (String(localized: "图纸原图拿不到，这是识别结果"), "photo.badge.exclamationmark")
+        }
+    }
+
+    private func aspect(of image: UIImage) -> CGFloat {
+        guard image.size.height > 0 else { return 1 }
+        return image.size.width / image.size.height
+    }
+
+    /// 这个零件的原图现在是什么状态。字典里还没有 = 选中那一下的裁图刚要开始 ——
+    /// 但没有图纸时连开始都不会开始，那就直接说拿不到，别先闪一下转圈。
+    private func originalState(of partId: UUID) -> PartOriginalSheet.Original {
+        if let known = originals[partId] { return known }
+        return work == nil ? .unavailable : .loading
     }
 
     private func name(of partId: UUID) -> String {
@@ -947,6 +1019,11 @@ struct PartsBoardStepView: View {
     }
 
     /// 点了零件条里的一个零件：落到当前这块板上；这块满了就新开一块并切过去。
+    ///
+    /// **落位之后不选中它。** 选中会把整条零件条换成那个零件的大图（见 `bottomPanel`），
+    /// 于是「接着点下一个」变成「先点收起，再点下一个」—— 一次点击换来的是每放一个零件
+    /// 多一次点击，而「还有 N 个没摆」那句恰好在它最该确认放成功的时候消失。
+    /// 放成功的证据在板上：那儿多了一块带号的零件，条里少了一个。
     private func place(_ part: BeadPart) {
         // 这里只认**当前这块板**（用户点的时候看着的就是它），所以不走 packer 的
         // placeOne（那个会挨块板试过去）；「怎么摆」的规矩还是共用 packer 那一份。
@@ -956,11 +1033,9 @@ struct PartsBoardStepView: View {
         if let board = currentBoard,
            let hit = PartsBoardPacker.fit(
                options, in: PartsBoardPacker.occupancy(of: board, parts: parts, spacing: used)) {
-            let placement = PartPlacement(
+            boards[boardIndex].placements.append(PartPlacement(
                 partId: part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
-            )
-            boards[boardIndex].placements.append(placement)
-            selection = placement.id
+            ))
             return
         }
 
@@ -971,14 +1046,13 @@ struct PartsBoardStepView: View {
             return
         }
         var board = PartsBoard(size: size)
-        let placement = PartPlacement(
+        board.placements.append(PartPlacement(
             partId: part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
-        )
-        board.placements.append(placement)
+        ))
         boards.append(board)
         boardSpacing = used
+        // switchTo 顺手把选中清掉了，正是这里要的（理由见函数头注释）
         switchTo(boards.count - 1)
-        selection = placement.id
         flash(String(localized: "这块板放不下了，新开了一块"))
     }
 

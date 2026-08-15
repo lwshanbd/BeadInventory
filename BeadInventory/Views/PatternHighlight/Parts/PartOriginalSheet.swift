@@ -16,11 +16,23 @@
 import SwiftUI
 
 struct PartOriginalSheet: View {
-    /// 这个零件摆在哪儿。没摆上板时是 nil（零件条里的那些）。
+    /// 这个零件摆在哪儿。nil = 还没摆上板 —— 目前进不来（只有点板上的零件才开得了这一屏），
+    /// 留着是为了以后从零件条也能点开。
     struct Placement {
         let boardNumber: Int
         /// 顺时针转了几个 90°。**必须说**：板上那块是转过的，跟原图对不上不是识别错了。
         let turns: Int
+    }
+
+    /// 图纸原图现在处于哪一步。**必须是三选一，不能用「一张 nil 的图 + 一个 Bool」凑**：
+    /// 那样「抠失败」和「还在抠」长得一模一样，用户对着一个永远转下去的圈等 ——
+    /// 而抠失败是确定性的（同一张图、同一块 bounds，每次都失败），他等到天亮也不会出来。
+    enum Original {
+        case loading
+        case ready(UIImage)
+        /// 这次没有图纸可抠，或者这块在图纸上抠不出来。对用户来说是同一件事：
+        /// 别等了，只能看识别结果。
+        case unavailable
     }
 
     let title: String
@@ -29,11 +41,7 @@ struct PartOriginalSheet: View {
     /// 要不要单列一行写编号。零件没改过名时标题本身就是「零件 10」，
     /// 底下再写一行「编号 10」是同一句话说两遍；改过名的（「左前腿」）才需要这一行。
     let showsOrder: Bool
-    /// 从图纸上抠下来的原样。nil = 还在抠，或者这次根本没有图（见 `hasSource`）。
-    let original: UIImage?
-    /// 这次有没有图纸可抠。没有图和「正在抠」要说不一样的话：
-    /// 一个是等一下就好，一个是等到天亮也不会出来。
-    let hasSource: Bool
+    let original: Original
     let footprint: PartFootprint
     let colors: [String: Color]
     let placement: Placement?
@@ -102,31 +110,44 @@ struct PartOriginalSheet: View {
 
     @ViewBuilder
     private var sourceImage: some View {
-        if let original {
+        switch original {
+        case .ready(let image):
             GeometryReader { geo in
-                // 放大到超过原图分辨率时用最近邻，豆子的边界是硬的（同零件清单那屏）；
-                // 缩小时用默认插值，否则一像素宽的格线会抖成摩尔纹。
-                Image(uiImage: original)
+                // 放大到超过原图分辨率时用最近邻，豆子的边界是硬的；缩小时用默认插值，
+                // 否则一像素宽的格线会抖成摩尔纹。
+                //
+                // 比的是**图真正画出来那块**的宽，不是容器的宽：`scaledToFit` 之后
+                // 竖长的图只占容器中间窄窄一条，拿容器宽去比会在其实正在缩小的时候选中
+                // 最近邻，摩尔纹照样出来。
+                let drawn = min(geo.size.width, geo.size.height * aspect(of: image))
+                Image(uiImage: image)
                     .resizable()
-                    .interpolation(geo.size.width >= original.size.width ? .none : .high)
+                    .interpolation(drawn >= image.size.width ? .none : .high)
                     .scaledToFit()
                     .frame(width: geo.size.width, height: geo.size.height)
             }
             .padding(Theme.Spacing.sm)
-        } else if hasSource {
+        case .loading:
             ProgressView()
-        } else {
+        case .unavailable:
             VStack(spacing: Theme.Spacing.sm) {
                 Image(systemName: "photo.badge.exclamationmark")
                     .font(.title)
                     .foregroundStyle(Theme.ColorToken.Text.tertiary)
-                Text("这次读不出图纸原图，只能看右边这张")
+                // 「没读出图纸」和「这块抠不出来」对用户是同一件事：别等了。
+                // 但必须说成「这次拿不到」而不是转圈 —— 转圈是在让他等一个不会来的东西。
+                Text("图纸上这块这次拿不到，只能看右边识别出来的样子")
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Text.tertiary)
                     .multilineTextAlignment(.center)
             }
             .padding(Theme.Spacing.sm)
         }
+    }
+
+    private func aspect(of image: UIImage) -> CGFloat {
+        guard image.size.height > 0 else { return 1 }
+        return image.size.width / image.size.height
     }
 
     // MARK: - 几句事实
@@ -173,10 +194,15 @@ struct PartOriginalSheet: View {
         }
     }
 
+    /// 只有真的有两边可比时才说这句。左边是转圈或者「拿不到」的时候，
+    /// 「两边形状对不上」是在让他比一个不存在的东西。
+    @ViewBuilder
     private var hint: some View {
-        Text("两边形状对不上，多半是这个零件的格子或者颜色判错了 —— 回「核对颜色」那屏改，改完再回来摆。")
-            .font(.caption)
-            .foregroundColor(Theme.ColorToken.Text.tertiary)
-            .fixedSize(horizontal: false, vertical: true)
+        if case .ready = original {
+            Text("两边形状对不上，多半是这个零件的格子或者颜色判错了 —— 回「核对颜色」那屏改，改完再回来摆。")
+                .font(.caption)
+                .foregroundColor(Theme.ColorToken.Text.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
