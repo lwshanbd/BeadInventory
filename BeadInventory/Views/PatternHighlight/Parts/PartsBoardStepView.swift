@@ -461,21 +461,26 @@ struct PartsBoardStepView: View {
 
     // MARK: - 下：零件 / 颜色
 
+    /// 下半屏。**选中一个零件时，这里整个变成那个零件在图纸上的大图。**
+    ///
+    /// 早先是在原来那排按钮左边塞了个 42pt 的小图 —— 一个 20×18 格的零件缩到 42 点，
+    /// 一格两个点，什么都看不清，等于没给。而选中一个零件时用户就一件事要做：
+    /// 确认「板上这块 = 图纸上那块」。零件条和色号条那会儿一个都用不上，让位给图。
     private var bottomPanel: some View {
         VStack(spacing: Theme.Spacing.md) {
             if let id = selection, let placement = currentBoard?.placements.first(where: { $0.id == id }) {
-                selectedActions(placement)
-            }
+                selectedPanel(placement)
+            } else {
+                Picker("", selection: $tab) {
+                    Text("零件").tag(Tab.parts)
+                    Text("颜色").tag(Tab.colors)
+                }
+                .pickerStyle(.segmented)
 
-            Picker("", selection: $tab) {
-                Text("零件").tag(Tab.parts)
-                Text("颜色").tag(Tab.colors)
-            }
-            .pickerStyle(.segmented)
-
-            switch tab {
-            case .parts: partsTray
-            case .colors: colorTray
+                switch tab {
+                case .parts: partsTray
+                case .colors: colorTray
+                }
             }
 
             Button(action: onFinish) {
@@ -487,44 +492,100 @@ struct PartsBoardStepView: View {
         .background(.regularMaterial)
     }
 
-    /// 选中一个零件之后：左边告诉他「这是几号、图纸上长什么样」，右边是能对它做的事。
+    /// 选中之后的下半屏：这是几号 · 图纸上长什么样 · 能对它做什么。
     ///
-    /// 左边那一坨整个可点，点开是大图对照。板上的零件是一片纯色方块（判色的产物），
-    /// 跟图纸上那块带描边、带渐变的画差得很远 —— 摆错了位置、拿错了零件，
-    /// 只看板子是看不出来的，得跟原图对一眼。
-    private func selectedActions(_ placement: PartPlacement) -> some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            Button { inspect(placement.partId) } label: {
-                HStack(spacing: Theme.Spacing.sm) {
-                    originalThumb(placement.partId)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(name(of: placement.partId))
-                            .font(.footnote.weight(.medium))
-                            .foregroundColor(Theme.ColorToken.Text.primary)
-                            .lineLimit(1)
-                        Label("看原图", systemImage: "photo")
-                            .font(.caption2)
-                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
-                    }
+    /// 板上的零件是一片纯色方块（判色的产物），跟图纸上那块带描边、带渐变的画差得很远 ——
+    /// 拿错了零件、摆错了位置，只看板子是看不出来的，得跟原图对一眼。
+    private func selectedPanel(_ placement: PartPlacement) -> some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.sm) {
+                orderBadge(placement.partId, size: 11)
+                Text(name(of: placement.partId))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(Theme.ColorToken.Text.primary)
+                    .lineLimit(1)
+                Spacer(minLength: Theme.Spacing.sm)
+                // 明写一个出口。选中之后零件条和色号条都让位了，只靠「点板上空白处取消」
+                // 的话，用户想切回颜色高亮会以为那两条没了。
+                Button("收起") { selection = nil }
+                    .font(.footnote)
+            }
+
+            partPreview(placement)
+
+            HStack(spacing: Theme.Spacing.sm) {
+                Button { rotateSelected() } label: {
+                    Label("转 90°", systemImage: "rotate.right").frame(maxWidth: .infinity)
                 }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+                .buttonStyle(.bordered)
 
-            Spacer(minLength: Theme.Spacing.sm)
-
-            Button { rotateSelected() } label: {
-                Label("转 90°", systemImage: "rotate.right")
+                Button(role: .destructive) { takeOffSelected() } label: {
+                    Label("拿下来", systemImage: "arrow.down.left").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.bordered)
-
-            Button(role: .destructive) { takeOffSelected() } label: {
-                Label("拿下来", systemImage: "arrow.down.left")
-            }
-            .buttonStyle(.bordered)
+            .font(.footnote)
+            .lineLimit(1)
         }
-        .font(.footnote)
-        .lineLimit(1)
+    }
+
+    /// 图纸上原来那块，尽量画大。还没抠出来（或者这次没有图）就画识别出来的形状 ——
+    /// 这块地方永远有东西，不会空一大片。
+    ///
+    /// 点一下开对照弹窗（原图和识别结果并排）：这里只有一张图，
+    /// 「两边像不像」还得那一屏才比得了。
+    private func partPreview(_ placement: PartPlacement) -> some View {
+        Button { inspect(placement.partId) } label: {
+            ZStack(alignment: .bottomTrailing) {
+                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                    .fill(Theme.ColorToken.Surface.subtle)
+
+                if let image = originals[placement.partId] {
+                    GeometryReader { geo in
+                        // 放大到超过原图分辨率时用最近邻，豆子边界是硬的；缩小时用默认插值，
+                        // 否则一像素宽的格线会抖成摩尔纹（同零件清单那屏）。
+                        Image(uiImage: image)
+                            .resizable()
+                            .interpolation(geo.size.width >= image.size.width ? .none : .high)
+                            .scaledToFit()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                    }
+                    .padding(Theme.Spacing.xs)
+                } else if let part = parts.first(where: { $0.id == placement.partId }) {
+                    PartShapeThumbnail(footprint: part.footprint(turns: 0), colors: colorCache)
+                        .padding(Theme.Spacing.sm)
+                }
+
+                Label(work == nil ? "看识别结果" : "点开对照", systemImage: "rectangle.on.rectangle")
+                    .font(.caption2.weight(.medium))
+                    .foregroundColor(Theme.ColorToken.Text.secondary)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(.regularMaterial))
+                    .padding(Theme.Spacing.sm)
+            }
+            // 一屏之内板子和零件图各占一半上下：板子还得看得见（用户要照着它摆），
+            // 零件图要大到一格豆子看得出颜色。200 点是两边都还成立的那个数。
+            .frame(maxWidth: .infinity)
+            .frame(height: 200)
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                    .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .overlay(alignment: .topLeading) {
+            // 板上那块是转过的，跟这张图对不上不是判错了 —— 不说的话用户会以为识别坏了。
+            if placement.turns != 0 {
+                Text("板上转了 \(placement.turns * 90)° 放")
+                    .font(.caption2)
+                    .foregroundColor(Theme.ColorToken.Text.secondary)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(.regularMaterial))
+                    .padding(Theme.Spacing.sm)
+            }
+        }
     }
 
     /// 还没摆上板的零件。点一下就落到当前这块板上 ——
@@ -603,32 +664,6 @@ struct PartsBoardStepView: View {
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .background(Capsule().fill(Theme.ColorToken.Morandi.mauve))
-    }
-
-    /// 选中的零件在图纸上原来那块。还没抠出来（或者这次没有图）就先画识别出来的形状 ——
-    /// 这一格永远有东西，不会闪一个空框。
-    private func originalThumb(_ partId: UUID) -> some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
-                .fill(Theme.ColorToken.Surface.subtle)
-
-            if let image = originals[partId] {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .padding(1)
-            } else if let part = parts.first(where: { $0.id == partId }) {
-                PartShapeThumbnail(footprint: part.footprint(turns: 0), colors: colorCache)
-                    .padding(3)
-            }
-
-            orderBadge(partId, size: 9).padding(2)
-        }
-        .frame(width: 42, height: 42)
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
-                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-        )
     }
 
     /// 这块板上用到的颜色。点一下只剩它是亮的 —— 抓一把 H7 的时候，
