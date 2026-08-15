@@ -160,6 +160,9 @@ struct BoardCanvasRenderer {
     /// 排到板上之后零件就脱离图纸了，板上一块灰蓝色的方块到底是图纸上哪一块，
     /// 不写号就只能靠形状猜。号跟着零件上板，用户才对得回去。
     /// 单图纸模式整张图就一个「零件」，没有号可写，传空。
+    ///
+    /// **点亮了色号时这些号一个都不画**（见 `drawBadges`）—— 那一屏的规矩是「除了那个色号，
+    /// 别的都让路」，号也不例外。调用方照常传，画不画由这里定，两块屏幕才不会一块写一块不写。
     var labels: [UUID: String] = [:]
     var selection: UUID?
     var moving: Moving?
@@ -293,7 +296,8 @@ struct BoardCanvasRenderer {
                               : stage?.contour ?? Theme.ColorToken.Text.primary.opacity(0.45))
             contours.append((path: contour, color: outline, width: isSelected ? 2.5 : 1))
 
-            if let text = labels[placement.id], !footprint.isEmpty {
+            // 高亮期间一个号都不写，理由见 `drawBadges`。
+            if stage == nil, let text = labels[placement.id], !footprint.isEmpty {
                 badges.append((
                     box: layout.boundingRect(of: footprint, col: col, row: row),
                     text: text,
@@ -325,7 +329,7 @@ struct BoardCanvasRenderer {
             context.stroke(contour.path, with: .color(contour.color), lineWidth: contour.width)
         }
 
-        drawBadges(badges, in: context, cell: cell, stage: stage)
+        drawBadges(badges, in: context, cell: cell)
     }
 
     /// 把编号写在每个零件正中间。
@@ -337,11 +341,14 @@ struct BoardCanvasRenderer {
     /// **装不下就不写**（除非它是选中的那个）：一块 100×100 的板缩在手机上，
     /// 一格才三四个点，五十几个号会叠成一团糊，比不写还糟。用户捏一下放大就出来了；
     /// 而选中的那个不管多小都写 —— 他刚点了它，屏幕上必须回答「这是几号」。
+    ///
+    /// **点亮某个色号的时候一个号都不写**（调用方在收集阶段就拦掉了，所以这里不接 `stage`）。
+    /// 那一屏用户在数「哪几个格子是这个色」，一颗一颗按豆子 —— 号压在豆子上就是在
+    /// 挡他正要数的东西，而「这是几号」在那一刻根本不是他的问题。要看号，取消高亮就有。
     private func drawBadges(
         _ badges: [(box: CGRect, text: String, selected: Bool)],
         in context: GraphicsContext,
-        cell: CGFloat,
-        stage: BoardHighlightStage?
+        cell: CGFloat
     ) {
         guard !badges.isEmpty else { return }
         // 跟着格子大小走：放大之后号也跟着大，不然一块放大 8 倍的板上还是那个米粒大的号。
@@ -350,10 +357,8 @@ struct BoardCanvasRenderer {
         for badge in badges {
             let fill: Color = badge.selected
                 ? Theme.ColorToken.Morandi.honey
-                : (stage?.board ?? Theme.ColorToken.Surface.background).opacity(0.88)
-            let ink: Color = badge.selected
-                ? .black
-                : (stage?.gridCore ?? Theme.ColorToken.Text.primary)
+                : Theme.ColorToken.Surface.background.opacity(0.88)
+            let ink: Color = badge.selected ? .black : Theme.ColorToken.Text.primary
 
             // 先按理想字号试，装不下再退到最小可读的 10pt；还装不下就只有选中的那个硬写。
             var drawn: (text: GraphicsContext.ResolvedText, pill: CGRect)?
