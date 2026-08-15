@@ -99,8 +99,10 @@ struct SinglePatternFlowView: View {
         case classifyFailed
         /// 图纸换过了，之前对好的网格对不上新图。
         case imageChanged
-        /// 还没量过格子就按了「开始判色」。
+        /// 还没量过格子就按了判色。老数据没有 calibration，见 `requestClassification` 的守卫。
         case needsGrid
+        /// 重新判色会洗掉用户在核对页一格一格改过的色号。
+        case confirmReclassify
 
         var id: String {
             switch self {
@@ -110,6 +112,7 @@ struct SinglePatternFlowView: View {
             case .classifyFailed: return "classify"
             case .imageChanged: return "changed"
             case .needsGrid: return "needsGrid"
+            case .confirmReclassify: return "reclassify"
             }
         }
     }
@@ -197,10 +200,14 @@ struct SinglePatternFlowView: View {
                                 emptyHex: tracked($emptyHex),
                                 // 单图纸没有「任意色」这一档，所以这个 binding 永远不会被写。
                                 anyColorHex: .constant(nil),
-                                onContinue: { runClassification() },
+                                onContinue: { requestClassification() },
                                 showsAnyColor: false,
                                 emptyHint: "图纸上没有豆子的那一片留白",
-                                title: "底色"
+                                title: "底色",
+                                // 非 nil 就是「判过色了」。原样回去，一格都不重算。
+                                onKeepExisting: sheet.hasCells
+                                    ? { path = [.grid, .baseColor, .review] }
+                                    : nil
                             )
                         case .review:
                             PartsColorReviewStepView(
@@ -233,7 +240,7 @@ struct SinglePatternFlowView: View {
         }
         // **盖在整个 NavigationStack 上，不是盖在根视图上。** 判色是从「底色」那一屏
         // 按下去的，而那一屏是被 push 上来的 —— 转圈要是挂在根视图上，就整个被压在
-        // 底下看不见：用户按完「开始判色」屏幕上什么都没发生，几十秒里他只能反复按。
+        // 底下看不见：用户按完判色屏幕上什么都没发生，几十秒里他只能反复按。
         .overlay {
             if let busy {
                 ZStack {
@@ -289,6 +296,14 @@ struct SinglePatternFlowView: View {
                     title: Text("还没量过格子"),
                     message: Text("得先定下一格多大、格线落在哪，才知道每一格是什么颜色。"),
                     dismissButton: .default(Text("去量格子")) { path = [.grid] }
+                )
+            // 判色是从头重算每一格，用户在核对页一格一格改过的色号会被整片盖掉。
+            case .confirmReclassify:
+                return Alert(
+                    title: Text("重新判一遍颜色？"),
+                    message: Text("会照现在的底色重看一遍每一格，你在核对页改过的色号全部作废，要重新核对一遍。只是想接着核对的话点「取消」，再点上面那个「回核对颜色」。"),
+                    primaryButton: .cancel(Text("取消")),
+                    secondaryButton: .destructive(Text("重新判色")) { runClassification() }
                 )
             case .imageChanged:
                 return Alert(
@@ -673,16 +688,17 @@ struct SinglePatternFlowView: View {
 
     // MARK: - 逐格判色
 
-    /// 判色跟多零件模式**走的是同一个函数**（`PartsCellClassifier`）：
-    /// 每格取众数色 → 聚成十几类 → 一类整体配一个色号。整张图纸就是「一个零件」。
+    /// 「开始判色 / 重新判色」这个按钮按下去之后的事。
     ///
-    /// 这里曾经在它上面加过一层逐格 OCR（图纸格子里多半印着「14」「28」这样的色号），
-    /// 已经删掉：慢，而且用户要的不是「再多一个会出错的来源」——
-    /// 判错了在核对页两下就能改，那才是这条流程的解法。
-    private func runClassification() {
-        guard let work else { return }   // 屏幕上正显示「正在准备图纸…」，这个按钮还看不见
-        // 老数据的 calibration 是空的，而 load 会按「有豆子的格子」把用户直接送到照着拼；
-        // 他往回翻到底色按下去，静默 return 的话就是一个永远没有反应的按钮。
+    /// 判色是从头重算每一格 —— 第一次走到这儿这正是用户要的，但从核对页返回之后
+    /// 再按一次，用户一格一格改过的色号会被整片盖掉。所以判过色的先问一句。
+    ///
+    /// **「还没量过格子」必须在弹确认框之前就发现。** 老数据的 calibration 是空的，而 load
+    /// 会按「有豆子的格子」把用户直接送到照着拼；他往回翻到底色按下去，正好同时命中
+    /// 「有格子 → 先弹确认框」和「没标定 → 弹去量格子」两条。后者要是从**前者的按钮闭包里**
+    /// 置起，`.alert(item:)` 收尾时那一下写回 nil 很可能把它吞掉 —— 用户点完那个红色确认之后
+    /// 什么都不会发生。收成一个 Prompt 值挡住的是「同时置起两个」，挡不住「同一轮里前后置起两个」。
+    private func requestClassification() {
         guard let calibration, calibration.isUsable else {
             AppLogger.shared.error("SinglePattern", "classify_without_calibration", metadata: [
                 "projectId": project.id.uuidString,
@@ -691,6 +707,23 @@ struct SinglePatternFlowView: View {
             prompt = .needsGrid
             return
         }
+        if sheet.hasCells {
+            prompt = .confirmReclassify
+            return
+        }
+        runClassification()
+    }
+
+    /// 判色跟多零件模式**走的是同一个函数**（`PartsCellClassifier`）：
+    /// 每格取众数色 → 聚成十几类 → 一类整体配一个色号。整张图纸就是「一个零件」。
+    ///
+    /// 这里曾经在它上面加过一层逐格 OCR（图纸格子里多半印着「14」「28」这样的色号），
+    /// 已经删掉：慢，而且用户要的不是「再多一个会出错的来源」——
+    /// 判错了在核对页两下就能改，那才是这条流程的解法。
+    ///
+    /// 只从 `requestClassification` 进来，标定在那儿已经查过了。
+    private func runClassification() {
+        guard let work, let calibration else { return }   // 屏幕上正显示「正在准备图纸…」，这个按钮还看不见
         let snapshot = sheet
         let area = sheet.gridRect ?? sheet.bounds
         let colorSystem = project.colorSystem

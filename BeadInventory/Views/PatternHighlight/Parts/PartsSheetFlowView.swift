@@ -93,7 +93,7 @@ struct PartsSheetFlowView: View {
 
     /// 现在要跟用户说的那一句话。
     ///
-    /// 四个弹窗平铺在同一个 view 上时，`runClassification` 能在同一轮里置起两个，
+    /// 以前几个弹窗平铺在同一个 view 上时，`runClassification` 能在同一轮里置起两个，
     /// SwiftUI 只 present 一个、另一个的标志停在 true 却没有界面 —— 要是被吞的是
     /// 「没存上」，`关闭` 和 `完成` 都会因为它停在 true 而**没反应也没有任何解释**。
     /// 收成一个值之后，「同时只有一句话」变成类型层面的事实。
@@ -104,6 +104,8 @@ struct PartsSheetFlowView: View {
         case loadFailed
         /// 重新找零件会洗掉已有的成果。
         case confirmRedetect
+        /// 重新判色会洗掉用户在核对页一格一格改过的色号。
+        case confirmReclassify
         /// 判色时有零件的框里取不到图。出路是回零件清单改那几个框。
         case classifyNote(String)
         /// 这块范围里一个零件都没找到。出路是**留在这一屏**把框挪一挪，
@@ -116,6 +118,7 @@ struct PartsSheetFlowView: View {
             case .saveFailed: return "save"
             case .loadFailed: return "load"
             case .confirmRedetect: return "redetect"
+            case .confirmReclassify: return "reclassify"
             case .classifyNote(let text): return "note:\(text)"
             case .detectFoundNothing: return "empty"
             }
@@ -222,7 +225,11 @@ struct PartsSheetFlowView: View {
                                 calibration: calibration,
                                 emptyHex: tracked($emptyHex),
                                 anyColorHex: tracked($anyColorHex),
-                                onContinue: { runClassification() }
+                                onContinue: { requestClassification() },
+                                // 非 nil 就是「判过色了」。原样回去，一格都不重算。
+                                onKeepExisting: hasClassified
+                                    ? { path = [.list, .cellSize, .baseColor, .review] }
+                                    : nil
                             )
                         case .review:
                             PartsColorReviewStepView(
@@ -250,7 +257,7 @@ struct PartsSheetFlowView: View {
         }
         // **盖在整个 NavigationStack 上，不是盖在根视图上。** 判色是从「底色和任意色」
         // 那一屏按下去的，而那一屏是被 push 上来的 —— 转圈要是挂在根视图上，就整个被压在
-        // 底下看不见：用户按完「开始判色」屏幕上什么都没发生，几十秒里他只能反复按。
+        // 底下看不见：用户按完判色屏幕上什么都没发生，几十秒里他只能反复按。
         .overlay {
             if let busy {
                 ZStack {
@@ -269,7 +276,7 @@ struct PartsSheetFlowView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { persist() }
         }
-        // 一个弹窗口子，四种话轮流用它。见 Prompt 的注释。
+        // 一个弹窗口子，所有要跟用户说的话轮流用它。见 Prompt 的注释。
         .alert(item: $prompt) { prompt in
             switch prompt {
             // 存不上必须让他看见。五十几个零件框、几万格色号、拼豆板摆位，
@@ -295,6 +302,15 @@ struct PartsSheetFlowView: View {
                     message: Text("会按现在圈的范围重找一遍零件。已经找好的零件框、量好的格子、判好的颜色、摆好的拼豆板都跟着作废，要从头再走一遍。"),
                     primaryButton: .cancel(Text("取消")),
                     secondaryButton: .destructive(Text("重新找")) { runDetection() }
+                )
+            // 判色是从头重算每一格，用户在核对页一格一格改过的色号会被整片盖掉 ——
+            // 那是几天的活，而在这个改动之前，触发它只要在这一屏点一下。
+            case .confirmReclassify:
+                return Alert(
+                    title: Text("重新判一遍颜色？"),
+                    message: Text("会照现在的底色和任意色重看一遍每一格，你在核对页改过的色号全部作废，要重新核对一遍。只是想接着核对的话点「取消」，再点上面那个「回核对颜色」。"),
+                    primaryButton: .cancel(Text("取消")),
+                    secondaryButton: .destructive(Text("重新判色")) { runClassification() }
                 )
             case .classifyNote(let text):
                 return Alert(
@@ -624,6 +640,31 @@ struct PartsSheetFlowView: View {
     }
 
     // MARK: - 逐格判色
+
+    /// 已经判过色了。核对页的修改全落在 `parts` 的格子里，所以「有格子」就等于
+    /// 「这儿有东西可丢」。
+    private var hasClassified: Bool { parts.contains(where: \.hasCells) }
+
+    /// 「开始判色 / 重新判色」这个按钮按下去之后的事。
+    ///
+    /// 判色是从头重算每一格 —— 第一次走到这儿这正是用户要的，但从核对页返回之后
+    /// 再按一次，用户一格一格改过的色号会被整片盖掉。所以判过色的先问一句。
+    ///
+    /// **能不能判得成，必须在弹确认框之前就问清楚。** `runClassification` 开头那道
+    /// 守卫是直接 return 的，从确认框里撞上它，用户看到的是「点了红色确认之后什么都没发生」——
+    /// 他只会认为东西已经没了、只是界面没刷新，比这次要修的死按钮还难受。
+    /// 没有标定就直接送回量格子，那一屏的标题本身就是说法。
+    private func requestClassification() {
+        guard calibration?.isUsable == true else {
+            path = [.list, .cellSize]
+            return
+        }
+        if hasClassified {
+            prompt = .confirmReclassify
+            return
+        }
+        runClassification()
+    }
 
     private func runClassification() {
         guard let work, let calibration else { return }

@@ -31,6 +31,17 @@
 //
 //  没有任意色的图纸直接跳过：那一行留空就是了。
 //
+//  ## 这一屏是「已经判过色」之后一路返回必经的地方
+//
+//  核对颜色是下一屏，用户从那儿按返回（或者不小心划回来）就落在这里。这时候屏幕上
+//  唯一那个主按钮要是「开始判色」，他就只有一条路：再判一遍 —— 而判色是从头重算每一格，
+//  他几天来一格一格改过的色号当场全没。用户报的就是这件事。
+//
+//  所以判过色之后主按钮换成「回核对颜色」（原样回去，什么都不重算），重判降成下面一行
+//  小字，并且**要求**外面再问一句才真的跑（见各 flow 的 `requestClassification`）。
+//  重判仍然留着：用户特地退回这一屏，多半就是因为底色 / 任意色指认错了要重来 ——
+//  而那种时候主按钮不重算这件事得说出来，否则他改完底色按下大按钮，看到的还是照旧的颜色。
+//
 
 import SwiftUI
 
@@ -50,6 +61,14 @@ struct PartsBaseColorStepView: View {
     var emptyHint: LocalizedStringKey = "零件外面那一片，不用放豆子"
     var title: LocalizedStringKey = "底色和任意色"
 
+    /// 「不重判，原样回核对颜色」。**非 nil 就等于「图上已经有判过的格子」**：
+    /// 主按钮变成它，重判退成一行小字（理由见文件头注释）。nil = 还没判过色，只有「开始判色」。
+    ///
+    /// 刻意不拆成「一个 Bool + 一个闭包」：那样 `true + nil` 是可表示的，
+    /// 而它渲染出来正好是改动前那个大号「开始判色」—— 朝着原 bug 的方向静默失败。
+    /// 也刻意不给默认值：漏传的代价是数据没了，不是版式难看。
+    let onKeepExisting: (() -> Void)?
+
     private enum Slot { case empty, anyColor }
 
     @State private var armed: Slot = .anyColor
@@ -59,6 +78,11 @@ struct PartsBaseColorStepView: View {
     private var activeSlot: Slot { showsAnyColor ? armed : .empty }
     /// 上一次点图没取到颜色时要说的那句话。nil = 一切正常。
     @State private var note: String?
+    /// 这次进来之后真的改过底色 / 任意色。
+    ///
+    /// 判过色的人退回这一屏多半就是为了改这两样，而主按钮「回核对颜色」什么都不重算 ——
+    /// 不说一句，他改完按下去看到的还是照旧的颜色，会以为是没生效还是自己点错了。
+    @State private var repickedThisVisit = false
     @State private var image: UIImage?
     @State private var zoom: CGFloat = 1
     @State private var lastZoom: CGFloat = 1
@@ -188,11 +212,46 @@ struct PartsBaseColorStepView: View {
                     .foregroundStyle(Theme.ColorToken.Morandi.honey)
             }
 
-            Button(action: onContinue) {
-                Label("开始判色", systemImage: "eyedropper")
-                    .frame(maxWidth: .infinity)
+            if let onKeepExisting {
+                // 刚改完底色就按「回核对颜色」＝什么都不会变。这一句是那次点击的唯一说法。
+                if repickedThisVisit {
+                    Text("改了底色要重新判色才生效，直接回去看还是原来那批颜色。")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.ColorToken.Morandi.honey)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // 从核对页返回落到这一屏时，用户九成九是想回去接着核对。
+                // 主按钮就是那件事，而且什么都不重算。
+                Button(action: onKeepExisting) {
+                    Label("回核对颜色", systemImage: "checklist")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+
+                // 重判仍然留着（底色指认错了就得重来），但降成一行小字，
+                // 并且写清楚代价 —— 一样大的两个按钮并排放，误按的就是丢东西的那个。
+                //
+                // 带个图标：上面那条取色失败提示也是红色 footnote，光看颜色和字号
+                // 分不出哪一行是能点的。撑到 44pt 也是为这个 —— 小归小，不能点不中。
+                Button(action: onContinue) {
+                    Label("重新判色（核对时改过的色号会清掉）", systemImage: "arrow.clockwise")
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.ColorToken.Status.error)
+            } else {
+                Button(action: onContinue) {
+                    Label("开始判色", systemImage: "eyedropper")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
         }
         .padding()
         .background(.regularMaterial)
@@ -231,7 +290,7 @@ struct PartsBaseColorStepView: View {
                 Spacer(minLength: Theme.Spacing.sm)
 
                 if hex != nil, slot == .anyColor {
-                    Button("清掉") { anyColorHex = nil }
+                    Button("清掉") { anyColorHex = nil; repickedThisVisit = true }
                         .font(.caption)
                         .buttonStyle(.plain)
                         .foregroundColor(Theme.ColorToken.Status.error)
@@ -288,8 +347,12 @@ struct PartsBaseColorStepView: View {
             }
             note = nil
             switch activeSlot {
-            case .empty: emptyHex = hex
-            case .anyColor: anyColorHex = hex
+            case .empty:
+                if emptyHex != hex { repickedThisVisit = true }
+                emptyHex = hex
+            case .anyColor:
+                if anyColorHex != hex { repickedThisVisit = true }
+                anyColorHex = hex
             }
         }
     }
