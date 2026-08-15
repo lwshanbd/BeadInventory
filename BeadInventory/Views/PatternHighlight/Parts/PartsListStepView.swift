@@ -165,6 +165,19 @@ struct PartsListStepView: View {
                 }
 
                 gestureCatcher(in: geo.size, transform: transform)
+
+                // 正好选中一个零件时，露出编辑把手：四条边中点各一个改大小，框内单指拖挪位置。
+                // 压在手势层之上，所以拖把手不会连带平移画布。补零件时不出现（那会儿没有选中）。
+                if !addingPart, selection.count == 1,
+                   let selected = parts.first(where: { selection.contains($0.id) }) {
+                    PartEditHandles(
+                        bounds: selected.bounds,
+                        roi: roi,
+                        transform: transform,
+                        onChange: updateSelectedBounds,
+                        onTapBody: { toggle(selected.id) }
+                    )
+                }
             }
         }
         // 图纸是竖长的，240pt 高只剩不到 180pt 宽，五十几个框挤成一团看不清谁是谁。
@@ -335,7 +348,7 @@ struct PartsListStepView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             } else if selection.isEmpty {
-                Text("找到 \(parts.count) 个零件。点一下选中它，然后可以删除、合并、拆开或改名。\n两指捏合放大，单指拖动移动图片。")
+                Text("找到 \(parts.count) 个零件。点一下选中它，可以删除、合并、拆开、改名，或拖边上的把手改大小、按住框内挪位置。\n两指捏合放大，单指拖动移动图片。")
                     .font(.footnote)
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
                     .multilineTextAlignment(.center)
@@ -378,6 +391,14 @@ struct PartsListStepView: View {
                 }
                 .font(.footnote)
                 .lineLimit(1)
+
+                if selection.count == 1 {
+                    Text("框太大压到别的零件了？拖四条边上的橙色把手改大小；按住框内单指拖能整体挪一下。")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             // **这个按钮任何时候都在。** 以前它藏在「没选中任何零件」那一支里：
@@ -573,6 +594,20 @@ struct PartsListStepView: View {
         }
     }
 
+    /// 选中单个零件后，拖边把手改大小、拖框内挪位置，都落到这里。
+    /// 框一变，之前算出来的网格信息就作废（下一步「量格子」会按新框重算）——
+    /// 同 mergeSelected：框都换了，行列数和格子内容不可能还对得上。
+    /// 不重排：这还是同一个零件，编号跟着跳来跳去反而认不出改的是哪个。
+    private func updateSelectedBounds(_ newBounds: CGRect) {
+        guard selection.count == 1, let id = selection.first,
+              let index = parts.firstIndex(where: { $0.id == id }) else { return }
+        parts[index].bounds = newBounds
+        parts[index].gridRect = nil
+        parts[index].rows = 0
+        parts[index].cols = 0
+        parts[index].cells = []
+    }
+
     private func beginRename() {
         guard let id = selection.first, let part = parts.first(where: { $0.id == id }) else { return }
         renameText = part.customName ?? ""
@@ -629,6 +664,131 @@ private struct PartsBoxOverlay: View {
                 )
                 context.draw(badge, at: CGPoint(x: r.minX + 0.5, y: badgeY))
             }
+        }
+    }
+}
+
+// MARK: - 选中零件后的编辑把手（改大小 / 挪位置）
+
+/// 只在「正好选中一个零件」时出现，专治算法框歪了 —— 框太大压到邻居、或者偏了一点。
+///
+/// 交互刻意分两种，别互相打架：
+///   · **四条边中点各一个橙色把手**：拖哪条边动哪条边，对侧固定 —— 精确改大小；
+///   · **框内单指拖**：整块平移，位置对不准时挪一下。
+///
+/// 整层压在手势层（gestureCatcher）之上，所以拖把手 / 拖框内不会连带平移画布；
+/// 反过来，把手只盖住选中的这一个框，框外照样落到手势层去点选别的零件。
+private struct PartEditHandles: View {
+    /// 归一化坐标（相对整张图纸），和 BeadPart.bounds 同一套。
+    let bounds: CGRect
+    /// 零件区。改大小 / 挪位置都夹在这里面，框外本来就不该有零件。
+    let roi: CGRect
+    let transform: PartsCanvasTransform
+    let onChange: (CGRect) -> Void
+    let onTapBody: () -> Void
+
+    /// 框的最小边长（归一化）。零件本来就可能很小，留一点余量，别把边拖到穿过对侧。
+    private let minSide: CGFloat = 0.006
+
+    @State private var moveStart: CGRect?
+    /// 一次拖边开始时的框。跟 `moveStart` 同理：拖动全程按「相对起点位移了多少」算，
+    /// 不读手指的绝对位置（原因见 `edgeHandle` 里的注释）。
+    @State private var resizeStart: CGRect?
+
+    private enum Edge { case top, bottom, left, right }
+
+    var body: some View {
+        let r = transform.screenRect(bounds)
+        ZStack {
+            // 框内：单指拖 = 挪动整个框；轻点 = 取消选中（沿用「点框身取消」的老行为，
+            // 不然把手盖住框身后，想取消这个选中反而没地方点了）。
+            Rectangle()
+                .fill(Color.white.opacity(0.001))
+                .frame(width: max(r.width, 1), height: max(r.height, 1))
+                .position(x: r.midX, y: r.midY)
+                .contentShape(Rectangle())
+                .gesture(
+                    SimultaneousGesture(
+                        DragGesture(minimumDistance: 6)
+                            .onChanged { value in
+                                if moveStart == nil { moveStart = bounds }
+                                guard let start = moveStart else { return }
+                                onChange(moved(start, by: value.translation))
+                            }
+                            .onEnded { _ in moveStart = nil },
+                        TapGesture().onEnded { onTapBody() }
+                    )
+                )
+
+            // 边把手叠在框身之后 → 边上那一圈热区归把手，框身中间才是挪动区。
+            edgeHandle(.top, at: CGPoint(x: r.midX, y: r.minY), in: r)
+            edgeHandle(.bottom, at: CGPoint(x: r.midX, y: r.maxY), in: r)
+            edgeHandle(.left, at: CGPoint(x: r.minX, y: r.midY), in: r)
+            edgeHandle(.right, at: CGPoint(x: r.maxX, y: r.midY), in: r)
+        }
+    }
+
+    private func edgeHandle(_ edge: Edge, at p: CGPoint, in r: CGRect) -> some View {
+        let horizontal = (edge == .top || edge == .bottom)
+        // 热区想要 44pt（HIG 最小点击目标），但**不能吃掉整个框**：这张图纸上大半零件
+        // 只有三四十 pt 高，上下两个 44pt 热区一叠，框身一点不剩，「按住框内挪位置」
+        // 就再也摸不到了。所以垂直于边的那一维最多占框的三分之一，中间那条always留给挪动。
+        let across = min(44, max(12, (horizontal ? r.height : r.width) / 3))
+        let along = min(44, max(24, horizontal ? r.width : r.height))
+        return ZStack {
+            Rectangle().fill(Color.white.opacity(0.001))
+                .frame(width: horizontal ? along : across,
+                       height: horizontal ? across : along)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.orange)
+                .frame(width: horizontal ? 26 : 9, height: horizontal ? 9 : 26)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(Color.white, lineWidth: 1.5)
+                )
+        }
+        .contentShape(Rectangle())
+        .position(x: p.x, y: p.y)
+        .gesture(
+            // **只用 translation，不用 value.location。** location 是「手势所在视图的
+            // 局部坐标」，这里就是把手那个几十 pt 的小方块（0…44），而 `transform.normalized`
+            // 要的是画布坐标 —— 直接喂进去会被夹到边界，一拖框就压成一条线。
+            // 铺满画布的 gestureCatcher 能直接用 location，是因为它的局部坐标恰好就是画布坐标。
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    if resizeStart == nil { resizeStart = bounds }
+                    guard let start = resizeStart else { return }
+                    onChange(resized(edge, from: start,
+                                     by: transform.normalizedDelta(value.translation)))
+                }
+                .onEnded { _ in resizeStart = nil }
+        )
+    }
+
+    /// 整体平移：按手指位移换算成图纸上的位移，再夹住四边别拖出零件区。
+    private func moved(_ start: CGRect, by translation: CGSize) -> CGRect {
+        let d = transform.normalizedDelta(translation)
+        let dx = max(roi.minX - start.minX, min(roi.maxX - start.maxX, d.width))
+        let dy = max(roi.minY - start.minY, min(roi.maxY - start.maxY, d.height))
+        return start.offsetBy(dx: dx, dy: dy)
+    }
+
+    /// 把某条边从**这次拖动开始时的位置**挪 d：只动那条边，对侧固定；
+    /// 夹在 roi 内并保底最小边长。按位移算而不是按绝对位置算，理由见 `edgeHandle`。
+    private func resized(_ edge: Edge, from start: CGRect, by d: CGSize) -> CGRect {
+        switch edge {
+        case .top:
+            let y = min(max(start.minY + d.height, roi.minY), start.maxY - minSide)
+            return CGRect(x: start.minX, y: y, width: start.width, height: start.maxY - y)
+        case .bottom:
+            let y = max(min(start.maxY + d.height, roi.maxY), start.minY + minSide)
+            return CGRect(x: start.minX, y: start.minY, width: start.width, height: y - start.minY)
+        case .left:
+            let x = min(max(start.minX + d.width, roi.minX), start.maxX - minSide)
+            return CGRect(x: x, y: start.minY, width: start.maxX - x, height: start.height)
+        case .right:
+            let x = max(min(start.maxX + d.width, roi.maxX), start.minX + minSide)
+            return CGRect(x: start.minX, y: start.minY, width: x - start.minX, height: start.height)
         }
     }
 }
