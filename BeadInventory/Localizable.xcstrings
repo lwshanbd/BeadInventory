@@ -1,6 +1,326 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "描红边那 %lld 个零件跟旁边挨着，烫完会连成一片。拖开一点，或者上面「加一块」板。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The %lld outlined-red pieces are touching their neighbours and will fuse when ironed. Drag them apart, or add another board above."
+          }
+        }
+      }
+    },
+    "有 %lld 个零件（描红边那几个）跟旁边挨着了。挨着的豆子烫完会连成一片，得拿剪刀分开，那一刀下去边缘就毁了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pieces (the ones outlined in red) are touching their neighbours. Touching beads fuse when ironed and have to be cut apart, which ruins the edge."
+          }
+        }
+      }
+    },
+    "有 %lld 块对不上任何零件了，已经从板上清掉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld placements no longer match any piece and were cleared off the board"
+          }
+        }
+      }
+    },
+    "「%@」原地放不下，挪到旁边空地了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” no longer fits where it was and moved to free space nearby"
+          }
+        }
+      }
+    },
+    "有 %lld 个零件原地放不下，挪到旁边空地了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pieces no longer fit where they were and moved to free space nearby"
+          }
+        }
+      }
+    },
+    "这一块对不上任何零件了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This no longer matches any piece"
+          }
+        }
+      }
+    },
+    "退出去回零件清单看看。在这儿改也存不下来。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go back to the piece list and check — nothing edited here can be saved."
+          }
+        }
+      }
+    },
+    "这一层这次画不出来，屏幕上是上一次的样子；底下那个颗数才是准的。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This layer couldn't be redrawn; you're seeing the previous state. The bead count below is the accurate one."
+          }
+        }
+      }
+    },
+    "挑的那个色号在这张图纸的色号体系里没有对应的，换一个。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That colour has no equivalent in this pattern's colour system — pick another."
+          }
+        }
+      }
+    },
+    "先在上面挑一个色号，再划过要补上的格子。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick a colour above first, then swipe across the cells you want to add."
+          }
+        }
+      }
+    },
+    "对照图纸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compare to pattern"
+          }
+        }
+      }
+    },
+    "看零件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show piece"
+          }
+        }
+      }
+    },
+    "这次取不到图纸上的这一块，没法对照图纸 —— 照着手上的实物改。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't load this part of the pattern, so there's nothing to compare against — edit it against the piece in your hand."
+          }
+        }
+      }
+    },
+    "擦掉 / 补上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erase / Add"
+          }
+        }
+      }
+    },
+    "这一块还没判过色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This piece hasn't been colour-read yet"
+          }
+        }
+      }
+    },
+    "先走一遍「看每格什么颜色」，再回来擦或者补。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run “See each cell's colour” first, then come back to erase or add."
+          }
+        }
+      }
+    },
+    "挪图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move"
+          }
+        }
+      }
+    },
+    "擦掉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erase"
+          }
+        }
+      }
+    },
+    "补上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add"
+          }
+        }
+      }
+    },
+    "撤销" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undo"
+          }
+        }
+      }
+    },
+    "其它色号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other colours"
+          }
+        }
+      }
+    },
+    "%@ · 现在 %lld 颗" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$lld beads now"
+          }
+        }
+      }
+    },
+    "拖动看图，两指捏合放大。要改格子，上面换「擦掉」或「补上」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag to look around, pinch to zoom. To change cells, switch to Erase or Add above."
+          }
+        }
+      }
+    },
+    "手指划过要去掉的格子。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe across the cells you want to remove."
+          }
+        }
+      }
+    },
+    "手指划过要补上的格子。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe across the cells you want to add."
+          }
+        }
+      }
+    },
+    "这一块" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "this piece"
+          }
+        }
+      }
+    },
+    "改格子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit cells"
+          }
+        }
+      }
+    },
+    "改哪一块的格子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Which piece to edit"
+          }
+        }
+      }
+    },
+    "有 %lld 个零件一颗豆子都不剩，已经从板上拿下来（要找回来，回「核对颜色」那屏补格子）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pieces have no beads left and were taken off the board (to bring one back, add cells on the Check colours screen)"
+          }
+        }
+      }
+    },
+    "板上有零件挨着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pieces are touching on this board"
+          }
+        }
+      }
+    },
+    "回去挪一下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go move them"
+          }
+        }
+      }
+    },
+    "仍然完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finish anyway"
+          }
+        }
+      }
+    },
     "在手机上摆好拼豆板，这里就会显示" : {
       "localizations" : {
         "en" : {

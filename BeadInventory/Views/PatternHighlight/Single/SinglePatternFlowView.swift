@@ -91,7 +91,11 @@ struct SinglePatternFlowView: View {
     /// （理由同 `PartsSheetFlowView.Prompt`：两个 alert 同时置起时 SwiftUI 只显示一个，
     /// 被吞掉的那个会让某个按钮既没反应也没有说法）。
     private enum Prompt: Identifiable {
-        case saveFailed
+        /// 存不进去。带着「第几次」：id 要是个常数，弹窗被吞掉一次之后 `prompt` 就永远
+        /// 停在这个值，之后每次失败都赋成同一个 —— `.alert(item:)` 认不出变化，
+        /// 那句话再也不出现，而「关闭」会因为 `persist()` 一直返回 false
+        /// 变成一个既不响应也不解释的按钮。
+        case saveFailed(Int)
         case loadFailed
         /// 改了裁切范围，已经判好的颜色要重来。
         case confirmRecrop
@@ -106,7 +110,7 @@ struct SinglePatternFlowView: View {
 
         var id: String {
             switch self {
-            case .saveFailed: return "save"
+            case .saveFailed(let attempt): return "save\(attempt)"
             case .loadFailed: return "load"
             case .confirmRecrop: return "recrop"
             case .classifyFailed: return "classify"
@@ -118,6 +122,8 @@ struct SinglePatternFlowView: View {
     }
 
     @State private var prompt: Prompt?
+    /// 存盘失败了几次。只用来让 `Prompt.saveFailed` 每次都是一个新身份，见那里。
+    @State private var saveAttempt = 0
 
     private func tracked<Value>(_ binding: Binding<Value>) -> Binding<Value> {
         Binding(get: { binding.wrappedValue },
@@ -215,16 +221,17 @@ struct SinglePatternFlowView: View {
                                 parts: sheetParts,
                                 colorSystem: project.colorSystem,
                                 legendCounts: legendCounts,
-                                // 核对完一个色号就落盘。一张图纸几千格，
-                                // 对到一半退出去不该白对（同多零件模式）。
-                                onConfirmGroup: { persist() },
+                                // 核对完一个色号、在图纸上擦 / 补完格子都立刻落盘。
+                                // 一张图纸几千格，对到一半退出去不该白对（同多零件模式）。
+                                onPersist: { persist() },
                                 onFinish: {
                                     persist()
                                     path = [.grid, .baseColor, .review, .highlight]
                                 },
                                 allowsAnyColor: false,
                                 finishTitle: { Text("开始拼 · 一共 \($0) 颗") },
-                                finishIcon: "wand.and.rays"
+                                finishIcon: "wand.and.rays",
+                                subjectLabel: String(localized: "整张图纸")
                             )
                             .environmentObject(inventoryManager)
                         case .highlight:
@@ -790,7 +797,13 @@ struct SinglePatternFlowView: View {
             return true
         }
         guard inventoryManager.updateProjectPatternGrid(project.id, grid: grid) else {
-            prompt = .saveFailed
+            // 弹窗是给用户看的，日志是事后查「他那次到底为什么丢了」用的。
+            // 多零件那边有这条，这边一直没有 —— 而擦 / 补格子两边都走。
+            AppLogger.shared.error("SinglePattern", "persist_write_failed", metadata: [
+                "projectId": project.id.uuidString
+            ])
+            saveAttempt += 1
+            prompt = .saveFailed(saveAttempt)
             return false
         }
         dirty = false

@@ -27,9 +27,9 @@ struct PartsColorReviewStepView: View {
     /// 只作参照：核对时用户能直接比对「我认出 2,887 颗，图纸写的是 3,006 颗」，
     /// 差得多就说明这个色号还得再看看。
     let legendCounts: [String: Int]
-    /// 核对完一个色号点「看下一个」时调一下 —— 把这一屏改过的色号立刻落盘。
+    /// 把这一屏改过的东西立刻落盘。核对完一个色号、以及在图纸上擦 / 补完格子之后各调一次。
     /// 不然辛辛苦苦对完几百格，手一滑点了返回就全没了（改动只落在内存里的 parts 上）。
-    let onConfirmGroup: () -> Void
+    let onPersist: () -> Void
     let onFinish: () -> Void
 
     /// 有没有「任意色」这一档。单图纸模式没有（理由见 `PartsBaseColorStepView.showsAnyColor`），
@@ -38,6 +38,8 @@ struct PartsColorReviewStepView: View {
     /// 主按钮怎么说。多零件的下一步是摆拼豆板，单图纸的下一步是照着高亮拼。
     var finishTitle: (Int) -> Text = { Text("去摆拼豆板 · 一共 \($0) 颗") }
     var finishIcon: String = "square.grid.3x3"
+    /// 这一屏在核对什么。nil = 一块一块的零件（多零件模式），用零件自己的名字。
+    var subjectLabel: String?
 
     @EnvironmentObject var inventoryManager: InventoryManager
 
@@ -72,6 +74,24 @@ struct PartsColorReviewStepView: View {
     /// 平时收集会让每一帧滚动都重算几百条 preference。
     @State private var cellFrames: [CellRef: CGRect] = [:]
 
+    /// 正在图纸上擦 / 补格子的那一块
+    @State private var brushTarget: BrushTarget?
+    /// 挑一块来擦 / 补（只有多零件模式要挑）
+    @State private var showingPartPicker = false
+    /// 挑好了、等挑零件那一屏关掉之后再打开画笔。
+    ///
+    /// **不能在同一拍里关一个 sheet 开另一个** —— SwiftUI 只 present 一个，
+    /// 另一个的标志停在 true 却没有界面（`PartsSheetFlowView` 的 Prompt 那段写过这件事）。
+    /// 更糟的是 `BrushTarget.id` 就是零件 id：被吞之后再挑**同一个零件**，
+    /// `.sheet(item:)` 认不出身份变化，那个零件的入口就永久死了，还没有任何提示。
+    @State private var pendingBrushId: UUID?
+    /// 挑零件那一屏的行。开之前算一次就够 —— 放在 sheet 的内容闭包里的话，
+    /// 每次求值都要给所有零件重建一遍 `PartFootprint`（板子那屏专门缓存它就是因为这个贵）。
+    @State private var pickerRows: [PartBrushPickerSheet.Row] = []
+    private struct BrushTarget: Identifiable {
+        let id: UUID
+    }
+
     /// 一格的坐标：第几个零件、第几行、第几列
     struct CellRef: Hashable {
         let part: Int
@@ -90,6 +110,39 @@ struct PartsColorReviewStepView: View {
         }
         .navigationTitle("核对颜色")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                // 这一屏改的是「这一格是什么颜色」。另一半 —— 「这一格到底有没有豆子」——
+                // 在这儿是解不了的：一个本该有豆子的空格躺在几万个空格中间，
+                // 用户在铺出来的格子里根本找不到它。所以给一条去图纸上直接改的路。
+                Button {
+                    if parts.count == 1 {
+                        brushTarget = BrushTarget(id: parts[0].id)
+                    } else {
+                        pickerRows = parts.enumerated().map { index, part in
+                            PartBrushPickerSheet.Row(
+                                id: part.id,
+                                name: part.displayName(order: index),
+                                beadCount: part.beadCount,
+                                footprint: part.footprint(turns: 0)
+                            )
+                        }
+                        showingPartPicker = true
+                    }
+                } label: {
+                    // 图标和字自己拼，**不用 `Label`**：导航栏里的 `Label` 一律只画图标，
+                    // `.labelStyle(.titleAndIcon)` 也压不住它（试过）。光一个橡皮图标，
+                    // 用户得先猜它是干什么的 —— 而这一屏最需要的那件事
+                    //（「这一格根本没有豆子」）就藏在它后面。
+                    // 名字跟拼豆板那屏的按钮一致，两处是同一件事。
+                    HStack(spacing: 4) {
+                        Image(systemName: "eraser")
+                        Text("改格子")
+                    }
+                }
+                .disabled(parts.isEmpty)
+            }
+        }
         .task { selectDefaultGroup() }
         .sheet(isPresented: $showingCodePicker, onDismiss: applyPickedCode) {
             ColorSelectionView(
@@ -121,6 +174,64 @@ struct PartsColorReviewStepView: View {
                 }
             )
         }
+        .sheet(isPresented: $showingPartPicker, onDismiss: {
+            // 等这一屏真的关掉了再开画笔，理由见 `pendingBrushId`
+            if let id = pendingBrushId {
+                pendingBrushId = nil
+                brushTarget = BrushTarget(id: id)
+            }
+        }) {
+            PartBrushPickerSheet(
+                rows: pickerRows,
+                colors: swatchColors,
+                onPick: { id in
+                    pendingBrushId = id
+                    showingPartPicker = false
+                }
+            )
+        }
+        .sheet(item: $brushTarget) { target in
+            PartCellBrushView(
+                work: work,
+                partId: target.id,
+                parts: $parts,
+                colorSystem: colorSystem,
+                subject: brushSubject(for: target.id),
+                allowsAnyColor: allowsAnyColor,
+                onCommit: {
+                    onPersist()
+                    // 铺出来的那一片是**存下来的**（`groupCells`），擦 / 补完必须自己刷 ——
+                    // 擦掉的格子不刷就还留在这一组里，补上的格子进不来。
+                    // 小图缓存不用动：那是按 `CellRef` 从图纸上裁的，格子改成什么颜色跟它
+                    // 无关，新进这一组的那几格会自己按需裁（见 `swatch(for:)`）。
+                    groupCells = cells(of: selectedGroup)
+                    // 选中的是 (零件下标, row, col)，而刚才那些格子可能已经换了一组 ——
+                    // 留着的话，底下那排「这类都改成…」会作用到一批
+                    // 用户以为自己早就取消掉的格子上。
+                    selection.removeAll()
+                }
+            )
+            .environmentObject(inventoryManager)
+        }
+    }
+
+    /// 擦 / 补那一屏底下写的是在改哪一块
+    private func brushSubject(for id: UUID) -> String {
+        if let subjectLabel { return subjectLabel }
+        guard let index = parts.firstIndex(where: { $0.id == id }) else {
+            return String(localized: "这一块")
+        }
+        return parts[index].displayName(order: index)
+    }
+
+    /// 挑零件那一屏的小图要用的颜色表
+    private var swatchColors: [String: Color] {
+        var result: [String: Color] = ["#any": Theme.ColorToken.Morandi.mauve]
+        for group in groups {
+            guard case .code(let code) = group.fill else { continue }
+            result[code] = color(for: group.fill)
+        }
+        return result
     }
 
     // MARK: - 上：色号一排
@@ -436,7 +547,7 @@ struct PartsColorReviewStepView: View {
         selection.removeAll()
         // 每核对完一个色号就落一次盘：这一屏的修改一直只在内存里的 parts 上，
         // 之前要走到「去摆拼豆板」才存。用户对完一个点「看下一个」，就当是存盘点。
-        onConfirmGroup()
+        onPersist()
         if let next = unconfirmed.first {
             select(next.fill)
         }
@@ -717,6 +828,70 @@ private final class CellSwatchCache {
         if images.count >= Self.flushThreshold { images.removeAll(keepingCapacity: true) }
         images[ref] = made
         return made
+    }
+}
+
+// MARK: - 擦 / 补哪一块
+
+/// 要在图纸上擦 / 补格子，先得说清楚是哪一块零件。
+///
+/// 列表里画的是**识别出来的形状**（跟零件清单、拼豆板上是同一张画法），不是原图：
+/// 用户在这一屏要找的是「哪一块认错了」，而认错的地方本来就长在这张图上。
+/// 名字之外还写颗数 —— 一块本该有一百多颗、却只认出七颗的零件，一眼就看得出来。
+private struct PartBrushPickerSheet: View {
+    struct Row: Identifiable {
+        let id: UUID
+        let name: String
+        let beadCount: Int
+        let footprint: PartFootprint
+    }
+
+    let rows: [Row]
+    let colors: [String: Color]
+    let onPick: (UUID) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(rows) { row in
+                Button { onPick(row.id) } label: {
+                    HStack(spacing: Theme.Spacing.md) {
+                        PartShapeThumbnail(footprint: row.footprint, colors: colors)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
+                                    .fill(Theme.ColorToken.Surface.subtle)
+                            )
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.name)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(Theme.ColorToken.Text.primary)
+                            Text("\(row.beadCount) 颗")
+                                .font(.caption.monospacedDigit())
+                                .foregroundColor(Theme.ColorToken.Text.secondary)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(Theme.ColorToken.Text.tertiary)
+                    }
+                    // 整行都能点。少了这一句，点到图和字之间那段空白就没反应。
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .navigationTitle("改哪一块的格子")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+        }
     }
 }
 

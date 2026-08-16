@@ -704,9 +704,33 @@ enum PartsThumbnailMaker {
 
     /// `rect` 是**相对整张图纸**的归一化矩形，由工作图自己翻译到它手里那块图上。
     static func crop(_ work: PartsWorkImage, normalized rect: CGRect) -> UIImage? {
-        guard let cg = work.image.cgImage else { return nil }
-        return crop(cg, normalized: work.localRect(rect),
-                    scale: work.image.scale, orientation: work.image.imageOrientation)
+        cropExact(work, normalized: rect)?.image
+    }
+
+    /// 同 `crop`，另外把**真正裁到的那一块**（同样是相对整张图纸的归一化矩形）一起交回来。
+    ///
+    /// 为什么要这个：裁的时候会把像素矩形取整（`.integral`，向外扩到整像素），
+    /// 所以裁出来的图往往比要的那块**大一点点**，每边最多一个源像素。谁只是拿它当缩略图
+    /// 谁就不用管；而「擦掉 / 补上」那一屏要把这张图铺回格子上跟格线对齐，
+    /// 按要的那块铺就会整体拉伸一点点，格线跟豆子对不上 —— 而用户只会以为网格没量准。
+    static func cropExact(_ work: PartsWorkImage, normalized rect: CGRect) -> (image: UIImage, rect: CGRect)? {
+        guard let cg = work.image.cgImage, cg.width > 0, cg.height > 0 else { return nil }
+        let local = work.localRect(rect)
+        let pixels = CGRect(
+            x: local.minX * CGFloat(cg.width),
+            y: local.minY * CGFloat(cg.height),
+            width: local.width * CGFloat(cg.width),
+            height: local.height * CGFloat(cg.height)
+        ).intersection(CGRect(x: 0, y: 0, width: cg.width, height: cg.height)).integral
+        guard pixels.width >= 1, pixels.height >= 1,
+              let cropped = cg.cropping(to: pixels) else { return nil }
+        let image = UIImage(cgImage: cropped, scale: work.image.scale,
+                            orientation: work.image.imageOrientation)
+        let exact = CGRect(x: pixels.minX / CGFloat(cg.width),
+                           y: pixels.minY / CGFloat(cg.height),
+                           width: pixels.width / CGFloat(cg.width),
+                           height: pixels.height / CGFloat(cg.height))
+        return (image, work.wholeRect(exact))
     }
 
     private static func crop(

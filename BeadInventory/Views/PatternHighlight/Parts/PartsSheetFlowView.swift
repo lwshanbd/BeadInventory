@@ -99,7 +99,11 @@ struct PartsSheetFlowView: View {
     /// 收成一个值之后，「同时只有一句话」变成类型层面的事实。
     private enum Prompt: Identifiable {
         /// 存不进去。手上这些东西只活在内存里，得拦住他别关。
-        case saveFailed
+        ///
+        /// 带着「第几次」：id 要是个常数，弹窗被吞掉一次之后 `prompt` 就永远停在这个值，
+        /// 之后每次失败都赋成同一个 —— `.alert(item:)` 认不出变化，那句话再也不出现，
+        /// 而「关闭」「完成」会因为 `persist()` 一直返回 false 变成两个既不响应也不解释的按钮。
+        case saveFailed(Int)
         /// 库里有东西但打不开。接着做等于拿新的盖掉旧的，要他自己点头。
         case loadFailed
         /// 重新找零件会洗掉已有的成果。
@@ -115,7 +119,7 @@ struct PartsSheetFlowView: View {
 
         var id: String {
             switch self {
-            case .saveFailed: return "save"
+            case .saveFailed(let attempt): return "save\(attempt)"
             case .loadFailed: return "load"
             case .confirmRedetect: return "redetect"
             case .confirmReclassify: return "reclassify"
@@ -126,6 +130,8 @@ struct PartsSheetFlowView: View {
     }
 
     @State private var prompt: Prompt?
+    /// 存盘失败了几次。只用来让 `Prompt.saveFailed` 每次都是一个新身份，见那里。
+    @State private var saveAttempt = 0
 
     /// 把一个交给子屏的 binding 包成「改了就记一笔」。
     private func tracked<Value>(_ binding: Binding<Value>) -> Binding<Value> {
@@ -183,13 +189,14 @@ struct PartsSheetFlowView: View {
                     // 拼豆板那屏只用格子数据，不用图 —— 图裁失败也不该把它挡在外面。
                     if step == .board {
                         PartsBoardStepView(
-                            parts: parts,
+                            parts: tracked($parts),
                             // 给它图不等于要求它有图：拿到了就能点开零件跟图纸原图对一眼，
                             // 没拿到（裁失败）这一屏照常摆板子。
                             work: work,
                             boards: tracked($boards),
                             boardSpacing: tracked($boardSpacing),
                             colorSystem: project.colorSystem,
+                            onPersist: { persist() },
                             onFinish: { save() }
                         )
                         .environmentObject(inventoryManager)
@@ -237,7 +244,7 @@ struct PartsSheetFlowView: View {
                                 parts: tracked($parts),
                                 colorSystem: project.colorSystem,
                                 legendCounts: legendCounts,
-                                onConfirmGroup: { persist() },
+                                onPersist: { persist() },
                                 onFinish: {
                                     persist()
                                     path = [.list, .cellSize, .baseColor, .review, .board]
@@ -761,7 +768,16 @@ struct PartsSheetFlowView: View {
         guard inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet) else {
             // 没写进去。这里绝不能算了 —— 用户手上这些东西全在内存里，
             // 而屏幕上跟存好了长得一模一样，他关掉就再也找不回来。
-            prompt = .saveFailed
+            //
+            // 也要记一笔：弹窗是给用户看的，日志是事后查「他那次到底为什么丢了」用的。
+            // 隔壁 `persist_blocked_unreadable` 一直有，这条一直没有。
+            AppLogger.shared.error("PartsSheet", "persist_write_failed", metadata: [
+                "projectId": project.id.uuidString,
+                "parts": "\(parts.count)",
+                "boards": "\(boards.count)"
+            ])
+            saveAttempt += 1
+            prompt = .saveFailed(saveAttempt)
             return false
         }
         dirty = false

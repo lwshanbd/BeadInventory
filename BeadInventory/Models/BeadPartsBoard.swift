@@ -260,8 +260,9 @@ extension BeadPart {
 /// 只有 `canPlace` 一处判定，自动排、点零件条落位、拖动校验全都走它 ——
 /// 少判一处就是一条能钻的缝，而钻进去的后果要等用户拼到那儿才发现。
 ///
-/// （`firstFit` 的扫描范围和 `blockedByEdge` 另有一份 margin 算术，那两处一个是为了
-/// 少扫、一个是为了分辨失败原因，都不参与判定。margin 要是哪天不再是 0/1，这三处一起改。）
+/// （`firstFit` 的扫描范围、`blockedByEdge`、`PartsBoardRepair.offendingPlacements` 各有
+/// 一份 margin 算术：一个为了少扫、一个为了分辨失败原因、一个为了一次扫完整块板。
+/// 前两处不参与判定，第三处参与。margin 要是哪天不再是 0/1，这四处一起改。）
 struct BoardOccupancy: Sendable {
     let cols: Int
     let rows: Int
@@ -325,6 +326,179 @@ struct BoardOccupancy: Sendable {
                 }
             }
         }
+    }
+}
+
+// MARK: - 板上摆位的体检
+
+/// 走一遍所有板子，把已经不成立的摆位挑出来、能修的就地修好。
+///
+/// ## 为什么需要它
+///
+/// 摆位是在**当时那个零件形状**下算出来的合法位置。零件的格子后来还能改（擦掉 / 补上），
+/// 而改格子的入口有两个：拼豆板那屏（改完就在眼前），和核对颜色那屏（改完人还在别的屏，
+/// 板子在后台被悄悄推翻）。少了这一遍，第二条路上补出来的格子会让两个零件贴上，
+/// **而贴着的零件烫完连成一片，那一刀下去边缘就毁了**（见文件头）—— 用户是在熨斗底下
+/// 发现的，那时候豆子已经摆完了。
+///
+/// 所以判定只写这一份，谁都不要各写各的：拼豆板进屏时跑一遍（把别处改出来的问题兜住），
+/// 改完格子再跑一遍（同一遍，全量 —— 一块板五十个零件也就几毫秒，不值得为「只查一个」
+/// 再写一条会跟这条漂移的路）。
+///
+/// ## 三种结果，对应三种不同的话
+///
+///   拿下来  这个零件一颗豆子都不剩了（或者零件本身已经不在图纸上了）。留着是一个
+///           画不出来、点不到、也拿不下来的幽灵摆位，只会让板头那句
+///           「摆了 27 个零件」多算一个。
+///   挪走    原地放不下，但同一块板上还有空地。挪过去，然后**说一句**（还报名字，
+///           只挪了一个的时候）—— 位置是用户自己摆的，动了他的东西必须让他知道。
+///   挪不动  这块板上哪儿都放不下（`firstFit` 只在同一块板里找）。**留在原地**，
+///           由界面显式标出来（描红边 + 常驻提示 + 拦「完成」）：悄悄拿下来的话，
+///           用户刚补完一格零件就从板上消失了；而一声不响留着，等于让他照着一块
+///           拼出来会粘连的板去烫。这一类不进返回值 —— 它是板子**当下**的状态，
+///           随时用 `offendingPlacements(in:)` 问，别缓存。
+enum PartsBoardRepair {
+    struct Outcome: Equatable {
+        /// 挪到别处去了的零件
+        var moved: [UUID] = []
+        /// 一颗豆子都不剩、已经拿下来的零件
+        var removed: [UUID] = []
+        /// 板上已经没有对应零件、被当成孤儿清掉的摆放（对应的零件 id）。
+        /// 跟 `removed` 分开，是因为对用户说的话不一样：那种「回核对页补格子」找得回来，
+        /// 这种找不回来 —— 零件本身已经不在图纸上了。
+        var orphaned: [UUID] = []
+
+        var isEmpty: Bool { moved.isEmpty && removed.isEmpty && orphaned.isEmpty }
+    }
+
+    /// 把板子修到合法，并报告改了什么。
+    ///
+    /// **不报告「还挨着的有哪些」** —— 那是板子**当下**的状态，不是这一次调用干了什么。
+    /// 早先它也在返回值里，调用方顺手把它缓存进 @State，然后用户一拖一转一重排，
+    /// 缓存就开始骗人：红的还红着、「完成」还拦着，而板子明明已经好了。
+    /// 要问「现在还有谁站不住」，随时调 `offendingPlacements(in:)`，它不改任何东西。
+    @discardableResult
+    static func repair(
+        boards: inout [PartsBoard],
+        parts: [BeadPart],
+        spacing: BoardSpacing
+    ) -> Outcome {
+        var outcome = Outcome()
+        let byId = Dictionary(parts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        for index in boards.indices {
+            // 1. 空零件、以及已经不存在的零件，先拿下来
+            boards[index].placements.removeAll { placement in
+                guard let part = byId[placement.partId] else {
+                    outcome.orphaned.append(placement.partId)
+                    return true
+                }
+                guard part.footprint(turns: placement.turns).isEmpty else { return false }
+                outcome.removed.append(placement.partId)
+                return true
+            }
+
+            // 2. 剩下的挑出真正站不住的那几个
+            for offender in offendingPlacements(in: boards[index], parts: parts, spacing: spacing) {
+                guard let slot = boards[index].placements.firstIndex(where: { $0.id == offender }),
+                      let part = byId[boards[index].placements[slot].partId] else { continue }
+                let placement = boards[index].placements[slot]
+                let footprint = part.footprint(turns: placement.turns)
+                let occupancy = PartsBoardPacker.occupancy(of: boards[index], parts: parts,
+                                                           spacing: spacing, ignoring: placement.id)
+                // 前一个零件挪走之后这个可能自己就合法了，所以每次都重新问一遍
+                if occupancy.canPlace(footprint, col: placement.col, row: placement.row) { continue }
+                // 挪得动就挪。挪不动就留在原地 —— 悄悄拿下来的话，用户刚补完一格
+                // 零件就从板上消失了。留下的那些由 `offendingPlacements` 随时报得出来。
+                guard let spot = PartsBoardPacker.firstFit(footprint, occupancy: occupancy) else { continue }
+                boards[index].placements[slot].col = spot.col
+                boards[index].placements[slot].row = spot.row
+                outcome.moved.append(placement.partId)
+            }
+        }
+        return outcome
+    }
+
+    /// 这块板上现在有哪些摆放站不住（**摆放** id）。纯查询，不改任何东西。
+    ///
+    /// 判定跟 `BoardOccupancy.canPlace` 完全等价，只是一次扫完，不是每个摆位各建一张
+    /// 占位表：一块板上五十个零件、每个上千颗豆子，各建一张就是五十遍全表，
+    /// 而这个查询要在每次画板子、每次改动之后跑。
+    ///
+    /// 办法是数「每一格被**几个零件**的扩张区盖住」：某颗豆子所在的格子被两个以上零件
+    /// 盖住 ⟺ 它挨上了别人。出界和压到留边另算。
+    ///
+    /// **每个零件对同一格只能记一次。** 早先这里是按「豆子×扩张」逐次 +1 的，
+    /// 于是零件自己相邻的豆子把自己的格子叠到了 2 —— 板上每个多颗豆子的零件都成了
+    /// 「挨着别人」。当时靠 `repair` 里那道 `canPlace` 复查兜住了结果，
+    /// 但整个「一次扫完」的省事全白搭：每个摆位照样各建了一张全表。
+    static func offendingPlacements(
+        in board: PartsBoard,
+        parts: [BeadPart],
+        spacing: BoardSpacing
+    ) -> Set<UUID> {
+        guard !board.placements.isEmpty else { return [] }
+        let cols = max(1, board.cols)
+        let rows = max(1, board.rows)
+        let gap = spacing.gap
+        let margin = spacing.margin
+        let byId = Dictionary(parts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        var covered = [Int32](repeating: 0, count: cols * rows)
+        /// 这一格上一次是被第几个摆位盖的。同一个摆位重复盖到就不再记 —— 见上面那段。
+        var stamp = [Int32](repeating: -1, count: cols * rows)
+        var shapes: [(id: UUID, footprint: PartFootprint, col: Int, row: Int)] = []
+        for (order, placement) in board.placements.enumerated() {
+            guard let part = byId[placement.partId] else { continue }
+            let footprint = part.footprint(turns: placement.turns)
+            shapes.append((placement.id, footprint, placement.col, placement.row))
+            let tag = Int32(order)
+            for bead in footprint.beads {
+                for dr in -gap...gap {
+                    for dc in -gap...gap {
+                        let c = placement.col + bead.col + dc
+                        let r = placement.row + bead.row + dr
+                        guard c >= 0, r >= 0, c < cols, r < rows else { continue }
+                        let index = r * cols + c
+                        guard stamp[index] != tag else { continue }
+                        stamp[index] = tag
+                        covered[index] += 1
+                    }
+                }
+            }
+        }
+
+        var result: Set<UUID> = []
+        for shape in shapes {
+            for bead in shape.footprint.beads {
+                let c = shape.col + bead.col
+                let r = shape.row + bead.row
+                // 出板、压到四周留边：都是「站不住」。这一条也覆盖了「整个零件都在板外」
+                // —— 那种情况下面那句根本读不到格子。
+                if c < margin || r < margin || c >= cols - margin || r >= rows - margin {
+                    result.insert(shape.id)
+                    break
+                }
+                if covered[r * cols + c] >= 2 {
+                    result.insert(shape.id)
+                    break
+                }
+            }
+        }
+        return result
+    }
+
+    /// 所有板子上还站不住的摆放，按板子分。给界面画红和数数用。
+    static func offendingPlacements(
+        in boards: [PartsBoard],
+        parts: [BeadPart],
+        spacing: BoardSpacing
+    ) -> Set<UUID> {
+        var result: Set<UUID> = []
+        for board in boards {
+            result.formUnion(offendingPlacements(in: board, parts: parts, spacing: spacing))
+        }
+        return result
     }
 }
 
