@@ -88,13 +88,6 @@ struct PartsColorReviewStepView: View {
     /// 挑零件那一屏的行。开之前算一次就够 —— 放在 sheet 的内容闭包里的话，
     /// 每次求值都要给所有零件重建一遍 `PartFootprint`（板子那屏专门缓存它就是因为这个贵）。
     @State private var pickerRows: [PartBrushPickerSheet.Row] = []
-    /// 擦 / 补完了要把抠好的小图重抠一遍。
-    ///
-    /// 分组本身（`cells(of:)`）是现算的，**擦掉**那一格自己就从这一组里掉出去了；
-    /// 坏的是**补上**：新进这一组的格子在 `swatches` 里没有对应的图，
-    /// 不重抠就是一个空白方块 —— 用户会以为补上去的那几格是坏的。
-    @State private var brushRevision = 0
-
     private struct BrushTarget: Identifiable {
         let id: UUID
     }
@@ -207,7 +200,11 @@ struct PartsColorReviewStepView: View {
                 allowsAnyColor: allowsAnyColor,
                 onCommit: {
                     onPersist()
-                    brushRevision += 1
+                    // 铺出来的那一片是**存下来的**（`groupCells`），擦 / 补完必须自己刷 ——
+                    // 擦掉的格子不刷就还留在这一组里，补上的格子进不来。
+                    // 小图缓存不用动：那是按 `CellRef` 从图纸上裁的，格子改成什么颜色跟它
+                    // 无关，新进这一组的那几格会自己按需裁（见 `swatch(for:)`）。
+                    groupCells = cells(of: selectedGroup)
                     // 选中的是 (零件下标, row, col)，而刚才那些格子可能已经换了一组 ——
                     // 留着的话，底下那排「这类都改成…」会作用到一批
                     // 用户以为自己早就取消掉的格子上。

@@ -83,9 +83,10 @@ struct PartCellBrushView: View {
     @State private var image: UIImage?
     /// `image` 盖住的是格子矩阵里的哪一块（归一化，相对整张图纸）。
     ///
-    /// 多数时候就是 `gridArea` 本身；靠零件区边上的零件会被工作图切掉一条，
-    /// 那时它比 `gridArea` 小 —— 按它自己的范围画，切掉的那条就是空的，
-    /// 而不是把一张缺角的图拉满整个框（那样格线跟豆子会整体错开）。
+    /// 多数时候约等于 `gridArea`；两种情况下会不一样，都必须按它自己的范围画，
+    /// 不能把图拉满整个框（那样格线跟豆子会整体错开）：
+    ///   · 靠零件区边上的零件会被工作图切掉一条；
+    ///   · 裁图把像素矩形向外取整了，于是比要的那块大一点点（见 `cropExact`）。
     @State private var imageRect: CGRect = .zero
     /// 画布画的是整张图纸的哪一块（归一化）。**永远等于 `gridArea`** ——
     /// `transform` 要一个存下来的值，而 `gridArea` 是每次从 `parts` 现算的。
@@ -878,16 +879,19 @@ struct PartCellBrushView: View {
             }
             return
         }
+        // 要**真正裁到的那一块**，不是我们要的那一块：裁图会把像素矩形向外取整，
+        // 拿要的那块去铺，图整体会拉伸一点点，格线跟豆子对不上 ——
+        // 而用户只会以为是网格没量准，跑回「量格子」白推半天。
         let cropped = await Task.detached(priority: .userInitiated) {
-            PartsThumbnailMaker.crop(source, normalized: cropRect)
+            PartsThumbnailMaker.cropExact(source, normalized: cropRect)
         }.value
         guard !Task.isCancelled else {
             // 取消 ≠ 成功。不说一句的话，「对照图纸」那个按钮凭空不见了，没人猜得到为什么。
             imageUnavailable = true
             return
         }
-        image = cropped
-        imageRect = cropRect
+        image = cropped?.image
+        imageRect = cropped?.rect ?? cropRect
         // 裁不出来就只画零件那一层，「对照图纸」那个按钮跟着不出现。
         // 记一笔：裁失败是确定性的（同一张图、同一块 bounds，重开几次都一样），
         // 不记的话事后无从查起（同 `PartsBoardStepView.loadOriginal`）。
