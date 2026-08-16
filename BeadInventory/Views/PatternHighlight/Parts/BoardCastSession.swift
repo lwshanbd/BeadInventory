@@ -56,6 +56,9 @@ final class BoardCastSession: ObservableObject {
         /// 手机上写了号、电视上不写，他就得低头再找一遍。
         /// 单图纸模式整张图只有一个「零件」，没有号，用默认的空表。
         var labels: [UUID: String] = [:]
+        /// 跟旁边挨上了、又挪不开的那些摆放。电视上也要标红 ——
+        /// 抬头照着电视摆豆子的人，正是会照着这两块摆成粘连的那个人。
+        var invalid: Set<UUID> = []
     }
 
     private init() {}

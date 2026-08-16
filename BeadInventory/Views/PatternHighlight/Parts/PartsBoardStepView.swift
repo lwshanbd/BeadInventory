@@ -111,9 +111,18 @@ struct PartsBoardStepView: View {
     @State private var inspecting: BeadPart?
     /// 正在图纸上擦 / 补格子的那个零件
     @State private var brushTarget: BrushTarget?
-    /// 格子被改过几回。形状缓存、颜色表、送外屏都得跟着重来 ——
-    /// `shapeSignature` 只认「哪个零件、转了几次」，格子里的内容变了它是看不见的。
+    /// 格子被改过几回。形状缓存和送外屏靠它失效（`shapeSignature` / `castSignature`
+    /// 只认「哪个零件、转了几次」，格子里的内容变了它们是看不见的）；
+    /// 颜色表在 `afterCellsChanged` 里直接重算。
     @State private var cellsRevision = 0
+    /// 现在还跟旁边挨着、而且哪儿都放不下的那些零件（`PartsBoardRepair.Outcome.invalid`）。
+    ///
+    /// **必须一直看得见**，不能只闪一句就算。挨着的两个零件烫完连成一片，那一刀下去
+    /// 边缘就毁了 —— 提示消失之后，板上就是一份看起来完全正常、拼出来会报废的布局。
+    /// 所以它们在板上画成红的，「完成」也会先拦一下。
+    @State private var invalidParts: Set<UUID> = []
+    /// 板上还有挨着的零件时按了「完成」
+    @State private var confirmFinishInvalid = false
 
     private struct BrushTarget: Identifiable {
         let id: UUID
@@ -213,6 +222,9 @@ struct PartsBoardStepView: View {
             colorCache = makeColorCache()
             partOrder = Dictionary(uniqueKeysWithValues: parts.enumerated().map { ($1.id, $0 + 1) })
             autoPackIfNeeded()
+            // 排完（或者本来就有板子）之后先体检一遍：别处改过的格子可能已经把
+            // 这块板改成非法的了，而用户看到板子就是在这儿。见 `revalidateBoards`。
+            revalidateBoards()
         }
         // 选中谁就把谁的原图抠出来。抠在后台：高清工作图上一块零件几十万像素，
         // 主线程上裁，用户点一下零件界面就顿一下。
@@ -241,9 +253,15 @@ struct PartsBoardStepView: View {
                 parts: $parts,
                 colorSystem: colorSystem,
                 subject: name(of: target.id),
+                // 这一屏只有多零件模式走得到，「任意色」那一档是有的。显式写出来 ——
+                // 靠默认值恰好对，是下一个人删掉这一屏的前提时才会发现的那种对。
+                allowsAnyColor: true,
                 onCommit: {
+                    // **先修板子再落盘。** 反过来的话，「挪到旁边空地了」那一下只活在
+                    // 内存里等下一次 persist —— 而屏幕上刚跟用户说完这句话，
+                    // 他有理由认为已经定了。
+                    afterCellsChanged()
                     onPersist()
-                    afterCellsChanged(target.id)
                 }
             )
             .environmentObject(inventoryManager)
@@ -260,6 +278,12 @@ struct PartsBoardStepView: View {
                 colors: colorCache,
                 placement: placementInfo(of: part.id)
             )
+        }
+        .alert("板上有零件挨着", isPresented: $confirmFinishInvalid) {
+            Button("回去挪一下", role: .cancel) { confirmFinishInvalid = false }
+            Button("仍然完成") { onFinish() }
+        } message: {
+            Text("有 \(invalidParts.count) 个零件（红色那几个）跟旁边挨着了。挨着的豆子烫完会连成一片，得拿剪刀分开，那一刀下去边缘就毁了。")
         }
         .alert("重新排一遍？", isPresented: Binding(
             get: { repackTarget != nil },
@@ -298,6 +322,16 @@ struct PartsBoardStepView: View {
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.lg)
+            }
+
+            // 挨着的零件必须一直挂在眼前 —— 一句会消失的提示挡不住一块拼出来会粘连的板。
+            if !invalidParts.isEmpty {
+                Label("红色那 \(invalidParts.count) 个零件跟旁边挨着，烫完会连成一片。拖开一点，或者上面「加一块」板。",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundColor(Theme.ColorToken.Status.error)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Theme.Spacing.lg)
             }
 
             if let board = currentBoard {
@@ -515,7 +549,12 @@ struct PartsBoardStepView: View {
                 }
             }
 
-            Button(action: onFinish) {
+            // 板上还有挨着的零件时先拦一下。**不是禁用按钮** —— 灰着不说话，用户
+            // 只会以为 App 坏了；而且「就这么拼」也可能真是他的决定（他也许打算
+            // 拼完自己剪开）。所以说清楚代价，让他自己点。
+            Button {
+                if invalidParts.isEmpty { onFinish() } else { confirmFinishInvalid = true }
+            } label: {
                 Label("完成", systemImage: "checkmark").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -795,6 +834,13 @@ struct PartsBoardStepView: View {
     private var selectedPartId: UUID? {
         guard let id = selection else { return nil }
         return currentBoard?.placements.first(where: { $0.id == id })?.partId
+    }
+
+    /// `invalidParts` 记的是**零件** id（体检是按零件报的），画布认的是**摆放** id。
+    /// 翻一道，别让画布去理解零件那一层。
+    private func invalidPlacements(on board: PartsBoard) -> Set<UUID> {
+        guard !invalidParts.isEmpty else { return [] }
+        return Set(board.placements.filter { invalidParts.contains($0.partId) }.map(\.id))
     }
 
     /// 板上每个摆放身上写的号。零件已经不在图纸上了，号是它跟图纸之间唯一的线。
@@ -1161,53 +1207,55 @@ struct PartsBoardStepView: View {
         }
     }
 
-    /// 一个零件的格子被改过之后，板上跟着要处理的事。
+    /// 零件的格子被改过之后，板上跟着要处理的事。
     ///
-    /// 擦掉几格只会让零件变小，怎么摆都还成立；**补上几格不是** —— 它可能一下子
-    /// 顶到板边、或者跟旁边那个零件贴上（贴着的两个零件烫完连成一片，那一刀下去
-    /// 边缘就毁了，见 BeadPartsBoard.swift）。这时候不能装作没事：
-    ///
-    /// - 原地还放得下 → 什么都不做，最理想。
-    /// - 原地放不下、板上还有空地 → 挪过去，并且说一句（同 `rotateSelected`）。
-    /// - 哪儿都放不下 → **留在原地**，说清楚它现在跟旁边挨上了。悄悄拿下来的话，
-    ///   用户刚补完一格，零件就从板上消失了，他不知道发生了什么。
-    /// - 一颗豆子都不剩了 → 从板上拿下来。板上画不出任何东西的摆放留着只会占地方。
-    private func afterCellsChanged(_ partId: UUID) {
+    /// 判定本身在 `PartsBoardRepair`，这里只负责说人话。**判定必须只有一份**：
+    /// 改格子的入口有两个（这一屏、以及核对颜色那屏），而只有这一屏看得见板子 ——
+    /// 各写各的话，从核对页改出来的粘连没有任何地方会发现（见 `revalidateBoards`）。
+    private func afterCellsChanged() {
         cellsRevision += 1
         colorCache = makeColorCache()
+        let outcome = PartsBoardRepair.repair(boards: &boards, parts: parts, spacing: spacing)
         footprints = makeFootprints()
-
-        guard let part = parts.first(where: { $0.id == partId }) else { return }
-
-        if part.beadCount == 0 {
-            let wasPlaced = boards.contains { $0.placements.contains { $0.partId == partId } }
-            for index in boards.indices {
-                boards[index].placements.removeAll { $0.partId == partId }
-            }
-            if wasPlaced {
-                selection = nil
-                footprints = makeFootprints()
-                dropHighlightIfGone()
-                flash(String(localized: "这一块一颗豆子都不剩了，已经从板上拿下来"))
-            }
-            return
+        invalidParts = Set(outcome.invalid)
+        if !boards.contains(where: { $0.placements.contains { $0.id == selection } }) {
+            selection = nil
         }
+        dropHighlightIfGone()
+        if let note = note(for: outcome) { flash(note) }
+    }
 
-        guard boards.indices.contains(boardIndex),
-              let index = boards[boardIndex].placements.firstIndex(where: { $0.partId == partId })
-        else { return }
-        let placement = boards[boardIndex].placements[index]
-        let footprint = part.footprint(turns: placement.turns)
-        let occupancy = PartsBoardPacker.occupancy(of: boards[boardIndex], parts: parts,
-                                                   spacing: spacing, ignoring: placement.id)
-        if occupancy.canPlace(footprint, col: placement.col, row: placement.row) { return }
-        if let spot = PartsBoardPacker.firstFit(footprint, occupancy: occupancy) {
-            boards[boardIndex].placements[index].col = spot.col
-            boards[boardIndex].placements[index].row = spot.row
-            flash(String(localized: "补上的格子在原地放不下，挪到旁边空地了"))
-        } else {
-            flash(String(localized: "补上的格子跟旁边挨上了，自己挪一下（挨着烫完会连成一片）"))
+    /// 进这一屏就先给所有板子做一次体检。
+    ///
+    /// 这不是重复劳动：从**核对颜色**那屏擦 / 补过的格子，改完时人还在那一屏，板子
+    /// 是在背后被改的 —— 那条路上没有任何地方会发现「这两个零件现在贴上了」。
+    /// 用户下次看到板子就是在这儿，那就在这儿兜住，并且说清楚动了什么。
+    private func revalidateBoards() {
+        guard !boards.isEmpty else { return }
+        let outcome = PartsBoardRepair.repair(boards: &boards, parts: parts, spacing: spacing)
+        invalidParts = Set(outcome.invalid)
+        guard !outcome.isEmpty else { return }
+        footprints = makeFootprints()
+        dropHighlightIfGone()
+        if let note = note(for: outcome) { flash(note) }
+        // 修完就存。屏幕上已经跟用户说「挪到旁边空地了」，库里却还是那份挨着的布局 ——
+        // 下次进来虽然会再修一遍（这一句是幂等的），但两边不一致本身就是个坑：
+        // 备份、投屏、导出读到的都是没修过的那份。
+        onPersist()
+    }
+
+    /// 体检结果怎么跟用户说。一次只说最要紧的那一条 —— 三句话同时闪出来等于没说。
+    private func note(for outcome: PartsBoardRepair.Outcome) -> String? {
+        if !outcome.invalid.isEmpty {
+            return String(localized: "有 \(outcome.invalid.count) 个零件跟旁边挨上了（红的那几个），挨着烫完会连成一片 —— 自己挪一下，或者加一块板")
         }
+        if !outcome.moved.isEmpty {
+            return String(localized: "补上的格子在原地放不下，\(outcome.moved.count) 个零件挪到旁边空地了")
+        }
+        if !outcome.removed.isEmpty {
+            return String(localized: "有 \(outcome.removed.count) 个零件一颗豆子都不剩，已经从板上拿下来（要找回来，回「核对颜色」那屏补格子）")
+        }
+        return nil
     }
 
     private func takeOffSelected() {
@@ -1332,7 +1380,7 @@ struct PartsBoardStepView: View {
     ///
     /// 只看当前这块板：送出去的本来就只有它。
     private var castSignature: String {
-        var signature = "\(boardIndex)|\(boards.count)|\(highlightKey ?? "")|\(colorCache.count)|\(cellsRevision)"
+        var signature = "\(boardIndex)|\(boards.count)|\(highlightKey ?? "")|\(colorCache.count)|\(cellsRevision)|\(invalidParts.count)"
         for placement in currentBoard?.placements ?? [] {
             signature += "|\(placement.id)@\(placement.col),\(placement.row),\(placement.turns)"
         }
@@ -1350,7 +1398,8 @@ struct PartsBoardStepView: View {
             colorCache: colorCache,
             highlightKeys: highlightKey.map { [$0] } ?? [],
             caption: String(localized: "第 \(boardIndex + 1) / \(boards.count) 块"),
-            labels: labels(for: board)
+            labels: labels(for: board),
+            invalid: invalidPlacements(on: board)
         ))
     }
 
@@ -1366,7 +1415,8 @@ struct PartsBoardStepView: View {
             moving: drag.map {
                 .init(placement: $0.placement, deltaCol: $0.deltaCol,
                       deltaRow: $0.deltaRow, valid: $0.valid)
-            }
+            },
+            invalid: invalidPlacements(on: board)
         )
     }
 

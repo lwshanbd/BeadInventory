@@ -762,6 +762,14 @@ struct PartsSheetFlowView: View {
         guard inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet) else {
             // 没写进去。这里绝不能算了 —— 用户手上这些东西全在内存里，
             // 而屏幕上跟存好了长得一模一样，他关掉就再也找不回来。
+            //
+            // 也要记一笔：弹窗是给用户看的，日志是事后查「他那次到底为什么丢了」用的。
+            // 隔壁 `persist_blocked_unreadable` 一直有，这条一直没有。
+            AppLogger.shared.error("PartsSheet", "persist_write_failed", metadata: [
+                "projectId": project.id.uuidString,
+                "parts": "\(parts.count)",
+                "boards": "\(boards.count)"
+            ])
             prompt = .saveFailed
             return false
         }

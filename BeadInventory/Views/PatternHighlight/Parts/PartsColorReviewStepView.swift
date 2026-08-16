@@ -78,8 +78,21 @@ struct PartsColorReviewStepView: View {
     @State private var brushTarget: BrushTarget?
     /// 挑一块来擦 / 补（只有多零件模式要挑）
     @State private var showingPartPicker = false
-    /// 擦 / 补完了要把铺出来的格子重铺一遍 —— 那一层是按色号抠的图，
-    /// 擦掉一格之后它还留在原来那一组里，不重铺的话用户以为自己白擦了。
+    /// 挑好了、等挑零件那一屏关掉之后再打开画笔。
+    ///
+    /// **不能在同一拍里关一个 sheet 开另一个** —— SwiftUI 只 present 一个，
+    /// 另一个的标志停在 true 却没有界面（`PartsSheetFlowView` 的 Prompt 那段写过这件事）。
+    /// 更糟的是 `BrushTarget.id` 就是零件 id：被吞之后再挑**同一个零件**，
+    /// `.sheet(item:)` 认不出身份变化，那个零件的入口就永久死了，还没有任何提示。
+    @State private var pendingBrushId: UUID?
+    /// 挑零件那一屏的行。开之前算一次就够 —— 放在 sheet 的内容闭包里的话，
+    /// 每次求值都要给所有零件重建一遍 `PartFootprint`（板子那屏专门缓存它就是因为这个贵）。
+    @State private var pickerRows: [PartBrushPickerSheet.Row] = []
+    /// 擦 / 补完了要把抠好的小图重抠一遍。
+    ///
+    /// 分组本身（`cells(of:)`）是现算的，**擦掉**那一格自己就从这一组里掉出去了；
+    /// 坏的是**补上**：新进这一组的格子在 `swatches` 里没有对应的图，
+    /// 不重抠就是一个空白方块 —— 用户会以为补上去的那几格是坏的。
     @State private var brushRevision = 0
 
     private struct BrushTarget: Identifiable {
@@ -113,6 +126,14 @@ struct PartsColorReviewStepView: View {
                     if parts.count == 1 {
                         brushTarget = BrushTarget(id: parts[0].id)
                     } else {
+                        pickerRows = parts.enumerated().map { index, part in
+                            PartBrushPickerSheet.Row(
+                                id: part.id,
+                                name: part.displayName(order: index),
+                                beadCount: part.beadCount,
+                                footprint: part.footprint(turns: 0)
+                            )
+                        }
                         showingPartPicker = true
                     }
                 } label: {
@@ -160,20 +181,19 @@ struct PartsColorReviewStepView: View {
                 }
             )
         }
-        .sheet(isPresented: $showingPartPicker) {
+        .sheet(isPresented: $showingPartPicker, onDismiss: {
+            // 等这一屏真的关掉了再开画笔，理由见 `pendingBrushId`
+            if let id = pendingBrushId {
+                pendingBrushId = nil
+                brushTarget = BrushTarget(id: id)
+            }
+        }) {
             PartBrushPickerSheet(
-                rows: parts.enumerated().map { index, part in
-                    PartBrushPickerSheet.Row(
-                        id: part.id,
-                        name: part.displayName(order: index),
-                        beadCount: part.beadCount,
-                        footprint: part.footprint(turns: 0)
-                    )
-                },
+                rows: pickerRows,
                 colors: swatchColors,
                 onPick: { id in
+                    pendingBrushId = id
                     showingPartPicker = false
-                    brushTarget = BrushTarget(id: id)
                 }
             )
         }
@@ -188,6 +208,9 @@ struct PartsColorReviewStepView: View {
                 onCommit: {
                     onPersist()
                     brushRevision += 1
+                    // 选中的是 (零件下标, row, col)，而刚才那些格子可能已经换了一组 ——
+                    // 留着的话，接下来那三个「这类都改成…」会作用到一批
+                    // 用户以为自己早就取消掉的格子上。
                     selection.removeAll()
                 }
             )

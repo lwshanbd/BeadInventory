@@ -166,6 +166,11 @@ struct BoardCanvasRenderer {
     var labels: [UUID: String] = [:]
     var selection: UUID?
     var moving: Moving?
+    /// 跟旁边挨上了、又挪不开的那些摆放。跟「拖到放不下的地方」画成同一种红 ——
+    /// 用户在这块板上只需要认一种「这儿不对」，不该学两套。
+    ///
+    /// 外屏也要画：人是抬头照着电视摆豆子的，粘连的那两块正是他会照着摆错的地方。
+    var invalid: Set<UUID> = []
 
     func draw(in context: GraphicsContext, canvas size: CGSize, layout: BoardCanvasLayout) {
         let cell = layout.cell
@@ -243,7 +248,7 @@ struct BoardCanvasRenderer {
             let moving = self.moving?.placement == placement.id ? self.moving : nil
             let col = placement.col + (moving?.deltaCol ?? 0)
             let row = placement.row + (moving?.deltaRow ?? 0)
-            let blocked = moving.map { !$0.valid } ?? false
+            let blocked = moving.map { !$0.valid } ?? invalid.contains(placement.id)
 
             // 沿着这个零件的外沿描一圈。
             //

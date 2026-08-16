@@ -24,9 +24,11 @@
 //
 //  ## 改完就是改完了
 //
-//  一笔画完立刻写回零件（`commit`），调用方跟着落盘。用户擦掉的格子，下次进来、
-//  下次开 App 都还是擦掉的 —— 除非他自己再按「重新判色」，那一步本来就会
-//  从头重算每一格（有确认弹窗）。
+//  一笔画完立刻写回**内存里的**零件（`commit`），关掉这一屏时调用方落盘一次
+//  （`onCommit`，见 `.onDisappear`）；中途被切到后台，两个流程容器的
+//  `scenePhase != .active` 也会存一遍。用户擦掉的格子，下次进来、下次开 App
+//  都还是擦掉的 —— 除非他自己再按「重新判色」，那一步本来就会从头重算每一格
+//  （有确认弹窗）。
 //
 
 import SwiftUI
@@ -43,8 +45,8 @@ struct PartCellBrushView: View {
     var subject: String
     /// 有没有「任意色」这一档。单图纸模式没有（同 `PartsColorReviewStepView.allowsAnyColor`）。
     var allowsAnyColor: Bool = true
-    /// 改完落盘。**必须由调用方给** —— 这一屏改的是内存里的零件，
-    /// 不写进项目的话，用户擦掉的格子下次进来又原样回来了。
+    /// 改完落盘：这一屏只改内存里的零件，不写进项目的话，
+    /// 用户擦掉的格子下次进来又原样回来了。
     let onCommit: () -> Void
 
     @EnvironmentObject var inventoryManager: InventoryManager
@@ -64,8 +66,10 @@ struct PartCellBrushView: View {
     @State private var strokes: [[Change]] = []
     @State private var loaded = false
 
-    /// 「补上」用哪个色号
-    @State private var paintFill: PartCellFill = .anyColor
+    /// 「补上」用哪个色号。**可以是 nil** —— 图纸上一个色号都没认出来、而这张图纸
+    /// 又没有「任意色」这一档时（单图纸模式），没有任何一个合法的默认值可给，
+    /// 那就先让用户自己挑一个（见 `buildPalette` 末尾）。
+    @State private var paintFill: PartCellFill?
     @State private var showingCodePicker = false
     @State private var pickedCodes: Set<String> = []
 
@@ -81,8 +85,15 @@ struct PartCellBrushView: View {
     /// 现在这一块还剩多少颗豆子。放 @State 而不是每次 body 现算 ——
     /// 七万格的图纸上，拖一下就要重数七万遍。
     @State private var beadCount = 0
-    /// 真的改过东西（决定关掉时要不要落盘）
+    /// 往零件里写过东西（决定关掉时要不要落盘）。
+    /// 「取消」那一次还原也算 —— 还原本身也得落盘，把之前写进去的盖回去。
     @State private var changed = false
+    /// 写不回零件（`partId` 在 `parts` 里找不到了）。这时候屏幕上画什么都没用，
+    /// 得当场告诉用户，别让他白擦一屏。
+    @State private var writeFailed = false
+    /// 图纸这一块没取到（没有原图、或者裁失败）。这一屏承诺的是「照着图纸改」，
+    /// 取不到就得说出来 —— 而且「只看图纸」那个开关这时候只会给出一片空白。
+    @State private var imageUnavailable = false
 
     @State private var canvasSize: CGSize = .zero
     @State private var zoom: CGFloat = 1
@@ -155,7 +166,12 @@ struct PartCellBrushView: View {
         .onDisappear {
             // 落盘放在这里，不放在「完成」上：下拉关掉弹窗也是关掉，
             // 那时候格子早就写回零件了，不存的话用户下次进来看到的是没改过的样子。
-            if changed { onCommit() }
+            //
+            // **晚一拍再落**：存不上的时候流程容器会弹「这一步没存上」，而这里正是
+            // sheet 拆解的那一拍 —— 在这拍里 present 一个 alert 有可能被吞掉，
+            // 那句话就再也不会出现（`prompt` 停在同一个 id，之后每次失败都盖回同一个值）。
+            guard changed else { return }
+            Task { @MainActor in onCommit() }
         }
         .sheet(isPresented: $showingCodePicker, onDismiss: applyPickedCode) {
             ColorSelectionView(
@@ -265,7 +281,8 @@ struct PartCellBrushView: View {
                             } else {
                                 // 最后一段常常只随抬手事件送达，onChanged 没见过它 ——
                                 // 不补这一下，快速划一道的末尾几格不会变
-                                //（同 PartsBoardStepView.commitMove）。
+                                //（同 PartsBoardStepView 里 gestureCatcher 的 onEnded：
+                                // 抬手前再 updateMove 一次）。
                                 if pinchContentAnchor == nil { paint(at: value.location) }
                                 endStroke()
                             }
@@ -275,9 +292,11 @@ struct PartCellBrushView: View {
                             if pinchContentAnchor == nil {
                                 pinchScreenPoint = value.startLocation
                                 pinchContentAnchor = unzoomed(value.startLocation)
-                                // 捏合和画画同时进来时，把已经画的那一笔收干净，
-                                // 免得它跟后面的动作串成一条撤不干净的记录。
-                                endStroke()
+                                // **把这一笔退掉，不是收下。** 两指捏合的第一根手指会先
+                                // 触发一次 minimumDistance 0 的拖动，在 Magnify 反应过来之前
+                                // 已经改掉一格了 —— 用户想放大，代价是图纸上多 / 少了一颗豆子，
+                                // 而在几千格里他多半发现不了。想放大就是想放大，退干净。
+                                rollbackStroke()
                             }
                             guard let anchor = pinchContentAnchor else { return }
                             zoom = max(1, min(20, lastZoom * value.magnification))
@@ -300,6 +319,15 @@ struct PartCellBrushView: View {
 
     private var footer: some View {
         VStack(spacing: Theme.Spacing.md) {
+            // 出了事就摆在最上面，别让用户对着一屏正常的界面白擦。
+            if writeFailed {
+                warning("这一块对不上任何零件了，改的东西存不下来。退出去回零件清单看看。",
+                        icon: "exclamationmark.triangle.fill", isError: true)
+            } else if imageUnavailable {
+                warning("这次没取到图纸上的这一块，下面画的是识别结果 —— 照着手上的实物改。",
+                        icon: "photo.badge.exclamationmark", isError: false)
+            }
+
             Picker("", selection: $tool) {
                 Text("挪图").tag(Tool.move)
                 Text("擦掉").tag(Tool.erase)
@@ -334,12 +362,17 @@ struct PartCellBrushView: View {
                 Spacer()
                 // 盖在上面的是识别结果，底下才是图纸本身。判「这儿到底有没有豆子」
                 // 得看得见图纸，所以给一个一按就掀开的开关。
-                Button {
-                    showsOverlay.toggle()
-                } label: {
-                    Label(showsOverlay ? "只看图纸" : "看识别结果",
-                          systemImage: showsOverlay ? "eye.slash" : "eye")
-                        .font(.footnote)
+                //
+                // **没有图纸时不摆这个按钮**：掀开之后底下什么都没有，
+                // 用户按到的是一个把屏幕清空的开关，而且看不出为什么。
+                if image != nil {
+                    Button {
+                        showsOverlay.toggle()
+                    } label: {
+                        Label(showsOverlay ? "只看图纸" : "看识别结果",
+                              systemImage: showsOverlay ? "eye.slash" : "eye")
+                            .font(.footnote)
+                    }
                 }
                 zoomButton("minus.magnifyingglass") { zoomBy(1 / 1.6) }
                 zoomButton("plus.magnifyingglass") { zoomBy(1.6) }
@@ -349,8 +382,25 @@ struct PartCellBrushView: View {
         .background(.regularMaterial)
     }
 
-    /// 「补上」补的是哪个色号。列的是**这张图纸上已经用到的**颜色 ——
-    /// 漏判的那颗豆子几乎一定是其中之一，用户不用去四百多个色号里翻。
+    private func warning(_ text: LocalizedStringKey, icon: String, isError: Bool) -> some View {
+        Label {
+            Text(text)
+                .font(.footnote)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } icon: {
+            Image(systemName: icon)
+        }
+        .foregroundStyle(isError ? Theme.ColorToken.Status.error : Theme.ColorToken.Text.secondary)
+    }
+
+    /// 「补上」补的是哪个色号。列的是**识别结果里已经出现过的**颜色，按颗数从多到少 ——
+    /// 大多数时候要补的就在这几个里，用户不用去四百多个色号里翻。
+    ///
+    /// 盖不住的是「这个色号一颗都没认出来」那一种（浅色压在浅色底上最容易整片漏）：
+    /// 它在识别结果里是零，所以既不在这条栏里，也不在「其它色号」的推荐里。
+    /// 那时候只能自己去色号表翻 —— 要更准得把图纸色号表（`legendCounts`）传进来，
+    /// 核对页就是那么做的（见 `PartsColorReviewStepView.patternColors`）。
     private var paintColorBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Theme.Spacing.sm) {
@@ -380,7 +430,7 @@ struct PartCellBrushView: View {
     }
 
     private func colorChip(_ option: PaletteOption) -> some View {
-        let isOn = groupKey(paintFill) == option.key
+        let isOn = paintFill.map(groupKey) == option.key
         return HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .fill(option.color)
@@ -493,8 +543,37 @@ struct PartCellBrushView: View {
     // MARK: - 画
 
     private func paint(at point: CGPoint) {
-        guard let hit = cellIndex(at: point) else { return }
-        let target: PartCellFill = tool == .erase ? .empty : paintFill
+        // **画什么由工具单独决定，别写成三目。** `tool == .erase ? .empty : paintFill`
+        // 会把「挪图」也映射成画画 —— 现在安全只因为两个调用点都先判了 .move，
+        // 那是调用方的纪律，不是这里的保证。
+        let target: PartCellFill
+        switch tool {
+        case .move: return
+        case .erase: target = .empty
+        case .paint:
+            // 还没挑色号（图纸上一个都没认出来）。**别让这一下变成没反应的空点** ——
+            // 直接把选色盘推上来，那正是他现在唯一该做的事。
+            guard let paintFill else {
+                if !showingCodePicker {
+                    pickedCodes = []
+                    showingCodePicker = true
+                }
+                return
+            }
+            target = paintFill
+        }
+
+        // 划到框外面：**把锚点清掉**。留着的话，用户从框里划出去、绕一圈再划回来，
+        // 下面那段补线会把两个落点之间连成一条斜带，把他一小时前核对好的格子整片改掉 ——
+        // 而那条带看起来就像他自己画的那一笔。框只是画布里的一小块（四周还特意留了
+        // 一圈图纸看格线对没对齐），划出去太容易了。
+        guard let hit = cellIndex(at: point) else {
+            stroke.last = nil
+            return
+        }
+        // 识别结果掀开着的时候动了笔，就把它盖回来 —— 否则用户划半天，
+        // 屏幕上唯一的变化是底下那个颗数。
+        if !showsOverlay { showsOverlay = true }
 
         // 手指移得快时两次事件之间会跳过好几格。只改落点的话，划出来的是一串虚线，
         // 用户得回头一格一格补 —— 那正是这一屏想省掉的事。
@@ -511,19 +590,27 @@ struct PartCellBrushView: View {
         }
         setCell(row: hit.row, col: hit.col, to: target)
         stroke.last = hit
-    }
-
-    private func setCell(row: Int, col: Int, to fill: PartCellFill) {
-        guard row >= 0, row < rows, col >= 0, col < cols else { return }
-        guard cells[row][col] != fill else { return }
-        stroke.changes.append(Change(row: row, col: col, old: cells[row][col]))
-        cells[row][col] = fill
+        // **一次事件刷一遍，不是一格刷一遍。** `refresh` 要重数所有格子 + 重建整张位图；
+        // 一次快速滑动光补线就能改十几格，放在 `setCell` 里就是同一个触摸事件里重建十几遍。
+        // 单图纸模式一张七万格，位图方案本来就是为了避掉这种量。
         refresh()
     }
 
-    /// 一笔画完：记进撤销栈，写回零件。
+    private func setCell(row: Int, col: Int, to fill: PartCellFill) {
+        // 按**这一行自己的**长度判界。全仓库别处（`CellOverlayBitmap.make`、
+        // `BeadPart.rotatedCells`、`PartsColorReviewStepView.apply`）都当 cells 可能不齐，
+        // 只有这里拿第 0 行的宽度去索引别的行 —— 而这里是唯一会崩、不是跳过的地方。
+        guard row >= 0, row < rows, col >= 0, col < cells[row].count else { return }
+        guard cells[row][col] != fill else { return }
+        stroke.changes.append(Change(row: row, col: col, old: cells[row][col]))
+        cells[row][col] = fill
+    }
+
+    /// 一笔画完：记进撤销栈，写回**内存里的**零件。
     ///
-    /// 一笔一存而不是等「完成」：擦掉五十格之后来个电话，回来东西还在。
+    /// 一笔一写而不是等「完成」，是为了「取消」有东西可还原、撤销栈不跟零件脱节。
+    /// **落盘不在这儿** —— 在 `.onDisappear` 那一下（见 `onCommit`）。这一屏开着时
+    /// 被电话打断，靠的是两个流程容器的 `scenePhase != .active` 也会 persist 一次。
     private func endStroke() {
         defer { stroke.reset() }
         guard !stroke.changes.isEmpty else { return }
@@ -531,13 +618,30 @@ struct PartCellBrushView: View {
         commit()
     }
 
-    private func undo() {
-        guard let last = strokes.popLast() else { return }
-        for change in last.reversed() where change.row < rows && change.col < cols {
-            cells[change.row][change.col] = change.old
-        }
+    /// 把正在画的这一笔原样退回去（捏合抢走了这次手势）。
+    /// 跟 `endStroke` 的区别是它不进撤销栈 —— 用户压根没打算画这一下。
+    private func rollbackStroke() {
+        defer { stroke.reset() }
+        guard !stroke.changes.isEmpty else { return }
+        restore(stroke.changes)
         refresh()
         commit()
+    }
+
+    private func undo() {
+        guard let last = strokes.popLast() else { return }
+        restore(last)
+        refresh()
+        commit()
+    }
+
+    /// 把一串改动按相反顺序放回去。同一格在一笔里最多出现一次（`setCell` 值没变就早返回、
+    /// 一笔之内 target 恒定），所以顺序其实不承重 —— 但反着来是白拿的保险。
+    private func restore(_ changes: [Change]) {
+        for change in changes.reversed()
+        where change.row < rows && change.col < cells[change.row].count {
+            cells[change.row][change.col] = change.old
+        }
     }
 
     /// 整块还原成进来时的样子（「取消」）
@@ -554,7 +658,18 @@ struct PartCellBrushView: View {
     /// get→mutate→set，而单图纸模式那个 binding 的 getter 是现拼出来的，
     /// 第二次读到的可能还是旧值（见 `cells` 的注释）。
     private func commit() {
-        guard let index = parts.firstIndex(where: { $0.id == partId }) else { return }
+        guard let index = parts.firstIndex(where: { $0.id == partId }) else {
+            // 屏幕上每一笔都照画不误（`cells` 是这一屏自己的），但一个字节都写不出去，
+            // 而 `changed` 停在 false 连落盘都不会试 —— 用户擦五十格、看着全生效、
+            // 按完成、回来一格没变。这种必须当场说，不能等他自己发现。
+            guard !writeFailed else { return }
+            writeFailed = true
+            AppLogger.shared.error("PartCellBrush", "commit_part_missing", metadata: [
+                "partId": partId.uuidString,
+                "parts": "\(parts.count)"
+            ])
+            return
+        }
         var updated = parts[index]
         updated.cells = cells
         parts[index] = updated
@@ -564,7 +679,15 @@ struct PartCellBrushView: View {
     /// 格子变了之后，屏幕上跟着变的那几样
     private func refresh() {
         beadCount = cells.reduce(0) { $0 + $1.filter(\.needsBead).count }
-        overlay = CellOverlayBitmap.make(cells: cells, colors: overlayColors)
+        // 建不出来就**留住上一张**。无条件赋值的话，识别结果那一层会在用户下一笔之后
+        // 整个消失 —— 他读到的是「我把东西全擦没了」，而真相是一张位图没建出来。
+        if let built = CellOverlayBitmap.make(cells: cells, colors: overlayColors) {
+            overlay = built
+        } else {
+            AppLogger.shared.error("PartCellBrush", "overlay_bitmap_failed", metadata: [
+                "rows": "\(rows)", "cols": "\(cols)"
+            ])
+        }
     }
 
     // MARK: - 颜色
@@ -596,8 +719,10 @@ struct PartCellBrushView: View {
     ///
     /// **MARD 不能走 `findColor(byCode:preferSystem:)`** —— 那个重载在
     /// `preferSystem == .mard` 时直接返回 nil（MARD 自己那一路留给了
-    /// `findColor(byMardCode:)`），走它的话 MARD 图纸上每个色块都是黑的
-    /// （同 `PartsColorReviewStepView.bead(for:)`）。
+    /// `findColor(byMardCode:)`）。走它的话 MARD 图纸上每个色号都取不到颜色，
+    /// 色号栏和识别结果那一层会一起退成同一片灰（两处的 fallback 分别是
+    /// `Surface.strong` 和 `Color(white: 0.5)`）—— 看上去像是所有色号合成了一种。
+    /// 核对页栽过同样的坑，见 `PartsColorReviewStepView.bead(for:)`。
     private func bead(for code: String) -> BeadColor? {
         colorSystem == .mard
             ? inventoryManager.findColor(byMardCode: code)
@@ -632,8 +757,30 @@ struct PartCellBrushView: View {
 
     private func load() async {
         guard !loaded else { return }
-        guard let part, part.hasCells else {
-            loaded = true
+        defer { loaded = true }
+        guard let part else {
+            // 「还没判过色」那句话在这儿是假的，它会把用户支去重判一遍色 —— 而问题是
+            // 这个 id 根本不在 parts 里，判多少遍色都没用。
+            writeFailed = true
+            AppLogger.shared.error("PartCellBrush", "part_missing_on_open", metadata: [
+                "partId": partId.uuidString
+            ])
+            return
+        }
+        // **行列数跟 cells 的实际形状必须一致。** 落点换算这一屏用的是 `cells` 的行列数，
+        // 而 `BeadPart.cellRect`（板子、抠图、核对页都走它）用的是 `rows`/`cols`
+        // 这两个存储属性 —— 两边差一格，用户划的是这一格、改的却是旁边那一格，
+        // 而且一声不响。宁可退回「还没判过色」让他重判，也不能让他在错位的网格上改。
+        guard part.hasCells,
+              part.rows == part.cells.count,
+              part.cols == part.cells.first?.count else {
+            if part.hasCells {
+                AppLogger.shared.error("PartCellBrush", "cells_shape_mismatch", metadata: [
+                    "partId": partId.uuidString,
+                    "rows": "\(part.rows)", "cols": "\(part.cols)",
+                    "cellRows": "\(part.cells.count)", "cellCols": "\(part.cells.first?.count ?? 0)"
+                ])
+            }
             return
         }
         cells = part.cells
@@ -659,7 +806,15 @@ struct PartCellBrushView: View {
         // 多留的那一圈会让格子被拉长。
         region = area
         guard let source = work, !padded.isEmpty else {
-            loaded = true
+            // 没有图纸不是错（拼豆板那屏的图本来就可能裁不出来），但**必须说出来**：
+            // 这一屏承诺的是「照着图纸改」，不说的话用户会对着一片灰底找豆子。
+            imageUnavailable = true
+            if let work {
+                AppLogger.shared.warning("PartCellBrush", "brush_region_empty", metadata: [
+                    "partId": partId.uuidString,
+                    "area": "\(area)", "workRegion": "\(work.region)"
+                ])
+            }
             return
         }
         region = padded
@@ -668,9 +823,19 @@ struct PartCellBrushView: View {
         }.value
         guard !Task.isCancelled else { return }
         image = cropped
-        // 裁不出来就退回只画识别结果，范围跟着换回格子矩阵那一块
-        if cropped == nil { region = area }
-        loaded = true
+        // 裁不出来就退回只画识别结果，范围跟着换回格子矩阵那一块。
+        // 记一笔：裁失败是确定性的（同一张图、同一块 bounds，重开几次都一样），
+        // 不记的话事后无从查起（同 `PartsBoardStepView.loadOriginal`）。
+        if cropped == nil {
+            region = area
+            imageUnavailable = true
+            AppLogger.shared.warning("PartCellBrush", "brush_crop_failed", metadata: [
+                "partId": partId.uuidString,
+                "padded": "\(padded)",
+                "region": "\(source.region)",
+                "workSize": "\(source.image.size)"
+            ])
+        }
     }
 
     /// 这张图纸用到的颜色，按颗数从多到少。
@@ -717,9 +882,19 @@ struct PartCellBrushView: View {
         paletteOptions = options
         overlayColors = colors
         sheetColors = candidates
-        // 默认补最常用的那个色号。一个都没有（这一步不该走到）时退回任意色，
-        // 至少不让「补上」变成一个按了没反应的工具。
-        paintFill = options.first?.fill ?? .anyColor
+        // 默认补最常用的那个色号。
+        //
+        // **一个都没有时不能瞎给一个。** 早先这里退回 `.anyColor`，而单图纸模式压根没有
+        // 「任意色」这一档：`SinglePatternFlowView.codeMatrix` 存盘时只写 `.code`，
+        // 任意色被存成 nil、读回来是空 —— 用户画上去、颗数涨了、下次进来全没了，
+        // 正是这个文件头承诺不做的事。现在宁可让「补上」先去挑一个色号。
+        if let first = options.first {
+            paintFill = first.fill
+        } else if allowsAnyColor {
+            paintFill = .anyColor
+        } else {
+            paintFill = nil
+        }
     }
 }
 
