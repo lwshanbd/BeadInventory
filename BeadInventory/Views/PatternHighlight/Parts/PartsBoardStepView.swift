@@ -111,16 +111,21 @@ struct PartsBoardStepView: View {
     @State private var inspecting: BeadPart?
     /// 正在图纸上擦 / 补格子的那个零件
     @State private var brushTarget: BrushTarget?
-    /// 格子被改过几回。形状缓存和送外屏靠它失效（`shapeSignature` / `castSignature`
-    /// 只认「哪个零件、转了几次」，格子里的内容变了它们是看不见的）；
-    /// 颜色表在 `afterCellsChanged` 里直接重算。
+    /// 格子被改过几回。形状缓存、送外屏、「还有谁站不住」都靠它失效 ——
+    /// `shapeSignature` / `castSignature` / `layoutSignature` 记的都是零件 id、转向和位置，
+    /// **格子里的内容变了它们看不见**；颜色表在 `afterCellsChanged` 里直接重算。
     @State private var cellsRevision = 0
-    /// 现在还跟旁边挨着、而且哪儿都放不下的那些零件（`PartsBoardRepair.Outcome.invalid`）。
+    /// 现在还站不住的那些**摆放**（跟旁边挨着 / 出界，而且挪不开）。
     ///
-    /// **必须一直看得见**，不能只闪一句就算。挨着的两个零件烫完连成一片，那一刀下去
+    /// **必须一直看得见**，不能只闪一句就算：挨着的两个零件烫完连成一片，那一刀下去
     /// 边缘就毁了 —— 提示消失之后，板上就是一份看起来完全正常、拼出来会报废的布局。
-    /// 所以它们在板上画成红的，「完成」也会先拦一下。
-    @State private var invalidParts: Set<UUID> = []
+    /// 所以它们在板上描红边，「完成」也会先拦一下。
+    ///
+    /// **跟着板子重算，不是修完存一次。** 早先它是 `repair` 的返回值缓存下来的，
+    /// 于是用户照着提示把零件拖开、或者重排一遍之后，红边还红着、「完成」还拦着 ——
+    /// 而板子明明已经好了。一个跟着现实走的警告才有人看，一个赖着不走的警告只会被
+    /// 学会无视，而旁边就摆着「仍然完成」。
+    @State private var invalidPlacements: Set<UUID> = []
     /// 板上还有挨着的零件时按了「完成」
     @State private var confirmFinishInvalid = false
 
@@ -226,6 +231,9 @@ struct PartsBoardStepView: View {
             // 这块板改成非法的了，而用户看到板子就是在这儿。见 `revalidateBoards`。
             revalidateBoards()
         }
+        // 板子一动就重算「还有谁站不住」。拖动、转向、拿下来、加一块、重排、切板子 ——
+        // 每一处都得算，而它们分散在八九个函数里，所以认签名不认调用点。
+        .onChange(of: layoutSignature) { _, _ in refreshInvalid() }
         // 选中谁就把谁的原图抠出来。抠在后台：高清工作图上一块零件几十万像素，
         // 主线程上裁，用户点一下零件界面就顿一下。
         .task(id: selectedPartId) { await loadOriginal(for: selectedPartId) }
@@ -283,7 +291,7 @@ struct PartsBoardStepView: View {
             Button("回去挪一下", role: .cancel) { confirmFinishInvalid = false }
             Button("仍然完成") { onFinish() }
         } message: {
-            Text("有 \(invalidParts.count) 个零件（红色那几个）跟旁边挨着了。挨着的豆子烫完会连成一片，得拿剪刀分开，那一刀下去边缘就毁了。")
+            Text("有 \(invalidPlacements.count) 个零件（描红边那几个）跟旁边挨着了。挨着的豆子烫完会连成一片，得拿剪刀分开，那一刀下去边缘就毁了。")
         }
         .alert("重新排一遍？", isPresented: Binding(
             get: { repackTarget != nil },
@@ -325,8 +333,8 @@ struct PartsBoardStepView: View {
             }
 
             // 挨着的零件必须一直挂在眼前 —— 一句会消失的提示挡不住一块拼出来会粘连的板。
-            if !invalidParts.isEmpty {
-                Label("红色那 \(invalidParts.count) 个零件跟旁边挨着，烫完会连成一片。拖开一点，或者上面「加一块」板。",
+            if !invalidPlacements.isEmpty {
+                Label("描红边那 \(invalidPlacements.count) 个零件跟旁边挨着，烫完会连成一片。拖开一点，或者上面「加一块」板。",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Status.error)
@@ -553,7 +561,7 @@ struct PartsBoardStepView: View {
             // 只会以为 App 坏了；而且「就这么拼」也可能真是他的决定（他也许打算
             // 拼完自己剪开）。所以说清楚代价，让他自己点。
             Button {
-                if invalidParts.isEmpty { onFinish() } else { confirmFinishInvalid = true }
+                if invalidPlacements.isEmpty { onFinish() } else { confirmFinishInvalid = true }
             } label: {
                 Label("完成", systemImage: "checkmark").frame(maxWidth: .infinity)
             }
@@ -836,13 +844,6 @@ struct PartsBoardStepView: View {
         return currentBoard?.placements.first(where: { $0.id == id })?.partId
     }
 
-    /// `invalidParts` 记的是**零件** id（体检是按零件报的），画布认的是**摆放** id。
-    /// 翻一道，别让画布去理解零件那一层。
-    private func invalidPlacements(on board: PartsBoard) -> Set<UUID> {
-        guard !invalidParts.isEmpty else { return [] }
-        return Set(board.placements.filter { invalidParts.contains($0.partId) }.map(\.id))
-    }
-
     /// 板上每个摆放身上写的号。零件已经不在图纸上了，号是它跟图纸之间唯一的线。
     private func labels(for board: PartsBoard) -> [UUID: String] {
         var result: [UUID: String] = [:]
@@ -994,6 +995,24 @@ struct PartsBoardStepView: View {
         boards.flatMap { board in
             board.placements.map { "\($0.id)|\($0.partId)|\($0.turns)" }
         }.joined(separator: ",") + "#\(cellsRevision)"
+    }
+
+    /// 板子的现状。任何一处摆放变了（位置、转向、增删、换板尺寸、松紧、格子内容）都会变，
+    /// 拿它当「该重算一遍还站不站得住」的触发条件 —— 比在八个改板子的地方各记一笔可靠。
+    private var layoutSignature: String {
+        var signature = "\(spacing.rawValue)|\(cellsRevision)"
+        for board in boards {
+            signature += "|\(board.cols)x\(board.rows)"
+            for placement in board.placements {
+                signature += "|\(placement.id)@\(placement.col),\(placement.row),\(placement.turns)"
+            }
+        }
+        return signature
+    }
+
+    private func refreshInvalid() {
+        let found = PartsBoardRepair.offendingPlacements(in: boards, parts: parts, spacing: spacing)
+        if invalidPlacements != found { invalidPlacements = found }
     }
 
     private func makeFootprints() -> [UUID: PartFootprint] {
@@ -1217,7 +1236,7 @@ struct PartsBoardStepView: View {
         colorCache = makeColorCache()
         let outcome = PartsBoardRepair.repair(boards: &boards, parts: parts, spacing: spacing)
         footprints = makeFootprints()
-        invalidParts = Set(outcome.invalid)
+        refreshInvalid()
         if !boards.contains(where: { $0.placements.contains { $0.id == selection } }) {
             selection = nil
         }
@@ -1233,7 +1252,10 @@ struct PartsBoardStepView: View {
     private func revalidateBoards() {
         guard !boards.isEmpty else { return }
         let outcome = PartsBoardRepair.repair(boards: &boards, parts: parts, spacing: spacing)
-        invalidParts = Set(outcome.invalid)
+        refreshInvalid()
+        // **没动过就别写盘。** 挪不开的那种（`outcome` 是空的、但板上还有站不住的）
+        // 每次进屏都会走到这儿，而写一次是整张图纸的 JSON —— 白写，还每次都把
+        // `dirty` 顶起来。
         guard !outcome.isEmpty else { return }
         footprints = makeFootprints()
         dropHighlightIfGone()
@@ -1244,18 +1266,28 @@ struct PartsBoardStepView: View {
         onPersist()
     }
 
-    /// 体检结果怎么跟用户说。一次只说最要紧的那一条 —— 三句话同时闪出来等于没说。
+    /// 体检动过什么，就跟用户说什么。
+    ///
+    /// **三件事各说各的，不挑一件说。** 早先是按「挨着 > 挪走 > 拿下来」只说最要紧的一条，
+    /// 而「拿下来」恰恰是唯一没有别的地方看得见的：零件从板上消失，也不会回到零件条
+    ///（那条只列还有豆子的），板头的计数悄悄少一个。挨着的那种反而有红边和常驻提示，
+    /// 根本不缺这一句 —— 所以它压根不进这条提示。
     private func note(for outcome: PartsBoardRepair.Outcome) -> String? {
-        if !outcome.invalid.isEmpty {
-            return String(localized: "有 \(outcome.invalid.count) 个零件跟旁边挨上了（红的那几个），挨着烫完会连成一片 —— 自己挪一下，或者加一块板")
-        }
-        if !outcome.moved.isEmpty {
-            return String(localized: "补上的格子在原地放不下，\(outcome.moved.count) 个零件挪到旁边空地了")
-        }
+        var lines: [String] = []
         if !outcome.removed.isEmpty {
-            return String(localized: "有 \(outcome.removed.count) 个零件一颗豆子都不剩，已经从板上拿下来（要找回来，回「核对颜色」那屏补格子）")
+            lines.append(String(localized: "有 \(outcome.removed.count) 个零件一颗豆子都不剩，已经从板上拿下来（要找回来，回「核对颜色」那屏补格子）"))
         }
-        return nil
+        if !outcome.orphaned.isEmpty {
+            // 这种回核对页也补不回来 —— 零件本身已经不在图纸上了，说法必须跟上面那条分开
+            lines.append(String(localized: "有 \(outcome.orphaned.count) 块对不上任何零件了，已经从板上清掉"))
+        }
+        if outcome.moved.count == 1, let moved = outcome.moved.first {
+            // 挪的是用户自己摆的位置，能报名字就报名字 —— 「1 个零件」他还得自己找是哪个
+            lines.append(String(localized: "「\(name(of: moved))」原地放不下，挪到旁边空地了"))
+        } else if !outcome.moved.isEmpty {
+            lines.append(String(localized: "有 \(outcome.moved.count) 个零件原地放不下，挪到旁边空地了"))
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: "；")
     }
 
     private func takeOffSelected() {
@@ -1380,7 +1412,9 @@ struct PartsBoardStepView: View {
     ///
     /// 只看当前这块板：送出去的本来就只有它。
     private var castSignature: String {
-        var signature = "\(boardIndex)|\(boards.count)|\(highlightKey ?? "")|\(colorCache.count)|\(cellsRevision)|\(invalidParts.count)"
+        var signature = "\(boardIndex)|\(boards.count)|\(highlightKey ?? "")|\(colorCache.count)|\(cellsRevision)"
+        // 描红的是哪几块也要送 —— 只送个数的话，一红一好地换人时电视上标错块。
+        signature += "|" + invalidPlacements.map(\.uuidString).sorted().joined(separator: ",")
         for placement in currentBoard?.placements ?? [] {
             signature += "|\(placement.id)@\(placement.col),\(placement.row),\(placement.turns)"
         }
@@ -1399,7 +1433,7 @@ struct PartsBoardStepView: View {
             highlightKeys: highlightKey.map { [$0] } ?? [],
             caption: String(localized: "第 \(boardIndex + 1) / \(boards.count) 块"),
             labels: labels(for: board),
-            invalid: invalidPlacements(on: board)
+            invalid: invalidPlacements
         ))
     }
 
@@ -1416,7 +1450,7 @@ struct PartsBoardStepView: View {
                 .init(placement: $0.placement, deltaCol: $0.deltaCol,
                       deltaRow: $0.deltaRow, valid: $0.valid)
             },
-            invalid: invalidPlacements(on: board)
+            invalid: invalidPlacements
         )
     }
 

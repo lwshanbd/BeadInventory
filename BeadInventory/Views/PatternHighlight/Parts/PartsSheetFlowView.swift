@@ -99,7 +99,11 @@ struct PartsSheetFlowView: View {
     /// 收成一个值之后，「同时只有一句话」变成类型层面的事实。
     private enum Prompt: Identifiable {
         /// 存不进去。手上这些东西只活在内存里，得拦住他别关。
-        case saveFailed
+        ///
+        /// 带着「第几次」：id 要是个常数，弹窗被吞掉一次之后 `prompt` 就永远停在这个值，
+        /// 之后每次失败都赋成同一个 —— `.alert(item:)` 认不出变化，那句话再也不出现，
+        /// 而「关闭」「完成」会因为 `persist()` 一直返回 false 变成两个既不响应也不解释的按钮。
+        case saveFailed(Int)
         /// 库里有东西但打不开。接着做等于拿新的盖掉旧的，要他自己点头。
         case loadFailed
         /// 重新找零件会洗掉已有的成果。
@@ -115,7 +119,7 @@ struct PartsSheetFlowView: View {
 
         var id: String {
             switch self {
-            case .saveFailed: return "save"
+            case .saveFailed(let attempt): return "save\(attempt)"
             case .loadFailed: return "load"
             case .confirmRedetect: return "redetect"
             case .confirmReclassify: return "reclassify"
@@ -126,6 +130,8 @@ struct PartsSheetFlowView: View {
     }
 
     @State private var prompt: Prompt?
+    /// 存盘失败了几次。只用来让 `Prompt.saveFailed` 每次都是一个新身份，见那里。
+    @State private var saveAttempt = 0
 
     /// 把一个交给子屏的 binding 包成「改了就记一笔」。
     private func tracked<Value>(_ binding: Binding<Value>) -> Binding<Value> {
@@ -770,7 +776,8 @@ struct PartsSheetFlowView: View {
                 "parts": "\(parts.count)",
                 "boards": "\(boards.count)"
             ])
-            prompt = .saveFailed
+            saveAttempt += 1
+            prompt = .saveFailed(saveAttempt)
             return false
         }
         dirty = false

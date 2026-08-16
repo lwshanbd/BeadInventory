@@ -209,7 +209,7 @@ struct PartsColorReviewStepView: View {
                     onPersist()
                     brushRevision += 1
                     // 选中的是 (零件下标, row, col)，而刚才那些格子可能已经换了一组 ——
-                    // 留着的话，接下来那三个「这类都改成…」会作用到一批
+                    // 留着的话，底下那排「这类都改成…」会作用到一批
                     // 用户以为自己早就取消掉的格子上。
                     selection.removeAll()
                 }

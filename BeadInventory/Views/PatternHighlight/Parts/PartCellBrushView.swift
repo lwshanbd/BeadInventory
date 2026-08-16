@@ -17,8 +17,9 @@
 //
 //  **不拿图纸原图当底。** 垫在底下的话，格子就得按图纸的几何铺：网格但凡量得不准，
 //  零件在这一屏会被拉成一条扁带，跟零件清单、拼豆板上那个形状对不上 ——
-//  而用户要改的正是那个形状。图纸原图挪到「对照图纸」那个按钮后面，
-//  按一下整层换上来（同一个框、同一批格线），对完再按回来。
+//  而用户要改的正是那个形状。图纸原图挪到「对照图纸」那个按钮后面，按一下整层换上来 ——
+//  同一个框里的同一块地方、同一批格线（靠零件区边上的零件只铺到工作图切剩的那块，
+//  见 `imageRect`），对完再按回来。
 //
 //  ## 三个工具，一次只干一件事
 //
@@ -86,9 +87,10 @@ struct PartCellBrushView: View {
     /// 那时它比 `gridArea` 小 —— 按它自己的范围画，切掉的那条就是空的，
     /// 而不是把一张缺角的图拉满整个框（那样格线跟豆子会整体错开）。
     @State private var imageRect: CGRect = .zero
-    /// 画布画的是整张图纸的哪一块（归一化）
+    /// 画布画的是整张图纸的哪一块（归一化）。**永远等于 `gridArea`** ——
+    /// `transform` 要一个存下来的值，而 `gridArea` 是每次从 `parts` 现算的。
     @State private var region: CGRect = .zero
-    /// 识别结果那一层。一格一个像素画成位图，再按最终尺寸贴上去 ——
+    /// 零件那一层。一格一个像素画成位图，再按最终尺寸贴上去 ——
     /// 单图纸模式一张图纸七万格，用 Canvas 一格一格描的话，
     /// 手指划一下整屏重画七万个矩形，直接卡死。
     @State private var overlay: UIImage?
@@ -107,9 +109,15 @@ struct PartCellBrushView: View {
     /// 写不回零件（`partId` 在 `parts` 里找不到了）。这时候屏幕上画什么都没用，
     /// 得当场告诉用户，别让他白擦一屏。
     @State private var writeFailed = false
-    /// 图纸这一块没取到（没有原图、或者裁失败）。这一屏承诺的是「照着图纸改」，
-    /// 取不到就得说出来 —— 而且「只看图纸」那个开关这时候只会给出一片空白。
+    /// 图纸这一块没取到（没有原图、裁失败、或者只裁到一半）。这一屏承诺的是
+    /// 「照着图纸改」，取不到就得说出来 —— 「对照图纸」那个按钮这时候整个不出现，
+    /// 光是按钮消失，用户看不出为什么。
     @State private var imageUnavailable = false
+    /// 零件那一层这次没画出来，屏幕上是上一次的样子。颗数照样在变 ——
+    /// 不说的话用户会以为「数字在动、画面不动」是数字在骗人，然后对着已经空了的格子再擦一遍。
+    @State private var overlayStale = false
+    /// 用户挑的那个色号在这张图纸的色号体系里没有对应的
+    @State private var pickUnusable = false
 
     @State private var canvasSize: CGSize = .zero
     @State private var zoom: CGFloat = 1
@@ -150,6 +158,14 @@ struct PartCellBrushView: View {
                         canvas
                         footer
                     }
+                } else if writeFailed {
+                    // 「还没判过色」在这儿是假话，它会把用户支去重判一遍色 ——
+                    // 那一步会洗掉他手工核对过的所有颜色，而且救不了这个问题。
+                    ContentUnavailableView(
+                        "这一块对不上任何零件了",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text("退出去回零件清单看看。在这儿改也存不下来。")
+                    )
                 } else if loaded {
                     ContentUnavailableView(
                         "这一块还没判过色",
@@ -257,7 +273,7 @@ struct PartCellBrushView: View {
             let ch = box.height / CGFloat(rows)
 
             // 一格小到看不出是格子的时候就别画了 —— 几百条线糊成一片，
-            // 反而把底下的图纸盖住。
+            // 反而把底下的格子盖住。
             if cw >= 9, ch >= 9 {
                 var path = Path()
                 for c in 0...cols {
@@ -344,6 +360,12 @@ struct PartCellBrushView: View {
             if writeFailed {
                 warning("这一块对不上任何零件了，改的东西存不下来。退出去回零件清单看看。",
                         icon: "exclamationmark.triangle.fill", isError: true)
+            } else if overlayStale {
+                warning("这一层这次画不出来，屏幕上是上一次的样子；底下那个颗数才是准的。",
+                        icon: "exclamationmark.triangle", isError: true)
+            } else if pickUnusable {
+                warning("挑的那个色号在这张图纸的色号体系里没有对应的，换一个。",
+                        icon: "paintpalette", isError: true)
             } else if imageUnavailable {
                 warning("这次取不到图纸上的这一块，没法对照图纸 —— 照着手上的实物改。",
                         icon: "photo.badge.exclamationmark", isError: false)
@@ -493,7 +515,10 @@ struct PartCellBrushView: View {
         switch tool {
         case .move: return String(localized: "拖动看图，两指捏合放大。要改格子，上面换「擦掉」或「补上」。")
         case .erase: return String(localized: "手指划过要去掉的格子。")
-        case .paint: return String(localized: "手指划过要补上的格子。")
+        case .paint:
+            return paintFill == nil
+                ? String(localized: "先在上面挑一个色号，再划过要补上的格子。")
+                : String(localized: "手指划过要补上的格子。")
         }
     }
 
@@ -589,12 +614,13 @@ struct PartCellBrushView: View {
 
         // 划到框外面：**把锚点清掉**。留着的话，用户从框里划出去、绕一圈再划回来，
         // 下面那段补线会把两个落点之间连成一条斜带，把他一小时前核对好的格子整片改掉 ——
-        // 而那条带看起来就像他自己画的那一笔。框只是画布里的一小块（四周还特意留了
-        // 一圈图纸看格线对没对齐），划出去太容易了。
+        // 而那条带看起来就像他自己画的那一笔。框只占画布中间一块（长边方向两头是留白），
+        // 划出去太容易了。
         guard let hit = cellIndex(at: point) else {
             stroke.last = nil
             return
         }
+        let changesBefore = stroke.changes.count
         // 正对照着图纸的时候动了笔，就切回零件那一层 —— 否则用户划半天，
         // 屏幕上唯一的变化是底下那个颗数。
         if showsPattern { showsPattern = false }
@@ -614,16 +640,18 @@ struct PartCellBrushView: View {
         }
         setCell(row: hit.row, col: hit.col, to: target)
         stroke.last = hit
-        // **一次事件刷一遍，不是一格刷一遍。** `refresh` 要重数所有格子 + 重建整张位图；
-        // 一次快速滑动光补线就能改十几格，放在 `setCell` 里就是同一个触摸事件里重建十几遍。
+        // **一次事件刷一遍，不是一格刷一遍；这一下没改到东西就一遍都不刷。**
+        // `refresh` 要重数所有格子 + 重建整张位图；一次快速滑动光补线就能改十几格，
+        // 放在 `setCell` 里就是同一个触摸事件里重建十几遍。而手指在同一格里挪动时
+        // 每秒还有几十个事件，一格都没变，照样刷就是白烧电。
         // 单图纸模式一张七万格，位图方案本来就是为了避掉这种量。
-        refresh()
+        if stroke.changes.count != changesBefore { refresh() }
     }
 
     private func setCell(row: Int, col: Int, to fill: PartCellFill) {
         // 按**这一行自己的**长度判界。全仓库别处（`CellOverlayBitmap.make`、
         // `BeadPart.rotatedCells`、`PartsColorReviewStepView.apply`）都当 cells 可能不齐，
-        // 只有这里拿第 0 行的宽度去索引别的行 —— 而这里是唯一会崩、不是跳过的地方。
+        // 早先只有这里拿第 0 行的宽度去索引别的行 —— 而这里是唯一会崩、不是跳过的地方。
         guard row >= 0, row < rows, col >= 0, col < cells[row].count else { return }
         guard cells[row][col] != fill else { return }
         stroke.changes.append(Change(row: row, col: col, old: cells[row][col]))
@@ -697,6 +725,7 @@ struct PartCellBrushView: View {
         var updated = parts[index]
         updated.cells = cells
         parts[index] = updated
+        writeFailed = false
         changed = true
     }
 
@@ -707,7 +736,10 @@ struct PartCellBrushView: View {
         // 整个消失 —— 他读到的是「我把东西全擦没了」，而真相是一张位图没建出来。
         if let built = CellOverlayBitmap.make(cells: cells, colors: overlayColors) {
             overlay = built
-        } else {
+            overlayStale = false
+        } else if !overlayStale {
+            // 只报一次：`refresh` 是按触摸事件调的，真坏了会刷屏。
+            overlayStale = true
             AppLogger.shared.error("PartCellBrush", "overlay_bitmap_failed", metadata: [
                 "rows": "\(rows)", "cols": "\(cols)"
             ])
@@ -744,9 +776,9 @@ struct PartCellBrushView: View {
     /// **MARD 不能走 `findColor(byCode:preferSystem:)`** —— 那个重载在
     /// `preferSystem == .mard` 时直接返回 nil（MARD 自己那一路留给了
     /// `findColor(byMardCode:)`）。走它的话 MARD 图纸上每个色号都取不到颜色，
-    /// 色号栏和识别结果那一层会一起退成同一片灰（两处的 fallback 分别是
-    /// `Surface.strong` 和 `Color(white: 0.5)`）—— 看上去像是所有色号合成了一种。
-    /// 核对页栽过同样的坑，见 `PartsColorReviewStepView.bead(for:)`。
+    /// `buildPalette` 一律退回 `Theme.ColorToken.Surface.strong`，于是色号栏和零件那一层
+    /// 一起变成同一片中性灰 —— 看上去像是所有色号合成了一种。
+    /// 同 `PartsColorReviewStepView.bead(for:)`。
     private func bead(for code: String) -> BeadColor? {
         colorSystem == .mard
             ? inventoryManager.findColor(byMardCode: code)
@@ -758,9 +790,18 @@ struct PartCellBrushView: View {
     /// 色块变灰、自成一组、跟色号表也对不上（同 `PartsColorReviewStepView.applyPickedCode`）。
     private func applyPickedCode() {
         defer { pickedCodes = [] }
-        guard let picked = pickedCodes.sorted().first,
-              let bead = inventoryManager.findColor(byMardCode: picked),
-              bead.hasCode(for: colorSystem) else { return }
+        guard let picked = pickedCodes.sorted().first else { return }
+        guard let bead = inventoryManager.findColor(byMardCode: picked),
+              bead.hasCode(for: colorSystem) else {
+            // 用户明明挑了一个，回来却什么都没变 —— 下一笔又把选色盘弹出来，
+            // 成了一个反复问同一个问题的死循环。说清楚这个色号在这张图纸的体系里没有。
+            pickUnusable = true
+            AppLogger.shared.warning("PartCellBrush", "picked_code_unusable", metadata: [
+                "picked": picked, "system": "\(colorSystem)"
+            ])
+            return
+        }
+        pickUnusable = false
         let code = bead.displayCode(for: colorSystem)
         paintFill = .code(code)
         tool = .paint
@@ -826,8 +867,6 @@ struct PartCellBrushView: View {
         // 切剩的那块小到没意义就不给了 —— 半条边的「对照」比没有还容易看错。
         guard let source = work, cropRect.width > area.width * 0.5,
               cropRect.height > area.height * 0.5 else {
-            // 没有图纸不是错（拼豆板那屏的图本来就可能裁不出来），但**必须说出来**：
-            // 这一屏承诺的是「照着图纸改」，不说的话用户会对着一片灰底找豆子。
             // 没有图纸、或者这一块基本不在工作图里。改格子本身不受影响，
             // 只是没有图可对 —— 这件事要说出来（见 footer 那条提示）。
             imageUnavailable = true
@@ -842,7 +881,11 @@ struct PartCellBrushView: View {
         let cropped = await Task.detached(priority: .userInitiated) {
             PartsThumbnailMaker.crop(source, normalized: cropRect)
         }.value
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else {
+            // 取消 ≠ 成功。不说一句的话，「对照图纸」那个按钮凭空不见了，没人猜得到为什么。
+            imageUnavailable = true
+            return
+        }
         image = cropped
         imageRect = cropRect
         // 裁不出来就只画零件那一层，「对照图纸」那个按钮跟着不出现。
@@ -919,7 +962,7 @@ struct PartCellBrushView: View {
     }
 }
 
-// MARK: - 识别结果那一层
+// MARK: - 零件那一层
 
 /// 把格子矩阵画成一张 **rows × cols 像素**的位图，一格一个像素。
 ///
@@ -933,8 +976,8 @@ struct PartCellBrushView: View {
 /// 半透明盖在图纸原图上的，空格还得铺一层灰才看得出擦掉没有，而底下那颗豆子
 /// 一直还在图上，用户得盯着灰度差判断自己那一下生效没有。
 enum CellOverlayBitmap {
-    /// 有豆子的格子画多实。留一点点透明，是为了「对照图纸」切过去的时候
-    /// 两层看起来是同一块地方，而不是两张不相干的图。
+    /// 有豆子的格子画多实。留一点点透明，是让底下那层板面（`Surface.elevated`）
+    /// 透出来一丝 —— 全不透明时，深色豆子和空格之间只剩色差，一格的边界反而糊掉。
     private static let beadAlpha: Double = 0.95
 
     static func make(cells: [[PartCellFill]], colors: [String: Color]) -> UIImage? {

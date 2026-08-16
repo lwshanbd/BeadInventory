@@ -166,8 +166,12 @@ struct BoardCanvasRenderer {
     var labels: [UUID: String] = [:]
     var selection: UUID?
     var moving: Moving?
-    /// 跟旁边挨上了、又挪不开的那些摆放。跟「拖到放不下的地方」画成同一种红 ——
-    /// 用户在这块板上只需要认一种「这儿不对」，不该学两套。
+    /// 跟旁边挨上了、又挪不开的那些摆放。
+    ///
+    /// **只描红边，不涂红整块。** 拖动时那种红是整块涂掉的，因为那一刻用户在看
+    /// 「能不能放这儿」，豆子什么颜色根本不重要；而这一种是长期挂着的 ——
+    /// 涂掉整块等于把这个零件的色号全抹了，而人正照着这块板（和电视）一颗一颗放豆子。
+    /// 红边已经足够指出是哪两块。
     ///
     /// 外屏也要画：人是抬头照着电视摆豆子的，粘连的那两块正是他会照着摆错的地方。
     var invalid: Set<UUID> = []
@@ -248,7 +252,10 @@ struct BoardCanvasRenderer {
             let moving = self.moving?.placement == placement.id ? self.moving : nil
             let col = placement.col + (moving?.deltaCol ?? 0)
             let row = placement.row + (moving?.deltaRow ?? 0)
-            let blocked = moving.map { !$0.valid } ?? invalid.contains(placement.id)
+            // 拖到放不下的地方：整块涂红（那一刻只有「行不行」这一件事）。
+            // 长期挨着的：豆子照常画自己的颜色，只把外沿描红（见 `invalid`）。
+            let blocked = moving.map { !$0.valid } ?? false
+            let touching = moving == nil && invalid.contains(placement.id)
 
             // 沿着这个零件的外沿描一圈。
             //
@@ -295,11 +302,12 @@ struct BoardCanvasRenderer {
             }
 
             let isSelected = selection == placement.id || moving != nil
-            let outline: Color = blocked
+            let outline: Color = (blocked || touching)
                 ? Theme.ColorToken.Status.error
                 : (isSelected ? Theme.ColorToken.Morandi.honey
                               : stage?.contour ?? Theme.ColorToken.Text.primary.opacity(0.45))
-            contours.append((path: contour, color: outline, width: isSelected ? 2.5 : 1))
+            contours.append((path: contour, color: outline,
+                             width: (blocked || touching) ? 2.5 : (isSelected ? 2.5 : 1)))
 
             // 高亮期间一个号都不写，理由见 `drawBadges`。
             if stage == nil, let text = labels[placement.id], !footprint.isEmpty {

@@ -1,6 +1,106 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "描红边那 %lld 个零件跟旁边挨着，烫完会连成一片。拖开一点，或者上面「加一块」板。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The %lld outlined-red pieces are touching their neighbours and will fuse when ironed. Drag them apart, or add another board above."
+          }
+        }
+      }
+    },
+    "有 %lld 个零件（描红边那几个）跟旁边挨着了。挨着的豆子烫完会连成一片，得拿剪刀分开，那一刀下去边缘就毁了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pieces (the ones outlined in red) are touching their neighbours. Touching beads fuse when ironed and have to be cut apart, which ruins the edge."
+          }
+        }
+      }
+    },
+    "有 %lld 块对不上任何零件了，已经从板上清掉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld placements no longer match any piece and were cleared off the board"
+          }
+        }
+      }
+    },
+    "「%@」原地放不下，挪到旁边空地了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” no longer fits where it was and moved to free space nearby"
+          }
+        }
+      }
+    },
+    "有 %lld 个零件原地放不下，挪到旁边空地了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pieces no longer fit where they were and moved to free space nearby"
+          }
+        }
+      }
+    },
+    "这一块对不上任何零件了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This no longer matches any piece"
+          }
+        }
+      }
+    },
+    "退出去回零件清单看看。在这儿改也存不下来。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go back to the piece list and check — nothing edited here can be saved."
+          }
+        }
+      }
+    },
+    "这一层这次画不出来，屏幕上是上一次的样子；底下那个颗数才是准的。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This layer couldn't be redrawn; you're seeing the previous state. The bead count below is the accurate one."
+          }
+        }
+      }
+    },
+    "挑的那个色号在这张图纸的色号体系里没有对应的，换一个。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That colour has no equivalent in this pattern's colour system — pick another."
+          }
+        }
+      }
+    },
+    "先在上面挑一个色号，再划过要补上的格子。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick a colour above first, then swipe across the cells you want to add."
+          }
+        }
+      }
+    },
     "对照图纸" : {
       "localizations" : {
         "en" : {
@@ -101,26 +201,6 @@
         }
       }
     },
-    "只看图纸" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pattern only"
-          }
-        }
-      }
-    },
-    "看识别结果" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show result"
-          }
-        }
-      }
-    },
     "其它色号" : {
       "localizations" : {
         "en" : {
@@ -171,26 +251,6 @@
         }
       }
     },
-    "这一块对不上任何零件了，改的东西存不下来。退出去回零件清单看看。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This no longer matches any piece — your changes can't be saved. Go back to the piece list and check."
-          }
-        }
-      }
-    },
-    "这次没取到图纸上的这一块，下面画的是识别结果 —— 照着手上的实物改。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't load this part of the pattern; what you see below is the recognised result — edit it against the piece in your hand."
-          }
-        }
-      }
-    },
     "这一块" : {
       "localizations" : {
         "en" : {
@@ -221,42 +281,12 @@
         }
       }
     },
-    "有 %lld 个零件跟旁边挨上了（红的那几个），挨着烫完会连成一片 —— 自己挪一下，或者加一块板" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld pieces are touching their neighbours (the red ones). Touching beads fuse when ironed — drag them apart, or add another board"
-          }
-        }
-      }
-    },
-    "补上的格子在原地放不下，%lld 个零件挪到旁边空地了" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The added cells no longer fit where they were; %lld pieces moved to free space nearby"
-          }
-        }
-      }
-    },
     "有 %lld 个零件一颗豆子都不剩，已经从板上拿下来（要找回来，回「核对颜色」那屏补格子）" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld pieces have no beads left and were taken off the board (to bring one back, add cells on the Check colours screen)"
-          }
-        }
-      }
-    },
-    "红色那 %lld 个零件跟旁边挨着，烫完会连成一片。拖开一点，或者上面「加一块」板。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The %lld red pieces are touching their neighbours and will fuse when ironed. Drag them apart, or add another board above."
           }
         }
       }
@@ -287,16 +317,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Finish anyway"
-          }
-        }
-      }
-    },
-    "有 %lld 个零件（红色那几个）跟旁边挨着了。挨着的豆子烫完会连成一片，得拿剪刀分开，那一刀下去边缘就毁了。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld pieces (the red ones) are touching their neighbours. Touching beads fuse when ironed and have to be cut apart, which ruins the edge."
           }
         }
       }
