@@ -2,7 +2,9 @@
 //  PartsColorReviewStepView.swift
 //  BeadInventory
 //
-//  多零件模式 · 校色（第五屏；整条流程的屏序见 PartsSheetFlowView 的头注释）
+//  校色 —— 两条流程共用的一屏：
+//    多零件模式第五屏（屏序见 PartsSheetFlowView 的头注释）
+//    单图纸模式第三屏（见 SinglePatternFlowView，那边没有「任意色」，主按钮也不一样）
 //
 //  拼豆是一颗一颗把豆子按进板子，所以用户只关心两件事：
 //  **这个色号要用多少颗**、**分别是哪几格**。这一屏就长成那个样子：
@@ -41,7 +43,18 @@ struct PartsColorReviewStepView: View {
 
     @State private var selectedGroup: PartCellFill = .empty
     @State private var selection: Set<CellRef> = []
-    @State private var swatches: [CellRef: UIImage] = [:]
+    /// 当前色号的全部格子。算一次存下来 —— 一张平面图纸七万格，
+    /// 框选时每拖一下都重新全图扫一遍的话，手指是拖不动的。
+    ///
+    /// **`nil` 是「还没算」，不是「一格也没有」。** 默认色号在 `.task` 里选，比首帧晚；
+    /// 这中间要是拿空数组去画，用户看到的是一句「这个颜色一格也没有」——
+    /// 而这一屏正是重开项目时的落地页（见 `PartsSheetFlowView` 恢复 path 那段）。
+    ///
+    /// 存下来的代价是得手动刷，而且只有两条路：换色号走 `select`，改格子走 `apply`。
+    /// 漏一条不会崩也不会报错 —— `cellRect` 是纯几何算的，只会安静地给用户看一张对不上的小图。
+    @State private var groupCells: [CellRef]?
+    /// 露头才裁的小图缓存（见 `CellSwatchCache`）
+    @State private var swatchCache = CellSwatchCache()
     @State private var showingCodePicker = false
     @State private var pickedCodes: Set<String> = []
     /// 已经核对过的色号（按 groupKey）。只是给用户记进度用，不影响数据。
@@ -78,9 +91,6 @@ struct PartsColorReviewStepView: View {
         .navigationTitle("核对颜色")
         .navigationBarTitleDisplayMode(.inline)
         .task { selectDefaultGroup() }
-        // 工作图也算进 id：进来时先拿到的是整张图纸的低清兜底版，高清版在后台裁好之后
-        // 才换上来。不跟着重裁的话，用户看到的一直是一格十来个像素的马赛克。
-        .task(id: "\(groupKey(selectedGroup))|\(work.image.size)") { await loadSwatches() }
         .sheet(isPresented: $showingCodePicker, onDismiss: applyPickedCode) {
             ColorSelectionView(
                 selectedColors: $pickedCodes,
@@ -195,53 +205,43 @@ struct PartsColorReviewStepView: View {
         selectedGroup = fill
         selection.removeAll()
         marquee = false
+        groupCells = cells(of: fill)
     }
 
     // MARK: - 中：这个色号的所有格子
 
     private var cellGrid: some View {
         ScrollView {
-            let all = cells(of: selectedGroup)
-            let refs = Array(all.prefix(Self.maxDisplayedCells))
-            if refs.isEmpty {
-                ContentUnavailableView(
-                    "这个颜色一格也没有",
-                    systemImage: "square.dashed",
-                    description: Text("上面换一个色号看看。")
-                )
-                .padding(.top, Theme.Spacing.xxl)
-            } else {
-                LazyVGrid(columns: columns, spacing: 6) {
-                    ForEach(refs, id: \.self) { ref in
-                        CellSwatch(
-                            image: swatches[ref],
-                            isSelected: selection.contains(ref)
-                        )
-                        .background {
-                            if marquee {
-                                GeometryReader { geo in
-                                    Color.clear.preference(key: CellFramesKey.self,
-                                                           value: [ref: geo.frame(in: .global)])
+            // 还没算出来（groupCells == nil）就什么都别说 —— 说「一格也没有」是撒谎
+            if let refs = groupCells {
+                if refs.isEmpty {
+                    ContentUnavailableView(
+                        "这个颜色一格也没有",
+                        systemImage: "square.dashed",
+                        description: Text("上面换一个色号看看。")
+                    )
+                    .padding(.top, Theme.Spacing.xxl)
+                } else {
+                    LazyVGrid(columns: columns, spacing: 6) {
+                        ForEach(refs, id: \.self) { ref in
+                            CellSwatch(
+                                image: swatch(for: ref),
+                                isSelected: selection.contains(ref)
+                            )
+                            .background {
+                                if marquee {
+                                    GeometryReader { geo in
+                                        Color.clear.preference(key: CellFramesKey.self,
+                                                               value: [ref: geo.frame(in: .global)])
+                                    }
                                 }
                             }
-                        }
-                        .onTapGesture {
-                            if selection.contains(ref) { selection.remove(ref) } else { selection.insert(ref) }
+                            .onTapGesture {
+                                if selection.contains(ref) { selection.remove(ref) } else { selection.insert(ref) }
+                            }
                         }
                     }
-                }
-                .padding(Theme.Spacing.lg)
-
-                if all.count > refs.count {
-                    // 铺出来的没有全部，就把这件事说清楚 —— 少铺几格不是错，
-                    // 让用户以为「这个色号只有三千格」才是。
-                    Text("这个色号一共 \(all.count) 格，上面只铺出前 \(refs.count) 格。下面那三个按钮在没选中任何一格时，作用于全部 \(all.count) 格。")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.ColorToken.Text.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, Theme.Spacing.lg)
-                        .padding(.bottom, Theme.Spacing.lg)
+                    .padding(Theme.Spacing.lg)
                 }
             }
         }
@@ -518,58 +518,60 @@ struct PartsColorReviewStepView: View {
     }
 
     private func selectDefaultGroup() {
-        if let first = groups.first { selectedGroup = first.fill }
+        if let first = groups.first { select(first.fill) }
     }
 
     // MARK: - 抠格子
 
-    /// 把当前这一组的格子从图纸上原样抠出来。
+    /// 把一格从图纸上原样抠出来。
     /// 用真实像素而不是画一个平均色的方块 —— 平均色是算法自己的结论，
     /// 拿它给用户看等于让算法自证清白；原图才能露出「这格其实压在两颗豆子之间」这种错。
-    /// 最多铺多少格。
     ///
-    /// 这里曾经封顶 1500，被拿掉过一次 —— 当时的理由是对的：H7 有 2901 格，
-    /// 第 1501 格往后全是灰底空方块，用户看到的是「一大堆不知道为什么存在的空白格」，
-    /// 而且那些格子照样能选、能改。**那个坑现在靠说清楚来避免**（见 `cellGrid` 里那句话），
-    /// 而且整类操作依然覆盖全部格子。
+    /// **谁露头才裁谁。** 以前是进屏之前把整组格子一次性裁完塞进一个字典，格子一多就撑不住。
+    /// 这里封过两次顶，两次的坑还不一样，别把它们记成一回事：
+    ///   · 1500 只封了裁图，格子照样全铺出来 —— 第 1501 格往后是灰底空方块，还照样能选能改。
+    ///     用户看到的是「一大堆不知道为什么存在的空白格」，所以被拿掉过一次。
+    ///   · 拿掉之后单图纸模式来了：一张平面图纸七万格，光「空」这一类就五万多，全裁完是
+    ///     几十秒白屏。于是 3000 又封了回来，这次连列表一起封 —— 换来的是「这个色号只让你
+    ///     看前 3000 格」，剩下的格子在这一屏根本点不到，判错了只能退出去重来。
     ///
-    /// 重新封顶是因为单图纸模式：一张平面图纸动辄七万格，光「空」这一类就有五万多，
-    /// 五万张小图 + 五万个列表项，用户等的是几十秒的白屏，而他要看的东西前两屏就看完了。
-    /// 3000 挑得比任何一个零件模式下见过的色号都大，多零件那边实际不会被它挡到。
-    private static let maxDisplayedCells = 3000
-
-    private func loadSwatches() async {
-        let refs = Array(cells(of: selectedGroup).prefix(Self.maxDisplayedCells))
-        let snapshot = parts
-        let source = work
-        let built = await Task.detached(priority: .userInitiated) { () -> [CellRef: UIImage] in
-            var result: [CellRef: UIImage] = [:]
-            for ref in refs {
-                guard ref.part < snapshot.count else { continue }
-                let rect = snapshot[ref.part].cellRect(row: ref.row, col: ref.col)
-                if let cropped = PartsThumbnailMaker.crop(source, normalized: rect) {
-                    result[ref] = cropped
-                }
-            }
-            return result
-        }.value
-        swatches = built
+    /// 两次封顶都是在给「一次性全裁」擦屁股。LazyVGrid 只实例化屏幕上那一屏（二三十格），
+    /// 而裁一格是 `CGImage.cropping` + `UIImage(cgImage:)`，两步都不碰像素 —— 改成滚到哪儿
+    /// 裁到哪儿之后这个前提没了，封顶不是被放宽，是失去了存在的理由。
+    ///
+    /// 注意这是**在 body 里同步跑的**（以前是 `Task.detached`）。哪天 crop 里加了缩放、调色
+    /// 这类真活儿，七万格的滚动会当场死掉。
+    private func swatch(for ref: CellRef) -> UIImage? {
+        swatchCache.image(for: ref, source: work.image) {
+            guard ref.part < parts.count else { return nil }
+            let rect = parts[ref.part].cellRect(row: ref.row, col: ref.col)
+            return PartsThumbnailMaker.crop(work, normalized: rect)
+        }
     }
 
     // MARK: - 改
 
     private func selectWholeGroup() {
-        selection = Set(cells(of: selectedGroup))
+        selection = Set(groupCells ?? [])
     }
 
+    /// 改格子。**先在本地改完再一次性写回 binding。**
+    ///
+    /// 逐格写 `parts[...]…= fill` 的话，每一格都是一次完整的 binding get→modify→set，
+    /// 而 getter 交出来的临时数组会多持一份 `cells`，于是每次赋值都触发一次 COW。
+    /// 整类操作（「这类没有豆子」作用于整组）在单图纸的空组上是五万格 —— 五万次状态写。
     private func apply(_ fill: PartCellFill) {
+        var updated = parts
         for ref in selection {
-            guard ref.part < parts.count,
-                  ref.row < parts[ref.part].cells.count,
-                  ref.col < parts[ref.part].cells[ref.row].count else { continue }
-            parts[ref.part].cells[ref.row][ref.col] = fill
+            guard ref.part < updated.count,
+                  ref.row < updated[ref.part].cells.count,
+                  ref.col < updated[ref.part].cells[ref.row].count else { continue }
+            updated[ref.part].cells[ref.row][ref.col] = fill
         }
+        parts = updated
         selection.removeAll()
+        // 改过的格子已经不属于当前这一组了，铺出来的那片要跟着少掉
+        groupCells = cells(of: selectedGroup)
     }
 
     /// 选色盘交回来的**永远是 mardCode** —— `ColorSelectionView` 不管传进去的
@@ -672,6 +674,49 @@ private struct PartsPaletteSheet: View {
             return String(localized: "认出 \(row.found) 颗，跟图纸写的一样")
         }
         return String(localized: "认出 \(row.found) 颗，图纸写 \(onSheet) 颗（差 \(abs(gap)) 颗）")
+    }
+}
+
+// MARK: - 裁好的小图存哪儿
+
+/// 裁过的格子留一份，往回滚不用重裁。
+///
+/// 不是 `@State` 字典是有原因的：按需裁图会在滚动过程中一格一格往里加，
+/// 每加一格都让整片格子重画的话，滚动会直接卡住。这里是个引用类型，
+/// 存进来不惊动 SwiftUI。
+@MainActor
+private final class CellSwatchCache {
+    /// 上一次裁的是哪张工作图。进这一屏先拿到的是低清兜底版，高清版在后台裁好之后
+    /// 才换上来 —— 换了图不清空的话，用户看到的一直是一格十来个像素的马赛克。
+    ///
+    /// 靠的是「升级一定新建一个 `UIImage`」（两个流程视图的 `upgradeWorkImage` 都是
+    /// `UIGraphicsImageRenderer` 重画一份）。哪天那边改成复用同一个实例，这里的 `!==`
+    /// 就永远不成立，而且不会报任何错。
+    ///
+    /// 存强引用而不是 `ObjectIdentifier`：已释放对象的地址会被新分配复用，
+    /// 那会假命中，整屏给用户看错图。
+    private var source: UIImage?
+    private var images: [PartsColorReviewStepView.CellRef: UIImage] = [:]
+
+    /// 攒到这个数就**整批**扔掉重来（不是 LRU —— 屏幕上那二三十格也一起扔，下一帧原样重裁）。
+    /// 这么粗暴还行得通，是因为重裁一格是 `CGImage.cropping`，不碰像素。
+    /// 8000 只要够装下「滚很久也不至于爆」，具体多少不敏感。
+    private static let flushThreshold = 8000
+
+    func image(
+        for ref: PartsColorReviewStepView.CellRef,
+        source: UIImage,
+        make: () -> UIImage?
+    ) -> UIImage? {
+        if self.source !== source {
+            self.source = source
+            images.removeAll(keepingCapacity: true)
+        }
+        if let hit = images[ref] { return hit }
+        guard let made = make() else { return nil }
+        if images.count >= Self.flushThreshold { images.removeAll(keepingCapacity: true) }
+        images[ref] = made
+        return made
     }
 }
 
