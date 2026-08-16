@@ -11,9 +11,14 @@
 //  一个本该有豆子的空格躺在几万个空格中间，在那儿根本找不到 —— 而这恰恰是用户
 //  最想修的那一种错。
 //
-//  所以这一屏换个看法：把这一块**原样铺在屏幕上**，识别结果半透明盖在上面，
-//  手指划过去就是擦掉 / 补上。用户回答的是「图上这儿到底有没有豆子」，
-//  不是「这一格叫什么名字」。
+//  所以这一屏换个看法：把这一块**按它自己的行列数铺在屏幕上** —— 一格一个方块、
+//  正方的、跟拼豆板上看到的是同一个形状 —— 手指划过去就是擦掉 / 补上。
+//  用户回答的是「这儿到底有没有豆子」，不是「这一格叫什么名字」。
+//
+//  **不拿图纸原图当底。** 垫在底下的话，格子就得按图纸的几何铺：网格但凡量得不准，
+//  零件在这一屏会被拉成一条扁带，跟零件清单、拼豆板上那个形状对不上 ——
+//  而用户要改的正是那个形状。图纸原图挪到「对照图纸」那个按钮后面，
+//  按一下整层换上来（同一个框、同一批格线），对完再按回来。
 //
 //  ## 三个工具，一次只干一件事
 //
@@ -75,13 +80,24 @@ struct PartCellBrushView: View {
 
     /// 图纸上这一块的原样
     @State private var image: UIImage?
-    /// `image` 是整张图纸的哪一块（归一化）
+    /// `image` 盖住的是格子矩阵里的哪一块（归一化，相对整张图纸）。
+    ///
+    /// 多数时候就是 `gridArea` 本身；靠零件区边上的零件会被工作图切掉一条，
+    /// 那时它比 `gridArea` 小 —— 按它自己的范围画，切掉的那条就是空的，
+    /// 而不是把一张缺角的图拉满整个框（那样格线跟豆子会整体错开）。
+    @State private var imageRect: CGRect = .zero
+    /// 画布画的是整张图纸的哪一块（归一化）
     @State private var region: CGRect = .zero
     /// 识别结果那一层。一格一个像素画成位图，再按最终尺寸贴上去 ——
     /// 单图纸模式一张图纸七万格，用 Canvas 一格一格描的话，
     /// 手指划一下整屏重画七万个矩形，直接卡死。
     @State private var overlay: UIImage?
-    @State private var showsOverlay = true
+    /// 正在对照图纸原图（把零件那一层整个换成图纸）。
+    ///
+    /// **默认是关的**：这一屏画的是零件本身 —— 一格一格、正方的、跟拼豆板上一样的那个
+    /// 形状。图纸原图只在用户主动要「对一眼」的时候顶上来，而不是一直垫在底下：
+    /// 垫在底下就得按图纸的几何铺格子，网格量得不准时零件会被拉变形。
+    @State private var showsPattern = false
     /// 现在这一块还剩多少颗豆子。放 @State 而不是每次 body 现算 ——
     /// 七万格的图纸上，拖一下就要重数七万遍。
     @State private var beadCount = 0
@@ -191,27 +207,32 @@ struct PartCellBrushView: View {
             ZStack(alignment: .topLeading) {
                 Theme.ColorToken.Surface.subtle
 
-                if canvasSize.width > 0, region.width > 0 {
+                if canvasSize.width > 0, rows > 0, cols > 0 {
+                    let box = transform.screenRect(gridArea)
+
+                    // 板底。空格子就是它 —— 擦掉一格，露出来的是「这儿没有豆子」，
+                    // 而不是图纸上那颗还在那儿的豆子。
+                    Rectangle()
+                        .fill(Theme.ColorToken.Surface.elevated)
+                        .frame(width: box.width, height: box.height)
+                        .position(x: box.midX, y: box.midY)
+
                     // 按最终尺寸摆图，**不用 scaleEffect** —— 那是图层变换，
                     // 放大走双线性平滑，`.interpolation(.none)` 管不到它，
                     // 而这一屏要看的正是一颗豆子的边界（同 PartsCellSizeStepView）。
-                    if let image {
-                        let box = transform.screenRect(region)
+                    if showsPattern, let image {
+                        let shot = transform.screenRect(imageRect)
                         Image(uiImage: image)
+                            .resizable()
+                            .interpolation(.none)
+                            .frame(width: shot.width, height: shot.height)
+                            .position(x: shot.midX, y: shot.midY)
+                    } else if let overlay {
+                        Image(uiImage: overlay)
                             .resizable()
                             .interpolation(.none)
                             .frame(width: box.width, height: box.height)
                             .position(x: box.midX, y: box.midY)
-                    }
-
-                    if showsOverlay, let overlay {
-                        let area = transform.screenRect(gridArea)
-                        Image(uiImage: overlay)
-                            .resizable()
-                            .interpolation(.none)
-                            .frame(width: area.width, height: area.height)
-                            .position(x: area.midX, y: area.midY)
-                            .allowsHitTesting(false)
                     }
 
                     gridLines
@@ -324,7 +345,7 @@ struct PartCellBrushView: View {
                 warning("这一块对不上任何零件了，改的东西存不下来。退出去回零件清单看看。",
                         icon: "exclamationmark.triangle.fill", isError: true)
             } else if imageUnavailable {
-                warning("这次没取到图纸上的这一块，下面画的是识别结果 —— 照着手上的实物改。",
+                warning("这次取不到图纸上的这一块，没法对照图纸 —— 照着手上的实物改。",
                         icon: "photo.badge.exclamationmark", isError: false)
             }
 
@@ -360,17 +381,17 @@ struct PartCellBrushView: View {
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(Theme.ColorToken.Text.primary)
                 Spacer()
-                // 盖在上面的是识别结果，底下才是图纸本身。判「这儿到底有没有豆子」
-                // 得看得见图纸，所以给一个一按就掀开的开关。
+                // 屏幕上画的是零件本身。要判「图纸上这儿到底有没有豆子」，按一下把
+                // 图纸原图顶上来对一眼 —— 同一块地方、同一批格线，只是换了一层。
                 //
-                // **没有图纸时不摆这个按钮**：掀开之后底下什么都没有，
+                // **没有图纸时不摆这个按钮**：顶上来底下什么都没有，
                 // 用户按到的是一个把屏幕清空的开关，而且看不出为什么。
                 if image != nil {
                     Button {
-                        showsOverlay.toggle()
+                        showsPattern.toggle()
                     } label: {
-                        Label(showsOverlay ? "只看图纸" : "看识别结果",
-                              systemImage: showsOverlay ? "eye.slash" : "eye")
+                        Label(showsPattern ? "看零件" : "对照图纸",
+                              systemImage: showsPattern ? "square.grid.3x3.fill" : "photo")
                             .font(.footnote)
                     }
                 }
@@ -492,11 +513,14 @@ struct PartCellBrushView: View {
         return part.gridRect ?? part.bounds
     }
 
-    /// 画布上摆的那块内容有多大。没有图纸原图时按格子矩阵的长宽比铺 ——
-    /// 那时候用户对的是识别结果本身，形状对了就够用。
+    /// 画布上摆的那块内容有多大：**永远按零件自己的行列数**，一格一个单位。
+    ///
+    /// 早先这里用的是图纸那张裁图的像素尺寸，于是格子跟着**图纸**的几何走：
+    /// 网格但凡量得不准（格距偏大、框歪了），零件在这一屏就被拉成一条扁带，
+    /// 跟拼豆板上、零件清单里看到的那个形状对不上 —— 而用户要改的正是那个形状。
+    /// 按行列数铺之后，一格在屏幕上永远是正方的，零件长什么样就是什么样。
     private var contentSize: CGSize {
-        if let image, image.size.width > 0, image.size.height > 0 { return image.size }
-        return CGSize(width: max(cols, 1), height: max(rows, 1))
+        CGSize(width: max(cols, 1), height: max(rows, 1))
     }
 
     private var displayRect: CGRect {
@@ -571,9 +595,9 @@ struct PartCellBrushView: View {
             stroke.last = nil
             return
         }
-        // 识别结果掀开着的时候动了笔，就把它盖回来 —— 否则用户划半天，
+        // 正对照着图纸的时候动了笔，就切回零件那一层 —— 否则用户划半天，
         // 屏幕上唯一的变化是底下那个颗数。
-        if !showsOverlay { showsOverlay = true }
+        if showsPattern { showsPattern = false }
 
         // 手指移得快时两次事件之间会跳过好几格。只改落点的话，划出来的是一串虚线，
         // 用户得回头一格一格补 —— 那正是这一屏想省掉的事。
@@ -789,49 +813,46 @@ struct PartCellBrushView: View {
         buildPalette()
         refresh()
 
-        // 图纸上这一块的原样。四周多留一格，边上那一圈格子对没对得上要看得见。
+        // 图纸上这一块的原样，裁的就是**格子矩阵那一块**，不多留边。
+        //
+        // 「对照图纸」是把它整个铺进同一个框里，跟零件那一层严丝合缝地换 ——
+        // 多留一圈的话两层就对不上了，用户按一下图会跳一下，还以为是网格错位。
+        // 网格本身准不准是「量格子」那一屏的事，不在这儿看。
         let area = gridArea
-        let padX = area.width / CGFloat(max(cols, 1))
-        let padY = area.height / CGFloat(max(rows, 1))
-        // 再跟工作图自己那块相交一次。工作图是从**零件区**裁出来的，靠边的零件多留的
-        // 那一圈会伸到它外面去 —— 裁图那边会自动切掉，而这边还按没切之前的范围铺，
-        // 于是图被拉开一点点，格线跟豆子差半格。用户会以为是网格没对准，
-        // 跑回「量格子」推半天，而那儿一切正常。
-        let padded = area.insetBy(dx: -padX, dy: -padY)
-            .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
-            .intersection(work?.region ?? CGRect(x: 0, y: 0, width: 1, height: 1))
-        // 先把范围定下来再去裁图：裁失败（或者根本没有图纸）时，
-        // 识别结果那一层照样画得出来、照样改得动，不能整屏空着。
-        // 没有图的时候范围就是格子矩阵本身 —— 那时画布铺的是 cols × rows 那块，
-        // 多留的那一圈会让格子被拉长。
+        // 跟工作图自己那块相交一次：工作图是从**零件区**裁出来的，靠边的零件会伸到
+        // 它外面去 —— 裁图那边会自动切掉，而这边还按没切之前的范围铺，图就被拉开一点。
+        let cropRect = area.intersection(work?.region ?? CGRect(x: 0, y: 0, width: 1, height: 1))
         region = area
-        guard let source = work, !padded.isEmpty else {
+        // 切剩的那块小到没意义就不给了 —— 半条边的「对照」比没有还容易看错。
+        guard let source = work, cropRect.width > area.width * 0.5,
+              cropRect.height > area.height * 0.5 else {
             // 没有图纸不是错（拼豆板那屏的图本来就可能裁不出来），但**必须说出来**：
             // 这一屏承诺的是「照着图纸改」，不说的话用户会对着一片灰底找豆子。
+            // 没有图纸、或者这一块基本不在工作图里。改格子本身不受影响，
+            // 只是没有图可对 —— 这件事要说出来（见 footer 那条提示）。
             imageUnavailable = true
             if let work {
-                AppLogger.shared.warning("PartCellBrush", "brush_region_empty", metadata: [
+                AppLogger.shared.warning("PartCellBrush", "brush_region_unusable", metadata: [
                     "partId": partId.uuidString,
                     "area": "\(area)", "workRegion": "\(work.region)"
                 ])
             }
             return
         }
-        region = padded
         let cropped = await Task.detached(priority: .userInitiated) {
-            PartsThumbnailMaker.crop(source, normalized: padded)
+            PartsThumbnailMaker.crop(source, normalized: cropRect)
         }.value
         guard !Task.isCancelled else { return }
         image = cropped
-        // 裁不出来就退回只画识别结果，范围跟着换回格子矩阵那一块。
+        imageRect = cropRect
+        // 裁不出来就只画零件那一层，「对照图纸」那个按钮跟着不出现。
         // 记一笔：裁失败是确定性的（同一张图、同一块 bounds，重开几次都一样），
         // 不记的话事后无从查起（同 `PartsBoardStepView.loadOriginal`）。
         if cropped == nil {
-            region = area
             imageUnavailable = true
             AppLogger.shared.warning("PartCellBrush", "brush_crop_failed", metadata: [
                 "partId": partId.uuidString,
-                "padded": "\(padded)",
+                "crop": "\(cropRect)",
                 "region": "\(source.region)",
                 "workSize": "\(source.image.size)"
             ])
@@ -907,15 +928,14 @@ struct PartCellBrushView: View {
 /// 几万个像素，重建一次是零点几毫秒，贴上去的时候按最终尺寸 + 最近邻放大，
 /// 边界照样是硬的。
 ///
-/// 半透明是刻意的：底下是图纸原图，用户要比的正是「图上有豆子、这儿判成了什么」。
-/// 空格也铺一层淡灰而不是全透明 —— 擦掉一格之后底下的豆子还在图上，
-/// 什么都不画的话用户看不出自己那一下到底生效没有。
+/// 画的是**零件本身**：有豆子的格子是它自己的颜色，空格透明、露出底下的板面。
+/// 所以擦掉一格就是「这儿空了」，跟拼豆板上看到的是同一件事 —— 早先这一层是
+/// 半透明盖在图纸原图上的，空格还得铺一层灰才看得出擦掉没有，而底下那颗豆子
+/// 一直还在图上，用户得盯着灰度差判断自己那一下生效没有。
 enum CellOverlayBitmap {
-    /// 有豆子的格子盖多实
-    private static let beadAlpha: Double = 0.82
-    /// 空格盖多实
-    private static let emptyAlpha: Double = 0.40
-    private static let emptyGrey: (Double, Double, Double) = (0.55, 0.55, 0.55)
+    /// 有豆子的格子画多实。留一点点透明，是为了「对照图纸」切过去的时候
+    /// 两层看起来是同一块地方，而不是两张不相干的图。
+    private static let beadAlpha: Double = 0.95
 
     static func make(cells: [[PartCellFill]], colors: [String: Color]) -> UIImage? {
         let rows = cells.count
@@ -928,10 +948,8 @@ enum CellOverlayBitmap {
             table[key] = premultiplied(color, alpha: beadAlpha)
         }
         let fallback = premultiplied(Color(white: 0.5), alpha: beadAlpha)
-        let empty: (UInt8, UInt8, UInt8, UInt8) = (
-            UInt8(emptyGrey.0 * emptyAlpha * 255), UInt8(emptyGrey.1 * emptyAlpha * 255),
-            UInt8(emptyGrey.2 * emptyAlpha * 255), UInt8(emptyAlpha * 255)
-        )
+        // 空格全透明 —— 底下就是板面
+        let empty: (UInt8, UInt8, UInt8, UInt8) = (0, 0, 0, 0)
 
         var bytes = [UInt8](repeating: 0, count: rows * cols * 4)
         for r in 0..<rows {

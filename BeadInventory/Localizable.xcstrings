@@ -1,6 +1,36 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "对照图纸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compare to pattern"
+          }
+        }
+      }
+    },
+    "看零件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show piece"
+          }
+        }
+      }
+    },
+    "这次取不到图纸上的这一块，没法对照图纸 —— 照着手上的实物改。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't load this part of the pattern, so there's nothing to compare against — edit it against the piece in your hand."
+          }
+        }
+      }
+    },
     "擦掉 / 补上" : {
       "localizations" : {
         "en" : {
