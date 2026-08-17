@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 第零条：一律用汉语
+
+**跟这个项目相关的所有对话，全部用简体中文。** 没有例外，也不用等用户提醒。包括但不限于：
+
+- 聊天里的回复、解释、方案讨论、汇报；
+- 计划（plan）、待办列表、进度说明；
+- commit message、PR 标题和正文、PR 评论（含代码审查报告）；
+- 交给用户看的任何总结、表格、清单。
+
+代码本身照旧：标识符、类型名、API 用英文；注释和用户可见文案用中文（见 Code Conventions）。
+引用工具/框架的专有名词（SwiftUI、SwiftData、`ΔE`、`@State` 等）不用硬翻。
+
+子 agent、skill 产出的报告如果是英文的，**由你翻成中文再交给用户**，不要原样贴出去。
+
 ## 第一原则：我们在做一个给人用的 App
 
 BeadInventory 是一个真人每天拿在手上用的 iOS GUI App，不是一个库、不是一个跑分项目。**本文件里其它所有规则，都服从这一条。**
