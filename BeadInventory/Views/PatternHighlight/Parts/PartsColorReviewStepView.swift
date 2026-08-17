@@ -337,7 +337,8 @@ struct PartsColorReviewStepView: View {
     /// 排序开着时顶上那条字。**必须有**：格子的先后一变，用户第一反应是「图纸怎么乱了」——
     /// 得当场告诉他现在是按什么排的、该往哪儿看。
     private var sortHint: some View {
-        Label("最不像「\(label(for: selectedGroup))」的排在最前面", systemImage: "arrow.up.arrow.down")
+        Label("同一种颜色排在一起，最不像「\(label(for: selectedGroup))」的排在最前面",
+              systemImage: "arrow.up.arrow.down")
             .font(.caption)
             .foregroundStyle(Theme.ColorToken.Text.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -704,46 +705,119 @@ struct PartsColorReviewStepView: View {
         return sorted(refs, using: modes)
     }
 
-    /// 按颜色排：**最不像这一类的排在最前面**。
+    /// 同一种颜色允许的抖动。超过这个距离才算两种颜色 —— 跟判色那步同一个尺子
+    ///（`PartsCellClassifier.mergeDeltaE`）。两边不一致的话，判色认为是一种颜色的格子
+    /// 在这一屏会被拆成两片，用户会以为自己找到了一处判错。
+    private static let mergeDeltaE: Double = 8
+
+    /// 按颜色排：**一种颜色一片，最不像这一类的那片排在最前面**。
     ///
-    /// 「像不像」比的是每格的**众数色**（`PartsCellClassifier.sampleModes`）离这一组代表色的
-    /// Lab 距离。取众数而不是平均色 / 中心点：图纸给每颗豆子都描了一圈深色边，一格才十来个
-    /// 像素，平均进去整格就被往深处拉，拉多少还取决于网格差了几分之一格 —— 判色那一步栽过
-    /// 这个跟头（见 `sampleModes` 的注释），排序照样会栽。
+    /// 只按「离代表色多远」排是不够的：那是一圈一圈的等距排法，红偏亮和红偏绿可能离
+    /// 代表色一样远，于是两种根本不像的颜色被排到了一起。所以先把这一组里出现过的颜色
+    /// 并成几类（`mergeDeltaE`），**整类整类地摆**，一类之内再按离本类中心多远排。
     ///
-    /// 代表色是「这些众数色的众数」—— 同样不取平均：一组里混进来的几十格杂色会把平均值拽偏，
+    /// 「什么颜色」比的是每格的**众数色**（`PartsCellClassifier.sampleModes`）。取众数
+    /// 而不是平均色 / 中心点：图纸给每颗豆子都描了一圈深色边，一格才十来个像素，平均进去
+    /// 整格就被往深处拉，拉多少还取决于网格差了几分之一格 —— 判色那一步栽过这个跟头。
+    ///
+    /// 主色类取**格子最多的那一类**，不取平均：一组里混进来的几十格杂色会把平均值拽偏，
     /// 于是真正的主色反倒排到前面去了。
     ///
-    /// 颜色一样的格子必然挨在一起（`ΔE` 相同，再按量化色号断一次），
-    /// 所以用户框中最前面那一片，框住的就是同一种杂色。
+    /// 分不开的情况是存在的，而且没法靠排序解决：图纸上的白豆子和留白本来就是同一个颜色，
+    /// 判色分不开它们，排序照样分不开 —— 那种只能靠「改格子」在图纸上直接补。
     private func sorted(_ refs: [CellRef], using modes: [[[Int32]]]) -> [CellRef] {
         guard refs.count > 1 else { return refs }
 
         let colors = refs.map { mode(of: $0, in: modes) }
-        var histogram: [Int32: Int] = [:]
-        for color in colors where color >= 0 { histogram[color, default: 0] += 1 }
+        var counts: [Int32: Int] = [:]
+        for color in colors where color >= 0 { counts[color, default: 0] += 1 }
         // 一格都没量到（图没抠出来）就别乱排，原样交回去
-        guard let dominant = histogram.max(by: { $0.value < $1.value })?.key else { return refs }
+        guard !counts.isEmpty else { return refs }
 
-        // ΔE 按「量化色」算一次就够 —— 一组几万格，但里头的不同颜色只有几十种
-        let center = QuantizedRGB.labTable[Int(dominant)]
-        var distances: [Int32: Double] = [:]
-        for color in Set(colors) where color >= 0 {
-            distances[color] = GridCellSampler.deltaE(QuantizedRGB.labTable[Int(color)], center)
+        let clusters = cluster(counts)
+        // 主色类 = 格子最多的那一类
+        guard let dominant = clusters.groups.indices.max(by: {
+            clusters.groups[$0].count < clusters.groups[$1].count
+        }) else { return refs }
+        let dominantCenter = clusters.groups[dominant].center
+
+        // 整类之间：离主色类越远的越靠前。同距离的按类的下标断，免得两类交错。
+        let rank = clusters.groups.indices.sorted { lhs, rhs in
+            let ld = GridCellSampler.deltaE(clusters.groups[lhs].center, dominantCenter)
+            let rd = GridCellSampler.deltaE(clusters.groups[rhs].center, dominantCenter)
+            return ld != rd ? ld > rd : lhs < rhs
+        }
+        var order = [Int](repeating: 0, count: clusters.groups.count)
+        for (position, index) in rank.enumerated() { order[index] = position }
+
+        // 一类之内：离本类中心越远的越靠前。同一个量化色距离必然相同，所以铁定连成一片。
+        var within: [Int32: Double] = [:]
+        for (color, group) in clusters.belongsTo {
+            within[color] = GridCellSampler.deltaE(QuantizedRGB.labTable[Int(color)],
+                                                   clusters.groups[group].center)
         }
 
         // 没量到的（-1）排到最后：它们不是「像」，是「不知道」，摆在最前面等于让用户白找一趟
+        func key(_ color: Int32) -> (Int, Double) {
+            guard color >= 0, let group = clusters.belongsTo[color] else { return (Int.max, 0) }
+            return (order[group], within[color] ?? 0)
+        }
         return zip(refs.indices, zip(refs, colors))
             .sorted { lhs, rhs in
                 let (li, (_, lc)) = lhs
                 let (ri, (_, rc)) = rhs
-                let ld = lc >= 0 ? distances[lc] ?? 0 : -1
-                let rd = rc >= 0 ? distances[rc] ?? 0 : -1
-                if ld != rd { return ld > rd }
+                let lk = key(lc), rk = key(rc)
+                if lk.0 != rk.0 { return lk.0 < rk.0 }
+                if lk.1 != rk.1 { return lk.1 > rk.1 }
                 if lc != rc { return lc < rc }
                 return li < ri          // Swift 的 sort 不保证稳定，同色的先后自己钉住
             }
             .map { $0.1.0 }
+    }
+
+    private struct ColorGroup {
+        var center: LabColor
+        var count: Int
+    }
+
+    /// 把这一组出现过的颜色并成几类。**按格数从多到少并**，让最大的那几种颜色先立住类中心；
+    /// 反过来先并杂色的话，主色会被一格一格的噪点拽着走。
+    ///
+    /// 一组格子再多，里头不同的量化色也就几十上百种（图纸是像素画），所以这里的两两比较
+    /// 可以放心用 —— 真正贵的是逐格算，那一步在上面已经按量化色去重掉了。
+    private func cluster(_ counts: [Int32: Int]) -> (groups: [ColorGroup], belongsTo: [Int32: Int]) {
+        var groups: [ColorGroup] = []
+        var belongsTo: [Int32: Int] = [:]
+        let byCount = counts.keys.sorted {
+            counts[$0]! != counts[$1]! ? counts[$0]! > counts[$1]! : $0 < $1
+        }
+        for color in byCount {
+            let lab = QuantizedRGB.labTable[Int(color)]
+            var nearest = -1
+            var nearestDE = Double.infinity
+            for (index, group) in groups.enumerated() {
+                let de = GridCellSampler.deltaE(lab, group.center)
+                if de < nearestDE { nearestDE = de; nearest = index }
+            }
+            let n = counts[color] ?? 0
+            if nearestDE <= Self.mergeDeltaE, nearest >= 0 {
+                let old = groups[nearest]
+                let total = Double(old.count + n)
+                groups[nearest] = ColorGroup(
+                    center: LabColor(
+                        l: (old.center.l * Double(old.count) + lab.l * Double(n)) / total,
+                        a: (old.center.a * Double(old.count) + lab.a * Double(n)) / total,
+                        b: (old.center.b * Double(old.count) + lab.b * Double(n)) / total
+                    ),
+                    count: old.count + n
+                )
+                belongsTo[color] = nearest
+            } else {
+                groups.append(ColorGroup(center: lab, count: n))
+                belongsTo[color] = groups.count - 1
+            }
+        }
+        return (groups, belongsTo)
     }
 
     private func mode(of ref: CellRef, in modes: [[[Int32]]]) -> Int32 {

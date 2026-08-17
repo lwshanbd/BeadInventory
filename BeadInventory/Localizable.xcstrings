@@ -11382,12 +11382,12 @@
         }
       }
     },
-    "最不像「%@」的排在最前面" : {
+    "同一种颜色排在一起，最不像「%@」的排在最前面" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Least like “%@” comes first"
+            "value" : "Same colors grouped, least like “%@” first"
           }
         }
       }
