@@ -11372,6 +11372,66 @@
         }
       }
     },
+    "排序" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sort"
+          }
+        }
+      }
+    },
+    "同一种颜色排在一起，最不像「%@」的排在最前面" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Same colors grouped, least like “%@” first"
+          }
+        }
+      }
+    },
+    "正在看每格原本是什么颜色…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading each cell's original color…"
+          }
+        }
+      }
+    },
+    "取不到图纸上的颜色，排不了序。回去看看零件的框是不是圈得太小。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't read colors from the pattern, so it can't be sorted. Check whether the part boxes are too small."
+          }
+        }
+      }
+    },
+    "这一片的原图取不到，排不了序。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The source image for this batch is unavailable, so it can't be sorted."
+          }
+        }
+      }
+    },
+    "正在看每格原本是什么颜色…（%lld/%lld）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading each cell's original color… (%lld/%lld)"
+          }
+        }
+      }
+    },
     "拖着框选" : {
       "localizations" : {
         "en" : {

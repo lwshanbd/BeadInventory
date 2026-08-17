@@ -19,9 +19,12 @@ import UIKit
 enum PartsCellClassifier {
 
     /// 同一种颜色的两格之间允许的抖动。超过这个距离才算两种颜色。
-    /// 取 8：每格用的是众数色（见 `sampleCells`），本身几乎没有噪声，
+    /// 取 8：每格用的是众数色（见 `sampleModes`），本身几乎没有噪声，
     /// 只剩 5 bit 量化那点误差；阈值放宽反而会把相邻色阶串成一类。
-    private static let mergeDeltaE: Double = 8
+    ///
+    /// **不是 `private`**：核对页的「排序」也拿它并类（`PartsColorReviewStepView.sorted`）。
+    /// 两边各写一个 8 的话，改了这边不会有任何报错，而用户会在核对页看到一种颜色被切成两片。
+    static let mergeDeltaE: Double = 8
 
     /// 判成「空」的条件：跟图纸背景色的距离在这个范围内。
     /// 零件中间的镂空和零件外面蹭进框里的背景是同一种像素，一起归到空。
@@ -96,7 +99,7 @@ enum PartsCellClassifier {
         // 淡色，跟别的豆子长得一样，唯一的区别写在色号表那一行字里。
         let anyColorLab = anyColorHex.flatMap { GridCellSampler.lab(forHex: $0) }
 
-        // 第一趟：把每个零件切格、量出每格的平均色
+        // 第一趟：把每个零件切格、量出每格的众数色
         var fittedParts: [BeadPart] = []
         var cellLabs: [[[LabColor?]]] = []      // [part][row][col]
         var unreadableParts = 0
@@ -169,7 +172,16 @@ enum PartsCellClassifier {
 
     // MARK: - 采样
 
-    /// 量出一个零件每一格的颜色。
+    /// 把 `sampleModes` 量出来的量化色索引换成 Lab。取众数的理由见 `sampleModes`。
+    /// - Returns: `nil` = 这个零件的图根本没抠出来（原样透传 `sampleModes`）。
+    private static func sampleCells(work: PartsWorkImage, part: BeadPart) -> [[LabColor?]]? {
+        guard let modes = sampleModes(work: work, part: part) else { return nil }
+        return modes.map { row in
+            row.map { $0 >= 0 ? QuantizedRGB.labTable[Int($0)] : nil }
+        }
+    }
+
+    /// 量出一个零件每一格的颜色，值是 `QuantizedRGB` 索引，**`-1` = 这一格没量到**。
     ///
     /// **取众数，不取平均。** 图纸给每颗豆子都描了一圈深色边，一格才十来个像素，
     /// 边线一平均进去，整格的颜色就被往深处拉；拉的多少又取决于网格差了几分之一格，
@@ -178,15 +190,21 @@ enum PartsCellClassifier {
     ///
     /// 众数只认「这一格里最多的那个颜色」。描边再深也只占一圈，占不到一半，直接被无视；
     /// 网格差个几分之一格也不影响结论。
+    ///
+    /// 判色和核对页的「排序」共用这一趟取样。两边必须量出同一个颜色 —— 否则排序会把某一格
+    /// 排在「跟这一类很像」的位置上，而它当初正是因为不像才被判错的，用户就永远找不到它。
+    ///
+    /// - Important: 传进来的 part **必须已经定好格线**（`gridRect` / `rows` / `cols`）。
+    ///   这里不做 `classify` 第一趟那种回退标定，没定过的直接返回 nil。
     /// - Returns: `nil` = 这个零件的图**根本没抠出来**（框太小 / 解码失败），一格都没看到。
     ///   早先这里跟「看过了，每格都是背景」一样返回全 nil 的矩阵，两件事在数据上再也分不开。
-    private static func sampleCells(work: PartsWorkImage, part: BeadPart) -> [[LabColor?]]? {
+    static func sampleModes(work: PartsWorkImage, part: BeadPart) -> [[Int32]]? {
         let area = part.gridRect ?? part.bounds
         guard part.rows > 0, part.cols > 0,
               let bitmap = PartsBitmap.make(from: work, roi: area, maxPixels: 600_000) else {
             return nil
         }
-        var result = [[LabColor?]](repeating: [LabColor?](repeating: nil, count: part.cols), count: part.rows)
+        var result = [[Int32]](repeating: [Int32](repeating: -1, count: part.cols), count: part.rows)
         let cellW = Double(bitmap.width) / Double(part.cols)
         let cellH = Double(bitmap.height) / Double(part.rows)
 
@@ -209,11 +227,47 @@ enum PartsCellClassifier {
                     }
                 }
                 if let winner = counts.max(by: { $0.value < $1.value })?.key {
-                    result[r][c] = QuantizedRGB.labTable[Int(winner)]
+                    result[r][c] = winner
                 }
             }
         }
         return result
+    }
+
+    /// 把所有零件每一格的众数色量一遍，给核对页排序用。`[零件][行][列]`，`-1` = 没量到。
+    ///
+    /// 跟 `classify` 的第一趟是同一件事，但这里**只量颜色**（也不做那趟的回退标定）：
+    /// 核对页要的就是「这一格的原色离这一类有多远」，跟聚类、跟色号都无关。
+    /// 耗时随零件数线性涨（一张平面图纸就是一个零件），调用方请放后台。
+    ///
+    /// 图没抠出来的零件在这里退化成一整片 `-1`，**不单独报数** —— 调用方（核对页排序）
+    /// 对「没量到」只有一种处理：排到最后。`classify` 那边不一样，它必须把
+    /// `unreadableParts` 报给用户，因为那关系到「要不要回去把框圈大点」。
+    ///
+    /// - Parameter progress: (已完成零件数, 总数)
+    static func sampleModes(
+        work: PartsWorkImage,
+        parts: [BeadPart],
+        progress: ((Int, Int) -> Void)? = nil
+    ) -> [[[Int32]]] {
+        var result: [[[Int32]]] = []
+        result.reserveCapacity(parts.count)
+        for (index, part) in parts.enumerated() {
+            // 用户退出这一屏就别再磨了：几十个零件、每个最多 60 万像素，
+            // 白算完还要跟下一屏抢 CPU。没量完的按「没量到」补齐，语义上跟图没抠出来是一样的。
+            if Task.isCancelled {
+                result.append(contentsOf: parts[index...].map { unmeasured(like: $0) })
+                break
+            }
+            result.append(sampleModes(work: work, part: part) ?? unmeasured(like: part))
+            progress?(index + 1, parts.count)
+        }
+        return result
+    }
+
+    private static func unmeasured(like part: BeadPart) -> [[Int32]] {
+        [[Int32]](repeating: [Int32](repeating: -1, count: max(part.cols, 0)),
+                  count: max(part.rows, 0))
     }
 
     // MARK: - 聚类
