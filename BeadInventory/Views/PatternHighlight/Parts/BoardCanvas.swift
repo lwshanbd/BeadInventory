@@ -54,6 +54,26 @@ struct BoardCanvasLayout {
             cell: base * zoom
         )
     }
+
+    /// 板子**左上角钉在 `frame` 的左上角**，往右下铺开，不居中。
+    ///
+    /// 只有投影仪校准之后走这一条（见 `BoardCastCalibration`）：那时候 `frame` 不是
+    /// 「屏幕上哪块地方好看」，而是**桌上那块豆板在画面里的位置**。居中会把整块板
+    /// 挪半格出去 —— 挪多少取决于板子是不是正方形，用户永远对不上。
+    ///
+    /// 板子是正方形、`frame` 也是正方形时（多零件模式一直是这样），
+    /// 结果就是严丝合缝填满 `frame`，一格对一个孔。图纸不是正方形时（单图纸模式）
+    /// 长的那边贴着 `frame` 的边，短的那边剩一截空 —— 靠左上角，不居中，理由同上。
+    static func anchored(_ board: PartsBoard, in frame: CGRect) -> BoardCanvasLayout {
+        let cell = min(frame.width / CGFloat(max(board.cols, 1)),
+                       frame.height / CGFloat(max(board.rows, 1)))
+        return BoardCanvasLayout(
+            rect: CGRect(x: frame.minX, y: frame.minY,
+                         width: cell * CGFloat(board.cols),
+                         height: cell * CGFloat(board.rows)),
+            cell: cell
+        )
+    }
 }
 
 /// 高亮时整块板换成的「舞台」。

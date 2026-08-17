@@ -42,6 +42,8 @@ struct SinglePatternHighlightStepView: View {
 
     @EnvironmentObject var inventoryManager: InventoryManager
     @ObservedObject private var cast = BoardCastSession.shared
+    /// 开着「对准豆板」那一屏
+    @State private var showingCastCalibration = false
 
     /// 送外屏用的那份「整张图纸当成一块板」。**算一次存着** ——
     /// 它要遍历几万格，每次点色号都重算一遍就是每次点击卡一下。
@@ -145,13 +147,18 @@ struct SinglePatternHighlightStepView: View {
             canvas
             // 接了电视 / 投影仪之后第一件想确认的就是「到底投上了没有」——
             // 而人多半站在电视那头，手机上得有个准信。
+            // 点它就是「对准豆板」——投影仪投出来的画面跟豆板对不上，是接上之后立刻
+            // 会发现的事，而这个标记正是他这时候在看的东西（多零件那屏同样处理）。
             if cast.externalConnected {
-                Label("投屏中 · 电视上跟着高亮", systemImage: "tv")
-                    .font(.caption2.weight(.medium))
-                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.top, Theme.Spacing.xs)
+                Button { showingCastCalibration = true } label: {
+                    Label("投屏中 · 电视上跟着高亮，点这里对准豆板", systemImage: "tv")
+                        .font(.caption2.weight(.medium))
+                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.top, Theme.Spacing.xs)
             }
             ColorPaletteBar(entries: entries, highlightedCodes: $highlightedCodes)
         }
@@ -197,6 +204,9 @@ struct SinglePatternHighlightStepView: View {
         // 离开这一屏就把电视上的东西撤掉：留着的话用户已经走了，电视上还停着一张
         // 他不再看的图纸 —— 而这一屏是被 push 上来的，退出去是很随手的动作。
         .onDisappear { BoardCastSession.shared.stop() }
+        .sheet(isPresented: $showingCastCalibration) {
+            BoardCastCalibrationSheet()
+        }
         .sheet(isPresented: $showingDiffSheet) {
             ValidationDiffSheet(
                 diffs: GridValidator.mismatches(grid: grid, beadUsage: legendUsage),

@@ -143,6 +143,8 @@ struct PartsBoardStepView: View {
     /// 但 `@ObservedObject` 订阅的是整个对象，所以每次送板子也会让这一屏重画一遍。
     /// 送板子只发生在离散的编辑动作上（拖动过程中不送），所以不在手势的热路径上。
     @ObservedObject private var cast = BoardCastSession.shared
+    /// 开着「对准豆板」那一屏
+    @State private var showingCastCalibration = false
 
     private enum Tab: Hashable { case parts, colors }
 
@@ -249,6 +251,9 @@ struct PartsBoardStepView: View {
         // 跟着手指抖没有意义；但手一松、位置定下来就必须送过去。
         .onChange(of: castSignature) { _, _ in publishToExternalDisplay() }
         .onDisappear { BoardCastSession.shared.stop() }
+        .sheet(isPresented: $showingCastCalibration) {
+            BoardCastCalibrationSheet()
+        }
         .task(id: noteToken) {
             guard note != nil else { return }
             try? await Task.sleep(for: .seconds(4))
@@ -349,10 +354,17 @@ struct PartsBoardStepView: View {
                         .foregroundColor(Theme.ColorToken.Text.secondary)
                     // 接了电视 / 投影仪之后第一件想确认的就是「到底投上了没有」——
                     // 而人多半站在电视那头，手机上得有个准信。
+                    //
+                    // 顺手就是校准的入口：投影仪投出来的画面对不对得上豆板，是接上之后
+                    // 立刻会发现的事，而这个标记正是他这时候在看的东西。
+                    // 单独加一个按钮的话，接电视的人也得多看一个跟自己无关的东西。
                     if cast.externalConnected {
-                        Label("投屏中", systemImage: "tv")
-                            .font(.caption2.weight(.medium))
-                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                        Button { showingCastCalibration = true } label: {
+                            Label("投屏中 · 对准豆板", systemImage: "tv")
+                                .font(.caption2.weight(.medium))
+                                .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.lg)

@@ -42,6 +42,10 @@ final class BoardCastSession: ObservableObject {
     /// 手机那一屏据此显示「投屏中」—— 用户接了 AirPlay 之后第一件想确认的就是
     /// 「到底投上了没有」，而他多半人在电视那头，手机屏幕上得有个准信。
     @Published var externalConnected = false
+    /// 外屏有多大（点）。**校准页要靠它**：手机上那块预览得按外屏的长宽比画，
+    /// 手指拖的那几十点也要按这个比例换算成外屏上的点数。
+    /// nil = 没接外屏（校准页此时开不出来）。
+    @Published var externalScreenSize: CGSize?
 
     struct Content {
         let board: PartsBoard

@@ -14,6 +14,15 @@
 //  外屏**不接受任何操作**（角色名字里就写着 NonInteractive），所以这里没有手势、
 //  没有按钮，只有一块板。要动手仍然低头看手机。
 //
+//  ## 两种摆法
+//
+//  接**电视**时，人是抬头看图、低头在手机上动手 —— 板子居中铺满整块屏幕最好看清楚。
+//
+//  接**投影仪**、把画面投到桌上那块豆板上时，情况正相反：板子该有多大、落在哪儿，
+//  是桌上那块实物说了算，投影仪自己不知道。这时候走校准出来的那个方框
+//  （`BoardCastCalibration`）：左上角钉在用户标定的点上，边长是用户拉出来的长度，
+//  方框以外全黑。没校准过就还是铺满 —— 接电视的人不该被要求先做一次校准。
+//
 
 import SwiftUI
 import UIKit
@@ -22,72 +31,213 @@ import UIKit
 
 struct BoardExternalDisplayView: View {
     @ObservedObject private var session = BoardCastSession.shared
+    @ObservedObject private var calibration = BoardCastCalibration.shared
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                Color.black
 
-            if let content = session.content {
-                VStack(spacing: 0) {
-                    GeometryReader { geo in
-                        Canvas { context, size in
-                            BoardCanvasRenderer(
-                                board: content.board,
-                                footprints: content.footprints,
-                                colorCache: content.colorCache,
-                                highlightKeys: content.highlightKeys,
-                                labels: content.labels,
-                                invalid: content.invalid
-                            )
-                            // padding 交给外面那层 .padding(24) —— 这里再留一次的话
-                            // 每边就是 48pt 死边，而这块屏幕存在的意义就是铺满。
-                            .draw(in: context, canvas: size,
-                                  layout: .fitting(content.board, in: geo.size, padding: 0))
-                        }
+                if let content = session.content {
+                    if let frame = calibration.rect(in: geo.size) {
+                        calibrated(content, frame: frame, screen: geo.size)
+                    } else {
+                        filling(content)
                     }
-                    caption(for: content)
+                } else {
+                    emptyHint
                 }
-                .padding(24)
-            } else {
-                // 接上了，但手机那边现在没有板子可显示 —— 可能是没打开拼豆板那一屏，
-                // 也可能是打开了但一块板都还没有。这句话在两种情况下都成立，
-                // 而且都指向同一个下一步。别让人对着一块黑屏猜。
-                VStack(spacing: 12) {
-                    Image(systemName: "square.grid.3x3")
-                        .font(.system(size: 64))
-                        .foregroundStyle(.white.opacity(0.35))
-                    // 两种模式都会走到这儿（多零件的拼豆板、单图纸的高亮页），
-                    // 所以这句话不能只提其中一个 —— 用户按着提示去开另一个，
-                    // 只会得出「投屏坏了」的结论。
-                    Text("在手机上打开拼图模式，这里就会跟着显示")
-                        .font(.title3)
-                        .foregroundStyle(.white.opacity(0.7))
+
+                // 校准时压在最上面。平时一道都不画：拼的人照着画面按豆子，
+                // 多几道亮线他会当成格线数进去。
+                if calibration.isCalibrating {
+                    CalibrationMarksCanvas(frame: calibration.previewRect(in: geo.size))
                 }
             }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
+        .ignoresSafeArea()
+    }
+
+    // MARK: - 铺满（接电视）
+
+    private func filling(_ content: BoardCastSession.Content) -> some View {
+        VStack(spacing: 0) {
+            GeometryReader { geo in
+                Canvas { context, size in
+                    renderer(for: content)
+                        // padding 交给外面那层 .padding(24) —— 这里再留一次的话
+                        // 每边就是 48pt 死边，而这块屏幕存在的意义就是铺满。
+                        .draw(in: context, canvas: size,
+                              layout: .fitting(content.board, in: geo.size, padding: 0))
+                }
+            }
+            captionRow(for: content)
+                .padding(.top, 12)
+        }
+        .padding(24)
+    }
+
+    // MARK: - 校准过（接投影仪）
+
+    /// 板子画在标定出来的方框里，别的地方全黑。
+    ///
+    /// 说明文字挪到方框**外面**：投影仪把它照在豆板上的话，那几行字就落在用户
+    /// 正要按豆子的格子上了。四周都挤不下就干脆不显示 —— 对齐比图例重要。
+    private func calibrated(
+        _ content: BoardCastSession.Content, frame: CGRect, screen: CGSize
+    ) -> some View {
+        ZStack(alignment: .topLeading) {
+            Canvas { context, size in
+                renderer(for: content)
+                    .draw(in: context, canvas: size,
+                          layout: .anchored(content.board, in: frame))
+            }
+            captionOutside(content, frame: frame, screen: screen)
+        }
+    }
+
+    @ViewBuilder
+    private func captionOutside(
+        _ content: BoardCastSession.Content, frame: CGRect, screen: CGSize
+    ) -> some View {
+        let below = screen.height - frame.maxY
+        let beside = screen.width - frame.maxX
+
+        if below >= 64 {
+            captionRow(for: content)
+                .frame(width: screen.width, height: screen.height, alignment: .bottom)
+                .padding(.bottom, 16)
+        } else if beside >= 260 {
+            captionColumn(for: content)
+                .frame(width: beside - 48, alignment: .leading)
+                .offset(x: frame.maxX + 24, y: max(frame.minY, 24))
+        }
+    }
+
+    // MARK: - 零件
+
+    private func renderer(for content: BoardCastSession.Content) -> BoardCanvasRenderer {
+        BoardCanvasRenderer(
+            board: content.board,
+            footprints: content.footprints,
+            colorCache: content.colorCache,
+            highlightKeys: content.highlightKeys,
+            labels: content.labels,
+            invalid: content.invalid
+        )
+    }
+
+    private var emptyHint: some View {
+        // 接上了，但手机那边现在没有板子可显示 —— 可能是没打开拼豆板那一屏，
+        // 也可能是打开了但一块板都还没有。这句话在两种情况下都成立，
+        // 而且都指向同一个下一步。别让人对着一块黑屏猜。
+        VStack(spacing: 12) {
+            Image(systemName: "square.grid.3x3")
+                .font(.system(size: 64))
+                .foregroundStyle(.white.opacity(0.35))
+            // 两种模式都会走到这儿（多零件的拼豆板、单图纸的高亮页），
+            // 所以这句话不能只提其中一个 —— 用户按着提示去开另一个，
+            // 只会得出「投屏坏了」的结论。
+            Text("在手机上打开拼图模式，这里就会跟着显示")
+                .font(.title3)
+                .foregroundStyle(.white.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// 底下一行：我在哪儿、现在该找哪个颜色。
     /// 拼的人抬头看的就这两件事（左边那句由手机那边给：多零件是第几块板，单图纸是多少格）。
-    private func caption(for content: BoardCastSession.Content) -> some View {
+    private func captionRow(for content: BoardCastSession.Content) -> some View {
         HStack(spacing: 20) {
             Text(content.caption)
             ForEach(content.highlightKeys.sorted(), id: \.self) { key in
-                HStack(spacing: 8) {
-                    // fallback 跟板子上用的是同一个（BoardCanvas 的 beadColor）——
-                    // 两边不一样的话，同一个色号在图例上和板子上会是两个颜色，
-                    // 而图例正是用户抬头要查的那个东西。
-                    Circle()
-                        .fill(content.colorCache[key] ?? Theme.ColorToken.Surface.strong)
-                        .frame(width: 22, height: 22)
-                        .overlay(Circle().stroke(.white.opacity(0.5), lineWidth: 1))
-                    Text(key)
-                }
+                legend(key: key, content: content)
             }
         }
         .font(.title3.monospacedDigit())
         .foregroundStyle(.white.opacity(0.8))
-        .padding(.top, 12)
+    }
+
+    /// 方框右边那一竖条（校准之后板子占满高度，底下常常没地方了）
+    private func captionColumn(for content: BoardCastSession.Content) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(content.caption)
+            ForEach(content.highlightKeys.sorted(), id: \.self) { key in
+                legend(key: key, content: content)
+            }
+        }
+        .font(.title3.monospacedDigit())
+        .foregroundStyle(.white.opacity(0.8))
+    }
+
+    private func legend(key: String, content: BoardCastSession.Content) -> some View {
+        HStack(spacing: 8) {
+            // fallback 跟板子上用的是同一个（BoardCanvas 的 beadColor）——
+            // 两边不一样的话，同一个色号在图例上和板子上会是两个颜色，
+            // 而图例正是用户抬头要查的那个东西。
+            Circle()
+                .fill(content.colorCache[key] ?? Theme.ColorToken.Surface.strong)
+                .frame(width: 22, height: 22)
+                .overlay(Circle().stroke(.white.opacity(0.5), lineWidth: 1))
+            Text(key)
+        }
+    }
+}
+
+// MARK: - 校准时画在外屏上的角标
+
+/// 用户要对齐的两个角，各画一个粗角标；框本身描一圈细线。
+///
+/// 两个角**故意不同色**：校准分两步（先对左上角、再拉边长对右下角），
+/// 人站在投影仪那头、手机在手上，两个角长得一样的话他会把正在调的那个搞错。
+///
+/// 颜色写死不走 Theme：这几道线要在**桌面和豆板**上看得见，跟 App 的色彩模式无关。
+private struct CalibrationMarksCanvas: View {
+    let frame: CGRect
+
+    private static let topLeftColor = Color(red: 1.0, green: 0.83, blue: 0.0)
+    private static let bottomRightColor = Color(red: 0.2, green: 0.9, blue: 1.0)
+
+    var body: some View {
+        Canvas { context, _ in
+            context.stroke(Path(frame), with: .color(.white.opacity(0.55)), lineWidth: 1)
+
+            let arm = min(90, max(24, min(frame.width, frame.height) * 0.22))
+
+            var topLeft = Path()
+            topLeft.move(to: CGPoint(x: frame.minX, y: frame.minY + arm))
+            topLeft.addLine(to: CGPoint(x: frame.minX, y: frame.minY))
+            topLeft.addLine(to: CGPoint(x: frame.minX + arm, y: frame.minY))
+            context.stroke(topLeft, with: .color(Self.topLeftColor), lineWidth: 6)
+
+            var bottomRight = Path()
+            bottomRight.move(to: CGPoint(x: frame.maxX - arm, y: frame.maxY))
+            bottomRight.addLine(to: CGPoint(x: frame.maxX, y: frame.maxY))
+            bottomRight.addLine(to: CGPoint(x: frame.maxX, y: frame.maxY - arm))
+            context.stroke(bottomRight, with: .color(Self.bottomRightColor), lineWidth: 6)
+
+            draw(String(localized: "① 豆板左上角对这里"),
+                 color: Self.topLeftColor,
+                 at: CGPoint(x: frame.minX + 14, y: frame.minY + arm + 14),
+                 anchor: .topLeading, in: context)
+            draw(String(localized: "② 边长拉到这里"),
+                 color: Self.bottomRightColor,
+                 at: CGPoint(x: frame.maxX - 14, y: frame.maxY - arm - 14),
+                 anchor: .bottomTrailing, in: context)
+        }
+    }
+
+    private func draw(
+        _ text: String, color: Color, at point: CGPoint,
+        anchor: UnitPoint, in context: GraphicsContext
+    ) {
+        context.draw(
+            context.resolve(
+                Text(text).font(.system(size: 28, weight: .semibold)).foregroundStyle(color)
+            ),
+            at: point, anchor: anchor
+        )
     }
 }
 
@@ -126,6 +276,8 @@ final class BoardExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegat
         window.isHidden = false
         self.window = window
         BoardCastSession.shared.externalConnected = true
+        // 校准页要按这个尺寸画预览、换算手指拖的距离（见 BoardCastCalibrationSheet）
+        BoardCastSession.shared.externalScreenSize = windowScene.screen.bounds.size
         AppLogger.shared.info("ExternalDisplay", "connected", metadata: [
             "size": "\(windowScene.screen.bounds.size)"
         ])
@@ -134,6 +286,10 @@ final class BoardExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegat
     func sceneDidDisconnect(_ scene: UIScene) {
         window = nil
         BoardCastSession.shared.externalConnected = false
+        BoardCastSession.shared.externalScreenSize = nil
+        // 拔了线还留着校准角标的话，下次接上先看到的是两道亮角标而不是板子。
+        // 校准值本身留着 —— 那是用户对着实物量出来的，投影仪没挪就还作数。
+        BoardCastCalibration.shared.isCalibrating = false
         AppLogger.shared.info("ExternalDisplay", "disconnected", metadata: [:])
     }
 }
