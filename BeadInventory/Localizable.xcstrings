@@ -12751,8 +12751,7 @@
           }
         }
       }
-    }
-,
+    },
     "开始找零件" : {
       "localizations" : {
         "en" : {
@@ -12859,6 +12858,156 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Measuring the cell size and reading each cell's color is still in progress."
+          }
+        }
+      }
+    },
+    "对准豆板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Line up with your board"
+          }
+        }
+      }
+    },
+    "① 豆板左上角对这里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "① Board's top-left corner goes here"
+          }
+        }
+      }
+    },
+    "② 最后一格拉到这里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "② Drag the last cell to here"
+          }
+        }
+      }
+    },
+    "拖下面那块矩形，让投影里的黄色角落在豆板的左上角（挪豆板也行）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag the rectangle below so the yellow corner in the projection sits on your board's top-left corner (moving the board works too)"
+          }
+        }
+      }
+    },
+    "拖右下角那个蓝色把手改格子大小，直到投影里最后一格正好压在豆板对应的孔上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag the blue handle at the bottom right to resize the cells, until the last projected cell sits exactly on the matching peg"
+          }
+        }
+      }
+    },
+    "投影里这块是 %lld × %lld 格。比你的豆板大的话，先对上左上角这一块，拼完挪豆板再对一次。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The projection is %lld × %lld cells. If that's bigger than your board, line up the top-left part first, then move the board and line it up again."
+          }
+        }
+      }
+    },
+    "微调" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fine-tune"
+          }
+        }
+      }
+    },
+    "一下走 ¼ 格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¼ cell per tap"
+          }
+        }
+      }
+    },
+    "挪左上角" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move top-left"
+          }
+        }
+      }
+    },
+    "改格子大小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resize cells"
+          }
+        }
+      }
+    },
+    "恢复铺满" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to fill-screen"
+          }
+        }
+      }
+    },
+    "接的是电视、不是投影仪时用这个：画面回到自动铺满整块屏幕，这组对好的位置也一并清掉。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use this when you're on a TV rather than a projector: the picture goes back to filling the screen, and this calibration is cleared."
+          }
+        }
+      }
+    },
+    "投屏中 · 对准豆板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Casting · line up with your board"
+          }
+        }
+      }
+    },
+    "投屏中 · 电视上跟着高亮，点这里对准豆板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Casting · highlights follow on screen. Tap to line up with your board"
+          }
+        }
+      }
+    },
+    "在手机上打开拼图模式，这里就会跟着显示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open pattern mode on your phone and it will show up here"
           }
         }
       }

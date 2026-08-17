@@ -35,6 +35,8 @@
 		B7A1E0C14F0A4E1D9C2A0407 /* PartOriginalSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0408 /* PartOriginalSheet.swift */; };
 		B7A1E0C14F0A4E1D9C2A0507 /* PartCellBrushView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0508 /* PartCellBrushView.swift */; };
 		B7A1E0C14F0A4E1D9C2A0307 /* BoardExternalDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0308 /* BoardExternalDisplay.swift */; };
+		B7A1E0C14F0A4E1D9C2A0607 /* BoardCastCalibration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0608 /* BoardCastCalibration.swift */; };
+		B7A1E0C14F0A4E1D9C2A0707 /* BoardCastCalibrationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0708 /* BoardCastCalibrationSheet.swift */; };
 		B7A1E0C14F0A4E1D9C2A0207 /* BoardCastSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0208 /* BoardCastSession.swift */; };
 		B7A1E0C14F0A4E1D9C2A0001 /* PatternSourceBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0002 /* PatternSourceBanner.swift */; };
 		385001022FB3A70D00F5DDE2 /* GridGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001012FB3A70D00F5DDE2 /* GridGeometry.swift */; };
@@ -186,6 +188,8 @@
 		B7A1E0C14F0A4E1D9C2A0408 /* PartOriginalSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartOriginalSheet.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartOriginalSheet.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0508 /* PartCellBrushView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartCellBrushView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartCellBrushView.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0308 /* BoardExternalDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BoardExternalDisplay.swift; path = BeadInventory/Views/PatternHighlight/Parts/BoardExternalDisplay.swift; sourceTree = SOURCE_ROOT; };
+		B7A1E0C14F0A4E1D9C2A0608 /* BoardCastCalibration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BoardCastCalibration.swift; path = BeadInventory/Views/PatternHighlight/Parts/BoardCastCalibration.swift; sourceTree = SOURCE_ROOT; };
+		B7A1E0C14F0A4E1D9C2A0708 /* BoardCastCalibrationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BoardCastCalibrationSheet.swift; path = BeadInventory/Views/PatternHighlight/Parts/BoardCastCalibrationSheet.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0208 /* BoardCastSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BoardCastSession.swift; path = BeadInventory/Views/PatternHighlight/Parts/BoardCastSession.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0002 /* PatternSourceBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternSourceBanner.swift; path = BeadInventory/Views/PatternHighlight/Parts/PatternSourceBanner.swift; sourceTree = SOURCE_ROOT; };
 		385001012FB3A70D00F5DDE2 /* GridGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridGeometry.swift; sourceTree = "<group>"; };
@@ -370,6 +374,8 @@
 				B7A1E0C14F0A4E1D9C2A0508 /* PartCellBrushView.swift */,
 				B7A1E0C14F0A4E1D9C2A0308 /* BoardExternalDisplay.swift */,
 				B7A1E0C14F0A4E1D9C2A0208 /* BoardCastSession.swift */,
+				B7A1E0C14F0A4E1D9C2A0708 /* BoardCastCalibrationSheet.swift */,
+				B7A1E0C14F0A4E1D9C2A0608 /* BoardCastCalibration.swift */,
 				B7A1E0C14F0A4E1D9C2A0002 /* PatternSourceBanner.swift */,
 				385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */,
 				3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */,
@@ -808,6 +814,8 @@
 				B7A1E0C14F0A4E1D9C2A0507 /* PartCellBrushView.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0307 /* BoardExternalDisplay.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0207 /* BoardCastSession.swift in Sources */,
+				B7A1E0C14F0A4E1D9C2A0707 /* BoardCastCalibrationSheet.swift in Sources */,
+				B7A1E0C14F0A4E1D9C2A0607 /* BoardCastCalibration.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0001 /* PatternSourceBanner.swift in Sources */,
 				3850010A2FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift in Sources */,
 				3850010C2FB3A70D00F5DDE2 /* ColorPaletteBar.swift in Sources */,
