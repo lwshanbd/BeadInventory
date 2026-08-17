@@ -66,13 +66,25 @@ struct PartsColorReviewStepView: View {
     /// 按颜色排序。开着时铺出来的格子不再按图纸上的先后，而是**最不像这一类的排在最前面**。
     ///
     /// 一个色号动辄上千格，判错的那几格散在中间，靠一格一格看是找不出来的 ——
-    /// 而它们之所以判错，正是因为原图上的颜色离这一类的代表色最远。
+    /// 而它们多半是因为原图上的颜色离这一类的主色最远才判错的。
+    ///（顶不出全部：跟这一类颜色本来就一样的那种判错，排序也没辙，见 `sorted`。）
     @State private var sortByColor = false
     /// 每一格在原图上的众数色（`QuantizedRGB` 索引），`[零件][行][列]`。
     /// nil = 还没量过 —— 量一遍要几百毫秒到几秒，所以等用户真的点「排序」才算。
+    ///
+    /// **零件那一维是 `parts` 的下标，不是 id**，而且量一次用到底、不作废。这一屏只改格子的
+    /// 颜色，不动零件顺序也不动格线，所以成立；哪天这儿加了删零件 / 重对格线的路，
+    /// 必须把它置 nil —— 下标错位不会崩（`mode(of:in:)` 兜住了），只会安静地排错。
     @State private var cellModes: [[[Int32]]]?
-    /// 正在量颜色。量的时候整屏挡住：这时候点色号、改格子都会让排序算在一份过期的格子上。
+    /// 正在量颜色
     @State private var samplingColors = false
+    /// 量到第几个零件了。单张图纸只有一个零件，量得飞快，就不报数了（nil）。
+    @State private var samplingProgress: (done: Int, total: Int)?
+    /// 量颜色的活儿。用户退出这一屏要停掉 —— 几十个零件能磨好几秒，
+    /// 白算完还要跟下一屏抢 CPU，而且算完往一个已经没人看的界面里写。
+    @State private var samplingTask: Task<Void, Never>?
+    /// 排不动时说一句。**不能什么都不说**：点了「排序」没有任何反应，用户只会以为按钮坏了。
+    @State private var sortNote: String?
 
     /// 框选模式。开着时列表不滚动，拖一条对角线就把扫过的格子全选上。
     /// 一个色号动不动上千格，一格一格点是不可能的。
@@ -117,10 +129,15 @@ struct PartsColorReviewStepView: View {
             groupBar
             Divider()
             if sortByColor { sortHint }
+            if let sortNote { noteBar(sortNote) }
             cellGrid
             footer
         }
         .overlay { if samplingColors { samplingOverlay } }
+        .onDisappear {
+            samplingTask?.cancel()
+            samplingTask = nil
+        }
         .navigationTitle("核对颜色")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -153,7 +170,9 @@ struct PartsColorReviewStepView: View {
                         Text("改格子")
                     }
                 }
-                .disabled(parts.isEmpty)
+                // 量颜色的那几秒也关掉。挡屏的那层盖不住导航栏（overlay 加在 VStack 上，
+                // 而工具栏项是画到导航栏里去的），不关的话用户能在转圈的时候把画笔叫出来。
+                .disabled(parts.isEmpty || samplingColors)
             }
         }
         .task { selectDefaultGroup() }
@@ -347,14 +366,34 @@ struct PartsColorReviewStepView: View {
             .background(Theme.ColorToken.Surface.subtle)
     }
 
-    /// 量颜色的那几秒。整屏挡住 —— 这段时间里改格子会让排序算在一份过期的格子上。
+    /// 排不动的时候说一句。用户点了「排序」，屏幕上必须有个交代。
+    private func noteBar(_ text: String) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: "exclamationmark.triangle")
+            Text(text)
+            Spacer(minLength: 0)
+            Button("知道了") { sortNote = nil }
+        }
+        .font(.caption)
+        .foregroundStyle(Theme.ColorToken.Status.warning)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(Theme.ColorToken.Surface.subtle)
+    }
+
+    /// 量颜色的那几秒。把这一屏挡住，免得用户以为没反应又点一遍。
+    /// 导航栏在这层外面，「改格子」那个按钮是另外用 `.disabled` 关掉的。
     private var samplingOverlay: some View {
         ZStack {
             Color.black.opacity(0.12).ignoresSafeArea()
             VStack(spacing: Theme.Spacing.md) {
                 ProgressView()
-                Text("正在看每格原本是什么颜色…")
+                // 多零件模式几十个零件要好几秒，得报个数；单张图纸太快，报了反而闪一下
+                Text(samplingProgress.map {
+                    String(localized: "正在看每格原本是什么颜色…（\($0.done)/\($0.total)）")
+                } ?? String(localized: "正在看每格原本是什么颜色…"))
                     .font(.footnote)
+                    .monospacedDigit()
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
             }
             .padding(Theme.Spacing.xl)
@@ -461,10 +500,14 @@ struct PartsColorReviewStepView: View {
                          : "还有 \(unconfirmed.count) 个没核对")
                         .font(.footnote)
                         .foregroundStyle(Theme.ColorToken.Text.secondary)
+                        // 右边挤着两个按钮，字一大这句就放不下。HStack 里的 Text 空间不够时
+                        // 是直接截（「还有 7 个没…」），不会自己换行 —— 得明说可以往下长。
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text("已选 \(selection.count) 格")
                         .font(.footnote)
                         .foregroundStyle(Theme.ColorToken.Text.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Button("取消选择") { selection.removeAll() }
                         .font(.footnote)
                 }
@@ -474,6 +517,7 @@ struct PartsColorReviewStepView: View {
                           ? "arrow.up.arrow.down.circle.fill"
                           : "arrow.up.arrow.down")
                         .font(.footnote.weight(.medium))
+                        .lineLimit(1)
                 }
                 .disabled(samplingColors)
                 Button {
@@ -484,10 +528,12 @@ struct PartsColorReviewStepView: View {
                     Label(marquee ? "选完了" : "拖着框选",
                           systemImage: marquee ? "checkmark" : "rectangle.dashed")
                         .font(.footnote.weight(.medium))
+                        .lineLimit(1)
                 }
                 .padding(.leading, Theme.Spacing.md)
             }
-            .lineLimit(1)
+            // **`lineLimit(1)` 只给按钮，别给整行**：加在 HStack 上会把左边那句
+            // 「还有 7 个没核对」也截成「还有 7 个没…」，而那句话本来是可以换行放下的。
 
             // 没选中任何一格时，这三个按钮作用于整类 —— 图纸上那种
             // 「整片白其实是镂空、不是豆子」的情况，一格一格点几百下不现实。
@@ -676,69 +722,91 @@ struct PartsColorReviewStepView: View {
     private func toggleSort() {
         if sortByColor {
             sortByColor = false
+            sortNote = nil
             groupCells = cells(of: selectedGroup)
             return
         }
         if let modes = cellModes {
-            sortByColor = true
-            groupCells = sorted(cells(of: selectedGroup), using: modes)
+            turnSortOn(using: modes)
             return
         }
         let source = work
         let snapshot = parts
         samplingColors = true
-        Task.detached(priority: .userInitiated) {
-            let modes = PartsCellClassifier.sampleModes(work: source, parts: snapshot)
+        samplingProgress = nil
+        samplingTask = Task.detached(priority: .userInitiated) {
+            let modes = PartsCellClassifier.sampleModes(work: source, parts: snapshot) { done, total in
+                // 多零件模式一屏几十个零件，量一遍是好几秒。光转圈的话用户不知道还要等多久。
+                guard total > 1 else { return }
+                Task { @MainActor in samplingProgress = (done, total) }
+            }
+            guard !Task.isCancelled else { return }
             await MainActor.run {
-                self.samplingColors = false
-                self.cellModes = modes
-                self.sortByColor = true
-                self.groupCells = self.sorted(self.cells(of: self.selectedGroup), using: modes)
+                samplingColors = false
+                samplingTask = nil
+                // 一格都没量到（图全没抠出来）就别把这份结果存下来：存了之后再点「排序」
+                // 会走上面那条快路径，永远不会再量一次，用户除了退出整条流程没有别的办法。
+                guard modes.contains(where: { $0.contains { $0.contains { $0 >= 0 } } }) else {
+                    sortNote = String(localized: "取不到图纸上的颜色，排不了序。回去看看零件的框是不是圈得太小。")
+                    return
+                }
+                cellModes = modes
+                turnSortOn(using: modes)
             }
         }
+    }
+
+    /// 真的排出来了才把开关打开。
+    ///
+    /// **不能无脑 `sortByColor = true`**：`sorted` 排不动时原样交回格子，而顶上那条
+    /// 「同一种颜色排在一起…」照样显示 —— 用户翻两屏没看到异常就会认为这个色号没问题，
+    /// 而这一屏存在的全部意义就是找出那几个异常。「什么都没发生」必须长得跟「排好了」不一样。
+    private func turnSortOn(using modes: [[[Int32]]]) {
+        guard let ordered = sorted(cells(of: selectedGroup), using: modes) else {
+            sortByColor = false
+            sortNote = String(localized: "这一片的原图取不到，排不了序。")
+            return
+        }
+        sortByColor = true
+        sortNote = nil
+        groupCells = ordered
     }
 
     /// 这一组的格子，按当前排序方式给出来。排序关着就是图纸上的先后（从上到下、从左到右）。
     private func orderedCells(of fill: PartCellFill) -> [CellRef] {
         let refs = cells(of: fill)
         guard sortByColor, let modes = cellModes else { return refs }
-        return sorted(refs, using: modes)
+        return sorted(refs, using: modes) ?? refs
     }
-
-    /// 同一种颜色允许的抖动。超过这个距离才算两种颜色 —— 跟判色那步同一个尺子
-    ///（`PartsCellClassifier.mergeDeltaE`）。两边不一致的话，判色认为是一种颜色的格子
-    /// 在这一屏会被拆成两片，用户会以为自己找到了一处判错。
-    private static let mergeDeltaE: Double = 8
 
     /// 按颜色排：**一种颜色一片，最不像这一类的那片排在最前面**。
     ///
     /// 只按「离代表色多远」排是不够的：那是一圈一圈的等距排法，红偏亮和红偏绿可能离
     /// 代表色一样远，于是两种根本不像的颜色被排到了一起。所以先把这一组里出现过的颜色
-    /// 并成几类（`mergeDeltaE`），**整类整类地摆**，一类之内再按离本类中心多远排。
+    /// 并成几类（`PartsCellClassifier.mergeDeltaE`），**整类整类地摆**，一类之内再按
+    /// 离本类中心多远排。
     ///
-    /// 「什么颜色」比的是每格的**众数色**（`PartsCellClassifier.sampleModes`）。取众数
-    /// 而不是平均色 / 中心点：图纸给每颗豆子都描了一圈深色边，一格才十来个像素，平均进去
-    /// 整格就被往深处拉，拉多少还取决于网格差了几分之一格 —— 判色那一步栽过这个跟头。
+    /// 「什么颜色」比的是每格的**众数色**（`PartsCellClassifier.sampleModes`，取众数的
+    /// 理由写在那儿）。
     ///
     /// 主色类取**格子最多的那一类**，不取平均：一组里混进来的几十格杂色会把平均值拽偏，
     /// 于是真正的主色反倒排到前面去了。
     ///
     /// 分不开的情况是存在的，而且没法靠排序解决：图纸上的白豆子和留白本来就是同一个颜色，
     /// 判色分不开它们，排序照样分不开 —— 那种只能靠「改格子」在图纸上直接补。
-    private func sorted(_ refs: [CellRef], using modes: [[[Int32]]]) -> [CellRef] {
-        guard refs.count > 1 else { return refs }
-
+    ///
+    /// - Returns: `nil` = 这一组一格都没量到，**排不了**。调用方必须据此把开关关掉，
+    ///   不能显示「已按颜色排序」（见 `turnSortOn`）。
+    private func sorted(_ refs: [CellRef], using modes: [[[Int32]]]) -> [CellRef]? {
         let colors = refs.map { mode(of: $0, in: modes) }
         var counts: [Int32: Int] = [:]
         for color in colors where color >= 0 { counts[color, default: 0] += 1 }
-        // 一格都没量到（图没抠出来）就别乱排，原样交回去
-        guard !counts.isEmpty else { return refs }
+        guard !counts.isEmpty else { return nil }
+        guard refs.count > 1 else { return refs }
 
         let clusters = cluster(counts)
-        // 主色类 = 格子最多的那一类
-        guard let dominant = clusters.groups.indices.max(by: {
-            clusters.groups[$0].count < clusters.groups[$1].count
-        }) else { return refs }
+        // 主色类 = 格子最多的那一类。counts 非空 ⇒ 至少并出一类，所以这里一定有值。
+        let dominant = clusters.groups.indices.max { clusters.groups[$0].count < clusters.groups[$1].count }!
         let dominantCenter = clusters.groups[dominant].center
 
         // 整类之间：离主色类越远的越靠前。同距离的按类的下标断，免得两类交错。
@@ -750,29 +818,26 @@ struct PartsColorReviewStepView: View {
         var order = [Int](repeating: 0, count: clusters.groups.count)
         for (position, index) in rank.enumerated() { order[index] = position }
 
-        // 一类之内：离本类中心越远的越靠前。同一个量化色距离必然相同，所以铁定连成一片。
-        var within: [Int32: Double] = [:]
+        // 每个量化色的排序键**先算好存起来**，而不是在比较函数里现查字典。
+        // 一组五万格是八十万次比较，每次比较查四回字典 —— 那是三百万次哈希，
+        // 而且整个 sorted 是在主线程上跑的（换个色号、改一格都会重排一次）。
+        // 没量到的（-1）给 Int.max：它们不是「像」，是「不知道」，摆最前面等于让用户白找一趟。
+        var keyOfColor: [Int32: (rank: Int, distance: Double)] = [:]
         for (color, group) in clusters.belongsTo {
-            within[color] = GridCellSampler.deltaE(QuantizedRGB.labTable[Int(color)],
-                                                   clusters.groups[group].center)
+            keyOfColor[color] = (order[group],
+                                 GridCellSampler.deltaE(QuantizedRGB.labTable[Int(color)],
+                                                        clusters.groups[group].center))
         }
+        let keys = colors.map { keyOfColor[$0] ?? (Int.max, 0) }
 
-        // 没量到的（-1）排到最后：它们不是「像」，是「不知道」，摆在最前面等于让用户白找一趟
-        func key(_ color: Int32) -> (Int, Double) {
-            guard color >= 0, let group = clusters.belongsTo[color] else { return (Int.max, 0) }
-            return (order[group], within[color] ?? 0)
-        }
-        return zip(refs.indices, zip(refs, colors))
-            .sorted { lhs, rhs in
-                let (li, (_, lc)) = lhs
-                let (ri, (_, rc)) = rhs
-                let lk = key(lc), rk = key(rc)
-                if lk.0 != rk.0 { return lk.0 < rk.0 }
-                if lk.1 != rk.1 { return lk.1 > rk.1 }
-                if lc != rc { return lc < rc }
-                return li < ri          // Swift 的 sort 不保证稳定，同色的先后自己钉住
-            }
-            .map { $0.1.0 }
+        return refs.indices.sorted { l, r in
+            if keys[l].rank != keys[r].rank { return keys[l].rank < keys[r].rank }
+            // 一类之内：离本类中心越远的越靠前
+            if keys[l].distance != keys[r].distance { return keys[l].distance > keys[r].distance }
+            // 同距离的不同颜色也得分开摆，否则「同一种颜色连成一片」就不成立了
+            if colors[l] != colors[r] { return colors[l] < colors[r] }
+            return l < r                // Swift 的 sort 不保证稳定，同色的先后自己钉住
+        }.map { refs[$0] }
     }
 
     private struct ColorGroup {
@@ -783,15 +848,20 @@ struct PartsColorReviewStepView: View {
     /// 把这一组出现过的颜色并成几类。**按格数从多到少并**，让最大的那几种颜色先立住类中心；
     /// 反过来先并杂色的话，主色会被一格一格的噪点拽着走。
     ///
+    /// 阈值直接用判色那步的 `PartsCellClassifier.mergeDeltaE`。两边各写一个 8 的话，
+    /// 改了那边这边不会有任何报错，而用户会看到判色认为是一种颜色的格子在这屏被切成两片。
+    ///
+    /// **这是贪心的准入判断，不是「一类之内两两 ΔE ≤ 8」的硬边界**：类中心会随着后并进来的
+    /// 颜色慢慢挪，所以一个当初按 ΔE ≤ 8 收进来的颜色，最后可能离本类中心超过 8。
+    /// 判色那步（`PartsCellClassifier.cluster`）用的是同一套贪心，两边保持一致比各自更严格更要紧。
+    ///
     /// 一组格子再多，里头不同的量化色也就几十上百种（图纸是像素画），所以这里的两两比较
     /// 可以放心用 —— 真正贵的是逐格算，那一步在上面已经按量化色去重掉了。
     private func cluster(_ counts: [Int32: Int]) -> (groups: [ColorGroup], belongsTo: [Int32: Int]) {
         var groups: [ColorGroup] = []
         var belongsTo: [Int32: Int] = [:]
-        let byCount = counts.keys.sorted {
-            counts[$0]! != counts[$1]! ? counts[$0]! > counts[$1]! : $0 < $1
-        }
-        for color in byCount {
+        let byCount = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+        for (color, n) in byCount {
             let lab = QuantizedRGB.labTable[Int(color)]
             var nearest = -1
             var nearestDE = Double.infinity
@@ -799,8 +869,7 @@ struct PartsColorReviewStepView: View {
                 let de = GridCellSampler.deltaE(lab, group.center)
                 if de < nearestDE { nearestDE = de; nearest = index }
             }
-            let n = counts[color] ?? 0
-            if nearestDE <= Self.mergeDeltaE, nearest >= 0 {
+            if nearestDE <= PartsCellClassifier.mergeDeltaE, nearest >= 0 {
                 let old = groups[nearest]
                 let total = Double(old.count + n)
                 groups[nearest] = ColorGroup(
