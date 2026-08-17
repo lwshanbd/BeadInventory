@@ -203,13 +203,8 @@ enum TutorialContent {
             TutorialStep(
                 titleKey: "help.scan.apisetup.title",
                 descriptionKey: "help.scan.apisetup.description",
-                searchKeywords: ["API", "配置", "设置", "本地模型", "云端", "configure", "setup", "local model", "cloud", "key", "Kimi", "OpenAI", "Anthropic"],
+                searchKeywords: ["API", "配置", "设置", "云端", "configure", "setup", "cloud", "key", "Kimi", "OpenAI", "Anthropic"],
                 anchor: .scanAPISetup
-            ),
-            TutorialStep(
-                titleKey: "help.scan.localmodel.title",
-                descriptionKey: "help.scan.localmodel.description",
-                searchKeywords: ["本地模型", "下载", "离线", "local model", "download", "offline"]
             ),
             TutorialStep(
                 titleKey: "help.scan.cloudapi.title",
@@ -335,7 +330,6 @@ enum TutorialContent {
         FAQItem(questionKey: "help.faq.dataloss.question", answerKey: "help.faq.dataloss.answer", searchKeywords: ["数据", "丢失", "安全", "data", "loss", "safe"]),
         FAQItem(questionKey: "help.faq.multisync.question", answerKey: "help.faq.multisync.answer", searchKeywords: ["多设备", "同步", "multi-device", "sync"]),
         FAQItem(questionKey: "help.faq.whatisapi.question", answerKey: "help.faq.whatisapi.answer", searchKeywords: ["API", "什么", "为什么", "配置", "what", "why", "configure"]),
-        FAQItem(questionKey: "help.faq.localvscloud.question", answerKey: "help.faq.localvscloud.answer", searchKeywords: ["本地", "云端", "区别", "local", "cloud", "difference"]),
         FAQItem(questionKey: "help.faq.brands.question", answerKey: "help.faq.brands.answer", searchKeywords: ["品牌", "支持", "MARD", "vivid", "brand", "support"]),
         FAQItem(questionKey: "help.faq.contact.question", answerKey: "help.faq.contact.answer", searchKeywords: ["联系", "反馈", "开发者", "contact", "feedback", "developer"])
     ]

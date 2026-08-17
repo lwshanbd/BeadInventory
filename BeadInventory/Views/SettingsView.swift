@@ -57,7 +57,7 @@ struct SettingsView: View {
                 } header: {
                     Text("AI 图像识别")
                 } footer: {
-                    Text("配置云端 API 或下载本地模型用于扫描识别")
+                    Text("配置云端 API 用于扫描识别")
                 }
 
                 // 拼图模式：是否留一份原图
@@ -161,22 +161,18 @@ struct SettingsView: View {
 
 // MARK: - AI 图像识别 二级页（新设计）
 //
-// 骨架：SecondaryNav → ScrollView → BISegmented (cloud/local)
+// 骨架：SecondaryNav → ScrollView
 //   → 状态卡 hero（success=sage 立边 / 失败=rose 立边）
-//   → cloud: AI 提供商 radio list + API Key/模型 配置卡 + 自定义 URL 卡
-//   → local: 设备能力提示 + 本地模型卡片列表
+//   → AI 提供商 radio list + API Key/模型 配置卡 + 自定义 URL 卡
 //   → 教程链接 GroupCard
 //
 // flavor = Morandi.mauve（AI 识别入口图标色）
 struct RecognitionSettingsScreen: View {
     @ObservedObject private var aiService = AIServiceManager.shared
-    @ObservedObject private var localModelManager = LocalModelManager.shared
     @State private var showingAPIHelpSheet = false
     @State private var isAPIKeyVisible = false
     @State private var isTesting = false
     @State private var testResult: TestConnectionResult?
-
-    private var deviceProfile: LocalModelDeviceProfile { .current }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -188,22 +184,13 @@ struct RecognitionSettingsScreen: View {
 
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    // 后端切换 segmented
-                    backendSegmented
-                        .padding(.horizontal, 18)
-                        .padding(.top, 6)
-                        .padding(.bottom, 14)
-
                     // 状态卡 hero
                     statusHeroCard
                         .padding(.horizontal, 18)
+                        .padding(.top, 6)
                         .padding(.bottom, 4)
 
-                    if aiService.config.backend == .cloud {
-                        cloudSections
-                    } else {
-                        localSections
-                    }
+                    cloudSections
 
                     // 教程链接
                     BIGroupHeader(title: "帮助")
@@ -237,21 +224,6 @@ struct RecognitionSettingsScreen: View {
         .sheet(isPresented: $showingAPIHelpSheet) {
             HelpCenterNavigationView(initialDestination: .scanAPISetup)
         }
-        .onAppear {
-            localModelManager.refreshDownloadedModels()
-        }
-    }
-
-    // MARK: cloud / local segmented
-    private var backendSegmented: some View {
-        BISegmented(
-            selection: $aiService.config.backend,
-            segments: [
-                (.cloud, String(localized: "云端")),
-                (.local, String(localized: "本地模型"))
-            ],
-            fillWidth: true
-        )
     }
 
     // MARK: 状态卡
@@ -478,55 +450,6 @@ struct RecognitionSettingsScreen: View {
         }
     }
 
-    // MARK: local
-    @ViewBuilder
-    private var localSections: some View {
-        // 设备能力卡
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 18))
-                .foregroundStyle(Theme.ColorToken.Morandi.mauve)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("设备能力")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.ColorToken.Text.primary)
-                Text(deviceProfile.summaryText)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.ColorToken.Text.secondary)
-                    .lineLimit(4)
-            }
-            Spacer(minLength: 4)
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Theme.ColorToken.Morandi.mauve.opacity(0.10))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Theme.ColorToken.Morandi.mauve.opacity(0.30), lineWidth: 1)
-        )
-        .padding(.horizontal, 18)
-        .padding(.top, 14)
-
-        let models = LocalRecognitionModel.allCases
-        let downloadedCount = models.filter { localModelManager.isDownloaded($0) }.count
-        BIGroupHeader(title: "可用模型", hint: "\(downloadedCount) / \(models.count) 已下载")
-
-        VStack(spacing: 10) {
-            ForEach(models) { model in
-                LocalModelOptionCard(
-                    model: model,
-                    isSelected: aiService.config.localModel == model,
-                    aiService: aiService,
-                    localModelManager: localModelManager,
-                    recommendationText: deviceProfile.recommendation(for: model)
-                )
-            }
-        }
-        .padding(.horizontal, 18)
-    }
-
     // MARK: helpers
     private var divider: some View {
         Rectangle()
@@ -633,223 +556,6 @@ private struct ProviderRadioRow: View {
         case .anthropic: return String(localized: "Claude 系列 · 需要 API Key")
         case .qwen:      return String(localized: "阿里云通义千问 · 需要 API Key")
         case .gemini:    return String(localized: "Google Gemini · 需要 API Key")
-        }
-    }
-}
-
-/// 本地模型卡片（新设计）：
-/// 左侧 mauve 立边表示当前选中；圆形 radio + 模型名 + 推荐徽章
-/// 描述 / 体积 / 已下载徽章；下载进度条；底部下载/选择/删除按钮
-struct LocalModelOptionCard: View {
-    let model: LocalRecognitionModel
-    let isSelected: Bool
-    @ObservedObject var aiService: AIServiceManager
-    @ObservedObject var localModelManager: LocalModelManager
-    let recommendationText: String
-
-    @State private var isStartingDownload = false
-    @State private var showingDeleteConfirmation = false
-
-    private var isDownloaded: Bool { localModelManager.isDownloaded(model) }
-    private var isDownloading: Bool { localModelManager.isDownloading.contains(model) }
-    private var isDeleting: Bool { localModelManager.isDeleting.contains(model) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                // radio
-                Button {
-                    if isDownloaded {
-                        aiService.config.backend = .local
-                        aiService.config.localModel = model
-                    }
-                } label: {
-                    ZStack {
-                        Circle()
-                            .stroke(
-                                isSelected ? Color.clear : Theme.ColorToken.Border.default,
-                                lineWidth: 2
-                            )
-                            .background(
-                                Circle().fill(isSelected ? Theme.ColorToken.Fill.mauve : Color.clear)
-                            )
-                            .frame(width: 18, height: 18)
-                        if isSelected {
-                            Circle()
-                                .fill(.white)
-                                .frame(width: 7, height: 7)
-                        }
-                    }
-                    .padding(.top, 3)
-                }
-                .buttonStyle(.plain)
-                .disabled(!isDownloaded)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Text(model.displayName)
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Theme.ColorToken.Text.primary)
-                        if model == .qwen35_08b {
-                            BIBadge("推荐", style: .accent)
-                        }
-                    }
-
-                    Text(model.cautionText)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.ColorToken.Text.secondary)
-                        .lineLimit(3)
-
-                    HStack(spacing: 6) {
-                        Text(model.approximateDownloadSize)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Theme.ColorToken.Text.tertiary)
-                        if isDownloaded {
-                            BIBadge("已下载", style: .success)
-                        }
-                    }
-                }
-
-                Spacer(minLength: 4)
-            }
-
-            Text(recommendationText)
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.ColorToken.Text.secondary)
-                .padding(.leading, 30)
-
-            if isDownloading {
-                VStack(alignment: .leading, spacing: 4) {
-                    ProgressView(value: localModelManager.progress(for: model))
-                        .tint(Theme.ColorToken.Morandi.mauve)
-                    Text("下载中 \(Int(localModelManager.progress(for: model) * 100))%")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.ColorToken.Text.secondary)
-                }
-                .padding(.leading, 30)
-            }
-
-            if let errorMessage = localModelManager.errorMessage(for: model) {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.ColorToken.Status.error)
-                    Text(errorMessage)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.ColorToken.Status.error)
-                }
-                .padding(.leading, 30)
-            }
-
-            // 底部操作
-            HStack(spacing: 10) {
-                if isDownloaded {
-                    Button {
-                        aiService.config.backend = .local
-                        aiService.config.localModel = model
-                    } label: {
-                        Text(isSelected ? "当前已选" : "使用此模型")
-                            .font(.system(size: 13, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 36)
-                            .foregroundStyle(isSelected ? Theme.ColorToken.Text.tertiary : .white)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(isSelected ? Theme.ColorToken.Surface.subtle : Theme.ColorToken.Fill.mauve)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSelected || isDeleting)
-
-                    Button {
-                        showingDeleteConfirmation = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            if isDeleting {
-                                ProgressView()
-                                    .controlSize(.small)
-                            }
-                            Text(isDeleting ? "删除中" : "删除")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 36)
-                        .foregroundStyle(Theme.ColorToken.Status.error)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Theme.ColorToken.Status.error.opacity(0.10))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isDownloading || isDeleting || localModelManager.isLoadingModel)
-                } else {
-                    Button {
-                        isStartingDownload = true
-                        aiService.config.backend = .local
-                        aiService.config.localModel = model
-                        Task {
-                            defer {
-                                Task { @MainActor in isStartingDownload = false }
-                            }
-                            try? await localModelManager.downloadModel(model)
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            if isStartingDownload || isDownloading {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .tint(.white)
-                            } else {
-                                Image(systemName: "arrow.down.circle.fill")
-                                    .font(.system(size: 13))
-                            }
-                            Text(isDownloading ? "下载中" : "下载并使用")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 36)
-                        .foregroundStyle(.white)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Theme.ColorToken.Fill.mauve)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isDownloading || isDeleting || isStartingDownload)
-                }
-            }
-        }
-        .padding(14)
-        .background(
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Theme.ColorToken.Surface.elevated)
-                if isSelected {
-                    Rectangle()
-                        .fill(Theme.ColorToken.Morandi.mauve)
-                        .frame(width: 3)
-                        .clipShape(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        )
-                }
-            }
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(
-                    isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default,
-                    lineWidth: 1
-                )
-        )
-        .alert("删除 \(model.displayName)？", isPresented: $showingDeleteConfirmation) {
-            Button("取消", role: .cancel) {}
-            Button("删除模型", role: .destructive) {
-                Task {
-                    try? await localModelManager.deleteModel(model)
-                }
-            }
-        } message: {
-            Text("删除后会释放本地存储空间；如果之后还要使用，需要重新下载。")
         }
     }
 }
