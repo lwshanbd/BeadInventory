@@ -58,12 +58,13 @@ struct BoardCanvasLayout {
     /// 板子**左上角钉在 `frame` 的左上角**，往右下铺开，不居中。
     ///
     /// 只有投影仪校准之后走这一条（见 `BoardCastCalibration`）：那时候 `frame` 不是
-    /// 「屏幕上哪块地方好看」，而是**桌上那块豆板在画面里的位置**。居中会把整块板
-    /// 挪半格出去 —— 挪多少取决于板子是不是正方形，用户永远对不上。
+    /// 「屏幕上哪块地方好看」，而是**桌上那块豆板在画面里的位置**，左上角是用户
+    /// 亲手对到实物豆板左上角的那个点。板子只能从那儿起算 —— 居中的话，画面里
+    /// 多出来的那点空白会被对半分掉，左上角就不再是用户对好的那个点了。
     ///
-    /// 板子是正方形、`frame` 也是正方形时（多零件模式一直是这样），
-    /// 结果就是严丝合缝填满 `frame`，一格对一个孔。图纸不是正方形时（单图纸模式）
-    /// 长的那边贴着 `frame` 的边，短的那边剩一截空 —— 靠左上角，不居中，理由同上。
+    /// `frame` 来自 `BoardCastCalibration.frame(for:in:)`，本身就是按这块板的
+    /// `cols × rows` 算出来的，所以这里的 `min` 两边相等、结果严丝合缝填满 `frame`，
+    /// 一格对一个孔。板子是不是正方形都一样。
     static func anchored(_ board: PartsBoard, in frame: CGRect) -> BoardCanvasLayout {
         let cell = min(frame.width / CGFloat(max(board.cols, 1)),
                        frame.height / CGFloat(max(board.rows, 1)))

@@ -19,9 +19,12 @@
 //  接**电视**时，人是抬头看图、低头在手机上动手 —— 板子居中铺满整块屏幕最好看清楚。
 //
 //  接**投影仪**、把画面投到桌上那块豆板上时，情况正相反：板子该有多大、落在哪儿，
-//  是桌上那块实物说了算，投影仪自己不知道。这时候走校准出来的那个方框
-//  （`BoardCastCalibration`）：左上角钉在用户标定的点上，边长是用户拉出来的长度，
-//  方框以外全黑。没校准过就还是铺满 —— 接电视的人不该被要求先做一次校准。
+//  是桌上那块实物说了算，投影仪自己不知道。这时候走校准出来的那块矩形
+//  （`BoardCastCalibration`）：左上角钉在用户标定的点上，一格多大是用户拉出来的。
+//  矩形以外只剩底色和一行图例，而图例是刻意躲开矩形的（见 `captionOutside`）——
+//  照在豆板上的字，正好挡着用户要按豆子的格子。
+//
+//  没校准过就还是铺满 —— 接电视的人不该被要求先做一次校准。
 //
 
 import SwiftUI
@@ -39,19 +42,21 @@ struct BoardExternalDisplayView: View {
                 Color.black
 
                 if let content = session.content {
-                    if let frame = calibration.rect(in: geo.size) {
+                    if let frame = calibration.frame(for: content.board, in: geo.size) {
                         calibrated(content, frame: frame, screen: geo.size)
+                        // 校准时压在最上面。平时一道都不画：拼的人照着画面按豆子，
+                        // 多几道亮线他会当成格线数进去。
+                        //
+                        // 角标画的就是上面那块 `frame` —— 用户对齐的那两个角，
+                        // 必须是板子真正画出来的那两个角，不能是另算一个方框。
+                        if calibration.isCalibrating {
+                            CalibrationMarksCanvas(frame: frame)
+                        }
                     } else {
                         filling(content)
                     }
                 } else {
                     emptyHint
-                }
-
-                // 校准时压在最上面。平时一道都不画：拼的人照着画面按豆子，
-                // 多几道亮线他会当成格线数进去。
-                if calibration.isCalibrating {
-                    CalibrationMarksCanvas(frame: calibration.previewRect(in: geo.size))
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -80,10 +85,10 @@ struct BoardExternalDisplayView: View {
 
     // MARK: - 校准过（接投影仪）
 
-    /// 板子画在标定出来的方框里，别的地方全黑。
+    /// 板子画在标定出来的那块矩形里，别的地方全黑。
     ///
-    /// 说明文字挪到方框**外面**：投影仪把它照在豆板上的话，那几行字就落在用户
-    /// 正要按豆子的格子上了。四周都挤不下就干脆不显示 —— 对齐比图例重要。
+    /// 图例挪到矩形**外面**：投影仪把它照在豆板上的话，那几行字就落在用户
+    /// 正要按豆子的格子上了。四周都挤不下才不显示 —— 对齐比图例重要。
     private func calibrated(
         _ content: BoardCastSession.Content, frame: CGRect, screen: CGSize
     ) -> some View {
@@ -97,21 +102,37 @@ struct BoardExternalDisplayView: View {
         }
     }
 
+    /// 四个方向都找一遍。**上方和左方不能不看**：豆板摆在投影区的哪个位置是桌上
+    /// 决定的，校准之后那块矩形常常被推到画面右下角，这时候空地全在上边和左边。
+    /// 只看下、右两个方向的话，用户抬头看到一片高亮却没有图例，只会以为投屏坏了。
+    ///
+    /// padding 必须加在 `.frame` **里面**：先撑成整屏再加 padding，那 16pt 是溢出到
+    /// 屏幕外面的，字照样贴着画面最下沿 —— 而投影仪画面边缘常有衰减和梯形失真，
+    /// 正好切在这行字上。
     @ViewBuilder
     private func captionOutside(
         _ content: BoardCastSession.Content, frame: CGRect, screen: CGSize
     ) -> some View {
-        let below = screen.height - frame.maxY
-        let beside = screen.width - frame.maxX
-
-        if below >= 64 {
+        if screen.height - frame.maxY >= 64 {
             captionRow(for: content)
-                .frame(width: screen.width, height: screen.height, alignment: .bottom)
                 .padding(.bottom, 16)
-        } else if beside >= 260 {
+                .frame(width: screen.width, height: screen.height, alignment: .bottom)
+        } else if frame.minY >= 64 {
+            captionRow(for: content)
+                .padding(.top, 16)
+                .frame(width: screen.width, height: screen.height, alignment: .top)
+        } else if screen.width - frame.maxX >= 260 {
             captionColumn(for: content)
-                .frame(width: beside - 48, alignment: .leading)
-                .offset(x: frame.maxX + 24, y: max(frame.minY, 24))
+                .frame(width: screen.width - frame.maxX - 48, alignment: .leading)
+                .padding(.leading, frame.maxX + 24)
+                .padding(.top, max(frame.minY, 24))
+                .frame(width: screen.width, height: screen.height, alignment: .topLeading)
+        } else if frame.minX >= 260 {
+            captionColumn(for: content)
+                .frame(width: frame.minX - 48, alignment: .leading)
+                .padding(.leading, 24)
+                .padding(.top, max(frame.minY, 24))
+                .frame(width: screen.width, height: screen.height, alignment: .topLeading)
         }
     }
 
@@ -187,17 +208,16 @@ struct BoardExternalDisplayView: View {
 
 // MARK: - 校准时画在外屏上的角标
 
-/// 用户要对齐的两个角，各画一个粗角标；框本身描一圈细线。
+/// 用户要对齐的两个角，各画一个粗角标；板子那块矩形描一圈细线。
 ///
-/// 两个角**故意不同色**：校准分两步（先对左上角、再拉边长对右下角），
-/// 人站在投影仪那头、手机在手上，两个角长得一样的话他会把正在调的那个搞错。
-///
-/// 颜色写死不走 Theme：这几道线要在**桌面和豆板**上看得见，跟 App 的色彩模式无关。
+/// 两个角**故意不同色**（颜色定义在 `CalibrationMarkColor`，手机上用的是同一份）：
+/// 校准分两步（先对左上角、再拉格子对右下角），人站在投影仪那头、手机在手上，
+/// 两个角长得一样的话他会把正在调的那个搞错。
 private struct CalibrationMarksCanvas: View {
     let frame: CGRect
 
-    private static let topLeftColor = Color(red: 1.0, green: 0.83, blue: 0.0)
-    private static let bottomRightColor = Color(red: 0.2, green: 0.9, blue: 1.0)
+    private static let topLeftColor = CalibrationMarkColor.topLeft
+    private static let bottomRightColor = CalibrationMarkColor.bottomRight
 
     var body: some View {
         Canvas { context, _ in
@@ -221,7 +241,7 @@ private struct CalibrationMarksCanvas: View {
                  color: Self.topLeftColor,
                  at: CGPoint(x: frame.minX + 14, y: frame.minY + arm + 14),
                  anchor: .topLeading, in: context)
-            draw(String(localized: "② 边长拉到这里"),
+            draw(String(localized: "② 最后一格拉到这里"),
                  color: Self.bottomRightColor,
                  at: CGPoint(x: frame.maxX - 14, y: frame.maxY - arm - 14),
                  anchor: .bottomTrailing, in: context)
@@ -287,9 +307,10 @@ final class BoardExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegat
         window = nil
         BoardCastSession.shared.externalConnected = false
         BoardCastSession.shared.externalScreenSize = nil
-        // 拔了线还留着校准角标的话，下次接上先看到的是两道亮角标而不是板子。
-        // 校准值本身留着 —— 那是用户对着实物量出来的，投影仪没挪就还作数。
-        BoardCastCalibration.shared.isCalibrating = false
+        // 拔线时如果正开着校准页，这次校准就此作废、退回进去之前的值：
+        // 后面那半程本来就没法在一块不存在的屏幕上完成。已经「完成」过的
+        // 校准值不受影响 —— 那是用户对着实物量出来的，投影仪没挪就还作数。
+        BoardCastCalibration.shared.cancelCalibrating()
         AppLogger.shared.info("ExternalDisplay", "disconnected", metadata: [:])
     }
 }

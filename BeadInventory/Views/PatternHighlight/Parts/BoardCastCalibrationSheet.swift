@@ -4,39 +4,44 @@
 //
 //  手机上这一屏：把投影仪投出来的那块画面，对到桌上那块拼豆板上
 //
-//  ## 为什么是「一个角 + 一条边长」
+//  ## 为什么是「一个角 + 一格多大」
 //
 //  投影仪把画面照在桌上，人把豆板摆在画面里。要让投出来的一格正好盖住豆板上的一个孔，
-//  只需要两件事对上：**左上角在哪儿**、**一边有多长**。板子是正方形的，中间的格子
-//  就自动对齐了 —— 不需要用户去理解缩放比例、分辨率、每格多少毫米这些东西。
+//  只需要两件事对上：**左上角在哪儿**、**一格多大**。中间的格子自然就跟着对齐了 ——
+//  不需要用户去理解缩放比例、分辨率、每格多少毫米这些东西。
 //
-//  所以这一屏只有两个动作：拖框（对左上角）、拖右下角那个把手（拉边长）。
+//  所以这一屏的动作就两个：拖那块矩形（对左上角）、拖右下角那个把手（改格子大小）。
 //  投影仪那头实时跟着变，人站在桌边看着实物对，眼睛就是唯一的判据。
+//  拖不准的最后那一点点交给微调按钮，一下走四分之一格。
 //
 //  ## 为什么一进来就切到校准模式
 //
 //  用户点进这一屏，就是因为「投出来的跟我的板子对不上」。这时候画面必须**立刻**
-//  变成那个可以对齐的方框，他才有东西可拖。留在铺满状态、等他调完再切，
-//  等于让他对着一块铺满的画面盲拖。对完不满意的出路写在最下面（「恢复铺满」）。
+//  变成那块可以对齐的矩形，他才有东西可拖。留在铺满状态、等他调完再切，
+//  等于让他对着一块铺满的画面盲拖。
+//
+//  代价是「点进来看一眼」也会改掉外屏，所以这一屏必须有**取消**：进来时记一份快照，
+//  取消、划走、以及中途拔线都整组还原，只有「完成」才落盘。接电视的人手滑点开
+//  又划走，电视上不该留下任何变化。
 //
 
 import SwiftUI
 
 struct BoardCastCalibrationSheet: View {
+    /// 正在对的那块板。校准框按它的 `cols × rows` 画，右下角就是最后一格的右下角。
+    let board: PartsBoard
+    /// 外屏多大（点）。进来时就定下，中途拔线这一屏直接关掉（见 `onChange`）——
+    /// 兜底一个假尺寸的话，用户会对着一块不存在的屏幕继续调，还把值改坏。
+    let screen: CGSize
+
     @ObservedObject private var calibration = BoardCastCalibration.shared
     @ObservedObject private var session = BoardCastSession.shared
     @Environment(\.dismiss) private var dismiss
 
-    /// 拖动开始那一刻的值。拖动过程中拿它加上位移算 —— 每帧在当前值上叠加的话，
-    /// 手指没动的那几帧也会因为夹边界（`clampOrigin`）把值蹭走。
+    /// 拖动开始那一刻的值。`DragGesture` 的 `translation` 是**从按下那一刻累计**的，
+    /// 每帧拿它去加当前值就会越加越远，框直接飞出画面。
     @State private var dragOrigin: CGPoint?
-    @State private var dragSide: CGFloat?
-
-    /// 外屏多大（点）。没接外屏时这一屏本来就开不出来，兜底给个 16:9 免得除零。
-    private var screen: CGSize {
-        let size = session.externalScreenSize ?? CGSize(width: 1920, height: 1080)
-        return size.width > 0 && size.height > 0 ? size : CGSize(width: 1920, height: 1080)
-    }
+    @State private var dragCell: CGFloat?
 
     var body: some View {
         NavigationStack {
@@ -49,33 +54,51 @@ struct BoardCastCalibrationSheet: View {
                 }
                 .padding()
             }
+            // 拖框的时候别让页面跟着滚：这一屏的全部价值就是这两个拖动，
+            // 竖着拖和斜着拖正好跟 ScrollView 抢手势。
+            .scrollDisabled(dragOrigin != nil || dragCell != nil)
             .background(Theme.ColorToken.Surface.background)
             .navigationTitle("对准豆板")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") {
+                        calibration.cancelCalibrating()
+                        dismiss()
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") { dismiss() }
+                    Button("完成") {
+                        calibration.finishCalibrating()
+                        dismiss()
+                    }
                 }
             }
         }
-        .onAppear {
-            calibration.isEnabled = true
-            calibration.isCalibrating = true
+        .onAppear { calibration.beginCalibrating(board: board, screen: screen) }
+        // 划走（没点「完成」）跟点「取消」是同一件事。角标也在这里收掉 ——
+        // 留着的话，人照着画面按豆子会把那两道粗角标当成图纸的一部分。
+        .onDisappear {
+            if calibration.isCalibrating { calibration.cancelCalibrating() }
         }
-        // 角标只在这一屏开着的时候画。离开还留着的话，人照着画面按豆子时
-        // 会把那两道粗角标当成图纸的一部分。
-        .onDisappear { calibration.isCalibrating = false }
+        // 中途拔线：这一屏已经没有可对的东西了，关掉（`onDisappear` 顺手还原）。
+        .onChange(of: session.externalConnected) { _, connected in
+            if !connected { dismiss() }
+        }
     }
 
     // MARK: - 两步说明
 
     private var steps: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            step(number: "①", color: Self.topLeftColor,
-                 text: String(localized: "把豆板挪一挪，让它的左上角对上投影里那个黄色的角"))
-            step(number: "②", color: Self.bottomRightColor,
-                 text: String(localized: "拖下面那个蓝色把手改边长，直到投影的右下角也落在豆板的右下角"))
-            Text("对好之后，投影里的一格就正好是豆板上的一个孔。换个地方摆投影仪要重对一次。")
+            step(number: "①", color: CalibrationMarkColor.topLeft,
+                 text: String(localized: "拖下面那块矩形，让投影里的黄色角落在豆板的左上角（挪豆板也行）"))
+            step(number: "②", color: CalibrationMarkColor.bottomRight,
+                 text: String(localized: "拖右下角那个蓝色把手改格子大小，直到投影里最后一格正好压在豆板对应的孔上"))
+            // 图纸比豆板大是常事（单图纸模式整张图纸就是一块板），这时候第二步的
+            // 蓝角标压根落不到豆板上。与其让他对着一句对不上的说明反复重对，
+            // 不如把这件事直接说了。
+            Text("投影里这块是 \(board.cols) × \(board.rows) 格。比你的豆板大的话，先对上左上角这一块，拼完挪豆板再对一次。")
                 .font(.caption)
                 .foregroundColor(Theme.ColorToken.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -97,31 +120,33 @@ struct BoardCastCalibrationSheet: View {
     // MARK: - 缩小版的投影画面
 
     /// 手机上这块黑底就是投影仪那块画面的等比缩小版：投影仪多宽多高，这里就多宽多高。
-    /// 拖它 = 拖投影里那个框，位置一一对应 —— 人低头拖、抬头看实物，不用换算。
+    /// 拖它 = 拖投影里那块矩形，位置一一对应 —— 人低头拖、抬头看实物，不用换算。
     private var preview: some View {
         GeometryReader { geo in
             let scale = geo.size.width / screen.width
-            let rect = calibration.previewRect(in: screen)
+            let rect = calibration.frame(for: board, in: screen) ?? .zero
 
             ZStack(alignment: .topLeading) {
                 Color.black
 
                 Rectangle()
-                    .fill(Self.topLeftColor.opacity(0.10))
+                    .fill(CalibrationMarkColor.topLeft.opacity(0.10))
                     .overlay(Rectangle().stroke(Color.white.opacity(0.5), lineWidth: 1))
-                    .overlay(alignment: .topLeading) { cornerBracket(color: Self.topLeftColor) }
+                    .overlay(alignment: .topLeading) {
+                        cornerBracket(color: CalibrationMarkColor.topLeft)
+                    }
                     .overlay(alignment: .bottomTrailing) {
-                        cornerBracket(color: Self.bottomRightColor)
+                        cornerBracket(color: CalibrationMarkColor.bottomRight)
                             .rotationEffect(.degrees(180))
                     }
                     .frame(width: max(rect.width * scale, 1), height: max(rect.height * scale, 1))
-                    // 用 position 不用 offset：offset 之后这块的点击区不跟着走，
-                    // 手指拖的位置和框的位置会对不上（仓库里踩过这个坑）。
+                    // 用 `.position` 是因为 `rect` 本来就是这块预览坐标系里的绝对位置，
+                    // 直接给中心点最省事；`.offset` 还得先算出「相对布局位置差多少」。
                     .position(x: rect.midX * scale, y: rect.midY * scale)
                     .gesture(moveGesture(scale: scale, rect: rect))
 
                 Circle()
-                    .fill(Self.bottomRightColor)
+                    .fill(CalibrationMarkColor.bottomRight)
                     .overlay(Circle().stroke(Color.black.opacity(0.35), lineWidth: 1))
                     .frame(width: 30, height: 30)
                     .position(x: rect.maxX * scale, y: rect.maxY * scale)
@@ -156,26 +181,27 @@ struct BoardCastCalibrationSheet: View {
                 calibration.setOrigin(
                     x: start.x + value.translation.width / scale,
                     y: start.y + value.translation.height / scale,
-                    screen: screen
+                    board: board, screen: screen
                 )
             }
             .onEnded { _ in dragOrigin = nil }
     }
 
-    /// 把手只改边长，左上角钉住 —— 用户这一步已经把左上角对好了，
-    /// 拉边长时它再动一下，前一步就白做了。
-    ///
-    /// 斜着拖，取横竖位移的平均：框是正方形的，只认一个方向的话，
-    /// 顺手斜着一拖会觉得「跟不上手」。
+    /// 把手只改格子大小，左上角钉住 —— 用户这一步已经把左上角对好了，
+    /// 拉格子时它再动一下，前一步就白做了。
     private func resizeGesture(scale: CGFloat) -> some Gesture {
         DragGesture()
             .onChanged { value in
-                let start = dragSide ?? calibration.previewRect(in: screen).width
-                dragSide = start
-                let delta = (value.translation.width + value.translation.height) / 2 / scale
-                calibration.setSide(start + delta, screen: screen)
+                let start = dragCell ?? calibration.cell
+                dragCell = start
+                calibration.resizeCorner(
+                    from: start,
+                    translation: CGSize(width: value.translation.width / scale,
+                                        height: value.translation.height / scale),
+                    board: board, screen: screen
+                )
             }
-            .onEnded { _ in dragSide = nil }
+            .onEnded { _ in dragCell = nil }
     }
 
     // MARK: - 微调
@@ -197,21 +223,25 @@ struct BoardCastCalibrationSheet: View {
 
             HStack(spacing: Theme.Spacing.lg) {
                 VStack(spacing: Theme.Spacing.xs) {
-                    nudgeButton("chevron.up") { calibration.move(dx: 0, dy: -step, screen: screen) }
+                    nudgeButton("chevron.up") { nudge(dx: 0, dy: -1) }
                     HStack(spacing: Theme.Spacing.xs) {
-                        nudgeButton("chevron.left") { calibration.move(dx: -step, dy: 0, screen: screen) }
-                        nudgeButton("chevron.right") { calibration.move(dx: step, dy: 0, screen: screen) }
+                        nudgeButton("chevron.left") { nudge(dx: -1, dy: 0) }
+                        nudgeButton("chevron.right") { nudge(dx: 1, dy: 0) }
                     }
-                    nudgeButton("chevron.down") { calibration.move(dx: 0, dy: step, screen: screen) }
+                    nudgeButton("chevron.down") { nudge(dx: 0, dy: 1) }
                     Text("挪左上角")
                         .font(.caption2)
                         .foregroundColor(Theme.ColorToken.Text.secondary)
                 }
 
                 VStack(spacing: Theme.Spacing.xs) {
-                    nudgeButton("plus") { calibration.resize(by: step, screen: screen) }
-                    nudgeButton("minus") { calibration.resize(by: -step, screen: screen) }
-                    Text("改边长")
+                    nudgeButton("plus") {
+                        calibration.resize(cellDelta: step, board: board, screen: screen)
+                    }
+                    nudgeButton("minus") {
+                        calibration.resize(cellDelta: -step, board: board, screen: screen)
+                    }
+                    Text("改格子大小")
                         .font(.caption2)
                         .foregroundColor(Theme.ColorToken.Text.secondary)
                 }
@@ -225,6 +255,10 @@ struct BoardCastCalibrationSheet: View {
         )
     }
 
+    private func nudge(dx: CGFloat, dy: CGFloat) {
+        calibration.move(dx: dx * step, dy: dy * step, board: board, screen: screen)
+    }
+
     private func nudgeButton(_ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
@@ -234,12 +268,10 @@ struct BoardCastCalibrationSheet: View {
         .buttonStyle(.bordered)
     }
 
-    /// 一下挪多少（外屏上的点）。按**当前这块板一格有多大**算，所以不管投影仪多大、
-    /// 板子是 50 格还是 104 格，按一下的手感都是「四分之一格」。
+    /// 一下挪多少（外屏上的点）。直接按格距算，所以不管投影仪多大、板子多少格，
+    /// 按一下永远是「四分之一格」，跟旁边写的那句话一致。
     private var step: CGFloat {
-        let cols = session.content?.board.cols ?? 50
-        let cell = calibration.previewRect(in: screen).width / CGFloat(max(cols, 1))
-        return max(1, cell / 4)
+        max(1, calibration.cell * screen.width / 4)
     }
 
     // MARK: - 出路
@@ -247,20 +279,15 @@ struct BoardCastCalibrationSheet: View {
     private var resetRow: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             Button {
-                calibration.reset()
+                calibration.resetToFilling()
                 dismiss()
             } label: {
                 Label("恢复铺满", systemImage: "arrow.counterclockwise")
             }
-            Text("接的是电视、不是投影仪时用这个：画面回到自动铺满整块屏幕。")
+            Text("接的是电视、不是投影仪时用这个：画面回到自动铺满整块屏幕，这组对好的位置也一并清掉。")
                 .font(.caption)
                 .foregroundColor(Theme.ColorToken.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
-
-    // 跟外屏角标同一套颜色（`CalibrationMarksCanvas`）。两块屏幕上的黄和蓝必须是
-    // 同一个黄和蓝 —— 用户就是靠颜色认「我现在在调哪个角」。
-    private static let topLeftColor = Color(red: 1.0, green: 0.83, blue: 0.0)
-    private static let bottomRightColor = Color(red: 0.2, green: 0.9, blue: 1.0)
 }

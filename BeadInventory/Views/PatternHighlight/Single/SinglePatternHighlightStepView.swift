@@ -151,14 +151,19 @@ struct SinglePatternHighlightStepView: View {
             // 会发现的事，而这个标记正是他这时候在看的东西（多零件那屏同样处理）。
             if cast.externalConnected {
                 Button { showingCastCalibration = true } label: {
-                    Label("投屏中 · 电视上跟着高亮，点这里对准豆板", systemImage: "tv")
-                        .font(.caption2.weight(.medium))
-                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 2) {
+                        Label("投屏中 · 电视上跟着高亮，点这里对准豆板", systemImage: "tv")
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                    }
+                    .font(.caption2.weight(.medium))
+                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, Theme.Spacing.xs)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, Theme.Spacing.md)
-                .padding(.top, Theme.Spacing.xs)
             }
             ColorPaletteBar(entries: entries, highlightedCodes: $highlightedCodes)
         }
@@ -205,7 +210,9 @@ struct SinglePatternHighlightStepView: View {
         // 他不再看的图纸 —— 而这一屏是被 push 上来的，退出去是很随手的动作。
         .onDisappear { BoardCastSession.shared.stop() }
         .sheet(isPresented: $showingCastCalibration) {
-            BoardCastCalibrationSheet()
+            if let board = castBoard, let screen = cast.externalScreenSize {
+                BoardCastCalibrationSheet(board: board, screen: screen)
+            }
         }
         .sheet(isPresented: $showingDiffSheet) {
             ValidationDiffSheet(
