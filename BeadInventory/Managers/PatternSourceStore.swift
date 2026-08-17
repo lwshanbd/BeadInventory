@@ -30,7 +30,8 @@
 //
 //  ## 谁能读
 //
-//  **只有多零件模式**。列表、日历、详情页一律走 `displayThumbnail` / `thumbnail`，
+//  **只有拼图模式和多零件模式**（`SinglePatternFlowView.load` / `PartsSheetFlowView.load`，
+//  两边都是「有原图用原图，没有退回封面」）。列表、日历、详情页一律走 `displayThumbnail` / `thumbnail`，
 //  跟这里完全隔离 —— 这份文件是全分辨率的，任何一个会批量渲染的地方碰它都是 jetsam。
 //
 //  ## 什么时候没有
@@ -89,9 +90,12 @@ enum PatternSourceStore {
     // MARK: - 读写
 
     /// 存一份原图。要不要存由调用方决定（见 `keepsSourceByDefault`）。
-    /// - Parameter data: 用户选的那张图的**原始字节**（相册选图能直接拿到）。
-    static func save(_ data: Data, for projectId: UUID) {
-        guard let url = url(for: projectId) else { return }
+    /// - Parameter data: 原始字节，或 `lossless()` 重出的无损 PNG。
+    /// - Returns: 有没有真的写进去。**换图**那条路必须看这个返回值 ——
+    ///   写不成就得把库里那份（上一张图的）删掉，否则拼图模式会拿旧原图当这张图纸用。
+    @discardableResult
+    static func save(_ data: Data, for projectId: UUID) -> Bool {
+        guard let url = url(for: projectId) else { return false }
         do {
             try data.write(to: url, options: .atomic)
             // 单个文件也标一次：目录属性在某些恢复路径下不会被继承
@@ -102,11 +106,14 @@ enum PatternSourceStore {
             AppLogger.shared.info("PatternSource", "saved", metadata: [
                 "projectId": projectId.uuidString, "bytes": data.count
             ])
+            return true
         } catch {
-            // 存不下不是错误路径 —— 拼图模式退回用压缩图照常能用，不要打扰用户
+            // 第一次存存不下不是错误路径 —— 拼图模式退回用压缩图照常能用，不要打扰用户。
+            // 换图那条路不一样，调用方看返回值自己收拾（见上面 Returns）。
             AppLogger.shared.warning("PatternSource", "save_failed", metadata: [
                 "projectId": projectId.uuidString, "error": "\(error)"
             ])
+            return false
         }
     }
 
@@ -168,9 +175,9 @@ enum PatternSourceStore {
         return values.fileSize ?? 0
     }
 
-    /// 删掉某个项目的原图。
-    /// 两个调用点：用户点「拼好了」，以及项目被删除（后者是资源正确性，
-    /// 不删就永远留下一个谁也不会再读的孤儿文件）。
+    /// 删掉某个项目的原图。三种情形会走到：用户点「拼好了」、用户在封面编辑器里
+    /// 关掉「保留原图」（或换了图但新原图没写成，那份旧的必须跟着走），
+    /// 以及项目被删除（后者是资源正确性，不删就永远留下一个谁也不会再读的孤儿文件）。
     static func remove(for projectId: UUID) {
         guard let url = url(for: projectId) else { return }
         try? FileManager.default.removeItem(at: url)

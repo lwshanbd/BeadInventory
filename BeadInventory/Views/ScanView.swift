@@ -424,6 +424,12 @@ struct ScanView: View {
     ///     拼图模式所有几何量都是相对封面归一化的，构图一错整片零件框都会偏。
     ///
     /// 用户在上传那一屏把「留原图」关掉时返回 nil，一个字节都不写。
+    ///
+    /// 这条规则**只在建项目这一屏成立**：这里的 `thumbnailImage` 是用户刚传进来的全分辨率图
+    /// （压缩只发生在 `generateThumbnailData`），裁完重出仍是原画质，而且项目还没建、
+    /// 库里不可能已经有原图。封面编辑器那边手上只有压过的库存封面，同样写法会把用户
+    /// 不可再生的原图降一档 —— 所以它裁封面时什么都不写，见
+    /// `ProjectImageEditorSheet.applyPatternSourceDecision()`。
     private func patternSourceData() -> Data? {
         guard keepPatternSource else { return nil }
         if !thumbnailWasCropped, let pickedOriginalData { return pickedOriginalData }
