@@ -786,6 +786,15 @@ struct ProjectImageEditorSheet: View {
     @State private var keepPatternSource = PatternSourceStore.keepsSourceByDefault
     /// 库里已经有这个项目的原图。决定开关的初值，也决定要不要显示这一行。
     @State private var storedSourceExists = false
+    /// 库里那份原图多大。开关那一行显示给用户看 —— 「要不要删掉」得知道删的是多少东西。
+    @State private var storedSourceBytes = 0
+    /// 用户在这一屏**真的换了一张图**（相册选的 / 相机拍的），不是只把现有封面裁了一下。
+    ///
+    /// 这两件事必须分开，否则就是用户报的那个障：只裁一下封面，`editedImage` 就非 nil，
+    /// 被当成「有新图」，于是拿**压缩封面的裁切结果**去覆盖 `PatternSourceStore` 里那份
+    /// 全分辨率原图 —— 拼图模式从此只剩封面那点分辨率，而且不可逆（原图不进 iCloud、
+    /// 不进备份）。`editedImage != nil` 只说明「图被改过」，不说明「换了一张图」。
+    @State private var pickedNewImage = false
     @State private var editedImage: UIImage?
     @State private var isLoadingImage = false
     @State private var showingCropView = false
@@ -795,6 +804,8 @@ struct ProjectImageEditorSheet: View {
     @State private var saveSuccessAt: Date = .distantPast
     /// 编码失败时置位。失败必须可见 —— 静默失败会让用户以为图存上了。
     @State private var encodeFailed = false
+    /// 这次保存会让拼图模式里已经对好的网格对不上，正在等用户确认。
+    @State private var confirmingPatternWorkLoss = false
 
     var displayImage: UIImage? {
         editedImage ?? currentImage
@@ -894,7 +905,12 @@ struct ProjectImageEditorSheet: View {
                             }
 
                             Button {
+                                // 「重置」是把这一屏的改动全撤掉，回到库里那张封面 ——
+                                // 那就包括「我刚选的那张新图」，不然撤完还留着一个
+                                // pickedNewImage=true，保存时会去写一份属于已经不要了的图的原图。
                                 editedImage = nil
+                                pickedNewImage = false
+                                pickedOriginalData = nil
                             } label: {
                                 HStack {
                                     Image(systemName: "arrow.uturn.backward")
@@ -916,18 +932,22 @@ struct ProjectImageEditorSheet: View {
                     // 只在那边有、这边没有的话，从详情页换封面就会又悄悄留下一份几十 MB。
                     // 成品图不涉及拼图模式（savesPatternSource == false），不显示。
                     //
-                    // 只在**真的有得选**的时候才出现：换了图（要不要留这张新的），或者库里
-                    // 已经有一份（要不要删掉）。都没有的话这个开关无论怎么拨都不会发生任何事，
-                    // 摆在那儿就是个骗人的开关。
+                    // 只在**真的有得选**的时候才出现：换了一张新图（要不要留这张新的），
+                    // 或者库里已经有一份（要不要删掉）。**只是裁一下现有封面不算** ——
+                    // 那条路根本不会写原图（见 `patternSourceData`），开关摆在那儿唯一能做的
+                    // 就是删，写着「保留原图」却只会删，是个骗人的开关。
                     if savesPatternSource, displayImage != nil,
-                       editedImage != nil || pickedOriginalData != nil || storedSourceExists {
+                       pickedNewImage || storedSourceExists {
                         VStack(alignment: .leading, spacing: 4) {
                             Toggle(isOn: $keepPatternSource) {
                                 HStack(spacing: 6) {
                                     Text("保留原图")
                                         .font(.caption)
-                                    if editedImage == nil, let bytes = pickedOriginalData?.count {
-                                        Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
+                                    // 库里那份多大。**只在没换新图时显示**：换了新图的话，
+                                    // 这个数字是上一张图的，而真正要写进去的那份还没编码出来，
+                                    // 拿旧数字冒充新的比不显示更糟。
+                                    if !pickedNewImage, storedSourceExists, storedSourceBytes > 0 {
+                                        Text(ByteCountFormatter.string(fromByteCount: Int64(storedSourceBytes), countStyle: .file))
                                             .font(.caption2.monospacedDigit())
                                             .foregroundColor(.secondary)
                                     }
@@ -936,9 +956,7 @@ struct ProjectImageEditorSheet: View {
                             .toggleStyle(.switch)
                             .tint(Theme.ColorToken.Morandi.mauve)
 
-                            Text(keepPatternSource
-                                 ? "拼图模式需要原图才能看清每一格的颜色。原图保存在本机，不占用 iCloud，拼完后可以删除。"
-                                 : "这张图纸将无法使用拼图模式。以后需要时，可以在拼图模式里重新选择原图。")
+                            Text(keepPatternSourceHint)
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -974,48 +992,25 @@ struct ProjectImageEditorSheet: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("保存") {
-                        if let image = displayImage {
-                            // **编码失败绝不能落到 onSave**。`onSave` 的参数是 `Data?`，而
-                            // `nil` 已经被上面的「移除图片」按钮占用了含义（`onSave(nil)`
-                            // → `_setProjectBlobsDirectly(.some(nil))` → `sd.thumbnail = nil`）。
-                            // 也就是说「编码失败」和「用户要求删图」在这条链路上无法区分：
-                            // 用户给一个已有照片的项目换图、编码失败 → 现存照片被清空，
-                            // 而下一行还会放成功反馈。用户看到「已保存」，照片没了。
-                            //
-                            // 这正是归档分支被双审否掉的那个形状（写入层知道自己失败了，
-                            // 上面每一层硬编码成功），所以这里必须挡住。
-                            guard let imageData = generateImageData(from: image) else {
-                                AppLogger.shared.error("ProjectImageEditor", "encode_failed_keeping_existing", metadata: [
-                                    "pixelSize": "\(image.size)"
-                                ])
-                                encodeFailed = true
-                                return   // 不写库、不放成功反馈、不关闭 sheet
-                            }
-                            onSave(imageData)
-                            // 原图另存一份，只给拼图模式用。
-                            // 放在 onSave 之后：封面存成功才留原图，避免留下对不上号的孤儿文件。
-                            if savesPatternSource {
-                                if let source = patternSourceData() {
-                                    PatternSourceStore.save(source, for: projectId)
-                                } else if !keepPatternSource {
-                                    // 用户明说不留：删掉库里那份。换了图的话它是**上一张**图的，
-                                    // 留着比没有更糟（拼图模式会拿它当这张图纸的原图，零件框和网格
-                                    // 全套在别的图上）；没换图的话，删掉正是他拨这个开关的目的。
-                                    //
-                                    // 判据是 `!keepPatternSource` 而不是「有没有新图」：
-                                    // `patternSourceData()` 返回 nil 有两个完全不同的原因 ——
-                                    // 用户不留，以及 PNG 编不出来。拿「有没有新图」当判据的话，
-                                    // 开关开着但编码失败会走进删除分支：旧的删了、新的没写、还报成功。
-                                    PatternSourceStore.remove(for: projectId)
-                                }
-                            }
-                            saveSuccessAt = Date()
+                        // 会让已经对好的网格作废时，先问一句 —— 重新对一遍图纸是几十分钟的活，
+                        // 不能因为用户只是想换张好看点的封面就悄悄作废掉。
+                        if patternWorkWouldBreak() {
+                            confirmingPatternWorkLoss = true
+                        } else {
+                            performSave()
                         }
-                        dismiss()
                     }
                     .fontWeight(.semibold)
                     .disabled(editedImage == nil && currentImage == displayImage)
                 }
+            }
+            .alert("已经对好的图纸会对不上", isPresented: $confirmingPatternWorkLoss) {
+                Button("取消", role: .cancel) { }
+                Button("仍要保存", role: .destructive) { performSave() }
+            } message: {
+                Text(pickedNewImage
+                     ? "这个项目在拼图模式里已经对好了网格。换成新图之后，网格和判过的颜色都对不上了，得重新对一遍。"
+                     : "这个项目在拼图模式里已经对好了网格，而它是照着现在这张图对的。改完取景就对不上了，得重新对一遍。")
             }
             .onChange(of: selectedPhotoItem) { _, newItem in
                 if let newItem = newItem {
@@ -1026,6 +1021,7 @@ struct ProjectImageEditorSheet: View {
                             await MainActor.run {
                                 imageToCrop = image
                                 pickedOriginalData = data
+                                pickedNewImage = true
                                 isLoadingImage = false
                             }
                         } else {
@@ -1077,6 +1073,10 @@ struct ProjectImageEditorSheet: View {
                 CameraView { capturedImage in
                     if let image = capturedImage {
                         imageToCrop = image
+                        // 相机这条路拿不到「相册原始字节」，但它同样是**换了一张图**：
+                        // 拍完这张，库里那份属于上一张图的原图就作废了。
+                        pickedOriginalData = nil
+                        pickedNewImage = true
                         pendingCropAfterCamera = true
                     }
                 }
@@ -1090,21 +1090,102 @@ struct ProjectImageEditorSheet: View {
         }
         .task {
             storedSourceExists = PatternSourceStore.exists(for: projectId)
+            storedSourceBytes = PatternSourceStore.byteSize(for: projectId)
             if storedSourceExists { keepPatternSource = true }
         }
         .presentationDetents([.medium, .large])
     }
 
-    /// 另存给拼图 / 多零件模式的那份原图。取哪条只看**取景对不对得上封面**
-    /// （同 `ScanView.patternSourceData()`）：
-    ///   - 没裁过 → 用相册那份原始字节（没有二次编码，最干净）
-    ///   - 裁过   → 原始字节的构图已经不是封面那张了，改存裁完的全分辨率图。
-    ///     多零件模式的零件框、格子都是相对封面归一化的，构图一错整片框都会偏。
-    /// 两者都没有（用户只是打开 sheet 又保存）→ nil，不写。
+    /// 另存给拼图 / 多零件模式的那份原图。
+    ///
+    /// **只有用户在这一屏真的换了一张图时才写。** 只是把现有封面裁一下的话，一个字节都不动 ——
+    /// 这一屏手上那张封面是**压缩过的**（`ProjectImageEncoder` 长边 ≤3072、1.2 MB 预算），
+    /// 拿它的裁切结果去覆盖 `PatternSourceStore` 里那份全分辨率原图，等于把用户的原图
+    /// 降一档画质，而且不可逆（原图不进 iCloud、不进备份，覆盖了就没了）。
+    /// 用户报的就是这个：改完封面进拼图模式，图糊成了封面那样。
+    ///
+    /// 换了新图则照写：那张新图就是这个项目新的图纸，旧原图属于上一张图，作废是对的。
     private func patternSourceData() -> Data? {
-        guard keepPatternSource else { return nil }
-        if editedImage == nil, let pickedOriginalData { return pickedOriginalData }
+        guard keepPatternSource, pickedNewImage else { return nil }
         return PatternSourceStore.lossless(editedImage)
+    }
+
+    /// 「保留原图」那一行的说明文字。三种处境说三句不同的话 ——
+    /// 同一句「这张图纸将无法使用拼图模式」套在「删掉已有原图」上是不对的：
+    /// 删掉之后拼图模式照样能用，只是退回用封面、看格子糊一些。
+    private var keepPatternSourceHint: String {
+        if keepPatternSource {
+            return "拼图模式需要原图才能看清每一格的颜色。原图保存在本机，不占用 iCloud，拼完后可以删除。"
+        }
+        if storedSourceExists && !pickedNewImage {
+            return "会删掉本机存的这份原图。拼图模式仍然能用，但只能用封面，一格豆子的像素少一半。"
+        }
+        return "这张图纸将无法使用拼图模式。以后需要时，可以在拼图模式里重新选择原图。"
+    }
+
+    /// 这个项目在拼图 / 多零件模式里已经有对好的东西。
+    ///
+    /// 单列取字节、只看在不在，不解码（`patternGridData` / `partsSheetData` 都是 blob 列，
+    /// 顺手 fetch 整行会把同行的原图一起物化）。只在按「保存」时查一次。
+    private func hasStoredPatternWork() -> Bool {
+        inventoryManager.fetchProjectPatternGridData(for: projectId) != nil
+            || inventoryManager.fetchProjectPartsSheetData(for: projectId) != nil
+    }
+
+    /// 这次保存会不会让已经对好的网格对不上。
+    ///
+    /// 判据只有一个：**存完之后拼图模式手上那张图，还是不是当初对格子的那张。**
+    /// 拼图模式优先读原图、没有才退回封面（见 `SinglePatternFlowView.load`），所以：
+    ///   - 换了新图              → 图纸都换了，一定对不上
+    ///   - 只裁封面 + 原图原样留着 → 拼图模式读的还是那份原图，**完全不受影响**（这是本次修复）
+    ///   - 只裁封面 + 没有原图可依 → 坐标是相对封面的，取景一改就废
+    private func patternWorkWouldBreak() -> Bool {
+        guard savesPatternSource, editedImage != nil else { return false }
+        if !pickedNewImage, keepPatternSource, storedSourceExists { return false }
+        return hasStoredPatternWork()
+    }
+
+    /// 真正落盘。从「保存」按钮里拆出来，是因为它前面多了一道确认。
+    private func performSave() {
+        if let image = displayImage {
+            // **编码失败绝不能落到 onSave**。`onSave` 的参数是 `Data?`，而
+            // `nil` 已经被上面的「移除图片」按钮占用了含义（`onSave(nil)`
+            // → `_setProjectBlobsDirectly(.some(nil))` → `sd.thumbnail = nil`）。
+            // 也就是说「编码失败」和「用户要求删图」在这条链路上无法区分：
+            // 用户给一个已有照片的项目换图、编码失败 → 现存照片被清空，
+            // 而下一行还会放成功反馈。用户看到「已保存」，照片没了。
+            //
+            // 这正是归档分支被双审否掉的那个形状（写入层知道自己失败了，
+            // 上面每一层硬编码成功），所以这里必须挡住。
+            guard let imageData = generateImageData(from: image) else {
+                AppLogger.shared.error("ProjectImageEditor", "encode_failed_keeping_existing", metadata: [
+                    "pixelSize": "\(image.size)"
+                ])
+                encodeFailed = true
+                return   // 不写库、不放成功反馈、不关闭 sheet
+            }
+            onSave(imageData)
+            // 原图另存一份，只给拼图模式用。
+            // 放在 onSave 之后：封面存成功才留原图，避免留下对不上号的孤儿文件。
+            if savesPatternSource {
+                if let source = patternSourceData() {
+                    PatternSourceStore.save(source, for: projectId)
+                } else if !keepPatternSource {
+                    // 用户明说不留：删掉库里那份。换了图的话它是**上一张**图的，
+                    // 留着比没有更糟（拼图模式会拿它当这张图纸的原图，零件框和网格
+                    // 全套在别的图上）；没换图的话，删掉正是他拨这个开关的目的。
+                    //
+                    // 判据是 `!keepPatternSource` 而不是「有没有新图」：
+                    // `patternSourceData()` 返回 nil 有三个完全不同的原因 ——
+                    // 用户不留、只裁了封面（这时**不该动**原图）、以及 PNG 编不出来。
+                    // 拿「有没有新图」当判据的话，开关开着但编码失败会走进删除分支：
+                    // 旧的删了、新的没写、还报成功。
+                    PatternSourceStore.remove(for: projectId)
+                }
+            }
+            saveSuccessAt = Date()
+        }
+        dismiss()
     }
 
     /// 生成落盘用的图片数据。
