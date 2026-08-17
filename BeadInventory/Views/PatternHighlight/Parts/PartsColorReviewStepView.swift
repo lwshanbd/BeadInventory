@@ -63,6 +63,17 @@ struct PartsColorReviewStepView: View {
     @State private var confirmed: Set<String> = []
     @State private var showingPalette = false
 
+    /// 按颜色排序。开着时铺出来的格子不再按图纸上的先后，而是**最不像这一类的排在最前面**。
+    ///
+    /// 一个色号动辄上千格，判错的那几格散在中间，靠一格一格看是找不出来的 ——
+    /// 而它们之所以判错，正是因为原图上的颜色离这一类的代表色最远。
+    @State private var sortByColor = false
+    /// 每一格在原图上的众数色（`QuantizedRGB` 索引），`[零件][行][列]`。
+    /// nil = 还没量过 —— 量一遍要几百毫秒到几秒，所以等用户真的点「排序」才算。
+    @State private var cellModes: [[[Int32]]]?
+    /// 正在量颜色。量的时候整屏挡住：这时候点色号、改格子都会让排序算在一份过期的格子上。
+    @State private var samplingColors = false
+
     /// 框选模式。开着时列表不滚动，拖一条对角线就把扫过的格子全选上。
     /// 一个色号动不动上千格，一格一格点是不可能的。
     @State private var marquee = false
@@ -105,9 +116,11 @@ struct PartsColorReviewStepView: View {
         VStack(spacing: 0) {
             groupBar
             Divider()
+            if sortByColor { sortHint }
             cellGrid
             footer
         }
+        .overlay { if samplingColors { samplingOverlay } }
         .navigationTitle("核对颜色")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -204,7 +217,7 @@ struct PartsColorReviewStepView: View {
                     // 擦掉的格子不刷就还留在这一组里，补上的格子进不来。
                     // 小图缓存不用动：那是按 `CellRef` 从图纸上裁的，格子改成什么颜色跟它
                     // 无关，新进这一组的那几格会自己按需裁（见 `swatch(for:)`）。
-                    groupCells = cells(of: selectedGroup)
+                    groupCells = orderedCells(of: selectedGroup)
                     // 选中的是 (零件下标, row, col)，而刚才那些格子可能已经换了一组 ——
                     // 留着的话，底下那排「这类都改成…」会作用到一批
                     // 用户以为自己早就取消掉的格子上。
@@ -316,10 +329,40 @@ struct PartsColorReviewStepView: View {
         selectedGroup = fill
         selection.removeAll()
         marquee = false
-        groupCells = cells(of: fill)
+        groupCells = orderedCells(of: fill)
     }
 
     // MARK: - 中：这个色号的所有格子
+
+    /// 排序开着时顶上那条字。**必须有**：格子的先后一变，用户第一反应是「图纸怎么乱了」——
+    /// 得当场告诉他现在是按什么排的、该往哪儿看。
+    private var sortHint: some View {
+        Label("最不像「\(label(for: selectedGroup))」的排在最前面", systemImage: "arrow.up.arrow.down")
+            .font(.caption)
+            .foregroundStyle(Theme.ColorToken.Text.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.sm)
+            .background(Theme.ColorToken.Surface.subtle)
+    }
+
+    /// 量颜色的那几秒。整屏挡住 —— 这段时间里改格子会让排序算在一份过期的格子上。
+    private var samplingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.12).ignoresSafeArea()
+            VStack(spacing: Theme.Spacing.md) {
+                ProgressView()
+                Text("正在看每格原本是什么颜色…")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+            }
+            .padding(Theme.Spacing.xl)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                    .fill(.regularMaterial)
+            )
+        }
+    }
 
     private var cellGrid: some View {
         ScrollView {
@@ -425,6 +468,13 @@ struct PartsColorReviewStepView: View {
                         .font(.footnote)
                 }
                 Spacer()
+                Button(action: toggleSort) {
+                    Label("排序", systemImage: sortByColor
+                          ? "arrow.up.arrow.down.circle.fill"
+                          : "arrow.up.arrow.down")
+                        .font(.footnote.weight(.medium))
+                }
+                .disabled(samplingColors)
                 Button {
                     marquee.toggle()
                     marqueeRect = nil
@@ -434,7 +484,9 @@ struct PartsColorReviewStepView: View {
                           systemImage: marquee ? "checkmark" : "rectangle.dashed")
                         .font(.footnote.weight(.medium))
                 }
+                .padding(.leading, Theme.Spacing.md)
             }
+            .lineLimit(1)
 
             // 没选中任何一格时，这三个按钮作用于整类 —— 图纸上那种
             // 「整片白其实是镂空、不是豆子」的情况，一格一格点几百下不现实。
@@ -613,6 +665,94 @@ struct PartsColorReviewStepView: View {
         }
     }
 
+    // MARK: - 排序
+
+    /// 点「排序」。第一次点要先把每一格原本是什么颜色量一遍，之后再点就是纯排。
+    ///
+    /// 每一条都自己把 `groupCells` 摆好，**不走 `orderedCells`** —— 那个函数读的是
+    /// `sortByColor` / `cellModes`，而这里刚写完它们，同一轮读回来不保证是新值
+    ///（`PartsBoardStepView.DragSession` 栽过一次）。读到旧值的下场是点了排序没反应。
+    private func toggleSort() {
+        if sortByColor {
+            sortByColor = false
+            groupCells = cells(of: selectedGroup)
+            return
+        }
+        if let modes = cellModes {
+            sortByColor = true
+            groupCells = sorted(cells(of: selectedGroup), using: modes)
+            return
+        }
+        let source = work
+        let snapshot = parts
+        samplingColors = true
+        Task.detached(priority: .userInitiated) {
+            let modes = PartsCellClassifier.sampleModes(work: source, parts: snapshot)
+            await MainActor.run {
+                self.samplingColors = false
+                self.cellModes = modes
+                self.sortByColor = true
+                self.groupCells = self.sorted(self.cells(of: self.selectedGroup), using: modes)
+            }
+        }
+    }
+
+    /// 这一组的格子，按当前排序方式给出来。排序关着就是图纸上的先后（从上到下、从左到右）。
+    private func orderedCells(of fill: PartCellFill) -> [CellRef] {
+        let refs = cells(of: fill)
+        guard sortByColor, let modes = cellModes else { return refs }
+        return sorted(refs, using: modes)
+    }
+
+    /// 按颜色排：**最不像这一类的排在最前面**。
+    ///
+    /// 「像不像」比的是每格的**众数色**（`PartsCellClassifier.sampleModes`）离这一组代表色的
+    /// Lab 距离。取众数而不是平均色 / 中心点：图纸给每颗豆子都描了一圈深色边，一格才十来个
+    /// 像素，平均进去整格就被往深处拉，拉多少还取决于网格差了几分之一格 —— 判色那一步栽过
+    /// 这个跟头（见 `sampleModes` 的注释），排序照样会栽。
+    ///
+    /// 代表色是「这些众数色的众数」—— 同样不取平均：一组里混进来的几十格杂色会把平均值拽偏，
+    /// 于是真正的主色反倒排到前面去了。
+    ///
+    /// 颜色一样的格子必然挨在一起（`ΔE` 相同，再按量化色号断一次），
+    /// 所以用户框中最前面那一片，框住的就是同一种杂色。
+    private func sorted(_ refs: [CellRef], using modes: [[[Int32]]]) -> [CellRef] {
+        guard refs.count > 1 else { return refs }
+
+        let colors = refs.map { mode(of: $0, in: modes) }
+        var histogram: [Int32: Int] = [:]
+        for color in colors where color >= 0 { histogram[color, default: 0] += 1 }
+        // 一格都没量到（图没抠出来）就别乱排，原样交回去
+        guard let dominant = histogram.max(by: { $0.value < $1.value })?.key else { return refs }
+
+        // ΔE 按「量化色」算一次就够 —— 一组几万格，但里头的不同颜色只有几十种
+        let center = QuantizedRGB.labTable[Int(dominant)]
+        var distances: [Int32: Double] = [:]
+        for color in Set(colors) where color >= 0 {
+            distances[color] = GridCellSampler.deltaE(QuantizedRGB.labTable[Int(color)], center)
+        }
+
+        // 没量到的（-1）排到最后：它们不是「像」，是「不知道」，摆在最前面等于让用户白找一趟
+        return zip(refs.indices, zip(refs, colors))
+            .sorted { lhs, rhs in
+                let (li, (_, lc)) = lhs
+                let (ri, (_, rc)) = rhs
+                let ld = lc >= 0 ? distances[lc] ?? 0 : -1
+                let rd = rc >= 0 ? distances[rc] ?? 0 : -1
+                if ld != rd { return ld > rd }
+                if lc != rc { return lc < rc }
+                return li < ri          // Swift 的 sort 不保证稳定，同色的先后自己钉住
+            }
+            .map { $0.1.0 }
+    }
+
+    private func mode(of ref: CellRef, in modes: [[[Int32]]]) -> Int32 {
+        guard ref.part < modes.count,
+              ref.row < modes[ref.part].count,
+              ref.col < modes[ref.part][ref.row].count else { return -1 }
+        return modes[ref.part][ref.row][ref.col]
+    }
+
     private func cells(of fill: PartCellFill) -> [CellRef] {
         let key = groupKey(fill)
         var result: [CellRef] = []
@@ -682,7 +822,7 @@ struct PartsColorReviewStepView: View {
         parts = updated
         selection.removeAll()
         // 改过的格子已经不属于当前这一组了，铺出来的那片要跟着少掉
-        groupCells = cells(of: selectedGroup)
+        groupCells = orderedCells(of: selectedGroup)
     }
 
     /// 选色盘交回来的**永远是 mardCode** —— `ColorSelectionView` 不管传进去的

@@ -181,12 +181,25 @@ enum PartsCellClassifier {
     /// - Returns: `nil` = 这个零件的图**根本没抠出来**（框太小 / 解码失败），一格都没看到。
     ///   早先这里跟「看过了，每格都是背景」一样返回全 nil 的矩阵，两件事在数据上再也分不开。
     private static func sampleCells(work: PartsWorkImage, part: BeadPart) -> [[LabColor?]]? {
+        guard let modes = sampleModes(work: work, part: part) else { return nil }
+        return modes.map { row in
+            row.map { $0 >= 0 ? QuantizedRGB.labTable[Int($0)] : nil }
+        }
+    }
+
+    /// 量出一个零件每一格的众数色，值是 `QuantizedRGB` 索引，**`-1` = 这一格没量到**。
+    ///
+    /// 判色和核对页的「排序」共用这一趟取样。两边必须量出同一个颜色 —— 否则排序会把某一格
+    /// 排在「跟这一类很像」的位置上，而它当初正是因为不像才被判错的，用户就永远找不到它。
+    ///
+    /// - Returns: `nil` = 这个零件的图根本没抠出来（含义同 `sampleCells`）。
+    static func sampleModes(work: PartsWorkImage, part: BeadPart) -> [[Int32]]? {
         let area = part.gridRect ?? part.bounds
         guard part.rows > 0, part.cols > 0,
               let bitmap = PartsBitmap.make(from: work, roi: area, maxPixels: 600_000) else {
             return nil
         }
-        var result = [[LabColor?]](repeating: [LabColor?](repeating: nil, count: part.cols), count: part.rows)
+        var result = [[Int32]](repeating: [Int32](repeating: -1, count: part.cols), count: part.rows)
         let cellW = Double(bitmap.width) / Double(part.cols)
         let cellH = Double(bitmap.height) / Double(part.rows)
 
@@ -209,11 +222,31 @@ enum PartsCellClassifier {
                     }
                 }
                 if let winner = counts.max(by: { $0.value < $1.value })?.key {
-                    result[r][c] = QuantizedRGB.labTable[Int(winner)]
+                    result[r][c] = winner
                 }
             }
         }
         return result
+    }
+
+    /// 把所有零件每一格的众数色量一遍，给核对页排序用。`[零件][行][列]`，`-1` = 没量到。
+    ///
+    /// 跟 `classify` 的第一趟是同一件事，但这里**只量颜色**：核对页要的就是
+    /// 「这一格的原色离这一类有多远」，跟聚类、跟色号都无关。
+    /// 耗时随零件数线性涨（一张平面图纸就是一个零件），调用方请放后台。
+    ///
+    /// - Parameter progress: (已完成零件数, 总数)
+    static func sampleModes(
+        work: PartsWorkImage,
+        parts: [BeadPart],
+        progress: ((Int, Int) -> Void)? = nil
+    ) -> [[[Int32]]] {
+        parts.enumerated().map { index, part in
+            defer { progress?(index + 1, parts.count) }
+            return sampleModes(work: work, part: part)
+                ?? [[Int32]](repeating: [Int32](repeating: -1, count: max(part.cols, 0)),
+                             count: max(part.rows, 0))
+        }
     }
 
     // MARK: - 聚类

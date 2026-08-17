@@ -11372,6 +11372,36 @@
         }
       }
     },
+    "排序" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sort"
+          }
+        }
+      }
+    },
+    "最不像「%@」的排在最前面" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Least like “%@” comes first"
+          }
+        }
+      }
+    },
+    "正在看每格原本是什么颜色…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading each cell's original color…"
+          }
+        }
+      }
+    },
     "拖着框选" : {
       "localizations" : {
         "en" : {
