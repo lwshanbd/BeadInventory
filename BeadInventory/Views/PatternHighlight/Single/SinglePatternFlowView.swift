@@ -101,6 +101,8 @@ struct SinglePatternFlowView: View {
         case confirmRecrop
         /// 判色时图根本没抠出来。
         case classifyFailed
+        /// 图纸色号表里有色库对不上的色号（见 `PartsCellClassifier.Result.unknownLegendNote`）。
+        case legendNote(String)
         /// 图纸换过了，之前对好的网格对不上新图。
         case imageChanged
         /// 还没量过格子就按了判色。老数据没有 calibration，见 `requestClassification` 的守卫。
@@ -114,6 +116,7 @@ struct SinglePatternFlowView: View {
             case .loadFailed: return "load"
             case .confirmRecrop: return "recrop"
             case .classifyFailed: return "classify"
+            case .legendNote(let text): return "legend:\(text)"
             case .imageChanged: return "changed"
             case .needsGrid: return "needsGrid"
             case .confirmReclassify: return "reclassify"
@@ -297,6 +300,12 @@ struct SinglePatternFlowView: View {
                     title: Text("这块范围里取不到图"),
                     message: Text("一格颜色都没看出来，多半是框圈得太小或者位置不对。回第一屏把框重新拖一下再来一次。"),
                     dismissButton: .default(Text("回去改框")) { path = [] }
+                )
+            case .legendNote(let text):
+                return Alert(
+                    title: Text("有几个色号色库里没有"),
+                    message: Text(text),
+                    dismissButton: .default(Text("知道了"))
                 )
             case .needsGrid:
                 return Alert(
@@ -766,6 +775,9 @@ struct SinglePatternFlowView: View {
                 self.dirty = true
                 self.revision &+= 1
                 guard self.persist() else { return }   // 存不上会自己弹「这一步没存上」
+                // 色号表里有几个色号色库里对不上时说一句 —— 那几种颜色是按最接近的
+                // 色号判的，核对页上的字跟图纸上印的不是同一个。
+                if let note = result.unknownLegendNote { self.prompt = .legendNote(note) }
                 self.path = [.grid, .baseColor, .review]
             }
         }
