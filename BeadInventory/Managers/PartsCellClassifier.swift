@@ -442,6 +442,8 @@ enum PartsCellClassifier {
     /// （B11、P3 这种，而且认领的还是另一颗豆子）—— 用户看到的就是
     /// 「核对颜色那屏上面只给了 4 个颜色」，图上其余十几种颜色全被塞进了这 4 个里。
     ///
+    /// 查的顺序是**先本体系、后 mardCode**，理由见下面那段注释。
+    ///
     /// - Returns: `colors` 是认出来的豆子（去重，保持图例顺序）；
     ///   `unknownCodes` 是**色库里查无此码**的那些（图纸印的是我们没收录的品牌码，
     ///   例如 "HR"、"FG"）。后者调用方要报给用户 —— 这些颜色最后会按全色库里最接近的
@@ -468,10 +470,15 @@ enum PartsCellClassifier {
         for raw in codes {
             let key = raw.trimmingCharacters(in: .whitespaces).uppercased()
             guard !key.isEmpty, key != "ANY" else { continue }
-            // **先按 mardCode 查**：约定里匹配成功的那一支存的就是它，而且同一个字符串
-            // 在两个体系里可能是两颗不同的豆子（"B11" 既是某颗的 mardCode，
-            // 也是另一颗的卡卡码）。查不到才当成没匹配上的原始串，按本体系的码再查一次。
-            guard let color = byMard[key] ?? byDisplay[key] else {
+            // **先按用户选的这个体系查。** 同一个字符串在两个体系里往往是两颗不同的豆子
+            // （"B11" 既是某颗的 MARD 码，也是另一颗的卡卡码）—— 用户选了卡卡，图纸上写的
+            // 就是卡卡码，这时候去 MARD 里撞一个同名的，认领的是一颗完全不相干的豆子。
+            //
+            // 查不到才退到 mardCode 上，而且这一步没有歧义可言：能走到这儿说明这个串
+            // 在本体系里根本不是合法色号（卡卡码只有 B/P/R+数字，"H3" 不可能是卡卡码）。
+            // 这一步不能省 —— 扫描那步匹配成功时存的就是 canonical mardCode
+            //（见方法头注释），去掉的话卡卡 / COCO 项目的图例会整张作废。
+            guard let color = byDisplay[key] ?? byMard[key] else {
                 if !unknown.contains(key) { unknown.append(key) }
                 continue
             }

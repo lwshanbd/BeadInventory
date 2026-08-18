@@ -31,14 +31,24 @@ final class PartsLegendResolutionTests: XCTestCase {
 
     // MARK: - 非 MARD 图纸（这里是老代码整片失配的地方）
 
-    /// 图例存的是 canonical mardCode（扫描那步的约定），而格子里存的是卡卡码。
-    /// 不翻这一道，卡卡项目的图例只剩巧合，判色被锁死在那几个色号上。
-    func testKakaProject_legendStoredAsMardCode_stillResolves() {
+    /// **用户选了卡卡，就按卡卡认。** 同一个 "H7" 在两个体系里是两颗完全不同的豆子；
+    /// 先去 MARD 里撞的话，卡卡图纸上写着 H7 的那些格子会被判成一颗不相干的豆子。
+    func testKakaProject_prefersKakaCodeOverMardCode() {
         let result = PartsCellClassifier.resolveLegend(
-            codes: ["H7", "H1"], availableColors: library, colorSystem: .kaka
+            codes: ["H7"], availableColors: library, colorSystem: .kaka
         )
-        XCTAssertEqual(result.colors.map(\.colorHex), ["000000", "FFFFFF"],
-                       "H7 是黑豆的 MARD 码，不能认成「卡卡码恰好叫 H7」的那颗红豆")
+        XCTAssertEqual(result.colors.map(\.colorHex), ["FF0000"],
+                       "卡卡图纸上的 H7 是「卡卡码叫 H7」的那颗红豆，不是 MARD 的黑豆")
+    }
+
+    /// 本体系里根本不可能是合法色号时（卡卡码只有 B/P/R+数字，"H3" 不是），
+    /// 才退到 canonical mardCode —— 扫描那步匹配成功时存的就是它。
+    /// 这一步没有歧义，但不能省：省了卡卡 / COCO 项目的图例会整张作废。
+    func testKakaProject_fallsBackToMardCodeWhenNotAKakaCode() {
+        let result = PartsCellClassifier.resolveLegend(
+            codes: ["H1"], availableColors: library, colorSystem: .kaka
+        )
+        XCTAssertEqual(result.colors.map(\.colorHex), ["FFFFFF"])
         XCTAssertTrue(result.unknownCodes.isEmpty)
     }
 
@@ -105,32 +115,37 @@ final class PartsClassifyLegendCoverageTests: XCTestCase {
         Self.swatches.map { BeadColor(colorHex: $0.hex, mardCode: $0.code) }
     }
 
-    /// 画一张 4×2 的「图纸」，每格一种颜色，一格 40 像素。
-    private func makeWork() -> PartsWorkImage {
+    /// 画一张一行 N 格的「图纸」，每格一种颜色，一格 40 像素。
+    private func makeWork(_ hexes: [String]) -> PartsWorkImage {
         let cell = 40.0
-        let size = CGSize(width: cell * 4, height: cell * 2)
+        let size = CGSize(width: cell * Double(hexes.count), height: cell)
         let image = UIGraphicsImageRenderer(size: size).image { ctx in
-            for (index, swatch) in Self.swatches.enumerated() {
-                let rgb = GridCellSampler.rgbFromHex(swatch.hex)!
+            for (index, hex) in hexes.enumerated() {
+                let rgb = GridCellSampler.rgbFromHex(hex)!
                 UIColor(red: rgb.r / 255, green: rgb.g / 255, blue: rgb.b / 255, alpha: 1).setFill()
-                ctx.fill(CGRect(x: Double(index % 4) * cell, y: Double(index / 4) * cell,
-                                width: cell, height: cell))
+                ctx.fill(CGRect(x: Double(index) * cell, y: 0, width: cell, height: cell))
             }
         }
         return .whole(image)
     }
 
-    private func classify(legend: [String]) -> PartsCellClassifier.Result {
-        let part = BeadPart(rowBand: 0, bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-                            gridRect: CGRect(x: 0, y: 0, width: 1, height: 1), rows: 2, cols: 4)
+    private func classify(
+        legend: [String],
+        hexes: [String]? = nil,
+        colors: [BeadColor]? = nil,
+        colorSystem: ColorSystem = .mard
+    ) -> PartsCellClassifier.Result {
+        let hexes = hexes ?? Self.swatches.map(\.hex)
+        let unit = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let part = BeadPart(rowBand: 0, bounds: unit, gridRect: unit, rows: 1, cols: hexes.count)
         return PartsCellClassifier.classify(
-            work: makeWork(),
+            work: makeWork(hexes),
             parts: [part],
-            roi: CGRect(x: 0, y: 0, width: 1, height: 1),
-            calibration: PartsGridCalibration(cellWidth: 0.25, cellHeight: 0.5),
-            colorSystem: .mard,
+            roi: unit,
+            calibration: PartsGridCalibration(cellWidth: 1 / Double(hexes.count), cellHeight: 1),
+            colorSystem: colorSystem,
             legendCodes: legend,
-            availableColors: library,
+            availableColors: colors ?? library,
             // 底色指认成一个图上没有的颜色，免得自动猜底色把某一种豆子判成空 ——
             // 这里要测的是色号，不是空格。
             emptyHex: "FF00FF"
@@ -169,5 +184,38 @@ final class PartsClassifyLegendCoverageTests: XCTestCase {
     /// 完全没有色号表（用户手建的项目）：照旧退回全色库。
     func testNoLegend_fallsBackToWholeLibrary() {
         XCTAssertEqual(codes(classify(legend: [])), Set(Self.swatches.map(\.code)))
+    }
+
+    /// 卡卡图纸整条链路：图例存的是 canonical mardCode，格子里要写的是卡卡码。
+    ///
+    /// 这里曾经整片失配：图例作废，判色被锁在几个「mardCode 恰好也是合法卡卡码」的
+    /// 巧合上，而且认领的是另一颗豆子。
+    func testKakaSheet_legendInMardCodes_cellsSpeakKakaCodes() {
+        // 图例里这两个码（C1 / C2）在卡卡体系里不是合法色号，走的是 mardCode 兜底那一支。
+        let library = [
+            BeadColor(colorHex: "FF0000", mardCode: "C1", kakaCode: "R9"),
+            BeadColor(colorHex: "00FF00", mardCode: "C2", kakaCode: "P3"),
+            // 图例里没有的第三种颜色，用来确认它不会被塞进上面两个色号
+            BeadColor(colorHex: "0000FF", mardCode: "C3", kakaCode: "B77"),
+            // 卡卡没有这一颗 —— 它不能出现在卡卡图纸的判色结果里
+            BeadColor(colorHex: "0000F0", mardCode: "C4"),
+        ]
+        let result = classify(legend: ["C1", "C2"],
+                              hexes: ["FF0000", "00FF00", "0000FF"],
+                              colors: library,
+                              colorSystem: .kaka)
+        XCTAssertEqual(codes(result), ["R9", "P3", "B77"])
+        XCTAssertTrue(result.unknownLegendCodes.isEmpty)
+    }
+
+    /// 卡卡图纸上，图例里那颗豆子压根没有卡卡码时：不能默默当它不存在，
+    /// 得报出来（用户在卡卡体系下根本翻不到这个色号）。
+    func testKakaSheet_legendColorWithoutKakaCodeIsReported() {
+        let library = [BeadColor(colorHex: "FF0000", mardCode: "C1"),
+                       BeadColor(colorHex: "00FF00", mardCode: "C2", kakaCode: "P3")]
+        let result = classify(legend: ["C1"], hexes: ["00FF00"],
+                              colors: library, colorSystem: .kaka)
+        XCTAssertEqual(result.unknownLegendCodes, ["C1"])
+        XCTAssertNotNil(result.unknownLegendNote)
     }
 }
