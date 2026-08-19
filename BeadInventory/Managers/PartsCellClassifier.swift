@@ -35,6 +35,19 @@ enum PartsCellClassifier {
     /// 各格之间本来就有几个单位的漂移，卡太死会漏掉一半。
     private static let pickedDeltaE: Double = 12
 
+    /// 图例里最接近的那个色号离这一类还有这么远，就当**图例解释不了这一类**，
+    /// 退回全色库找最近的（见 `assignIdentities`）。
+    ///
+    /// 取 `mergeDeltaE`(8) 的两倍：8 是「同一种颜色的两格之间的抖动」，翻一倍留够图纸
+    /// 压缩和印色偏差的余量；再远就不是同一种豆子了，硬套上去只是给用户一个错色号。
+    ///
+    /// 这条出路必须有：图例本来就可能不全 —— AI 读出来的码色库里没有（图纸印的是我们
+    /// 没收录的品牌）、用户手建的计划项目只挑了几个色号、色号表那一栏干脆漏读了。
+    /// 没有出路时，图上十几种颜色会被整整齐齐地塞进仅剩的那几个色号里，
+    /// 而且**塞进同一个色号的几类在核对页会合成一组**，用户连「整类改掉」都做不到，
+    /// 只能一格一格挑 —— 这正是这条阈值要挡住的下场。
+    private static let legendMissDeltaE: Double = 16
+
     /// 在图上某一点取色，返回 `RRGGBB`。
     ///
     /// 取的是**一小片的众数色**而不是那一个像素：用户手指点不了那么准，
@@ -73,6 +86,24 @@ enum PartsCellClassifier {
         /// （全是 `.empty`）。调用方不据此分流的话，用户看到的是一句「一共 0 颗」，
         /// 而他没做错任何事，也不知道该改哪儿。
         var unreadableParts: Int
+        /// 图例里在色库中查无此码的那些色号（"HR"、"FG" 这种）。
+        ///
+        /// **必须报给用户**：这些颜色的格子最后按全色库里最接近的色号判，核对页上写的字
+        /// 跟图纸色号表上印的不是同一个。不说的话用户只会问「图纸上明明有 HR，
+        /// 怎么一个都没有」—— 而他在这一屏找不到任何线索。
+        var unknownLegendCodes: [String]
+
+        /// 上面那些对不上的色号该怎么跟用户说。nil = 没有这回事，别打扰他。
+        /// 两条流程（多零件 / 单图纸）共用一份说法 —— 同一件事在两屏上写成两样只会更难懂。
+        var unknownLegendNote: String? {
+            guard !unknownLegendCodes.isEmpty else { return nil }
+            // 色号表能有几十个色号，全列出来那句话就没人看了。
+            let shown = unknownLegendCodes.prefix(4).joined(separator: "、")
+            let codes = unknownLegendCodes.count > 4
+                ? String(localized: "\(shown) 等 \(unknownLegendCodes.count) 个色号")
+                : shown
+            return String(localized: "图纸色号表里的 \(codes)，在当前色号体系里对不上色库中的任何一种豆子。这些格子是按最接近的颜色判的，写的色号跟图纸上印的不是同一个 —— 核对时留意一下。")
+        }
     }
 
     /// 把每个零件切成格子并逐格判色。耗时在秒级，调用方请放后台。
@@ -98,6 +129,10 @@ enum PartsCellClassifier {
         // 任意色：只有用户指认了才有。它不是色号，猜不出来 —— 图纸上它就是一种普通的
         // 淡色，跟别的豆子长得一样，唯一的区别写在色号表那一行字里。
         let anyColorLab = anyColorHex.flatMap { GridCellSampler.lab(forHex: $0) }
+        // 图例的码先翻成色库里的豆子。**不能直接拿这些字符串去比**，理由见 resolveLegend。
+        let legend = resolveLegend(codes: legendCodes,
+                                   availableColors: availableColors,
+                                   colorSystem: colorSystem)
 
         // 第一趟：把每个零件切格、量出每格的众数色
         var fittedParts: [BeadPart] = []
@@ -140,7 +175,7 @@ enum PartsCellClassifier {
             backgroundLab: backgroundLab,
             anyColorLab: anyColorLab,
             colorSystem: colorSystem,
-            legendCodes: legendCodes,
+            legendColors: legend.colors,
             availableColors: availableColors
         )
 
@@ -167,7 +202,8 @@ enum PartsCellClassifier {
                 matchDeltaE: entry.deltaE
             )
         }
-        return Result(parts: fittedParts, palette: palette, unreadableParts: unreadableParts)
+        return Result(parts: fittedParts, palette: palette, unreadableParts: unreadableParts,
+                      unknownLegendCodes: legend.unknownCodes)
     }
 
     // MARK: - 采样
@@ -333,7 +369,7 @@ enum PartsCellClassifier {
         backgroundLab: LabColor?,
         anyColorLab: LabColor?,
         colorSystem: ColorSystem,
-        legendCodes: [String],
+        legendColors: [BeadColor],
         availableColors: [BeadColor]
     ) -> [Identity] {
         func table(_ colors: [BeadColor]) -> [(code: String, lab: LabColor)] {
@@ -343,22 +379,25 @@ enum PartsCellClassifier {
                 return (color.displayCode(for: colorSystem), lab)
             }
         }
-        let legendSet = Set(legendCodes)
-        let legendTable = table(availableColors.filter { legendSet.contains($0.displayCode(for: colorSystem)) })
+        let legendTable = table(legendColors)
         let fullTable = table(availableColors)
 
-        // **图纸自己写了用色表，就只在这张表里选。**
+        // **图纸自己写了用色表，就优先在这张表里选。**
         //
-        // 上一版是「图例里 ΔE ≤ 25 才用图例，否则去几百色的全色库里找最近的」，
-        // 结果图纸上明明只有十来种豆子，却认出一堆表上压根没有的色号 ——
-        // 用户实测：黑色的 H7 被判成了 23。全色库里总有一个色差更小的，
-        // 但那个色号这张图纸上根本不存在，用户拿着它去翻库存只会一头雾水。
+        // 走过两个极端：一版是「图例里 ΔE ≤ 25 才用图例，否则去全色库找最近的」，
+        // 太松，认出一堆表上压根没有的色号（全色库里相邻色号的色差中位数才 5 点出头，
+        // 总有一个「更近」的）；上一版是「只在图例里选」，太死，就是这个 PR 修的那个下场。
+        // 现在的 `legendMissDeltaE`(16) 在两者之间。
         //
-        // 代价是：图例漏写的颜色会被硬套到最近的那个图例色号上。这个代价可以接受 ——
-        // 它会整类扎堆出现在核对那一屏，用户一眼看得见，一次就能整类改掉；
-        // 而散落在几百个色号里的假色号是找都找不出来的。
-        // 图例为空（用户手动建的项目、没识别色号表）时才退回全色库。
-        let table = legendTable.isEmpty ? fullTable : legendTable
+        // **调这个数之前先看清方向**：调大 = 图例更容易过关 = 更偏向图纸自己写的色号；
+        // 调小 = 更多类退回全色库 = 更容易冒出图纸上没有的色号。想减少「表上没有的色号」
+        // 要往**大**调，不是往小调。
+        //
+        // 但**不能只在图例里选**：图例本身可能不全（那条阈值的注释里列了三种情形）。
+        // 只在图例里选时，图上其余的颜色会被硬塞进仅剩的那几个色号，
+        // 而且几类塞进同一个色号后在核对页合成一组 —— 连「整类改掉」都做不到。
+        // 所以图例里最近的那个也差得远时，退回全色库：至少每一类还是各自一组，
+        // 色号也真的接近，用户改一下就对了。
 
         return clusters.map { cluster in
             // **先认任意色，再认底色，最后才轮到色号。**
@@ -377,11 +416,91 @@ enum PartsCellClassifier {
             if let backgroundLab, GridCellSampler.deltaE(cluster.lab, backgroundLab) <= emptyDeltaE {
                 return Identity(fill: .empty, role: .empty, hex: hex(of: cluster.lab), deltaE: nil)
             }
-            if let hit = nearest(cluster.lab, in: table) {
-                return Identity(fill: .code(hit.0), role: .code(hit.0), hex: hex(of: cluster.lab), deltaE: hit.1)
+            let inLegend = nearest(cluster.lab, in: legendTable)
+            // 图例里有一个够像的就用它，图纸上写的就是这个字。
+            if let inLegend, inLegend.1 <= legendMissDeltaE {
+                return Identity(fill: .code(inLegend.0), role: .code(inLegend.0),
+                                hex: hex(of: cluster.lab), deltaE: inLegend.1)
+            }
+            // 图例解释不了这一类（或者压根没有图例），去全色库里找最近的。
+            if let wide = nearest(cluster.lab, in: fullTable), wide.1 < (inLegend?.1 ?? .infinity) {
+                return Identity(fill: .code(wide.0), role: .code(wide.0),
+                                hex: hex(of: cluster.lab), deltaE: wide.1)
+            }
+            if let inLegend {
+                return Identity(fill: .code(inLegend.0), role: .code(inLegend.0),
+                                hex: hex(of: cluster.lab), deltaE: inLegend.1)
             }
             return Identity(fill: .empty, role: .empty, hex: hex(of: cluster.lab), deltaE: nil)
         }
+    }
+
+    /// 图例里的色号 → 色库里的豆子。**这一道翻译不能省。**
+    ///
+    /// 图例存的是扫描那步定下的约定（见 `ScanView.recognizeImage`）：匹配上色库的存
+    /// **canonical mardCode**，没匹配上的原样存 AI 从图纸上读到的那个串。而判色要比的、
+    /// 格子里存的、用户在核对页看到的，是 `displayCode(for: colorSystem)`。
+    ///
+    /// 两者只有 MARD 项目上恰好相同。早先这里直接拿字符串比 displayCode，于是卡卡 /
+    /// COCO / 盼盼图纸上整张图例作废，只剩几个「mardCode 恰好也是一个合法卡卡码」的巧合
+    /// （B11、P3 这种，而且认领的还是另一颗豆子）—— 用户看到的就是
+    /// 「核对颜色那屏上面只给了 4 个颜色」，图上其余十几种颜色全被塞进了这 4 个里。
+    ///
+    /// 查的顺序是**先 mardCode、后本体系**，理由见下面那段注释 —— 关键在于图例里存的
+    /// 就是 mardCode，跟项目选了哪个体系无关。
+    ///
+    /// - Returns: `colors` 是认出来的豆子（去重，保持图例顺序，串已 trim + 大写）；
+    ///   `unknownCodes` 是**没能翻成豆子**的那些码，两种来源合在一起：
+    ///   色库里根本没有这个码（图纸印的是我们没收录的品牌，"HR"、"FG"），
+    ///   以及色库里有这颗豆子、但它在当前体系没有色号（`R5` 出现在卡卡图纸上）。
+    ///   后者其实有救 —— 用户把项目的色号体系改回去就对上了 —— 但现在两者混在一个数组里，
+    ///   调用方分不开，所以只能说同一句话。要给出那条出路得把这里拆成两支。
+    ///
+    ///   调用方要把它报给用户：图上如果真用到了这些颜色，那些格子写的色号跟图纸上印的
+    ///   不是同一个。**注意不是「一定按全色库最接近的判」** —— 已解析出来的图例色里
+    ///   只要有一个够近（≤ `legendMissDeltaE`），那一类照样吃图例的色号。
+    ///   「任意色」那一行（AI 约定输出 `any`）不是色号，两边都不算。
+    static func resolveLegend(
+        codes: [String],
+        availableColors: [BeadColor],
+        colorSystem: ColorSystem
+    ) -> (colors: [BeadColor], unknownCodes: [String]) {
+        var byMard: [String: BeadColor] = [:]
+        var byDisplay: [String: BeadColor] = [:]
+        for color in availableColors where color.hasCode(for: colorSystem) {
+            // 这个体系里没有码的豆子直接不要：它在这张图纸上根本没法显示，
+            // 判成它等于给用户一个他翻不到的色号。
+            byMard[color.mardCode.uppercased()] = byMard[color.mardCode.uppercased()] ?? color
+            let display = color.displayCode(for: colorSystem).uppercased()
+            byDisplay[display] = byDisplay[display] ?? color
+        }
+
+        var colors: [BeadColor] = []
+        var seen: Set<UUID> = []
+        var unknown: [String] = []
+        for raw in codes {
+            let key = raw.trimmingCharacters(in: .whitespaces).uppercased()
+            guard !key.isEmpty, key != "ANY" else { continue }
+            // **先按 mardCode 查。** 图例里这串字是扫描那步存下来的 canonical mardCode ——
+            // 项目选的是哪个体系都一样（见方法头注释）。所以卡卡项目里拿到的 "B1"
+            // 是 MARD 的 B1（亮绿 E6EE31），**不是**卡卡的 B1（白 FDFBFF）。
+            //
+            // 反过来说，一个串只要在本体系里是合法色号，扫描那步就一定认出来了、
+            // 于是被换成 mardCode 存了进去 —— 所以在这儿先按本体系查，查到的必然是
+            // 「mardCode 恰好撞上另一颗豆子的本体系码」那种巧合。卡卡上这样的码有 21 个，
+            // 全落在 MARD 的绿色系：B1 会认成白、B11 认成黑、B5 认成灰。
+            // （这也是为什么两边不能只留一个：真正该改的是「卡卡项目却存 MARD 码」
+            //  这件事本身，那要动 BeadUsage 的存储和存量数据，不在这一层解决。）
+            //
+            // 本体系码只兜**没匹配上**的那一支：AI 从图纸上读到、我们当时没认出来的原始串。
+            // 它按 mardCode 当然也查不到，落到这儿再按本体系试一次不亏。
+            guard let color = byMard[key] ?? byDisplay[key] else {
+                if !unknown.contains(key) { unknown.append(key) }
+                continue
+            }
+            if seen.insert(color.id).inserted { colors.append(color) }
+        }
+        return (colors, unknown)
     }
 
     private static func nearest(_ lab: LabColor, in table: [(code: String, lab: LabColor)]) -> (String, Double)? {

@@ -112,6 +112,10 @@ struct PartsSheetFlowView: View {
         case confirmReclassify
         /// 判色时有零件的框里取不到图。出路是回零件清单改那几个框。
         case classifyNote(String)
+        /// 图纸色号表里有色库对不上的色号（见 `PartsCellClassifier.Result.unknownLegendNote`）。
+        /// 出路是去核对页看那几组，所以**不跟上面那条共用** —— 那条的默认按钮是「回零件清单」，
+        /// 而这件事在零件清单上是解不了的。
+        case legendNote(String)
         /// 这块范围里一个零件都没找到。出路是**留在这一屏**把框挪一挪，
         /// 所以刻意不跟上面那条共用 —— 标题和按钮都不一样，混用会出现
         /// 「标题说有零件没看成、正文说一个也没找到」，而且默认按钮会把人送进一个空清单。
@@ -124,6 +128,7 @@ struct PartsSheetFlowView: View {
             case .confirmRedetect: return "redetect"
             case .confirmReclassify: return "reclassify"
             case .classifyNote(let text): return "note:\(text)"
+            case .legendNote(let text): return "legend:\(text)"
             case .detectFoundNothing: return "empty"
             }
         }
@@ -325,6 +330,12 @@ struct PartsSheetFlowView: View {
                     message: Text(text),
                     primaryButton: .default(Text("回零件清单")) { path = [.list] },
                     secondaryButton: .cancel(Text("知道了"))
+                )
+            case .legendNote(let text):
+                return Alert(
+                    title: Text("有几个色号色库里没有"),
+                    message: Text(text),
+                    dismissButton: .default(Text("知道了"))
                 )
             case .detectFoundNothing:
                 return Alert(
@@ -721,6 +732,11 @@ struct PartsSheetFlowView: View {
                     self.prompt = .classifyNote(String(
                         localized: "有 \(result.unreadableParts) 个零件的框里取不到图，它们的格子是空的。回零件清单看看这几个框是不是太小了。"
                     ))
+                } else if saved, let note = result.unknownLegendNote {
+                    // 出路不一样（这条是「去核对页看一眼」，上面那条是「回零件清单改框」），
+                    // 所以两句话不共用一个弹窗。抢同一个口子时让掉的是这条 ——
+                    // 零件没看成会让整块零件空着，比色号写得对不对要紧。
+                    self.prompt = .legendNote(note)
                 }
                 self.path = [.list, .cellSize, .baseColor, .review]
             }
