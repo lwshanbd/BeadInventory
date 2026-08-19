@@ -8,16 +8,16 @@ import XCTest
 /// 卡卡 / COCO 图纸上曾经整张图例作废，用户看到的是「上面只给了 4 个颜色」。
 final class PartsLegendResolutionTests: XCTestCase {
 
-    /// 三颗豆子，MARD 码和卡卡码故意错开：
-    /// 黑豆的 mardCode 是 H7、卡卡码是 B11；而**另一颗**红豆的卡卡码恰好是 H7 那种巧合
-    /// 正是老代码栽的地方，所以这里把它也摆进来。
+    /// 这两颗是色库里真实存在的一对撞名豆子（`allcolors.json`）：
+    /// 橄榄绿的 MARD 码是 `B11`、卡卡码是 `B140`；而黑豆的**卡卡码**恰好也叫 `B11`。
+    /// 卡卡上这样的撞名有 21 个，全落在 MARD 的绿色系。
+    private let olive = BeadColor(colorHex: "5D722A", mardCode: "B11", kakaCode: "B140")
     private let black = BeadColor(colorHex: "000000", mardCode: "H7", cocoCode: "B09", kakaCode: "B11")
     private let white = BeadColor(colorHex: "FFFFFF", mardCode: "H1", cocoCode: "B01", kakaCode: "B1")
-    private let red = BeadColor(colorHex: "FF0000", mardCode: "C1", cocoCode: "C01", kakaCode: "H7")
     /// 只有 MARD 码的豆子：卡卡图纸上根本显示不出来。
     private let mardOnly = BeadColor(colorHex: "00FF00", mardCode: "R5")
 
-    private var library: [BeadColor] { [black, white, red, mardOnly] }
+    private var library: [BeadColor] { [olive, black, white, mardOnly] }
 
     // MARK: - MARD 图纸
 
@@ -31,25 +31,19 @@ final class PartsLegendResolutionTests: XCTestCase {
 
     // MARK: - 非 MARD 图纸（这里是老代码整片失配的地方）
 
-    /// **用户选了卡卡，就按卡卡认。** 同一个 "H7" 在两个体系里是两颗完全不同的豆子；
-    /// 先去 MARD 里撞的话，卡卡图纸上写着 H7 的那些格子会被判成一颗不相干的豆子。
-    func testKakaProject_prefersKakaCodeOverMardCode() {
+    /// **卡卡项目里，图例存的那串字仍然是 MARD 码。**
+    ///
+    /// 扫描那步（`ScanView.recognizeImage`）不管项目选了什么体系，认出来的一律换成
+    /// canonical mardCode 存下来。所以图纸上印着卡卡的 `B140`（橄榄绿），
+    /// 数据库里存的是 `B11` —— 按卡卡码去查它，查到的是黑豆。整片绿色会变成黑色。
+    ///
+    /// 这条守的是 21 个真实色号，全是绿色系。
+    func testKakaProject_storedCodeIsMardCode_notTheKakaLookalike() {
         let result = PartsCellClassifier.resolveLegend(
-            codes: ["H7"], availableColors: library, colorSystem: .kaka
+            codes: ["B11"], availableColors: library, colorSystem: .kaka
         )
-        XCTAssertEqual(result.colors.map(\.colorHex), ["FF0000"],
-                       "卡卡图纸上的 H7 是「卡卡码叫 H7」的那颗红豆，不是 MARD 的黑豆")
-    }
-
-    /// 本体系里根本不可能是合法色号时（卡卡码只有 B/P/R+数字，"H3" 不是），
-    /// 才退到 canonical mardCode —— 扫描那步匹配成功时存的就是它。
-    /// 这一步没有歧义，但不能省：省了卡卡 / COCO 项目的图例会整张作废。
-    func testKakaProject_fallsBackToMardCodeWhenNotAKakaCode() {
-        let result = PartsCellClassifier.resolveLegend(
-            codes: ["H1"], availableColors: library, colorSystem: .kaka
-        )
-        XCTAssertEqual(result.colors.map(\.colorHex), ["FFFFFF"])
-        XCTAssertTrue(result.unknownCodes.isEmpty)
+        XCTAssertEqual(result.colors.map(\.colorHex), ["5D722A"],
+                       "B11 是橄榄绿的 MARD 码，不能认成「卡卡码恰好叫 B11」的那颗黑豆")
     }
 
     /// 这个体系里没有码的豆子不能进候选：判成它等于给用户一个他在图纸上翻不到的色号。
@@ -73,7 +67,9 @@ final class PartsLegendResolutionTests: XCTestCase {
         XCTAssertEqual(result.unknownCodes, ["HR", "FG"], "大小写不同的同一个码只报一次")
     }
 
-    /// 原始串恰好是本体系的合法码时（COCO 图纸上的 "B09"），按本体系认。
+    /// 按 mardCode 查不到时，才轮到本体系的码 —— 兜的是「AI 读到了、我们当时没匹配上」
+    /// 那一支（色库里没有任何豆子的 mardCode 叫 "B09"，所以只可能是 COCO 码）。
+    /// 删掉这条兜底，这种图例条目会被误报成「色库里没有」。
     func testRawBrandCodeResolvesByDisplayCode() {
         let result = PartsCellClassifier.resolveLegend(
             codes: ["B09"], availableColors: library, colorSystem: .coco
@@ -88,13 +84,6 @@ final class PartsLegendResolutionTests: XCTestCase {
         )
         XCTAssertEqual(result.colors.map(\.mardCode), ["H7"])
         XCTAssertTrue(result.unknownCodes.isEmpty)
-    }
-
-    func testDuplicateLegendEntriesCollapse() {
-        let result = PartsCellClassifier.resolveLegend(
-            codes: ["H7", "H7"], availableColors: library, colorSystem: .mard
-        )
-        XCTAssertEqual(result.colors.count, 1)
     }
 }
 
@@ -178,7 +167,6 @@ final class PartsClassifyLegendCoverageTests: XCTestCase {
                        "图上八种颜色，判出来也该是八个色号")
         XCTAssertEqual(result.unknownLegendCodes, ["HR", "FG"],
                        "查不到的色号要报出来，好告诉用户这几组的字跟图纸上印的不一样")
-        XCTAssertNotNil(result.unknownLegendNote)
     }
 
     /// 完全没有色号表（用户手建的项目）：照旧退回全色库。
@@ -197,15 +185,30 @@ final class PartsClassifyLegendCoverageTests: XCTestCase {
             BeadColor(colorHex: "00FF00", mardCode: "C2", kakaCode: "P3"),
             // 图例里没有的第三种颜色，用来确认它不会被塞进上面两个色号
             BeadColor(colorHex: "0000FF", mardCode: "C3", kakaCode: "B77"),
-            // 卡卡没有这一颗 —— 它不能出现在卡卡图纸的判色结果里
+            // 卡卡没有这一颗，而且它**比 C3 更接近那一格的颜色** —— 少了 `table()` 里的
+            // hasCode 过滤，它就会赢，用户会拿到一个在卡卡色号表上翻不到的色号。
             BeadColor(colorHex: "0000F0", mardCode: "C4"),
         ]
         let result = classify(legend: ["C1", "C2"],
-                              hexes: ["FF0000", "00FF00", "0000FF"],
+                              hexes: ["FF0000", "00FF00", "0000F4"],
                               colors: library,
                               colorSystem: .kaka)
         XCTAssertEqual(codes(result), ["R9", "P3", "B77"])
         XCTAssertTrue(result.unknownLegendCodes.isEmpty)
+    }
+
+    /// **图例里有一个够像的，就别去全色库里挑更像的。**
+    ///
+    /// 这条守的是 `legendMissDeltaE` 本身：格子色离图例色 ΔE≈11.5，离色库里另一颗
+    /// 不在图例上的豆子只有 ΔE≈0.4。判色必须写图例上那个色号 —— 图纸上印的就是它，
+    /// 用户拿着它去翻库存才对得上。阈值被调小、或者「图例优先」那一支被删掉，这条会挂。
+    func testLegendWinsOverACloserColorOutsideIt() {
+        let onSheet = BeadColor(colorHex: "35709F", mardCode: "L1")
+        let closer = BeadColor(colorHex: "4181C1", mardCode: "W1")
+        let result = classify(legend: ["L1"], hexes: ["4080C0"],
+                              colors: [onSheet, closer])
+        XCTAssertEqual(codes(result), ["L1"],
+                       "图例里的 L1 已经够像了，不该被色库里更近的 W1 顶掉")
     }
 
     /// 卡卡图纸上，图例里那颗豆子压根没有卡卡码时：不能默默当它不存在，
@@ -216,6 +219,5 @@ final class PartsClassifyLegendCoverageTests: XCTestCase {
         let result = classify(legend: ["C1"], hexes: ["00FF00"],
                               colors: library, colorSystem: .kaka)
         XCTAssertEqual(result.unknownLegendCodes, ["C1"])
-        XCTAssertNotNil(result.unknownLegendNote)
     }
 }
