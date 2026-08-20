@@ -830,14 +830,16 @@ struct PartsCellSizeStepView: View {
             .insetBy(dx: -sample.bounds.width * 0.06, dy: -sample.bounds.height * 0.06)
             .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
         let cropped = await Task.detached(priority: .userInitiated) {
-            PartsThumbnailMaker.crop(source, normalized: padded)
+            PartsThumbnailMaker.cropExact(source, normalized: padded)
         }.value
         // 裁这一下的工夫用户可能已经点了「对齐了，看下一个」，或者零件区那一版刚换上来 ——
         // 那时上面的 `.task(id:)` 已经把这一轮取消了。不认取消的话，屏幕上显示的是
         // 上一个零件的图，格线却是按新零件算的，用户对着错的图在标定。
         guard !Task.isCancelled else { return }
-        sampleImage = cropped
-        sampleRegion = padded
+        // `padded` 可能伸到高清工作图之外。裁图会把越界部分截掉，所以图片和网格都必须
+        // 使用真正裁到的区域；继续用 `padded` 会把被截掉更多的方向按错误比例摊开。
+        sampleImage = cropped?.image
+        sampleRegion = cropped?.rect ?? .zero
         syncFrameToLattice()
         focusIfTooDense()
         // 翻到一个零件就先按当前格距给它对一次 —— 用户翻过来看到的应该是已经对好的，

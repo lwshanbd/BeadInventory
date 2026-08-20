@@ -341,11 +341,11 @@ struct SinglePatternHighlightStepView: View {
             .insetBy(dx: -box.width * 0.03, dy: -box.height * 0.03)
             .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
         let cropped = await Task.detached(priority: .userInitiated) {
-            PartsThumbnailMaker.crop(source, normalized: padded)
+            PartsThumbnailMaker.cropExact(source, normalized: padded)
         }.value
         guard !Task.isCancelled else { return }
-        image = cropped
-        region = padded.width > 0 ? padded : CGRect(x: 0, y: 0, width: 1, height: 1)
+        image = cropped?.image
+        region = cropped?.rect ?? .zero
     }
 
     // MARK: - 投到电视 / 投影仪
