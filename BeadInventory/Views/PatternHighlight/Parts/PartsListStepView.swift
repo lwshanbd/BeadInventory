@@ -35,6 +35,7 @@ struct PartsListStepView: View {
     @State private var selection: Set<UUID> = []
     @State private var thumbnails: [UUID: UIImage] = [:]
     @State private var roiImage: UIImage?
+    @State private var roiImageRegion: CGRect = .zero
     @State private var renamingPart: BeadPart?
     @State private var renameText: String = ""
     /// 最近一次是从图上点中的零件。用来驱动下面的缩略图滚过去；
@@ -115,10 +116,11 @@ struct PartsListStepView: View {
             let region = roi
             let built = await Task.detached(priority: .userInitiated) {
                 (thumbs: PartsThumbnailMaker.make(for: snapshot, from: source),
-                 crop: PartsThumbnailMaker.crop(source, normalized: region))
+                 crop: PartsThumbnailMaker.cropExact(source, normalized: region))
             }.value
             thumbnails = built.thumbs
-            roiImage = built.crop
+            roiImage = built.crop?.image
+            roiImageRegion = built.crop?.rect ?? .zero
         }
     }
 
@@ -133,18 +135,20 @@ struct PartsListStepView: View {
 
     private var preview: some View {
         GeometryReader { geo in
+            let imageRegion = roiImageRegion.width > 0 && roiImageRegion.height > 0
+                ? roiImageRegion : roi
             let display = PartsRegionStepView.aspectFitRect(
                 imageSize: roiImage?.size ?? CGSize(width: 1, height: 1),
                 in: geo.size
             )
-            let transform = PartsCanvasTransform(region: roi, display: display,
+            let transform = PartsCanvasTransform(region: imageRegion, display: display,
                                                  size: geo.size, zoom: zoom, pan: pan)
             ZStack(alignment: .topLeading) {
                 if let roiImage {
                     // 按放大后的**最终尺寸**摆图，不用 scaleEffect（同「量格子」那屏）。
                     // scaleEffect 是图层变换：图先按画布大小栅格化，再整层拉大 8 倍 ——
                     // 放大的是那张已经缩小过的栅格，用户特地留的原图一个像素都用不上。
-                    let box = transform.screenRect(roi)
+                    let box = transform.screenRect(imageRegion)
                     Image(uiImage: roiImage)
                         .resizable()
                         // 放大到超过原图分辨率时用最近邻，豆子边界是硬的；

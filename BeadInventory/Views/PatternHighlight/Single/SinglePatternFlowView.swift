@@ -648,7 +648,8 @@ struct SinglePatternFlowView: View {
             autoreleasepool {
                 let maxPixel = Self.decodeMaxPixel(for: data, budget: Self.workPixelBudget)
                 guard let full = ImageDownsampler.downsampleToUIImage(data, maxPixelSize: maxPixel),
-                      let cropped = PartsThumbnailMaker.crop(.whole(full), normalized: padded) else { return nil }
+                      let crop = PartsThumbnailMaker.cropExact(.whole(full), normalized: padded) else { return nil }
+                let cropped = crop.image
                 // **必须重画一份。** `CGImage.cropping(to:)` 不复制像素，它跟整图共享
                 // data provider —— 只要裁剪结果活着，整图那份解码就一直躺在内存里
                 // （6000 万像素 = 240 MB，会在整个会话期间常驻）。
@@ -658,7 +659,7 @@ struct SinglePatternFlowView: View {
                 let detached = UIGraphicsImageRenderer(size: cropped.size, format: format).image { _ in
                     cropped.draw(in: CGRect(origin: .zero, size: cropped.size))
                 }
-                return PartsWorkImage(image: detached, region: padded)
+                return PartsWorkImage(image: detached, region: crop.rect)
             }
         }.value
         guard let built else {

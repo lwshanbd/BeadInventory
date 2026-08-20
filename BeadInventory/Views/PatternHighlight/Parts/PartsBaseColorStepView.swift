@@ -84,6 +84,7 @@ struct PartsBaseColorStepView: View {
     /// 不说一句，他改完按下去看到的还是照旧的颜色，会以为是没生效还是自己点错了。
     @State private var repickedThisVisit = false
     @State private var image: UIImage?
+    @State private var imageRegion: CGRect = .zero
     @State private var zoom: CGFloat = 1
     @State private var lastZoom: CGFloat = 1
     @State private var pan: CGSize = .zero
@@ -99,8 +100,12 @@ struct PartsBaseColorStepView: View {
     }
 
     private var transform: PartsCanvasTransform {
-        PartsCanvasTransform(region: roi, display: displayRect,
+        PartsCanvasTransform(region: activeImageRegion, display: displayRect,
                              size: canvasSize, zoom: zoom, pan: pan)
+    }
+
+    private var activeImageRegion: CGRect {
+        imageRegion.width > 0 && imageRegion.height > 0 ? imageRegion : roi
     }
 
     var body: some View {
@@ -121,8 +126,8 @@ struct PartsBaseColorStepView: View {
             ZStack(alignment: .topLeading) {
                 Theme.ColorToken.Surface.subtle
 
-                if let image, canvasSize.width > 0, roi.width > 0 {
-                    let box = transform.screenRect(roi)
+                if let image, canvasSize.width > 0, activeImageRegion.width > 0 {
+                    let box = transform.screenRect(activeImageRegion)
                     Image(uiImage: image)
                         .resizable()
                         .interpolation(.none)
@@ -316,9 +321,10 @@ struct PartsBaseColorStepView: View {
         let source = work
         let region = roi
         let cropped = await Task.detached(priority: .userInitiated) {
-            PartsThumbnailMaker.crop(source, normalized: region)
+            PartsThumbnailMaker.cropExact(source, normalized: region)
         }.value
-        image = cropped
+        image = cropped?.image
+        imageRegion = cropped?.rect ?? .zero
         // 底色先猜一个填进去 —— 多数图纸猜得对，用户点个头就行，
         // 真正非点不可的只有任意色。
         if emptyHex == nil {
@@ -330,7 +336,7 @@ struct PartsBaseColorStepView: View {
     }
 
     private func pick(at screenPoint: CGPoint) {
-        guard image != nil, canvasSize.width > 0, roi.width > 0 else { return }
+        guard image != nil, canvasSize.width > 0, activeImageRegion.width > 0 else { return }
         let normalized = transform.normalized(screenPoint)
         guard CGRect(x: 0, y: 0, width: 1, height: 1).contains(normalized) else { return }
         let source = work
