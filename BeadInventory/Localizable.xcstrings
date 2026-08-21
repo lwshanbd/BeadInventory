@@ -13011,6 +13011,156 @@
           }
         }
       }
+    },
+    "在手机上点一个色号，这里就只亮那个色号的格子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick a color code on your phone and only its cells light up here"
+          }
+        }
+      }
+    },
+    "你手上那块豆板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your bead board"
+          }
+        }
+      }
+    },
+    "关掉投影仪模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn off projector mode"
+          }
+        }
+      }
+    },
+    "把投影里那个方框的四个角，分别拖到豆板的四个角上。角上的颜色和号跟下面预览里的一一对应。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag each corner of the projected frame onto the matching corner of your board. The colors and numbers match the preview below."
+          }
+        }
+      }
+    },
+    "投影仪模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projector mode"
+          }
+        }
+      }
+    },
+    "投影仪模式 · 只亮当前色号，点这里重新对板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projector mode · only the current color lights up. Tap to line up again"
+          }
+        }
+      }
+    },
+    "投影仪斜着照没关系：四个角对上之后，App 会把画面掰回正方形，中间的格子自动就对齐了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An angled projector is fine: once the four corners line up, the app squares the picture back up and every cell in between falls into place."
+          }
+        }
+      }
+    },
+    "投影里那个方框会分成这么多格，四个角对到板子四个角上之后，一格正好一个孔。格数说错，中间就会越偏越多。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The projected frame is split into this many cells. Once its four corners sit on your board's four corners, one cell covers exactly one peg. Get the count wrong and the middle drifts further off with every cell."
+          }
+        }
+      }
+    },
+    "投屏中 · 投到豆板上？点这里开投影仪模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Casting · projecting onto your board? Tap to set up projector mode"
+          }
+        }
+      }
+    },
+    "挪 %@ 这个角" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move corner %@"
+          }
+        }
+      }
+    },
+    "整块一起挪" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move the whole frame"
+          }
+        }
+      }
+    },
+    "图纸比豆板大的时候，超出板子的格子会投到桌面上：先拼板子上这一块，拼完把豆板挪到下一块位置再拼。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When the pattern is bigger than your board, the extra cells land on the table: build the part on the board first, then move the board to the next section."
+          }
+        }
+      }
+    },
+    "接的是电视、不是投影仪时用这个：画面回到整块板铺满屏幕，这组对好的四个角也一并清掉。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use this when you're on a TV rather than a projector: the whole board fills the screen again, and these four corners are cleared."
+          }
+        }
+      }
+    },
+    "这一屏摆的是 %@ 的板，跟上面对不上。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The board on this screen is %@, which doesn't match the size above."
+          }
+        }
+      }
+    },
+    "改成 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change to %@"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

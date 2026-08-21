@@ -1,0 +1,235 @@
+//
+//  ProjectorGeometry.swift
+//  BeadInventory
+//
+//  投影仪投出来的画面，怎么按四个角掰回到豆板上
+//
+//  ## 为什么两个点不够
+//
+//  投影仪很少能正对着桌面：它多半架在旁边、斜着往下照。斜着照出来的正方形画面落在桌上
+//  就是个**梯形** —— 近的一边短、远的一边长。这时候不管怎么挪位置、怎么改格子大小，
+//  都只能对上一个角：左上角对准了，右下角就差出去半格甚至一整格，照着投影按豆子，
+//  越往远处越错。
+//
+//  两个点（左上角 + 格距）能表达的只有「平移 + 等比缩放」，梯形不在里面。四个角才够：
+//  用户把画面里那个方框的四个角分别拖到豆板的四个角上，剩下的形变由这里算出来 ——
+//  这就是投影仪自带的「梯形校正」在做的事，只不过那个旋钮只能校上下两边，
+//  而且校完整块画面都缩水；这里是 App 自己画，一格都不浪费。
+//
+//  ## 单应（homography）
+//
+//  桌面是平的、投影仪的成像也是平面透视，所以「豆板上的格子」到「画面上的位置」
+//  之间是一个 3×3 的射影变换 —— 四对点就唯一确定它。确定之后**中间的格子自动就对了**，
+//  不需要用户再对第五个点：这是平面透视的性质，不是近似。
+//
+//  这里算的是 Heckbert 那套「单位正方形 → 任意四边形」的闭式解，比解 8 元线性方程组
+//  短得多，也不会引入迭代误差。
+//
+//  ## 为什么要自己画四边形，而不是给图层加个 3D 变换
+//
+//  `CATransform3D` 也能表达同一个变换，但那是**把画好的位图再拉一遍**：拉完是重采样，
+//  像素画那种一格一色的图会糊成渐变（`scaleEffect` 毁掉最近邻是同一个坑）。
+//  这里换成：每一格的四个角各自算一遍，然后直接填这个四边形。画出来的边永远是实的，
+//  投多大都清楚。
+//
+
+import CoreGraphics
+
+// MARK: - 豆板的四个角
+
+/// 桌上那块豆板的四个角，在外屏画面里的位置。
+///
+/// 单位是**外屏宽度**（x 和 y 都是）—— 换一台投影仪、或者同一台换个输出分辨率，
+/// 点数全变、比例还在。两个方向用同一个单位是为了少一次换算、少一个出错的地方。
+struct ProjectorQuad: Equatable {
+    var topLeft: CGPoint
+    var topRight: CGPoint
+    var bottomRight: CGPoint
+    var bottomLeft: CGPoint
+
+    subscript(corner: ProjectorCorner) -> CGPoint {
+        get {
+            switch corner {
+            case .topLeft: return topLeft
+            case .topRight: return topRight
+            case .bottomRight: return bottomRight
+            case .bottomLeft: return bottomLeft
+            }
+        }
+        set {
+            switch corner {
+            case .topLeft: topLeft = newValue
+            case .topRight: topRight = newValue
+            case .bottomRight: bottomRight = newValue
+            case .bottomLeft: bottomLeft = newValue
+            }
+        }
+    }
+
+    /// 顺时针一圈。画框、判凸、算外接矩形都按这个顺序走。
+    var clockwise: [CGPoint] { [topLeft, topRight, bottomRight, bottomLeft] }
+
+    /// 换算成外屏上的点数
+    func points(in screen: CGSize) -> [CGPoint] {
+        clockwise.map { CGPoint(x: $0.x * screen.width, y: $0.y * screen.width) }
+    }
+
+    func point(_ corner: ProjectorCorner, in screen: CGSize) -> CGPoint {
+        CGPoint(x: self[corner].x * screen.width, y: self[corner].y * screen.width)
+    }
+
+    /// 四个角围出来那块地方的外接矩形（外屏点数）。图例要躲开的就是它。
+    func boundingBox(in screen: CGSize) -> CGRect {
+        let pts = points(in: screen)
+        let xs = pts.map(\.x), ys = pts.map(\.y)
+        guard let minX = xs.min(), let maxX = xs.max(),
+              let minY = ys.min(), let maxY = ys.max() else { return .zero }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    /// 四个角还围得成一块正经地方吗。
+    ///
+    /// 拖角是可以把四边形拖成「8」字或者拧成一条线的，而那时候单应算出来的东西
+    /// 是乱的：格子会翻面、会飞到画面外。与其画出一团乱码让用户以为功能坏了，
+    /// 不如在拖的那一刻就不让它变成这样（见 `BoardProjector.setCorner`）。
+    ///
+    /// 判据是四个叉积同号（凸且不自交），外加一个下限面积（拧成细线时叉积虽同号，
+    /// 但一格已经小到看不见了）。
+    var isUsable: Bool {
+        let p = clockwise
+        var positive = false, negative = false
+        for i in 0..<4 {
+            let a = p[i], b = p[(i + 1) % 4], c = p[(i + 2) % 4]
+            let cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)
+            if cross > 0 { positive = true }
+            if cross < 0 { negative = true }
+        }
+        guard positive != negative else { return false }
+        // 鞋带公式。单位是「外屏宽度的平方」，0.01 相当于画面的百分之一。
+        var area: CGFloat = 0
+        for i in 0..<4 {
+            let a = p[i], b = p[(i + 1) % 4]
+            area += a.x * b.y - b.x * a.y
+        }
+        return abs(area) / 2 >= 0.01
+    }
+
+    /// 一块四四方方、居中放着的板：第一次进校准页时的起点。
+    /// 用户一进来就该有个方框可以拖，而不是对着一片黑猜该点哪儿。
+    static func centered(cols: Int, rows: Int, in screen: CGSize) -> ProjectorQuad {
+        let bottom = screen.height / screen.width          // 画面高度，同样以宽度为单位
+        let cell = min(bottom * 0.8 / CGFloat(max(rows, 1)), 0.8 / CGFloat(max(cols, 1)))
+        let width = cell * CGFloat(max(cols, 1))
+        let height = cell * CGFloat(max(rows, 1))
+        let x = (1 - width) / 2
+        let y = (bottom - height) / 2
+        return ProjectorQuad(
+            topLeft: CGPoint(x: x, y: y),
+            topRight: CGPoint(x: x + width, y: y),
+            bottomRight: CGPoint(x: x + width, y: y + height),
+            bottomLeft: CGPoint(x: x, y: y + height)
+        )
+    }
+}
+
+/// 四个角各自的身份。用户在手机上选中哪个、微调按钮作用在哪个，靠它。
+enum ProjectorCorner: String, CaseIterable, Identifiable {
+    case topLeft, topRight, bottomRight, bottomLeft
+
+    var id: String { rawValue }
+
+    /// 说明里写的序号。顺时针从左上开始 —— 人绕着板子对角也是这么绕的。
+    var number: String {
+        switch self {
+        case .topLeft: return "①"
+        case .topRight: return "②"
+        case .bottomRight: return "③"
+        case .bottomLeft: return "④"
+        }
+    }
+}
+
+// MARK: - 格子 → 画面
+
+/// 「豆板上第几行第几列」到「外屏上哪一点」的射影变换。
+///
+/// 输入坐标是**格**：(0,0) 是豆板左上角那个孔的左上角，(cols,rows) 是右下角那个孔的
+/// 右下角。小数也认（画一格里的内缩、画半格的辅助线都要用）。
+struct ProjectorMapping {
+    // p' = ((a·u + b·v + c) / (g·u + h·v + 1), (d·u + e·v + f) / (g·u + h·v + 1))
+    private let a, b, c, d, e, f, g, h: CGFloat
+    private let cols: CGFloat
+    private let rows: CGFloat
+
+    /// 板子多少格。渲染时要判断一格在不在板上。
+    let boardCols: Int
+    let boardRows: Int
+
+    /// nil = 这四个角围不成一块正经地方（拖坏了 / 存坏了），调用方据此退回铺满。
+    init?(quad: ProjectorQuad, screen: CGSize, cols: Int, rows: Int) {
+        guard screen.width > 0, cols > 0, rows > 0, quad.isUsable else { return nil }
+        let p = quad.points(in: screen)
+        let (x0, y0) = (p[0].x, p[0].y)   // 单位方格 (0,0)
+        let (x1, y1) = (p[1].x, p[1].y)   //          (1,0)
+        let (x2, y2) = (p[2].x, p[2].y)   //          (1,1)
+        let (x3, y3) = (p[3].x, p[3].y)   //          (0,1)
+
+        let dx1 = x1 - x2, dx2 = x3 - x2, dx3 = x0 - x1 + x2 - x3
+        let dy1 = y1 - y2, dy2 = y3 - y2, dy3 = y0 - y1 + y2 - y3
+
+        if abs(dx3) < 1e-9 && abs(dy3) < 1e-9 {
+            // 平行四边形（投影仪正对着桌子时就是这种）：没有透视项，退化成仿射。
+            a = x1 - x0; b = x2 - x1; c = x0
+            d = y1 - y0; e = y2 - y1; f = y0
+            g = 0; h = 0
+        } else {
+            let den = dx1 * dy2 - dy1 * dx2
+            guard abs(den) > 1e-9 else { return nil }
+            g = (dx3 * dy2 - dy3 * dx2) / den
+            h = (dx1 * dy3 - dy1 * dx3) / den
+            a = x1 - x0 + g * x1
+            b = x3 - x0 + h * x3
+            c = x0
+            d = y1 - y0 + g * y1
+            e = y3 - y0 + h * y3
+            f = y0
+        }
+        self.cols = CGFloat(cols)
+        self.rows = CGFloat(rows)
+        boardCols = cols
+        boardRows = rows
+    }
+
+    /// 第 `col` 列、第 `row` 行那个位置在画面上的点。
+    ///
+    /// nil = 这一点落在「地平线」的另一侧（分母 ≤ 0）。斜着投的时候，画面之外足够远的
+    /// 地方会翻到透视中心背后去，硬画出来是一片翻转的乱纹。图纸比豆板大时确实会算到
+    /// 那么远的格子，所以这里必须能说「这一格没有」。
+    func point(col: CGFloat, row: CGFloat) -> CGPoint? {
+        let u = col / cols
+        let v = row / rows
+        let w = g * u + h * v + 1
+        guard w > 1e-6 else { return nil }
+        return CGPoint(x: (a * u + b * v + c) / w, y: (d * u + e * v + f) / w)
+    }
+
+    /// 一格的四个角（顺时针）。`inset` 是每边往里缩多少格 —— 缩一点，
+    /// 挨着的两格才不会连成一片，用户一眼能数清是几个孔。
+    func cellCorners(col: Int, row: Int, inset: CGFloat = 0) -> [CGPoint]? {
+        let c0 = CGFloat(col) + inset, c1 = CGFloat(col + 1) - inset
+        let r0 = CGFloat(row) + inset, r1 = CGFloat(row + 1) - inset
+        guard let tl = point(col: c0, row: r0),
+              let tr = point(col: c1, row: r0),
+              let br = point(col: c1, row: r1),
+              let bl = point(col: c0, row: r1) else { return nil }
+        return [tl, tr, br, bl]
+    }
+
+    /// 一格在画面上大概多大（点）。用来决定「小到这个份上就别画了」。
+    /// 取板子正中间那一格：斜投时四角的格子一大一小，中间那格最有代表性。
+    var averageCellSize: CGFloat {
+        guard let a = point(col: cols / 2, row: rows / 2),
+              let b = point(col: cols / 2 + 1, row: rows / 2 + 1) else { return 0 }
+        return max(abs(b.x - a.x), abs(b.y - a.y))
+    }
+}
