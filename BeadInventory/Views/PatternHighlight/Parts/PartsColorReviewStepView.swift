@@ -61,6 +61,13 @@ struct PartsColorReviewStepView: View {
     @State private var pickedCodes: Set<String> = []
     /// 已经核对过的色号（按 groupKey）。只是给用户记进度用，不影响数据。
     @State private var confirmed: Set<String> = []
+    /// 底下那三个按钮改过的格子，倒着记。**这一屏最容易一下子改错一大片**——
+    /// 一格都没选中时它们作用于整类，单图纸模式的「空」那一类是五万格，
+    /// 手滑点一下「这类都改成…」，五万格的判色结果当场没了，退出去也捡不回来。
+    ///
+    /// 只记这三个按钮。画笔（「改格子」）自己有一套按笔走的撤销，
+    /// 而且它改完之后这里存的旧值可能已经对不上了（见 `PartCellBrushView` 的 `onCommit`）。
+    @State private var undoStack: [CellEdit] = []
     @State private var showingPalette = false
 
     /// 按颜色排序。开着时铺出来的格子不再按图纸上的先后，而是**最不像这一类的排在最前面**。
@@ -122,6 +129,17 @@ struct PartsColorReviewStepView: View {
         let col: Int
     }
 
+    /// 一次「改成…」。`olds` 跟 `refs` 一一对应，撤销就是照着放回去。
+    ///
+    /// 逐格记旧值而不是记「这一类原来是什么」：整类操作确实是同一个旧值，
+    /// 但框选选出来的那批不保证（选完之后画笔可能已经动过其中几格）。
+    /// 五万格一步约两三兆，所以 `pushUndo` 只留最近几步。
+    struct CellEdit {
+        let refs: [CellRef]
+        let olds: [PartCellFill]
+        let newFill: PartCellFill
+    }
+
     private let columns = [GridItem(.adaptive(minimum: 34), spacing: 6)]
 
     var body: some View {
@@ -130,6 +148,7 @@ struct PartsColorReviewStepView: View {
             Divider()
             if sortByColor { sortHint }
             if let sortNote { noteBar(sortNote) }
+            if let last = undoStack.last { undoBar(last) }
             cellGrid
             footer
         }
@@ -232,6 +251,9 @@ struct PartsColorReviewStepView: View {
                 allowsAnyColor: allowsAnyColor,
                 onCommit: {
                     onPersist()
+                    // 画笔动过格子之后，这里存的旧值可能已经不是那一格的上一手了 ——
+                    // 再撤销就会把用户刚补好的格子一起盖回去。画笔自己带撤销，丢掉这几步不亏。
+                    undoStack.removeAll()
                     // 铺出来的那一片是**存下来的**（`groupCells`），擦 / 补完必须自己刷 ——
                     // 擦掉的格子不刷就还留在这一组里，补上的格子进不来。
                     // 小图缓存不用动：那是按 `CellRef` 从图纸上裁的，格子改成什么颜色跟它
@@ -376,6 +398,30 @@ struct PartsColorReviewStepView: View {
         }
         .font(.caption)
         .foregroundStyle(Theme.ColorToken.Status.warning)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(Theme.ColorToken.Surface.subtle)
+    }
+
+    /// 刚改完一片格子之后的那条回执 + 一条退路。
+    ///
+    /// 顺带补上了原来根本没有的回执：整类操作点下去，屏幕上只是一片格子悄悄消失了，
+    /// 用户既不知道改掉了多少格，也没有任何办法确认自己点的是不是想点的那个按钮。
+    /// 所以这里把「改了多少格、改成了什么」写出来，撤销就摆在同一行。
+    private func undoBar(_ edit: CellEdit) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: "clock.arrow.circlepath")
+            Text("刚把 \(edit.refs.count) 格改成「\(label(for: edit.newFill))」")
+                .monospacedDigit()
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button(action: undoLast) {
+                Label("撤销", systemImage: "arrow.uturn.backward")
+                    .lineLimit(1)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(Theme.ColorToken.Text.secondary)
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.sm)
         .background(Theme.ColorToken.Surface.subtle)
@@ -956,16 +1002,54 @@ struct PartsColorReviewStepView: View {
     /// 整类操作（「这类没有豆子」作用于整组）在单图纸的空组上是五万格 —— 五万次状态写。
     private func apply(_ fill: PartCellFill) {
         var updated = parts
+        var refs: [CellRef] = []
+        var olds: [PartCellFill] = []
         for ref in selection {
             guard ref.part < updated.count,
                   ref.row < updated[ref.part].cells.count,
                   ref.col < updated[ref.part].cells[ref.row].count else { continue }
+            let old = updated[ref.part].cells[ref.row][ref.col]
+            // 本来就是这个色号的那些格子不记 —— 记了会让撤销条报一个比实际大的数
+            guard old != fill else { continue }
+            refs.append(ref)
+            olds.append(old)
             updated[ref.part].cells[ref.row][ref.col] = fill
         }
         parts = updated
         selection.removeAll()
         // 改过的格子已经不属于当前这一组了，铺出来的那片要跟着少掉
         groupCells = orderedCells(of: selectedGroup)
+        guard !refs.isEmpty else { return }
+        pushUndo(CellEdit(refs: refs, olds: olds, newFill: fill))
+    }
+
+    /// 撤销栈只留最近 5 步。整类操作一步就是几万格的旧值（两三兆），
+    /// 无限留着的话，用户在一个色号上来回改十几次就能把这一屏的内存吃穿。
+    private func pushUndo(_ edit: CellEdit) {
+        undoStack.append(edit)
+        if undoStack.count > 5 { undoStack.removeFirst(undoStack.count - 5) }
+    }
+
+    /// 把上一次「改成…」放回去。
+    ///
+    /// **要落盘**：`apply` 自己不落盘（落盘在核对完一个色号、或画笔提交那两处），
+    /// 但改错的那一片有可能已经被后来某一次落盘写进去了 ——
+    /// 撤销完不写一次，用户退出去再进来，撤掉的东西又回来了。
+    private func undoLast() {
+        guard let last = undoStack.popLast() else { return }
+        var updated = parts
+        for (index, ref) in last.refs.enumerated() {
+            guard ref.part < updated.count,
+                  ref.row < updated[ref.part].cells.count,
+                  ref.col < updated[ref.part].cells[ref.row].count else { continue }
+            updated[ref.part].cells[ref.row][ref.col] = last.olds[index]
+        }
+        parts = updated
+        // 选中的还是刚才那批格子的坐标，而它们已经换回原来那一组了 ——
+        // 留着的话，底下那排按钮会作用在一批用户看不见的格子上（同 `apply` 之后清空）。
+        selection.removeAll()
+        groupCells = orderedCells(of: selectedGroup)
+        onPersist()
     }
 
     /// 选色盘交回来的**永远是 mardCode** —— `ColorSelectionView` 不管传进去的
