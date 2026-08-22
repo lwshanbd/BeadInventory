@@ -117,8 +117,14 @@ struct ProjectorCanvasRenderer {
 
 /// 四个角标 + 一层稀疏的辅助线。**只在用户开着校准页时画**。
 ///
+/// 角标是个由格子拼出来的直角箭头（`ProjectorCornerArrow`）：箭尖那个亮块就是豆板
+/// 最角上那个孔，两条胳膊沿着板子的两条边各再亮几个孔，越往外画得越小。用户要做的
+/// 就是把箭尖那块光挪到板子角上那个孔里 —— 对没对上，看那个孔有没有被照亮就行，
+/// 不用判断「一条线该压在哪儿」。
+///
 /// 四个角各是一种颜色（`ProjectorCorner.markColor`，手机上用的是同一套）：用户站在
-/// 桌边、手机在手上，四个角长得一样的话他会把正在调的那个搞错。正在调的那个画得更粗。
+/// 桌边、手机在手上，四个角长得一样的话他会把正在调的那个搞错。正在调的那个更亮，
+/// 箭尖还描一圈白。
 ///
 /// 辅助线每 10 格一条：四个角对上了不代表中间也对上 —— 理论上平面透视保证中间自动对齐，
 /// 但投影仪镜头本身有畸变、桌面也可能不平。中间几条线落在豆板的孔上，用户扫一眼
@@ -130,10 +136,6 @@ struct ProjectorCalibrationMarks: View {
     var body: some View {
         Canvas { context, _ in
             let cols = mapping.boardCols, rows = mapping.boardRows
-            guard let tl = mapping.point(col: 0, row: 0),
-                  let tr = mapping.point(col: CGFloat(cols), row: 0),
-                  let br = mapping.point(col: CGFloat(cols), row: CGFloat(rows)),
-                  let bl = mapping.point(col: 0, row: CGFloat(rows)) else { return }
 
             var guides = Path()
             for c in stride(from: 10, to: cols, by: 10) {
@@ -150,44 +152,59 @@ struct ProjectorCalibrationMarks: View {
             }
             context.stroke(guides, with: .color(.white.opacity(0.35)), lineWidth: 1)
 
-            var border = Path()
-            border.move(to: tl); border.addLine(to: tr)
-            border.addLine(to: br); border.addLine(to: bl)
-            border.closeSubpath()
-            context.stroke(border, with: .color(.white.opacity(0.6)), lineWidth: 1)
+            if let tl = mapping.point(col: 0, row: 0),
+               let tr = mapping.point(col: CGFloat(cols), row: 0),
+               let br = mapping.point(col: CGFloat(cols), row: CGFloat(rows)),
+               let bl = mapping.point(col: 0, row: CGFloat(rows)) {
+                var border = Path()
+                border.move(to: tl); border.addLine(to: tr)
+                border.addLine(to: br); border.addLine(to: bl)
+                border.closeSubpath()
+                context.stroke(border, with: .color(.white.opacity(0.6)), lineWidth: 1)
+            }
 
-            let corners: [(ProjectorCorner, CGPoint, CGPoint, CGPoint)] = [
-                (.topLeft, tl, tr, bl),
-                (.topRight, tr, br, tl),
-                (.bottomRight, br, bl, tr),
-                (.bottomLeft, bl, tl, br)
-            ]
-            let center = CGPoint(x: (tl.x + tr.x + br.x + bl.x) / 4,
-                                 y: (tl.y + tr.y + br.y + bl.y) / 4)
-            for (corner, point, next, previous) in corners {
-                let isActive = corner == activeCorner
-                var bracket = Path()
-                bracket.move(to: interpolate(from: point, to: previous, fraction: 0.14))
-                bracket.addLine(to: point)
-                bracket.addLine(to: interpolate(from: point, to: next, fraction: 0.14))
-                context.stroke(bracket, with: .color(corner.markColor),
-                               lineWidth: isActive ? 10 : 5)
-
-                // 号写在角往里一点的地方：写在角上就压在用户正要对齐的那条线上了
-                context.draw(
-                    context.resolve(
-                        Text(corner.number)
-                            .font(.system(size: isActive ? 52 : 38, weight: .bold))
-                            .foregroundStyle(corner.markColor)
-                    ),
-                    at: interpolate(from: point, to: center, fraction: 0.09),
-                    anchor: .center
-                )
+            for corner in ProjectorCorner.allCases {
+                draw(corner: corner, isActive: corner == activeCorner, in: context)
             }
         }
     }
 
-    private func interpolate(from: CGPoint, to: CGPoint, fraction: CGFloat) -> CGPoint {
-        CGPoint(x: from.x + (to.x - from.x) * fraction, y: from.y + (to.y - from.y) * fraction)
+    private func draw(corner: ProjectorCorner, isActive: Bool, in context: GraphicsContext) {
+        let arrow = ProjectorCornerArrow(corner: corner,
+                                         cols: mapping.boardCols,
+                                         rows: mapping.boardRows)
+        let color = corner.markColor.opacity(isActive ? 1 : 0.55)
+        for cell in arrow.cells {
+            // 离箭尖越远缩得越多：一排由大到小的亮块，方向不用另外画箭头也看得出来。
+            // 箭尖只缩 0.05 —— 那一格是要盖住一个孔的，缩多了反而不知道盖没盖住。
+            let inset = 0.05 + 0.06 * CGFloat(cell.distance)
+            guard let corners = mapping.cellCorners(col: cell.col, row: cell.row, inset: inset)
+            else { continue }
+            var path = Path()
+            path.move(to: corners[0])
+            for point in corners.dropFirst() { path.addLine(to: point) }
+            path.closeSubpath()
+            context.fill(path, with: .color(color))
+            // 正在调的那个角，箭尖再描一圈白：四个箭头形状一样，光靠颜色深浅，
+            // 隔着一米看不出哪个是「现在按微调动的那个」。
+            if isActive, cell.distance == 0 {
+                context.stroke(path, with: .color(.white.opacity(0.9)), lineWidth: 2)
+            }
+        }
+
+        // 号写在两条胳膊夹出来那个直角的里面。字号跟着格子走 —— 桌上一块 25cm 的板
+        // 在三米宽的画面里只占一小块，固定字号会把整个角标压在底下。
+        guard let at = mapping.point(col: arrow.labelAnchor.x, row: arrow.labelAnchor.y)
+        else { return }
+        let size = min(56, max(20, mapping.averageCellSize * 3))
+        context.draw(
+            context.resolve(
+                Text(corner.number)
+                    .font(.system(size: isActive ? size : size * 0.75, weight: .bold))
+                    .foregroundStyle(color)
+            ),
+            at: at,
+            anchor: .center
+        )
     }
 }

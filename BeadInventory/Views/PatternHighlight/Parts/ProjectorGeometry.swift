@@ -251,3 +251,82 @@ struct ProjectorMapping {
                 + hypot(down.x - origin.x, down.y - origin.y)) / 2
     }
 }
+
+// MARK: - 角标那个箭头
+
+/// 一个角的角标：箭尖是豆板最角上那一格，沿着两条边各再走几格，凑成一个直角箭头。
+///
+/// ## 为什么角标要按「格」画，不能是一条线
+///
+/// 之前画的是一道折线，用户看着投影不知道该把它对到哪儿：线本身有粗细，对准的是
+/// 线的中心还是外沿？角上那个孔是该被线压住，还是该在线的外面？站在桌边看，
+/// 半格的差别肉眼分不出来，而半格就是每颗豆子都压在孔的边上。
+///
+/// 换成格子之后，这件事只剩一句话：**箭尖那个亮块盖住板子最角上那个孔**，
+/// 两条边上各再亮几个孔。用户数得出来是几个孔，也就对得准 —— 拼豆的人本来就是
+/// 按孔数东西的。
+///
+/// ## 为什么要有两条胳膊
+///
+/// 一个亮块只说得清「对到哪个孔」，说不清「这是哪个角」：板子是方的，四个角长得一样，
+/// 人绕到另一边站，①②③④ 就全反了。两条胳膊沿着板子的两条边伸出去，箭头指着哪个角
+/// 一眼就是一眼 —— 不管人站在哪一边。
+struct ProjectorCornerArrow {
+    let corner: ProjectorCorner
+    let cols: Int
+    let rows: Int
+
+    /// 沿着两条边、朝板子里面走的方向
+    var inward: (col: CGFloat, row: CGFloat) {
+        switch corner {
+        case .topLeft: return (1, 1)
+        case .topRight: return (-1, 1)
+        case .bottomRight: return (-1, -1)
+        case .bottomLeft: return (1, -1)
+        }
+    }
+
+    /// 一条胳膊几格。
+    ///
+    /// 4 格是在实物上量出来的：常见的 25cm 豆板一格 5mm，4 格 2cm，站在桌边一眼能数清。
+    /// 小板子上要收着点 —— 14×14 的板上再伸 4 格，四个箭头就快在边上接起来了，
+    /// 反而看不出哪儿是角。
+    var armLength: Int { min(4, max(1, min(cols, rows) / 4)) }
+
+    /// 角标上的一格。`distance` 是离箭尖几格：画的时候越远画得越小，
+    /// 一排由大到小的亮块看着就是个指向箭尖的箭头。
+    struct Cell {
+        let col: Int
+        let row: Int
+        let distance: Int
+    }
+
+    var cells: [Cell] {
+        let tipCol = inward.col > 0 ? 0 : max(cols - 1, 0)
+        let tipRow = inward.row > 0 ? 0 : max(rows - 1, 0)
+        let stepCol = Int(inward.col), stepRow = Int(inward.row)
+        var result = [Cell(col: tipCol, row: tipRow, distance: 0)]
+        for d in 1...armLength {
+            let alongTop = tipCol + stepCol * d
+            let alongSide = tipRow + stepRow * d
+            if (0..<cols).contains(alongTop) {
+                result.append(Cell(col: alongTop, row: tipRow, distance: d))
+            }
+            if (0..<rows).contains(alongSide) {
+                result.append(Cell(col: tipCol, row: alongSide, distance: d))
+            }
+        }
+        return result
+    }
+
+    /// 序号（①②③④）写在哪儿，格坐标。
+    ///
+    /// 落在两条胳膊夹出来那个直角的里面、再往里挪一点：写在箭尖上就把用户正要对准的
+    /// 那个亮块给盖住了，而那个亮块是这一屏唯一要对准的东西。
+    var labelAnchor: CGPoint {
+        let tipCol: CGFloat = inward.col > 0 ? 0 : CGFloat(cols)
+        let tipRow: CGFloat = inward.row > 0 ? 0 : CGFloat(rows)
+        let reach = CGFloat(armLength) + 1.4
+        return CGPoint(x: tipCol + inward.col * reach, y: tipRow + inward.row * reach)
+    }
+}

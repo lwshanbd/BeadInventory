@@ -172,7 +172,9 @@ struct BoardProjectorSheet: View {
 
     private var steps: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text("把投影里那个方框的四个角，分别拖到豆板的四个角上。角上的颜色和号跟下面预览里的一一对应。")
+            // 「对准了」得有个用户自己看得出来的判据，所以两条胳膊要跟箭尖写在一句话里：
+            // 光看箭尖那一格，差半格是看不出来的；顺着板边亮的那几个孔歪没歪，一眼就是一眼。
+            Text("投影里四个角上各有一个箭头。把箭尖那个亮块，拖到豆板同一个角最角上的那个孔里 —— 两条胳膊会顺着板边再亮几个孔，这几个孔都照上了，这个角就对准了。")
                 .font(.subheadline)
                 .foregroundColor(Theme.ColorToken.Text.primary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -214,7 +216,11 @@ struct BoardProjectorSheet: View {
                 guideLines(scale: scale)
 
                 ForEach(Array(ProjectorCorner.allCases.enumerated()), id: \.element) { index, corner in
-                    handle(corner: corner, at: points[index], scale: scale)
+                    // 把手上那个直角要顺着板子的两条边画，所以得知道左右两个邻角在哪儿。
+                    // 顺时针存的（见 `ProjectorCorner` 的顺序警告），所以 +1 / +3 就是邻角。
+                    handle(corner: corner, at: points[index],
+                           toward: points[(index + 1) % 4], and: points[(index + 3) % 4],
+                           scale: scale)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -272,28 +278,64 @@ struct BoardProjectorSheet: View {
         )
     }
 
-    /// 一个角的把手。
+    /// 一个角的把手：一个直角 + 顶点上一个点，跟投影里那个箭头同一个形状。
     ///
-    /// 圆点画 26 点，命中区垫到 44 点：这几个角常常挨着预览的边缘，手指按下去的位置
-    /// 本来就偏，把手再小就只能靠微调按钮一格一格挪了。
-    private func handle(corner: ProjectorCorner, at point: CGPoint, scale: CGFloat) -> some View {
+    /// 之前这儿是个圆点。圆点说不清「对准的到底是圆心还是圆边」，也说不出这是哪个角 ——
+    /// 用户对着投影拖了半天，回头问「四个角到底怎么定义的」。换成直角之后，两条胳膊
+    /// 指着板子的两条边，跟投影里那个箭头一一对上，顶点就是要落到角上那个孔的位置。
+    ///
+    /// 胳膊的方向照着相邻两个角算，不是写死的上下左右：投影仪斜着照的时候这个方框是
+    /// 梯形，写死方向的话把手会指到板子外面去。
+    ///
+    /// 命中区垫到 60 点：这几个角常常挨着预览的边缘，手指按下去的位置本来就偏，
+    /// 把手再小就只能靠微调按钮一格一格挪了。
+    private func handle(corner: ProjectorCorner, at point: CGPoint,
+                        toward next: CGPoint, and previous: CGPoint,
+                        scale: CGFloat) -> some View {
         let isActive = projector.activeCorner == corner
+        let box: CGFloat = 60
+        let center = CGPoint(x: box / 2, y: box / 2)
+        let arm: CGFloat = 17
+        let a = unitVector(from: point, to: next)
+        let b = unitVector(from: point, to: previous)
+        let bisector = unitVector(dx: a.dx + b.dx, dy: a.dy + b.dy)
+
         return ZStack {
+            Color.clear
+            Path { path in
+                path.move(to: CGPoint(x: center.x + a.dx * arm, y: center.y + a.dy * arm))
+                path.addLine(to: center)
+                path.addLine(to: CGPoint(x: center.x + b.dx * arm, y: center.y + b.dy * arm))
+            }
+            .stroke(corner.markColor.opacity(isActive ? 1 : 0.7),
+                    style: StrokeStyle(lineWidth: isActive ? 4 : 2.5,
+                                       lineCap: .round, lineJoin: .round))
             Circle()
                 .fill(corner.markColor)
-                .frame(width: isActive ? 26 : 20, height: isActive ? 26 : 20)
-                .overlay(
-                    Circle().stroke(Color.white.opacity(isActive ? 0.9 : 0.4),
-                                    lineWidth: isActive ? 2 : 1)
-                )
+                .frame(width: isActive ? 11 : 8, height: isActive ? 11 : 8)
+                .position(center)
+            // 号写在直角里面（两条胳膊的角平分线上），跟投影里的位置一致
             Text(corner.number)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(.black.opacity(0.7))
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(corner.markColor)
+                .position(x: center.x + bisector.dx * 21, y: center.y + bisector.dy * 21)
         }
-        .frame(width: 44, height: 44)
+        .frame(width: box, height: box)
         .contentShape(Rectangle())
         .position(point)
         .gesture(dragGesture(corner: corner, scale: scale))
+    }
+
+    private func unitVector(from: CGPoint, to: CGPoint) -> CGVector {
+        unitVector(dx: to.x - from.x, dy: to.y - from.y)
+    }
+
+    /// 长度归一。四个角拧成一条线时会算出零向量（`ProjectorQuad.isUsable` 已经挡在前面，
+    /// 这里只是不让它变成 NaN）—— 那时候胳膊缩成一个点，形状难看但不会画飞。
+    private func unitVector(dx: CGFloat, dy: CGFloat) -> CGVector {
+        let length = hypot(dx, dy)
+        guard length > 0.0001 else { return CGVector(dx: 0, dy: 0) }
+        return CGVector(dx: dx / length, dy: dy / length)
     }
 
     /// `minimumDistance: 0` 是为了「点一下就选中这个角」：微调按钮作用在选中的那个角上，

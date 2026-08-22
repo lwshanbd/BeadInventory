@@ -13042,12 +13042,12 @@
         }
       }
     },
-    "把投影里那个方框的四个角，分别拖到豆板的四个角上。角上的颜色和号跟下面预览里的一一对应。" : {
+    "投影里四个角上各有一个箭头。把箭尖那个亮块，拖到豆板同一个角最角上的那个孔里 —— 两条胳膊会顺着板边再亮几个孔，这几个孔都照上了，这个角就对准了。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Drag each corner of the projected frame onto the matching corner of your board. The colors and numbers match the preview below."
+            "value" : "Each corner of the projection shows an arrow. Drag the lit square at its tip onto the outermost peg of that corner of your board — the two arms light up a few more pegs along each edge, and when all of them land on pegs, that corner is aligned."
           }
         }
       }
