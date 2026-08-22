@@ -251,3 +251,151 @@ struct ProjectorMapping {
                 + hypot(down.x - origin.x, down.y - origin.y)) / 2
     }
 }
+
+// MARK: - 角标那个箭头
+
+/// 一个角的角标：拐角是豆板最角上那一格，沿着两条边各再走几格，凑成一个直角。
+///
+/// ## 为什么角标要按「格」画，不能是一条线
+///
+/// 之前画的是一道折线，用户看着投影不知道该把它对到哪儿：线本身有粗细，对准的是
+/// 线的中心还是外沿？角上那个孔是该被线压住，还是该在线的外面？站在桌边看，
+/// 半格的差别肉眼分不出来，而半格就是每颗豆子都压在孔的边上。
+///
+/// 换成格子之后，这件事只剩一句话：**拐角那个亮块盖住板子最角上那个孔**，
+/// 两条边上各再亮几个孔。用户数得出来是几个孔，也就对得准 —— 拼豆的人本来就是
+/// 按孔数东西的。
+///
+/// 这几格画得**一样大**（绘制在 `ProjectorCalibrationMarks`）。试过让它越往里越小、
+/// 看着像个箭头，投出来反而坏事：用户拿每一块光去比一个孔，大小一变，
+/// 「这块没照准」和「这块本来就该小」就分不开了。
+///
+/// ## 为什么要有两条胳膊
+///
+/// 一个亮块只说得清「对到哪个孔」，说不清「这是哪个角」：板子是方的，四个角长得一样，
+/// 人绕到另一边站，①②③④ 就全反了。两条胳膊沿着板子的两条边伸出去，箭头指着哪个角
+/// 一眼就是一眼 —— 不管人站在哪一边。
+struct ProjectorCornerArrow {
+    let corner: ProjectorCorner
+    let cols: Int
+    let rows: Int
+
+    /// 沿着两条边、朝板子里面走的方向
+    var inward: (col: CGFloat, row: CGFloat) {
+        switch corner {
+        case .topLeft: return (1, 1)
+        case .topRight: return (-1, 1)
+        case .bottomRight: return (-1, -1)
+        case .bottomLeft: return (1, -1)
+        }
+    }
+
+    /// 一条胳膊几格。选单里那几块板（最小 50×50）算出来**恒等于 4**。
+    ///
+    /// 4 格是在实物上量出来的：常见的 25cm 豆板一格 5mm，4 格 2cm，站在桌边一眼能数清。
+    /// 短边不到 16 格时按短边的 ¼ 收 —— 板子太小的话四个角标会在边上接起来，
+    /// 反而看不出哪儿是角。
+    ///
+    /// ⚠️ `max(1, ...)` 不只是好看：`cells` 里的 `1...armLength` 靠它兜底，
+    /// 去掉之后短边小于 4 格的板一进校准页就 trap。
+    var armLength: Int { min(4, max(1, min(cols, rows) / 4)) }
+
+    /// 角标上的一格。`distance` 是离拐角几格 —— 画的时候只用来认出拐角那一格
+    /// （`distance == 0`，正在调的角要给它描一圈白），九格本身画得一样大。
+    struct Cell {
+        let col: Int
+        let row: Int
+        let distance: Int
+    }
+
+    var cells: [Cell] {
+        let tipCol = inward.col > 0 ? 0 : max(cols - 1, 0)
+        let tipRow = inward.row > 0 ? 0 : max(rows - 1, 0)
+        let stepCol = Int(inward.col), stepRow = Int(inward.row)
+        var result = [Cell(col: tipCol, row: tipRow, distance: 0)]
+        for d in 1...armLength {
+            let alongTop = tipCol + stepCol * d
+            let alongSide = tipRow + stepRow * d
+            if (0..<cols).contains(alongTop) {
+                result.append(Cell(col: alongTop, row: tipRow, distance: d))
+            }
+            if (0..<rows).contains(alongSide) {
+                result.append(Cell(col: tipCol, row: alongSide, distance: d))
+            }
+        }
+        return result
+    }
+
+    /// 序号（①②③④）写在哪儿。
+    ///
+    /// 落在两条胳膊夹出来那个直角的里面、再往里挪一点：写在拐角上就把用户正要对准的
+    /// 那个亮块给盖住了，而那个亮块是这一屏唯一要对准的东西。
+    ///
+    /// ⚠️ 这里用的是**网格线坐标**（0…cols），不是 `cells` 里那套**格索引**（0…cols-1）——
+    /// 因为它要喂给 `ProjectorMapping.point(col:row:)`，而 `cells` 喂的是 `cellCorners`。
+    /// 两套坐标差整整一格，别把公式从这儿抄到那儿。
+    var labelAnchor: CGPoint {
+        let cornerCol: CGFloat = inward.col > 0 ? 0 : CGFloat(cols)
+        let cornerRow: CGFloat = inward.row > 0 ? 0 : CGFloat(rows)
+        let reach = CGFloat(armLength) + 1.4
+        return CGPoint(x: cornerCol + inward.col * reach, y: cornerRow + inward.row * reach)
+    }
+}
+
+// MARK: - 四条边中间 + 板子正中的对齐点
+
+/// 校准时额外点亮的几个十字：四条边的正中各一个，板子正中一个。
+///
+/// ## 光有四个角不够
+///
+/// 四个角对上之后，中间的格子在**数学上**是自动对齐的（平面透视的性质）。但桌上不是
+/// 数学：投影仪镜头本身有枕形/桶形畸变，边的中间鼓出去或者凹进来是最常见的一处；
+/// 桌面也可能不平，豆板还可能被压得翘起来一点。这些都是四个角看不出来的 ——
+/// 角上对得严丝合缝，边中间照样能差半格。
+///
+/// 边的正中间正是畸变最大的地方，所以标在那儿。
+///
+/// ## 别指望它查出「板子格数选错」
+///
+/// 想过让中间那个记号顺带查格数，算完发现不行：四个角是钉死在实物板角上的，
+/// 格数说错时误差在两端为零、中间按周期起伏，而**正中间恰好是好几组常见错法的零点**。
+/// 存 50 实物 52（选单里挨着的两档）时，正中那个记号只偏 0.02 个孔 —— 看着完全照进
+/// 孔里，用户据此确信选对了，拼到四分之一处才发现每颗豆子都压在孔沿上。
+/// 100 ↔ 104 同理。所以这件事交给 `BoardProjectorSheet` 里那条 `mismatchNote`，
+/// 这几个记号只管畸变。
+///
+/// 用白色：四个角标已经占了黄青绿品红，再添一种彩色，用户会以为它也是个「要拖的角」。
+/// 白色一看就是「只是给你看的」。
+struct ProjectorAlignmentMarks {
+    let cols: Int
+    let rows: Int
+
+    /// 每个十字的中心。格数是偶数时取不到正中间那一格，会偏半格 —— 用户是拿它看
+    /// 「有没有照进孔里」，不是拿它量距离，半格无所谓。
+    var centers: [(col: Int, row: Int)] {
+        let midCol = cols / 2, midRow = rows / 2
+        return [
+            (midCol, 0),            // 上边正中
+            (midCol, rows - 1),     // 下边正中
+            (0, midRow),            // 左边正中
+            (cols - 1, midRow),     // 右边正中
+            (midCol, midRow)        // 板子正中
+        ]
+    }
+
+    /// 一个十字由哪几格组成：中心 + 上下左右各一格。
+    ///
+    /// 出界的那一格直接丢掉，所以边上那四个十字自动变成朝板子里面的「T」——
+    /// 正好把边的位置指出来，不用为边和中心分别写两套形状。
+    var cells: [(col: Int, row: Int)] {
+        var result: [(col: Int, row: Int)] = []
+        for center in centers {
+            for (dc, dr) in [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)] {
+                let c = center.col + dc, r = center.row + dr
+                guard (0..<cols).contains(c), (0..<rows).contains(r) else { continue }
+                result.append((c, r))
+            }
+        }
+        return result
+    }
+}

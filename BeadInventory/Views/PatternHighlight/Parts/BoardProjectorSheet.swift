@@ -89,7 +89,8 @@ struct BoardProjectorSheet: View {
         }
         .onAppear { projector.beginCalibrating(suggestedBoard: suggestedBoard, screen: screen) }
         // 划走（没点「完成」）跟点「取消」是同一件事。角标也在这里收掉 ——
-        // 留着的话，人照着画面按豆子会把那四个粗角标当成图纸的一部分。
+        // 留着的话，人照着画面按豆子会把那些彩色亮块当成图纸的一部分。
+        // 换成格子画之后更要紧了：角标跟真正要按豆子的格子长得一模一样，只有颜色不同。
         // （点「完成」时 `finishCalibrating` 已经收掉了，下面这个 if 不成立。）
         .onDisappear {
             if projector.isCalibrating { projector.cancelCalibrating() }
@@ -172,9 +173,18 @@ struct BoardProjectorSheet: View {
 
     private var steps: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text("把投影里那个方框的四个角，分别拖到豆板的四个角上。角上的颜色和号跟下面预览里的一一对应。")
+            // 「对准了」得有个用户自己看得出来的判据，所以两条胳膊要跟箭尖写在一句话里：
+            // 光看箭尖那一格，差半格是看不出来的；顺着板边亮的那几个孔歪没歪，一眼就是一眼。
+            Text("投影里四个角上各有一个直角记号。把拐角那个亮块，拖到豆板同一个角最角上的那个孔里 —— 两条胳膊会顺着板边再亮几个孔，这几个孔都照上了，这个角就对准了。")
                 .font(.subheadline)
                 .foregroundColor(Theme.ColorToken.Text.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            // 四个角对上、中间却偏了，是用户自己发现不了的一类错（镜头畸变、桌面不平）。
+            // 记号画在畸变最大的几处，把这件事变成「看那几块光有没有照进孔里」。
+            // 不提「格数选错」：正中间恰好是常见错法的零点，查不出来（见 `ProjectorAlignmentMarks`）。
+            Text("四条边的正中间还各有一个白色的 T，板子正中间是一个白十字。这几处也照进孔里，中间就没有偏。")
+                .font(.caption)
+                .foregroundColor(Theme.ColorToken.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
             // 斜着投是常态，而这正是四个角要分别拖的原因 —— 说一句，用户才不会以为
             // 「投出来是梯形」是自己没摆正。
@@ -212,9 +222,18 @@ struct BoardProjectorSheet: View {
                 // 投影里画的是同一组线（每 10 格一条）。手机上不画的话，用户在这块
                 // 预览里看到的是个空框，跟他抬头看到的画面对不上号。
                 guideLines(scale: scale)
+                alignmentMarks(scale: scale)
 
                 ForEach(Array(ProjectorCorner.allCases.enumerated()), id: \.element) { index, corner in
-                    handle(corner: corner, at: points[index], scale: scale)
+                    // 把手上那个直角要顺着板子的两条边画，所以得知道左右两个邻角在哪儿。
+                    // 顺时针存的（见 `ProjectorCorner` 的顺序警告），所以 +1 / +3 就是邻角。
+                    handle(corner: corner, at: points[index],
+                           toward: points[(index + 1) % 4], and: points[(index + 3) % 4],
+                           scale: scale)
+                        // 选中的那个画在最上层。四个把手的命中区挨得近时，压在底下的
+                        // 那个按不着 —— 而「先在下面点一下这个角、再回预览里拖」正是
+                        // 用户会做的事。
+                        .zIndex(projector.activeCorner == corner ? 1 : 0)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -251,6 +270,33 @@ struct BoardProjectorSheet: View {
         }
     }
 
+    /// 四条边正中 + 板子正中那几个十字，跟投影里是同一批位置。
+    ///
+    /// 这里画的是固定大小的十字，不是按格子画：这块预览才三百多点宽，一格常常不到两个点，
+    /// 照着格子画等于什么都没画。用户在这块预览上要认的是「有这么几个记号、在这几个位置」，
+    /// 至于每个记号盖住几个孔，那是抬头看投影的事。
+    ///
+    /// 所以边上那四个在外屏是缺一笔的「T」、这里画的是完整的十字 —— 形状对不上是故意的，
+    /// 两三个点大的地方缺不缺一笔看不出来，硬裁只会变成一个更难认的小点。
+    @ViewBuilder
+    private func alignmentMarks(scale: CGFloat) -> some View {
+        if let mapping = projector.mapping(in: screen) {
+            Path { path in
+                let marks = ProjectorAlignmentMarks(cols: mapping.boardCols, rows: mapping.boardRows)
+                for center in marks.centers {
+                    guard let point = mapping.point(col: CGFloat(center.col) + 0.5,
+                                                    row: CGFloat(center.row) + 0.5) else { continue }
+                    let at = scaled(point, scale)
+                    path.move(to: CGPoint(x: at.x - 4, y: at.y))
+                    path.addLine(to: CGPoint(x: at.x + 4, y: at.y))
+                    path.move(to: CGPoint(x: at.x, y: at.y - 4))
+                    path.addLine(to: CGPoint(x: at.x, y: at.y + 4))
+                }
+            }
+            .stroke(Color.white.opacity(0.85), lineWidth: 1.5)
+        }
+    }
+
     private func scaled(_ point: CGPoint, _ scale: CGFloat) -> CGPoint {
         CGPoint(x: point.x * scale, y: point.y * scale)
     }
@@ -272,28 +318,77 @@ struct BoardProjectorSheet: View {
         )
     }
 
-    /// 一个角的把手。
+    /// 一个角的把手：一个直角 + 顶点上一个点，跟投影里那个箭头同一个形状。
     ///
-    /// 圆点画 26 点，命中区垫到 44 点：这几个角常常挨着预览的边缘，手指按下去的位置
-    /// 本来就偏，把手再小就只能靠微调按钮一格一格挪了。
-    private func handle(corner: ProjectorCorner, at point: CGPoint, scale: CGFloat) -> some View {
+    /// 之前这儿是个圆点。圆点说不清「对准的到底是圆心还是圆边」，也说不出这是哪个角 ——
+    /// 用户对着投影拖了半天，回头问「四个角到底怎么定义的」。换成直角之后，两条胳膊
+    /// 指着板子的两条边，跟投影里那个箭头一一对上，顶点就是要落到角上那个孔的位置。
+    ///
+    /// 胳膊的方向照着相邻两个角算，不是写死的上下左右：投影仪斜着照的时候这个方框是
+    /// 梯形，写死方向的话把手会指到板子外面去。
+    ///
+    /// 命中区最大 60 点：这几个角常常挨着预览的边缘，手指按下去的位置本来就偏，
+    /// 把手再小就只能靠微调按钮一格一格挪了。
+    ///
+    /// 但**不能一律 60**：投影仪打三米宽的画面、桌上一块 25cm 的豆板只占画面宽的 8%
+    /// （`ProjectorQuad.isUsable` 那段有这个实测数），换算到这块预览上，相邻两个角
+    /// 只隔三十来点。命中区是整块方的，一超过角距，后画的那个就把前一个的中心盖住了，
+    /// 用户按在 ① 上拖走的是 ④。所以按角距夹一下：只要不超过角距，
+    /// 相邻把手就永远盖不住对方的中心。
+    private func handle(corner: ProjectorCorner, at point: CGPoint,
+                        toward next: CGPoint, and previous: CGPoint,
+                        scale: CGFloat) -> some View {
         let isActive = projector.activeCorner == corner
+        let spacing = min(hypot(next.x - point.x, next.y - point.y),
+                          hypot(previous.x - point.x, previous.y - point.y))
+        // 下限 28 点：再小就真的按不着了，这时候靠下面那排选角按钮 + 微调兜底。
+        let box = min(60, max(28, spacing))
+        let center = CGPoint(x: box / 2, y: box / 2)
+        let arm = box * 0.28
+        let a = unitVector(from: point, to: next)
+        let b = unitVector(from: point, to: previous)
+        let bisector = unitVector(dx: a.dx + b.dx, dy: a.dy + b.dy)
+
         return ZStack {
+            Color.clear
+            Path { path in
+                path.move(to: CGPoint(x: center.x + a.dx * arm, y: center.y + a.dy * arm))
+                path.addLine(to: center)
+                path.addLine(to: CGPoint(x: center.x + b.dx * arm, y: center.y + b.dy * arm))
+            }
+            .stroke(corner.markColor.opacity(isActive ? 1 : 0.7),
+                    style: StrokeStyle(lineWidth: isActive ? 4 : 2.5,
+                                       lineCap: .round, lineJoin: .round))
             Circle()
                 .fill(corner.markColor)
-                .frame(width: isActive ? 26 : 20, height: isActive ? 26 : 20)
-                .overlay(
-                    Circle().stroke(Color.white.opacity(isActive ? 0.9 : 0.4),
-                                    lineWidth: isActive ? 2 : 1)
-                )
+                .frame(width: isActive ? 11 : 8, height: isActive ? 11 : 8)
+                .position(center)
+            // 号写在直角里面（两条胳膊的角平分线上），跟投影里的位置一致
             Text(corner.number)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(.black.opacity(0.7))
+                .font(.system(size: 12, weight: .bold))
+                // 跟胳膊一起变淡：外屏那边序号也是跟着淡的，两边得是同一个信号
+                .foregroundColor(corner.markColor.opacity(isActive ? 1 : 0.7))
+                .position(x: center.x + bisector.dx * box * 0.35,
+                          y: center.y + bisector.dy * box * 0.35)
         }
-        .frame(width: 44, height: 44)
+        .frame(width: box, height: box)
         .contentShape(Rectangle())
         .position(point)
         .gesture(dragGesture(corner: corner, scale: scale))
+    }
+
+    private func unitVector(from: CGPoint, to: CGPoint) -> CGVector {
+        unitVector(dx: to.x - from.x, dy: to.y - from.y)
+    }
+
+    /// 长度归一。**这个兜底真的会走到**：全新安装、还没存过校准值时 `quad` 是四个 `.zero`，
+    /// 而 SwiftUI 先求 body 再调 `onAppear`，所以把 quad 换成可用值的 `beginCalibrating`
+    /// 慢一帧 —— 那一帧四个角重合，算出来就是零向量。兜住之后只是四个把手叠在左上角
+    /// 一帧，不兜就是 NaN 画飞。别因为「`isUsable` 挡着呢」把它删了。
+    private func unitVector(dx: CGFloat, dy: CGFloat) -> CGVector {
+        let length = hypot(dx, dy)
+        guard length > 0.0001 else { return CGVector(dx: 0, dy: 0) }
+        return CGVector(dx: dx / length, dy: dy / length)
     }
 
     /// `minimumDistance: 0` 是为了「点一下就选中这个角」：微调按钮作用在选中的那个角上，
