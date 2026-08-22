@@ -68,7 +68,7 @@ final class BoardProjector: ObservableObject {
     /// 用户正开着校准页。外屏据此把四个角标和辅助线画出来 ——
     /// 平时一道都不画：拼的时候画面上多几条亮线，人照着按豆子会把它当成格线数进去。
     @Published private(set) var isCalibrating = false
-    /// 手机上选中的那个角（微调按钮作用在它身上，外屏上它画得更粗）。
+    /// 手机上选中的那个角（微调按钮作用在它身上，外屏上它更亮、拐角那格还描一圈白）。
     @Published var activeCorner: ProjectorCorner = .topLeft
 
     /// 进校准页那一刻的整组值。取消时全组还原 —— 用户是趴在桌上对着实物拖出来的，

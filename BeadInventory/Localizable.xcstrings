@@ -13042,22 +13042,22 @@
         }
       }
     },
-    "四条边的正中间和板子正中间，还各有一个白十字。这几处也照进孔里，中间就没有偏 —— 顺带能看出板子的格数选对了没有。" : {
+    "四条边的正中间还各有一个白色的 T，板子正中间是一个白十字。这几处也照进孔里，中间就没有偏。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "There is also a white cross at the middle of each edge and at the center of the board. When those land inside pegs too, the middle is not drifting — and it doubles as a check that you picked the right board size."
+            "value" : "There is also a white T at the middle of each edge and a white cross at the center of the board. When those land inside pegs too, the middle is not drifting."
           }
         }
       }
     },
-    "投影里四个角上各有一个箭头。把箭尖那个亮块，拖到豆板同一个角最角上的那个孔里 —— 两条胳膊会顺着板边再亮几个孔，这几个孔都照上了，这个角就对准了。" : {
+    "投影里四个角上各有一个直角记号。把拐角那个亮块，拖到豆板同一个角最角上的那个孔里 —— 两条胳膊会顺着板边再亮几个孔，这几个孔都照上了，这个角就对准了。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Each corner of the projection shows an arrow. Drag the lit square at its tip onto the outermost peg of that corner of your board — the two arms light up a few more pegs along each edge, and when all of them land on pegs, that corner is aligned."
+            "value" : "Each corner of the projection shows a right-angle mark. Drag the lit square at its corner onto the outermost peg of that corner of your board — the two arms light up a few more pegs along each edge, and when all of them land on pegs, that corner is aligned."
           }
         }
       }

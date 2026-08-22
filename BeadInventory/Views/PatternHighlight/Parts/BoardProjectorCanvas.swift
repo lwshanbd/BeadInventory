@@ -117,23 +117,31 @@ struct ProjectorCanvasRenderer {
 
 /// 四个角标 + 一层稀疏的辅助线。**只在用户开着校准页时画**。
 ///
-/// 角标是个由格子拼出来的直角箭头（`ProjectorCornerArrow`）：箭尖那个亮块就是豆板
-/// 最角上那个孔，两条胳膊沿着板子的两条边各再亮几个孔，越往外画得越小。用户要做的
-/// 就是把箭尖那块光挪到板子角上那个孔里 —— 对没对上，看那个孔有没有被照亮就行，
-/// 不用判断「一条线该压在哪儿」。
+/// 角标是个由格子拼出来的直角（`ProjectorCornerArrow`）：拐角那个亮块就是豆板
+/// 最角上那个孔，两条胳膊沿着板子的两条边各再亮几个孔。用户要做的就是把拐角那块光
+/// 挪到板子角上那个孔里 —— 对没对上，看那个孔有没有被照亮就行，不用判断
+/// 「一条线该压在哪儿」。
+///
+/// **九格一样大。** 一开始是越往里画越小、想让它看着像个箭头，实际投出来反而糟：
+/// 用户拿每一块光去比孔，大小不一的时候「这块是不是没照准」变成了「这块本来就该小」，
+/// 判据就废了。一样大才比得出来。
 ///
 /// 四个角各是一种颜色（`ProjectorCorner.markColor`，手机上用的是同一套）：用户站在
 /// 桌边、手机在手上，四个角长得一样的话他会把正在调的那个搞错。正在调的那个更亮，
 /// 箭尖还描一圈白。
 ///
-/// 四条边的正中间和板子正中间再各点一个白十字（`ProjectorAlignmentMarks`）：四个角对上了
-/// 不代表中间也对上 —— 镜头畸变最厉害的地方就是边的中间。这几个十字有没有照进孔里，
-/// 是用户唯一能自己判断「中间准不准」的办法。
+/// 四条边的正中间和板子正中间再各点一个白记号（`ProjectorAlignmentMarks`，边上那四个
+/// 缺了朝外的一笔、是「T」）：四个角对上了不代表中间也对上 —— 镜头畸变最厉害的地方
+/// 就是边的中间。这几处有没有照进孔里，是用户唯一能自己判断「中间准不准」的办法。
 ///
 /// 辅助线每 10 格一条，管的是另一件事：整块画面有没有整体歪掉。
 struct ProjectorCalibrationMarks: View {
     let mapping: ProjectorMapping
     let activeCorner: ProjectorCorner
+
+    /// 角标和对齐记号每边往里缩多少（单位：格）。两处必须一致 ——
+    /// 用户是拿它们互相比着看「哪块偏了」的，大小不一样就没法比。
+    private static let markInset: CGFloat = 0.05
 
     var body: some View {
         Canvas { context, _ in
@@ -173,13 +181,14 @@ struct ProjectorCalibrationMarks: View {
         }
     }
 
-    /// 四条边正中 + 板子正中那几个白十字。缩得跟角标箭尖一样多（0.05），
+    /// 四条边正中 + 板子正中那几个白记号。缩得跟角标一样多，
     /// 用户是拿它跟孔比对的，缩多了就看不出照没照进孔里。
     private func drawAlignmentMarks(in context: GraphicsContext) {
         let marks = ProjectorAlignmentMarks(cols: mapping.boardCols, rows: mapping.boardRows)
         var path = Path()
         for cell in marks.cells {
-            guard let corners = mapping.cellCorners(col: cell.col, row: cell.row, inset: 0.05)
+            guard let corners = mapping.cellCorners(col: cell.col, row: cell.row,
+                                                    inset: Self.markInset)
             else { continue }
             path.move(to: corners[0])
             for point in corners.dropFirst() { path.addLine(to: point) }
@@ -194,28 +203,38 @@ struct ProjectorCalibrationMarks: View {
                                          rows: mapping.boardRows)
         let color = corner.markColor.opacity(isActive ? 1 : 0.55)
         for cell in arrow.cells {
-            // 离箭尖越远缩得越多：一排由大到小的亮块，方向不用另外画箭头也看得出来。
-            // 箭尖只缩 0.05 —— 那一格是要盖住一个孔的，缩多了反而不知道盖没盖住。
-            let inset = 0.05 + 0.06 * CGFloat(cell.distance)
-            guard let corners = mapping.cellCorners(col: cell.col, row: cell.row, inset: inset)
+            // 九格同一个内缩：用户是拿每一块光去比一个孔的，大小一变，「这块没照准」
+            // 和「这块本来就该小」就分不开了。缩 0.05 是为了两格之间留条缝，
+            // 缩多了反而看不出盖没盖住那个孔。
+            guard let corners = mapping.cellCorners(col: cell.col, row: cell.row,
+                                                    inset: Self.markInset)
             else { continue }
             var path = Path()
             path.move(to: corners[0])
             for point in corners.dropFirst() { path.addLine(to: point) }
             path.closeSubpath()
             context.fill(path, with: .color(color))
-            // 正在调的那个角，箭尖再描一圈白：四个箭头形状一样，光靠颜色深浅，
+            // 正在调的那个角，拐角那格再描一圈白：四个角标形状一样，光靠颜色深浅，
             // 隔着一米看不出哪个是「现在按微调动的那个」。
+            //
+            // 描边宽度跟着格子走：一格只有两三个点的时候（大画面 + 小板子），
+            // 固定 2 点的白边会往外溢出一整圈，那块光就比一个孔还宽，
+            // 「拐角这格盖住一个孔」这个判据当场作废。
             if isActive, cell.distance == 0 {
-                context.stroke(path, with: .color(.white.opacity(0.9)), lineWidth: 2)
+                context.stroke(path, with: .color(.white.opacity(0.9)),
+                               lineWidth: max(0.5, min(2, mapping.averageCellSize * 0.2)))
             }
         }
 
         // 号写在两条胳膊夹出来那个直角的里面。字号跟着格子走 —— 桌上一块 25cm 的板
         // 在三米宽的画面里只占一小块，固定字号会把整个角标压在底下。
+        //
+        // 下限只有 8 点：`labelAnchor` 离拐角 5.4 格，一格两三个点的时候，字再大一点
+        // 就压到胳膊和拐角上了 —— 而那几块光正是这一屏唯一要看的东西。投影仪打三米宽，
+        // 8 点也有一厘米多高，桌边看得清。
         guard let at = mapping.point(col: arrow.labelAnchor.x, row: arrow.labelAnchor.y)
         else { return }
-        let size = min(56, max(20, mapping.averageCellSize * 3))
+        let size = min(56, max(8, mapping.averageCellSize * 3))
         context.draw(
             context.resolve(
                 Text(corner.number)
