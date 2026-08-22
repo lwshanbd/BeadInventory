@@ -54,8 +54,9 @@ final class BoardProjector: ObservableObject {
 
     /// 投影仪模式开着。false = 板子居中铺满外屏（接电视时要的就是这个）。
     ///
-    /// 注意它不是「校准过了没有」：进校准页就会打开它（不然没东西可拖），
-    /// 取消或者「恢复铺满」会关掉。
+    /// 注意它不是「校准过了没有」：进校准页就会打开它（不然没东西可拖）。
+    /// 「取消」是**整组还原到进来之前**（本来就开着就还开着），只有
+    /// 「关掉投影仪模式」一定关。
     @Published private(set) var isOn: Bool
     /// 桌上那块豆板的四个角，在外屏画面里的位置（单位：外屏宽度）
     @Published private(set) var quad: ProjectorQuad
@@ -103,6 +104,17 @@ final class BoardProjector: ObservableObject {
             boardRows = Self.defaultBoardSize.rows
         }
         migrateFromPitchCalibration()
+        // 开着投影仪模式、四个角却不可用，是唯一一种「手机说一套、外屏演一套」的状态：
+        // chip 读 `isOn` 写着「只亮当前色号」，而 `mapping(in:)` 返回 nil，外屏其实在铺满。
+        // 存坏了、或者从老版本一个极小的格距搬过来，都会落到这儿。关掉它，
+        // 用户看到的至少是同一句话，重新对一次就好了。
+        if isOn, !quad.isUsable {
+            AppLogger.shared.error("BoardProjector", "calibration_unusable_reset", metadata: [
+                "quad": "\(quad.clockwise)", "board": "\(boardCols)x\(boardRows)"
+            ])
+            isOn = false
+            save()
+        }
     }
 
     /// 没别的信息时按最常见的那块板算（拼豆板 52×52）。
@@ -180,6 +192,9 @@ final class BoardProjector: ObservableObject {
     /// 直接拿来当默认格数，用户少答一个问题。单图纸模式送 nil（图纸大小跟实物板无关，
     /// 猜错了比不猜更糟），沿用上次存的格数。
     func beginCalibrating(suggestedBoard: BeadBoardSize?, screen: CGSize) {
+        // `onAppear` 不保证只跑一次。跑第二次时快照会变成「已经拖到一半的值」，
+        // 那之后「取消」还原到的是中间态，用户对了半天的原始校准无声消失。
+        guard !isCalibrating else { return }
         snapshot = (isOn, quad, boardCols, boardRows)
         if let suggestedBoard, !isOn {
             // 只在还没开着投影仪模式时才采纳：已经对好的用户换张图纸再进来，
@@ -250,12 +265,27 @@ final class BoardProjector: ObservableObject {
             next[corner] = CGPoint(x: next[corner].x + dx / screen.width,
                                    y: next[corner].y + dy / screen.width)
         }
+        // 整块拖出画面就再也拖不回来了（画面外的东西手机预览上也点不到），所以要拦。
+        //
+        // **拦法是夹到边上，不是整帧丢掉**：丢掉的话，一旦这块框已经越界
+        // （换一台长宽比不同的投影仪、或者从老版本搬过来的值本来就超出画面），
+        // 这个按钮就**任何方向都按不动了，包括往回挪的那个方向** —— 一个看着能按、
+        // 按了什么都不发生的按钮。
         let bottom = screen.height / screen.width
-        // 整块拖出画面就再也拖不回来了（画面外的东西手机预览上也点不到）
         let xs = next.clockwise.map(\.x), ys = next.clockwise.map(\.y)
         guard let minX = xs.min(), let maxX = xs.max(),
-              let minY = ys.min(), let maxY = ys.max(),
-              minX > -0.05, maxX < 1.05, minY > -0.05, maxY < bottom + 0.05 else { return }
+              let minY = ys.min(), let maxY = ys.max() else { return }
+        // 只往「把越界量变小」的方向让步：本来就越界的，这一下至少能把它拉回来一点
+        var fixX: CGFloat = 0, fixY: CGFloat = 0
+        if minX < -0.05 { fixX = min(-0.05 - minX, max(0, -dx / screen.width)) }
+        if maxX > 1.05 { fixX = max(1.05 - maxX, min(0, -dx / screen.width)) }
+        if minY < -0.05 { fixY = min(-0.05 - minY, max(0, -dy / screen.width)) }
+        if maxY > bottom + 0.05 { fixY = max(bottom + 0.05 - maxY, min(0, -dy / screen.width)) }
+        if fixX != 0 || fixY != 0 {
+            for corner in ProjectorCorner.allCases {
+                next[corner] = CGPoint(x: next[corner].x + fixX, y: next[corner].y + fixY)
+            }
+        }
         quad = next
     }
 

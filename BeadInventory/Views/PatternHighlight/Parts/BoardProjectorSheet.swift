@@ -25,8 +25,8 @@
 //  铺满的画面盲拖。
 //
 //  代价是「点进来看一眼」也会改掉外屏，所以这一屏必须有**取消**：进来时记一份快照，
-//  取消、划走、以及中途拔线都整组还原，只有「完成」才落盘。接电视的人手滑点开又划走，
-//  电视上不该留下任何变化。
+//  取消、划走、以及中途拔线都整组还原。落盘只有两个入口：「完成」和「关掉投影仪模式」。
+//  接电视的人手滑点开又划走，电视上不该留下任何变化。
 //
 
 import SwiftUI
@@ -45,7 +45,13 @@ struct BoardProjectorSheet: View {
 
     /// 按下那一刻，被拖的那个角在外屏上的位置。`DragGesture` 的 `translation` 是
     /// **从按下那一刻累计**的，每帧拿它去加当前值就会越加越远，角直接飞出画面。
-    @State private var dragAnchor: (corner: ProjectorCorner, point: CGPoint)?
+    ///
+    /// 用 `@GestureState` 不用 `@State`：手势被 ScrollView 抢走、或者被来电打断时
+    /// **不保证走 `onEnded`**（这一版 `minimumDistance` 是 0，按下那一刻就跟 ScrollView
+    /// 抢，抢输是常事）。用 `@State` 的话那次就永远清不掉：`scrollDisabled` 卡死、
+    /// 下次再拖同一个角还会拿上次的旧锚点当起点，角先跳一下再跟手。
+    /// `@GestureState` 在手势结束或取消时由系统自动复位，正是为这种情况存在的。
+    @GestureState private var dragAnchor: (corner: ProjectorCorner, point: CGPoint)?
 
     var body: some View {
         NavigationStack {
@@ -84,10 +90,13 @@ struct BoardProjectorSheet: View {
         .onAppear { projector.beginCalibrating(suggestedBoard: suggestedBoard, screen: screen) }
         // 划走（没点「完成」）跟点「取消」是同一件事。角标也在这里收掉 ——
         // 留着的话，人照着画面按豆子会把那四个粗角标当成图纸的一部分。
+        // （点「完成」时 `finishCalibrating` 已经收掉了，下面这个 if 不成立。）
         .onDisappear {
             if projector.isCalibrating { projector.cancelCalibrating() }
         }
-        // 中途拔线：这一屏已经没有可对的东西了，关掉（`onDisappear` 顺手还原）。
+        // 中途拔线：这一屏已经没有可对的东西了，关掉。
+        // 还原不在这儿做 —— `sceneDidDisconnect` 里已经同步调过 `cancelCalibrating()`，
+        // 等这个 onChange 派发到时 `isCalibrating` 早就是 false 了。
         .onChange(of: session.externalConnected) { _, connected in
             if !connected { dismiss() }
         }
@@ -291,14 +300,16 @@ struct BoardProjectorSheet: View {
     /// 而用户在实物旁边最常做的事就是「先点这个角、再按几下微调」，不该被迫先拖动一下。
     private func dragGesture(corner: ProjectorCorner, scale: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                let anchor: CGPoint
-                if let dragAnchor, dragAnchor.corner == corner {
-                    anchor = dragAnchor.point
-                } else {
-                    anchor = projector.quad.point(corner, in: screen)
-                    dragAnchor = (corner, anchor)
+            .updating($dragAnchor) { _, anchor, _ in
+                // 第一帧记下这个角的起点，后面每帧都以它为基准加累计位移
+                if anchor == nil || anchor?.corner != corner {
+                    anchor = (corner, projector.quad.point(corner, in: screen))
                 }
+            }
+            .onChanged { value in
+                let anchor = dragAnchor?.corner == corner
+                    ? dragAnchor!.point
+                    : projector.quad.point(corner, in: screen)
                 projector.setCorner(
                     corner,
                     to: CGPoint(x: anchor.x + value.translation.width / scale,
@@ -306,7 +317,6 @@ struct BoardProjectorSheet: View {
                     screen: screen
                 )
             }
-            .onEnded { _ in dragAnchor = nil }
     }
 
     // MARK: - 选中哪个角

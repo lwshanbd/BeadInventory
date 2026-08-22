@@ -83,29 +83,39 @@ struct BoardExternalDisplayView: View {
     /// 正要按豆子的格子上了。
     @ViewBuilder
     private func projected(mapping: ProjectorMapping, screen: CGSize) -> some View {
-        let box = projector.quad.boundingBox(in: screen)
+        let content = session.content
+        // 文字要躲开的是**实际画出来的格子**，不是那块实物豆板。
+        // 单图纸模式下图纸常比豆板大，超出的格子按同一变换投到板子外面 ——
+        // 只按豆板的外接矩形躲，字就正好照在那些格子上。
+        let box = drawnBox(content: content, mapping: mapping, screen: screen)
         ZStack(alignment: .topLeading) {
-            if let content = session.content {
-                Canvas { context, _ in
-                    ProjectorCanvasRenderer(
-                        board: content.board,
-                        footprints: content.footprints,
-                        colorCache: content.colorCache,
-                        highlightKeys: content.highlightKeys,
-                        mapping: mapping
-                    ).draw(in: context)
+            Canvas { context, _ in
+                let renderer = ProjectorCanvasRenderer(
+                    board: content?.board ?? PartsBoard(size: BeadBoardSize(cols: 1, rows: 1)),
+                    footprints: content?.footprints ?? [:],
+                    colorCache: content?.colorCache ?? [:],
+                    highlightKeys: content?.highlightKeys ?? [],
+                    mapping: mapping
+                )
+                // 没内容时也画那一圈板框：不然外屏是一整块纯黑，
+                // 用户连「校准还在不在」都看不出来。
+                if content == nil {
+                    renderer.drawOutlineOnly(in: context)
+                } else {
+                    renderer.draw(in: context)
                 }
-                textOutside(box: box, screen: screen) { axis in
+            }
+
+            textOutside(box: box, screen: screen) { axis in
+                if let content {
                     if content.highlightKeys.isEmpty {
                         // 板子对上了、格子却一个都不亮，用户第一反应是「投屏坏了」。
                         // 这一句把下一步说清楚：亮哪些格子是手机上点出来的。
                         hintRow(String(localized: "在手机上点一个色号，这里就只亮那个色号的格子"))
                     } else {
-                        caption(for: content, axis: axis)
+                        caption(for: content, axis: axis, projected: true)
                     }
-                }
-            } else {
-                textOutside(box: box, screen: screen) { _ in
+                } else {
                     hintRow(String(localized: "在手机上打开拼图模式，这里就会跟着显示"))
                 }
             }
@@ -118,11 +128,32 @@ struct BoardExternalDisplayView: View {
         }
     }
 
+    /// 画面上真正被画到的那一块（豆板 ∪ 图纸），文字要躲的就是它。
+    private func drawnBox(
+        content: BoardCastSession.Content?, mapping: ProjectorMapping, screen: CGSize
+    ) -> CGRect {
+        let board = projector.quad.boundingBox(in: screen)
+        guard let content else { return board }
+        let cols = CGFloat(max(content.board.cols, 1))
+        let rows = CGFloat(max(content.board.rows, 1))
+        let corners = [mapping.point(col: 0, row: 0), mapping.point(col: cols, row: 0),
+                       mapping.point(col: cols, row: rows), mapping.point(col: 0, row: rows)]
+            .compactMap { $0 }
+        guard corners.count == 4 else { return board }
+        let xs = corners.map(\.x), ys = corners.map(\.y)
+        let pattern = CGRect(x: xs.min()!, y: ys.min()!,
+                             width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+        return board.union(pattern)
+    }
+
     /// 把一段文字放在豆板**外面**的空地上。
     ///
     /// 四个方向都找一遍，**上方和左方不能不看**：豆板摆在投影区的哪个位置是桌上决定的，
     /// 对完之后那块地方常常被推到画面右下角，这时候空地全在上边和左边。只看下、右
     /// 两个方向的话，用户抬头看到一片高亮却没有图例，只会以为投屏坏了。
+    ///
+    /// 四边都塞不下时**压在板子上**（见最后那个 else）—— 挡住一两行格子，
+    /// 也比整段消失强。
     ///
     /// padding 必须加在 `.frame` **里面**：先撑成整屏再加 padding，那 16pt 是溢出到
     /// 屏幕外面的，字照样贴着画面最下沿 —— 而投影仪画面边缘常有衰减和梯形失真，
@@ -153,6 +184,16 @@ struct BoardExternalDisplayView: View {
                 .padding(.leading, 24)
                 .padding(.top, max(box.minY, 24))
                 .frame(width: screen.width, height: screen.height, alignment: .topLeading)
+        } else {
+            // 四边都塞不下 —— 板子几乎占满整块画面时就是这样，而那恰恰是**对得最好**
+            // 的情况。这时候宁可压在板子上：挡住底下那一两行格子，也比图例整段消失强
+            // （消失的表现是「一片高亮但没有图例」，用户只会以为投屏坏了）。
+            content(.horizontal)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.65))
+                .padding(.bottom, 16)
+                .frame(width: screen.width, height: screen.height, alignment: .bottom)
         }
     }
 
@@ -196,16 +237,16 @@ struct BoardExternalDisplayView: View {
     /// 底下一行：我在哪儿、现在该找哪个颜色。
     /// 拼的人抬头看的就这两件事（左边那句由手机那边给：多零件是第几块板，单图纸是多少格）。
     private func captionRow(for content: BoardCastSession.Content) -> some View {
-        caption(for: content, axis: .horizontal)
+        caption(for: content, axis: .horizontal, projected: false)
     }
 
     /// 竖排是给板子左右两侧那条窄空地用的（见 `textOutside`）。
     @ViewBuilder
-    private func caption(for content: BoardCastSession.Content, axis: Axis) -> some View {
+    private func caption(for content: BoardCastSession.Content, axis: Axis, projected: Bool) -> some View {
         let items = Group {
             Text(content.caption)
             ForEach(content.highlightKeys.sorted(), id: \.self) { key in
-                legend(key: key, content: content)
+                legend(key: key, content: content, projected: projected)
             }
         }
         .font(.title3.monospacedDigit())
@@ -218,13 +259,16 @@ struct BoardExternalDisplayView: View {
         }
     }
 
-    private func legend(key: String, content: BoardCastSession.Content) -> some View {
+    /// 图例上那个圆点必须跟板子上那个色号**投出来的颜色**一致 ——
+    /// 投影仪模式下格子是提亮过的（`ProjectorCanvasRenderer.projected`），
+    /// 圆点若用原色，黑色色号就是「一个看不见的点」配「一片白格子」，
+    /// 而图例正是用户抬头要查的那个东西。
+    private func legend(key: String, content: BoardCastSession.Content, projected: Bool) -> some View {
         HStack(spacing: 8) {
-            // fallback 跟板子上用的是同一个（BoardCanvas 的 beadColor）——
-            // 两边不一样的话，同一个色号在图例上和板子上会是两个颜色，
-            // 而图例正是用户抬头要查的那个东西。
             Circle()
-                .fill(content.colorCache[key] ?? Theme.ColorToken.Surface.strong)
+                .fill(projected
+                      ? ProjectorCanvasRenderer.projected(content.colorCache[key])
+                      : (content.colorCache[key] ?? Theme.ColorToken.Surface.strong))
                 .frame(width: 22, height: 22)
                 .overlay(Circle().stroke(.white.opacity(0.5), lineWidth: 1))
             Text(key)

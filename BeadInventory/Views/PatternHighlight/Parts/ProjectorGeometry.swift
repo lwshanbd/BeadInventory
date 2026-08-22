@@ -93,25 +93,32 @@ struct ProjectorQuad: Equatable {
     /// 是乱的：格子会翻面、会飞到画面外。与其画出一团乱码让用户以为功能坏了，
     /// 不如在拖的那一刻就不让它变成这样（见 `BoardProjector.setCorner`）。
     ///
-    /// 判据是四个叉积同号（凸且不自交），外加一个下限面积（拧成细线时叉积虽同号，
-    /// 但一格已经小到看不见了）。
+    /// 判据是四个叉积**都不为零且同号**（凸、不自交、也不三点共线）。零叉积得排除：
+    /// 三点共线时单应的分母能算出零，格子会整片消失或飞出画面。
+    ///
+    /// 面积下限只用来挡「拧成一条线」这种退化，所以取得很小。**不要往大了调**：
+    /// 它是以「外屏宽度的平方」为单位的，1e-4 已经相当于边长 1% 画面宽；
+    /// 之前取 0.01 等于要求方框边长至少占画面宽的 10%，而投影仪打出三米宽的画面、
+    /// 桌上一块 25cm 的豆板只占 8%，四个角**永远拖不到板子上**，而且拖不动时
+    /// 界面上一个字都没有（`BoardProjector.setCorner` 是静默不采纳）。
     var isUsable: Bool {
         let p = clockwise
         var positive = false, negative = false
         for i in 0..<4 {
             let a = p[i], b = p[(i + 1) % 4], c = p[(i + 2) % 4]
             let cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)
-            if cross > 0 { positive = true }
-            if cross < 0 { negative = true }
+            if cross > 1e-9 { positive = true }
+            else if cross < -1e-9 { negative = true }
+            else { return false }   // 三点共线
         }
         guard positive != negative else { return false }
-        // 鞋带公式。单位是「外屏宽度的平方」，0.01 相当于画面的百分之一。
+        // 鞋带公式
         var area: CGFloat = 0
         for i in 0..<4 {
             let a = p[i], b = p[(i + 1) % 4]
             area += a.x * b.y - b.x * a.y
         }
-        return abs(area) / 2 >= 0.01
+        return abs(area) / 2 >= 1e-4
     }
 
     /// 一块四四方方、居中放着的板：第一次进校准页时的起点。
@@ -133,6 +140,11 @@ struct ProjectorQuad: Equatable {
 }
 
 /// 四个角各自的身份。用户在手机上选中哪个、微调按钮作用在哪个，靠它。
+///
+/// ⚠️ **case 的声明顺序就是顺时针顺序，别重排。** `ProjectorQuad.clockwise`、
+/// `points(in:)`、存进 UserDefaults 的那八个数（TL TR BR BL），以及
+/// `BoardProjectorSheet` 里按下标取把手（`allCases.enumerated()` 配 `points[index]`）
+/// 全都依赖它。调换一下不会报错，表现是手机上拖 ① 动的是 ③。
 enum ProjectorCorner: String, CaseIterable, Identifiable {
     case topLeft, topRight, bottomRight, bottomLeft
 
@@ -225,11 +237,17 @@ struct ProjectorMapping {
         return [tl, tr, br, bl]
     }
 
-    /// 一格在画面上大概多大（点）。用来决定「小到这个份上就别画了」。
+    /// 一格在画面上大概多大（点）。微调按钮的步长按它算。
+    ///
     /// 取板子正中间那一格：斜投时四角的格子一大一小，中间那格最有代表性。
+    /// 横竖各量一次再平均 —— 只取对角差的最大分量的话，板子转过一定角度时
+    /// 「一下走 ¼ 格」会明显不是 ¼ 格。
     var averageCellSize: CGFloat {
-        guard let a = point(col: cols / 2, row: rows / 2),
-              let b = point(col: cols / 2 + 1, row: rows / 2 + 1) else { return 0 }
-        return max(abs(b.x - a.x), abs(b.y - a.y))
+        let c = cols / 2, r = rows / 2
+        guard let origin = point(col: c, row: r),
+              let right = point(col: c + 1, row: r),
+              let down = point(col: c, row: r + 1) else { return 0 }
+        return (hypot(right.x - origin.x, right.y - origin.y)
+                + hypot(down.x - origin.x, down.y - origin.y)) / 2
     }
 }
