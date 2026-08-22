@@ -144,7 +144,7 @@ struct PartsBoardStepView: View {
     /// 送板子只发生在离散的编辑动作上（拖动过程中不送），所以不在手势的热路径上。
     @ObservedObject private var cast = BoardCastSession.shared
     /// 开着「对准豆板」那一屏
-    @State private var showingCastCalibration = false
+    @State private var showingProjectorSheet = false
 
     private enum Tab: Hashable { case parts, colors }
 
@@ -253,9 +253,10 @@ struct PartsBoardStepView: View {
         .onDisappear { BoardCastSession.shared.stop() }
         // 板子和外屏尺寸都得有才对得起来。按钮本来就只在接了外屏、且这一屏有板子时
         // 才画得出来，所以这里取不到值的情况只剩「刚好在这一瞬间拔了线」。
-        .sheet(isPresented: $showingCastCalibration) {
+        .sheet(isPresented: $showingProjectorSheet) {
             if let board = currentBoard, let screen = cast.externalScreenSize {
-                BoardCastCalibrationSheet(board: board, screen: screen)
+                // 多零件模式下这块板就是桌上那块实物豆板，格数直接填好，用户少答一个问题
+                BoardProjectorSheet(suggestedBoard: board.size, screen: screen)
             }
         }
         .task(id: noteToken) {
@@ -352,34 +353,18 @@ struct PartsBoardStepView: View {
             }
 
             if let board = currentBoard {
-                HStack(spacing: Theme.Spacing.sm) {
+                // 投屏那一行单独占一行：它那句话本身就够长，跟板子摘要挤在同一行的话
+                // 两边都会被截断，而这两句都是用来「扫一眼确认」的。
+                VStack(alignment: .leading, spacing: 0) {
                     Text("\(board.size.label) · 摆了 \(board.placements.count) 个零件 · \(beadCount(of: board)) 颗豆子")
                         .font(.caption.monospacedDigit())
                         .foregroundColor(Theme.ColorToken.Text.secondary)
-                    // 接了电视 / 投影仪之后第一件想确认的就是「到底投上了没有」——
-                    // 而人多半站在电视那头，手机上得有个准信。
-                    //
-                    // 顺手就是校准的入口：投影仪投出来的画面对不对得上豆板，是接上之后
-                    // 立刻会发现的事，而这个标记正是他这时候在看的东西。
-                    // 单独加一个按钮的话，接电视的人也得多看一个跟自己无关的东西。
+                    // 状态标记 + 投影仪模式的入口，写法见 `ProjectorStatusChip`
                     if cast.externalConnected {
-                        Button { showingCastCalibration = true } label: {
-                            HStack(spacing: 2) {
-                                Label("投屏中 · 对准豆板", systemImage: "tv")
-                                // 光把文字变成按钮，用户看不出它可以点（改之前那儿
-                                // 就是一个纯状态标记，长得一模一样）。
-                                Image(systemName: "chevron.right")
-                                    .font(.caption2.weight(.semibold))
-                            }
-                            .font(.caption2.weight(.medium))
-                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
-                            // 十几点高的一行字太难点了，垫出一块像样的触摸区
-                            .padding(.vertical, Theme.Spacing.xs)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+                        ProjectorStatusChip { showingProjectorSheet = true }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Theme.Spacing.lg)
             }
         }

@@ -29,6 +29,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 @MainActor
 final class BoardCastSession: ObservableObject {
@@ -41,7 +42,9 @@ final class BoardCastSession: ObservableObject {
     ///
     /// 手机那一屏据此显示「投屏中」—— 用户接了 AirPlay 之后第一件想确认的就是
     /// 「到底投上了没有」，而他多半人在电视那头，手机屏幕上得有个准信。
-    @Published var externalConnected = false
+    @Published var externalConnected = false {
+        didSet { refreshIdleTimer() }
+    }
     /// 外屏有多大（点）。**校准页要靠它**：手机上那块预览得按外屏的长宽比画，
     /// 手指拖的那几十点也要按这个比例换算成外屏上的点数。
     /// nil = 没接外屏（校准页此时开不出来）。
@@ -67,14 +70,26 @@ final class BoardCastSession: ObservableObject {
 
     private init() {}
 
+    /// 投着屏的时候别让手机自己睡过去。
+    ///
+    /// 拼豆是低头按十分钟才抬一次头的活儿 —— 手机放在旁边不动，到点熄屏、锁屏，
+    /// 外屏上那块板也就跟着没了，而用户手上正拿着一把豆子。所以只要「接了外屏
+    /// 且确实有东西在投」，就把自动锁屏顶住；东西撤掉或者线拔了立刻恢复，
+    /// 不然用户会发现自己的手机从此再也不熄屏了。
+    private func refreshIdleTimer() {
+        UIApplication.shared.isIdleTimerDisabled = externalConnected && content != nil
+    }
+
     /// 这里不比「有没有变」—— 里面装着几十个零件的形状，比一遍比直接赋值还贵。
     /// 判断的责任在调用方（`PartsBoardStepView.castSignature` / `SinglePatternHighlightStepView`）。
     /// 改那个 signature 的时候记得，漏掉一项的代价是电视上停着一块过期的板。
     func update(_ content: Content) {
         self.content = content
+        refreshIdleTimer()
     }
 
     func stop() {
         content = nil
+        refreshIdleTimer()
     }
 }
