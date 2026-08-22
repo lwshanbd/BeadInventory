@@ -178,6 +178,12 @@ struct BoardProjectorSheet: View {
                 .font(.subheadline)
                 .foregroundColor(Theme.ColorToken.Text.primary)
                 .fixedSize(horizontal: false, vertical: true)
+            // 四个角对上、中间却偏了，是用户自己发现不了的一类错（镜头畸变、板子格数选错）。
+            // 十字画在畸变最大的几处，把这件事变成「看那几块光有没有照进孔里」。
+            Text("四条边的正中间和板子正中间，还各有一个白十字。这几处也照进孔里，中间就没有偏 —— 顺带能看出板子的格数选对了没有。")
+                .font(.caption)
+                .foregroundColor(Theme.ColorToken.Text.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
             // 斜着投是常态，而这正是四个角要分别拖的原因 —— 说一句，用户才不会以为
             // 「投出来是梯形」是自己没摆正。
             Text("投影仪斜着照没关系：四个角对上之后，App 会把画面掰回正方形，中间的格子自动就对齐了。")
@@ -214,6 +220,7 @@ struct BoardProjectorSheet: View {
                 // 投影里画的是同一组线（每 10 格一条）。手机上不画的话，用户在这块
                 // 预览里看到的是个空框，跟他抬头看到的画面对不上号。
                 guideLines(scale: scale)
+                alignmentMarks(scale: scale)
 
                 ForEach(Array(ProjectorCorner.allCases.enumerated()), id: \.element) { index, corner in
                     // 把手上那个直角要顺着板子的两条边画，所以得知道左右两个邻角在哪儿。
@@ -254,6 +261,30 @@ struct BoardProjectorSheet: View {
                 }
             }
             .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
+        }
+    }
+
+    /// 四条边正中 + 板子正中那几个十字，跟投影里是同一批位置。
+    ///
+    /// 这里画的是固定大小的十字，不是按格子画：这块预览才三百多点宽，一格常常不到两个点，
+    /// 照着格子画等于什么都没画。用户在这块预览上要认的是「有这么几个记号、在这几个位置」，
+    /// 至于每个记号盖住几个孔，那是抬头看投影的事。
+    @ViewBuilder
+    private func alignmentMarks(scale: CGFloat) -> some View {
+        if let mapping = projector.mapping(in: screen) {
+            Path { path in
+                let marks = ProjectorAlignmentMarks(cols: mapping.boardCols, rows: mapping.boardRows)
+                for center in marks.centers {
+                    guard let point = mapping.point(col: CGFloat(center.col) + 0.5,
+                                                    row: CGFloat(center.row) + 0.5) else { continue }
+                    let at = scaled(point, scale)
+                    path.move(to: CGPoint(x: at.x - 4, y: at.y))
+                    path.addLine(to: CGPoint(x: at.x + 4, y: at.y))
+                    path.move(to: CGPoint(x: at.x, y: at.y - 4))
+                    path.addLine(to: CGPoint(x: at.x, y: at.y + 4))
+                }
+            }
+            .stroke(Color.white.opacity(0.85), lineWidth: 1.5)
         }
     }
 

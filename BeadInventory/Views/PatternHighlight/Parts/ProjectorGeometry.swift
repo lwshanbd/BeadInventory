@@ -330,3 +330,58 @@ struct ProjectorCornerArrow {
         return CGPoint(x: tipCol + inward.col * reach, y: tipRow + inward.row * reach)
     }
 }
+
+// MARK: - 四条边中间 + 板子正中的对齐点
+
+/// 校准时额外点亮的几个十字：四条边的正中各一个，板子正中一个。
+///
+/// ## 光有四个角不够
+///
+/// 四个角对上之后，中间的格子在**数学上**是自动对齐的（平面透视的性质）。但桌上不是
+/// 数学：投影仪镜头本身有枕形/桶形畸变，边的中间鼓出去或者凹进来是最常见的一处；
+/// 桌面也可能不平，豆板还可能被压得翘起来一点。这些都是四个角看不出来的 ——
+/// 角上对得严丝合缝，边中间照样能差半格。
+///
+/// 边的正中间正是畸变最大的地方，所以标在那儿。
+///
+/// ## 正中间那个十字还兼一件事
+///
+/// 板子格数选错时（比如实物是 52×52、这里存着 100×100），四个角照样能对上 ——
+/// 角就是角，跟格数无关。但那时候每一格都不是一个孔，中间那个十字会明显骑在孔沿上。
+/// 用户看不懂「格数」这个概念，但看得懂「这块光没照进孔里」。
+///
+/// 用白色：四个角标已经占了黄青绿品红，再添一种彩色，用户会以为它也是个「要拖的角」。
+/// 白色一看就是「只是给你看的」。
+struct ProjectorAlignmentMarks {
+    let cols: Int
+    let rows: Int
+
+    /// 每个十字的中心。格数是偶数时取不到正中间那一格，会偏半格 —— 用户是拿它看
+    /// 「有没有照进孔里」，不是拿它量距离，半格无所谓。
+    var centers: [(col: Int, row: Int)] {
+        let midCol = cols / 2, midRow = rows / 2
+        return [
+            (midCol, 0),            // 上边正中
+            (midCol, rows - 1),     // 下边正中
+            (0, midRow),            // 左边正中
+            (cols - 1, midRow),     // 右边正中
+            (midCol, midRow)        // 板子正中
+        ]
+    }
+
+    /// 一个十字由哪几格组成：中心 + 上下左右各一格。
+    ///
+    /// 出界的那一格直接丢掉，所以边上那四个十字自动变成朝板子里面的「T」——
+    /// 正好把边的位置指出来，不用为边和中心分别写两套形状。
+    var cells: [(col: Int, row: Int)] {
+        var result: [(col: Int, row: Int)] = []
+        for center in centers {
+            for (dc, dr) in [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)] {
+                let c = center.col + dc, r = center.row + dr
+                guard (0..<cols).contains(c), (0..<rows).contains(r) else { continue }
+                result.append((c, r))
+            }
+        }
+        return result
+    }
+}

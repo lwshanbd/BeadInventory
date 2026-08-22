@@ -126,9 +126,11 @@ struct ProjectorCanvasRenderer {
 /// 桌边、手机在手上，四个角长得一样的话他会把正在调的那个搞错。正在调的那个更亮，
 /// 箭尖还描一圈白。
 ///
-/// 辅助线每 10 格一条：四个角对上了不代表中间也对上 —— 理论上平面透视保证中间自动对齐，
-/// 但投影仪镜头本身有畸变、桌面也可能不平。中间几条线落在豆板的孔上，用户扫一眼
-/// 就知道这次对得准不准，不用等拼到一半才发现。
+/// 四条边的正中间和板子正中间再各点一个白十字（`ProjectorAlignmentMarks`）：四个角对上了
+/// 不代表中间也对上 —— 镜头畸变最厉害的地方就是边的中间。这几个十字有没有照进孔里，
+/// 是用户唯一能自己判断「中间准不准」的办法。
+///
+/// 辅助线每 10 格一条，管的是另一件事：整块画面有没有整体歪掉。
 struct ProjectorCalibrationMarks: View {
     let mapping: ProjectorMapping
     let activeCorner: ProjectorCorner
@@ -163,10 +165,27 @@ struct ProjectorCalibrationMarks: View {
                 context.stroke(border, with: .color(.white.opacity(0.6)), lineWidth: 1)
             }
 
+            drawAlignmentMarks(in: context)
+
             for corner in ProjectorCorner.allCases {
                 draw(corner: corner, isActive: corner == activeCorner, in: context)
             }
         }
+    }
+
+    /// 四条边正中 + 板子正中那几个白十字。缩得跟角标箭尖一样多（0.05），
+    /// 用户是拿它跟孔比对的，缩多了就看不出照没照进孔里。
+    private func drawAlignmentMarks(in context: GraphicsContext) {
+        let marks = ProjectorAlignmentMarks(cols: mapping.boardCols, rows: mapping.boardRows)
+        var path = Path()
+        for cell in marks.cells {
+            guard let corners = mapping.cellCorners(col: cell.col, row: cell.row, inset: 0.05)
+            else { continue }
+            path.move(to: corners[0])
+            for point in corners.dropFirst() { path.addLine(to: point) }
+            path.closeSubpath()
+        }
+        context.fill(path, with: .color(.white.opacity(0.9)))
     }
 
     private func draw(corner: ProjectorCorner, isActive: Bool, in context: GraphicsContext) {

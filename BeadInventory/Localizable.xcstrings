@@ -13042,6 +13042,16 @@
         }
       }
     },
+    "四条边的正中间和板子正中间，还各有一个白十字。这几处也照进孔里，中间就没有偏 —— 顺带能看出板子的格数选对了没有。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "There is also a white cross at the middle of each edge and at the center of the board. When those land inside pegs too, the middle is not drifting — and it doubles as a check that you picked the right board size."
+          }
+        }
+      }
+    },
     "投影里四个角上各有一个箭头。把箭尖那个亮块，拖到豆板同一个角最角上的那个孔里 —— 两条胳膊会顺着板边再亮几个孔，这几个孔都照上了，这个角就对准了。" : {
       "localizations" : {
         "en" : {
