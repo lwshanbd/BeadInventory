@@ -2458,7 +2458,7 @@ struct ThumbnailPreviewSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("项目缩略图")
+                Text("封面")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
 
@@ -2547,12 +2547,16 @@ struct ThumbnailPreviewSection: View {
                         )
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("将保存为项目封面")
+                        Text("列表里显示的就是这张")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text("点击裁切可调整，或上传新封面")
+                        // 用户报障的根子就是把这两件事当成了一件：他在这里裁了一刀，
+                        // 以为只动了列表上的小图，结果拼图模式要拼的那张也跟着变了。
+                        // 代码已经分开了（见 `patternSourceData()`），这句话是让用户也知道。
+                        Text("裁切或换一张都不影响拼图模式用的图纸")
                             .font(.caption2)
                             .foregroundColor(.secondary.opacity(0.7))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer()
@@ -2569,10 +2573,10 @@ struct ThumbnailPreviewSection: View {
                         )
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("暂无封面图")
+                        Text("暂无封面")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text("点击「上传封面」添加")
+                        Text("不加也行，列表里会显示一个占位图")
                             .font(.caption2)
                             .foregroundColor(.secondary.opacity(0.7))
                     }

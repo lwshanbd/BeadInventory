@@ -1427,14 +1427,21 @@ struct PlannedProjectDetailView: View {
     }
 
     private var infoCardView: some View {
-        PlannedProjectInfoCard(
-            project: currentProject ?? project,
-            isParent: isParentProject,
-            colorCount: colorCount,
-            totalBeads: totalBeads,
-            childCount: childProjects.count,
-            onEditThumbnail: { showThumbnailEditor = true }
-        )
+        VStack(spacing: 16) {
+            PlannedProjectInfoCard(
+                project: currentProject ?? project,
+                isParent: isParentProject,
+                colorCount: colorCount,
+                totalBeads: totalBeads,
+                childCount: childProjects.count,
+                onEditThumbnail: { showThumbnailEditor = true }
+            )
+
+            // 图纸原图。计划项目正是拼图模式的主力，这一份该看得见、能自己换。
+            // 它跟上面那张封面是两件东西，改封面碰不到它。
+            PatternSourceRow(projectId: (currentProject ?? project).id)
+                .padding(.horizontal)
+        }
     }
 
     private var actionButtonsView: some View {
