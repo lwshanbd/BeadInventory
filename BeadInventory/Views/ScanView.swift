@@ -429,9 +429,9 @@ struct ScanView: View {
     ///
     /// 用户在上传那一屏把「留原图」关掉时返回 nil，一个字节都不写。
     ///
-    /// 封面编辑器那边（项目已经建好之后改封面）规矩不一样，见
-    /// `ProjectImageEditorSheet.applyPatternSourceDecision()`：只裁旧封面时一个字节都不动
-    /// （手上那张封面是压过的，拿它覆盖等于把原图降一档），换了新图才写，用户明说不留才删。
+    /// 项目建好之后规矩不一样：封面编辑器（`ProjectImageEditorSheet`）**一个字节都不写**，
+    /// 改封面碰不到图纸；换图纸只有一个入口，就是详情页那一行（`PatternSourceRow`），
+    /// 它会在覆盖前问一句。
     private func patternSourceData() -> Data? {
         guard keepPatternSource else { return nil }
         if let pickedOriginalData { return pickedOriginalData }
@@ -2552,11 +2552,21 @@ struct ThumbnailPreviewSection: View {
                             .foregroundColor(.secondary)
                         // 用户报障的根子就是把这两件事当成了一件：他在这里裁了一刀，
                         // 以为只动了列表上的小图，结果拼图模式要拼的那张也跟着变了。
-                        // 代码已经分开了（见 `patternSourceData()`），这句话是让用户也知道。
-                        Text("裁切或换一张都不影响拼图模式用的图纸")
-                            .font(.caption2)
-                            .foregroundColor(.secondary.opacity(0.7))
-                            .fixedSize(horizontal: false, vertical: true)
+                        //
+                        // **只在真的传过图纸时才说这句话。** 手动加色号那条路上传进来的
+                        // 封面就是唯一的图，`patternSourceData()` 最后一行会把它当图纸存 ——
+                        // 那种情况下这句安抚话恰好是反的。
+                        if originalImage != nil {
+                            Text("裁切或换一张都不影响拼图模式用的图纸")
+                                .font(.caption2)
+                                .foregroundColor(.secondary.opacity(0.7))
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text("这个项目没有单独的图纸，拼图模式用的就是这张")
+                                .font(.caption2)
+                                .foregroundColor(.secondary.opacity(0.7))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
 
                     Spacer()

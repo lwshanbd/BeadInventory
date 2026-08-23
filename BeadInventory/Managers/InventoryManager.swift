@@ -4334,6 +4334,26 @@ class InventoryManager: ObservableObject {
         case fetchFailed(Error)
     }
 
+    /// 这个项目在拼图 / 多零件模式里已经有对好的东西（网格，或者零件摆位）。
+    ///
+    /// 谁要动「拼图模式手上那张图」，动之前都得问一次这个 —— 改封面（`ProjectImageEditorSheet`）、
+    /// 换图纸、删图纸（`PatternSourceRow`）三条路都会让已经对好的作废，所以判断放在这里共用，
+    /// 不是各屏各写一份。
+    ///
+    /// **读不出来按「有」算**：`fetchProject*Data` 那两个便利版把读失败和「本来就没有」混成
+    /// 同一个 nil（见 `BlobFetchFailure`），而这里拿它决定要不要拦下一次不可逆的操作 ——
+    /// 猜错只多问一句，猜反了是用户几十分钟的标定无声作废。
+    func hasStoredPatternWork(for projectId: UUID) -> Bool {
+        func hasBlob(_ result: Result<Data?, BlobFetchFailure>) -> Bool {
+            switch result {
+            case .success(let data): return data != nil
+            case .failure: return true
+            }
+        }
+        return hasBlob(fetchProjectPatternGridDataResult(for: projectId))
+            || hasBlob(fetchProjectPartsSheetDataResult(for: projectId))
+    }
+
     /// 同步取单个项目的 patternGridData **原始字节**（不解码），并区分读失败与真的没有。
     /// 备份导出必须走这个版本；解码再编码等于把一份解不出来的网格静默换成「这个项目没有网格」。
     /// **round-10 review I1**：`propertiesToFetch = [\.patternGridData]` 限定单列。

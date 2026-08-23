@@ -17,6 +17,8 @@ struct ProjectDetailView: View {
     // 图片编辑相关状态
     @State private var showingThumbnailEditor = false
     @State private var showingFinishedImageEditor = false
+    /// 拼图模式里动过图纸原图之后，靠它让「图纸原图」那一行重读（见 `PatternSourceRow.refreshToken`）。
+    @State private var patternSourceRefreshToken = 0
     @State private var showingPatternModePicker = false
     /// 在模式选择页里选了哪种模式，等它收起后再进下一页（见 openPatternModeIfSelected）
     @State private var pendingSinglePatternMode = false
@@ -101,8 +103,16 @@ struct ProjectDetailView: View {
                 // 图纸原图。跟上面那张封面是**两件东西**：封面管列表好不好看，
                 // 这一份管拼图模式看不看得清每一格。以前它只存在于代码里，
                 // 用户能摸到的只有封面，于是改封面就被当成了改图纸。
-                PatternSourceRow(projectId: (currentProject ?? project).id)
-                    .padding(.horizontal)
+                //
+                // `allowsPicking` 跟着拼图模式入口走（下面那个 `if isPlanned`）：
+                // 已执行的项目进不去拼图模式，就别劝他补一张用不上的图 —— 但已经
+                // 留着的那几十 MB 得让他看得见、删得掉。
+                PatternSourceRow(
+                    projectId: (currentProject ?? project).id,
+                    allowsPicking: (currentProject ?? project).isPlanned,
+                    refreshToken: patternSourceRefreshToken
+                )
+                .padding(.horizontal)
 
                 // 成品图展示区域（仅已执行项目显示）
                 if !project.isPlanned {
@@ -212,11 +222,15 @@ struct ProjectDetailView: View {
                 onSelectMultiPart: { pendingMultiPartMode = true }
             )
         }
-        .fullScreenCover(isPresented: $showingPartsSheetFlow) {
+        // 两个 onDismiss 都要：拼图模式里能删掉原图（零件清单页「拼好了」）也能补一张
+        // （缺图提示条），而 fullScreenCover 关掉之后这一页不会重建，那一行不会自己重读。
+        .fullScreenCover(isPresented: $showingPartsSheetFlow,
+                         onDismiss: { patternSourceRefreshToken += 1 }) {
             PartsSheetFlowView(project: currentProject ?? project)
                 .environmentObject(inventoryManager)
         }
-        .fullScreenCover(isPresented: $showingSinglePatternFlow) {
+        .fullScreenCover(isPresented: $showingSinglePatternFlow,
+                         onDismiss: { patternSourceRefreshToken += 1 }) {
             SinglePatternFlowView(project: currentProject ?? project)
                 .environmentObject(inventoryManager)
         }
@@ -227,6 +241,7 @@ struct ProjectDetailView: View {
                 projectId: projectId,
                 title: "项目封面",
                 currentImage: data.flatMap { UIImage(data: $0) },
+                subject: .cover,
                 onSave: { imageData in
                     inventoryManager.updateProjectThumbnail(projectId, thumbnail: imageData)
                 }
@@ -240,6 +255,7 @@ struct ProjectDetailView: View {
                 projectId: projectId,
                 title: "成品图",
                 currentImage: data.flatMap { UIImage(data: $0) },
+                subject: .finishedPhoto,
                 maxImageSize: 400, // 成品图使用更大尺寸
                 onSave: { imageData in
                     inventoryManager.updateProjectFinishedImage(projectId, finishedImage: imageData)
@@ -766,9 +782,22 @@ struct CompletedDatePickerSheet: View {
 
 // MARK: - 项目图片编辑弹窗
 struct ProjectImageEditorSheet: View {
+    /// 这一屏在编哪一张图。
+    ///
+    /// **故意不给默认值。** 上一版这里是 `savesPatternSource: Bool = true`，删掉它的时候
+    /// 没人注意到成品图入口也跟着变了 —— 于是裁一张实物照片会弹「已经对好的图纸会对不上」。
+    /// 没有默认值，加新入口时编译器就会逼着回答这个问题。
+    enum Subject {
+        /// 项目封面。没有图纸原图时，拼图模式的格子就是照着它对的。
+        case cover
+        /// 拼完的实物照片。跟图纸、跟拼图模式一个字节的关系都没有。
+        case finishedPhoto
+    }
+
     let projectId: UUID
     let title: String
     let currentImage: UIImage?
+    let subject: Subject
     var maxImageSize: CGFloat = 200
     let onSave: (Data?) -> Void
 
@@ -1046,27 +1075,10 @@ struct ProjectImageEditorSheet: View {
             Text("这张图片无法处理，原有图片已保留。请重试或换一张图片。")
         }
         .task {
-            storedSourceExists = PatternSourceStore.exists(for: projectId)
+            // 成品图跟图纸原图无关，不必读。
+            storedSourceExists = subject == .cover && PatternSourceStore.exists(for: projectId)
         }
         .presentationDetents([.medium, .large])
-    }
-
-    /// 这个项目在拼图 / 多零件模式里已经有对好的东西（网格，或者零件摆位）。
-    ///
-    /// 单列取字节、不解码（两列都是 blob，不限定单列会把同行的封面也一起物化）。
-    /// **读不出来按「有」算**：`fetchProject*Data` 那两个便利版把读失败和「本来就没有」
-    /// 混成同一个 nil（见 `InventoryManager.BlobFetchFailure`），而这里拿它决定要不要
-    /// 拦下一次不可逆的写入 —— 猜错只多问一句，猜反了是用户几十分钟的标定无声作废。
-    private func hasStoredPatternWork() -> Bool {
-        hasBlob(inventoryManager.fetchProjectPatternGridDataResult(for: projectId))
-            || hasBlob(inventoryManager.fetchProjectPartsSheetDataResult(for: projectId))
-    }
-
-    private func hasBlob(_ result: Result<Data?, InventoryManager.BlobFetchFailure>) -> Bool {
-        switch result {
-        case .success(let data): return data != nil
-        case .failure: return true
-        }
     }
 
     /// 这次保存会不会让已经对好的图纸对不上。
@@ -1074,18 +1086,20 @@ struct ProjectImageEditorSheet: View {
     /// 判据只有一个：**存完之后拼图模式手上那张图，还是不是当初对格子的那张。**
     /// 这一屏只动封面（图纸原图归 `PatternSourceRow` 管），而两种模式都是原图优先、
     /// 没有才退回封面（`SinglePatternFlowView.load`、`PartsSheetFlowView.load`），于是：
+    ///   - 成品图      → 跟拼图模式无关，永远不问
     ///   - 有图纸原图 → 拼图模式读的一直是它，封面随便改，**碰不到**
     ///   - 没有图纸原图 → 格子就是照着这张封面对的，取景一改就全偏
     private func patternWorkWouldBreak() -> Bool {
-        guard editedImage != nil, !storedSourceExists else { return false }
-        return hasStoredPatternWork()
+        guard subject == .cover, editedImage != nil, !storedSourceExists else { return false }
+        return inventoryManager.hasStoredPatternWork(for: projectId)
     }
 
     /// 「移除图片」按下去。移除封面之后这个项目可能连一张图都不剩，
     /// 那已经对好的图纸就没有任何东西可以对照了 —— 这种时候先问一句。
     /// 原图还在的话不问：拼图模式读的是它，封面没了也照样能用。
+    /// 成品图同理不问：删一张实物照片跟格子没有关系。
     private func attemptRemoveImage() {
-        if !storedSourceExists, hasStoredPatternWork() {
+        if subject == .cover, !storedSourceExists, inventoryManager.hasStoredPatternWork(for: projectId) {
             pendingWrite = .removeImage
         } else {
             performRemoveImage()
@@ -1099,8 +1113,7 @@ struct ProjectImageEditorSheet: View {
 
     /// 真正落盘。从「保存」按钮里拆出来，是因为它前面多了一道确认。
     private func performSave() {
-        // 图没改就不重写封面 —— 用户只拨了「保留原图」开关时，把同一张图重编码再写回去
-        // 是白写一整行（inline blob，改一列 SQLite 要重写整条记录）。
+        // 图没改就不重写：inline blob，改一列 SQLite 要重写整条记录，白写一整行。
         if editedImage != nil, let image = displayImage {
             // **编码失败绝不能落到 onSave**。`onSave` 的参数是 `Data?`，而
             // `nil` 已经被上面的「移除图片」按钮占用了含义（`onSave(nil)`

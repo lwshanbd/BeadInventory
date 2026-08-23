@@ -1324,6 +1324,8 @@ struct PlannedProjectDetailView: View {
     @State private var pendingMultiPartMode = false
     @State private var showSinglePatternFlow = false
     @State private var showPartsSheetFlow = false
+    /// 拼图模式里动过图纸原图之后，靠它让「图纸原图」那一行重读（见 `PatternSourceRow.refreshToken`）。
+    @State private var patternSourceRefreshToken = 0
 
     // 获取当前项目的最新状态
     var currentProject: ProjectRecord? {
@@ -1393,11 +1395,15 @@ struct PlannedProjectDetailView: View {
                 onSelectMultiPart: { pendingMultiPartMode = true }
             )
         }
-        .fullScreenCover(isPresented: $showPartsSheetFlow) {
+        // 两个 onDismiss 都要，理由同 `ProjectDetailView`：拼图模式里能删也能补，
+        // 关掉之后这一页不重建，「图纸原图」那一行不会自己重读。
+        .fullScreenCover(isPresented: $showPartsSheetFlow,
+                         onDismiss: { patternSourceRefreshToken += 1 }) {
             PartsSheetFlowView(project: currentProject ?? project)
                 .environmentObject(inventoryManager)
         }
-        .fullScreenCover(isPresented: $showSinglePatternFlow) {
+        .fullScreenCover(isPresented: $showSinglePatternFlow,
+                         onDismiss: { patternSourceRefreshToken += 1 }) {
             SinglePatternFlowView(project: currentProject ?? project)
                 .environmentObject(inventoryManager)
         }
@@ -1439,8 +1445,11 @@ struct PlannedProjectDetailView: View {
 
             // 图纸原图。计划项目正是拼图模式的主力，这一份该看得见、能自己换。
             // 它跟上面那张封面是两件东西，改封面碰不到它。
-            PatternSourceRow(projectId: (currentProject ?? project).id)
-                .padding(.horizontal)
+            PatternSourceRow(
+                projectId: (currentProject ?? project).id,
+                refreshToken: patternSourceRefreshToken
+            )
+            .padding(.horizontal)
         }
     }
 
@@ -1654,6 +1663,7 @@ struct PlannedProjectDetailView: View {
             projectId: projectId,
             title: "项目封面",
             currentImage: data.flatMap { UIImage(data: $0) },
+            subject: .cover,
             onSave: { imageData in
                 inventoryManager.updateProjectThumbnail(projectId, thumbnail: imageData)
             }
