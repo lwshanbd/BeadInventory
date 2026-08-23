@@ -352,7 +352,7 @@ struct PartsSheetFlowView: View {
     private func load() async {
         let id = project.id
         let loader = inventoryManager.imageLoader
-        // 有原图就用原图 —— 它是上传时另存的全分辨率副本，只有这条流程会读（见 PatternSourceStore）。
+        // 有原图就用原图 —— 它是上传时另存的全分辨率副本（见 PatternSourceStore）。
         // 没有就退回 SwiftData 里那份压缩图，流程完全一样，只是一格豆子的像素少一半。
         //
         // 读盘和解码都扔到后台：这个 View 是 @MainActor，而原图是几十 MB 的文件，

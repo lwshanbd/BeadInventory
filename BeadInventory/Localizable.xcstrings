@@ -1,6 +1,296 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "封面" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cover"
+          }
+        }
+      }
+    },
+    "图纸原图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pattern Original"
+          }
+        }
+      }
+    },
+    "换一张" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace"
+          }
+        }
+      }
+    },
+    "选一张" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose"
+          }
+        }
+      }
+    },
+    "删掉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete"
+          }
+        }
+      }
+    },
+    "换掉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace"
+          }
+        }
+      }
+    },
+    "拼图模式用的是这张" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pattern mode uses this one"
+          }
+        }
+      }
+    },
+    "这份图纸读不出来了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This pattern can't be read"
+          }
+        }
+      }
+    },
+    "拼图模式会退回用封面。重新选一张就好。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pattern mode will fall back to the cover. Just pick another one."
+          }
+        }
+      }
+    },
+    "存在本机，不占用 iCloud" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stored on this device, not in iCloud"
+          }
+        }
+      }
+    },
+    "%@ · 存在本机，不占用 iCloud" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Stored on this device, not in iCloud"
+          }
+        }
+      }
+    },
+    "没有图纸原图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No pattern original"
+          }
+        }
+      }
+    },
+    "拼图模式会拿封面凑合，一格豆子的像素少一半。相册里还留着原图就选一下。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pattern mode will make do with the cover, where each bead gets half the pixels. If the original is still in your photos, pick it."
+          }
+        }
+      }
+    },
+    "这张图取不出来。如果它还在 iCloud 里，等下载完再试。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This image can't be loaded. If it's still in iCloud, try again once it finishes downloading."
+          }
+        }
+      }
+    },
+    "没存进去，可能是手机空间不够。原来那张还在。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't save it — you may be out of space. The previous one is still there."
+          }
+        }
+      }
+    },
+    "没删掉，稍后再试。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't delete it. Try again later."
+          }
+        }
+      }
+    },
+    "换成这张图纸？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use this as the pattern?"
+          }
+        }
+      }
+    },
+    "换掉这张图纸原图？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace this pattern original?"
+          }
+        }
+      }
+    },
+    "拼图模式以后就用这张来看每一格的颜色。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pattern mode will use this one to read each bead's color."
+          }
+        }
+      }
+    },
+    "现在这张会被盖掉。它不进 iCloud、也不在备份里，换掉就找不回来了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The current one will be overwritten. It isn't in iCloud or your backups, so it's gone for good."
+          }
+        }
+      }
+    },
+    "删掉这张图纸原图？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this pattern original?"
+          }
+        }
+      }
+    },
+    "拼图模式仍然能用，但只能拿封面凑合，看格子会糊一些。它不进 iCloud、也不在备份里，删了要重新从相册选。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pattern mode still works, but it can only make do with the cover, so the grid looks blurrier. It isn't in iCloud or your backups — delete it and you'll have to pick it from your photos again."
+          }
+        }
+      }
+    },
+    "列表里显示的就是这张" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is what shows in the list"
+          }
+        }
+      }
+    },
+    "裁切或换一张都不影响拼图模式用的图纸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cropping or replacing it doesn't affect the pattern used by pattern mode"
+          }
+        }
+      }
+    },
+    "这个项目没有单独的图纸，拼图模式用的就是这张" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This project has no separate pattern — pattern mode uses this one"
+          }
+        }
+      }
+    },
+    "暂无封面" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No cover yet"
+          }
+        }
+      }
+    },
+    "不加也行，列表里会显示一个占位图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional — the list will show a placeholder instead"
+          }
+        }
+      }
+    },
+    "这个项目在拼图模式里已经对好了图纸，而它是照着现在这张封面对的（这个项目没有图纸原图）。改完取景就对不上了，得重新对一遍。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You've already aligned the pattern in pattern mode, and it was aligned against this cover (this project has no pattern original). Changing the framing will throw it off — you'd have to align it again."
+          }
+        }
+      }
+    },
+    "这里设置的是默认值，每张图纸在上传时都可以单独选择是否保留原图。\n原图只用在拼图模式里，用来看清每一格的颜色。列表和详情页仍然用压缩后的图；原图存在本机，不占 iCloud、不进备份。拼完之后可以删掉它：项目详情页的「图纸原图」那一行，或者「多零件模式」零件清单页的「拼好了」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is the default; each pattern can keep or skip its original when you upload it.\nOriginals are only used in Pattern Mode, to read each bead's color clearly. Lists and detail pages still use the compressed image; the original lives on this device, outside iCloud and backups. When you're done you can delete it — from the “Pattern Original” row on the project detail page, or via “All done” on the parts list in Multi-part Mode."
+          }
+        }
+      }
+    },
     "这 %lld 格本来就是「%@」，没有改动" : {
       "localizations" : {
         "en" : {
@@ -5910,16 +6200,6 @@
         }
       }
     },
-    "将保存为项目封面" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Will be saved as project cover"
-          }
-        }
-      }
-    },
     "将创建包含 %lld 颗豆子（%lld 种颜色）的计划项目。执行时需要选择品牌。" : {
       "localizations" : {
         "en" : {
@@ -7939,16 +8219,6 @@
         }
       }
     },
-    "暂无封面图" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No cover image"
-          }
-        }
-      }
-    },
     "暂无计划项目" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8690,16 +8960,6 @@
         }
       }
     },
-    "点击「上传封面」添加" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tap 'Upload Cover' to add"
-          }
-        }
-      }
-    },
     "点击「以网格为准」将该色号的图例用量更新为网格识别的数量。" : {
       "localizations" : {
         "en" : {
@@ -8787,16 +9047,6 @@
     },
     "点击日期查看当天完成的拼豆作品" : {
 
-    },
-    "点击裁切可调整，或上传新封面" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tap crop to adjust, or upload a new cover"
-          }
-        }
-      }
     },
     "父项目" : {
       "localizations" : {
@@ -10956,16 +11206,6 @@
         }
       }
     },
-    "项目缩略图" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Project Thumbnail"
-          }
-        }
-      }
-    },
     "项目记录" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -12588,16 +12828,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keep original by default"
-          }
-        }
-      }
-    },
-    "这里设置的是默认值，每张图纸在上传时都可以单独选择是否保留原图。\n原图只用在拼图模式里，用来看清每一格的颜色。列表和详情页仍然用压缩后的图；原图存在本机，不占 iCloud、不进备份。拼完之后可以在「多零件模式」的零件清单页点「拼好了」把它删掉。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This is the default; each pattern can keep or skip its original when you upload it.\nOriginals are only used in Pattern Mode, to show the color of each cell. Lists and detail pages still use the compressed image. Originals stay on this device, don't use iCloud, and aren't included in backups. Once a pattern is finished you can remove it from the piece list in Multi-Piece Mode."
           }
         }
       }

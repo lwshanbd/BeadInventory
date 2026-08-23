@@ -30,9 +30,14 @@
 //
 //  ## 谁能读
 //
-//  **只有拼图模式和多零件模式**（`SinglePatternFlowView.load` / `PartsSheetFlowView.load`，
-//  两边都是「有原图用原图，没有退回封面」）。列表、日历、详情页一律走 `displayThumbnail` / `thumbnail`，
-//  跟这里完全隔离 —— 这份文件是全分辨率的，任何一个会批量渲染的地方碰它都是 jetsam。
+//  **像素只有拼图模式和多零件模式读**（`SinglePatternFlowView.load` / `PartsSheetFlowView.load`，
+//  两边都是「有原图用原图，没有退回封面」）。
+//
+//  另外详情页的「图纸原图」那一行（`PatternSourceRow`）也读，但只为了一张 240px 预览和
+//  字节数，而且**必须走后台 downsample**，绝不能整张解码上屏。
+//
+//  除此之外，列表、日历一律走 `displayThumbnail` / `thumbnail` —— 这份文件是全分辨率的，
+//  任何一个会批量渲染的地方碰它都是 jetsam。
 //
 //  ## 什么时候没有
 //
@@ -117,7 +122,7 @@ enum PatternSourceStore {
         }
     }
 
-    /// 没有原始字节可用时（相机拍的、Share Extension 传进来的、详情页换的新封面）拿什么存。
+    /// 没有原始字节可用时（相机拍的、Share Extension 传进来的）拿什么存。
     ///
     /// **PNG，无损。** 这里以前是 `jpegData(0.95)` —— 用户传一张 5.8 MB 的图纸，
     /// 走这条路存下来只剩两三 MB，他在零件清单看到「留了一份原图，占 2.1 MB」，
@@ -175,11 +180,32 @@ enum PatternSourceStore {
         return values.fileSize ?? 0
     }
 
-    /// 删掉某个项目的原图。三种情形会走到：用户点「拼好了」、用户在封面编辑器里
-    /// 关掉「保留原图」（或换了图但新原图没写成，那份旧的必须跟着走），
-    /// 以及项目被删除（后者是资源正确性，不删就永远留下一个谁也不会再读的孤儿文件）。
-    static func remove(for projectId: UUID) {
-        guard let url = url(for: projectId) else { return }
-        try? FileManager.default.removeItem(at: url)
+    /// 删掉某个项目的原图。三种情形会走到：用户在零件清单页点「拼好了」
+    /// （`PartsListStepView`）、用户在详情页「图纸原图」那一行按「删掉」
+    /// （`PatternSourceRow`），以及项目被删除（后者是资源正确性，不删就永远
+    /// 留下一个谁也不会再读的孤儿文件）。
+    ///
+    /// - Returns: 删完之后这个项目确实没有原图了。**「本来就没有」也算成功。**
+    ///   前两条路都是用户按了确认弹窗才走到这儿的，失败必须说一声 —— 静默失败会让
+    ///   他看到东西原封不动回来，再点一次还是一样，而屏幕上没有任何线索。
+    @discardableResult
+    static func remove(for projectId: UUID) -> Bool {
+        guard let url = url(for: projectId) else {
+            AppLogger.shared.error("PatternSource", "remove_no_directory", metadata: [
+                "projectId": projectId.uuidString
+            ])
+            return false
+        }
+        do {
+            try FileManager.default.removeItem(at: url)
+            return true
+        } catch CocoaError.fileNoSuchFile {
+            return true   // 已经没了，正是想要的结果
+        } catch {
+            AppLogger.shared.error("PatternSource", "remove_failed", metadata: [
+                "projectId": projectId.uuidString, "error": "\(error)"
+            ])
+            return false
+        }
     }
 }
