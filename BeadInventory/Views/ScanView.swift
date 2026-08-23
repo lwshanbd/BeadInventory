@@ -58,10 +58,6 @@ struct ScanView: View {
     /// 从相册选进来的那张图的**原始字节**。建项目时另存一份给拼图模式用
     /// （见 `patternSourceData()` 和 `PatternSourceStore`）。
     @State private var pickedOriginalData: Data?
-    /// 缩略图被裁过没有。裁过的话上面那份原始字节就作废了 ——
-    /// 它和项目封面的取景不一样，而拼图模式所有坐标都是相对封面那张图归一化的，
-    /// 拿构图不同的一张图去铺网格，零件框会整片错位。
-    @State private var thumbnailWasCropped = false
     /// 这一张要不要留原图。
     ///
     /// **是每张图各自的决定，不是一个全局开关。** 用户一次可能传十张图纸，只有其中
@@ -122,11 +118,7 @@ struct ScanView: View {
                         image: image,
                         isPinned: $isImagePinned,
                         showingCropView: $showingCropView,
-                        onReselect: {
-                            selectedImage = nil
-                            selectedPhotoItem = nil
-                            isImagePinned = false
-                        }
+                        onReselect: resetPickedImage
                     )
                 }
 
@@ -146,8 +138,9 @@ struct ScanView: View {
                                     showingCropView: $showingCropView,
                                     isPinned: $isImagePinned,
                                     keepPatternSource: $keepPatternSource,
-                                    originalByteCount: thumbnailWasCropped ? nil : pickedOriginalData?.count,
+                                    originalByteCount: pickedOriginalData?.count,
                                     hasRecognizedItems: !recognizedItems.isEmpty,
+                                    onReselect: resetPickedImage,
                                     onManualTap: { showingManualEntry = true }
                                 )
                             }
@@ -230,7 +223,6 @@ struct ScanView: View {
                 if let image = thumbnailImage ?? originalImage {
                     ImageCropView(image: image) { croppedImage in
                         thumbnailImage = croppedImage
-                        thumbnailWasCropped = true
                     }
                 } else {
                     Color.black.onAppear { showingThumbnailCrop = false }
@@ -386,7 +378,6 @@ struct ScanView: View {
                     originalImage = image
                     thumbnailImage = image
                     pickedOriginalData = data
-                    thumbnailWasCropped = false
                     keepPatternSource = PatternSourceStore.keepsSourceByDefault
                     isLoadingImage = false
                 }
@@ -418,22 +409,33 @@ struct ScanView: View {
     /// 用户上传时手里明明有原图，却要等走到拼图模式才被提示「去相册再选一次」——
     /// 所以现在建项目的同时就把它留下来。
     ///
-    /// 两条来源，取哪条只看**取景对不对得上封面**：
-    ///   - 没裁过封面 → 用相册那份原始字节（没有二次编码，最干净）
-    ///   - 裁过封面   → 原始字节的构图已经不是封面那张了，改存裁完的全分辨率图。
-    ///     拼图模式所有几何量都是相对封面归一化的，构图一错整片零件框都会偏。
+    /// 存的是**用户传进来的那张图纸**；只要他传过图，封面后来被怎么改都不影响这一份。
+    ///
+    /// 这一条是用户报障换来的：识别完之后在下面那张封面上裁一刀（或者换成一张成品照），
+    /// 存成计划，再进拼图模式 —— 图纸变成了那张封面。用户的心智很清楚：上面那张是我要
+    /// 拼的图纸，下面那张是列表里给自己看的封面，改封面不该动图纸。
+    ///
+    /// 三条来源，优先级从高到低：
+    ///   - 相册选的 → 那份原始字节（没有二次编码，最干净）
+    ///   - 拍照 / 从别处传进来的 → 手上那张重出无损 PNG。分享进来的那张在 Share Extension
+    ///     里已经被 `ProjectImageEncoder` 压过一道（分辨率保留、编码有损），这里只是原样留下，
+    ///     画质不会因为存成 PNG 就回来。
+    ///   - 一张图纸都没传过（手动加色号、只上传了封面）→ 那封面就是唯一的图，用它。
+    ///     只有这一条会落到封面上。
+    ///
+    /// 两张图取景不同不要紧：拼图模式一次会话里只认一张（有原图用原图、没有才退回封面，
+    /// 见 `SinglePatternFlowView.load`）。单张模式还会把对格子时那张的尺寸记进
+    /// `BeadPatternGrid.sourceImageSize`，下次进来宽高比对不上就作废网格；零件模式没有这道检查。
     ///
     /// 用户在上传那一屏把「留原图」关掉时返回 nil，一个字节都不写。
     ///
-    /// 这条规则**只在建项目这一屏成立**：这里的 `thumbnailImage` 是用户刚传进来的全分辨率图
-    /// （压缩只发生在 `generateThumbnailData`），裁完重出仍是原画质，而且项目还没建、
-    /// 库里不可能已经有原图。封面编辑器那边手上只有压过的库存封面，同样写法会把用户
-    /// 不可再生的原图降一档 —— 所以它裁封面时什么都不写，见
-    /// `ProjectImageEditorSheet.applyPatternSourceDecision()`。
+    /// 封面编辑器那边（项目已经建好之后改封面）规矩不一样，见
+    /// `ProjectImageEditorSheet.applyPatternSourceDecision()`：只裁旧封面时一个字节都不动
+    /// （手上那张封面是压过的，拿它覆盖等于把原图降一档），换了新图才写，用户明说不留才删。
     private func patternSourceData() -> Data? {
         guard keepPatternSource else { return nil }
-        if !thumbnailWasCropped, let pickedOriginalData { return pickedOriginalData }
-        return PatternSourceStore.lossless(thumbnailImage)
+        if let pickedOriginalData { return pickedOriginalData }
+        return PatternSourceStore.lossless(originalImage ?? thumbnailImage)
     }
 
     // MARK: - 主 body 的子片段（拆分以减轻类型检查复杂度）
@@ -658,8 +660,7 @@ struct ScanView: View {
             ThumbnailPreviewSection(
                 thumbnailImage: $thumbnailImage,
                 originalImage: originalImage,
-                showingThumbnailCrop: $showingThumbnailCrop,
-                thumbnailWasCropped: $thumbnailWasCropped
+                showingThumbnailCrop: $showingThumbnailCrop
             )
             .padding(.horizontal)
 
@@ -708,12 +709,7 @@ struct ScanView: View {
 
                 Divider()
 
-                Button {
-                    // 重新选择图片：清除当前图片但保留识别结果
-                    selectedImage = nil
-                    selectedPhotoItem = nil
-                    isImagePinned = false
-                } label: {
+                Button(action: resetPickedImage) {
                     Label("重新选择图片", systemImage: "arrow.counterclockwise")
                 }
                 .disabled(selectedImage == nil)
@@ -945,20 +941,34 @@ struct ScanView: View {
         return .some(encoded)
     }
 
-    /// 清除所有状态
-    func clearState() {
-        recognizedItems = []
+    /// 「重新选择」：把上一张图的痕迹全部清掉，识别结果和项目名留着不动。
+    ///
+    /// 只清 `selectedImage` 是不够的：封面和那份原始字节还留着上一张。接着**用相机**
+    /// 拍一张的话，`onChange(of: selectedImage)` 那条只在 `originalImage == nil` 时才接手，
+    /// 于是封面、连同留给拼图模式的图纸，都还是上一张那张图。
+    ///
+    /// **所有「重新选择」入口都得走这里**，现在有三处：置顶图、上传卡片、工具栏菜单。
+    /// 之前工具栏那处自己写了三行，于是上面那个 bug 从菜单进去照样能复现。
+    private func resetPickedImage() {
         selectedImage = nil
         selectedPhotoItem = nil
-        projectName = ""
         originalImage = nil
         thumbnailImage = nil
         pickedOriginalData = nil
-        thumbnailWasCropped = false
+        isImagePinned = false
         // 「留不留原图」是**这一张**的决定，不能带到下一张去 —— 上一张不留，
         // 不代表下一张也不留。回到设置里那个默认值。
         keepPatternSource = PatternSourceStore.keepsSourceByDefault
-        isImagePinned = false
+    }
+
+    /// 清除所有状态：`resetPickedImage()` 那一份，外加识别结果和项目名。
+    ///
+    /// 「这一张图要清什么」只在 `resetPickedImage()` 里定义一次 —— 两边各抄一份清单的
+    /// 结果就是以后加了新状态只改一边。
+    func clearState() {
+        resetPickedImage()
+        recognizedItems = []
+        projectName = ""
     }
 
 }
@@ -1051,10 +1061,13 @@ struct ImageSelectionSection: View {
     @Binding var isPinned: Bool
     /// 这一张要不要留原图（见 ScanView 里同名 State 的注释）
     @Binding var keepPatternSource: Bool
-    /// 相册那份原始字节有多大。拿不到（拍照、裁过）就是 nil，那时不写数字，
-    /// 免得报一个还没编码出来、多半不准的大小。
+    /// 相册那份原始字节有多大。相机拍的、Share Extension 传进来的没有这份字节，就是 nil，
+    /// 那时不写数字，免得报一个还没编码出来、多半不准的大小。
     var originalByteCount: Int?
     var hasRecognizedItems: Bool
+    /// 「重新选择」。不能只把 `selectedImage` 置 nil —— 上一张图的封面和原始字节
+    /// 还留在 ScanView 里，见 `ScanView.resetPickedImage()`。
+    var onReselect: () -> Void
     var onManualTap: (() -> Void)? = nil
 
     @Environment(\.tabFlavor) private var flavor
@@ -1102,10 +1115,7 @@ struct ImageSelectionSection: View {
                         }
                     }
 
-                    Button("重新选择") {
-                        selectedImage = nil
-                        selectedPhotoItem = nil
-                    }
+                    Button("重新选择", action: onReselect)
                     .font(.caption)
                     .foregroundColor(.secondary)
                 }
@@ -2438,9 +2448,6 @@ struct ThumbnailPreviewSection: View {
     @Binding var thumbnailImage: UIImage?
     let originalImage: UIImage?
     @Binding var showingThumbnailCrop: Bool
-    /// 在这里换过封面就置位：换完之后识别时那张图的原始字节跟封面已经不是一张图了，
-    /// 拼图模式那份原图得改从当前封面重出（见 `ScanView.patternSourceData()`）。
-    @Binding var thumbnailWasCropped: Bool
 
     // 上传新封面相关
     @State private var selectedPhotoItem: PhotosPickerItem?
@@ -2582,7 +2589,6 @@ struct ThumbnailPreviewSection: View {
             if let image = uploadedImage {
                 ImageCropView(image: image) { croppedImage in
                     thumbnailImage = croppedImage
-                    thumbnailWasCropped = true
                     uploadedImage = nil
                 }
             } else {
