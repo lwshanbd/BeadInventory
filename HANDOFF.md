@@ -117,7 +117,7 @@ SecondaryNav（返回 + 居中标题 + 0–2 个 IconBtn）
 | 4 | `HistoryView.swift` | `hist-list` + `hist-select` | 按 "今天 / 昨天 / 更早" 分组 BIGroupCard / 每条 row 用 morandi 各色 icon 区分操作类型 / 选择态用 honey / 底部多选操作条独立浮起 |
 | 5 | `ColorConverterView.swift` | `conv-empty` + `conv-results` | BISearchBar 带 ⌘K / 源色卡用 hex 渐变背景 / 跨品牌行带相似度% / Empty 给「试试这些」+ 最近查询 / **绝不要造中文色名** |
 | 6 | `CustomColorsView.swift` | `custom-main` + `custom-edit` | 卡片左 honey 立边代表自定义 / 显示用户自取的名字（用户自定义所以可以）/ FAB mauve / 编辑半屏 sheet 含品牌启用 toggle 列表 |
-| 7 | `SettingsView.swift` 中的 `RecognitionSettingsSections` | `ai-cloud` | 状态卡（success 立边）/ AI 提供商 radio list / API 配置卡 / 教程链接 |
+| 7 | `SettingsView.swift` 中的 `RecognitionSettingsScreen` | `ai-cloud` | 状态卡（success 立边）/ AI 提供商 radio list / API 配置卡 / 教程链接 |
 | 8 | `BrandSettingsView.swift` | `bs-main` | 品牌 hero（rose→latte 渐变 + 品牌首字）/ 品牌信息 / 库存提醒 stepper / 库存操作 / **危险区独立 GroupCard** 放重置 / 清除 / 删除三个 BIDangerRow |
 | 9 | `BrandManagerView.swift` | `bm-main` | 总览 hero + brand icon cluster / tip 提示 / 列表卡片（左 rose 立边 = current，drag handle，圆角 14）/ 合并品牌按钮在底 / FAB rose |
 

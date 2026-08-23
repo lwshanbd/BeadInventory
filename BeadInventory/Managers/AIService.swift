@@ -214,6 +214,11 @@ class AIServiceManager: ObservableObject {
     private static func normalizedConfig(from config: AIConfig) -> AIConfig {
         var normalized = config
 
+        // 从网页复制 Key 很容易带上尾随换行或空格。不清掉的话 `!apiKey.isEmpty` 一路放行、
+        // 「测试连接」也能点，最后服务端回 401，用户看到的是「我明明填了 key」。
+        // didSet 是所有写入的必经之路，在这里清最省事。
+        normalized.apiKey = config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
         let validModels: [String]
         switch normalized.provider {
         case .kimi:

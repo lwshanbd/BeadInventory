@@ -13196,6 +13196,56 @@
           }
         }
       }
+    },
+    "本地模型识别已下线" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On-device recognition has been retired"
+          }
+        }
+      }
+    },
+    "已清理本地模型残留" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leftover model files cleaned up"
+          }
+        }
+      }
+    },
+    "你之前用的是手机上的本地模型识别，这个功能已经下线。现在扫描统一走云端 API——识别时图片会上传到你配置的服务商（Kimi / OpenAI 等）。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You were using on-device recognition, which has been retired. Scanning now goes through a cloud API — your image is uploaded to whichever provider you configure (Kimi, OpenAI, etc.)."
+          }
+        }
+      }
+    },
+    "如果还没填过 API Key，可以在「更多 → 设置 → AI 图像识别」里填。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If you haven't entered an API Key yet, you can add one under More → Settings → AI Image Recognition."
+          }
+        }
+      }
+    },
+    "之前下载的模型文件已经自动删除，给手机腾出了 %@。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The model files you downloaded earlier have been deleted, freeing up %@ on your phone."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

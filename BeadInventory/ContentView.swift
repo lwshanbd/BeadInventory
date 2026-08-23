@@ -13,6 +13,7 @@ struct ContentView: View {
     @EnvironmentObject var sharedImageManager: SharedImageManager
     @EnvironmentObject var cloudSyncStatusManager: CloudSyncStatusManager
     @ObservedObject private var announcementManager = AnnouncementManager.shared
+    @ObservedObject private var localModelRemovalMigrator = LocalModelRemovalMigrator.shared
     @Binding var shouldOpenScan: Bool
     @State private var selectedTab = 0
     @State private var showingAddInventory = false
@@ -201,6 +202,20 @@ struct ContentView: View {
             }
         } message: {
             Text(announcementManager.currentAnnouncement?.message ?? "")
+        }
+        // 本地模型识别下线的一次性告知：识别方式变了（图片开始上云），以及清掉了多少残留
+        .alert(
+            localModelRemovalMigrator.pendingNotice?.title ?? "",
+            isPresented: Binding(
+                get: { localModelRemovalMigrator.pendingNotice != nil },
+                set: { if !$0 { localModelRemovalMigrator.acknowledgeNotice() } }
+            )
+        ) {
+            Button("我知道了") {
+                localModelRemovalMigrator.acknowledgeNotice()
+            }
+        } message: {
+            Text(localModelRemovalMigrator.pendingNotice?.message ?? "")
         }
         // 监听 URL Scheme 触发的扫描请求
         .onChange(of: shouldOpenScan) { _, newValue in

@@ -50,6 +50,7 @@
 		385001122FB3A70D00F5DDE2 /* ValidationDiffSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001112FB3A70D00F5DDE2 /* ValidationDiffSheet.swift */; };
 		386001022FB3A70D00F5DDE2 /* GridOCRSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386001012FB3A70D00F5DDE2 /* GridOCRSampler.swift */; };
 		386ECBFA2F332DB600BD92E8 /* AnnouncementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */; };
+		38A1B2C42F900002000LMRM2 /* LocalModelRemovalMigrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A1B2C32F900001000LMRM1 /* LocalModelRemovalMigrator.swift */; };
 		386ECBFC2F332DB600BD92E8 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFB2F332DB600BD92E8 /* BackupManager.swift */; };
 		386ECBFE2F332E1500BD92E8 /* BackupRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */; };
 		38B1A0012F01000100000001 /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000011 /* Brand.swift */; };
@@ -204,6 +205,7 @@
 		385001112FB3A70D00F5DDE2 /* ValidationDiffSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ValidationDiffSheet.swift; path = BeadInventory/Views/PatternHighlight/ValidationDiffSheet.swift; sourceTree = SOURCE_ROOT; };
 		386001012FB3A70D00F5DDE2 /* GridOCRSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridOCRSampler.swift; sourceTree = "<group>"; };
 		386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnouncementManager.swift; sourceTree = "<group>"; };
+		38A1B2C32F900001000LMRM1 /* LocalModelRemovalMigrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelRemovalMigrator.swift; sourceTree = "<group>"; };
 		386ECBFB2F332DB600BD92E8 /* BackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
 		386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreView.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000011 /* Brand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brand.swift; sourceTree = "<group>"; };
@@ -482,6 +484,7 @@
 			children = (
 				386ECBFB2F332DB600BD92E8 /* BackupManager.swift */,
 				386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */,
+				38A1B2C32F900001000LMRM1 /* LocalModelRemovalMigrator.swift */,
 				CC510001A0050002DEADBEEF /* ColorSimilarityService.swift */,
 				DE0D1C03A0050002DEADBEEF /* DeductionResolver.swift */,
 				38FA2CF62F274C4000912E02 /* SharedImageManager.swift */,
@@ -782,6 +785,7 @@
 				38B1A0012F01000100000050 /* ColorSystem.swift in Sources */,
 				386ECBFC2F332DB600BD92E8 /* BackupManager.swift in Sources */,
 				386ECBFA2F332DB600BD92E8 /* AnnouncementManager.swift in Sources */,
+				38A1B2C42F900002000LMRM2 /* LocalModelRemovalMigrator.swift in Sources */,
 				38B1A0012F01000100000048 /* CSVImporter.swift in Sources */,
 				38FA2CF72F274C4000912E02 /* SharedImageManager.swift in Sources */,
 				CC510001A0050001DEADBEEF /* ColorSimilarityService.swift in Sources */,

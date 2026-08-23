@@ -241,6 +241,9 @@ struct BeadInventoryApp: App {
 
                     // 静默检查远程公告
                     AnnouncementManager.shared.checkForAnnouncement()
+
+                    // 一次性迁移：本地模型识别下线后的善后（告知 + 清理残留模型文件）
+                    LocalModelRemovalMigrator.shared.runIfNeeded()
                 }
                 .alert(
                     String(localized: "数据库异常"),
