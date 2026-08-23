@@ -1,6 +1,16 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "这 %lld 格本来就是「%@」，没有改动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Those %lld cells were already \u201c%@\u201d \u2014 nothing changed"
+          }
+        }
+      }
+    },
     "刚把 %lld 格改成「%@」" : {
       "localizations" : {
         "en" : {

@@ -52,8 +52,9 @@ struct PartsColorReviewStepView: View {
     /// 这中间要是拿空数组去画，用户看到的是一句「这个颜色一格也没有」——
     /// 而这一屏正是重开项目时的落地页（见 `PartsSheetFlowView` 恢复 path 那段）。
     ///
-    /// 存下来的代价是得手动刷，而且只有两条路：换色号走 `select`，改格子走 `apply`。
-    /// 漏一条不会崩也不会报错 —— `cellRect` 是纯几何算的，只会安静地给用户看一张对不上的小图。
+    /// 存下来的代价是得手动刷：换色号走 `select`，改格子走 `apply` / `undoLast` / 画笔的
+    /// `onCommit`，重排走 `toggleSort`。漏一条不会崩也不会报错 —— `cellRect` 是纯几何算的，
+    /// 只会安静地给用户看一张对不上的小图。
     @State private var groupCells: [CellRef]?
     /// 露头才裁的小图缓存（见 `CellSwatchCache`）
     @State private var swatchCache = CellSwatchCache()
@@ -63,10 +64,19 @@ struct PartsColorReviewStepView: View {
     @State private var confirmed: Set<String> = []
     /// 底下那三个按钮改过的格子，倒着记。**这一屏最容易一下子改错一大片**——
     /// 一格都没选中时它们作用于整类，单图纸模式的「空」那一类是五万格，
-    /// 手滑点一下「这类都改成…」，五万格的判色结果当场没了，退出去也捡不回来。
+    /// 手滑点一下「这类是任意色」，五万格的判色结果当场没了，退出去也捡不回来。
     ///
-    /// 只记这三个按钮。画笔（「改格子」）自己有一套按笔走的撤销，
-    /// 而且它改完之后这里存的旧值可能已经对不上了（见 `PartCellBrushView` 的 `onCommit`）。
+    /// **只管当前色号上刚做的那一步。** 换色号、核对完这一个、去摆拼豆板、动画笔 ——
+    /// 每一样都清空它（`select` / `confirmCurrentGroup` / 主按钮 / 画笔的 `onCommit`）。
+    ///
+    /// 不这么收的话，撤销条会跟着用户一路挂到别的色号上去：他在 H2 那一屏点「撤销」，
+    /// 改回去的是屏幕外的 H7 并且立刻落盘，而眼前的格子一个都不动 —— 一个专门用来
+    /// 「防止一下改错一大片」的东西，自己成了在用户看不见的地方改数据的路。
+    /// 摆拼豆板那屏改过的格子同理：它跟这一屏共用一份 `parts`，而这一屏还在导航栈里活着
+    ///（`path` 是 `[…, .review, .board]`），拿旧值盖回去会把人家刚在板上修好的格子洗掉。
+    ///
+    /// 代价是「进画笔补两格」之后，之前那次整类操作就撤不回来了。这是明知的取舍：
+    /// 画笔改完，这里存的旧值可能已经不是那一格的上一手，硬撤只会盖掉刚补好的格子。
     @State private var undoStack: [CellEdit] = []
     @State private var showingPalette = false
 
@@ -90,8 +100,9 @@ struct PartsColorReviewStepView: View {
     /// 量颜色的活儿。用户退出这一屏要停掉 —— 几十个零件能磨好几秒，
     /// 白算完还要跟下一屏抢 CPU，而且算完往一个已经没人看的界面里写。
     @State private var samplingTask: Task<Void, Never>?
-    /// 排不动时说一句。**不能什么都不说**：点了「排序」没有任何反应，用户只会以为按钮坏了。
-    @State private var sortNote: String?
+    /// 顶上那条一次性的提示。**不能什么都不说**：点了「排序」没有任何反应、
+    /// 或者整组改完发现一格都没变，用户只会以为按钮坏了。
+    @State private var note: String?
 
     /// 框选模式。开着时列表不滚动，拖一条对角线就把扫过的格子全选上。
     /// 一个色号动不动上千格，一格一格点是不可能的。
@@ -129,14 +140,19 @@ struct PartsColorReviewStepView: View {
         let col: Int
     }
 
-    /// 一次「改成…」。`olds` 跟 `refs` 一一对应，撤销就是照着放回去。
+    /// 一次「改成…」：每一格连着它的上一手，撤销就是照着放回去。
     ///
-    /// 逐格记旧值而不是记「这一类原来是什么」：整类操作确实是同一个旧值，
-    /// 但框选选出来的那批不保证（选完之后画笔可能已经动过其中几格）。
-    /// 五万格一步约两三兆，所以 `pushUndo` 只留最近几步。
-    struct CellEdit {
-        let refs: [CellRef]
-        let olds: [PartCellFill]
+    /// **一条数组而不是 refs / olds 两条平行的。** 两条的内存一模一样
+    ///（`CellRef` 24 字节、`PartCellFill` 16 字节，合起来 40，拼成一条也是 40，量过），
+    /// 但配对关系就得靠下标自己对齐 —— 那是白给的一类错位 bug。
+    ///
+    /// 逐格记旧值而不是只记「这一类原来是什么」：整组操作确实是同一个旧值，
+    /// 但框选出来的那批不保证 —— `groupCells` 是存下来的，可能已经比 `parts` 陈旧
+    ///（同 `groupCells` 那段注释）。
+    ///
+    /// 一格 40 字节，五万格一步约 2MB，所以 `pushUndo` 只留最近几步。
+    private struct CellEdit {
+        let cells: [(ref: CellRef, old: PartCellFill)]
         let newFill: PartCellFill
     }
 
@@ -147,7 +163,7 @@ struct PartsColorReviewStepView: View {
             groupBar
             Divider()
             if sortByColor { sortHint }
-            if let sortNote { noteBar(sortNote) }
+            if let note { noteBar(note) }
             if let last = undoStack.last { undoBar(last) }
             cellGrid
             footer
@@ -252,7 +268,8 @@ struct PartsColorReviewStepView: View {
                 onCommit: {
                     onPersist()
                     // 画笔动过格子之后，这里存的旧值可能已经不是那一格的上一手了 ——
-                    // 再撤销就会把用户刚补好的格子一起盖回去。画笔自己带撤销，丢掉这几步不亏。
+                    // 再撤销就会把用户刚补好的格子一起盖回去。所以进过画笔，之前那几步
+                    // 就撤不回来了（画笔那屏有自己的撤销，但它撤不了这一屏的整组操作）。
                     undoStack.removeAll()
                     // 铺出来的那一片是**存下来的**（`groupCells`），擦 / 补完必须自己刷 ——
                     // 擦掉的格子不刷就还留在这一组里，补上的格子进不来。
@@ -369,6 +386,8 @@ struct PartsColorReviewStepView: View {
     private func select(_ fill: PartCellFill) {
         selectedGroup = fill
         selection.removeAll()
+        // 撤销只管当前色号上刚做的那一步（理由见 `undoStack`）—— 换了色号就收
+        undoStack.removeAll()
         marquee = false
         groupCells = orderedCells(of: fill)
     }
@@ -388,13 +407,13 @@ struct PartsColorReviewStepView: View {
             .background(Theme.ColorToken.Surface.subtle)
     }
 
-    /// 排不动的时候说一句。用户点了「排序」，屏幕上必须有个交代。
+    /// 说一句就完事的提示条。用户点了个按钮，屏幕上必须有个交代。
     private func noteBar(_ text: String) -> some View {
         HStack(spacing: Theme.Spacing.sm) {
             Image(systemName: "exclamationmark.triangle")
             Text(text)
             Spacer(minLength: 0)
-            Button("知道了") { sortNote = nil }
+            Button("知道了") { note = nil }
         }
         .font(.caption)
         .foregroundStyle(Theme.ColorToken.Status.warning)
@@ -410,10 +429,15 @@ struct PartsColorReviewStepView: View {
     /// 所以这里把「改了多少格、改成了什么」写出来，撤销就摆在同一行。
     private func undoBar(_ edit: CellEdit) -> some View {
         HStack(spacing: Theme.Spacing.sm) {
+            // 灰只给说明那半边。整行一起灰的话（`.foregroundStyle` 挂在 HStack 上），
+            // 按钮跟旁边那句字一个颜色一个字号，看着就不像能点的东西 ——
+            // 而这一条存在的全部意义就是那个按钮。
             Image(systemName: "clock.arrow.circlepath")
-            Text("刚把 \(edit.refs.count) 格改成「\(label(for: edit.newFill))」")
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
+            Text("刚把 \(edit.cells.count) 格改成「\(label(for: edit.newFill))」")
                 .monospacedDigit()
                 .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
             Spacer(minLength: 0)
             Button(action: undoLast) {
                 Label("撤销", systemImage: "arrow.uturn.backward")
@@ -421,7 +445,6 @@ struct PartsColorReviewStepView: View {
             }
         }
         .font(.caption)
-        .foregroundStyle(Theme.ColorToken.Text.secondary)
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.sm)
         .background(Theme.ColorToken.Surface.subtle)
@@ -630,7 +653,12 @@ struct PartsColorReviewStepView: View {
             .buttonStyle(.bordered)
             .disabled(confirmed.contains(groupKey(selectedGroup)) && unconfirmed.isEmpty)
 
-            Button(action: onFinish) {
+            Button {
+                // 下一屏（摆拼豆板）跟这一屏共用一份 parts，而这一屏还留在导航栈里 ——
+                // 退路留着，回来一撤就会把人家在板上刚改好的格子盖掉。
+                undoStack.removeAll()
+                onFinish()
+            } label: {
                 Label {
                     finishTitle(totalBeads)
                 } icon: {
@@ -690,6 +718,9 @@ struct PartsColorReviewStepView: View {
     private func confirmCurrentGroup() {
         confirmed.insert(groupKey(selectedGroup))
         selection.removeAll()
+        // 「这个色号没问题」就是一个收工点：下面这一行会落盘，退路到此为止。
+        //（后面多半会 `select` 到下一个色号，那里也清 —— 但没有下一个时走不到。）
+        undoStack.removeAll()
         // 每核对完一个色号就落一次盘：这一屏的修改一直只在内存里的 parts 上，
         // 之前要走到「去摆拼豆板」才存。用户对完一个点「看下一个」，就当是存盘点。
         onPersist()
@@ -768,7 +799,7 @@ struct PartsColorReviewStepView: View {
     private func toggleSort() {
         if sortByColor {
             sortByColor = false
-            sortNote = nil
+            note = nil
             groupCells = cells(of: selectedGroup)
             return
         }
@@ -793,7 +824,7 @@ struct PartsColorReviewStepView: View {
                 // 一格都没量到（图全没抠出来）就别把这份结果存下来：存了之后再点「排序」
                 // 会走上面那条快路径，永远不会再量一次，用户除了退出整条流程没有别的办法。
                 guard modes.contains(where: { $0.contains { $0.contains { $0 >= 0 } } }) else {
-                    sortNote = String(localized: "取不到图纸上的颜色，排不了序。回去看看零件的框是不是圈得太小。")
+                    note = String(localized: "取不到图纸上的颜色，排不了序。回去看看零件的框是不是圈得太小。")
                     return
                 }
                 cellModes = modes
@@ -810,11 +841,11 @@ struct PartsColorReviewStepView: View {
     private func turnSortOn(using modes: [[[Int32]]]) {
         guard let ordered = sorted(cells(of: selectedGroup), using: modes) else {
             sortByColor = false
-            sortNote = String(localized: "这一片的原图取不到，排不了序。")
+            note = String(localized: "这一片的原图取不到，排不了序。")
             return
         }
         sortByColor = true
-        sortNote = nil
+        note = nil
         groupCells = ordered
     }
 
@@ -1002,8 +1033,8 @@ struct PartsColorReviewStepView: View {
     /// 整类操作（「这类没有豆子」作用于整组）在单图纸的空组上是五万格 —— 五万次状态写。
     private func apply(_ fill: PartCellFill) {
         var updated = parts
-        var refs: [CellRef] = []
-        var olds: [PartCellFill] = []
+        var edits: [(ref: CellRef, old: PartCellFill)] = []
+        edits.reserveCapacity(selection.count)
         for ref in selection {
             guard ref.part < updated.count,
                   ref.row < updated[ref.part].cells.count,
@@ -1011,20 +1042,25 @@ struct PartsColorReviewStepView: View {
             let old = updated[ref.part].cells[ref.row][ref.col]
             // 本来就是这个色号的那些格子不记 —— 记了会让撤销条报一个比实际大的数
             guard old != fill else { continue }
-            refs.append(ref)
-            olds.append(old)
+            edits.append((ref, old))
             updated[ref.part].cells[ref.row][ref.col] = fill
+        }
+        // 一格都没变（在选色盘里挑回了这一组本来的色号）。**必须说一句** ——
+        // 屏幕上什么都不动的话，用户不知道是自己挑错了还是这个按钮坏了。
+        guard !edits.isEmpty else {
+            note = String(localized: "这 \(selection.count) 格本来就是「\(label(for: fill))」，没有改动")
+            selection.removeAll()
+            return
         }
         parts = updated
         selection.removeAll()
         // 改过的格子已经不属于当前这一组了，铺出来的那片要跟着少掉
         groupCells = orderedCells(of: selectedGroup)
-        guard !refs.isEmpty else { return }
-        pushUndo(CellEdit(refs: refs, olds: olds, newFill: fill))
+        pushUndo(CellEdit(cells: edits, newFill: fill))
     }
 
-    /// 撤销栈只留最近 5 步。整类操作一步就是几万格的旧值（两三兆），
-    /// 无限留着的话，用户在一个色号上来回改十几次就能把这一屏的内存吃穿。
+    /// 撤销栈只留最近 5 步。一步最大是整组几万格的旧值（五万格约 2MB），
+    /// 封 5 步等于最多常驻十来兆；不封的话用户在一个色号上来回改就会一路涨上去。
     private func pushUndo(_ edit: CellEdit) {
         undoStack.append(edit)
         if undoStack.count > 5 { undoStack.removeFirst(undoStack.count - 5) }
@@ -1038,15 +1074,14 @@ struct PartsColorReviewStepView: View {
     private func undoLast() {
         guard let last = undoStack.popLast() else { return }
         var updated = parts
-        for (index, ref) in last.refs.enumerated() {
+        for (ref, old) in last.cells {
             guard ref.part < updated.count,
                   ref.row < updated[ref.part].cells.count,
                   ref.col < updated[ref.part].cells[ref.row].count else { continue }
-            updated[ref.part].cells[ref.row][ref.col] = last.olds[index]
+            updated[ref.part].cells[ref.row][ref.col] = old
         }
         parts = updated
-        // 选中的还是刚才那批格子的坐标，而它们已经换回原来那一组了 ——
-        // 留着的话，底下那排按钮会作用在一批用户看不见的格子上（同 `apply` 之后清空）。
+        // 数据刚被改回去，用户在这之后新点 / 新框的那批格子可能已经不在当前这一组里了
         selection.removeAll()
         groupCells = orderedCells(of: selectedGroup)
         onPersist()
