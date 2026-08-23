@@ -959,7 +959,7 @@ struct ProjectImageEditorSheet: View {
                     //
                     // 只在**真的有得选**的时候才出现：换了一张新图（要不要留这张新的），
                     // 或者库里已经有一份（要不要删掉）。**只是裁一下现有封面不算** ——
-                    // 那条路根本不会写原图（见 `patternSourceData`），开关摆在那儿唯一能做的
+                    // 那条路根本不会写原图（见 `applyPatternSourceDecision`），开关摆在那儿唯一能做的
                     // 就是删，写着「保留原图」却只会删，是个骗人的开关。
                     if savesPatternSource, displayImage != nil,
                        pickedNewImage || storedSourceExists {

@@ -409,26 +409,29 @@ struct ScanView: View {
     /// 用户上传时手里明明有原图，却要等走到拼图模式才被提示「去相册再选一次」——
     /// 所以现在建项目的同时就把它留下来。
     ///
-    /// 存的是**用户传进来的那张图纸**，跟封面后来被怎么改没有关系。
+    /// 存的是**用户传进来的那张图纸**；只要他传过图，封面后来被怎么改都不影响这一份。
     ///
     /// 这一条是用户报障换来的：识别完之后在下面那张封面上裁一刀（或者换成一张成品照），
-    /// 存成计划，再进拼图模式 —— 图纸变成了那张封面。因为这里以前是从 `thumbnailImage`
-    /// 出的，封面动一下，图纸就跟着没了。用户的心智很清楚：上面那张是我要拼的图纸，
-    /// 下面那张是列表里给自己看的封面，改封面不该动图纸。
+    /// 存成计划，再进拼图模式 —— 图纸变成了那张封面。用户的心智很清楚：上面那张是我要
+    /// 拼的图纸，下面那张是列表里给自己看的封面，改封面不该动图纸。
     ///
-    /// 两条来源，都跟封面无关：
+    /// 三条来源，优先级从高到低：
     ///   - 相册选的 → 那份原始字节（没有二次编码，最干净）
-    ///   - 拍照 / 从别处传进来的 → 手上那张全分辨率图重出无损 PNG
-    ///   - 两样都没有（手动加色号、只传了张封面）→ 那封面就是唯一的图，用它
+    ///   - 拍照 / 从别处传进来的 → 手上那张重出无损 PNG。分享进来的那张在 Share Extension
+    ///     里已经被 `ProjectImageEncoder` 压过一道（分辨率保留、编码有损），这里只是原样留下，
+    ///     画质不会因为存成 PNG 就回来。
+    ///   - 一张图纸都没传过（手动加色号、只上传了封面）→ 那封面就是唯一的图，用它。
+    ///     只有这一条会落到封面上。
     ///
-    /// 两张图不同构图不要紧：拼图模式一次会话里只认一张（有原图用原图、没有才退回封面，
-    /// 见 `SinglePatternFlowView.load`），网格是照着当时那张对的，也记着那张的尺寸。
+    /// 两张图取景不同不要紧：拼图模式一次会话里只认一张（有原图用原图、没有才退回封面，
+    /// 见 `SinglePatternFlowView.load`）。单张模式还会把对格子时那张的尺寸记进
+    /// `BeadPatternGrid.sourceImageSize`，下次进来宽高比对不上就作废网格；零件模式没有这道检查。
     ///
     /// 用户在上传那一屏把「留原图」关掉时返回 nil，一个字节都不写。
     ///
-    /// 封面编辑器那边（项目已经建好之后改封面）手上只有压过的库存封面，写进来会把用户
-    /// 不可再生的原图降一档，所以它裁封面时什么都不写，见
-    /// `ProjectImageEditorSheet.applyPatternSourceDecision()`。
+    /// 封面编辑器那边（项目已经建好之后改封面）规矩不一样，见
+    /// `ProjectImageEditorSheet.applyPatternSourceDecision()`：只裁旧封面时一个字节都不动
+    /// （手上那张封面是压过的，拿它覆盖等于把原图降一档），换了新图才写，用户明说不留才删。
     private func patternSourceData() -> Data? {
         guard keepPatternSource else { return nil }
         if let pickedOriginalData { return pickedOriginalData }
@@ -706,12 +709,7 @@ struct ScanView: View {
 
                 Divider()
 
-                Button {
-                    // 重新选择图片：清除当前图片但保留识别结果
-                    selectedImage = nil
-                    selectedPhotoItem = nil
-                    isImagePinned = false
-                } label: {
+                Button(action: resetPickedImage) {
                     Label("重新选择图片", systemImage: "arrow.counterclockwise")
                 }
                 .disabled(selectedImage == nil)
@@ -943,11 +941,14 @@ struct ScanView: View {
         return .some(encoded)
     }
 
-    /// 「重新选择」：把上一张图的痕迹全部清掉，识别结果留着不动。
+    /// 「重新选择」：把上一张图的痕迹全部清掉，识别结果和项目名留着不动。
     ///
     /// 只清 `selectedImage` 是不够的：封面和那份原始字节还留着上一张。接着**用相机**
     /// 拍一张的话，`onChange(of: selectedImage)` 那条只在 `originalImage == nil` 时才接手，
     /// 于是封面、连同留给拼图模式的图纸，都还是上一张那张图。
+    ///
+    /// **所有「重新选择」入口都得走这里**，现在有三处：置顶图、上传卡片、工具栏菜单。
+    /// 之前工具栏那处自己写了三行，于是上面那个 bug 从菜单进去照样能复现。
     private func resetPickedImage() {
         selectedImage = nil
         selectedPhotoItem = nil
@@ -955,23 +956,19 @@ struct ScanView: View {
         thumbnailImage = nil
         pickedOriginalData = nil
         isImagePinned = false
-        // 同 clearState：留不留原图是**这一张**的决定，换一张就回到默认值。
-        keepPatternSource = PatternSourceStore.keepsSourceByDefault
-    }
-
-    /// 清除所有状态
-    func clearState() {
-        recognizedItems = []
-        selectedImage = nil
-        selectedPhotoItem = nil
-        projectName = ""
-        originalImage = nil
-        thumbnailImage = nil
-        pickedOriginalData = nil
         // 「留不留原图」是**这一张**的决定，不能带到下一张去 —— 上一张不留，
         // 不代表下一张也不留。回到设置里那个默认值。
         keepPatternSource = PatternSourceStore.keepsSourceByDefault
-        isImagePinned = false
+    }
+
+    /// 清除所有状态：`resetPickedImage()` 那一份，外加识别结果和项目名。
+    ///
+    /// 「这一张图要清什么」只在 `resetPickedImage()` 里定义一次 —— 两边各抄一份清单的
+    /// 结果就是以后加了新状态只改一边。
+    func clearState() {
+        resetPickedImage()
+        recognizedItems = []
+        projectName = ""
     }
 
 }
@@ -1064,8 +1061,8 @@ struct ImageSelectionSection: View {
     @Binding var isPinned: Bool
     /// 这一张要不要留原图（见 ScanView 里同名 State 的注释）
     @Binding var keepPatternSource: Bool
-    /// 相册那份原始字节有多大。拿不到（拍照、裁过）就是 nil，那时不写数字，
-    /// 免得报一个还没编码出来、多半不准的大小。
+    /// 相册那份原始字节有多大。相机拍的、Share Extension 传进来的没有这份字节，就是 nil，
+    /// 那时不写数字，免得报一个还没编码出来、多半不准的大小。
     var originalByteCount: Int?
     var hasRecognizedItems: Bool
     /// 「重新选择」。不能只把 `selectedImage` 置 nil —— 上一张图的封面和原始字节
