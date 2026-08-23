@@ -1,6 +1,26 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "这 %lld 格本来就是「%@」，没有改动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Those %lld cells were already \u201c%@\u201d \u2014 nothing changed"
+          }
+        }
+      }
+    },
+    "刚把 %lld 格改成「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Just changed %lld cells to \u201c%@\u201d"
+          }
+        }
+      }
+    },
     "描红边那 %lld 个零件跟旁边挨着，烫完会连成一片。拖开一点，或者上面「加一块」板。" : {
       "localizations" : {
         "en" : {
