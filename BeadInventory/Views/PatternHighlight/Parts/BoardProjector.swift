@@ -76,8 +76,9 @@ final class BoardProjector: ObservableObject {
     /// 手机上选中的那个角（微调按钮作用在它身上，外屏上它更亮、拐角那格还描一圈白）。
     @Published var activeCorner: ProjectorCorner = .topLeft
 
-    /// 亮的格子投什么颜色。外屏画格子和画图例都读它（见 `ProjectorHighlightPaint`）。
-    @Published private(set) var highlight = ProjectorHighlightPaint()
+    /// 亮的格子投什么颜色。外屏画格子、外屏图例、手机上那条样例条都读它
+    /// （见 `ProjectorHighlightPaint`）。
+    @Published private(set) var highlight: ProjectorHighlightPaint
 
     /// 进校准页那一刻的整组值。取消时全组还原 —— 用户是趴在桌上对着实物拖出来的，
     /// 手一滑就被覆盖、还没有退路，是这一屏最容易惹人恼火的地方。
@@ -123,9 +124,11 @@ final class BoardProjector: ObservableObject {
             // 没存过就跟着图纸走 —— 老用户升上来，投出来的画面跟升级前一模一样。
             style: ProjectorHighlightStyle(rawValue: defaults.string(forKey: Key.highlightStyle) ?? "")
                 ?? .pattern,
+            // 存坏了退回这个亮黄，不退回白：白是另一个合法选项，
+            // 退成白的话用户看到的是「我选的自定义，颜色却跟白色那一项一模一样」。
             custom: Color(uiColor: UIColor(themeHex: defaults.string(forKey: Key.highlightCustomHex)
                                            ?? Self.defaultCustomHex,
-                                           fallback: .white))
+                                           fallback: UIColor(themeHex: Self.defaultCustomHex)))
         )
         if boardCols <= 0 || boardRows <= 0 {
             boardCols = Self.defaultBoardSize.cols
@@ -276,8 +279,9 @@ final class BoardProjector: ObservableObject {
         highlight.style = style
     }
 
-    /// 换自定义的那个颜色。不夹亮度：他可能就是要压暗（屋里很黑、板子反光）。
-    /// 挑得太暗时手机上提醒一句，改不改由他。
+    /// 换自定义的那个颜色，顺带切到「自定义」这一项。
+    /// 不夹亮度：他可能就是要压暗（屋里很黑、板子反光）。挑得太暗时手机上提醒一句，
+    /// 改不改由他。
     func setCustomHighlightColor(_ color: Color) {
         highlight.custom = color
         highlight.style = .custom
@@ -349,6 +353,9 @@ final class BoardProjector: ObservableObject {
     /// 四个角一并清掉（不只是关开关）：投影仪挪过之后那组数已经不作数了，
     /// 留着只会让下次进来时对着一堆错的数字微调。
     func resetToFilling() {
+        // 这一屏改过的颜色跟「取消」一样收回去：用户点的是「关掉」，
+        // 没道理把他随手试的那个颜色顺手存下来。
+        if let snapshot { highlight = snapshot.highlight }
         snapshot = nil
         isCalibrating = false
         isOn = false

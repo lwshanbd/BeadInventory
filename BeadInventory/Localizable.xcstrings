@@ -1,6 +1,96 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "亮的格子什么颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color of the lit cells"
+          }
+        }
+      }
+    },
+    "跟着图纸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Match pattern"
+          }
+        }
+      }
+    },
+    "白色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "White"
+          }
+        }
+      }
+    },
+    "挑一个颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick a color"
+          }
+        }
+      }
+    },
+    "这个颜色偏暗，投影仪打出来的格子可能不太看得清。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This color is fairly dark — the projected cells may be hard to see."
+          }
+        }
+      }
+    },
+    "现在一个色号都没点，板子上一格都不亮 —— 回上一屏点一个色号，才看得出这几种颜色的差别。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No color code is selected yet, so nothing lights up on the board. Go back and pick a color code to see the difference between these options."
+          }
+        }
+      }
+    },
+    "按色号本来的颜色投。黑、深蓝这类投出来是不亮的，会自动提到最亮 —— 色相还在，深浅没了：黑和白都是白光。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projects each color code in its own color. Dark ones like black or navy would not light up at all, so they are pushed to full brightness — the hue stays, the lightness is gone: black and white both come out as white light."
+          }
+        }
+      }
+    },
+    "不管当前是哪个色号，一律投白光。板子上最亮、边界最清楚，代价是同时点亮两个色号时它们长得一样。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always projects white light, whatever the current color code is. Brightest and crispest on the board; the trade-off is that two color codes lit at once look identical."
+          }
+        }
+      }
+    },
+    "一律投你挑的这个颜色。白板子上白光晃眼、或者屋里灯偏黄看不清时，换一个更好认的颜色。代价跟白色一样：同时点亮两个色号时它们长得一样。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always projects the color you pick. Useful when white glares on a white board, or when warm room lighting washes it out. Same trade-off as white: two color codes lit at once look identical."
+          }
+        }
+      }
+    },
     "封面" : {
       "localizations" : {
         "en" : {

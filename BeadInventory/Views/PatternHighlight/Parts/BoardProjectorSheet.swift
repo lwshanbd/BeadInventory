@@ -527,6 +527,9 @@ struct BoardProjectorSheet: View {
     ///
     /// 外屏这时候也在实时跟着变（这一屏开着的时候投影仪照样在投），
     /// 所以真正的判据仍然是抬头看板子；手机上这三个点只是让他知道该看什么。
+    ///
+    /// **除非一个色号都没点** —— 那时候板子上本来就一格不亮，怎么切都没有变化，
+    /// 而手机上这三个点照样在变，等于告诉他「已经生效了」。所以那种情况直接说出来。
     private var highlightColorRow: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             Text("亮的格子什么颜色")
@@ -545,6 +548,13 @@ struct BoardProjectorSheet: View {
                 .font(.caption)
                 .foregroundColor(Theme.ColorToken.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if session.content?.highlightKeys.isEmpty ?? true {
+                Text("现在一个色号都没点，板子上一格都不亮 —— 回上一屏点一个色号，才看得出这几种颜色的差别。")
+                    .font(.caption)
+                    .foregroundColor(Theme.ColorToken.Status.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if projector.highlight.style == .custom {
                 ColorPicker("挑一个颜色", selection: customColorBinding, supportsOpacity: false)
