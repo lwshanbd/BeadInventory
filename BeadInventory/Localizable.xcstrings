@@ -111,6 +111,46 @@
         }
       }
     },
+    "手指划过要去掉的格子。放大后想挪，拖上面那条图纸。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe across the cells to remove. Zoomed in? Drag the pattern strip above to move around."
+          }
+        }
+      }
+    },
+    "手指划过要去掉的格子。放大后想挪，先切回「挪图」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe across the cells to remove. Zoomed in? Switch back to Move to pan."
+          }
+        }
+      }
+    },
+    "手指划过要补上的格子。放大后想挪，拖上面那条图纸。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe across the cells to fill. Zoomed in? Drag the pattern strip above to move around."
+          }
+        }
+      }
+    },
+    "手指划过要补上的格子。放大后想挪，先切回「挪图」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe across the cells to fill. Zoomed in? Switch back to Move to pan."
+          }
+        }
+      }
+    },
     "图纸原图" : {
       "localizations" : {
         "en" : {

@@ -224,35 +224,38 @@ struct PartCellBrushView: View {
 
     // MARK: - 上：图
 
-    /// 对照时左右各占一半，中间留一条缝把两边分开。
+    /// 对照时上下各占一半，中间留一条缝把两边分开。
     ///
-    /// **两边必须一样大**：整屏只有一个 `transform`，它是按 `canvasSize` 算的 ——
-    /// 两栏宽高一致，同一格才会落在两边同一个位置上，一眼横着扫过去就是同一行。
+    /// **两块必须一样大**：整屏只有一个 `transform`，它是按 `canvasSize` 算的 ——
+    /// 两块宽高一致，同一格才会落在两块里同一个位置上，一眼上下扫过去就是同一列。
+    ///
+    /// **上下分而不是左右分**：手机是竖的，左右分等于把宽度砍一半，而一格在屏幕上
+    /// 是正方的 —— 宽度受限的零件（多数）格子直接小一半。上下分只砍高度，
+    /// 宽度不动，格子该多大还多大。
     private func paneSize(in total: CGSize) -> CGSize {
         guard showsCompare else { return total }
-        return CGSize(width: max(1, (total.width - Theme.Spacing.xs) / 2), height: total.height)
+        return CGSize(width: total.width, height: max(1, (total.height - Theme.Spacing.xs) / 2))
     }
 
-    /// 现在是不是真的分栏。没有图纸就永远不分 —— 分出来左边是一片空的，
-    /// 白白把格子挤小一半。
+    /// 现在是不是真的分栏。没有图纸就永远不分 —— 分出来上面是一片空的，
+    /// 白白把格子挤矮一半。
     private var showsCompare: Bool { comparing && image != nil }
 
     private var canvas: some View {
         GeometryReader { geo in
             let pane = paneSize(in: geo.size)
             ZStack(alignment: .topLeading) {
-                HStack(spacing: showsCompare ? Theme.Spacing.xs : 0) {
+                VStack(spacing: showsCompare ? Theme.Spacing.xs : 0) {
                     if showsCompare {
-                        // 图纸在左、格子在右：跟 `PartOriginalSheet` 那一屏一个方向，
-                        // 也跟人从原件抄到成品的顺序一致。
+                        // 图纸在上、格子在下：手指落在下半屏改格子，图纸不会被自己的手挡住。
                         patternPane.frame(width: pane.width, height: pane.height)
                     }
                     editorPane.frame(width: pane.width, height: pane.height)
                 }
-                // **手势只有这一层，盖在两栏上面**，见 `gestureCatcher`。
-                gestureCatcher(editorX: showsCompare ? pane.width + Theme.Spacing.xs : 0)
+                // **手势只有这一层，盖在两块上面**，见 `gestureCatcher`。
+                gestureCatcher(editorY: showsCompare ? pane.height + Theme.Spacing.xs : 0)
             }
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             .onAppear { setCanvasSize(pane) }
             .onChange(of: pane) { _, new in setCanvasSize(new) }
         }
@@ -328,12 +331,15 @@ struct PartCellBrushView: View {
     /// **不能用 `Surface.elevated`**：它浅色下近乎纯白 —— 白豆子铺上去就是一片白，
     /// 用户分不出哪几格是空的、哪几格是白豆子，而这一屏问的正是「这儿到底有没有豆子」；
     /// 深色下它又整个变暗，同一张图两种模式下擦出来能不一样多。板底是「桌上那块板」，
-    /// 深浅色用同一个值，定成一档中灰把色域两端（纯白豆、纯黑豆）都拉开。
+    /// 深浅色用同一个值。
     ///
-    /// **拉不开的是中间那一段**：拿 `color.json` 算过，291 个色号在亮度上是连续铺满的，
-    /// 任选一个纯灰当板底，最近的低饱和色号也只差 0.06 亮度（H4 `#89858C` 跟中灰几乎一样）。
-    /// 也就是说不存在「跟所有豆子都拉得开」的板底色 —— 真要治，得给空格加非颜色的线索
-    /// （斜纹 / 棋盘格）并让豆子完全不透明，不是继续调这个灰度。
+    /// **只比白略深一档，不用中灰。** 中灰试过，跟白豆子确实拉得最开，但整屏压得发闷，
+    /// 而豆子本身的颜色才是这一屏要看的东西 —— 板底越素越好。现在这一档配上格线，
+    /// 白豆子是「亮一块 + 四周有缝」，跟空格分得出来。
+    ///
+    /// **别指望靠调这个灰度把所有豆子都拉开**：拿 `color.json` 算过，291 个色号在亮度上
+    /// 是连续铺满的，任选一个纯灰当板底，最近的低饱和色号也只差 0.06 亮度。
+    /// 真要治得给空格加非颜色的线索（斜纹 / 棋盘格），不是继续挪灰度。
     private func boardBase(_ box: CGRect) -> some View {
         Rectangle()
             .fill(Self.boardColor)
@@ -341,8 +347,8 @@ struct PartCellBrushView: View {
             .position(x: box.midX, y: box.midY)
     }
 
-    /// 板底那一档中灰。为什么不是白的、以及为什么单靠颜色治不了中灰豆子，见 `boardBase`。
-    private static let boardColor = Color(white: 0.55)
+    /// 板底：比白略深一档。为什么不是白的、以及为什么单靠颜色治不了同色豆子，见 `boardBase`。
+    private static let boardColor = Color(white: 0.84)
 
     /// 哪一栏是哪一栏。两边都是灰底加格线，不写字的话看一眼分不出来。
     private func paneCaption(_ text: LocalizedStringKey) -> some View {
@@ -383,6 +389,8 @@ struct PartCellBrushView: View {
                 // **描两遍：宽的浅线打底，窄的深线压在中间。**
                 // 只有一种颜色时，它必然在色域的一端消失 —— 白线看不见白豆子挨白豆子的缝，
                 // 黑线看不见黑豆子挨黑豆子的缝，而这两处恰恰都是最需要数格子的时候。
+                // 板底改浅之后这一层更要紧了：白豆子跟板底只差一档亮度，
+                // 「四周有缝」是它跟空格之间另一半的区别。
                 context.stroke(path, with: .color(.white.opacity(0.30)), lineWidth: 1.0)
                 context.stroke(path, with: .color(.black.opacity(0.28)), lineWidth: 0.5)
             }
@@ -392,15 +400,15 @@ struct PartCellBrushView: View {
         .allowsHitTesting(false)
     }
 
-    /// 这一下算不算画：工具不是「挪图」，而且**起点**落在格子那一栏。
-    private func drawing(from start: CGPoint, editorX: CGFloat) -> Bool {
-        tool != .move && start.x >= editorX
+    /// 这一下算不算画：工具不是「挪图」，而且**起点**落在格子那一块（下半屏）。
+    private func drawing(from start: CGPoint, editorY: CGFloat) -> Bool {
+        tool != .move && start.y >= editorY
     }
 
-    /// 整块画布上的一点 → 它所在那一栏自己的坐标。两栏共用同一个 `transform`，
-    /// 所以两栏的同一个 (x, y) 指的就是同一块内容，减掉那一栏的左边缘就行。
-    private func paneLocal(_ point: CGPoint, editorX: CGFloat) -> CGPoint {
-        point.x >= editorX ? CGPoint(x: point.x - editorX, y: point.y) : point
+    /// 整块画布上的一点 → 它所在那一块自己的坐标。两块共用同一个 `transform`，
+    /// 所以两块里同一个 (x, y) 指的就是同一块内容，减掉那一块的上边缘就行。
+    private func paneLocal(_ point: CGPoint, editorY: CGFloat) -> CGPoint {
+        point.y >= editorY ? CGPoint(x: point.x, y: point.y - editorY) : point
     }
 
     /// 整块画布的手势层。**只能有这一层**，哪怕分成了两栏。
@@ -411,19 +419,24 @@ struct PartCellBrushView: View {
     /// 但它拦不到另一层里的笔。实测：开着对照栏、工具停在「擦掉」、两指跨着中缝
     /// 往外一撑，倍数一点没变，一整行豆子没了。
     ///
-    /// - Parameter editorX: 格子那一栏的左边缘。手势点是整块画布的坐标，
-    ///   `paneLocal` 按它换算回单栏坐标；**起点**落在它左边（图纸那栏）就只挪图。
-    private func gestureCatcher(editorX: CGFloat) -> some View {
+    /// - Parameter editorY: 格子那一块的上边缘。手势点是整块画布的坐标，
+    ///   `paneLocal` 按它换算回单块坐标；**起点**落在它上面（图纸那块）就只挪图。
+    private func gestureCatcher(editorY: CGFloat) -> some View {
         Color.clear
             .contentShape(Rectangle())
             .gesture(
                 SimultaneousGesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
-                            // 两指捏合时别顺手画一道
+                            // 两指捏合时别顺手画一道。
+                            //
+                            // 试过在这里拿两指中点做「两指拖动挪图」，**不成立**：
+                            // 第二根手指一落，`MagnifyGesture` 就把触点收走了，
+                            // 这个回调根本不再送事件（模拟器上实测，图一动不动）。
+                            // 放大之后要挪，走的是「拖图纸那一条」或者切回「挪图」，见 `hint`。
                             guard pinchContentAnchor == nil else { return }
-                            if drawing(from: value.startLocation, editorX: editorX) {
-                                paint(at: paneLocal(value.location, editorX: editorX))
+                            if drawing(from: value.startLocation, editorY: editorY) {
+                                paint(at: paneLocal(value.location, editorY: editorY))
                             } else {
                                 pan = clampPan(CGSize(
                                     width: lastPan.width + value.translation.width,
@@ -434,13 +447,13 @@ struct PartCellBrushView: View {
                         .onEnded { value in
                             // 认**起点**不认落点：一笔从格子那栏划到图纸那栏，
                             // 抬手时还得走 `endStroke()` 把这一笔记进撤销栈。
-                            if drawing(from: value.startLocation, editorX: editorX) {
+                            if drawing(from: value.startLocation, editorY: editorY) {
                                 // 最后一段常常只随抬手事件送达，onChanged 没见过它 ——
                                 // 不补这一下，快速划一道的末尾几格不会变
                                 //（同 PartsBoardStepView 里 gestureCatcher 的 onEnded：
                                 // 抬手前再 updateMove 一次）。
                                 if pinchContentAnchor == nil {
-                                    paint(at: paneLocal(value.location, editorX: editorX))
+                                    paint(at: paneLocal(value.location, editorY: editorY))
                                 }
                                 endStroke()
                             } else {
@@ -450,7 +463,7 @@ struct PartCellBrushView: View {
                     MagnifyGesture()
                         .onChanged { value in
                             if pinchContentAnchor == nil {
-                                pinchScreenPoint = paneLocal(value.startLocation, editorX: editorX)
+                                pinchScreenPoint = paneLocal(value.startLocation, editorY: editorY)
                                 pinchContentAnchor = unzoomed(pinchScreenPoint)
                                 // **把这一笔退掉，不是收下。** 两指捏合的第一根手指会先
                                 // 触发一次 minimumDistance 0 的拖动，在 Magnify 反应过来之前
@@ -637,11 +650,17 @@ struct PartCellBrushView: View {
     private var hint: String {
         switch tool {
         case .move: return String(localized: "拖动看图，两指捏合放大。要改格子，上面换「擦掉」或「补上」。")
-        case .erase: return String(localized: "手指划过要去掉的格子。")
+        // 画笔状态下拖动是画，不是挪 —— 放大之后想看旁边那块，得知道从哪儿挪。
+        // 分栏时上面那条图纸就是现成的把手（那儿只挪不画），收起来时只能切回「挪图」。
+        case .erase:
+            return showsCompare
+                ? String(localized: "手指划过要去掉的格子。放大后想挪，拖上面那条图纸。")
+                : String(localized: "手指划过要去掉的格子。放大后想挪，先切回「挪图」。")
         case .paint:
-            return paintFill == nil
-                ? String(localized: "先在上面挑一个色号，再划过要补上的格子。")
-                : String(localized: "手指划过要补上的格子。")
+            if paintFill == nil { return String(localized: "先在上面挑一个色号，再划过要补上的格子。") }
+            return showsCompare
+                ? String(localized: "手指划过要补上的格子。放大后想挪，拖上面那条图纸。")
+                : String(localized: "手指划过要补上的格子。放大后想挪，先切回「挪图」。")
         }
     }
 
@@ -1093,17 +1112,16 @@ struct PartCellBrushView: View {
 /// 几万个像素，重建一次是零点几毫秒，贴上去的时候按最终尺寸 + 最近邻放大，
 /// 边界照样是硬的。
 ///
-/// 画的是**零件本身**：有豆子的格子是它自己的颜色，空格透明、露出底下那块中灰板面
-/// （`PartCellBrushView.boardColor`）。板面刻意不是白的 —— 白豆子铺在白板面上，
+/// 画的是**零件本身**：有豆子的格子是它自己的颜色，空格透明、露出底下那块板面
+/// （`PartCellBrushView.boardColor`）。板面刻意不是纯白的 —— 白豆子铺在白板面上，
 /// 「空格」和「白豆子」长得一模一样。
 /// 所以擦掉一格就是「这儿空了」，跟拼豆板上看到的是同一件事 —— 早先这一层是
 /// 半透明盖在图纸原图上的，空格还得铺一层灰才看得出擦掉没有，而底下那颗豆子
 /// 一直还在图上，用户得盯着灰度差判断自己那一下生效没有。
 enum CellOverlayBitmap {
-    /// 有豆子的格子画多实。**这 5% 现在基本是历史包袱**：板面还是白的时候，透出来那一丝
-    /// 能给深色豆子勾一道亮边；换成中灰板面之后，同样 5% 只把纯黑豆子从 0.0 抬到 0.028，
-    /// 看不出来。真正在管格子边界的是 `gridLines` 那两道描边。留着只因为它无害
-    /// —— 哪天要让豆子颜色跟图纸严格对得上（比色时），把它改成 1 就行。
+    /// 有豆子的格子画多实。**这 5% 基本是历史包袱**，真正在管格子边界的是 `gridLines`
+    /// 那两道描边。留着只因为它无害 —— 哪天要让豆子颜色跟图纸严格对得上（比色时），
+    /// 把它改成 1 就行。
     private static let beadAlpha: Double = 0.95
 
     static func make(cells: [[PartCellFill]], colors: [String: Color]) -> UIImage? {
