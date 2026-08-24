@@ -18,6 +18,12 @@
 //  手指拖不准的最后一点点交给微调按钮，一下走四分之一格。另外给一组「整块挪」：
 //  桌子被碰了一下、投影仪蹭歪了一点，形状没变、只是整体偏了，不该逼人四个角重对一遍。
 //
+//  ## 顺带在这儿挑「亮的格子什么颜色」
+//
+//  跟对齐是两回事，但摆在同一屏：两样都是**站在投影仪旁边、看着桌上那块板**才能定的，
+//  而这一屏是唯一一个「人在桌边、外屏实时跟着变」的地方 —— 挑颜色跟拖角一样，
+//  判据是抬头看一眼板子。埋进设置页的话，他得来回跑两趟。
+//
 //  ## 为什么一进来就切到投影仪模式
 //
 //  用户点进这一屏，就是因为「投出来的跟我的板子对不上」。这时候画面必须**立刻**变成
@@ -62,6 +68,7 @@ struct BoardProjectorSheet: View {
                     preview
                     cornerPicker
                     nudgePad
+                    highlightColorRow
                     resetRow
                 }
                 .padding()
@@ -507,6 +514,112 @@ struct BoardProjectorSheet: View {
     /// 按一下永远是「四分之一格」，跟旁边写的那句话一致。
     private var step: CGFloat {
         max(1, projector.cellSize(in: screen) / 4)
+    }
+
+    // MARK: - 亮的格子什么颜色
+
+    /// 三选一 + 一条「投出来大概是这样」的样例。
+    ///
+    /// 样例那一条是这一段里最要紧的东西：三种投法的差别不在名字上，在
+    /// **「黑豆子投出来是什么样」** 上 —— 「跟着图纸」下黑和白都是白光，用户光看
+    /// 「跟着图纸」四个字是想不到这件事的。所以左边摆色号本来的颜色、右边摆投出来的，
+    /// 中间一个箭头，切一下模式那三个点当场就变。
+    ///
+    /// 外屏这时候也在实时跟着变（这一屏开着的时候投影仪照样在投），
+    /// 所以真正的判据仍然是抬头看板子；手机上这三个点只是让他知道该看什么。
+    ///
+    /// **除非一个色号都没点** —— 那时候板子上本来就一格不亮，怎么切都没有变化，
+    /// 而手机上这三个点照样在变，等于告诉他「已经生效了」。所以那种情况直接说出来。
+    private var highlightColorRow: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text("亮的格子什么颜色")
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(Theme.ColorToken.Text.primary)
+
+            BISegmented(
+                selection: styleBinding,
+                segments: ProjectorHighlightStyle.allCases.map { (value: $0, label: $0.label) },
+                fillWidth: true
+            )
+
+            sampleStrip
+
+            Text(projector.highlight.style.explanation)
+                .font(.caption)
+                .foregroundColor(Theme.ColorToken.Text.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if session.content?.highlightKeys.isEmpty ?? true {
+                Text("现在一个色号都没点，板子上一格都不亮 —— 回上一屏点一个色号，才看得出这几种颜色的差别。")
+                    .font(.caption)
+                    .foregroundColor(Theme.ColorToken.Status.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if projector.highlight.style == .custom {
+                ColorPicker("挑一个颜色", selection: customColorBinding, supportsOpacity: false)
+                    .font(.subheadline)
+                // 挑了个暗色只说一句，不替他改掉 —— 屋里很黑、板子反光的时候，
+                // 压暗可能正是他要的。但「投出来一格都不亮」看着就是投屏坏了，
+                // 不说的话他会回去查校准。
+                if ProjectorHighlightPaint.isTooDarkToProject(projector.highlight.custom) {
+                    Text("这个颜色偏暗，投影仪打出来的格子可能不太看得清。")
+                        .font(.caption)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+    }
+
+    /// 三个常见色号（黑、深蓝、大红）在当前这种投法下投出来是什么样。
+    /// 底色画成黑的：投影仪不出光的地方就是黑的，白点摆在 App 的浅色底上会看不见。
+    private var sampleStrip: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            ForEach(Self.sampleBeadHexes, id: \.self) { hex in
+                let bead = Color(uiColor: UIColor(themeHex: hex, fallback: .black))
+                HStack(spacing: 5) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(bead)
+                        .frame(width: 13, height: 13)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                .stroke(.white.opacity(0.35), lineWidth: 0.5)
+                        )
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.4))
+                    Circle()
+                        .fill(projector.highlight.color(for: bead))
+                        .frame(width: 13, height: 13)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
+                .fill(Color.black)
+        )
+        .accessibilityHidden(true)   // 三个色块讲的是「看着什么样」，念出来没有意义
+    }
+
+    /// 样例用的三个色号：黑（最常用、也最说明问题）、深蓝（暗色但有色相）、大红（本来就亮）。
+    private static let sampleBeadHexes = ["000000", "1F3A93", "D0021B"]
+
+    private var styleBinding: Binding<ProjectorHighlightStyle> {
+        Binding(get: { projector.highlight.style },
+                set: { projector.setHighlightStyle($0) })
+    }
+
+    private var customColorBinding: Binding<Color> {
+        Binding(get: { projector.highlight.custom },
+                set: { projector.setCustomHighlightColor($0) })
     }
 
     // MARK: - 出路

@@ -14,16 +14,27 @@
 //  一片暗；亮的地方正好是接下来要按豆子的那些孔。用户抓一把豆子，照着亮的地方按下去，
 //  按完在手机上换下一个色号。
 //
-//  ## 亮的格子为什么不用豆子本来的颜色
+//  ## 亮的格子用什么颜色
 //
-//  投影是加光：黑色豆子的颜色投出来就是不出光，那一格跟没亮一样 —— 而黑色恰恰是
-//  用得最多的色号之一。深蓝、墨绿同理。所以这里把色号的颜色**提到最亮**（保住色相，
-//  顺手压一点饱和度，因为纯色越饱和投出来越暗）：黑色变成白光，深蓝变成亮蓝。
+//  三种，用户在投影仪模式那一屏里挑（`ProjectorHighlightStyle`）：
 //
-//  代价是**亮度这一维整个丢了**：黑、白、所有灰阶都会投成同一个白，同色相的深浅两色
-//  （深红/亮红）也会撞在一起。同时点亮两个这样的色号时，用户只能靠位置区分。
-//  真要分开得再引入亮度以外的编码（比如给第二个色号加描边或点阵），现在故意不做 ——
-//  一次抓一把豆子拼一个色号才是常态。
+//  **跟着图纸走**（默认）：按色号本来的颜色投，但要**提到最亮**再投 —— 投影是加光，
+//  黑色豆子的颜色投出来就是不出光，那一格跟没亮一样，而黑恰恰是用得最多的色号之一，
+//  深蓝、墨绿同理。提亮时保住色相、顺手压一点饱和度（纯色越饱和投出来越暗）：
+//  黑变成白光，深蓝变成亮蓝。代价是**亮度这一维整个丢了**：黑、白、所有灰阶都投成
+//  同一个白，同色相的深浅两色（深红/亮红）也会撞在一起 —— 同时点亮两个这样的色号时，
+//  用户只能靠位置区分。
+//
+//  **一律白光**：板子上最亮最清楚。反正一次只拼一个色号的时候，格子是什么颜色并不
+//  携带信息 —— 亮着的孔就是要按豆子的孔。
+//
+//  **一律用户挑的那个颜色**：桌面、板子、屋里的灯什么样，只有站在那儿的人知道 ——
+//  白板子上投白光反光晃眼、暖光台灯下投黄光看不出来，都是真事。给个颜色让他自己挑，
+//  比在这儿猜一个「最合适的颜色」靠谱。
+//
+//  后两种下所有色号投出来长得一样，同时点亮两个就分不开了。这是用户自己选的，
+//  说清楚就行（那一屏选中哪一项，底下就写着那一项的代价），不额外加描边、点阵
+//  那类编码 —— 一次抓一把豆子拼一个色号才是常态。
 //
 //  ## 格子往里缩一点
 //
@@ -39,6 +50,8 @@ struct ProjectorCanvasRenderer {
     let colorCache: [String: Color]
     /// 只亮这些色号。空 = 一格都不亮（手机上还没点色号）。
     let highlightKeys: Set<String>
+    /// 亮的格子投什么颜色（用户在投影仪模式那一屏里挑的）
+    let highlight: ProjectorHighlightPaint
     let mapping: ProjectorMapping
 
     /// 每格四边各往里缩多少（单位：格）
@@ -67,7 +80,7 @@ struct ProjectorCanvasRenderer {
             }
         }
         for (key, path) in fills {
-            context.fill(path, with: .color(Self.projected(colorCache[key])))
+            context.fill(path, with: .color(highlight.color(for: colorCache[key])))
         }
     }
 
@@ -101,15 +114,88 @@ struct ProjectorCanvasRenderer {
         path.closeSubpath()
         return path
     }
+}
 
-    /// 色号的颜色 → 投出来看得见的那个颜色（理由见文件头）。
+// MARK: - 亮的格子用什么颜色
+
+/// 三种投法。存在 `BoardProjector` 里，手机那一屏和外屏读的是同一份。
+/// `rawValue` 直接落进 UserDefaults —— 改 case 名等于把用户的选择清掉。
+enum ProjectorHighlightStyle: String, CaseIterable, Identifiable {
+    /// 跟着图纸的色号走（暗色会被提亮，见 `ProjectorHighlightPaint.brightened`）
+    case pattern
+    /// 一律白光
+    case white
+    /// 一律用户挑的那个颜色
+    case custom
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .pattern: return String(localized: "跟着图纸")
+        case .white: return String(localized: "白色")
+        case .custom: return String(localized: "自定义")
+        }
+    }
+
+    /// 选中这一项时底下显示的那句话。三句都得说到「代价是什么」——
+    /// 用户是站在投影仪旁边挑的，挑完才发现两个色号撞色就晚了。
+    var explanation: String {
+        switch self {
+        case .pattern:
+            return String(localized: "按色号本来的颜色投。黑、深蓝这类投出来是不亮的，会自动提到最亮 —— 色相还在，深浅没了：黑和白都是白光。")
+        case .white:
+            return String(localized: "不管当前是哪个色号，一律投白光。板子上最亮、边界最清楚，代价是同时点亮两个色号时它们长得一样。")
+        case .custom:
+            return String(localized: "一律投你挑的这个颜色。白板子上白光晃眼、或者屋里灯偏黄看不清时，换一个更好认的颜色。代价跟白色一样：同时点亮两个色号时它们长得一样。")
+        }
+    }
+}
+
+/// 「色号本来的颜色」→「投到板子上的那个颜色」。
+///
+/// 图例上那个圆点也走这儿（见 `BoardExternalDisplayView.legend`）：抬头看到的是什么
+/// 颜色，图例上就得是什么颜色，不然黑色色号会变成「一个看不见的点」配「一片白格子」。
+///
+/// 两个字段都不给默认值：默认是「上次存的那一套」，只有 `BoardProjector` 知道
+/// （见它的 `defaultCustomHex`）。这里再写一个默认值，就会有两份说法。
+struct ProjectorHighlightPaint {
+    var style: ProjectorHighlightStyle
+    /// `style == .custom` 时用它。别的模式下也留着 —— 用户切走再切回来，
+    /// 上次挑的那个颜色还在。
+    var custom: Color
+
+    func color(for patternColor: Color?) -> Color {
+        switch style {
+        case .pattern: return Self.brightened(patternColor)
+        case .white: return .white
+        case .custom: return custom
+        }
+    }
+
+    /// 保住色相、压一点饱和度、亮度拉满（理由见文件头）。
     /// 查不到色号时给白光：这一格用户照样要按豆子，不能因为图例里少一条就不亮。
-    static func projected(_ color: Color?) -> Color {
+    ///
+    /// `private`：投出来的颜色只有 `color(for:)` 一个出口。绕过它直接调这儿，
+    /// 就是图例曾经犯过的那个错 —— 用户选了白光，图例还按图纸的颜色画。
+    private static func brightened(_ color: Color?) -> Color {
         guard let color else { return .white }
         var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
         guard UIColor(color).getHue(&hue, saturation: &saturation,
                                     brightness: &brightness, alpha: &alpha) else { return .white }
         return Color(hue: hue, saturation: min(saturation, 0.6), brightness: 1, opacity: 1)
+    }
+
+    /// 这个颜色暗到投出来看不见了没有。只用来在手机上提醒一句 ——
+    /// **不替用户改掉他挑的颜色**：他可能就是要压暗（屋里很黑、板子反光）。
+    ///
+    /// 按人眼的亮度算，不用 HSB 那个 brightness：后者是 RGB 里最大的那个分量，
+    /// 纯蓝算出来是满值 —— 而纯蓝正是在取色盘上看着挺醒目、投到板子上几乎看不见的
+    /// 那一类。用这个公式纯蓝是 0.07，会被拦下；默认那个亮黄是 0.81，不会误伤。
+    static func isTooDarkToProject(_ color: Color) -> Bool {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        guard UIColor(color).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return false }
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue < 0.2
     }
 }
 

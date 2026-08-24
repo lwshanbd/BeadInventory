@@ -29,6 +29,11 @@
 //  角的坐标以**外屏宽度**为单位（x 和 y 都是）：换投影仪、换输出分辨率，点数全变、
 //  比例还在。
 //
+//  ## 还存了「亮的格子投什么颜色」
+//
+//  同样是桌上那套摆法的属性：白板子、暖光台灯、投影仪偏色，只有站在那儿的人知道
+//  哪个颜色看得清。三种投法见 `ProjectorHighlightStyle`，跟四个角一起存、一起还原。
+//
 
 import SwiftUI
 
@@ -71,15 +76,31 @@ final class BoardProjector: ObservableObject {
     /// 手机上选中的那个角（微调按钮作用在它身上，外屏上它更亮、拐角那格还描一圈白）。
     @Published var activeCorner: ProjectorCorner = .topLeft
 
+    /// 亮的格子投什么颜色。外屏画格子、外屏图例、手机上那条样例条都读它
+    /// （见 `ProjectorHighlightPaint`）。
+    @Published private(set) var highlight: ProjectorHighlightPaint
+
     /// 进校准页那一刻的整组值。取消时全组还原 —— 用户是趴在桌上对着实物拖出来的，
     /// 手一滑就被覆盖、还没有退路，是这一屏最容易惹人恼火的地方。
-    private var snapshot: (isOn: Bool, quad: ProjectorQuad, cols: Int, rows: Int)?
+    ///
+    /// 颜色也在这一组里：那一屏上所有能改的东西，「取消」都得能收回去。
+    /// 少还原一样，就得让用户自己记住「哪些改动会留下」。
+    private struct Snapshot {
+        let isOn: Bool
+        let quad: ProjectorQuad
+        let cols: Int
+        let rows: Int
+        let highlight: ProjectorHighlightPaint
+    }
+    private var snapshot: Snapshot?
 
     private enum Key {
         static let on = "boardProjector.on"
         static let corners = "boardProjector.corners"      // 8 个数：TL TR BR BL
         static let cols = "boardProjector.boardCols"
         static let rows = "boardProjector.boardRows"
+        static let highlightStyle = "boardProjector.highlightStyle"
+        static let highlightCustomHex = "boardProjector.highlightCustomHex"
         /// 老版本（一个角 + 格距）的值搬过来一次就够了，见 `migrateFromPitchCalibration`
         static let migrated = "boardProjector.migratedFromPitch"
     }
@@ -99,6 +120,16 @@ final class BoardProjector: ObservableObject {
         boardRows = defaults.integer(forKey: Key.rows)
         quad = Self.decodeQuad(defaults.array(forKey: Key.corners) as? [Double])
             ?? ProjectorQuad(topLeft: .zero, topRight: .zero, bottomRight: .zero, bottomLeft: .zero)
+        highlight = ProjectorHighlightPaint(
+            // 没存过就跟着图纸走 —— 老用户升上来，投出来的画面跟升级前一模一样。
+            style: ProjectorHighlightStyle(rawValue: defaults.string(forKey: Key.highlightStyle) ?? "")
+                ?? .pattern,
+            // 存坏了退回这个亮黄，不退回白：白是另一个合法选项，
+            // 退成白的话用户看到的是「我选的自定义，颜色却跟白色那一项一模一样」。
+            custom: Color(uiColor: UIColor(themeHex: defaults.string(forKey: Key.highlightCustomHex)
+                                           ?? Self.defaultCustomHex,
+                                           fallback: UIColor(themeHex: Self.defaultCustomHex)))
+        )
         if boardCols <= 0 || boardRows <= 0 {
             boardCols = Self.defaultBoardSize.cols
             boardRows = Self.defaultBoardSize.rows
@@ -119,6 +150,10 @@ final class BoardProjector: ObservableObject {
 
     /// 没别的信息时按最常见的那块板算（拼豆板 52×52）。
     private static let defaultBoardSize = BeadBoardSize(cols: 52, rows: 52)
+
+    /// 刚点开「自定义」时给的那个颜色：亮黄。白光之外最扎眼的一个，
+    /// 而且跟白色一眼能分开 —— 点开自定义却发现「跟刚才没区别」是最糟的第一印象。
+    private static let defaultCustomHex = "FFD400"
 
     /// 上一版存的是「左上角 + 一格多大」。那组值只表达了平移和缩放，正好等于
     /// 「四个角围成一个正矩形」这种特例，所以能一比一搬过来：**投出来的画面跟升级前
@@ -159,6 +194,8 @@ final class BoardProjector: ObservableObject {
         defaults.set(boardCols, forKey: Key.cols)
         defaults.set(boardRows, forKey: Key.rows)
         defaults.set(Self.encodeQuad(quad), forKey: Key.corners)
+        defaults.set(highlight.style.rawValue, forKey: Key.highlightStyle)
+        defaults.set(highlight.custom.toThemeHex(), forKey: Key.highlightCustomHex)
     }
 
     private static func encodeQuad(_ quad: ProjectorQuad) -> [Double] {
@@ -195,7 +232,8 @@ final class BoardProjector: ObservableObject {
         // `onAppear` 不保证只跑一次。跑第二次时快照会变成「已经拖到一半的值」，
         // 那之后「取消」还原到的是中间态，用户对了半天的原始校准无声消失。
         guard !isCalibrating else { return }
-        snapshot = (isOn, quad, boardCols, boardRows)
+        snapshot = Snapshot(isOn: isOn, quad: quad, cols: boardCols, rows: boardRows,
+                            highlight: highlight)
         if let suggestedBoard, !isOn {
             // 只在还没开着投影仪模式时才采纳：已经对好的用户换张图纸再进来，
             // 格数不该被这张图纸的尺寸改掉 —— 桌上那块板并没有变。
@@ -222,6 +260,7 @@ final class BoardProjector: ObservableObject {
             quad = snapshot.quad
             boardCols = snapshot.cols
             boardRows = snapshot.rows
+            highlight = snapshot.highlight
         }
         snapshot = nil
         isCalibrating = false
@@ -232,6 +271,20 @@ final class BoardProjector: ObservableObject {
     func setBoardSize(_ size: BeadBoardSize) {
         boardCols = max(size.cols, 1)
         boardRows = max(size.rows, 1)
+    }
+
+    /// 换一种投法（跟着图纸 / 白色 / 自定义）。外屏立刻跟着变 ——
+    /// 用户就是站在投影仪旁边照着实物挑的，这一眼就是他的判据。
+    func setHighlightStyle(_ style: ProjectorHighlightStyle) {
+        highlight.style = style
+    }
+
+    /// 换自定义的那个颜色，顺带切到「自定义」这一项。
+    /// 不夹亮度：他可能就是要压暗（屋里很黑、板子反光）。挑得太暗时手机上提醒一句，
+    /// 改不改由他。
+    func setCustomHighlightColor(_ color: Color) {
+        highlight.custom = color
+        highlight.style = .custom
     }
 
     /// 拖一个角。`point` 是**外屏上的点数**（手机预览上拖到哪儿换算过来）。
@@ -300,6 +353,9 @@ final class BoardProjector: ObservableObject {
     /// 四个角一并清掉（不只是关开关）：投影仪挪过之后那组数已经不作数了，
     /// 留着只会让下次进来时对着一堆错的数字微调。
     func resetToFilling() {
+        // 这一屏改过的颜色跟「取消」一样收回去：用户点的是「关掉」，
+        // 没道理把他随手试的那个颜色顺手存下来。
+        if let snapshot { highlight = snapshot.highlight }
         snapshot = nil
         isCalibrating = false
         isOn = false
