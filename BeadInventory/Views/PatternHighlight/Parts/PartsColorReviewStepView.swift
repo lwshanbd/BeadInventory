@@ -599,9 +599,16 @@ struct PartsColorReviewStepView: View {
                     // 底下 `.clipped()` 会把露到列表外的部分切掉。
                     let onScreen = rect.offsetBy(dx: gridOrigin.x - viewport.minX,
                                                  dy: gridOrigin.y - viewport.minY)
+                    // 这个框是压在花花绿绿的图纸格子上的，底下什么颜色都可能有：
+                    // 一道莫兰迪灰调的细边，碰上灰紫、藕粉那几格就整条看不见了，
+                    // 用户拖了半天不知道自己框到哪儿。改成深色芯 + 白色包边两道 ——
+                    // 底下是深豆时白边跳出来，是浅豆时深芯跳出来，总有一道分得开。
+                    // 里面那层填充仍然很淡：这一屏是用来看颜色的，框住的格子被染一层紫
+                    // 就没法判断它到底是哪个色号了 —— 「框到哪儿了」交给两道边说。
                     Rectangle()
-                        .fill(Theme.ColorToken.Morandi.mauve.opacity(0.18))
-                        .overlay(Rectangle().stroke(Theme.ColorToken.Morandi.mauve, lineWidth: 1.5))
+                        .fill(Theme.ColorToken.Fill.mauve.opacity(0.2))
+                        .overlay(Rectangle().stroke(Color.white, lineWidth: 5))
+                        .overlay(Rectangle().stroke(Theme.ColorToken.Morandi.mauve, lineWidth: 3))
                         .frame(width: onScreen.width, height: onScreen.height)
                         .position(x: onScreen.midX, y: onScreen.midY)
                         .allowsHitTesting(false)
@@ -1569,11 +1576,19 @@ private struct CellSwatch: View {
         }
         .frame(width: 34, height: 34)
         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .stroke(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.divider,
-                        lineWidth: isSelected ? 3 : 1)
-        )
+        // 选中的那一圈同样压在图纸颜色上（理由见框选那一层）：单描边总有撞色的时候，
+        // 一格藕紫色豆子套一圈莫兰迪紫，选没选中根本看不出来。这里也是深芯 + 白包边，
+        // 彩色那道仍是原来的 3 点（浅色豆子上白边会隐进去，全靠它），外面再包 1 点白；
+        // 一共往外撑 2.5 点，比格子之间那 6 点间距窄，不会跟旁边那格粘上。
+        .overlay {
+            let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+            if isSelected {
+                shape.stroke(Color.white, lineWidth: 5)
+                    .overlay(shape.stroke(Theme.ColorToken.Morandi.mauve, lineWidth: 3))
+            } else {
+                shape.stroke(Theme.ColorToken.Border.divider, lineWidth: 1)
+            }
+        }
         .contentShape(Rectangle())
     }
 }
