@@ -95,6 +95,7 @@ struct BoardExternalDisplayView: View {
                     footprints: content?.footprints ?? [:],
                     colorCache: content?.colorCache ?? [:],
                     highlightKeys: content?.highlightKeys ?? [],
+                    highlight: projector.highlight,
                     mapping: mapping
                 )
                 // 没内容时也画那一圈板框：不然外屏是一整块纯黑，
@@ -259,15 +260,18 @@ struct BoardExternalDisplayView: View {
         }
     }
 
-    /// 图例上那个圆点必须跟板子上那个色号**投出来的颜色**一致 ——
-    /// 投影仪模式下格子是提亮过的（`ProjectorCanvasRenderer.projected`），
-    /// 圆点若用原色，黑色色号就是「一个看不见的点」配「一片白格子」，
-    /// 而图例正是用户抬头要查的那个东西。
+    /// 图例上那个圆点画的是**这个色号投到板子上是什么样**，不是它本来的颜色 ——
+    /// 投影仪模式下格子是提亮过的，圆点若用原色，黑色色号就是「一个看不见的点」
+    /// 配「一片白格子」，而图例正是用户抬头要查的那个东西。
+    ///
+    /// 用户把颜色改成白色 / 自定义时，圆点也跟着变成那一个颜色：这时候画面上所有
+    /// 亮着的格子确实就是这个颜色，圆点画成豆子的原色反而是在骗人 ——
+    /// 「板子上哪几格是这个色号」只能靠位置认，这正是那两种模式说明里写着的代价。
     private func legend(key: String, content: BoardCastSession.Content, projected: Bool) -> some View {
         HStack(spacing: 8) {
             Circle()
                 .fill(projected
-                      ? ProjectorCanvasRenderer.projected(content.colorCache[key])
+                      ? projector.highlight.color(for: content.colorCache[key])
                       : (content.colorCache[key] ?? Theme.ColorToken.Surface.strong))
                 .frame(width: 22, height: 22)
                 .overlay(Circle().stroke(.white.opacity(0.5), lineWidth: 1))
