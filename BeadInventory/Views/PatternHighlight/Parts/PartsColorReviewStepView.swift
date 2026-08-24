@@ -111,7 +111,7 @@ struct PartsColorReviewStepView: View {
     ///
     /// 手指拖到列表最下面时，列表会自己接着往下滚（见 `runAutoScroll`）——
     /// 那么这一笔的起点就得钉在内容上：钉在屏幕上的话，往下滚多少起点就跟着跑多少，
-    /// 框永远只有屏幕那么大，用户还是只能选到眼前这二十来格。
+    /// 框永远只有屏幕那么大，用户一笔只能选到眼前这一屏。
     @State private var marqueeRect: CGRect?
     /// 这一笔的起点（`gridSpace` 坐标）。nil = 现在没在拖。
     @State private var marqueeAnchor: CGPoint?
@@ -120,8 +120,8 @@ struct PartsColorReviewStepView: View {
     @State private var marqueeFinger: CGPoint?
     /// 这一次拖动开始前已经选中的，用来支持「框好几片」
     @State private var marqueeBase: Set<CellRef> = []
-    /// 现在铺在屏幕上的那几十格的位置（`gridSpace` 坐标）。只在框选模式下收集 ——
-    /// 平时收集会让每一帧滚动都重算几百条 preference。
+    /// 现在铺在屏幕上的那些格子的位置（`gridSpace` 坐标）。只在框选模式下收集 ——
+    /// 平时收集会让格子进出屏幕时白白重算一份 preference 字典。
     @State private var cellFrames: [CellRef: CGRect] = [:]
     /// 这一笔从头到现在**见过的所有**格子的位置。滚出屏幕的格子会从 `cellFrames` 里消失，
     /// 光拿它算的话，刚框中的格子一滚出视野就又被取消选中了。
@@ -131,7 +131,9 @@ struct PartsColorReviewStepView: View {
     @State private var marqueeFrames: [CellRef: CGRect] = [:]
     /// 格子那一片的左上角现在在屏幕的哪儿。手指是屏幕坐标、框是内容坐标，靠它换算。
     @State private var gridOrigin: CGPoint = .zero
-    /// 列表这个窗口在屏幕上的位置。判断手指有没有拖到上 / 下边上要用。
+    /// 列表这个窗口在屏幕上的位置。自动滚**起步**时靠它换算出「现在贴着顶的是哪一行」
+    /// （见 `topVisibleIndex`）—— 手指在不在边上是拿当场的 `viewport` 判的，不读这个。
+    /// 只在拖动事件里写，所以自动滚跑起来时它一定已经是新的。
     @State private var gridViewport: CGRect = .zero
     /// 自动往上 / 往下滚：0 停，±1 慢，±2 快（手指越贴边滚得越快）。
     /// 数值本身就是 `.task(id:)` 的 id —— 快慢一变就重起一个循环。
@@ -140,9 +142,11 @@ struct PartsColorReviewStepView: View {
     ///
     /// 自己数着往下走，而不是每一步现看屏幕上滚到哪儿：上一步的滚动动画还没走完，
     /// 现看会看到一个走到一半的位置，于是每一步都少滚一点，越滚越慢还一顿一顿的。
+    ///
+    /// 代价是它会跟真实位置脱节：滚到底时 `scrollTo(anchor: .top)` 够不着最后那几行，
+    /// 下标却照数不误。所以**换方向时必须清掉重量**（见 `updateAutoScroll`），
+    /// 不然往回拖会先空走十几拍、列表纹丝不动。
     @State private var autoScrollIndex: Int?
-    /// 一行铺得下几格。`LazyVGrid` 是自适应列数，只能从量到的格子位置反推。
-    @State private var marqueeColumns = 1
 
     /// 格子那一片自己的坐标系。滚动不影响它，所以量到的格子位置一直有效。
     private let gridSpace = "PartsColorReviewGrid"
@@ -204,6 +208,10 @@ struct PartsColorReviewStepView: View {
         .onDisappear {
             samplingTask?.cancel()
             samplingTask = nil
+            // 手势被系统打断时（来电、上滑回桌面）`onEnded` 不保证会来。不收的话，
+            // 下次从「摆拼豆板」返回，`.task(id:)` 会拿着上一笔的旧手指位置重新起来 ——
+            // 没人碰屏幕，列表自己滚，还一路往 selection 里塞格子。
+            endMarqueeDrag()
         }
         .navigationTitle("核对颜色")
         .navigationBarTitleDisplayMode(.inline)
@@ -545,12 +553,17 @@ struct PartsColorReviewStepView: View {
                         }
                         .padding(Theme.Spacing.lg)
                         .coordinateSpace(name: gridSpace)
-                        // 这一片的左上角跑到屏幕哪儿了。滚动的每一帧都会变，
-                        // 手指（屏幕坐标）换算成内容坐标全靠它。
+                        // 这一片的左上角跑到屏幕哪儿了 —— 手指（屏幕坐标）换算成内容坐标全靠它。
+                        // **跟上面那份格子位置一样，只在框选模式下收**：这个值滚动每一帧都在变，
+                        // 平时也收的话，每帧都要往 @State 里写一次，body 跟着整个重算 ——
+                        // 而 body 里的色号栏要把所有零件逐格数一遍（`groups`），
+                        // 七万格的图纸滚起来会当场发涩。
                         .background {
-                            GeometryReader { geo in
-                                Color.clear.preference(key: GridOriginKey.self,
-                                                       value: geo.frame(in: .global).origin)
+                            if marquee {
+                                GeometryReader { geo in
+                                    Color.clear.preference(key: GridOriginKey.self,
+                                                           value: geo.frame(in: .global).origin)
+                                }
                             }
                         }
                     }
@@ -602,7 +615,6 @@ struct PartsColorReviewStepView: View {
                             marqueeBase = selection
                             marqueeAnchor = toGrid(value.startLocation)
                             marqueeFrames = cellFrames
-                            marqueeColumns = measureColumns()
                             autoScrollIndex = nil
                         }
                         marqueeFinger = value.location
@@ -641,7 +653,11 @@ struct PartsColorReviewStepView: View {
     }
 
     /// 手指拖到列表上 / 下边上时，让列表自己接着滚。
-    /// 框选模式下列表不跟手滚动，没有这一下的话，一次框选最多只能选到眼前这二十来格。
+    /// 框选模式下列表不跟手滚动，没有这一下的话，一次框选最多只能选到眼前这一屏。
+    ///
+    /// 边上这一条 76 点差不多两行格子高（一行 40）：窄了手指得贴着屏幕边才触发、
+    /// 而那儿正好被指腹挡着看不见；宽了想在底下几行静止框选都做不到。
+    /// 进去一半开始慢滚、贴到最边上快滚 —— 只有两挡，用户不用学。
     private func updateAutoScroll(finger: CGPoint, viewport: CGRect) {
         let zone: CGFloat = 76
         let dir: Int
@@ -652,34 +668,58 @@ struct PartsColorReviewStepView: View {
         } else {
             dir = 0
         }
-        if dir != autoScrollDir { autoScrollDir = dir }
+        guard dir != autoScrollDir else { return }
+        // 掉头了就把自己数的那个下标清掉（理由见 `autoScrollIndex`）。
+        // 只是慢挡换快挡（1→2）不清 —— 那样会白丢一次连续性。
+        if dir.signum() != autoScrollDir.signum() { autoScrollIndex = nil }
+        autoScrollDir = dir
+    }
+
+    /// 滚一行的结果。**「这一帧还量不到」和「到头了」必须分开** ——
+    /// 手指停在边上不动时不会再有拖动事件，循环一停就没人重启，
+    /// 一次瞬时的量不到会让这一整笔框选都不再自动滚。
+    private enum ScrollStep {
+        case scrolled
+        /// 格子的位置还没送到（刚开框选、刚换色号就马上拖）。等下一拍再试。
+        case notReady
+        case reachedEnd
     }
 
     /// 自动滚的那个循环。手指停在边上一动不动也要接着滚，所以它是自己跑的，
     /// 不挂在拖动事件上。`autoScrollDir` 一变（换方向、换快慢、松手）就整个重来。
+    ///
+    /// **`@MainActor` 不能去掉。** 不标的话，从 `.task` 那个主线程闭包 await 进来会直接
+    /// 跳到后台线程（SE-0338），于是 `withAnimation` + `scrollTo` 在主线程外面动布局、
+    /// `ScrollViewProxy` 被跨线程传 —— 模拟器上照样跑得好好的，崩在用户手机上。
+    @MainActor
     private func runAutoScroll(_ proxy: ScrollViewProxy) async {
         guard autoScrollDir != 0 else { return }
         let step = autoScrollDir > 0 ? 1 : -1
-        // 一行 40 点（格子 34 + 间距 6）：慢挡约每秒 200 点，快挡约每秒 570 点。
+        // 一行 40 点（`CellSwatch` 的 34 + `columns` 的 spacing 6，改那两处这里要跟着改）：
+        // 慢挡约每秒 200 点，快挡约每秒 570 点。
         let interval: Double = abs(autoScrollDir) > 1 ? 0.07 : 0.2
         while !Task.isCancelled {
-            guard scrollOneRow(proxy, step: step, duration: interval) else { return }
+            if scrollOneRow(proxy, step: step, duration: interval) == .reachedEnd { return }
             try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
         }
     }
 
-    /// 往下（或往上）滚一行。返回 false = 到头了，别再滚了。
-    private func scrollOneRow(_ proxy: ScrollViewProxy, step: Int, duration: Double) -> Bool {
-        guard let refs = groupCells, !refs.isEmpty else { return false }
-        guard let base = autoScrollIndex ?? topVisibleIndex(in: refs) else { return false }
-        let target = min(max(base + step * max(1, marqueeColumns), 0), refs.count - 1)
-        guard target != base else { return false }
+    /// 往下（或往上）滚一行。
+    private func scrollOneRow(_ proxy: ScrollViewProxy, step: Int, duration: Double) -> ScrollStep {
+        guard let refs = groupCells, !refs.isEmpty else { return .notReady }
+        // 列数每一拍现量。存下来的话，起手那一下要是还没量到（`cellFrames` 是空的），
+        // 这一笔就会一直按错的列数走 —— 按 1 走就是一拍挪一格，`scrollTo` 的目标还在同一行，
+        // 屏幕一动不动却以为自己在滚。
+        guard let columns = measureColumns(),
+              let base = autoScrollIndex ?? topVisibleIndex(in: refs) else { return .notReady }
+        let target = min(max(base + step * columns, 0), refs.count - 1)
+        guard target != base else { return .reachedEnd }
         autoScrollIndex = target
         // 动画时长跟循环的间隔一样长，一步接一步，看着就是匀速在滚
         withAnimation(.linear(duration: duration)) {
             proxy.scrollTo(refs[target], anchor: .top)
         }
-        return true
+        return .scrolled
     }
 
     /// 现在贴着列表上边的那一格是第几个（取那一行最左边那格）。
@@ -703,14 +743,17 @@ struct PartsColorReviewStepView: View {
         return refs.firstIndex(of: bestRef)
     }
 
-    /// 一行铺得下几格。同一行的格子上边缘一样高，取最满的那一行 ——
-    /// 屏幕最上面和最下面那两行多半被切了一半，格子数是不全的。
-    private func measureColumns() -> Int {
+    /// 一行铺得下几格。`LazyVGrid` 是自适应列数，只能从量到的格子位置反推。
+    /// nil = 这一帧还没量到。
+    ///
+    /// 同一行的格子上边缘一样高，按 `minY` 分桶（除以 2 是给浮点抖动留的余量），
+    /// 取最满的那一行 —— 这一组的最后一行本来就可能不满。
+    private func measureColumns() -> Int? {
         var perRow: [Int: Int] = [:]
         for frame in cellFrames.values {
             perRow[Int((frame.minY / 2).rounded()), default: 0] += 1
         }
-        return max(1, perRow.values.max() ?? 1)
+        return perRow.values.max()
     }
 
     /// 松手 / 退出框选：这一笔到此为止，自动滚也停下。
@@ -1198,7 +1241,11 @@ struct PartsColorReviewStepView: View {
     /// 框选会框中一批早就不在这一组里的格子 —— 底下「这类都改成…」会作用到它们身上，
     /// 而用户在屏幕上根本看不见自己选中了什么。
     private func setGroupCells(_ new: [CellRef]?) {
-        groupCells = new
+        defer { groupCells = new }
+        // 铺出来的还是原来那一片（排序前后顺序一样是常事）就别动缓存：
+        // `cellFrames` 只有 preference 变了才会重填，而格子一格没挪、preference 就不会再来 ——
+        // 清了就一直空着，框选当场变成「框得出来、一格也选不中」。
+        guard new != groupCells else { return }
         cellFrames = [:]
         marqueeFrames = [:]
         endMarqueeDrag()
