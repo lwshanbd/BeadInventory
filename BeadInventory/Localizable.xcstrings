@@ -21,6 +21,26 @@
         }
       }
     },
+    "现在的格子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your cells"
+          }
+        }
+      }
+    },
+    "收起图纸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide pattern"
+          }
+        }
+      }
+    },
     "换一张" : {
       "localizations" : {
         "en" : {

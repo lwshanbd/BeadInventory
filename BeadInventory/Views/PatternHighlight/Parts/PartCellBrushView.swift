@@ -17,9 +17,15 @@
 //
 //  **不拿图纸原图当底。** 垫在底下的话，格子就得按图纸的几何铺：网格但凡量得不准，
 //  零件在这一屏会被拉成一条扁带，跟零件清单、拼豆板上那个形状对不上 ——
-//  而用户要改的正是那个形状。图纸原图挪到「对照图纸」那个按钮后面，按一下整层换上来 ——
-//  同一个框里的同一块地方、同一批格线（靠零件区边上的零件只铺到工作图切剩的那块，
-//  见 `imageRect`），对完再按回来。
+//  而用户要改的正是那个形状。
+//
+//  图纸原图放在**旁边那一栏**：按「对照图纸」，画布左右对半分，左边图纸、右边格子，
+//  两边同一块地方、同一个放大倍数、同一批格线（靠零件区边上的零件只铺到工作图切剩的
+//  那块，见 `imageRect`），拖哪一边两边一起动。
+//
+//  早先是按一下把格子那一层整个换成图纸、原地盖住 —— 换过去看不见自己改的格子、
+//  换回来看不见图纸，用户得来回按十几次，靠脑子记住上一眼看到的是什么。
+//  要比的两样东西必须同时在眼里（同 `PartOriginalSheet` 那一屏）。
 //
 //  ## 三个工具，一次只干一件事
 //
@@ -95,12 +101,11 @@ struct PartCellBrushView: View {
     /// 单图纸模式一张图纸七万格，用 Canvas 一格一格描的话，
     /// 手指划一下整屏重画七万个矩形，直接卡死。
     @State private var overlay: UIImage?
-    /// 正在对照图纸原图（把零件那一层整个换成图纸）。
+    /// 正在对照图纸原图（画布左右对半分，左图纸、右格子）。
     ///
-    /// **默认是关的**：这一屏画的是零件本身 —— 一格一格、正方的、跟拼豆板上一样的那个
-    /// 形状。图纸原图只在用户主动要「对一眼」的时候顶上来，而不是一直垫在底下：
-    /// 垫在底下就得按图纸的几何铺格子，网格量得不准时零件会被拉变形。
-    @State private var showsPattern = false
+    /// **默认是关的**：不对照的时候格子占满整个画布，一格能大一倍。开着的时候两边
+    /// 各占一半，共用同一个 `transform` —— 两边宽高一样，同一格就落在同一个位置上。
+    @State private var comparing = false
     /// 现在这一块还剩多少颗豆子。放 @State 而不是每次 body 现算 ——
     /// 七万格的图纸上，拖一下就要重数七万遍。
     @State private var beadCount = 0
@@ -219,48 +224,130 @@ struct PartCellBrushView: View {
 
     // MARK: - 上：图
 
+    /// 对照时左右各占一半，中间留一条缝把两边分开。
+    ///
+    /// **两边必须一样大**：整屏只有一个 `transform`，它是按 `canvasSize` 算的 ——
+    /// 两栏宽高一致，同一格才会落在两边同一个位置上，一眼横着扫过去就是同一行。
+    private func paneSize(in total: CGSize) -> CGSize {
+        guard showsCompare else { return total }
+        return CGSize(width: max(1, (total.width - Theme.Spacing.xs) / 2), height: total.height)
+    }
+
+    /// 现在是不是真的分栏。没有图纸就永远不分 —— 分出来左边是一片空的，
+    /// 白白把格子挤小一半。
+    private var showsCompare: Bool { comparing && image != nil }
+
     private var canvas: some View {
         GeometryReader { geo in
-            ZStack(alignment: .topLeading) {
-                Theme.ColorToken.Surface.subtle
+            let pane = paneSize(in: geo.size)
+            HStack(spacing: showsCompare ? Theme.Spacing.xs : 0) {
+                if showsCompare {
+                    // 图纸在左、格子在右：跟「对照弹窗」那一屏一个方向，
+                    // 也跟人从原件抄到成品的顺序一致。
+                    patternPane.frame(width: pane.width, height: pane.height)
+                }
+                editorPane.frame(width: pane.width, height: pane.height)
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+            .onAppear { setCanvasSize(pane) }
+            .onChange(of: pane) { _, new in setCanvasSize(new) }
+        }
+    }
 
-                if canvasSize.width > 0, rows > 0, cols > 0 {
-                    let box = transform.screenRect(gridArea)
+    /// 画布尺寸变了（转屏、开关对照栏）就得把平移量重新夹一遍 ——
+    /// `clampPan` 的边界跟着尺寸走，不夹的话分栏之后图会整块跑到框外面去。
+    private func setCanvasSize(_ size: CGSize) {
+        canvasSize = size
+        pan = clampPan(pan)
+        lastPan = pan
+    }
 
-                    // 板底。空格子就是它 —— 擦掉一格，露出来的是「这儿没有豆子」，
-                    // 而不是图纸上那颗还在那儿的豆子。
-                    Rectangle()
-                        .fill(Theme.ColorToken.Surface.elevated)
+    /// 右边（或者不分栏时的整块）：能擦能补的那一层。
+    private var editorPane: some View {
+        ZStack(alignment: .topLeading) {
+            Theme.ColorToken.Surface.subtle
+
+            if canvasSize.width > 0, rows > 0, cols > 0 {
+                let box = transform.screenRect(gridArea)
+
+                boardBase(box)
+
+                // 按最终尺寸摆图，**不用 scaleEffect** —— 那是图层变换，
+                // 放大走双线性平滑，`.interpolation(.none)` 管不到它，
+                // 而这一屏要看的正是一颗豆子的边界（同 PartsCellSizeStepView）。
+                if let overlay {
+                    Image(uiImage: overlay)
+                        .resizable()
+                        .interpolation(.none)
                         .frame(width: box.width, height: box.height)
                         .position(x: box.midX, y: box.midY)
-
-                    // 按最终尺寸摆图，**不用 scaleEffect** —— 那是图层变换，
-                    // 放大走双线性平滑，`.interpolation(.none)` 管不到它，
-                    // 而这一屏要看的正是一颗豆子的边界（同 PartsCellSizeStepView）。
-                    if showsPattern, let image {
-                        let shot = transform.screenRect(imageRect)
-                        Image(uiImage: image)
-                            .resizable()
-                            .interpolation(.none)
-                            .frame(width: shot.width, height: shot.height)
-                            .position(x: shot.midX, y: shot.midY)
-                    } else if let overlay {
-                        Image(uiImage: overlay)
-                            .resizable()
-                            .interpolation(.none)
-                            .frame(width: box.width, height: box.height)
-                            .position(x: box.midX, y: box.midY)
-                    }
-
-                    gridLines
                 }
 
-                gestureCatcher
+                gridLines
             }
-            .onAppear { canvasSize = geo.size }
-            .onChange(of: geo.size) { _, new in canvasSize = new }
+
+            gestureCatcher(paints: true)
+
+            if showsCompare { paneCaption("现在的格子") }
         }
         .clipped()
+    }
+
+    /// 左边那一栏：图纸上这一块的原样。**只看不改** —— 这一栏里划手指是挪图，
+    /// 不管上面选的是「擦掉」还是「补上」：用户盯着图纸比对时手指多半落在图纸那边，
+    /// 那一下要是也在画，他改掉的是自己正照着看的东西。
+    private var patternPane: some View {
+        ZStack(alignment: .topLeading) {
+            Theme.ColorToken.Surface.subtle
+
+            if canvasSize.width > 0, rows > 0, cols > 0, let image {
+                let box = transform.screenRect(gridArea)
+                let shot = transform.screenRect(imageRect)
+
+                boardBase(box)
+
+                Image(uiImage: image)
+                    .resizable()
+                    .interpolation(.none)
+                    .frame(width: shot.width, height: shot.height)
+                    .position(x: shot.midX, y: shot.midY)
+
+                gridLines
+            }
+
+            gestureCatcher(paints: false)
+
+            paneCaption("图纸原图")
+        }
+        .clipped()
+    }
+
+    /// 板底。空格子就是它 —— 擦掉一格，露出来的是「这儿没有豆子」，
+    /// 而不是图纸上那颗还在那儿的豆子。
+    ///
+    /// **不能用 `Surface.elevated`（近乎纯白）**：白色豆子铺在白板底上就是一片白，
+    /// 用户分不出哪几格是空的、哪几格是白豆子 —— 而这一屏问的正是「这儿到底有没有豆子」。
+    /// 定成一档中灰，色域两端（纯白豆、纯黑豆）都跟它拉得开；深浅色模式用同一个值，
+    /// 板底是「桌上那块板」，不该跟着界面变亮变暗，否则同一张图两种模式下擦出来不一样多。
+    private func boardBase(_ box: CGRect) -> some View {
+        Rectangle()
+            .fill(Self.boardColor)
+            .frame(width: box.width, height: box.height)
+            .position(x: box.midX, y: box.midY)
+    }
+
+    static let boardColor = Color(white: 0.55)
+
+    /// 哪一栏是哪一栏。两边都是灰底加格线，不写字的话看一眼分不出来。
+    private func paneCaption(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(Theme.ColorToken.Text.secondary)
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(.regularMaterial))
+            .padding(Theme.Spacing.sm)
+            .allowsHitTesting(false)
     }
 
     /// 格线 + 这一块的边界。
@@ -287,7 +374,9 @@ struct PartCellBrushView: View {
                     path.move(to: CGPoint(x: box.minX, y: y))
                     path.addLine(to: CGPoint(x: box.maxX, y: y))
                 }
-                context.stroke(path, with: .color(.white.opacity(0.35)), lineWidth: 0.5)
+                // 压暗、不是提亮。板底改成中灰之后，白线在板底上还看得见，但两颗
+                // 挨着的白豆子中间就没了 —— 而白豆子挨着白豆子正是最需要数格子的时候。
+                context.stroke(path, with: .color(.black.opacity(0.28)), lineWidth: 0.5)
             }
 
             context.stroke(Path(box), with: .color(Theme.ColorToken.Morandi.honey), lineWidth: 1.5)
@@ -295,8 +384,10 @@ struct PartCellBrushView: View {
         .allowsHitTesting(false)
     }
 
-    private var gestureCatcher: some View {
-        Color.clear
+    /// - Parameter paints: 这一栏里划手指算不算画。图纸那一栏传 false —— 那儿只能挪图。
+    private func gestureCatcher(paints: Bool) -> some View {
+        let drawing = paints && tool != .move
+        return Color.clear
             .contentShape(Rectangle())
             .gesture(
                 SimultaneousGesture(
@@ -304,7 +395,7 @@ struct PartCellBrushView: View {
                         .onChanged { value in
                             // 两指捏合时别顺手画一道
                             guard pinchContentAnchor == nil else { return }
-                            if tool == .move {
+                            if !drawing {
                                 pan = clampPan(CGSize(
                                     width: lastPan.width + value.translation.width,
                                     height: lastPan.height + value.translation.height
@@ -314,7 +405,7 @@ struct PartCellBrushView: View {
                             }
                         }
                         .onEnded { value in
-                            if tool == .move {
+                            if !drawing {
                                 lastPan = pan
                             } else {
                                 // 最后一段常常只随抬手事件送达，onChanged 没见过它 ——
@@ -404,17 +495,17 @@ struct PartCellBrushView: View {
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(Theme.ColorToken.Text.primary)
                 Spacer()
-                // 屏幕上画的是零件本身。要判「图纸上这儿到底有没有豆子」，按一下把
-                // 图纸原图顶上来对一眼 —— 同一块地方、同一批格线，只是换了一层。
+                // 要判「图纸上这儿到底有没有豆子」，按一下把图纸拉到旁边那一栏，
+                // 两边同一块地方、同一个倍数，横着扫一眼就对得上。收起来则格子占满整屏。
                 //
-                // **没有图纸时不摆这个按钮**：顶上来底下什么都没有，
-                // 用户按到的是一个把屏幕清空的开关，而且看不出为什么。
+                // **没有图纸时不摆这个按钮**：拉出来的那一栏是空的，
+                // 用户按到的是一个只会把格子挤小一半的开关，而且看不出为什么。
                 if image != nil {
                     Button {
-                        showsPattern.toggle()
+                        withAnimation(.easeInOut(duration: 0.2)) { comparing.toggle() }
                     } label: {
-                        Label(showsPattern ? "看零件" : "对照图纸",
-                              systemImage: showsPattern ? "square.grid.3x3.fill" : "photo")
+                        Label(comparing ? "收起图纸" : "对照图纸",
+                              systemImage: comparing ? "rectangle" : "rectangle.split.2x1")
                             .font(.footnote)
                     }
                 }
@@ -622,10 +713,6 @@ struct PartCellBrushView: View {
             return
         }
         let changesBefore = stroke.changes.count
-        // 正对照着图纸的时候动了笔，就切回零件那一层 —— 否则用户划半天，
-        // 屏幕上唯一的变化是底下那个颗数。
-        if showsPattern { showsPattern = false }
-
         // 手指移得快时两次事件之间会跳过好几格。只改落点的话，划出来的是一串虚线，
         // 用户得回头一格一格补 —— 那正是这一屏想省掉的事。
         if let last = stroke.last, last != hit {
@@ -975,13 +1062,16 @@ struct PartCellBrushView: View {
 /// 几万个像素，重建一次是零点几毫秒，贴上去的时候按最终尺寸 + 最近邻放大，
 /// 边界照样是硬的。
 ///
-/// 画的是**零件本身**：有豆子的格子是它自己的颜色，空格透明、露出底下的板面。
+/// 画的是**零件本身**：有豆子的格子是它自己的颜色，空格透明、露出底下那块中灰板面
+/// （`PartCellBrushView.boardColor`）。板面刻意不是白的 —— 白豆子铺在白板面上，
+/// 「空格」和「白豆子」长得一模一样。
 /// 所以擦掉一格就是「这儿空了」，跟拼豆板上看到的是同一件事 —— 早先这一层是
 /// 半透明盖在图纸原图上的，空格还得铺一层灰才看得出擦掉没有，而底下那颗豆子
 /// 一直还在图上，用户得盯着灰度差判断自己那一下生效没有。
 enum CellOverlayBitmap {
-    /// 有豆子的格子画多实。留一点点透明，是让底下那层板面（`Surface.elevated`）
-    /// 透出来一丝 —— 全不透明时，深色豆子和空格之间只剩色差，一格的边界反而糊掉。
+    /// 有豆子的格子画多实。留一点点透明，是让底下那层板面
+    /// （`PartCellBrushView.boardColor`）透出来一丝 ——
+    /// 全不透明时，深色豆子和空格之间只剩色差，一格的边界反而糊掉。
     private static let beadAlpha: Double = 0.95
 
     static func make(cells: [[PartCellFill]], colors: [String: Color]) -> UIImage? {
