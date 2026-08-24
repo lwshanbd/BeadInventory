@@ -101,12 +101,42 @@
         }
       }
     },
+    "图纸原图 · 只能看" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pattern (view only)"
+          }
+        }
+      }
+    },
     "图纸原图" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pattern Original"
+          }
+        }
+      }
+    },
+    "现在的格子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your cells"
+          }
+        }
+      }
+    },
+    "收起图纸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide pattern"
           }
         }
       }
@@ -507,16 +537,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Compare to pattern"
-          }
-        }
-      }
-    },
-    "看零件" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show piece"
           }
         }
       }
