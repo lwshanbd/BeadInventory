@@ -19,9 +19,10 @@
 //  零件在这一屏会被拉成一条扁带，跟零件清单、拼豆板上那个形状对不上 ——
 //  而用户要改的正是那个形状。
 //
-//  图纸原图放在**旁边那一栏**：按「对照图纸」，画布左右对半分，左边图纸、右边格子，
-//  两边同一块地方、同一个放大倍数、同一批格线（靠零件区边上的零件只铺到工作图切剩的
-//  那块，见 `imageRect`），拖哪一边两边一起动。
+//  图纸原图放在**旁边那一块**：按「对照图纸」，画布对半分，图纸在前、格子在后，
+//  两块同一块地方、同一个放大倍数、同一批格线（格线两块都按 `gridArea` 铺，完全一致；
+//  被切掉一条的是**图**：靠零件区边上的零件只铺到工作图切剩的那块，见 `imageRect`），
+//  拖哪一块两块一起动。切竖着还是横着由画布形状定，见 `panes`。
 //
 //  早先是按一下把格子那一层整个换成图纸、原地盖住 —— 换过去看不见自己改的格子、
 //  换回来看不见图纸，用户得来回按十几次，靠脑子记住上一眼看到的是什么。
@@ -101,10 +102,10 @@ struct PartCellBrushView: View {
     /// 单图纸模式一张图纸七万格，用 Canvas 一格一格描的话，
     /// 手指划一下整屏重画七万个矩形，直接卡死。
     @State private var overlay: UIImage?
-    /// 正在对照图纸原图（画布左右对半分，左图纸、右格子）。
+    /// 正在对照图纸原图（画布对半分，图纸在前、格子在后，方向见 `panes`）。
     ///
-    /// **默认是关的**：不对照的时候格子占满整个画布，一格能大一倍。开着的时候两边
-    /// 各占一半，共用同一个 `transform` —— 两边宽高一样，同一格就落在同一个位置上。
+    /// **默认是关的**：不对照的时候格子占满整个画布。开着的时候两块各占一半，
+    /// 共用同一个 `transform` —— 两块宽高一样，同一格就落在两块里同一个位置上。
     @State private var comparing = false
     /// 现在这一块还剩多少颗豆子。放 @State 而不是每次 body 现算 ——
     /// 七万格的图纸上，拖一下就要重数七万遍。
@@ -224,41 +225,69 @@ struct PartCellBrushView: View {
 
     // MARK: - 上：图
 
-    /// 对照时左右各占一半，中间留一条缝把两边分开。
+    /// 对照时把画布对半分，中间留一条缝。返回单块的尺寸，以及**格子那一块的左上角**。
     ///
-    /// **两边必须一样大**：整屏只有一个 `transform`，它是按 `canvasSize` 算的 ——
-    /// 两栏宽高一致，同一格才会落在两边同一个位置上，一眼横着扫过去就是同一行。
-    private func paneSize(in total: CGSize) -> CGSize {
-        guard showsCompare else { return total }
-        return CGSize(width: max(1, (total.width - Theme.Spacing.xs) / 2), height: total.height)
+    /// **两块必须一样大**：整屏只有一个 `transform`，它是按 `canvasSize` 算的 ——
+    /// 两块宽高一致，同一格才会落在两块里同一个位置上，扫一眼就对得上。
+    ///
+    /// **沿画布的长边切，不写死方向。** 一格在屏幕上是正方的（`aspectFitRect` 等比，
+    /// 边长是 `min(paneW/cols, paneH/rows)`）。
+    ///
+    /// **这是「少砍一半」，不是「不砍」。** 砍短边一定把格子对半砍；砍长边只在零件
+    /// 够扁时不影响，方正和偏高的零件照样缩 —— 竖屏 440×680 下临界比是 `2W/H ≈ 1.29`，
+    /// 正方形零件缩到约 77%。选长边只因为它比另一头好，不是因为它免费。
+    ///
+    /// 竖屏画布是高的，切高度；横屏是宽的，切宽度。写死一个方向的话另一个方向就是
+    /// 最坏情况：上一版写死上下分，而横屏画布本来只剩两百来点高，再对半分两块都塞不下。
+    ///
+    /// **`editorOrigin` 是轴的唯一出口。** 手势那一层（`drawing` / `paneLocal` /
+    /// `brushLocal`）只按分量减这个原点，对方向一无所知 —— 「切哪个轴」和
+    /// 「谁在前谁在后」这两件事都只活在这个函数里，下次要改不必翻到别处。
+    /// 这块画布该沿哪个轴切。**轴的唯一判据** —— `panes` 和「对照图纸」那个图标都问它。
+    /// 分开写过一次：图标那边把同一个比较抄了第二份，改了 `panes` 它会静默指错方向，
+    /// 而「预告这一次会分成什么样」正是那个图标存在的唯一理由。
+    private func splitsHorizontally(_ total: CGSize) -> Bool { total.width > total.height }
+
+    private func panes(in total: CGSize) -> (size: CGSize, editorOrigin: CGPoint) {
+        guard showsCompare else { return (total, .zero) }
+        let gap = Theme.Spacing.xs
+        if !splitsHorizontally(total) {
+            let h = max(1, (total.height - gap) / 2)
+            return (CGSize(width: total.width, height: h), CGPoint(x: 0, y: h + gap))
+        }
+        let w = max(1, (total.width - gap) / 2)
+        return (CGSize(width: w, height: total.height), CGPoint(x: w + gap, y: 0))
     }
 
-    /// 现在是不是真的分栏。没有图纸就永远不分 —— 分出来左边是一片空的，
+    /// 现在是不是真的分开。没有图纸就永远不分 —— 分出来那一块是空的，
     /// 白白把格子挤小一半。
     private var showsCompare: Bool { comparing && image != nil }
 
     private var canvas: some View {
         GeometryReader { geo in
-            let pane = paneSize(in: geo.size)
+            let (pane, editorOrigin) = panes(in: geo.size)
+            // 图纸在前（上 / 左）、格子在后 —— 跟 `editorOrigin` 是同一件事，
+            // 谁也别单独改：反了就成了「划这一格改那一格」。
+            let layout = editorOrigin.x > 0
+                ? AnyLayout(HStackLayout(spacing: Theme.Spacing.xs))
+                : AnyLayout(VStackLayout(spacing: showsCompare ? Theme.Spacing.xs : 0))
             ZStack(alignment: .topLeading) {
-                HStack(spacing: showsCompare ? Theme.Spacing.xs : 0) {
+                layout {
                     if showsCompare {
-                        // 图纸在左、格子在右：跟 `PartOriginalSheet` 那一屏一个方向，
-                        // 也跟人从原件抄到成品的顺序一致。
                         patternPane.frame(width: pane.width, height: pane.height)
                     }
                     editorPane.frame(width: pane.width, height: pane.height)
                 }
-                // **手势只有这一层，盖在两栏上面**，见 `gestureCatcher`。
-                gestureCatcher(editorX: showsCompare ? pane.width + Theme.Spacing.xs : 0)
+                // **手势只有这一层，盖在两块上面**，见 `gestureCatcher`。
+                gestureCatcher(editorOrigin: editorOrigin)
             }
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .onAppear { setCanvasSize(pane) }
             .onChange(of: pane) { _, new in setCanvasSize(new) }
         }
     }
 
-    /// 画布尺寸变了（转屏、开关对照栏）就得把平移量重新夹一遍 ——
+    /// 画布尺寸变了（转屏、开关对照）就得把平移量重新夹一遍 ——
     /// `clampPan` 的边界跟着尺寸走，不夹的话分栏之后图会整块跑到框外面去。
     private func setCanvasSize(_ size: CGSize) {
         canvasSize = size
@@ -266,7 +295,7 @@ struct PartCellBrushView: View {
         lastPan = pan
     }
 
-    /// 右边（或者不分栏时的整块）：能擦能补的那一层。
+    /// 格子那一块（或者不分栏时的整块）：能擦能补的那一层。
     private var editorPane: some View {
         ZStack(alignment: .topLeading) {
             Theme.ColorToken.Surface.subtle
@@ -295,7 +324,7 @@ struct PartCellBrushView: View {
         .clipped()
     }
 
-    /// 左边那一栏：图纸上这一块的原样。**只看不改** —— 这一栏里划手指是挪图，
+    /// 图纸那一块：图纸上这一块的原样。**只看不改** —— 这一块里划手指是挪图，
     /// 不管上面选的是「擦掉」还是「补上」：用户盯着图纸比对时手指多半落在图纸那边，
     /// 那一下要是也在画，他改掉的是自己正照着看的东西。
     private var patternPane: some View {
@@ -317,7 +346,9 @@ struct PartCellBrushView: View {
                 gridLines
             }
 
-            paneCaption("图纸原图 · 只能看")
+            // 「拖它挪画面」只有放大之后才做得到 —— `clampPan` 在 zoom == 1 时把 pan
+            // 夹成 .zero，那时候按提示去拖，画面纹丝不动也没有任何反馈。
+            paneCaption(zoom > 1 ? "图纸原图 · 只能看，拖它挪画面" : "图纸原图 · 只能看")
         }
         .clipped()
     }
@@ -328,12 +359,27 @@ struct PartCellBrushView: View {
     /// **不能用 `Surface.elevated`**：它浅色下近乎纯白 —— 白豆子铺上去就是一片白，
     /// 用户分不出哪几格是空的、哪几格是白豆子，而这一屏问的正是「这儿到底有没有豆子」；
     /// 深色下它又整个变暗，同一张图两种模式下擦出来能不一样多。板底是「桌上那块板」，
-    /// 深浅色用同一个值，定成一档中灰把色域两端（纯白豆、纯黑豆）都拉开。
+    /// 深浅色用同一个值。
     ///
-    /// **拉不开的是中间那一段**：拿 `color.json` 算过，291 个色号在亮度上是连续铺满的，
-    /// 任选一个纯灰当板底，最近的低饱和色号也只差 0.06 亮度（H4 `#89858C` 跟中灰几乎一样）。
-    /// 也就是说不存在「跟所有豆子都拉得开」的板底色 —— 真要治，得给空格加非颜色的线索
-    /// （斜纹 / 棋盘格）并让豆子完全不透明，不是继续调这个灰度。
+    /// **要亮，但不能待在纯灰那条轴上。** 亮是用户要的（中灰压得整屏发闷，而豆子
+    /// 本身的颜色才是这一屏要看的东西）；离开纯灰是因为豆子里灰的太多了。
+    ///
+    /// 拿屏幕真正渲染用的那份色表（`allcolors.json`，599 个不重复色值）按
+    /// `0.95×豆子 + 0.05×板底`（见 `CellOverlayBitmap.beadAlpha`）合成后算 CIE76 ΔE，
+    /// 「跟空格糊在一起」的色号数是这样的 —— ΔE 2.3 是人眼刚能察觉的门槛：
+    ///
+    ///     板底              相对亮度   ΔE<5   最近的那个
+    ///     #8C8C8C 中灰       0.26      1     #89858C  ΔE 4.6
+    ///     #D6D6D6 浅灰       0.67      5     #D9D9D9  ΔE 1.0   ← 看不见了
+    ///     #D4E6D3 极浅绿     0.75      0     #E0E3DA  ΔE 7.2   ← 现在这个
+    ///
+    /// 也就是说**从中灰往白走，越浅越危险**：近白那一段正是色表最密的地方（L* 80-90
+    /// 占 116 个）。注意只有亮端这一头单调 —— 暗端也有 4~5 个撞车，最安全的是中间那一段，
+    /// 但中灰整屏压得发闷，那是这次要躲开的。极浅绿比浅灰还亮，
+    /// 撞车的色号却从 5 个降到 0 个 —— 亮和「分得开」并不冲突，冲突的是亮和**灰**。
+    ///
+    /// **别再往纯灰上调。** 真要更保险，得给空格加非颜色的线索（斜纹 / 棋盘格）
+    /// 并让豆子完全不透明，不是继续挪这个值。
     private func boardBase(_ box: CGRect) -> some View {
         Rectangle()
             .fill(Self.boardColor)
@@ -341,10 +387,15 @@ struct PartCellBrushView: View {
             .position(x: box.midX, y: box.midY)
     }
 
-    /// 板底那一档中灰。为什么不是白的、以及为什么单靠颜色治不了中灰豆子，见 `boardBase`。
-    private static let boardColor = Color(white: 0.55)
+    /// 板底：比白略深一档的极浅绿。为什么不是白的、为什么不能是灰的，见 `boardBase`。
+    ///
+    /// 它跟 `CellOverlayBitmap.beadAlpha`、`gridLines` 那两道描边共担同一条不变量
+    /// ——「空格和白豆子必须分得出来」。**三个值要一起调**，动一个就得重看另外两个。
+    ///
+    /// `fileprivate` 而不是 `private`：`CellOverlayBitmap` 的文档按符号引用它。
+    fileprivate static let boardColor = Color(red: 212 / 255, green: 230 / 255, blue: 211 / 255)
 
-    /// 哪一栏是哪一栏。两边都是灰底加格线，不写字的话看一眼分不出来。
+    /// 哪一块是哪一块。两块都是浅底加格线，不写字的话看一眼分不出来。
     private func paneCaption(_ text: LocalizedStringKey) -> some View {
         Text(text)
             .font(.caption2.weight(.medium))
@@ -368,7 +419,14 @@ struct PartCellBrushView: View {
 
             // 一格小到看不出是格子的时候就别画了 —— 几百条线糊成一片，
             // 反而把底下的格子盖住。
-            if cw >= 9, ch >= 9 {
+            //
+            // **阈值 6 不是 9。** 9 是「板底还是白的、只描一道线」那会儿定的。现在
+            // 「这一格有没有豆子」全靠板底和豆子的颜色差（见 `boardBase`），格线只管
+            // 「同色两格之间的缝」—— 也就是只在用户想精确点一格时才要紧，而那时候
+            // 他本来就会放大。降到 6 是为了缩窄「一按对照图纸格线就没了」那个突变：
+            // 分栏把长边砍一半，格子跟着缩（见 `panes`），原来刚过阈值的零件会掉到线以下。
+            // **只是缩窄，没有消掉** —— 窗口从「原始格宽 9～11.7pt」变成「6～7.8pt」。
+            if cw >= 6, ch >= 6 {
                 var path = Path()
                 for c in 0...cols {
                     let x = box.minX + CGFloat(c) * cw
@@ -383,8 +441,14 @@ struct PartCellBrushView: View {
                 // **描两遍：宽的浅线打底，窄的深线压在中间。**
                 // 只有一种颜色时，它必然在色域的一端消失 —— 白线看不见白豆子挨白豆子的缝，
                 // 黑线看不见黑豆子挨黑豆子的缝，而这两处恰恰都是最需要数格子的时候。
-                context.stroke(path, with: .color(.white.opacity(0.30)), lineWidth: 1.0)
-                context.stroke(path, with: .color(.black.opacity(0.28)), lineWidth: 0.5)
+                // **别把它当成「白豆子和空格的区别」。** 这里是整片铺线的，
+                // 空格四周同样有缝 —— 格线只解决「同色两格之间的缝」，
+                // 「这一格有没有豆子」从头到尾只靠颜色差，那是 `boardColor` 的事。
+                // 线宽跟着格子缩，别让它吃掉超过八分之一格 —— 6pt 的格子上
+                // 1pt 的线就占了六分之一，一片格子看着像一张网。
+                let hair = min(1.0, cw / 8)
+                context.stroke(path, with: .color(.white.opacity(0.30)), lineWidth: hair)
+                context.stroke(path, with: .color(.black.opacity(0.28)), lineWidth: hair / 2)
             }
 
             context.stroke(Path(box), with: .color(Theme.ColorToken.Morandi.honey), lineWidth: 1.5)
@@ -392,38 +456,94 @@ struct PartCellBrushView: View {
         .allowsHitTesting(false)
     }
 
-    /// 这一下算不算画：工具不是「挪图」，而且**起点**落在格子那一栏。
-    private func drawing(from start: CGPoint, editorX: CGFloat) -> Bool {
-        tool != .move && start.x >= editorX
-    }
-
-    /// 整块画布上的一点 → 它所在那一栏自己的坐标。两栏共用同一个 `transform`，
-    /// 所以两栏的同一个 (x, y) 指的就是同一块内容，减掉那一栏的左边缘就行。
-    private func paneLocal(_ point: CGPoint, editorX: CGFloat) -> CGPoint {
-        point.x >= editorX ? CGPoint(x: point.x - editorX, y: point.y) : point
-    }
-
-    /// 整块画布的手势层。**只能有这一层**，哪怕分成了两栏。
+    /// 这一下算不算画：工具不是「挪图」，而且**起点**落在格子那一块。
     ///
-    /// 一栏挂一层试过，翻车：两指一边一根时，两边的 `MagnifyGesture` 各自只拿到
-    /// 一根手指、缩放根本不触发，而落在格子那栏的那根被 `minimumDistance: 0` 的
-    /// 拖动当成画笔收下了 —— 下面那句 `rollbackStroke()` 本来就是拦这件事的，
-    /// 但它拦不到另一层里的笔。实测：开着对照栏、工具停在「擦掉」、两指跨着中缝
+    /// 两个分量一起判，所以横竖两种切法用的是同一行代码 —— 没切到的那个轴
+    /// 原点是 0，那一维恒成立（见 `panes`）。
+    private func drawing(from start: CGPoint, editorOrigin o: CGPoint) -> Bool {
+        tool != .move && start.x >= o.x && start.y >= o.y
+    }
+
+    /// 整块画布上的一点 → 它所在那一块自己的坐标。两块共用同一个 `transform`，
+    /// 所以两块里同一个 (x, y) 指的就是同一块内容，减掉那一块的左上角就行
+    /// （图纸那一块的左上角就是 0,0，所以原样返回）。
+    ///
+    /// **只给捏合用。** 画笔必须走 `brushLocal`，理由见那里。
+    private func paneLocal(_ point: CGPoint, editorOrigin o: CGPoint) -> CGPoint {
+        point.x >= o.x && point.y >= o.y
+            ? CGPoint(x: point.x - o.x, y: point.y - o.y)
+            : point
+    }
+
+    /// 画笔专用的换算：编辑区自己的坐标。**不在编辑区那一块里就没有坐标 —— 返回 nil。**
+    ///
+    /// 不能用 `paneLocal`：那个函数对落在图纸那一块的点原样返回，而这里返回值会被
+    /// 当成「编辑区自己的坐标」喂给 `cellIndex(at:)` —— 差一点点的越界坐标会被读成
+    /// 块内快到头的位置，也就是零件的**最后一行 / 最后一列**。于是手指往外挪 5pt，
+    /// 笔尖跳到零件另一头，`paint` 的补线看到 steps 很大，把中间整条改掉。
+    ///
+    /// **也不能只减不判、指望「变成负数就会被 `cellIndex` 挡掉」**（上一版就是这么写的）。
+    /// `cellIndex` 判的不是坐标正负，是 `transform.normalized` 落不落在 `gridArea` 里，
+    /// 而那个换算里有一步 `/ zoom`：放大之后格子框的上沿跑到负数区
+    /// （`box.minY ≥ -(zoom-1)·pane.height`），一个负的 y 照样落在框里面、算出一组
+    /// **合法的行列**。实测 zoom 3：手指停在图纸那一块，擦掉的是编辑区上方
+    /// 看不见的那几行 —— 比原来的瞬移更难发现，因为屏幕上什么都没变。
+    /// 而放大正是这一屏的常态（几千格里点准一格）。
+    ///
+    /// 拿 `canvasSize` 当边界：它就是单块的尺寸（`setCanvasSize` 保证的）。
+    private func brushLocal(_ point: CGPoint, editorOrigin o: CGPoint) -> CGPoint? {
+        let p = CGPoint(x: point.x - o.x, y: point.y - o.y)
+        guard p.x >= 0, p.y >= 0, p.x <= canvasSize.width, p.y <= canvasSize.height else {
+            return nil
+        }
+        return p
+    }
+
+    /// 捏合收尾。**三个值必须一起落** —— `zoom`/`pan` 在捏合过程中一直在变，
+    /// 而 `lastZoom`/`lastPan` 是下一次手势的起点。只清锚点不结算的话，
+    /// 下一下拖动会从捏合之前的 `lastPan` 算起、画面瞬间弹回去，
+    /// 下一次捏合也会从旧的 `lastZoom` 重来 —— 用户放大到 3 倍找了半天的那一块没了。
+    private func settlePinch() {
+        lastZoom = zoom
+        lastPan = pan
+        pinchContentAnchor = nil
+    }
+
+    /// 整块画布的手势层。**只能有这一层**，哪怕分成了两块。
+    ///
+    /// 一块挂一层试过，翻车：两指各落一块时，两边的 `MagnifyGesture` 各自
+    /// 只拿到一根手指、缩放根本不触发，而落在格子那一块的那根被 `minimumDistance: 0`
+    /// 的拖动当成画笔收下了 —— 下面那句 `rollbackStroke()` 本来就是拦这件事的，
+    /// 但它拦不到另一层里的笔。实测：开着对照、工具停在「擦掉」、两指跨着中间那条缝
     /// 往外一撑，倍数一点没变，一整行豆子没了。
     ///
-    /// - Parameter editorX: 格子那一栏的左边缘。手势点是整块画布的坐标，
-    ///   `paneLocal` 按它换算回单栏坐标；**起点**落在它左边（图纸那栏）就只挪图。
-    private func gestureCatcher(editorX: CGFloat) -> some View {
+    /// - Parameter editorOrigin: 格子那一块的左上角（见 `panes`）。手势点是整块画布的
+    ///   坐标，靠它换算回单块坐标；**起点**落在它前面（图纸那块）就只挪图。
+    private func gestureCatcher(editorOrigin: CGPoint) -> some View {
         Color.clear
             .contentShape(Rectangle())
             .gesture(
                 SimultaneousGesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
-                            // 两指捏合时别顺手画一道
+                            // 捏合**起来之后**别再顺手画 —— 锚点是 `MagnifyGesture.onChanged`
+                            // 第一拍设上的，所以这道 guard 拦的是那之后继续送进来的拖动事件。
+                            // 起来**之前**漏进来的那一两拍是下面 `rollbackStroke()` 退掉的，
+                            // 两者分工不同，别混成一件事（混了就会有人把这道 guard 当死代码删掉）。
+                            //
+                            // 另外：试过在这儿拿两指中点做「两指拖动挪图」，做不到 ——
+                            // `DragGesture` 从头到尾只暴露一根手指的位置，算不出两指中点。
+                            // 放大之后要挪，走的是「拖图纸那一块」或者切回「挪图」，见 `hint`。
                             guard pinchContentAnchor == nil else { return }
-                            if drawing(from: value.startLocation, editorX: editorX) {
-                                paint(at: paneLocal(value.location, editorX: editorX))
+                            if drawing(from: value.startLocation, editorOrigin: editorOrigin) {
+                                if let p = brushLocal(value.location, editorOrigin: editorOrigin) {
+                                    paint(at: p)
+                                } else {
+                                    // 划出编辑区那一块了。**得自己断线** —— 原来这一步是
+                                    // `paint` 里「划到框外就清锚点」代劳的，现在提前拦下来了。
+                                    // 不断的话，用户绕出去再划回来，补线会把两个落点连成一条斜带。
+                                    stroke.last = nil
+                                }
                             } else {
                                 pan = clampPan(CGSize(
                                     width: lastPan.width + value.translation.width,
@@ -432,15 +552,16 @@ struct PartCellBrushView: View {
                             }
                         }
                         .onEnded { value in
-                            // 认**起点**不认落点：一笔从格子那栏划到图纸那栏，
+                            // 认**起点**不认落点：一笔从格子那一块划到图纸那一块，
                             // 抬手时还得走 `endStroke()` 把这一笔记进撤销栈。
-                            if drawing(from: value.startLocation, editorX: editorX) {
+                            if drawing(from: value.startLocation, editorOrigin: editorOrigin) {
                                 // 最后一段常常只随抬手事件送达，onChanged 没见过它 ——
                                 // 不补这一下，快速划一道的末尾几格不会变
                                 //（同 PartsBoardStepView 里 gestureCatcher 的 onEnded：
                                 // 抬手前再 updateMove 一次）。
-                                if pinchContentAnchor == nil {
-                                    paint(at: paneLocal(value.location, editorX: editorX))
+                                if pinchContentAnchor == nil,
+                                   let p = brushLocal(value.location, editorOrigin: editorOrigin) {
+                                    paint(at: p)
                                 }
                                 endStroke()
                             } else {
@@ -450,7 +571,7 @@ struct PartCellBrushView: View {
                     MagnifyGesture()
                         .onChanged { value in
                             if pinchContentAnchor == nil {
-                                pinchScreenPoint = paneLocal(value.startLocation, editorX: editorX)
+                                pinchScreenPoint = paneLocal(value.startLocation, editorOrigin: editorOrigin)
                                 pinchContentAnchor = unzoomed(pinchScreenPoint)
                                 // **把这一笔退掉，不是收下。** 两指捏合的第一根手指会先
                                 // 触发一次 minimumDistance 0 的拖动，在 Magnify 反应过来之前
@@ -466,11 +587,7 @@ struct PartCellBrushView: View {
                                 height: pinchScreenPoint.y - center.y - (anchor.y - center.y) * zoom
                             ))
                         }
-                        .onEnded { _ in
-                            lastZoom = zoom
-                            lastPan = pan
-                            pinchContentAnchor = nil
-                        }
+                        .onEnded { _ in settlePinch() }
                 )
             )
     }
@@ -500,7 +617,17 @@ struct PartCellBrushView: View {
                 Text("补上").tag(Tool.paint)
             }
             .pickerStyle(.segmented)
-            .onChange(of: tool) { _, _ in endStroke() }
+            .onChange(of: tool) { _, new in
+                endStroke()
+                // 手势被系统打断时（来电、下拉通知中心、sheet 被拖走）`MagnifyGesture.onEnded`
+                // 不保证送达，锚点会停在非 nil —— 那时 `gestureCatcher` 第一行就 return，
+                // 画布从此不画也不挪，而且没有别的路径能清它。切工具是用户
+                // 「怎么点都没反应」时最先试的动作，在这儿把这一组状态结算掉。
+                settlePinch()
+                // 离开「补上」时色号栏整条消失，「换一个色号」那句就没处换了；
+                // 而它排在告警链最前面，会一直把「这次取不到图纸上的这一块」压在下面。
+                if new != .paint { pickUnusable = false }
+            }
 
             if tool == .paint {
                 paintColorBar
@@ -526,17 +653,23 @@ struct PartCellBrushView: View {
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(Theme.ColorToken.Text.primary)
                 Spacer()
-                // 要判「图纸上这儿到底有没有豆子」，按一下把图纸拉到旁边那一栏，
-                // 两边同一块地方、同一个倍数，横着扫一眼就对得上。收起来则格子占满整屏。
+                // 要判「图纸上这儿到底有没有豆子」，按一下把图纸拉到旁边那一块，
+                // 两块同一块地方、同一个倍数，扫一眼就对得上。收起来则格子占满整屏。
                 //
-                // **没有图纸时不摆这个按钮**：拉出来的那一栏是空的，
+                // **没有图纸时不摆这个按钮**：拉出来的那一块是空的，
                 // 用户按到的是一个只会把格子挤小一半的开关，而且看不出为什么。
                 if image != nil {
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { comparing.toggle() }
                     } label: {
+                        // 图标得预告**这一次**会分成什么样：`panes` 沿画布长边切，
+                        // 竖屏是上下分（横的分割线）、横屏是左右分（竖的）。
+                        // 不分栏时 `canvasSize` 就是整块画布，拿它判方向正好。
                         Label(comparing ? "收起图纸" : "对照图纸",
-                              systemImage: comparing ? "rectangle" : "rectangle.split.2x1")
+                              systemImage: comparing
+                                  ? "rectangle"
+                                  : (splitsHorizontally(canvasSize)
+                                     ? "rectangle.split.2x1" : "rectangle.split.1x2"))
                             .font(.footnote)
                     }
                 }
@@ -571,7 +704,12 @@ struct PartCellBrushView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Theme.Spacing.sm) {
                 ForEach(paletteOptions, id: \.key) { option in
-                    Button { paintFill = option.fill } label: {
+                    Button {
+                        paintFill = option.fill
+                        // 挑到一个能用的，「换一个」那句就不成立了。不清的话它会一直挂着，
+                        // 而且它排在告警链最前面，会把「这次取不到图纸上的这一块」永远顶掉。
+                        pickUnusable = false
+                    } label: {
                         colorChip(option)
                     }
                     .buttonStyle(.plain)
@@ -637,11 +775,18 @@ struct PartCellBrushView: View {
     private var hint: String {
         switch tool {
         case .move: return String(localized: "拖动看图，两指捏合放大。要改格子，上面换「擦掉」或「补上」。")
-        case .erase: return String(localized: "手指划过要去掉的格子。")
+        // 画笔状态下拖动是画，不是挪 —— 放大之后想看旁边那块，得知道从哪儿挪。
+        // 分栏时图纸那一块就是现成的把手（那儿只挪不画），收起来时只能切回「挪图」。
+        // **别写「上面那条」**：`panes` 沿画布长边切，横屏时图纸在左边。
+        case .erase:
+            return showsCompare
+                ? String(localized: "手指划过要去掉的格子。放大后想挪，拖图纸那一块。")
+                : String(localized: "手指划过要去掉的格子。放大后想挪，先切回「挪图」。")
         case .paint:
-            return paintFill == nil
-                ? String(localized: "先在上面挑一个色号，再划过要补上的格子。")
-                : String(localized: "手指划过要补上的格子。")
+            if paintFill == nil { return String(localized: "先在上面挑一个色号，再划过要补上的格子。") }
+            return showsCompare
+                ? String(localized: "手指划过要补上的格子。放大后想挪，拖图纸那一块。")
+                : String(localized: "手指划过要补上的格子。放大后想挪，先切回「挪图」。")
         }
     }
 
@@ -975,8 +1120,8 @@ struct PartCellBrushView: View {
 
         // 图纸上这一块的原样，裁的就是**格子矩阵那一块**，不多留边。
         //
-        // 「对照图纸」把它摆在旁边那一栏，两栏共用同一个 `transform` —— 多留一圈的话
-        // 左右两边的同一格就错开了，而用户正是横着扫过去比这两边。
+        // 「对照图纸」把它摆在旁边那一块，两块共用同一个 `transform` —— 多留一圈的话
+        // 两块的同一格就错开了，而用户正是扫一眼比这两块。
         // 网格本身准不准是「量格子」那一屏的事，不在这儿看。
         let area = gridArea
         // 跟工作图自己那块相交一次：工作图是从**零件区**裁出来的，靠边的零件会伸到
@@ -1010,7 +1155,7 @@ struct PartCellBrushView: View {
         }
         image = cropped?.image
         imageRect = cropped?.rect ?? cropRect
-        // 裁不出来就只剩格子那一栏，「对照图纸」那个按钮跟着不出现。
+        // 裁不出来就只剩格子那一块，「对照图纸」那个按钮跟着不出现。
         // 记一笔：裁失败是确定性的（同一张图、同一块 bounds，重开几次都一样），
         // 不记的话事后无从查起（同 `PartsBoardStepView.loadOriginal`）。
         if cropped == nil {
@@ -1093,17 +1238,21 @@ struct PartCellBrushView: View {
 /// 几万个像素，重建一次是零点几毫秒，贴上去的时候按最终尺寸 + 最近邻放大，
 /// 边界照样是硬的。
 ///
-/// 画的是**零件本身**：有豆子的格子是它自己的颜色，空格透明、露出底下那块中灰板面
-/// （`PartCellBrushView.boardColor`）。板面刻意不是白的 —— 白豆子铺在白板面上，
-/// 「空格」和「白豆子」长得一模一样。
+/// 画的是**零件本身**：有豆子的格子是它自己的颜色，空格透明、露出底下那块板面
+/// （`PartCellBrushView.boardColor`）。板面刻意不是纯白、也刻意不是灰的 ——
+/// 白豆子铺在白板面上「空格」和「白豆子」长得一模一样，而灰板面会轮到灰豆子
+/// 分不出来（那一段色号最密），理由和实测数字见 `boardBase`。
 /// 所以擦掉一格就是「这儿空了」，跟拼豆板上看到的是同一件事 —— 早先这一层是
 /// 半透明盖在图纸原图上的，空格还得铺一层灰才看得出擦掉没有，而底下那颗豆子
 /// 一直还在图上，用户得盯着灰度差判断自己那一下生效没有。
 enum CellOverlayBitmap {
-    /// 有豆子的格子画多实。**这 5% 现在基本是历史包袱**：板面还是白的时候，透出来那一丝
-    /// 能给深色豆子勾一道亮边；换成中灰板面之后，同样 5% 只把纯黑豆子从 0.0 抬到 0.028，
-    /// 看不出来。真正在管格子边界的是 `gridLines` 那两道描边。留着只因为它无害
-    /// —— 哪天要让豆子颜色跟图纸严格对得上（比色时），把它改成 1 就行。
+    /// 有豆子的格子画多实。剩下那 5% 是板面透出来的一丝：在现在这块板面下，
+    /// 它让每颗豆子往板面方向漂**相对亮度最多 0.018、平均 0.009**（L\* 最多 5）——
+    /// 肉眼看不出，但**算「豆子跟空格差多少」时得带上它**
+    /// （`boardBase` 里那张表就是按 `0.95×豆子 + 0.05×板底` 合成后算的）。
+    ///
+    /// 留着只因为它无害。哪天要让豆子颜色跟图纸严格对得上（比色时），把它改成 1 就行，
+    /// 但那时候 `boardBase` 那张表要重算。
     private static let beadAlpha: Double = 0.95
 
     static func make(cells: [[PartCellFill]], colors: [String: Color]) -> UIImage? {
@@ -1116,9 +1265,10 @@ enum CellOverlayBitmap {
         for (key, color) in colors {
             table[key] = premultiplied(color, alpha: beadAlpha)
         }
-        // 色号查不到时的兜底。**不能是灰的** —— 中灰压在中灰板底上就是一格「空的」，
-        // 而查不到色号的格子恰恰是最需要用户看见、手工改掉的那一批。
-        // 挑一个没有哪个色号长这样的品红，它出现在屏幕上就等于「这格没认出来」。
+        // 色号查不到时的兜底。**不能挑一个跟板面差不多的颜色** —— 那样这一格看起来
+        // 就是「空的」，而查不到色号的格子恰恰是最需要用户看见、手工改掉的那一批。
+        // 挑一个没有哪个色号长这样的品红（对现在这块板面 ΔE 104），
+        // 它出现在屏幕上就等于「这格没认出来」。
         let fallback = premultiplied(Color(red: 0.85, green: 0.15, blue: 0.75), alpha: beadAlpha)
         // 空格全透明 —— 底下就是板面
         let empty: (UInt8, UInt8, UInt8, UInt8) = (0, 0, 0, 0)

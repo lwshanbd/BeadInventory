@@ -124,8 +124,11 @@ SwiftData  HistoryManager  AIServiceManager
 - `MoreView`: Settings, History, About navigation hub
 
 ### Data Files
-- `color.json`: MARD color codes → hex mappings
-- `convert.csv`: Cross-brand color code conversion table
+- **`allcolors.json`：运行时唯一的色表**（600 条、599 个不重复色值，跨品牌色号，
+  `InventoryManager.loadAllColorsFromJSON` 读它）。要算「豆子颜色」相关的任何东西，一律用这份。
+- `color.json`：**没有进 App 包，也没有任何 Swift 代码读它**（291 条 MARD 色号 → hex）。
+  只是份留在仓库里的参考数据。拿它做统计会得出跟屏幕不符的结论 —— 踩过一次。
+- `convert.csv`：跨品牌色号对照表。**同样没进 App 包、没有 Swift 读它**，跟 `color.json` 一样只是参考。
 
 ## Git 操作规则
 

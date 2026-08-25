@@ -581,6 +581,18 @@ class BackupManager {
                     continue
                 }
 
+                // 备份文件是用户手上的 JSON —— 手改过、早期版本导出的、传坏了的都有可能。
+                // 这是唯一一条能把非法色值送进 `CustomColor` 的路（界面输入那条在
+                // `CustomColorEditView` 里就卡死了 3/6 位纯十六进制）。挡在门口，
+                // 别等渲染时才发现：那时只剩一格颜色不对，看不出是哪条数据。
+                let hexBody = colorHex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+                guard hexBody.count == 3 || hexBody.count == 6,
+                      hexBody.allSatisfy(\.isHexDigit) else {
+                    AppLogger.shared.error("Backup", "custom_color_bad_hex",
+                                           metadata: ["code": colorCode, "hex": colorHex])
+                    continue
+                }
+
                 var createdAt = Date()
                 if let createdAtString = colorDict["createdAt"] as? String {
                     createdAt = ISO8601DateFormatter().date(from: createdAtString) ?? Date()

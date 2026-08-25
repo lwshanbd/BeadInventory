@@ -111,6 +111,56 @@
         }
       }
     },
+    "图纸原图 · 只能看，拖它挪画面" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pattern (view only) — drag it to pan"
+          }
+        }
+      }
+    },
+    "手指划过要去掉的格子。放大后想挪，拖图纸那一块。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe across the cells to remove. Zoomed in? Drag the pattern pane to move around."
+          }
+        }
+      }
+    },
+    "手指划过要去掉的格子。放大后想挪，先切回「挪图」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe across the cells to remove. Zoomed in? Switch back to Move to pan."
+          }
+        }
+      }
+    },
+    "手指划过要补上的格子。放大后想挪，拖图纸那一块。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe across the cells to fill. Zoomed in? Drag the pattern pane to move around."
+          }
+        }
+      }
+    },
+    "手指划过要补上的格子。放大后想挪，先切回「挪图」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe across the cells to fill. Zoomed in? Switch back to Move to pan."
+          }
+        }
+      }
+    },
     "图纸原图" : {
       "localizations" : {
         "en" : {
@@ -647,26 +697,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Drag to look around, pinch to zoom. To change cells, switch to Erase or Add above."
-          }
-        }
-      }
-    },
-    "手指划过要去掉的格子。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Swipe across the cells you want to remove."
-          }
-        }
-      }
-    },
-    "手指划过要补上的格子。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Swipe across the cells you want to add."
           }
         }
       }
