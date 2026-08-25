@@ -260,19 +260,37 @@ struct PurchaseItem: Identifiable, Codable, Equatable, Hashable {
 
 // MARK: - Color Extension
 extension Color {
+    /// 已经报过的非法 hex。`Color(hex:)` 常写在 `body` 第一行（比如 `BIColorSwatch`），
+    /// 列表里有一个坏色号 + 用户一滚，日志会按帧刷 —— `AppLogger` 是滚动的，
+    /// 几秒就能把导出诊断时真正要看的记录挤掉。同一个值只报一次。
+    @MainActor private static var reportedInvalidHex: Set<String> = []
+
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0
-        // **要扫到底，不能只看扫没扫动。** `scanHexInt64` 碰到非十六进制字符就停下、
-        // 把已经读到的那几位当结果 —— 而 trim 只去两头的非字母数字，字母混在中间是
-        // 留得住的。色表里真出现过 `#FECODF`（第 4 位是字母 O 不是零）：扫出 `0xFEC`，
-        // 位数还是 6，于是一路走到下面的 case 6，浅粉渲染成饱和蓝，不报错也不留日志。
+        // **要扫到底、位数也要对。**
+        //
+        // `scanHexInt64` 碰到非十六进制字符就停下、把已经读到的那几位当结果 ——
+        // 而 trim 只去两头的非字母数字，字母混在中间是留得住的。参考数据 `color.json`
+        // 里出现过 `#FECODF`（第 4 位是字母 O 不是零）；那份没进 App 包，所以**没有真的
+        // 渲染错过**，但同样的笔误落到运行时那份 `allcolors.json` 上就是：扫出 `0xFEC`、
+        // 位数仍是 6、一路走到 case 6，浅粉变饱和蓝，不报错也不留日志。
+        //
+        // 位数得单独判：`"FFFF"` 全是合法十六进制字符、扫得到底，但 3/6/8 之外的位数
+        // 一样是笔误，只判字符的话它会静默落到 default 变成一格黑。
         let scanner = Scanner(string: hex)
         let parsed = scanner.scanHexInt64(&int) && scanner.isAtEnd
+            && (hex.count == 3 || hex.count == 6 || hex.count == 8)
         if !parsed {
-            // 只可能来自色表里的笔误。debug 下当场炸，别让它在屏幕上蒙混过去。
-            assertionFailure("Color(hex:): 非法 hex '\(hex)'")
-            AppLogger.shared.error("Color", "invalid_hex", metadata: ["hex": hex])
+            // **不断言。** 这里收得到持久化和导入的数据（`SDCustomColor.colorHex` 的默认值
+            // 就是空串；备份恢复那条路见 `BackupManager`），拿用户的数据去炸开发机不对。
+            // 挡在门口是导入那边的事，这里只负责别装成没事。
+            MainActor.assumeIsolated {
+                if Self.reportedInvalidHex.insert(hex).inserted {
+                    AppLogger.shared.error("Color", "invalid_hex",
+                                           metadata: ["hex": hex, "len": "\(hex.count)"])
+                }
+            }
         }
         let a, r, g, b: UInt64
         switch parsed ? hex.count : 0 {
@@ -283,7 +301,11 @@ extension Color {
         case 8: // ARGB (32-bit)
             (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
         default:
-            (a, r, g, b) = (255, 0, 0, 0)
+            // **兜底别用黑。** 黑在这个 App 里是合法色号（`H7 #000000` 就在色表里），
+            // 一格黑看起来像「这个色号变成黑的了」，而不是「这条数据坏了」。
+            // 跟 `CellOverlayBitmap` 那个「没认出来」的兜底同一个思路：挑一个没有哪个
+            // 色号长这样的品红，它出现在屏幕上就等于「这儿的颜色没解析出来」。
+            (a, r, g, b) = (255, 217, 38, 191)
         }
         self.init(
             .sRGB,

@@ -101,6 +101,16 @@
         }
       }
     },
+    "图纸原图 · 只能看" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pattern (view only)"
+          }
+        }
+      }
+    },
     "图纸原图 · 只能看，拖它挪画面" : {
       "localizations" : {
         "en" : {
