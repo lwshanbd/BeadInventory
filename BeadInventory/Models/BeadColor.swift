@@ -263,9 +263,19 @@ extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
+        // **要扫到底，不能只看扫没扫动。** `scanHexInt64` 碰到非十六进制字符就停下、
+        // 把已经读到的那几位当结果 —— 而 trim 只去两头的非字母数字，字母混在中间是
+        // 留得住的。色表里真出现过 `#FECODF`（第 4 位是字母 O 不是零）：扫出 `0xFEC`，
+        // 位数还是 6，于是一路走到下面的 case 6，浅粉渲染成饱和蓝，不报错也不留日志。
+        let scanner = Scanner(string: hex)
+        let parsed = scanner.scanHexInt64(&int) && scanner.isAtEnd
+        if !parsed {
+            // 只可能来自色表里的笔误。debug 下当场炸，别让它在屏幕上蒙混过去。
+            assertionFailure("Color(hex:): 非法 hex '\(hex)'")
+            AppLogger.shared.error("Color", "invalid_hex", metadata: ["hex": hex])
+        }
         let a, r, g, b: UInt64
-        switch hex.count {
+        switch parsed ? hex.count : 0 {
         case 3: // RGB (12-bit)
             (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
         case 6: // RGB (24-bit)
