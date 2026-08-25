@@ -101,12 +101,12 @@
         }
       }
     },
-    "图纸原图 · 只能看" : {
+    "图纸原图 · 只能看，拖它挪画面" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pattern (view only)"
+            "value" : "Pattern (view only) — drag it to pan"
           }
         }
       }
@@ -687,26 +687,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Drag to look around, pinch to zoom. To change cells, switch to Erase or Add above."
-          }
-        }
-      }
-    },
-    "手指划过要去掉的格子。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Swipe across the cells you want to remove."
-          }
-        }
-      }
-    },
-    "手指划过要补上的格子。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Swipe across the cells you want to add."
           }
         }
       }
