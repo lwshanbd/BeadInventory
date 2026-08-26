@@ -381,8 +381,8 @@ struct PartCellBrushView: View {
     /// **别再往纯灰上调。** 真要更保险，得给空格加非颜色的线索（斜纹 / 棋盘格）
     /// 并让豆子完全不透明，不是继续挪这个值。
     private func boardBase(_ box: CGRect) -> some View {
-        Rectangle()
-            .fill(Self.boardColor)
+        Image(uiImage: Self.boardTile)
+            .resizable(resizingMode: .tile)
             .frame(width: box.width, height: box.height)
             .position(x: box.midX, y: box.midY)
     }
@@ -394,6 +394,38 @@ struct PartCellBrushView: View {
     ///
     /// `fileprivate` 而不是 `private`：`CellOverlayBitmap` 的文档按符号引用它。
     fileprivate static let boardColor = Color(red: 212 / 255, green: 230 / 255, blue: 211 / 255)
+
+    /// 板底那层马赛克，平铺出去就是一格一格的棋盘。
+    ///
+    /// 上面那张表的结论是「别再往纯灰上调，真要更保险就给空格加**非颜色**的线索」——
+    /// 这就是那条线索。空格从此不只是「某个浅色」，还是「有纹理的那一块」：
+    /// 哪怕用户挑了个跟板底几乎一样的浅色豆子铺满一片，两者仍然一眼分得开，
+    /// 因为豆子那一片是平的。顺带也更像桌上那块实物豆板 —— 板面本来就是一格一格的。
+    ///
+    /// **两格只差 9/255（约 3.5%）**，深的那格照样落在 `boardColor` 边上。
+    /// 这是刻意的：上面那张 ΔE 表是拿 `boardColor` 一个值算出来的，纹理要是拉开对比，
+    /// 深的那一格就成了表上没算过的第二种板底，「跟空格糊在一起」的色号数得重算。
+    /// 淡到这个程度，肉眼看是质感，算色差看还是同一个板底。
+    ///
+    /// 小方块**固定 6pt，不跟着格子走**：跟格子挂钩的话，用户捏合放大时纹理跟着放大，
+    /// 一格里就那么两三块，看着像豆子上带了花纹 —— 而这一屏他正在数「这一格有没有豆子」。
+    /// 固定尺寸的纹理放大缩小都只是「底」。
+    fileprivate static let boardTile: UIImage = {
+        let square: CGFloat = 6
+        let side = square * 2
+        let format = UIGraphicsImageRendererFormat.default()
+        // 硬边小方块，2x 足够；这张图只有 12pt 见方，再高只是白占内存
+        format.scale = 2
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
+            .image { ctx in
+                UIColor(boardColor).setFill()
+                ctx.fill(CGRect(x: 0, y: 0, width: side, height: side))
+                UIColor(red: 203 / 255, green: 221 / 255, blue: 202 / 255, alpha: 1).setFill()
+                ctx.fill(CGRect(x: 0, y: 0, width: square, height: square))
+                ctx.fill(CGRect(x: square, y: square, width: square, height: square))
+            }
+    }()
 
     /// 哪一块是哪一块。两块都是浅底加格线，不写字的话看一眼分不出来。
     private func paneCaption(_ text: LocalizedStringKey) -> some View {
