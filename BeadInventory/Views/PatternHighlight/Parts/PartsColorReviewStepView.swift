@@ -599,9 +599,30 @@ struct PartsColorReviewStepView: View {
                     // 底下 `.clipped()` 会把露到列表外的部分切掉。
                     let onScreen = rect.offsetBy(dx: gridOrigin.x - viewport.minX,
                                                  dy: gridOrigin.y - viewport.minY)
+                    // 这个框是压在花花绿绿的图纸格子上的，底下什么颜色都可能有：
+                    // 单独一道莫兰迪灰调的细边，碰上灰紫、藕粉那几格就整条看不见了，
+                    // 用户拖了半天不知道自己框到哪儿。所以画两道，紫的压在白的上面。
+                    //
+                    // **`stroke` 是居中描边，不是外描边**，两道叠出来的实际画面是：
+                    //     外 1 点白 ┊ 中 3 点紫 ┊ 内 1 点白
+                    // 三条各管一种底色：外面那圈白落在页面底色上（深色模式最跳），
+                    // 中间的紫管深豆子，里面那圈白管浅豆子和跟紫撞色的那几格。
+                    // **别"顺手"把白边改成 `.strokeBorder` 或挪到框外面** —— 里面那圈
+                    // 白正是藕紫色豆子唯一分得开的东西，挪走就退回改之前的样子，
+                    // 而且不报错、不掉断言，只有用户在图纸上盯半天。
+                    //
+                    // 白是字面量、不走主题：底下是图纸位图，不随深浅模式变，
+                    // 要的就是绝对白（同样写法见 `PartsRegionStepView` 的取景框）。
+                    //
+                    // 填充压得很淡（0.2），也不打算加深：这一屏是用来看颜色的，
+                    // 框住的格子被染一层紫就没法判断它到底是哪个色号了 ——
+                    //「框到哪儿了」交给上面那两道边说。填充按 Theme 的规矩用 `Fill`
+                    // 而不是 `Morandi`（后者的深色变体是提亮版，只给文字和描边用），
+                    // 代价是深色模式下框内从"淡淡发亮"变成"淡淡压暗"，方向反了一次。
                     Rectangle()
-                        .fill(Theme.ColorToken.Morandi.mauve.opacity(0.18))
-                        .overlay(Rectangle().stroke(Theme.ColorToken.Morandi.mauve, lineWidth: 1.5))
+                        .fill(Theme.ColorToken.Fill.mauve.opacity(0.2))
+                        .overlay(Rectangle().stroke(Color.white, lineWidth: 5))
+                        .overlay(Rectangle().stroke(Theme.ColorToken.Morandi.mauve, lineWidth: 3))
                         .frame(width: onScreen.width, height: onScreen.height)
                         .position(x: onScreen.midX, y: onScreen.midY)
                         .allowsHitTesting(false)
@@ -1569,11 +1590,27 @@ private struct CellSwatch: View {
         }
         .frame(width: 34, height: 34)
         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .stroke(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.divider,
-                        lineWidth: isSelected ? 3 : 1)
-        )
+        // 选中的那一圈同样压在图纸颜色上，画法和道理跟 `marqueeLayer` 那个框一模一样
+        //（为什么要两道、为什么白是字面量、为什么不能改成外描边，都写在那儿）：
+        //     外 1 点白 ┊ 中 3 点紫 ┊ 内 1 点白
+        //
+        // 两道都是居中描边，所以往外撑 2.5 点、也往里吃掉 2.5 点：
+        //
+        // - 往外：相邻两格各撑 2.5，合计 5 点，比 `columns` 和 `LazyVGrid` 的
+        //   spacing 6 窄，中间还剩 1 点底色 —— 框选拖出来的必然是连成一片的格子，
+        //   靠这 1 点缝才看得出是一颗一颗而不是一整块。横向 `.adaptive` 会把富余
+        //   摊给列、缝更宽，**卡死的是纵向那 6 点，改 spacing 这里要跟着改**。
+        // - 往里：能看见的豆子从 34 点缩到 29 点。明知的取舍 —— 贴着豆子那圈白会
+        //   干扰辨色，但不这么画，浅色豆子上就没有任何东西分得开选没选中。
+        .overlay {
+            let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+            if isSelected {
+                shape.stroke(Color.white, lineWidth: 5)
+                    .overlay(shape.stroke(Theme.ColorToken.Morandi.mauve, lineWidth: 3))
+            } else {
+                shape.stroke(Theme.ColorToken.Border.divider, lineWidth: 1)
+            }
+        }
         .contentShape(Rectangle())
     }
 }
