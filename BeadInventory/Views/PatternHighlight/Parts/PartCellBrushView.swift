@@ -430,9 +430,12 @@ struct PartCellBrushView: View {
             .image { ctx in
                 UIColor(boardColor).setFill()
                 ctx.fill(CGRect(x: 0, y: 0, width: side, height: side))
+                // **`blendMode: .normal` 不能省。** `ctx.fill` 默认走 `.copy` ——
+                // 那会把这个半透明的黑原样拷进去、alpha 直接丢掉，深格变成纯黑，
+                // 整块板底成了黑绿相间的棋盘格（亲眼见过）。
                 UIColor(white: 0, alpha: 0.035).setFill()
-                ctx.fill(CGRect(x: 0, y: 0, width: square, height: square))
-                ctx.fill(CGRect(x: square, y: square, width: square, height: square))
+                ctx.fill(CGRect(x: 0, y: 0, width: square, height: square), blendMode: .normal)
+                ctx.fill(CGRect(x: square, y: square, width: square, height: square), blendMode: .normal)
             }
     }()
 
