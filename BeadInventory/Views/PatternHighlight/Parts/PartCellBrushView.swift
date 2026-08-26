@@ -371,26 +371,31 @@ struct PartCellBrushView: View {
     ///     板底              相对亮度   ΔE<5   最近的那个
     ///     #8C8C8C 中灰       0.26      1     #89858C  ΔE 4.6
     ///     #D6D6D6 浅灰       0.67      5     #D9D9D9  ΔE 1.0   ← 看不见了
-    ///     #D4E6D3 极浅绿     0.75      0     #E0E3DA  ΔE 7.2   ← 现在这个
+    ///     #D4E6D3 极浅绿     0.75      0     #E0E3DA  ΔE 7.2   ← 现在这个（棋盘浅格）
+    ///     棋盘深格           0.69      0     #E0E3DA  ΔE 7.9   ← 见 `boardTile`
     ///
     /// 也就是说**从中灰往白走，越浅越危险**：近白那一段正是色表最密的地方（L* 80-90
     /// 占 116 个）。注意只有亮端这一头单调 —— 暗端也有 4~5 个撞车，最安全的是中间那一段，
     /// 但中灰整屏压得发闷，那是这次要躲开的。极浅绿比浅灰还亮，
     /// 撞车的色号却从 5 个降到 0 个 —— 亮和「分得开」并不冲突，冲突的是亮和**灰**。
     ///
-    /// **别再往纯灰上调。** 真要更保险，得给空格加非颜色的线索（斜纹 / 棋盘格）
-    /// 并让豆子完全不透明，不是继续挪这个值。
+    /// **别再往纯灰上调。** 更保险的路子是给空格加非颜色的线索、再让豆子完全不透明 ——
+    /// 前一半已经做了，见 `boardTile`（棋盘格）；后一半没做，`beadAlpha` 还是 0.95。
+    /// 真要再加保险，动的是那个，不是继续挪这个值。
     private func boardBase(_ box: CGRect) -> some View {
         Image(uiImage: Self.boardTile)
             .resizable(resizingMode: .tile)
+            // 小方块是硬边，跟这一屏的图纸和格子一样，不能让插值把它抹圆
+            .interpolation(.none)
             .frame(width: box.width, height: box.height)
             .position(x: box.midX, y: box.midY)
     }
 
     /// 板底：比白略深一档的极浅绿。为什么不是白的、为什么不能是灰的，见 `boardBase`。
     ///
-    /// 它跟 `CellOverlayBitmap.beadAlpha`、`gridLines` 那两道描边共担同一条不变量
-    /// ——「空格和白豆子必须分得出来」。**三个值要一起调**，动一个就得重看另外两个。
+    /// 它跟 `CellOverlayBitmap.beadAlpha`、`gridLines` 那两道描边、`boardTile` 那层棋盘
+    /// 共担同一条不变量 ——「空格和白豆子必须分得出来」。**四个值要一起调**，
+    /// 动一个就得重看另外三个。棋盘两格都从这个值派生，所以调它不会把棋盘调歪。
     ///
     /// `fileprivate` 而不是 `private`：`CellOverlayBitmap` 的文档按符号引用它。
     fileprivate static let boardColor = Color(red: 212 / 255, green: 230 / 255, blue: 211 / 255)
@@ -402,10 +407,13 @@ struct PartCellBrushView: View {
     /// 哪怕用户挑了个跟板底几乎一样的浅色豆子铺满一片，两者仍然一眼分得开，
     /// 因为豆子那一片是平的。顺带也更像桌上那块实物豆板 —— 板面本来就是一格一格的。
     ///
-    /// **两格只差 9/255（约 3.5%）**，深的那格照样落在 `boardColor` 边上。
-    /// 这是刻意的：上面那张 ΔE 表是拿 `boardColor` 一个值算出来的，纹理要是拉开对比，
-    /// 深的那一格就成了表上没算过的第二种板底，「跟空格糊在一起」的色号数得重算。
-    /// 淡到这个程度，肉眼看是质感，算色差看还是同一个板底。
+    /// **深格只是板底压一层 3.5% 的黑**，两格差不到 10/255。这是刻意的：上面那张 ΔE 表
+    /// 原本是拿 `boardColor` 一个值算出来的，纹理要是拉开对比，深的那一格就成了
+    /// 表上没算过的第二种板底。淡到这个程度，撞车的色号数照样是 0 个、最近的也在
+    /// ΔE 7.9 开外（已按同一套口径实算，见上面表里那一行）。
+    ///
+    /// 深格**从 `boardColor` 派生**、不写死：`boardColor` 的文档教人「四个值一起调」，
+    /// 而调完板底色回头改这里是最容易漏的一步 —— 漏了就是一浅绿一浅蓝的两色棋盘。
     ///
     /// 小方块**固定 6pt，不跟着格子走**：跟格子挂钩的话，用户捏合放大时纹理跟着放大，
     /// 一格里就那么两三块，看着像豆子上带了花纹 —— 而这一屏他正在数「这一格有没有豆子」。
@@ -413,15 +421,16 @@ struct PartCellBrushView: View {
     fileprivate static let boardTile: UIImage = {
         let square: CGFloat = 6
         let side = square * 2
+        // scale 跟着设备走（`default()` 就是）。别为了省内存降到 2x —— 3x 屏上
+        // 12pt 要占 36 像素，2x 的图等于被拉 1.5 倍，硬边正好糊在这一步；
+        // 而整张图 3x 也才 36×36 像素。
         let format = UIGraphicsImageRendererFormat.default()
-        // 硬边小方块，2x 足够；这张图只有 12pt 见方，再高只是白占内存
-        format.scale = 2
         format.opaque = true
         return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
             .image { ctx in
                 UIColor(boardColor).setFill()
                 ctx.fill(CGRect(x: 0, y: 0, width: side, height: side))
-                UIColor(red: 203 / 255, green: 221 / 255, blue: 202 / 255, alpha: 1).setFill()
+                UIColor(white: 0, alpha: 0.035).setFill()
                 ctx.fill(CGRect(x: 0, y: 0, width: square, height: square))
                 ctx.fill(CGRect(x: square, y: square, width: square, height: square))
             }
@@ -453,7 +462,8 @@ struct PartCellBrushView: View {
             // 反而把底下的格子盖住。
             //
             // **阈值 6 不是 9。** 9 是「板底还是白的、只描一道线」那会儿定的。现在
-            // 「这一格有没有豆子」全靠板底和豆子的颜色差（见 `boardBase`），格线只管
+            // 「这一格有没有豆子」靠的是板底和豆子的颜色差、外加板底那层棋盘纹理
+            // （见 `boardBase` / `boardTile`），格线只管
             // 「同色两格之间的缝」—— 也就是只在用户想精确点一格时才要紧，而那时候
             // 他本来就会放大。降到 6 是为了缩窄「一按对照图纸格线就没了」那个突变：
             // 分栏把长边砍一半，格子跟着缩（见 `panes`），原来刚过阈值的零件会掉到线以下。
@@ -475,7 +485,8 @@ struct PartCellBrushView: View {
                 // 黑线看不见黑豆子挨黑豆子的缝，而这两处恰恰都是最需要数格子的时候。
                 // **别把它当成「白豆子和空格的区别」。** 这里是整片铺线的，
                 // 空格四周同样有缝 —— 格线只解决「同色两格之间的缝」，
-                // 「这一格有没有豆子」从头到尾只靠颜色差，那是 `boardColor` 的事。
+                // 「这一格有没有豆子」从头到尾靠的是板底本身（颜色差 + 棋盘纹理），
+                // 那是 `boardColor` 和 `boardTile` 的事。
                 // 线宽跟着格子缩，别让它吃掉超过八分之一格 —— 6pt 的格子上
                 // 1pt 的线就占了六分之一，一片格子看着像一张网。
                 let hair = min(1.0, cw / 8)
@@ -1271,7 +1282,8 @@ struct PartCellBrushView: View {
 /// 边界照样是硬的。
 ///
 /// 画的是**零件本身**：有豆子的格子是它自己的颜色，空格透明、露出底下那块板面
-/// （`PartCellBrushView.boardColor`）。板面刻意不是纯白、也刻意不是灰的 ——
+/// （`PartCellBrushView.boardTile`，浅的那格就是 `boardColor`）。
+/// 板面刻意不是纯白、也刻意不是灰的 ——
 /// 白豆子铺在白板面上「空格」和「白豆子」长得一模一样，而灰板面会轮到灰豆子
 /// 分不出来（那一段色号最密），理由和实测数字见 `boardBase`。
 /// 所以擦掉一格就是「这儿空了」，跟拼豆板上看到的是同一件事 —— 早先这一层是
