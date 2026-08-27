@@ -45,9 +45,16 @@ struct PartsColorReviewStepView: View {
     /// **单图纸模式一律不给**：那边整张图纸就是唯一的一「块」，「这一格属于哪一块」
     /// 没有任何信息量，点开只会得到一张跟屏幕上一模一样的图。
     ///
-    /// 走完那一趟回来时，被重对过的那一块的 `cells` 是空的（格线一动，旧的就作废了），
+    /// **格线真动过的话**，走完那一趟回来时被重对的那一块 `cells` 是空的，
     /// 由流程容器补判 —— 这一屏靠 `cellsPresenceSignature` 发现它，见那里。
+    /// 没动就原样留着（`PartsCellSizeStepView.finishRegrid` 会比一遍）。
     var onRegridPart: ((UUID) -> Void)?
+    /// 整类改掉了一个色号（旧的 → 新的）。
+    ///
+    /// 容器要拿它去改调色板：补判沿用的就是那份调色板，不跟着改的话，用户在这一屏
+    /// 好不容易把一整类从 H8 纠正成 H7，回头重对一块格子，那一块又变回 H8 ——
+    /// 核对页上同一种颜色出现两个色号，而且没有任何提示。
+    var onGroupRecolored: ((PartCellFill, PartCellFill) -> Void)?
 
     @EnvironmentObject var inventoryManager: InventoryManager
 
@@ -211,6 +218,10 @@ struct PartsColorReviewStepView: View {
     private struct CellEdit {
         let cells: [(ref: CellRef, old: PartCellFill)]
         let newFill: PartCellFill
+        /// 这一步整类改掉了哪个色号。nil = 只改了其中几格。
+        /// 撤销要靠它把调色板也改回去 —— 只把格子放回原样、调色板还停在新色号上的话，
+        /// 「撤销」等于没撤干净，下次补判又会按新色号来。
+        let groupFill: PartCellFill?
     }
 
     private let columns = [GridItem(.adaptive(minimum: 34), spacing: 6)]
@@ -1487,11 +1498,15 @@ struct PartsColorReviewStepView: View {
             selection.removeAll()
             return
         }
+        // 这一整组都被改掉了 —— 底下那三个按钮在一格没选中时就是作用于整类，
+        // 框选把整组框完也算。这一组的身份变了，调色板得跟着走，见 `onGroupRecolored`。
+        let groupFill = groupCells.map { selection == Set($0) } == true ? selectedGroup : nil
         parts = updated
         selection.removeAll()
+        if let groupFill { onGroupRecolored?(groupFill, fill) }
         // 改过的格子已经不属于当前这一组了，铺出来的那片要跟着少掉
         setGroupCells(orderedCells(of: selectedGroup))
-        pushUndo(CellEdit(cells: edits, newFill: fill))
+        pushUndo(CellEdit(cells: edits, newFill: fill, groupFill: groupFill))
     }
 
     /// 撤销栈只留最近 5 步。一步最大是整组几万格的旧值（五万格约 2MB），
@@ -1516,6 +1531,8 @@ struct PartsColorReviewStepView: View {
             updated[ref.part].cells[ref.row][ref.col] = old
         }
         parts = updated
+        // 整类改的那一步还动过调色板，撤销要把它一并改回去（见 `CellEdit.groupFill`）
+        if let groupFill = last.groupFill { onGroupRecolored?(last.newFill, groupFill) }
         // 数据刚被改回去，用户在这之后新点 / 新框的那批格子可能已经不在当前这一组里了
         selection.removeAll()
         setGroupCells(orderedCells(of: selectedGroup))

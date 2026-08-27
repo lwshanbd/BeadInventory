@@ -110,11 +110,14 @@ struct PartsCellSizeStepView: View {
     ///
     /// 比最终状态而不是「有没有按过方向键」：推出去再推回来是常事，那种不该算改过。
     @State private var focusGridOnArrival: GridShape?
-    /// 已经翻到 `focusPartId` 那一块了。只做一次 —— 之后用户自己翻到哪儿是他的事。
-    @State private var didFocus = false
+    /// 已经翻到哪一块了。**记 id，不能记一个 Bool**：这一屏的 `@State` 在导航栈里活着，
+    /// 用户第一次正常走过「量格子」时 `focusPartId` 还是 nil，记 Bool 的话那一次就把
+    /// 「翻过了」用掉了 —— 之后从核对页指名回来，跳转会被静默跳过，落在上次停的那一块上，
+    /// 而 `focusGridOnArrival` 也永远是 nil（作废旧颜色那道防线跟着一起失效）。
+    @State private var focusedPartId: UUID?
 
     /// 一块零件的网格形状。判「动过没有」只看格线位置（`gridRect`）和行列数。
-    private struct GridShape: Equatable {
+    private struct GridShape {
         let rect: CGRect?
         let rows: Int
         let cols: Int
@@ -123,6 +126,20 @@ struct PartsCellSizeStepView: View {
             rect = part.gridRect
             rows = part.rows
             cols = part.cols
+        }
+
+        /// 真的挪过了吗。**刻意不给 `Equatable`**：光是进这一屏，`syncFrameToLattice`
+        /// 改一下 `frameOrigin` 就会触发 `writeBackCurrentPart` 把 `gridRect` 按
+        /// `rect.width / cols` 原样重算一遍写回去 —— 数学上幂等，浮点上差最后一两位。
+        /// 拿 `==` 比，「什么都没碰」也会被判成改过，用户手工改好的色号白清一次。
+        ///
+        /// 容差 1e-9：方向键一次至少推一个源图像素（归一化下 ≥ 2.5e-4），隔着五个数量级。
+        func moved(from old: GridShape) -> Bool {
+            if rows != old.rows || cols != old.cols { return true }
+            guard let a = rect, let b = old.rect else { return (rect == nil) != (old.rect == nil) }
+            let tolerance = 1e-9
+            return abs(a.minX - b.minX) > tolerance || abs(a.minY - b.minY) > tolerance
+                || abs(a.width - b.width) > tolerance || abs(a.height - b.height) > tolerance
         }
     }
 
@@ -259,9 +276,11 @@ struct PartsCellSizeStepView: View {
         }
         .navigationTitle("量格子")
         .navigationBarTitleDisplayMode(.inline)
-        // 翻到指定那一块。**必须比底下那两个 `.task` 先跑**（`onAppear` 先于 `task`）——
-        // 晚一步的话 `loadSample` 会先给第一个零件抠一次图，画布上闪一下别人的图。
-        .onAppear { focusRequestedPart() }
+        // 翻到指定那一块。**认 `focusPartId` 本身，不能只在 `onAppear` 里做一次**：
+        // 这一屏被 push 回来时 `onAppear` 发不发是 SwiftUI 的事，赌不得。
+        // `initial: true` 让它照样赶在底下那两个 `.task` 之前 —— 晚一步的话
+        // `loadSample` 会先给第一个零件白裁一张图，正确那一块的图也跟着晚出来。
+        .onChange(of: focusPartId, initial: true) { _, _ in focusRequestedPart() }
         // 工作图也算进 id：进来时先拿到的是低清兜底版，高清版在后台裁好之后才换上来。
         // 认零件的 **id** 而不是下标：删掉一个非末尾的零件时下标不变，后面那个顶上来 ——
         // 只认下标的话这一句不会重跑，画布上留着的还是已经删掉那个零件的图，
@@ -669,10 +688,16 @@ struct PartsCellSizeStepView: View {
 
     /// 翻到核对页指定的那一块，并记下它现在的网格长什么样。
     private func focusRequestedPart() {
-        guard !didFocus else { return }
-        didFocus = true
-        guard let focusPartId,
+        guard let focusPartId else {
+            // 这一趟结束了（容器把 `regridTarget` 收掉了）。这里也收干净 ——
+            // 不收的话，用户为**同一块**再回来一次时 id 没变，下面那道判断会以为已经翻过了。
+            focusedPartId = nil
+            focusGridOnArrival = nil
+            return
+        }
+        guard focusedPartId != focusPartId,
               let index = samples.firstIndex(where: { $0.id == focusPartId }) else { return }
+        focusedPartId = focusPartId
         sampleIndex = index
         focusGridOnArrival = GridShape(samples[index])
     }
@@ -686,12 +711,14 @@ struct PartsCellSizeStepView: View {
     /// 网格一格没动就不清颜色 —— 用户可能只是回来看一眼确认没问题，
     /// 白清一次等于把他之前一格一格改过的色号扔了。
     private func finishRegrid() {
-        guard let sample, let index = parts.firstIndex(where: { $0.id == sample.id }) else { return }
+        // **认 `focusPartId`，不认 `sample`。** 用户在这一趟里可以按 ← 翻到别的零件去，
+        // 认 `sample` 的话，他要重对的那一块格线动了却不作废（回核对页也不会补判，
+        // 因为它还有 cells），而被翻到的那个无关零件反倒被盖上「亲手对过」的确认标记。
+        let targetId = focusPartId ?? sample?.id
+        guard let targetId, let index = parts.firstIndex(where: { $0.id == targetId }) else { return }
         var updated = parts[index]
         updated.gridConfirmed = true
-        // 只对「核对页指名要重对的那一块」比对。用户可以按 ← 翻到别的零件去，
-        // 那时候拿它跟这一块进来时的样子比是在比两个不相干的东西。
-        if sample.id == focusPartId, let before = focusGridOnArrival, GridShape(updated) != before {
+        if let before = focusGridOnArrival, GridShape(updated).moved(from: before) {
             // 格线挪过之后每一格盖住的已经是别的豆子，旧色号整片作废。
             // 核对页那边会把空着的这一块重判一遍。
             updated.cells = []
@@ -1124,8 +1151,12 @@ struct PartsCellSizeStepView: View {
     /// 改格距的两条路（`setCellPitch` 走全局分支、`writeBack` 又绕开锁住的零件）合起来的
     /// 效果是「数字在动、格线在动、一个字节没写」，用户完全看不出自己白按了。
     ///
-    /// 注意只锁格距。推格线仍然可用：那是平移，不改行列数，`cells` 不会错位，
-    /// 而「这个零件的网格整体偏了半格」恰恰是判完色最可能想回来修的事。
+    /// 注意只锁格距，推格线没锁 ——「这个零件的网格整体偏了半格」恰恰是判完色最想回来修的事。
+    ///
+    /// **但推格线不是没有代价的**（这里以前写着「那是平移，不改行列数，`cells` 不会错位」，
+    /// 是错的：`applyGrid` 连行列数一起重算）。格线一挪，每格盖住的就是别的豆子了。
+    /// 目前只有「从核对页指名回来重对的那一块」会在离开时作废旧颜色（见 `finishRegrid`），
+    /// 在别的零件上推格线仍然是「屏幕上一切正常、照着拼是错的」。
     private var pitchLocked: Bool {
         sample?.hasCells == true
     }

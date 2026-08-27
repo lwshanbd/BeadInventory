@@ -272,7 +272,8 @@ struct PartsSheetFlowView: View {
                                     persist()
                                     regridTarget = id
                                     path = [.list, .cellSize]
-                                }
+                                },
+                                onGroupRecolored: { from, to in recolorPalette(from: from, to: to) }
                             )
                             .environmentObject(inventoryManager)
                             // 重对过格子的那一块回来时是空的，进这一屏先把它补判上。
@@ -768,6 +769,34 @@ struct PartsSheetFlowView: View {
                 }
                 self.path = [.list, .cellSize, .baseColor, .review]
             }
+        }
+    }
+
+    /// 用户在核对页把一整类改成了别的色号：调色板跟着改。
+    ///
+    /// **不改的话补判会把他的修正原样抹掉。** 核对页改的是 `parts` 里的格子，
+    /// 一个字节都不会回到 `palette`；而 `classifyMissingParts` 沿用的正是 `palette`。
+    /// 于是「把一整类从 H8 纠正成 H7」之后再回去重对一块格子，那一块又变回 H8 ——
+    /// 核对页上同一种颜色出现两个色号，用户得自己发现、自己再改一次。
+    private func recolorPalette(from: PartCellFill, to: PartCellFill) {
+        let fromRole = Self.paletteRole(of: from)
+        let toRole = Self.paletteRole(of: to)
+        guard fromRole != toRole else { return }
+        var changed = false
+        for index in palette.indices where palette[index].role == fromRole {
+            palette[index].role = toRole
+            // 这一条不再是自动匹配的结果了，那个距离没有意义
+            palette[index].matchDeltaE = nil
+            changed = true
+        }
+        if changed { dirty = true }
+    }
+
+    private static func paletteRole(of fill: PartCellFill) -> PartsPaletteEntry.Role {
+        switch fill {
+        case .empty: return .empty
+        case .anyColor: return .anyColor
+        case .code(let code): return .code(code)
         }
     }
 
