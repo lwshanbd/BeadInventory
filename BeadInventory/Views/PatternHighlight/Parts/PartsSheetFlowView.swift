@@ -68,6 +68,12 @@ struct PartsSheetFlowView: View {
 
     @State private var busy: String?
 
+    /// 核对页点「看零件 → 回去重对这一块」跳过去的那一块。
+    ///
+    /// 非 nil 时「量格子」那屏一进去就翻到它，主按钮也变成「对好了，回核对颜色」——
+    /// 用户是为一块回来的，让他把剩下四十八块再翻一遍才走得掉是说不过去的。
+    @State private var regridTarget: UUID?
+
     /// 这次会话真的改过东西。
     ///
     /// 后面几屏都是通过 binding 直接改这里的 @State，容器这边看不见「改了什么」，
@@ -228,6 +234,14 @@ struct PartsSheetFlowView: View {
                                 onContinue: {
                                     persist()
                                     path = [.list, .cellSize, .baseColor]
+                                },
+                                focusPartId: regridTarget,
+                                // 从核对页跳过来的才有回程按钮。**闭包在，就说明是那一趟**——
+                                // 用 `regridTarget != nil` 现算，别缓存成一个 Bool：
+                                // 那样退出去再进来会剩一个通向空处的按钮。
+                                onReturn: regridTarget == nil ? nil : {
+                                    persist()
+                                    path = [.list, .cellSize, .baseColor, .review]
                                 }
                             )
                         case .baseColor:
@@ -253,9 +267,16 @@ struct PartsSheetFlowView: View {
                                 onFinish: {
                                     persist()
                                     path = [.list, .cellSize, .baseColor, .review, .board]
+                                },
+                                onRegridPart: { id in
+                                    persist()
+                                    regridTarget = id
+                                    path = [.list, .cellSize]
                                 }
                             )
                             .environmentObject(inventoryManager)
+                            // 重对过格子的那一块回来时是空的，进这一屏先把它补判上。
+                            .task { await classifyMissingParts() }
                         case .board:
                             EmptyView()   // 上面已经拦掉了
                         }
@@ -283,6 +304,12 @@ struct PartsSheetFlowView: View {
             }
         }
         .task { await load() }
+        // 离开「量格子」就等于这一趟结束了，不管是按了回程按钮还是直接返回。
+        // 不收的话，用户下次自己走到「量格子」还会看到一个「对好了，回核对颜色」——
+        // 而他这次根本不是从核对页来的。
+        .onChange(of: path) { _, new in
+            if new.last != .cellSize { regridTarget = nil }
+        }
         // 切出去接个电话不该丢掉刚改的色号 —— 核对页的修改是直接落在 parts 上的，
         // 不等到「完成」那一下。
         .onChange(of: scenePhase) { _, phase in
@@ -741,6 +768,80 @@ struct PartsSheetFlowView: View {
                 }
                 self.path = [.list, .cellSize, .baseColor, .review]
             }
+        }
+    }
+
+    /// 进核对页时，把「有网格、却没有格子」的零件补判一遍。
+    ///
+    /// 这是用户报的那个 bug 的正面：他在核对页点开一块、跳回「量格子」重对格线，
+    /// 回来时那一块的旧格子已经作废清掉了（格线一挪，每格盖住的就是别的豆子），
+    /// **而新的没人去判** —— 那一块从此在所有色号组里一格都不占，看起来像是被吞了。
+    ///
+    /// 只补这几块，不碰别人：`runClassification` 是从头重算整张图纸并整个替换 `parts`，
+    /// 走那条路等于把另外四十八块手工核对过的色号全洗掉，为修一块赔上几天的活。
+    ///
+    /// 颜色身份沿用上一次判色留下的调色板（见 `PartsCellClassifier.reclassify`），
+    /// 补出来的这块跟旁边那些说的是同一套色号。
+    private func classifyMissingParts() async {
+        guard let work, let calibration, calibration.isUsable else { return }
+        let pending = parts.filter { $0.rows > 0 && $0.cols > 0 && !$0.hasCells }
+        guard !pending.isEmpty else { return }
+
+        busy = pending.count == 1
+            ? String(localized: "正在看这一块每格什么颜色…")
+            : String(localized: "正在看这 \(pending.count) 块每格什么颜色…")
+
+        let table = palette
+        let currentROI = roi
+        let colorSystem = project.colorSystem
+        let legend = project.beadUsage.map(\.colorCode)
+        let colors = inventoryManager.beadColors
+        let base = emptyHex
+        let any = anyColorHex
+        let judged = await Task.detached(priority: .userInitiated) { () -> [BeadPart] in
+            // 没有调色板可沿用（从没判过色 / 老数据）：这几块单独走一遍完整判色。
+            // 聚类只看这几块，色号可能跟别处对不齐 —— 但那是退化情形下的次优解，
+            // 比让用户面对一块永远空着的零件强。
+            guard !table.isEmpty else {
+                return PartsCellClassifier.classify(
+                    work: work, parts: pending, roi: currentROI, calibration: calibration,
+                    colorSystem: colorSystem, legendCodes: legend, availableColors: colors,
+                    emptyHex: base, anyColorHex: any
+                ).parts
+            }
+            return pending.map { part in
+                PartsCellClassifier.reclassify(work: work, part: part, palette: table) ?? part
+            }
+        }.value
+
+        busy = nil
+
+        // 按 id 写回，不按下标 —— 判色跑在后台的这几秒里，用户在别的屏（比如画笔）
+        // 完全可能已经删掉 / 补过零件了。
+        var updated = parts
+        var unreadable = 0
+        for part in judged {
+            guard let index = updated.firstIndex(where: { $0.id == part.id }) else { continue }
+            guard part.hasCells else {
+                // 图没抠出来。**也要写一片空格子进去**，否则下次进这一屏又会重判一遍，
+                // 用户每进一次核对页都白等一次转圈，而结果永远是空的。
+                unreadable += 1
+                updated[index].cells = Array(
+                    repeating: Array(repeating: PartCellFill.empty, count: max(part.cols, 0)),
+                    count: max(part.rows, 0)
+                )
+                continue
+            }
+            updated[index] = part
+        }
+        parts = updated
+        dirty = true
+        let saved = persist()
+        // 存不上会自己弹「这一步没存上」，那句话比这条要紧（同 `runClassification`）。
+        if saved, unreadable > 0 {
+            prompt = .classifyNote(String(
+                localized: "有 \(unreadable) 个零件的框里取不到图，它们的格子是空的。回零件清单看看这几个框是不是太小了。"
+            ))
         }
     }
 

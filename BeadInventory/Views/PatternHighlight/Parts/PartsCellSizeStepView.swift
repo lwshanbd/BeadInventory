@@ -73,7 +73,15 @@ struct PartsCellSizeStepView: View {
     /// 并整个替换 `parts` —— 只说「清掉这一个」是骗人，四十九个零件手工核对过的
     /// 颜色会一起没。单图纸只有一块，所以那边传自己的说法。
     var regridCost: LocalizedStringKey =
-        "这个零件判好的颜色会清掉。之后重判一次会把**整张图纸所有零件**的颜色一起重判。框和位置不动。"
+        "这个零件判好的颜色会清掉，回「核对颜色」时会自动把这一块重判一遍。别的零件不动，框和位置也不动。"
+    /// 一进来就翻到这一块。核对页点「看零件 → 回去重对这一块」时给 ——
+    /// 不给的话用户落在第一个零件上，还得自己在四十九块里翻到刚才那一块。
+    var focusPartId: UUID?
+    /// 「对好了，回核对颜色」。非 nil 时主按钮变成它。
+    ///
+    /// 用户是特地为某一块回来的，不该被逼着把剩下四十八块也一路翻到底 ——
+    /// 而这一屏原本唯一的出口是走到最后一个零件再进判色。
+    var onReturn: (() -> Void)?
 
     /// 当前正在看哪个零件（按面积从大到小）。大零件格线多，最容易看出没对齐。
     @State private var sampleIndex = 0
@@ -93,6 +101,30 @@ struct PartsCellSizeStepView: View {
     @State private var deletingPart: BeadPart?
     /// 正要为了改格子清掉这一块判好的颜色。见 `pitchLocked` 旁边那个按钮。
     @State private var unlockingPitch = false
+
+    /// 从核对页跳过来时，那一块的网格长什么样。
+    ///
+    /// 回去的时候拿它比一遍：网格**真的动过**就把这一块判好的颜色清掉，交给核对页重判。
+    /// 不清的话，格线挪过之后每一格盖住的已经是别的豆子，而 `cells` 里装的还是照旧格子
+    /// 判出来的色号 —— 屏幕上一切正常，用户照着拼出来是错的。
+    ///
+    /// 比最终状态而不是「有没有按过方向键」：推出去再推回来是常事，那种不该算改过。
+    @State private var focusGridOnArrival: GridShape?
+    /// 已经翻到 `focusPartId` 那一块了。只做一次 —— 之后用户自己翻到哪儿是他的事。
+    @State private var didFocus = false
+
+    /// 一块零件的网格形状。判「动过没有」只看格线位置（`gridRect`）和行列数。
+    private struct GridShape: Equatable {
+        let rect: CGRect?
+        let rows: Int
+        let cols: Int
+
+        init(_ part: BeadPart) {
+            rect = part.gridRect
+            rows = part.rows
+            cols = part.cols
+        }
+    }
 
     @State private var zoom: CGFloat = 1
     @State private var lastZoom: CGFloat = 1
@@ -227,6 +259,9 @@ struct PartsCellSizeStepView: View {
         }
         .navigationTitle("量格子")
         .navigationBarTitleDisplayMode(.inline)
+        // 翻到指定那一块。**必须比底下那两个 `.task` 先跑**（`onAppear` 先于 `task`）——
+        // 晚一步的话 `loadSample` 会先给第一个零件抠一次图，画布上闪一下别人的图。
+        .onAppear { focusRequestedPart() }
         // 工作图也算进 id：进来时先拿到的是低清兜底版，高清版在后台裁好之后才换上来。
         // 认零件的 **id** 而不是下标：删掉一个非末尾的零件时下标不变，后面那个顶上来 ——
         // 只认下标的话这一句不会重跑，画布上留着的还是已经删掉那个零件的图，
@@ -571,6 +606,13 @@ struct PartsCellSizeStepView: View {
                 // 才发现得了 —— 早先主按钮直接跳去判色，用户看完第一个就走了。
                 Button {
                     Task {
+                        if let onReturn {
+                            // 专门为一块回来的：确认 + 作废旧颜色一次写完，见 `finishRegrid`。
+                            finishRegrid()
+                            await refitAllParts()
+                            onReturn()
+                            return
+                        }
                         // 先记下「这个我亲手对过了」：从此再改格距、再自动对齐都不动它。
                         confirmCurrentPart()
                         if isLastSample {
@@ -585,8 +627,7 @@ struct PartsCellSizeStepView: View {
                         }
                     }
                 } label: {
-                    Label(isLastSample ? "对齐了，看每格什么颜色" : "对齐了，看下一个",
-                          systemImage: isLastSample ? "eyedropper" : "arrow.right")
+                    Label(mainActionTitle, systemImage: mainActionIcon)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -596,7 +637,7 @@ struct PartsCellSizeStepView: View {
 
             // 剩下的不想一个个看了，随时能走。最后一个零件上不显示 —— 那时它和上面
             // 那个按钮是同一件事，摆两个只会让人以为有区别。
-            if !isLastSample {
+            if onReturn == nil, !isLastSample {
                 Button("不看了，完成") {
                     Task {
                         await refitAllParts()
@@ -614,6 +655,49 @@ struct PartsCellSizeStepView: View {
 
     /// 是不是最后一个要看的零件
     private var isLastSample: Bool { sampleIndex >= samples.count - 1 }
+
+    /// 主按钮上写什么。三种情形三句话，说的都是**按下去会去哪儿**。
+    private var mainActionTitle: LocalizedStringKey {
+        if onReturn != nil { return "对好了，回核对颜色" }
+        return isLastSample ? "对齐了，看每格什么颜色" : "对齐了，看下一个"
+    }
+
+    private var mainActionIcon: String {
+        if onReturn != nil { return "checkmark" }
+        return isLastSample ? "eyedropper" : "arrow.right"
+    }
+
+    /// 翻到核对页指定的那一块，并记下它现在的网格长什么样。
+    private func focusRequestedPart() {
+        guard !didFocus else { return }
+        didFocus = true
+        guard let focusPartId,
+              let index = samples.firstIndex(where: { $0.id == focusPartId }) else { return }
+        sampleIndex = index
+        focusGridOnArrival = GridShape(samples[index])
+    }
+
+    /// 「对好了，回核对颜色」按下去时对当前这一块做的两件事，**合成一次写回**。
+    ///
+    /// 拆成 `confirmCurrentPart()` 再改一次 `parts[index]` 是不行的：两次都是
+    /// get→mutate→set，而第二次的 get 不保证拿得到第一次刚写进去的值
+    ///（`PartsBoardStepView.DragSession` 栽过一次），确认标记会被第二次原样盖回去。
+    ///
+    /// 网格一格没动就不清颜色 —— 用户可能只是回来看一眼确认没问题，
+    /// 白清一次等于把他之前一格一格改过的色号扔了。
+    private func finishRegrid() {
+        guard let sample, let index = parts.firstIndex(where: { $0.id == sample.id }) else { return }
+        var updated = parts[index]
+        updated.gridConfirmed = true
+        // 只对「核对页指名要重对的那一块」比对。用户可以按 ← 翻到别的零件去，
+        // 那时候拿它跟这一块进来时的样子比是在比两个不相干的东西。
+        if sample.id == focusPartId, let before = focusGridOnArrival, GridShape(updated) != before {
+            // 格线挪过之后每一格盖住的已经是别的豆子，旧色号整片作废。
+            // 核对页那边会把空着的这一块重判一遍。
+            updated.cells = []
+        }
+        parts[index] = updated
+    }
 
     /// 方向键摆成十字。原先四个键排成一行，上下左右全靠图标区分 ——
     /// 想往上推一格得先在四个一模一样的小圆里找哪个是「上」，找到了还按不准。

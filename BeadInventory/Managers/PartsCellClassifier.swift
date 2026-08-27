@@ -306,6 +306,61 @@ enum PartsCellClassifier {
                   count: max(part.rows, 0))
     }
 
+    // MARK: - 只重判一块
+
+    /// 只重判一个零件，颜色身份**沿用上一次判色留下的调色板**。
+    ///
+    /// 用在「用户回『量格子』把某一块的格线重对了一遍」之后：格线一动，那一块原来的
+    /// `cells` 就作废了（行列数都可能变），必须清掉。清掉之后如果不补判，用户回到核对页
+    /// 看到的就是「原来的没了、新的没出现」—— 那一块从此在所有色号组里一格都不占。
+    ///
+    /// **不重新聚类。** 单独拿这一块的颜色去认领色号，同一种豆子很可能认领到跟别的零件
+    /// 不一样的色号（聚类中心变了、图例匹配的结果也就变了），用户在核对页看到的是一张
+    /// 自相矛盾的表：同一个颜色，这块叫 H7，旁边那块叫 H8。沿用整张图纸那份调色板，
+    /// 「同一种颜色全图同一个色号」才成立。
+    ///
+    /// - Returns: `nil` = 没有调色板可沿用，或者这一块的图根本没抠出来。
+    ///   两种都得让调用方自己决定怎么跟用户说，不能在这儿默默返回一片空格子 ——
+    ///   那跟「这块真的全是背景」在数据上分不开。
+    static func reclassify(
+        work: PartsWorkImage,
+        part: BeadPart,
+        palette: [PartsPaletteEntry]
+    ) -> BeadPart? {
+        let table: [(lab: LabColor, fill: PartCellFill)] = palette.compactMap { entry in
+            guard let lab = GridCellSampler.lab(forHex: entry.hex) else { return nil }
+            switch entry.role {
+            case .code(let code): return (lab, .code(code))
+            case .anyColor: return (lab, .anyColor)
+            case .empty: return (lab, .empty)
+            }
+        }
+        guard !table.isEmpty, let modes = sampleModes(work: work, part: part) else { return nil }
+
+        // 一张图纸的量化色就那么几十上百种（是像素画），同一个量化色的答案必然相同 ——
+        // 记一份就不用为每一格都把调色板扫一遍。
+        var memo: [Int32: PartCellFill] = [:]
+        var updated = part
+        updated.cells = modes.map { row in
+            row.map { index -> PartCellFill in
+                // 没量到的格子当空。这里跟 `classify` 第四趟对齐：它对 `nil` 的那一格
+                // 也是直接判空，两边不一致的话，同一张图纸上补判过的那块会长得不一样。
+                guard index >= 0 else { return .empty }
+                if let hit = memo[index] { return hit }
+                let lab = QuantizedRGB.labTable[Int(index)]
+                var best = table[0].fill
+                var bestDE = Double.infinity
+                for entry in table {
+                    let de = GridCellSampler.deltaE(lab, entry.lab)
+                    if de < bestDE { bestDE = de; best = entry.fill }
+                }
+                memo[index] = best
+                return best
+            }
+        }
+        return updated
+    }
+
     // MARK: - 聚类
 
     private struct Cluster {
