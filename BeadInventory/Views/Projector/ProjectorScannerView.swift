@@ -15,19 +15,73 @@ import SwiftUI
 struct ProjectorScannerView: View {
     let onFound: (String) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var denied = AVCaptureDevice.authorizationStatus(for: .video) == .denied
+        || AVCaptureDevice.authorizationStatus(for: .video) == .restricted
+    /// 扫到了自家的码却解析不出来。用户听见「嘀」一声、页面一关、什么都没发生，
+    /// 会以为是扫描器坏了然后一遍遍重扫 —— 得当场告诉他改用手输。
+    @State private var unreadable = false
 
     var body: some View {
         NavigationStack {
-            ScannerRepresentable(onFound: onFound)
-                .ignoresSafeArea(edges: .bottom)
-                .navigationTitle("扫描二维码")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("取消") { dismiss() }
-                    }
+            Group {
+                if denied {
+                    permissionHint
+                } else {
+                    ScannerRepresentable(onFound: handle)
+                        .ignoresSafeArea(edges: .bottom)
+                        .overlay(alignment: .bottom) {
+                            if unreadable {
+                                Text("这个二维码识别不出来，请返回上一屏手动输入地址和配对码")
+                                    .font(.footnote)
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .background(.black.opacity(0.7), in: Capsule())
+                                    .padding(.bottom, Theme.Spacing.xl)
+                            }
+                        }
                 }
+            }
+            .navigationTitle("扫描二维码")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+            }
         }
+    }
+
+    /// 相机权限被拒时这一屏原本是一整块纯黑，没有解释也没有出路 —— 而扫码是
+    /// 连接投影仪的主路径，用户会以为投影仪的码有问题，对着墙反复挥手机。
+    private var permissionHint: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            Image(systemName: "camera.fill")
+                .font(.largeTitle)
+                .foregroundColor(Theme.ColorToken.Text.secondary)
+            Text("需要相机权限才能扫描二维码")
+                .font(.headline)
+            Text("也可以返回上一屏，手动输入投影仪屏幕上的地址和配对码")
+                .font(.subheadline)
+                .foregroundColor(Theme.ColorToken.Text.secondary)
+                .multilineTextAlignment(.center)
+            Button("打开设置") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(Theme.Spacing.xl)
+    }
+
+    private func handle(_ uri: String) {
+        guard ProjectorPairing(uri: uri) != nil else {
+            AppLogger.shared.error("Projector", "pairing_uri_invalid",
+                                   metadata: ["prefix": String(uri.prefix(24))])
+            unreadable = true
+            return
+        }
+        onFound(uri)
     }
 }
 
@@ -91,7 +145,8 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if session.isRunning { session.stopRunning() }
+        guard session.isRunning else { return }
+        Task.detached { [session] in session.stopRunning() }
     }
 
     func metadataOutput(_ output: AVCaptureMetadataOutput,

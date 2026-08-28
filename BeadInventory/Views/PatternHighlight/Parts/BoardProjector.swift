@@ -308,9 +308,14 @@ final class BoardProjector: ObservableObject {
     /// 值已经是归一化的（安卓端跟这边用同一套单位），所以不再换算，只做跟
     /// `setCorner` 一样的可用性检查 —— 拧成「8」字的四边形算出来的映射是乱的，
     /// 而这一份是从网络来的，本地拦不住就只能画出一团乱纹。
-    func applyRemoteQuad(_ next: ProjectorQuad) {
-        guard next.isUsable else { return }
+    /// 返回值是**采纳了没有**。调用方必须看：拒绝时两端已经不一致了，
+    /// 得把这边正确的那组顶回去，否则投影仪拿着一组被丢掉的角在画，
+    /// 而手机这边以为「两端一致」再也不发校准 —— 用户按遥控器角标乱跑，拉不回来。
+    @discardableResult
+    func applyRemoteQuad(_ next: ProjectorQuad) -> Bool {
+        guard next.isUsable else { return false }
         quad = next
+        return true
     }
 
     /// 微调选中的那个角。`dx`/`dy` 是外屏上的点数。

@@ -20,7 +20,7 @@
 //
 //  安卓端只显示序号比当前更大的帧，而且**重连不会重置**它记住的那个值。所以序号不能
 //  每次连接从 0 开始（那样重连之后推过去的帧会被全部丢掉，症状是「连上了但画面不更新」）。
-//  这里拿当前 Unix 秒当初值，跟安卓端自带的模拟客户端一个路数。
+//  光用 Unix 秒当初值也不够 —— 序号按帧递增，比墙钟快得多。见 `initialSequence()`。
 //
 
 import Combine
@@ -38,7 +38,10 @@ final class ProjectorLink: NSObject, ObservableObject {
         case connecting
         /// 连上了。`size` 是那边的显示尺寸，渲染要按它出图。
         case connected(size: CGSize, device: String)
-        /// 连不上，等下一次重试。`reason` 只给排查用，不往界面上摆。
+        /// 连不上。`reason` **会直接显示在「连接投影仪」那一屏上** ——
+        /// 写进去之前先当成界面文案审一遍，别往里塞 `error.localizedDescription`
+        /// （用户读不懂 "Socket is not connected"，也不需要知道「App 进入后台」）。
+        /// 排查用的细节走 `AppLogger`。
         case waiting(reason: String)
 
         var isConnected: Bool {
@@ -67,11 +70,15 @@ final class ProjectorLink: NSObject, ObservableObject {
     private var receiveLoop: Task<Void, Never>?
     private var reconnect: Task<Void, Never>?
     private var retryCount = 0
-    /// 用户主动停止过。为真时不再自动重连 —— 否则用户点了「断开」它自己又连回来。
+    /// 不处于自动重连模式。**初值为真**（还没开始过），另外用户点「断开」、凭据被拒、
+    /// 冷启动那次静默失败都会置真 —— 名字里的 byUser 只覆盖其中一种情况。
     private var stoppedByUser = true
     /// 这次是冷启动时的自动尝试。失败就安静收手，不进入「断了一直接」那套。
     private var isAutoAttempt = false
-    private var sequence: UInt32 = UInt32(Date().timeIntervalSince1970)
+    /// 握手之后解不开包的次数。密钥路径对不上时每次重连都会走到这里，
+    /// 无限重连是白转 —— 连着几次就该停下来让用户重新配对。
+    private var decryptFailures = 0
+    private var sequence: UInt32 = ProjectorLink.initialSequence()
     /// 最后一次收到对方任何一条消息的时刻。**判断连接死没死靠它，不靠「发送有没有报错」**。
     ///
     /// 投影仪那头的 App 被系统回收、或者用户重启了它，TCP 这边可能一点动静都没有：
@@ -83,10 +90,12 @@ final class ProjectorLink: NSObject, ObservableObject {
     private lazy var urlSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.waitsForConnectivity = false
-        // 这是**长连接**，不能按「请求」的超时来管：投影仪模式下用户按十分钟豆子才切
-        // 一次色号，中间本来就没有数据流动。设成 10 秒的话，系统会在一段安静之后把
-        // 连接判成超时掐掉 —— 表现正是「投着投着自己断了」。
-        // 存活由 5 秒一次的心跳保证（安卓端 15 秒收不到消息才断）。
+        // 这是**长连接**，不能按「请求」的超时来管。
+        //
+        // 实测：即使有 5 秒一次的心跳，这个值设成 10 秒仍然会「投着投着自己断」——
+        // 说明 URLSession 并不把我们的收发当成这条 WebSocket 的活动来重置它。
+        // 所以只能放大到远超一次使用时长的量级，存活交给心跳（安卓端 15 秒收不到消息才断）。
+        // 代价是握手也失去了时限，那一段单独用 `handshakeWithTimeout` 兜。
         config.timeoutIntervalForRequest = 3600
         return URLSession(configuration: config)
     }()
@@ -97,6 +106,19 @@ final class ProjectorLink: NSObject, ObservableObject {
 
     private enum Key {
         static let pairing = "projectorLink.pairing"
+        static let sequence = "projectorLink.lastSequence"
+    }
+
+    /// 帧序号的起点。
+    ///
+    /// 安卓端只显示序号更大的帧，而且**重连不会重置**它记住的值。光拿 Unix 秒当初值
+    /// 不够：序号是按帧递增的（去抖 120ms，最快约 8 帧/秒），比墙钟快得多，连投一阵子
+    /// 之后重启 App，新的初值完全可能落在上次的末值之下 —— 症状是「连上了但画面再也
+    /// 不更新」。所以把末值也存下来，取两者的大者。
+    private static func initialSequence() -> UInt32 {
+        let saved = UInt32(UserDefaults.standard.integer(forKey: Key.sequence))
+        let now = UInt32(max(0, Date().timeIntervalSince1970))
+        return max(now, saved &+ 1)
     }
 
     private override init() {
@@ -161,6 +183,7 @@ final class ProjectorLink: NSObject, ObservableObject {
     /// 对不上整帧丢弃。
     func sendFrame(png: Data, width: Int, height: Int) {
         sequence &+= 1
+        UserDefaults.standard.set(Int(sequence), forKey: Key.sequence)
         let payload = ProjectorBitmapFrame.encode(
             sequence: sequence, width: width, height: height, png: png
         )
@@ -168,13 +191,18 @@ final class ProjectorLink: NSObject, ObservableObject {
     }
 
     private func sendEncrypted(_ plaintext: Data, as type: ProjectorCipher.FrameType) {
-        guard let task, cipher != nil else { return }
+        guard let task, let cipher else { return }
         do {
-            // cipher 里有 nonce 计数器，必须原地改。安卓端会拒绝重复或倒退的 nonce。
-            let packet = try cipher!.seal(plaintext, as: type)
-            task.send(.data(packet)) { [weak self] error in
+            let packet = try cipher.seal(plaintext, as: type)
+            task.send(.data(packet)) { [weak self, weak task] error in
                 guard let error else { return }
-                Task { @MainActor in self?.handleFailure("发送失败：\(error.localizedDescription)") }
+                Task { @MainActor in
+                    // 认一下这条回调是不是当前连接的。URLSession 的发送回调可以在任务
+                    // cancel 之后才送达，而最短重连间隔只有 1 秒 —— 旧连接的迟到错误
+                    // 会掐掉刚接好的新连接，表现是「刚连上又断了，来回抖」。
+                    guard let self, let task, self.task === task else { return }
+                    self.handleFailure("发送失败：\(error.localizedDescription)")
+                }
             }
         } catch {
             handleFailure("加密失败：\(error)")
@@ -184,11 +212,14 @@ final class ProjectorLink: NSObject, ObservableObject {
     // MARK: - 连接
 
     private func startConnecting() {
-        guard let pairing,
-              let url = pairing.webSocketURL,
-              let credential = pairing.credential,
-              let ikm = pairing.handshakeIKM else {
-            state = .waiting(reason: "配对信息不完整")
+        guard let pairing, let credential = pairing.credential, let ikm = pairing.handshakeIKM else {
+            state = .waiting(reason: String(localized: "配对信息已失效，请重新扫码或输入配对码"))
+            return
+        }
+        // 用户把地址抄错（多打一个空格、少一位）时，说「配对信息不完整」是误导 ——
+        // 他的配对信息很完整，是地址不合法。
+        guard let url = pairing.webSocketURL else {
+            state = .waiting(reason: String(localized: "投影仪地址格式不正确，请核对屏幕上显示的地址"))
             return
         }
         teardown(keepState: true)
@@ -200,12 +231,22 @@ final class ProjectorLink: NSObject, ObservableObject {
 
         Task { [weak self] in
             do {
-                let (key, welcome) = try await Self.handshake(task: task, credential: credential, ikm: ikm)
+                let (key, welcome) = try await Self.handshakeWithTimeout(
+                    task: task, credential: credential, ikm: ikm)
                 guard let self, self.task === task else { return }
-                self.cipher = ProjectorCipher(sessionKey: key)
+                guard let cipher = ProjectorCipher(sessionKey: key) else {
+                    self.handleFailure("随机数生成失败")
+                    return
+                }
+                self.cipher = cipher
                 self.retryCount = 0
                 self.isAutoAttempt = false
+                self.decryptFailures = 0
                 self.lastInboundAt = Date()
+                AppLogger.shared.info("Projector", "connected", metadata: [
+                    "device": welcome.device,
+                    "size": "\(welcome.width)x\(welcome.height)"
+                ])
                 self.state = .connected(
                     size: CGSize(width: welcome.width, height: welcome.height),
                     device: welcome.device
@@ -221,6 +262,7 @@ final class ProjectorLink: NSObject, ObservableObject {
                 // 屏幕抄的码刚输进来就被自己后台的重试顶失效了，表现是「明明照着抄的却
                 // 一直连不上」。密钥被轮换掉时同理，重试也没有意义。
                 if case ProjectorLinkError.denied = error {
+                    AppLogger.shared.info("Projector", "pairing_denied")
                     self.stoppedByUser = true
                     self.isAutoAttempt = false
                     self.teardown(keepState: true)
@@ -239,13 +281,40 @@ final class ProjectorLink: NSObject, ObservableObject {
         let device: String
     }
 
+    /// 给握手加个时限。
+    ///
+    /// `timeoutIntervalForRequest` 为了长连接被放到了 3600 秒，于是握手这一步也没了
+    /// 时限：对方接受了 TCP 却不回 `welcome`（安卓端卡死、端口填错连到别的服务上、
+    /// 本地网络权限还没批），这个 await 就一直挂着 —— 心跳还没起来，重连也排不上，
+    /// 用户看到的是一个转不完的圈。
+    private static func handshakeWithTimeout(
+        task: URLSessionWebSocketTask, credential: String, ikm: Data
+    ) async throws -> (SymmetricKey, Welcome) {
+        try await withThrowingTaskGroup(of: (SymmetricKey, Welcome).self) { group in
+            group.addTask { try await handshake(task: task, credential: credential, ikm: ikm) }
+            group.addTask {
+                try await Task.sleep(for: .seconds(8))
+                throw ProjectorLinkError.badHandshake("投影仪没有回应")
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
+        }
+    }
+
     /// 握手的两条消息是**明文文本帧**，之后每一条都必须是二进制帧 ——
     /// 安卓端收到握手后的文本帧会直接断开连接。
     private static func handshake(
         task: URLSessionWebSocketTask, credential: String, ikm: Data
     ) async throws -> (SymmetricKey, Welcome) {
         var salt = Data(count: 16)
-        salt.withUnsafeMutableBytes { _ = SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
+        // 失败时 salt 会保持全零，而会话密钥就由它派生 —— 短码路径下 IKM 只有 6 位数字，
+        // salt 一固定，离线把整张表算出来是分钟级的事。不能当没发生。
+        let saltStatus = salt.withUnsafeMutableBytes {
+            SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!)
+        }
+        guard saltStatus == errSecSuccess else {
+            throw ProjectorLinkError.badHandshake("随机数生成失败(\(saltStatus))")
+        }
 
         let hello: [String: Any] = [
             "t": "hello",
@@ -266,8 +335,14 @@ final class ProjectorLink: NSObject, ObservableObject {
             throw ProjectorLinkError.denied
         }
         guard json["t"] as? String == "welcome",
-              let width = json["w"] as? Int, let height = json["h"] as? Int else {
+              let width = (json["w"] as? NSNumber)?.intValue,
+              let height = (json["h"] as? NSNumber)?.intValue else {
             throw ProjectorLinkError.badHandshake("缺少 welcome 字段")
+        }
+        // 安卓端在拿到 display metrics 之前会报 0×0。放过去的话：握手成功、chip 亮起
+        // 「投影中」、而每一帧都在 pushFrame 的尺寸检查处被丢掉，投影永远是黑的。
+        guard (1...16384).contains(width), (1...16384).contains(height) else {
+            throw ProjectorLinkError.badHandshake("投影仪报告的画面尺寸无效")
         }
         let key = ProjectorCipher.deriveSessionKey(ikm: ikm, salt: salt)
         return (key, Welcome(width: width, height: height, device: json["device"] as? String ?? ""))
@@ -297,18 +372,32 @@ final class ProjectorLink: NSObject, ObservableObject {
 
     private func handle(packet: Data) {
         lastInboundAt = Date()
-        guard cipher != nil else { return }
+        guard let cipher else { return }
         do {
-            let (type, plaintext) = try cipher!.open(packet)
+            let (type, plaintext) = try cipher.open(packet)
             guard type == .control,
                   let json = try JSONSerialization.jsonObject(with: plaintext) as? [String: Any],
                   let inbound = ProjectorInbound(json: json) else { return }
             if case .resize(let w, let h) = inbound, case .connected(_, let device) = state {
                 state = .connected(size: CGSize(width: w, height: h), device: device)
             }
+            decryptFailures = 0
             onInbound?(inbound)
         } catch {
-            handleFailure("解密失败：\(error)")
+            AppLogger.shared.error("Projector", "decrypt_failed",
+                                   metadata: ["error": "\(error)"])
+            decryptFailures += 1
+            // 握手过了却解不开包，最常见的原因是两端的密钥路径没选到同一条
+            // （见 `ProjectorPairing.handshakeIKM`）。那种情况下重连一万次也是同样的结果，
+            // 用户看到的是一个永远在「正在连接 / 连接中断」之间跳的界面。
+            if decryptFailures >= 3 {
+                stoppedByUser = true
+                teardown(keepState: true)
+                state = .waiting(reason: String(
+                    localized: "与投影仪的加密通道校验失败，请重新扫码或输入配对码。"))
+                return
+            }
+            handleFailure("解密失败")
         }
     }
 
@@ -336,6 +425,9 @@ final class ProjectorLink: NSObject, ObservableObject {
     // MARK: - 断线与重连
 
     private func handleFailure(_ reason: String) {
+        AppLogger.shared.error("Projector", "connection_failed", metadata: [
+            "reason": reason, "retry": "\(retryCount)"
+        ])
         teardown(keepState: true)
         guard !stoppedByUser else {
             state = .idle
@@ -344,12 +436,16 @@ final class ProjectorLink: NSObject, ObservableObject {
         if isAutoAttempt {
             // 冷启动那一次没连上：投影仪多半没开机。安静收手，别让界面上出现
             // 一个用户没要求过的失败提示。
+            AppLogger.shared.info("Projector", "auto_connect_gave_up",
+                                  metadata: ["reason": reason])
             isAutoAttempt = false
             stoppedByUser = true
             state = .idle
             return
         }
-        state = .waiting(reason: reason)
+        // 界面上只说「在重连」。具体是超时、被重置还是解密失败，用户既看不懂也
+        // 帮不上忙 —— 那些已经进日志了。
+        state = .waiting(reason: String(localized: "与投影仪的连接中断，正在重新连接"))
         scheduleReconnect()
     }
 
@@ -391,7 +487,7 @@ final class ProjectorLink: NSObject, ObservableObject {
             Task { @MainActor in
                 guard let self, !self.stoppedByUser else { return }
                 self.teardown(keepState: true)
-                self.state = .waiting(reason: "App 进入后台")
+                self.state = .waiting(reason: String(localized: "回到 App 后会自动重新连接"))
             }
         })
         lifecycleObservers.append(center.addObserver(

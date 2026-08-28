@@ -19,8 +19,8 @@
 //  ## 校准态反过来，一个字节画面都不推
 //
 //  校准那一屏上只有四个角标和几个对齐十字，没有任何图纸内容，所以整屏交给安卓端
-//  本地画，这边只发四个角。用户在投影仪上按一下遥控器，那边立刻重画，不用等一个
-//  网络往返 —— 他是趴在桌边盯着投影调的，慢一点就跟不上手。
+//  本地画，这边只发四个角、板子格数和高亮颜色。用户在投影仪上按一下遥控器，那边
+//  立刻重画，不用等一个网络往返 —— 他是趴在桌边盯着投影调的，慢一点就跟不上手。
 //
 //  ## 回声
 //
@@ -42,6 +42,15 @@ final class ProjectorSession: ObservableObject {
     private let link = ProjectorLink.shared
     private var cancellables: Set<AnyCancellable> = []
     private var renderTask: Task<Void, Never>?
+    /// 断线之后、真正把「外屏没了」告诉 App 之前的宽限。
+    ///
+    /// 没有它的时候：用户正趴在桌边拖四个角，Wi-Fi 抖一下 → `externalConnected` 变 false
+    /// → 校准页被关掉 → 呈现方的 `onDismiss` 判定「真被关掉了」→ `cancelCalibrating()`
+    /// 整组回滚。五秒后重连上了，而他对了两分钟的四个角回到了原点，界面上一个字都没有。
+    private var disconnectGrace: Task<Void, Never>?
+    /// 连着几帧出不了图。一次可能是偶然，连着两次说明这个环境下就是画不出来，
+    /// 得让投影仪那边黑屏 —— 留一张过期的、看起来完全正常的板，用户会照着它按豆子。
+    private var renderFailures = 0
 
     /// 最后一次两端已经一致的那套校准参数。收到遥控器的改动、或者自己发出去之后
     /// 都会更新它，值没变就不发 —— 幂等去重，不用管这次变化是谁触发的。
@@ -75,7 +84,7 @@ final class ProjectorSession: ObservableObject {
             .sink { [weak self] _ in self?.scheduleSync() }
             .store(in: &cancellables)
 
-        // 校准态、四个角、选中角、投什么颜色
+        // 校准态、四个角、选中角、板子格数、投什么颜色
         let projector = BoardProjector.shared
         projector.$isCalibrating
             .sink { [weak self] _ in self?.scheduleSync() }
@@ -89,6 +98,14 @@ final class ProjectorSession: ObservableObject {
         projector.$boardCols
             .sink { [weak self] _ in self?.scheduleSync() }
             .store(in: &cancellables)
+        projector.$boardRows
+            .sink { [weak self] _ in self?.scheduleSync() }
+            .store(in: &cancellables)
+        // 颜色也要订：它在 calibrationSignature 里，漏了的话用户在校准页换投影颜色
+        // 得等下一次拖角才顺带发出去，而他正站在投影仪旁边照着实物挑颜色。
+        projector.$highlight
+            .sink { [weak self] _ in self?.scheduleSync() }
+            .store(in: &cancellables)
     }
 
     // MARK: - 连接状态
@@ -96,6 +113,9 @@ final class ProjectorSession: ObservableObject {
     private func handle(state: ProjectorLink.State) {
         switch state {
         case .connected(let size, _):
+            disconnectGrace?.cancel()
+            disconnectGrace = nil
+            renderFailures = 0
             // 让现有的那套外屏逻辑认这台安卓投影仪：手机上那句「投屏中」、
             // 校准页开不开得出来，判据都是这两个值。
             BoardCastSession.shared.externalScreenSize = size
@@ -103,14 +123,30 @@ final class ProjectorSession: ObservableObject {
             lastSentMode = nil          // 新连接，模式和校准参数都要重发一遍
             lastCalibrationSignature = nil
             syncNow()
-        case .idle, .waiting, .connecting:
-            // 只在没有真外接屏时才收回来。同时接着 HDMI 和投影仪 App 的人极少，
-            // 但要是有，不该因为网络断了一下就把外屏那份也判成没接。
-            if UIScreen.screens.count <= 1 {
-                BoardCastSession.shared.externalConnected = false
-                BoardCastSession.shared.externalScreenSize = nil
+        case .idle:
+            // 用户主动断开，没什么好等的。
+            disconnectGrace?.cancel()
+            disconnectGrace = nil
+            clearExternalIfNoRealScreen()
+        case .waiting, .connecting:
+            // 断一下就重连上是常态（切个后台、Wi-Fi 抖一下）。这段时间里
+            // 校准页要保持开着 —— 关掉它等于把用户对了一半的角丢掉。
+            guard disconnectGrace == nil else { return }
+            disconnectGrace = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(20))
+                guard !Task.isCancelled else { return }
+                self?.disconnectGrace = nil
+                self?.clearExternalIfNoRealScreen()
             }
         }
+    }
+
+    /// 只在没有真外接屏时才收回来。同时接着 HDMI 和投影仪 App 的人极少，
+    /// 但要是有，不该因为网络断了就把外屏那份也判成没接。
+    private func clearExternalIfNoRealScreen() {
+        guard UIScreen.screens.count <= 1 else { return }
+        BoardCastSession.shared.externalConnected = false
+        BoardCastSession.shared.externalScreenSize = nil
     }
 
     // MARK: - 收遥控器
@@ -120,12 +156,21 @@ final class ProjectorSession: ObservableObject {
         switch inbound {
         case .quad(let values):
             guard let quad = ProjectorQuad(wireValues: values) else { return }
-            projector.applyRemoteQuad(quad)
-            // 两端此刻已经一致，记下来，别再把同一组值回发过去。
-            //
-            // 回发不只是浪费流量：用户长按方向键连续移动时，回发的是一两百毫秒前的
-            // 旧位置，安卓端收到会当成新的 calib 覆盖自己 —— 角标会往回跳。
-            lastCalibrationSignature = calibrationSignature()
+            if projector.applyRemoteQuad(quad) {
+                // 两端此刻已经一致，记下来，别再把同一组值回发过去。
+                //
+                // 回发不只是浪费流量：用户长按方向键连续移动时，回发的是一两百毫秒前的
+                // 旧位置，安卓端收到会当成新的 calib 覆盖自己 —— 角标会往回跳。
+                lastCalibrationSignature = calibrationSignature()
+            } else {
+                // 拧成「8」字被本地丢掉了。此刻投影仪画的是这组被拒的角，
+                // 这边是另一组 —— 必须立刻把正确的顶回去，不然用户在投影仪跟前
+                // 怎么按都拉不回来。
+                AppLogger.shared.warning("Projector", "remote_quad_rejected",
+                                         metadata: ["quad": "\(values)"])
+                lastCalibrationSignature = nil
+                syncNow()
+            }
         case .active(let corner):
             projector.activeCorner = corner
             lastCalibrationSignature = calibrationSignature()
@@ -133,8 +178,8 @@ final class ProjectorSession: ObservableObject {
             // 用户在投影仪上按了返回。跟手机上点「完成」一样收尾：存下来、退出校准。
             if projector.isCalibrating { projector.finishCalibrating() }
         case .calibrationRequest:
-            // 遥控器要求进校准。板子格数用当前这块的 —— 用户此刻在投影仪那头，
-            // 手机上弹个选单让他回来挑是最糟的做法。
+            // 遥控器要求进校准。格数沿用上次存的那套（`suggestedBoard: nil`）——
+            // 用户此刻在投影仪那头，手机上弹个选单让他回来挑是最糟的做法。
             guard !projector.isCalibrating, let screen = link.state.screenSize else { return }
             projector.beginCalibrating(suggestedBoard: nil, screen: screen)
         case .resize:
@@ -211,24 +256,59 @@ final class ProjectorSession: ObservableObject {
 
     /// 按安卓端报上来的尺寸 1:1 离屏渲染一张 PNG。
     ///
-    /// `scale` 必须显式设成 1：默认跟着手机屏幕走（3 倍），出来的图会是 5760×3240，
-    /// 既超了协议里 uint16 的宽高，也让安卓端拿到一张要缩放的图 —— 而缩放正是
-    /// 这个功能要避免的东西。
+    /// `scale` 必须显式设成 1：默认跟着手机屏幕走（3 倍），出来的图会是 5760×3240 ——
+    /// 安卓端只能把它缩回去，而缩放正是这个功能要避免的东西，顺带还白编码了九倍面积的 PNG。
     private func pushFrame(screen: CGSize) {
         let width = Int(screen.width.rounded())
         let height = Int(screen.height.rounded())
-        guard width > 0, height > 0, width <= 65535, height <= 65535 else { return }
+        guard width > 0, height > 0, width <= 65535, height <= 65535 else {
+            AppLogger.shared.error("Projector", "frame_size_invalid",
+                                   metadata: ["size": "\(width)x\(height)"])
+            return
+        }
 
         let renderer = ImageRenderer(
             content: BoardExternalDisplayView()
                 .frame(width: screen.width, height: screen.height)
+                // 离屏渲染默认走浅色，那样图例文字会整个反过来。投影画面是黑底的，
+                // 必须钉死深色。
                 .environment(\.colorScheme, .dark)
         )
         renderer.scale = 1
         renderer.isOpaque = true
-        guard let image = renderer.uiImage, let png = image.pngData() else { return }
-        link.sendFrame(png: png,
-                       width: Int(image.size.width.rounded()),
-                       height: Int(image.size.height.rounded()))
+        guard let image = renderer.uiImage else {
+            handleRenderFailure(stage: "uiImage", screen: screen)
+            return
+        }
+        renderFailures = 0
+
+        // 出图必须在主线程（ImageRenderer 的要求），但 PNG 编码是这一串里最贵的一步
+        // —— 一张 1920×1080 编下来几十上百毫秒。留在主线程的话，用户每切一次色号
+        // 手机就顿一下，而他正在那块屏上滑色号列表。
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let png = image.pngData() else {
+                await MainActor.run { self?.handleRenderFailure(stage: "pngData", screen: screen) }
+                return
+            }
+            let w = Int(image.size.width.rounded())
+            let h = Int(image.size.height.rounded())
+            await MainActor.run { self?.link.sendFrame(png: png, width: w, height: h) }
+        }
+    }
+
+    /// 出不了图时别装作没事。
+    ///
+    /// 安卓端按设计**保持最后一帧不动**，所以这里悄悄返回的后果是：链路活着、心跳正常、
+    /// 手机上写着「投影仪模式」，而墙上还亮着上一块板 —— 用户抬头照着它把豆子按进错的
+    /// 孔位，按几十颗才发现。宁可让那边黑屏。
+    private func handleRenderFailure(stage: String, screen: CGSize) {
+        renderFailures += 1
+        AppLogger.shared.error("Projector", "render_frame_failed", metadata: [
+            "stage": stage,
+            "screen": "\(Int(screen.width))x\(Int(screen.height))",
+            "count": "\(renderFailures)"
+        ])
+        guard renderFailures >= 2 else { return }
+        send(mode: .blank)
     }
 }

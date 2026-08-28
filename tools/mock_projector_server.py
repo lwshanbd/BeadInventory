@@ -17,6 +17,7 @@
 
 跑起来之后可以敲这些命令模拟遥控器：
 
+    calib                   模拟遥控器长按确定键，发 calibRequest 请求进校准
     corner <tl|tr|br|bl>    切换当前角，发 active
     move <dx> <dy>          当前角移动多少像素，发 quad
     exit                    模拟按返回键，发 exit
@@ -315,6 +316,9 @@ class MockProjector:
                 self.quad[index + 1] += float(rest[1]) / self.width
                 self.send_soon({"t": "quad", "q": self.quad})
                 print(f"→ quad {self.format_quad()}")
+            elif command == "calib":
+                self.send_soon({"t": "calibRequest"})
+                print("→ calibRequest")
             elif command == "exit":
                 self.send_soon({"t": "exit"})
                 print("→ exit")
@@ -328,7 +332,8 @@ class MockProjector:
                     f"板={self.cols}×{self.rows} 当前角={self.active}\nquad={self.format_quad()}"
                 )
             else:
-                print("命令：corner <tl|tr|br|bl> / next / move <dx> <dy> / exit / resize <w> <h> / state / quit")
+                print("命令：calib / corner <tl|tr|br|bl> / next / move <dx> <dy> / exit"
+                      " / resize <w> <h> / state / quit")
 
 
 # ---------- 预览页：把收到的画面显示出来 ----------

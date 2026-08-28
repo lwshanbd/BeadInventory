@@ -20,8 +20,9 @@
 //  一块屏幕，拿到的东西跟用户举起手机拍投影没有区别，落不成一份能导进别家 App 的图纸。
 //
 //  唯一的例外是**校准态**：那一屏上只有四个角标和几个对齐十字，没有任何图纸内容，
-//  所以整屏交给安卓端本地画，这边只传四个角的八个浮点数。这样遥控器按一下，那边
-//  立刻重画，不用等一个网络往返 —— 用户是趴在桌边盯着投影调的，慢一点就跟不上手。
+//  所以整屏交给安卓端本地画。这边传的是四个角的八个归一化坐标、当前选中的角、实物
+//  豆板的格数，以及高亮用什么颜色 —— 都是桌上那套摆法的属性，没有一格图纸内容。
+//  这样遥控器按一下，那边立刻重画，不用等一个网络往返 —— 用户是趴在桌边盯着投影调的。
 //
 //  ## 协议本身
 //
@@ -107,7 +108,16 @@ struct ProjectorPairing: Equatable, Codable, Sendable {
 /// nonce 是「4 字节会话随机前缀 + 8 字节大端递增计数器」。安卓端会**拒绝**前缀中途
 /// 变化、计数器重复或倒退的包，所以这个类型必须是连接级唯一的一份，
 /// 不要为了图省事在每次发送时新建。
-struct ProjectorCipher {
+/// **是 class 不是 struct**：它持有 nonce 计数器，而 AES-GCM 里同一密钥下 nonce 重用
+/// 是致命的（泄漏明文异或、允许伪造 tag）。值类型的话，下面这两行编译完全通过：
+///
+/// ```swift
+/// var c = cipher!                       // 比如想把加密挪出主线程
+/// let packet = try c.seal(payload, as: .bitmap)   // 计数器就在这儿分叉了
+/// ```
+///
+/// 引用语义让「一条连接一份计数器」成为类型的性质，而不是一条要人记住的纪律。
+final class ProjectorCipher {
     enum FrameType: UInt8 {
         case control = 0x01
         case bitmap = 0x02
@@ -126,10 +136,15 @@ struct ProjectorCipher {
     private var receivePrefix: Data?
     private var lastReceiveCounter: UInt64?
 
-    init(sessionKey: SymmetricKey) {
+    init?(sessionKey: SymmetricKey) {
         self.key = sessionKey
         var prefix = Data(count: 4)
-        prefix.withUnsafeMutableBytes { _ = SecRandomCopyBytes(kSecRandomDefault, 4, $0.baseAddress!) }
+        // 失败时前缀全零，重连之后又是同一串 —— 配上同样从零开始的计数器，
+        // 就是同一密钥下的 nonce 重用。
+        let status = prefix.withUnsafeMutableBytes {
+            SecRandomCopyBytes(kSecRandomDefault, 4, $0.baseAddress!)
+        }
+        guard status == errSecSuccess else { return nil }
         self.sendPrefix = prefix
     }
 
@@ -143,7 +158,7 @@ struct ProjectorCipher {
         )
     }
 
-    mutating func seal(_ plaintext: Data, as type: FrameType) throws -> Data {
+    func seal(_ plaintext: Data, as type: FrameType) throws -> Data {
         var nonceData = sendPrefix
         nonceData.append(contentsOf: withUnsafeBytes(of: sendCounter.bigEndian) { Data($0) })
         sendCounter += 1
@@ -161,7 +176,7 @@ struct ProjectorCipher {
         return packet
     }
 
-    mutating func open(_ packet: Data) throws -> (type: FrameType, plaintext: Data) {
+    func open(_ packet: Data) throws -> (type: FrameType, plaintext: Data) {
         guard packet.count >= 1 + 12 + 16 else { throw Failure.packetTooShort }
         let raw = packet[packet.startIndex]
         guard let type = FrameType(rawValue: raw) else { throw Failure.unknownFrameType(raw) }
@@ -169,11 +184,9 @@ struct ProjectorCipher {
         let nonceData = packet.subdata(in: packet.startIndex + 1 ..< packet.startIndex + 13)
         let prefix = nonceData.prefix(4)
         let counter = nonceData.suffix(8).reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
-        if let known = receivePrefix {
-            guard known == prefix else { throw Failure.noncePrefixChanged }
-        } else {
-            receivePrefix = Data(prefix)
-        }
+        // 只比对，不写入 —— 写入要等验签过了再说。在那之前钉死的话，塞得进流的
+        // 一个垃圾首包就能把前缀定成别的值，之后所有正经帧全部 noncePrefixChanged。
+        if let known = receivePrefix, known != prefix { throw Failure.noncePrefixChanged }
         if let last = lastReceiveCounter, counter <= last { throw Failure.nonceReplayed }
 
         let body = packet.subdata(in: packet.startIndex + 13 ..< packet.endIndex)
@@ -183,6 +196,7 @@ struct ProjectorCipher {
             tag: body.suffix(16)
         )
         let plaintext = try AES.GCM.open(box, using: key, authenticating: Data([raw]))
+        receivePrefix = Data(prefix)
         lastReceiveCounter = counter
         return (type, plaintext)
     }
@@ -254,8 +268,10 @@ enum ProjectorOutbound {
     case mode(ProjectorDisplayMode)
     /// 校准参数。安卓端拿它本地画角标，这边不推位图。
     case calibration(quad: [Double], active: ProjectorCorner, cols: Int, rows: Int, paintStyle: String, paintHex: String)
-    /// 画面底部那行字。**是拼好的完整句子** —— 安卓端不知道自己在为哪种模式服务，
-    /// 也不该知道，跟外屏那份 caption 的约定一致。
+    /// 画面底部那行字。**iOS 侧目前不发**：推过去的位图里 `BoardExternalDisplayView`
+    /// 已经画好了同一行图例，安卓端再画一遍就是上下两行重复的字（见
+    /// `ProjectorSession.syncNow`）。协议里留着这一路，是为了将来位图不带图例的场景；
+    /// 真要用时传的必须是拼好的完整句子 —— 安卓端不知道自己在为哪种模式服务。
     case caption(String)
     case ping(Int)
 
