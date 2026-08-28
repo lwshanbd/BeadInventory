@@ -51,7 +51,7 @@ struct BoardProjectorSheet: View {
 
     /// 自己填过的板子格数。跟多零件模式那一屏读的是同一份偏好 ——
     /// 桌上那块板就一块，在哪儿填的不该影响另一处点不点得到。
-    @AppStorage("boardCustomSizes") private var customSizes = ""
+    @AppStorage(BeadBoardSize.recentsKey) private var customSizes = ""
     /// 开着「自定义尺寸」那一屏
     @State private var showingCustomSize = false
 
@@ -106,26 +106,26 @@ struct BoardProjectorSheet: View {
             BoardSizeCustomSheet(
                 initial: BeadBoardSize(cols: projector.boardCols, rows: projector.boardRows)
             ) { size in
-                customSizes = BeadBoardSize.remember(size, in: customSizes)
-                projector.setBoardSize(size)
+                pick(size)
             }
         }
         .onAppear { projector.beginCalibrating(suggestedBoard: suggestedBoard, screen: screen) }
-        // 划走（没点「完成」）跟点「取消」是同一件事。角标也在这里收掉 ——
-        // 留着的话，人照着画面按豆子会把那些彩色亮块当成图纸的一部分。
-        // 换成格子画之后更要紧了：角标跟真正要按豆子的格子长得一模一样，只有颜色不同。
-        // （点「完成」时 `finishCalibrating` 已经收掉了，下面这个 if 不成立。）
-        .onDisappear {
-            // 「自定义尺寸」那一屏盖在上面时不算划走 —— 底下这一屏还在，用户只是去填个数。
-            // 真在那时候还原，他对了半天的四个角就没了，而且回来也不会重新 beginCalibrating。
-            guard !showingCustomSize else { return }
-            if projector.isCalibrating { projector.cancelCalibrating() }
-        }
-        // 中途拔线：这一屏已经没有可对的东西了，关掉。
-        // 还原不在这儿做 —— `sceneDidDisconnect` 里已经同步调过 `cancelCalibrating()`，
-        // 等这个 onChange 派发到时 `isCalibrating` 早就是 false 了。
+        // 划走（没点「完成」）跟点「取消」是同一件事，角标也得收掉 —— 留着的话，
+        // 人照着画面按豆子会把那些彩色亮块当成图纸的一部分（角标跟真正要按豆子的格子
+        // 长得一模一样，只有颜色不同）。
+        //
+        // **但还原不在这一屏做**：这儿的 `onDisappear` 分不清「真被关掉了」和「只是被
+        // 『自定义尺寸』盖住了」，分错就把用户对了半天的四个角还原掉。所以收尾挂在
+        // 呈现方那个 sheet 的 `onDismiss` 上（PartsBoardStepView / SinglePatternHighlightStepView），
+        // 那儿只会在这一屏真的关掉时跑一次。
+        // 中途拔线：这一屏已经没有可对的东西了，关掉。子 sheet 也一起收 —— 不然用户
+        // 对着一块已经不存在的屏幕接着填格数，填完那个值没有快照能还原，也不落盘。
+        // 还原同样不在这儿做：`sceneDidDisconnect` 里已经同步调过 `cancelCalibrating()`。
         .onChange(of: session.externalConnected) { _, connected in
-            if !connected { dismiss() }
+            if !connected {
+                showingCustomSize = false
+                dismiss()
+            }
         }
     }
 
@@ -142,7 +142,7 @@ struct BoardProjectorSheet: View {
                     BoardSizePicker(
                         current: BeadBoardSize(cols: projector.boardCols, rows: projector.boardRows),
                         recents: BeadBoardSize.decodeList(customSizes),
-                        onPick: { projector.setBoardSize($0) },
+                        onPick: { pick($0) },
                         onCustom: { showingCustomSize = true }
                     )
                 } label: {
@@ -160,6 +160,15 @@ struct BoardProjectorSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
             mismatchNote
         }
+    }
+
+    /// 换一块板：格数立刻生效（外屏跟着重新分格），同时记进「最近使用」。
+    ///
+    /// 格数本身属于「取消」要还原的那一组（见 `BoardProjector` 的 snapshot），
+    /// 但「最近使用」故意不还原 —— 桌上确实有这块板，跟这次对齐成没成没关系。
+    private func pick(_ size: BeadBoardSize) {
+        customSizes = BeadBoardSize.remember(size, in: customSizes)
+        projector.setBoardSize(size)
     }
 
     /// 这一屏摆的板跟这里存的格数对不上时说一声。

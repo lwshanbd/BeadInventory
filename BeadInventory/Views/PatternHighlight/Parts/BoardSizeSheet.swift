@@ -25,6 +25,12 @@ import SwiftUI
 
 /// 常见规格 + 自己填过的 + 「自定义…」。多零件模式的两个菜单和投影仪校准页共用这一份，
 /// 三处列出来的板必须是同一批 —— 用户在其中一处填的板，另外两处点不到就等于没记住。
+///
+/// **只能放在 `Menu { }` 里**：body 返回的是一串平铺的按钮，塞进 VStack 会画出一堆散按钮。
+///
+/// 分组用 `Divider` 不用 `Section`：这份内容有一个调用方（「全部重排成」）本身已经
+/// 包在一个 Section 里了，菜单里 Section 套 Section 各版本渲染不一致 ——
+/// 轻则丢标题，重则整组不显示，而「最近使用」不显示 = 用户以为 App 把他填的板忘了。
 struct BoardSizePicker: View {
     /// 已经选中的那个（打勾用）。没有就传 nil。
     var current: BeadBoardSize?
@@ -38,12 +44,12 @@ struct BoardSizePicker: View {
             button(size)
         }
         if !recents.isEmpty {
-            Section("最近使用") {
-                ForEach(recents) { size in
-                    button(size)
-                }
+            Divider()
+            ForEach(recents) { size in
+                button(size)
             }
         }
+        Divider()
         Button {
             onCustom()
         } label: {
@@ -70,6 +76,8 @@ struct BoardSizeCustomSheet: View {
     /// 打开时先填上现在这块板的格数 —— 大多数人是来改一个数的（100×100 想改成 100×50），
     /// 不是从零填两个。
     let initial: BeadBoardSize
+    /// **在 `dismiss()` 之前调用。** 要接弹窗的调用方得自己把动作推到 `onDismiss`，
+    /// 在这儿挂弹窗会被正在关闭的 sheet 吞掉（见 `PartsBoardStepView.applyCustomSize`）。
     let onCommit: (BeadBoardSize) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -133,6 +141,9 @@ struct BoardSizeCustomSheet: View {
     /// 框里预填的是现在这块板（多半是 50），而人来这儿就是要换成别的数。不选中的话，
     /// 光标停在数字中间，打「60」得到的是「6050」—— 他得先按两下退格，
     /// 而数字键盘上退格在右下角，跟数字键长得不一样，找一下才看得见。
+    ///
+    /// 直接设选区，不用 `selectAll(_:)`：后者是编辑菜单的那个动作，会连带弹出
+    /// 「拷贝 / 粘贴」气泡盖在框上 —— 而这里要的只是选中。
     private var fields: some View {
         HStack(alignment: .top, spacing: Theme.Spacing.md) {
             field(title: String(localized: "列数"), text: $colsText, field: .cols)
@@ -146,7 +157,10 @@ struct BoardSizeCustomSheet: View {
             for: UITextField.textDidBeginEditingNotification)) { note in
             guard let field = note.object as? UITextField else { return }
             // 系统在这个通知之后还会自己摆一次光标，同步选中会被它盖掉。
-            DispatchQueue.main.async { field.selectAll(nil) }
+            DispatchQueue.main.async {
+                field.selectedTextRange = field.textRange(from: field.beginningOfDocument,
+                                                          to: field.endOfDocument)
+            }
         }
     }
 

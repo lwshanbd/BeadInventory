@@ -66,7 +66,7 @@ struct PartsBoardStepView: View {
     @AppStorage("partsBoardSpacing") private var preferredSpacing: BoardSpacing = .standard
     /// 自己填过的板子格数（最近三块，一行 `"60x40,29x29"`）。手上有哪几块板是跟着人走的，
     /// 不属于任何一张图纸 —— 所以在偏好里，投影仪校准页读的也是这一份。
-    @AppStorage("boardCustomSizes") private var customSizes = ""
+    @AppStorage(BeadBoardSize.recentsKey) private var customSizes = ""
 
     @State private var boardIndex = 0
     /// 当前选中的那个「摆放」（不是零件本身 —— 同一个零件只会被摆一次，但选中态属于板上那一份）
@@ -280,7 +280,12 @@ struct PartsBoardStepView: View {
         .onDisappear { BoardCastSession.shared.stop() }
         // 板子和外屏尺寸都得有才对得起来。按钮本来就只在接了外屏、且这一屏有板子时
         // 才画得出来，所以这里取不到值的情况只剩「刚好在这一瞬间拔了线」。
-        .sheet(isPresented: $showingProjectorSheet) {
+        // 校准的收尾挂在呈现方：那一屏自己 `onDisappear` 判不准「是真被关掉了，还是
+        // 只是被『自定义尺寸』盖住了」，判错的代价是外屏上的角标再也不消失（而角标跟
+        // 真正要按豆子的格子长得一模一样），下次进去也不会重新拍快照。
+        .sheet(isPresented: $showingProjectorSheet, onDismiss: {
+            if BoardProjector.shared.isCalibrating { BoardProjector.shared.cancelCalibrating() }
+        }) {
             if let board = currentBoard, let screen = cast.externalScreenSize {
                 // 多零件模式下这块板就是桌上那块实物豆板，格数直接填好，用户少答一个问题
                 BoardProjectorSheet(suggestedBoard: board.size, screen: screen)
@@ -367,7 +372,10 @@ struct PartsBoardStepView: View {
                         BoardSizePicker(
                             recents: BeadBoardSize.decodeList(customSizes),
                             onPick: { addBoard(size: $0) },
-                            onCustom: { customSizeTarget = .addBoard }
+                            // 清掉上一次的残留：那一份只在 onDismiss 里消费，万一哪次
+                            // 没消费成（sheet 开着时整条流程被拆掉），下次划走取消
+                            // 会替它执行上一次的动作 —— 凭空多一块板，或者弹一个没人要的重排确认。
+                            onCustom: { pendingCustomSize = nil; customSizeTarget = .addBoard }
                         )
                     } label: {
                         Label("加一块", systemImage: "plus")
@@ -466,7 +474,7 @@ struct PartsBoardStepView: View {
                     onPick: { size in
                         repackTarget = RepackTarget(size: size, spacing: spacing, pickedSpacing: false)
                     },
-                    onCustom: { customSizeTarget = .repack }
+                    onCustom: { pendingCustomSize = nil; customSizeTarget = .repack }
                 )
             }
             if let board = currentBoard, !board.placements.isEmpty {
@@ -1130,6 +1138,8 @@ struct PartsBoardStepView: View {
         repackTarget = nil
         savedCols = target.size.cols
         savedRows = target.size.rows
+        // 理由同 `addBoard` —— 记在用户按下「重新排」之后，不记在他填完数的时候。
+        customSizes = BeadBoardSize.remember(target.size, in: customSizes)
         // 只有用户亲手选了松紧才动偏好，理由见 `preferredSpacing` 和 `RepackTarget.pickedSpacing`。
         // 写在确认之后：弹窗上点「取消」不该改任何东西。
         if target.pickedSpacing { preferredSpacing = target.spacing }
@@ -1219,7 +1229,6 @@ struct PartsBoardStepView: View {
         guard let pending = pendingCustomSize else { return }
         pendingCustomSize = nil
         let size = pending.size
-        customSizes = BeadBoardSize.remember(size, in: customSizes)
         switch pending.target {
         case .addBoard:
             addBoard(size: size)
@@ -1234,6 +1243,10 @@ struct PartsBoardStepView: View {
         let used = spacing
         savedCols = size.cols
         savedRows = size.rows
+        // 「最近使用」记的是**真的用上了哪几块板**，不是「填过哪几个数」：填完在确认弹窗上
+        // 点了取消的那个尺寸不该被置顶，而菜单里点已有的那块该挪到最前。所以记在这儿，
+        // 不记在填数那一屏关掉的时候。常见规格 `remember` 会自己跳过。
+        customSizes = BeadBoardSize.remember(size, in: customSizes)
         boards.append(PartsBoard(size: size))
         boardSpacing = used
         switchTo(boards.count - 1)

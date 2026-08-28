@@ -1,6 +1,66 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "%@ · %lld 格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · %lld cells"
+          }
+        }
+      }
+    },
+    "列数" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Columns"
+          }
+        }
+      }
+    },
+    "列数和行数需在 %lld - %lld 之间" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Columns and rows must be between %lld and %lld"
+          }
+        }
+      }
+    },
+    "行数" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rows"
+          }
+        }
+      }
+    },
+    "自定义…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom…"
+          }
+        }
+      }
+    },
+    "自定义尺寸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom size"
+          }
+        }
+      }
+    },
     "亮的格子什么颜色" : {
       "localizations" : {
         "en" : {
