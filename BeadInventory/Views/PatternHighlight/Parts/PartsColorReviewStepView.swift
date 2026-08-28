@@ -306,7 +306,8 @@ struct PartsColorReviewStepView: View {
                 selectedColors: $pickedCodes,
                 colorSystem: colorSystem,
                 suggestedColors: patternColors,
-                focusColor: currentGroupColor
+                focusColor: currentGroupColor,
+                layout: .grid
             )
             .environmentObject(inventoryManager)
         }

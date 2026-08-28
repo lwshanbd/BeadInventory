@@ -8,6 +8,13 @@
 import SwiftUI
 
 struct ColorSelectionView: View {
+    /// 列表怎么铺：品牌管理那边选一批颜色建品牌，认名字比认色块更要紧，用一行一个的老样子；
+    /// 拼图模式核对/改色号，图上格子挨得密，用户要的是一眼扫过去比色块，改成网格更省地方。
+    enum Layout {
+        case list
+        case grid
+    }
+
     @Binding var selectedColors: Set<String>
     var colorSystem: ColorSystem = .mard
     /// 优先列在最上面的一组颜色。多零件模式核对颜色时传进来的是
@@ -20,6 +27,7 @@ struct ColorSelectionView: View {
     /// 打开时定位到哪个色号所在的系列。上面那组里没有要找的色号时
     /// （AI 连色号表都读漏了），从当前色号的邻居开始翻最省事。
     var focusColor: BeadColor? = nil
+    var layout: Layout = .list
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) var dismiss
 
@@ -32,11 +40,13 @@ struct ColorSelectionView: View {
     init(selectedColors: Binding<Set<String>>,
          colorSystem: ColorSystem = .mard,
          suggestedColors: [BeadColor] = [],
-         focusColor: BeadColor? = nil) {
+         focusColor: BeadColor? = nil,
+         layout: Layout = .list) {
         self._selectedColors = selectedColors
         self.colorSystem = colorSystem
         self.suggestedColors = suggestedColors
         self.focusColor = focusColor
+        self.layout = layout
         let initial = focusColor.map { Self.series(for: $0, in: colorSystem) } ?? colorSystem.defaultSeries
         self._selectedSeries = State(initialValue: initial)
     }
@@ -112,6 +122,8 @@ struct ColorSelectionView: View {
         !colorsInSeries.isEmpty && selectedInSeriesCount == colorsInSeries.count
     }
 
+    private let gridColumns = [GridItem(.adaptive(minimum: 72, maximum: 90), spacing: 10)]
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -174,7 +186,7 @@ struct ColorSelectionView: View {
 
                 // 颜色列表
                 ScrollView {
-                    LazyVStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 12) {
                         // 这张图纸自己用到的那几个色号排在最前面。判色判错时要改成的
                         // 那一个基本都在这里 —— 不管现在切到哪个系列都一直留着，
                         // 用户翻到别的系列时也不用滚回来找。
@@ -190,35 +202,15 @@ struct ColorSelectionView: View {
                                 Spacer()
                             }
                             .foregroundColor(Theme.ColorToken.Text.secondary)
-                            .padding(.top, 4)
 
-                            ForEach(suggestions) { color in
-                                ColorSelectRow(
-                                    color: color,
-                                    colorSystem: colorSystem,
-                                    isSelected: selectedColors.contains(color.mardCode),
-                                    onToggle: {
-                                        toggleColor(color.mardCode)
-                                    }
-                                )
-                            }
+                            colorGroup(suggestions)
 
                             Divider()
-                                .padding(.vertical, 4)
                         }
 
                         // 上面列过的不再重复一遍
                         let shown = Set(suggestions.map(\.mardCode))
-                        ForEach(colorsInSeries.filter { !shown.contains($0.mardCode) }) { color in
-                            ColorSelectRow(
-                                color: color,
-                                colorSystem: colorSystem,
-                                isSelected: selectedColors.contains(color.mardCode),
-                                onToggle: {
-                                    toggleColor(color.mardCode)
-                                }
-                            )
-                        }
+                        colorGroup(colorsInSeries.filter { !shown.contains($0.mardCode) })
                     }
                     .padding(.horizontal)
                     .padding(.bottom, 20)
@@ -284,9 +276,38 @@ struct ColorSelectionView: View {
             selectedColors.insert(mardCode)
         }
     }
+
+    @ViewBuilder
+    private func colorGroup(_ colors: [BeadColor]) -> some View {
+        switch layout {
+        case .list:
+            VStack(spacing: 8) {
+                ForEach(colors) { color in
+                    ColorSelectRow(
+                        color: color,
+                        colorSystem: colorSystem,
+                        isSelected: selectedColors.contains(color.mardCode),
+                        onToggle: { toggleColor(color.mardCode) }
+                    )
+                }
+            }
+        case .grid:
+            LazyVGrid(columns: gridColumns, spacing: 10) {
+                ForEach(colors) { color in
+                    ColorSelectCell(
+                        color: color,
+                        colorSystem: colorSystem,
+                        isSelected: selectedColors.contains(color.mardCode),
+                        onToggle: { toggleColor(color.mardCode) }
+                    )
+                }
+            }
+        }
+    }
 }
 
 // MARK: - 颜色选择行
+
 struct ColorSelectRow: View {
     let color: BeadColor
     var colorSystem: ColorSystem = .mard
@@ -350,6 +371,49 @@ struct ColorSelectRow: View {
             .cornerRadius(Theme.Radius.md)
         }
         .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - 颜色选择格
+
+struct ColorSelectCell: View {
+    let color: BeadColor
+    var colorSystem: ColorSystem = .mard
+    let isSelected: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            VStack(spacing: 4) {
+                RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
+                    .fill(color.color)
+                    .aspectRatio(1, contentMode: .fit)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
+                            .stroke(
+                                isSelected ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Border.default,
+                                lineWidth: isSelected ? 3 : 1
+                            )
+                    )
+                    .overlay(alignment: .topTrailing) {
+                        if isSelected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.caption)
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, Theme.ColorToken.Morandi.latte)
+                                .padding(3)
+                        }
+                    }
+
+                Text(color.displayCode(for: colorSystem))
+                    .font(.caption2.monospacedDigit())
+                    .fontWeight(.medium)
+                    .foregroundColor(isSelected ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 

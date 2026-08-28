@@ -217,7 +217,8 @@ struct PartCellBrushView: View {
                 selectedColors: $pickedCodes,
                 colorSystem: colorSystem,
                 suggestedColors: sheetColors,
-                focusColor: currentPaintColor
+                focusColor: currentPaintColor,
+                layout: .grid
             )
             .environmentObject(inventoryManager)
         }
