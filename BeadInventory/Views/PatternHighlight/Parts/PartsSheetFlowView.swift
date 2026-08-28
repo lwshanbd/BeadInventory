@@ -226,24 +226,10 @@ struct PartsSheetFlowView: View {
                                 onSourceLoaded: { Task { await reloadFromSource() } }
                             )
                         case .cellSize:
-                            PartsCellSizeStepView(
-                                work: work,
-                                parts: tracked($parts),
-                                calibration: tracked($calibration),
-                                onConfirmPart: { persist() },
-                                onContinue: {
-                                    persist()
-                                    path = [.list, .cellSize, .baseColor]
-                                },
-                                focusPartId: regridTarget,
-                                // 从核对页跳过来的才有回程按钮。**闭包在，就说明是那一趟**——
-                                // 用 `regridTarget != nil` 现算，别缓存成一个 Bool：
-                                // 那样退出去再进来会剩一个通向空处的按钮。
-                                onReturn: regridTarget == nil ? nil : {
-                                    persist()
-                                    path = [.list, .cellSize, .baseColor, .review]
-                                }
-                            )
+                            // 单拎出去，不是为了好看：这几个参数一多，整个
+                            // `navigationDestination` 的闭包就超出类型检查器的耐心
+                            //（"unable to type-check this expression in reasonable time"）。
+                            cellSizeStep(work: work)
                         case .baseColor:
                             PartsBaseColorStepView(
                                 work: work,
@@ -770,6 +756,30 @@ struct PartsSheetFlowView: View {
                 self.path = [.list, .cellSize, .baseColor, .review]
             }
         }
+    }
+
+    private func cellSizeStep(work: PartsWorkImage) -> some View {
+        PartsCellSizeStepView(
+            work: work,
+            parts: tracked($parts),
+            calibration: tracked($calibration),
+            onConfirmPart: { persist() },
+            onContinue: {
+                persist()
+                path = [.list, .cellSize, .baseColor]
+            },
+            focusPartId: regridTarget,
+            // 从核对页跳过来的才有回程按钮。**闭包在，就说明是那一趟** ——
+            // 用 `regridTarget != nil` 现算，别缓存成一个 Bool：
+            // 那样退出去再进来会剩一个通向空处的按钮。
+            onReturn: regridTarget == nil ? nil : {
+                persist()
+                path = [.list, .cellSize, .baseColor, .review]
+            },
+            // 多零件模式回核对页会自动补判空着的那一块，所以格线一挪就能放心
+            // 把旧颜色作废，见那个参数的注释。
+            clearsColorsWhenGridMoves: true
+        )
     }
 
     /// 用户在核对页把一整类改成了别的色号：调色板跟着改。
