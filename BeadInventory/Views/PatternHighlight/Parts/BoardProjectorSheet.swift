@@ -49,6 +49,12 @@ struct BoardProjectorSheet: View {
     @ObservedObject private var session = BoardCastSession.shared
     @Environment(\.dismiss) private var dismiss
 
+    /// 自己填过的板子格数。跟多零件模式那一屏读的是同一份偏好 ——
+    /// 桌上那块板就一块，在哪儿填的不该影响另一处点不点得到。
+    @AppStorage(BeadBoardSize.recentsKey) private var customSizes = ""
+    /// 开着「自定义尺寸」那一屏
+    @State private var showingCustomSize = false
+
     /// 按下那一刻，被拖的那个角在外屏上的位置。`DragGesture` 的 `translation` 是
     /// **从按下那一刻累计**的，每帧拿它去加当前值就会越加越远，角直接飞出画面。
     ///
@@ -94,19 +100,32 @@ struct BoardProjectorSheet: View {
                 }
             }
         }
-        .onAppear { projector.beginCalibrating(suggestedBoard: suggestedBoard, screen: screen) }
-        // 划走（没点「完成」）跟点「取消」是同一件事。角标也在这里收掉 ——
-        // 留着的话，人照着画面按豆子会把那些彩色亮块当成图纸的一部分。
-        // 换成格子画之后更要紧了：角标跟真正要按豆子的格子长得一模一样，只有颜色不同。
-        // （点「完成」时 `finishCalibrating` 已经收掉了，下面这个 if 不成立。）
-        .onDisappear {
-            if projector.isCalibrating { projector.cancelCalibrating() }
+        // 格数是即时生效的（外屏跟着重新分格），没有「等确认」这一步，
+        // 所以不用像板子那一屏那样推到 onDismiss。
+        .sheet(isPresented: $showingCustomSize) {
+            BoardSizeCustomSheet(
+                initial: BeadBoardSize(cols: projector.boardCols, rows: projector.boardRows)
+            ) { size in
+                pick(size)
+            }
         }
-        // 中途拔线：这一屏已经没有可对的东西了，关掉。
-        // 还原不在这儿做 —— `sceneDidDisconnect` 里已经同步调过 `cancelCalibrating()`，
-        // 等这个 onChange 派发到时 `isCalibrating` 早就是 false 了。
+        .onAppear { projector.beginCalibrating(suggestedBoard: suggestedBoard, screen: screen) }
+        // 划走（没点「完成」）跟点「取消」是同一件事，角标也得收掉 —— 留着的话，
+        // 人照着画面按豆子会把那些彩色亮块当成图纸的一部分（角标跟真正要按豆子的格子
+        // 长得一模一样，只有颜色不同）。
+        //
+        // **但还原不在这一屏做**：这儿的 `onDisappear` 分不清「真被关掉了」和「只是被
+        // 『自定义尺寸』盖住了」，分错就把用户对了半天的四个角还原掉。所以收尾挂在
+        // 呈现方那个 sheet 的 `onDismiss` 上（PartsBoardStepView / SinglePatternHighlightStepView），
+        // 那儿只会在这一屏真的关掉时跑一次。
+        // 中途拔线：这一屏已经没有可对的东西了，关掉。子 sheet 也一起收 —— 不然用户
+        // 对着一块已经不存在的屏幕接着填格数，填完那个值没有快照能还原，也不落盘。
+        // 还原同样不在这儿做：`sceneDidDisconnect` 里已经同步调过 `cancelCalibrating()`。
         .onChange(of: session.externalConnected) { _, connected in
-            if !connected { dismiss() }
+            if !connected {
+                showingCustomSize = false
+                dismiss()
+            }
         }
     }
 
@@ -120,17 +139,12 @@ struct BoardProjectorSheet: View {
                     .foregroundColor(Theme.ColorToken.Text.primary)
                 Spacer()
                 Menu {
-                    ForEach(BeadBoardSize.presets) { size in
-                        Button {
-                            projector.setBoardSize(size)
-                        } label: {
-                            if size.cols == projector.boardCols, size.rows == projector.boardRows {
-                                Label(size.label, systemImage: "checkmark")
-                            } else {
-                                Text(size.label)
-                            }
-                        }
-                    }
+                    BoardSizePicker(
+                        current: BeadBoardSize(cols: projector.boardCols, rows: projector.boardRows),
+                        recents: BeadBoardSize.decodeList(customSizes),
+                        onPick: { pick($0) },
+                        onCustom: { showingCustomSize = true }
+                    )
                 } label: {
                     HStack(spacing: 4) {
                         Text("\(projector.boardCols) × \(projector.boardRows)")
@@ -146,6 +160,15 @@ struct BoardProjectorSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
             mismatchNote
         }
+    }
+
+    /// 换一块板：格数立刻生效（外屏跟着重新分格），同时记进「最近使用」。
+    ///
+    /// 格数本身属于「取消」要还原的那一组（见 `BoardProjector` 的 snapshot），
+    /// 但「最近使用」故意不还原 —— 桌上确实有这块板，跟这次对齐成没成没关系。
+    private func pick(_ size: BeadBoardSize) {
+        customSizes = BeadBoardSize.remember(size, in: customSizes)
+        projector.setBoardSize(size)
     }
 
     /// 这一屏摆的板跟这里存的格数对不上时说一声。

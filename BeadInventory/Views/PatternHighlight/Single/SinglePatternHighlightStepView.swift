@@ -197,7 +197,11 @@ struct SinglePatternHighlightStepView: View {
         // 离开这一屏就把电视上的东西撤掉：留着的话用户已经走了，电视上还停着一张
         // 他不再看的图纸 —— 而这一屏是被 push 上来的，退出去是很随手的动作。
         .onDisappear { BoardCastSession.shared.stop() }
-        .sheet(isPresented: $showingProjectorSheet) {
+        // 校准的收尾挂在这儿，理由同 PartsBoardStepView：那一屏自己分不清「被关掉了」
+        // 和「被『自定义尺寸』盖住了」。
+        .sheet(isPresented: $showingProjectorSheet, onDismiss: {
+            if BoardProjector.shared.isCalibrating { BoardProjector.shared.cancelCalibrating() }
+        }) {
             if let screen = cast.externalScreenSize {
                 // 这里的「板」是整张图纸，跟桌上那块实物豆板多少格没有关系 —— 送 nil，
                 // 让用户自己点一下，猜一个图纸尺寸当板子格数只会把中间的格子全对歪。
