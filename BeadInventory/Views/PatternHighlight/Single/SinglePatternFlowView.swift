@@ -317,7 +317,7 @@ struct SinglePatternFlowView: View {
             case .confirmReclassify:
                 return Alert(
                     title: Text("重新识别颜色？"),
-                    message: Text("会照现在的底色重看一遍每一格，你在核对页改过的色号全部作废，要重新核对一遍。只是想接着核对的话点「取消」，再点上面那个「回核对颜色」。"),
+                    message: Text("会照现在的底色重看一遍每一格，你在核对页改过的色号全部作废，要重新核对一遍。只是想接着核对的话点「取消」，再点上面那个「返回核对颜色」。"),
                     primaryButton: .cancel(Text("取消")),
                     secondaryButton: .destructive(Text("重新判色")) { runClassification() }
                 )

@@ -334,7 +334,7 @@ struct PartsSheetFlowView: View {
             case .confirmReclassify:
                 return Alert(
                     title: Text("重新识别颜色？"),
-                    message: Text("将按当前底色和任意色重新识别每一格颜色，核对页中修改过的色号将全部作废，需要重新核对。如需继续之前的核对，请点「取消」，再点上方「回核对颜色」。"),
+                    message: Text("将按当前底色和任意色重新识别每一格颜色，核对页中修改过的色号将全部作废，需要重新核对。如需继续之前的核对，请点「取消」，再点上方「返回核对颜色」。"),
                     primaryButton: .cancel(Text("取消")),
                     secondaryButton: .destructive(Text("重新判色")) { runClassification() }
                 )

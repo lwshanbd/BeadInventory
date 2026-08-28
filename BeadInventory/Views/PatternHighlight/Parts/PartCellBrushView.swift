@@ -831,8 +831,8 @@ struct PartCellBrushView: View {
         case .paint:
             if paintFill == nil { return String(localized: "请先在上方选择一个色号，再划过需要填补的格子。") }
             return showsCompare
-                ? String(localized: "手指划过要补上的格子。放大后想挪，拖图纸那一块。")
-                : String(localized: "手指划过要补上的格子。放大后想挪，先切回「挪图」。")
+                ? String(localized: "用手指划过需要填补的格子。放大后如需平移，请拖动图纸区域。")
+                : String(localized: "用手指划过需要填补的格子。放大后如需平移，请先切换回「移动」。")
         }
     }
 
