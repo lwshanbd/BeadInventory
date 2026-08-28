@@ -40,6 +40,21 @@ struct PartsColorReviewStepView: View {
     var finishIcon: String = "square.grid.3x3"
     /// 这一屏在核对什么。nil = 一块一块的零件（多零件模式），用零件自己的名字。
     var subjectLabel: String?
+    /// 「回去把这一块的格子重对一遍」。给了才有导航栏上那个「看零件」。
+    ///
+    /// **单图纸模式一律不给**：那边整张图纸就是唯一的一「块」，「这一格属于哪一块」
+    /// 没有任何信息量，点开只会得到一张跟屏幕上一模一样的图。
+    ///
+    /// **格线真动过的话**，走完那一趟回来时被重对的那一块 `cells` 是空的，
+    /// 由流程容器补判 —— 这一屏靠 `cellsPresenceSignature` 发现它，见那里。
+    /// 没动就原样留着（`PartsCellSizeStepView.finishRegrid` 会比一遍）。
+    var onRegridPart: ((UUID) -> Void)?
+    /// 整类改掉了一个色号（旧的 → 新的）。
+    ///
+    /// 容器要拿它去改调色板：补判沿用的就是那份调色板，不跟着改的话，用户在这一屏
+    /// 好不容易把一整类从 H8 纠正成 H7，回头重对一块格子，那一块又变回 H8 ——
+    /// 核对页上同一种颜色出现两个色号，而且没有任何提示。
+    var onGroupRecolored: ((PartCellFill, PartCellFill) -> Void)?
 
     @EnvironmentObject var inventoryManager: InventoryManager
 
@@ -155,6 +170,19 @@ struct PartsColorReviewStepView: View {
     @State private var brushTarget: BrushTarget?
     /// 挑一块来擦 / 补（只有多零件模式要挑）
     @State private var showingPartPicker = false
+    /// 正在对照图纸原图的那一块
+    @State private var inspecting: BeadPart?
+    /// 从图纸上抠下来的零件原样，连同它现在处于哪一步。
+    /// **必须连状态一起存**：只存 `UIImage?` 的话，「还在抠」和「抠不出来」都是 nil，
+    /// 屏幕上只能都画成转圈 —— 而后者是等到天亮也不会出来的。见 `PartOriginalSheet.Original`。
+    @State private var originals: [UUID: PartOriginalSheet.Original] = [:]
+    /// 挑一块来看原图（选中的格子指不出唯一一块时才要挑）
+    @State private var showingInspectPicker = false
+    /// 挑好了、等挑零件那一屏关掉之后再打开对照屏（同 `pendingBrushId`，理由见那里）
+    @State private var pendingInspectId: UUID?
+    /// 在对照屏上按了「回去重对这一块」。**等对照屏真的关掉之后再跳** ——
+    /// 一边 dismiss 一边改导航栈，SwiftUI 会两件事只做成一件，用户按了没反应。
+    @State private var pendingRegridId: UUID?
     /// 挑好了、等挑零件那一屏关掉之后再打开画笔。
     ///
     /// **不能在同一拍里关一个 sheet 开另一个** —— SwiftUI 只 present 一个，
@@ -190,6 +218,10 @@ struct PartsColorReviewStepView: View {
     private struct CellEdit {
         let cells: [(ref: CellRef, old: PartCellFill)]
         let newFill: PartCellFill
+        /// 这一步整类改掉了哪个色号。nil = 只改了其中几格。
+        /// 撤销要靠它把调色板也改回去 —— 只把格子放回原样、调色板还停在新色号上的话，
+        /// 「撤销」等于没撤干净，下次补判又会按新色号来。
+        let groupFill: PartCellFill?
     }
 
     private let columns = [GridItem(.adaptive(minimum: 34), spacing: 6)]
@@ -216,6 +248,24 @@ struct PartsColorReviewStepView: View {
         .navigationTitle("核对颜色")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // 「这一格判成这个色号，对吗」在这一屏是答不了的：铺出来的是一格一格的碎片，
+            // 而用户判断对不对靠的是「这块零件原来长什么样」。所以给一条看原图的路，
+            // 顺着它还能一步回去重对格线 —— 格线没对准正是判错的头号原因。
+            //
+            // 先选中一格再按，看的就是那一格所在的那一块；没选中（或者选中的格子横跨
+            // 好几块）才要挑一下。
+            if onRegridPart != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: startInspect) {
+                        // 图标和字自己拼，理由同旁边那个「改格子」（导航栏里 `Label` 只画图标）
+                        HStack(spacing: 4) {
+                            Image(systemName: "photo")
+                            Text("看零件")
+                        }
+                    }
+                    .disabled(parts.isEmpty || samplingColors)
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 // 这一屏改的是「这一格是什么颜色」。另一半 —— 「这一格到底有没有豆子」——
                 // 在这儿是解不了的：一个本该有豆子的空格躺在几万个空格中间，
@@ -324,6 +374,152 @@ struct PartsColorReviewStepView: View {
             )
             .environmentObject(inventoryManager)
         }
+        .sheet(isPresented: $showingInspectPicker, onDismiss: {
+            // 等这一屏真的关掉了再开对照屏，理由同 `pendingBrushId`
+            if let id = pendingInspectId {
+                pendingInspectId = nil
+                inspecting = parts.first(where: { $0.id == id })
+            }
+        }) {
+            PartBrushPickerSheet(
+                title: "看哪一块",
+                rows: pickerRows,
+                colors: swatchColors,
+                onPick: { id in
+                    pendingInspectId = id
+                    showingInspectPicker = false
+                }
+            )
+        }
+        // 选中谁就抠谁的原图。抠在后台：高清工作图上一块零件几十万像素，
+        // 在主线程上裁，用户点一下界面就顿一下。
+        .task(id: inspecting?.id) { await loadOriginal(for: inspecting?.id) }
+        .sheet(item: $inspecting, onDismiss: {
+            // 对照屏关干净了再跳回「量格子」，理由见 `pendingRegridId`
+            if let id = pendingRegridId {
+                pendingRegridId = nil
+                onRegridPart?(id)
+            }
+        }) { part in
+            PartOriginalSheet(
+                title: brushSubject(for: part.id),
+                order: (parts.firstIndex(where: { $0.id == part.id }) ?? 0) + 1,
+                // 判「改过名没有」跟 displayName 用同一把尺（都要去掉空白），
+                // 否则名字里只打了个空格时，标题退回「零件 10」而这一行以为它有名字。
+                showsOrder: part.customName?.trimmingCharacters(in: .whitespaces).isEmpty == false,
+                original: originalState(of: part.id),
+                footprint: part.footprint(turns: 0),
+                colors: swatchColors,
+                // 这一屏还没走到摆板子，「摆在哪块板」无从谈起
+                placement: nil,
+                onRegrid: { pendingRegridId = part.id; inspecting = nil }
+            )
+        }
+        // 别处（流程容器）给某一块补判过之后，铺出来的那片格子必须跟着刷新。
+        // 不刷的话，补出来的那一块在这一屏一格都不出现 —— 正是用户报的
+        // 「原来的删掉了，新的不会出现」。见 `cellsPresenceSignature`。
+        .onChange(of: cellsPresenceSignature) { _, _ in refreshAfterExternalCellChange() }
+    }
+
+    /// 「哪几块有格子、各是几行几列」的一个便宜签名（不逐格看，几十块零件也就几十次拼接）。
+    ///
+    /// 只在**别处**改了格子时才会变：这一屏自己的操作（整类改色号、画笔、撤销）
+    /// 改的是格子里装什么，行列数和「有没有格子」一个都不动，所以不会白刷一次。
+    private var cellsPresenceSignature: String {
+        parts.map { $0.hasCells ? "\($0.rows)x\($0.cols)" : "-" }.joined(separator: ",")
+    }
+
+    /// 有零件在别处被重对 / 补判过。这一屏存下来的那几样全部作废，重新回到「刚进来」的样子。
+    private func refreshAfterExternalCellChange() {
+        // 量过的众数色是按旧的行列数存的（见 `cellModes` 的注释：重对过格线必须置 nil）
+        cellModes = nil
+        sortByColor = false
+        // 裁好的小图是按 (零件下标, row, col) 存的，格线一动就全是错位的图
+        swatchCache = CellSwatchCache()
+        // 重挑一次默认色号。补判是在进这一屏之后才落地的，`selectDefaultGroup` 当时看到的
+        // 是那一块还空着的样子 —— 挑中的可能是个凑数的色号（那一块的主色一格都没有，
+        // 排不进最前面），整张图纸只有一块时甚至一个组都没有。
+        //
+        // `select` 顺带把选中的格子和撤销栈收干净：那些坐标是 (零件下标, row, col)，
+        // 行列数一变就指向别的格子了，底下那排「这类都改成…」会打在用户看不见的地方。
+        if let first = groups.first {
+            select(first.fill)
+        } else {
+            selection.removeAll()
+            undoStack.removeAll()
+            setGroupCells([])
+        }
+    }
+
+    // MARK: - 看这一块原来长什么样
+
+    /// 按「看零件」之后的事：先看选中的格子指不指得出唯一一块，指不出来才让他挑。
+    private func startInspect() {
+        if let only = inspectTarget {
+            inspecting = parts.first(where: { $0.id == only })
+            return
+        }
+        // 开之前算一次就够 —— 放进 sheet 的内容闭包里的话，每次求值都要给所有零件
+        // 重建一遍 `PartFootprint`（同 `pickerRows`）。
+        pickerRows = parts.enumerated().map { index, part in
+            PartBrushPickerSheet.Row(
+                id: part.id,
+                name: part.displayName(order: index),
+                beadCount: part.beadCount,
+                footprint: part.footprint(turns: 0)
+            )
+        }
+        showingInspectPicker = true
+    }
+
+    /// 现在选中的格子指的是哪一块。只有一块零件时永远是它；
+    /// 一格没选、或者选中的格子横跨好几块时是 nil（那就得挑）。
+    private var inspectTarget: UUID? {
+        if parts.count == 1 { return parts.first?.id }
+        let indexes = Set(selection.map(\.part))
+        guard indexes.count == 1, let index = indexes.first, index < parts.count else { return nil }
+        return parts[index].id
+    }
+
+    /// 把这一块在图纸上原来那块抠出来。四周留 6% 余量，跟零件清单、拼豆板那两屏
+    /// 一个裁法（`PartsThumbnailMaker.make` / `PartsBoardStepView.loadOriginal`）——
+    /// 三处裁得不一样的话，用户会以为自己看的是三个零件。
+    ///
+    /// **抠不出来要记成 `.unavailable`，不能一声不响地返回**：裁失败是确定性的，
+    /// 静默返回的话弹窗上就是一个永远转下去的圈，而用户不知道该不该等。
+    private func loadOriginal(for partId: UUID?) async {
+        guard let partId, let part = parts.first(where: { $0.id == partId }) else { return }
+        if case .some(.ready) = originals[partId] { return }
+
+        originals[partId] = .loading
+        let bounds = part.bounds
+        let source = work
+        let cropped = await Task.detached(priority: .userInitiated) {
+            PartsThumbnailMaker.crop(source, normalized: bounds.insetBy(
+                dx: -bounds.width * 0.06, dy: -bounds.height * 0.06
+            ))
+        }.value
+
+        // 取消 ≠ 失败：用户换看别的零件而已，退回「没试过」，下次打开重来。
+        guard !Task.isCancelled else {
+            if case .some(.loading) = originals[partId] { originals[partId] = nil }
+            return
+        }
+        guard let cropped else {
+            originals[partId] = .unavailable
+            AppLogger.shared.warning("PartsColorReview", "part_original_crop_failed", metadata: [
+                "partId": partId.uuidString,
+                "bounds": "\(bounds)",
+                "region": "\(source.region)",
+                "workSize": "\(source.image.size)"
+            ])
+            return
+        }
+        originals[partId] = .ready(cropped)
+    }
+
+    private func originalState(of partId: UUID) -> PartOriginalSheet.Original {
+        originals[partId] ?? .loading
     }
 
     /// 擦 / 补那一屏底下写的是在改哪一块
@@ -1302,11 +1498,15 @@ struct PartsColorReviewStepView: View {
             selection.removeAll()
             return
         }
+        // 这一整组都被改掉了 —— 底下那三个按钮在一格没选中时就是作用于整类，
+        // 框选把整组框完也算。这一组的身份变了，调色板得跟着走，见 `onGroupRecolored`。
+        let groupFill = groupCells.map { selection == Set($0) } == true ? selectedGroup : nil
         parts = updated
         selection.removeAll()
+        if let groupFill { onGroupRecolored?(groupFill, fill) }
         // 改过的格子已经不属于当前这一组了，铺出来的那片要跟着少掉
         setGroupCells(orderedCells(of: selectedGroup))
-        pushUndo(CellEdit(cells: edits, newFill: fill))
+        pushUndo(CellEdit(cells: edits, newFill: fill, groupFill: groupFill))
     }
 
     /// 撤销栈只留最近 5 步。一步最大是整组几万格的旧值（五万格约 2MB），
@@ -1331,6 +1531,8 @@ struct PartsColorReviewStepView: View {
             updated[ref.part].cells[ref.row][ref.col] = old
         }
         parts = updated
+        // 整类改的那一步还动过调色板，撤销要把它一并改回去（见 `CellEdit.groupFill`）
+        if let groupFill = last.groupFill { onGroupRecolored?(last.newFill, groupFill) }
         // 数据刚被改回去，用户在这之后新点 / 新框的那批格子可能已经不在当前这一组里了
         selection.removeAll()
         setGroupCells(orderedCells(of: selectedGroup))
@@ -1498,6 +1700,9 @@ private struct PartBrushPickerSheet: View {
         let footprint: PartFootprint
     }
 
+    /// 挑完要拿去干什么。同一张列表两处在用（改格子 / 看原图），
+    /// 标题不跟着变的话，用户点开「看零件」看到的是「改哪一块的格子」。
+    var title: LocalizedStringKey = "改哪一块的格子"
     let rows: [Row]
     let colors: [String: Color]
     let onPick: (UUID) -> Void
@@ -1536,7 +1741,7 @@ private struct PartBrushPickerSheet: View {
                 }
                 .buttonStyle(.plain)
             }
-            .navigationTitle("改哪一块的格子")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

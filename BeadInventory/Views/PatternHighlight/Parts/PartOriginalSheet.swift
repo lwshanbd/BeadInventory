@@ -45,6 +45,12 @@ struct PartOriginalSheet: View {
     let footprint: PartFootprint
     let colors: [String: Color]
     let placement: Placement?
+    /// 「回去重对这一块的格子」。nil = 这一屏只能看。
+    ///
+    /// 拼豆板那屏就是 nil：那时候零件已经在板上了，格子不对该走它自己的「改格子」。
+    /// 核对颜色那屏才给这条路 —— 用户在那儿点开一块，十有八九就是因为觉得它判得不对，
+    /// 而「格线没对准」正是判错的头号原因，出路不摆在眼前他只能自己猜要退到第几屏。
+    var onRegrid: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -54,6 +60,7 @@ struct PartOriginalSheet: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     compare
                     facts
+                    regridButton
                     hint
                 }
                 .padding()
@@ -194,12 +201,30 @@ struct PartOriginalSheet: View {
         }
     }
 
+    /// 回去重对格子。**摆在两张图下面、说明文字上面** —— 用户是先看出不对，
+    /// 才需要这个按钮的，摆在他得出结论的那一眼之后。
+    @ViewBuilder
+    private var regridButton: some View {
+        if let onRegrid {
+            Button(action: onRegrid) {
+                Label("格子没对准，回去重对这一块", systemImage: "grid")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+    }
+
     /// 只有真的有两边可比时才说这句。左边是转圈或者「拿不到」的时候，
     /// 「两边形状对不上」是在让他比一个不存在的东西。
     @ViewBuilder
     private var hint: some View {
         if case .ready = original {
-            Text("两边形状对不上，多半是这个零件的格子或者颜色判错了 —— 回「核对颜色」那屏改，改完再回来摆。")
+            // 出路在哪儿取决于这一屏是从哪开的：核对颜色那屏上面就摆着按钮，
+            // 拼豆板那屏得先回核对颜色。说错一句，用户就在导航栈里白跑一趟。
+            Text(onRegrid == nil
+                 ? "两边形状对不上，多半是这个零件的格子或者颜色判错了 —— 回「核对颜色」那屏改，改完再回来摆。"
+                 : "两边形状对不上，多半是格线没落在豆子的缝上。按上面那个按钮回去重对，对完这一块的颜色会自动重判一遍。")
                 .font(.caption)
                 .foregroundColor(Theme.ColorToken.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
