@@ -459,34 +459,59 @@ struct PartCellBrushView: View {
     ///
     /// 边界那个框不是装饰：框外面的格子这一屏改不了（零件的格子矩阵就这么大），
     /// 不画出来的话用户会对着框外面划半天，一格都不会变。
+    ///
+    /// ## 为什么格线一定要落在整数像素上
+    ///
+    /// 格子边界算出来是小数（`box.minX + c * cw`，`cw` 本身就是除出来的），
+    /// 直接照着描的话，一条 1pt 的线会被抗锯齿摊到两三个像素上、每个像素只分到一点点
+    /// 颜色 —— 屏幕上不是一条线，是一层灰雾。**格子越小摊得越匀，也就越看不见**，
+    /// 而「对照图纸」恰恰把格子砍到最小（分栏，见 `panes`）。
+    ///
+    /// 提不透明度救不了这件事：摊开的那几个像素一起变深，糊还是糊。
+    /// 真正的解法是把线心挪到像素正中间（`snapped`）、线宽取奇数个像素，
+    /// 这样一条线就实实在在占满一个像素。格子小到 4pt 时，这一步的差别是
+    /// 「一格都看不出来」和「每一格都数得清」。
     private var gridLines: some View {
         Canvas { context, _ in
             let box = transform.screenRect(gridArea)
             let cw = box.width / CGFloat(cols)
             let ch = box.height / CGFloat(rows)
+            let px = 1 / displayScale
 
             // 一格小到看不出是格子的时候就别画了 —— 几百条线糊成一片，
             // 反而把底下的格子盖住。
             //
-            // **阈值 5 不是 9，也不是 6。** 9 是「板底还是白的、只描一道线」那会儿定的。现在
-            // 「这一格有没有豆子」靠的是板底和豆子的颜色差、外加板底那层棋盘纹理
-            // （见 `boardBase` / `boardTile`），格线只管
-            // 「同色两格之间的缝」—— 也就是只在用户想精确点一格时才要紧，而那时候
-            // 他本来就会放大。一路降到 5 是为了缩窄「一按对照图纸格线就没了」那个突变：
-            // 分栏把长边砍一半，格子跟着缩（见 `panes`），原来刚过阈值的零件会掉到线以下。
-            // **只是缩窄，没有消掉** —— 窗口从「原始格宽 9～11.7pt」变成「5～6.5pt」。
-            if cw >= 5, ch >= 5 {
-                var path = Path()
+            // **阈值 4 不是 9。** 9 是「板底还是白的、只描一道线」那会儿定的，
+            // 那时候线本来就糊，画小了确实只剩噪声。现在线是实的（见上面那段），
+            // 4pt 的格子照样一格一格数得清，而 4pt 正是常见零件在「对照图纸」
+            // 分栏之后落到的那一档 —— 阈值卡在 5 以上，用户按下对照的那一刻格线就没了。
+            if cw >= 4, ch >= 4 {
+                // 每 10 格一条粗的。拼豆图纸本来就这么画：一片同色里没有参照物，
+                // 用户想点第 17 列，只能从边上一格一格数过去。
+                // **格子太小时不画** —— 3 个像素的粗线在 4pt 的格子上要占掉四分之一，
+                // 那时候它不是参照物，是把两列格子并成一列的一道墙。
+                let majors = cw >= 6 && ch >= 6
+                var thin = Path()
+                var major = Path()
                 for c in 0...cols {
-                    let x = box.minX + CGFloat(c) * cw
-                    path.move(to: CGPoint(x: x, y: box.minY))
-                    path.addLine(to: CGPoint(x: x, y: box.maxY))
+                    let x = snapped(box.minX + CGFloat(c) * cw, px: px)
+                    let from = CGPoint(x: x, y: box.minY), to = CGPoint(x: x, y: box.maxY)
+                    if majors, c % 10 == 0 {
+                        major.move(to: from); major.addLine(to: to)
+                    } else {
+                        thin.move(to: from); thin.addLine(to: to)
+                    }
                 }
                 for r in 0...rows {
-                    let y = box.minY + CGFloat(r) * ch
-                    path.move(to: CGPoint(x: box.minX, y: y))
-                    path.addLine(to: CGPoint(x: box.maxX, y: y))
+                    let y = snapped(box.minY + CGFloat(r) * ch, px: px)
+                    let from = CGPoint(x: box.minX, y: y), to = CGPoint(x: box.maxX, y: y)
+                    if majors, r % 10 == 0 {
+                        major.move(to: from); major.addLine(to: to)
+                    } else {
+                        thin.move(to: from); thin.addLine(to: to)
+                    }
                 }
+
                 // **描两遍：宽的浅线打底，窄的深线压在中间。**
                 // 只有一种颜色时，它必然在色域的一端消失 —— 白线看不见白豆子挨白豆子的缝，
                 // 黑线看不见黑豆子挨黑豆子的缝，而这两处恰恰都是最需要数格子的时候。
@@ -495,23 +520,25 @@ struct PartCellBrushView: View {
                 // 「这一格有没有豆子」从头到尾靠的是板底本身（颜色差 + 棋盘纹理），
                 // 那是 `boardColor` 和 `boardTile` 的事。
                 //
-                // 线宽跟着格子缩，别让它吃掉超过八分之一格 —— 6pt 的格子上
-                // 1pt 的线就占了六分之一，一片格子看着像一张网。**但不能细过两个物理像素**：
-                // 再细下去 Canvas 画不出更细的线，只能把它摊在一个像素里按比例调淡 ——
-                // 线还在，人眼已经看不见了。「对照图纸」正好是格子被砍到最小的那一屏，
-                // 用户报的「格子线看不清」就出在这一段。
-                let px = 1 / displayScale
-                let hair = max(px * 2, min(1.0, cw / 8))
-                // 浅深两道都比原来实一档（0.30 / 0.28 → 0.55 / 0.45）。细线本来就只盖住
-                // 一两个像素，再按三成透明去调，落到屏幕上就是一层灰雾。加到这个程度，
-                // 两道线仍然比豆子本身淡，格子看着还是格子、不是一张网。
-                context.stroke(path, with: .color(.white.opacity(0.55)), lineWidth: hair)
-                context.stroke(path, with: .color(.black.opacity(0.45)), lineWidth: max(px, hair / 2))
+                // 宽度**写成像素数、不跟着格子缩**：跟着缩就又回到小数宽度那条老路上了。
+                // 3 像素在 3x 屏上是 1pt，正好是原来那版的上限，放大之后也不会变粗成一张网。
+                context.stroke(thin, with: .color(.white.opacity(0.60)), lineWidth: px * 3)
+                context.stroke(thin, with: .color(.black.opacity(0.55)), lineWidth: px)
+                if majors {
+                    context.stroke(major, with: .color(.white.opacity(0.90)), lineWidth: px * 5)
+                    context.stroke(major, with: .color(.black.opacity(0.85)), lineWidth: px * 3)
+                }
             }
 
             context.stroke(Path(box), with: .color(Theme.ColorToken.Morandi.honey), lineWidth: 1.5)
         }
         .allowsHitTesting(false)
+    }
+
+    /// 把线心挪到物理像素的正中间。奇数个像素宽的线这样描才是实的一条；
+    /// 落在两个像素中间的话，抗锯齿会把它摊成两条淡的（见 `gridLines` 的文档）。
+    private func snapped(_ v: CGFloat, px: CGFloat) -> CGFloat {
+        ((v / px).rounded() + 0.5) * px
     }
 
     /// 这一下算不算画：工具不是「挪图」，而且**起点**落在格子那一块。
