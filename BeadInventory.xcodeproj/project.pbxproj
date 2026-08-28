@@ -32,6 +32,7 @@
 		B7A1E0C14F0A4E1D9C2A0003 /* PartsBaseColorStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0004 /* PartsBaseColorStepView.swift */; };
 		B7A1E0C14F0A4E1D9C2A0007 /* PartsBoardStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0008 /* PartsBoardStepView.swift */; };
 		B7A1E0C14F0A4E1D9C2A0107 /* BoardCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0108 /* BoardCanvas.swift */; };
+		B7A1E0C14F0A4E1D9C2A0B07 /* BoardSizeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0B08 /* BoardSizeSheet.swift */; };
 		B7A1E0C14F0A4E1D9C2A0407 /* PartOriginalSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0408 /* PartOriginalSheet.swift */; };
 		B7A1E0C14F0A4E1D9C2A0507 /* PartCellBrushView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0508 /* PartCellBrushView.swift */; };
 		B7A1E0C14F0A4E1D9C2A0307 /* BoardExternalDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0308 /* BoardExternalDisplay.swift */; };
@@ -188,6 +189,7 @@
 		B7A1E0C14F0A4E1D9C2A0004 /* PartsBaseColorStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsBaseColorStepView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsBaseColorStepView.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0008 /* PartsBoardStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsBoardStepView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsBoardStepView.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0108 /* BoardCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BoardCanvas.swift; path = BeadInventory/Views/PatternHighlight/Parts/BoardCanvas.swift; sourceTree = SOURCE_ROOT; };
+		B7A1E0C14F0A4E1D9C2A0B08 /* BoardSizeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BoardSizeSheet.swift; path = BeadInventory/Views/PatternHighlight/Parts/BoardSizeSheet.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0408 /* PartOriginalSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartOriginalSheet.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartOriginalSheet.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0508 /* PartCellBrushView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartCellBrushView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartCellBrushView.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0308 /* BoardExternalDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BoardExternalDisplay.swift; path = BeadInventory/Views/PatternHighlight/Parts/BoardExternalDisplay.swift; sourceTree = SOURCE_ROOT; };
@@ -377,6 +379,7 @@
 				B7A1E0C14F0A4E1D9C2A0008 /* PartsBoardStepView.swift */,
 				B7A1E0C14F0A4E1D9C2A0108 /* BoardCanvas.swift */,
 				B7A1E0C14F0A4E1D9C2A0408 /* PartOriginalSheet.swift */,
+				B7A1E0C14F0A4E1D9C2A0B08 /* BoardSizeSheet.swift */,
 				B7A1E0C14F0A4E1D9C2A0508 /* PartCellBrushView.swift */,
 				B7A1E0C14F0A4E1D9C2A0308 /* BoardExternalDisplay.swift */,
 				B7A1E0C14F0A4E1D9C2A0908 /* ProjectorGeometry.swift */,
@@ -821,6 +824,7 @@
 				B7A1E0C14F0A4E1D9C2A0007 /* PartsBoardStepView.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0107 /* BoardCanvas.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0407 /* PartOriginalSheet.swift in Sources */,
+				B7A1E0C14F0A4E1D9C2A0B07 /* BoardSizeSheet.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0507 /* PartCellBrushView.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0307 /* BoardExternalDisplay.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0907 /* ProjectorGeometry.swift in Sources */,
