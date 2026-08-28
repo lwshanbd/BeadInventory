@@ -95,7 +95,7 @@ struct MoreView: View {
                                 icon: "eyedropper.halffull",
                                 iconColor: Theme.ColorToken.Morandi.mauve,
                                 title: "自定义色号",
-                                subtitle: "添加和管理自己的色号",
+                                subtitle: "添加和管理自定义色号",
                                 trailing: .chevron
                             )
                         }

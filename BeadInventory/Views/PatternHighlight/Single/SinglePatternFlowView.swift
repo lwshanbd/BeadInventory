@@ -147,14 +147,14 @@ struct SinglePatternFlowView: View {
                         projectId: project.id,
                         onSourceLoaded: { Task { await reloadFromSource() } },
                         hint: "拖动方框，把图纸上一格一格的那块框住。四周的色号表、留白不用框。",
-                        actionTitle: "量格子",
+                        actionTitle: "测量网格",
                         actionIcon: "grid"
                     )
                 } else if imageUnreadable {
                     ContentUnavailableView(
-                        "这张图纸这次读不出来",
+                        "本次无法读取此图纸",
                         systemImage: "photo.badge.exclamationmark",
-                        description: Text("图还在项目里，只是这次打不开。退出去再进来试一次；一直这样的话，去详情页重新选一张。")
+                        description: Text("图纸仍保留在项目中，只是本次无法打开。请退出后重新进入再试；若持续失败，请前往详情页重新选择一张。")
                     )
                 } else {
                     ContentUnavailableView(
@@ -273,17 +273,17 @@ struct SinglePatternFlowView: View {
             switch prompt {
             case .saveFailed:
                 return Alert(
-                    title: Text("这一步没存上"),
-                    message: Text("刚做的这些还没写进项目里，现在关掉就没了。先别关，接着往下走每一步都会再存一次。"),
+                    title: Text("此步骤未保存"),
+                    message: Text("刚完成的操作尚未写入项目，现在关闭将会丢失。请勿关闭，继续往下每一步都会自动保存。"),
                     primaryButton: .cancel(Text("知道了")),
                     secondaryButton: .destructive(Text("仍然关闭")) { dismiss() }
                 )
             case .loadFailed:
                 return Alert(
-                    title: Text("之前的进度这次打不开"),
+                    title: Text("之前的进度本次无法打开"),
                     message: Text("这个项目上次对好的网格和颜色这次读不出来。建议先退出去，过一会儿再进来试试；现在就重做的话，原来那份会被这次的结果盖掉。"),
-                    primaryButton: .cancel(Text("先退出去")) { dismiss() },
-                    secondaryButton: .destructive(Text("重新做一遍")) { overwriteBlocked = false }
+                    primaryButton: .cancel(Text("先退出")) { dismiss() },
+                    secondaryButton: .destructive(Text("重新开始")) { overwriteBlocked = false }
                 )
             case .confirmRecrop:
                 return Alert(
@@ -316,8 +316,8 @@ struct SinglePatternFlowView: View {
             // 判色是从头重算每一格，用户在核对页一格一格改过的色号会被整片盖掉。
             case .confirmReclassify:
                 return Alert(
-                    title: Text("重新判一遍颜色？"),
-                    message: Text("会照现在的底色重看一遍每一格，你在核对页改过的色号全部作废，要重新核对一遍。只是想接着核对的话点「取消」，再点上面那个「回核对颜色」。"),
+                    title: Text("重新识别颜色？"),
+                    message: Text("会照现在的底色重看一遍每一格，你在核对页改过的色号全部作废，要重新核对一遍。只是想接着核对的话点「取消」，再点上面那个「返回核对颜色」。"),
                     primaryButton: .cancel(Text("取消")),
                     secondaryButton: .destructive(Text("重新判色")) { runClassification() }
                 )

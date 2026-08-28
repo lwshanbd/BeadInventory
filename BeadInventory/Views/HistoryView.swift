@@ -464,7 +464,7 @@ struct HistoryView: View {
             var parts: [String] = []
             if failureCount > 0 { parts.append(String(localized: "失败 \(failureCount) 条")) }
             if partialCount > 0 {
-                parts.append(String(localized: "\(partialCount) 条的多零件进度没能一起还原"))
+                parts.append(String(localized: "\(partialCount) 条记录的多零件进度未能一并还原"))
             }
             let detail = parts.joined(separator: "，")
             revertErrorMessage = successCount > 0

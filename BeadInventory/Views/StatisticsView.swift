@@ -769,7 +769,7 @@ struct UsageStatisticsView: View {
                         EmptyStateView(
                             icon: showLowStockOnly ? "checkmark.circle" : "chart.bar",
                             title: showLowStockOnly ? "没有低库存颜色" : "尚无使用数据",
-                            description: showLowStockOnly ? "目前没有低库存的颜色，挺好" : "开始扣减或拼图后，统计就会出现在这里"
+                            description: showLowStockOnly ? "当前所有颜色库存充足" : "开始扣减或拼图后，统计就会出现在这里"
                         )
                         .frame(height: 200)
                     }
@@ -1202,7 +1202,7 @@ struct ProjectHistoryView: View {
                                     Button {
                                         inventoryManager.detachProject(child.id)
                                     } label: {
-                                        Label("独立为单独项目", systemImage: "arrow.up.forward.square")
+                                        Label("独立为顶级项目", systemImage: "arrow.up.forward.square")
                                     }
 
                                     Divider()
@@ -1431,7 +1431,7 @@ struct RevertToPlanSheet: View {
                 .padding(.horizontal)
 
                 // 提示
-                Text("💡 如果这些项目是从旧版备份导入的计划，建议关闭「恢复库存」")
+                Text("如果这些项目是从旧版备份导入的计划，建议关闭「恢复库存」")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)

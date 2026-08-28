@@ -144,3 +144,9 @@ SwiftData  HistoryManager  AIServiceManager
 - History operations must call `HistoryManager.shared.addRecord()` before modifying state
 - Stock operations are keyed by brand ID - always specify which brand when modifying inventory
 - SwiftData models have `.toStruct()` and `init(from:)` for conversion
+
+### UI 文案规范
+
+- **界面文案（标题、按钮、菜单项、字段名）用正常 App 的书面措辞，不用口语。** 写「自定义尺寸」不写「改尺寸」；写「确定」不写「用这块板」。用户口头怎么描述需求，跟这段文字最终显示在界面上该怎么写，是两件事——写之前把它们分开想：iOS 系统 App 会怎么写这一行？
+- **不加解释常识的 hint / 提示语。** 别把"这是干什么用的"这种一看就懂的事情写成界面上的说明文字，用户不是需要科普的新手。为什么这么设计、注意事项，写进代码注释或 PR 描述，不要写进界面。
+- 吃不准某句文案够不够书面/够不够简洁时，截图给用户判断，不要自己套模板加说明兜底。

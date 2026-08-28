@@ -112,12 +112,12 @@ struct BoardExternalDisplayView: View {
                     if content.highlightKeys.isEmpty {
                         // 板子对上了、格子却一个都不亮，用户第一反应是「投屏坏了」。
                         // 这一句把下一步说清楚：亮哪些格子是手机上点出来的。
-                        hintRow(String(localized: "在手机上点一个色号，这里就只亮那个色号的格子"))
+                        hintRow(String(localized: "在手机上选择一个色号后，此处仅高亮该色号对应的格子"))
                     } else {
                         caption(for: content, axis: axis, projected: true)
                     }
                 } else {
-                    hintRow(String(localized: "在手机上打开拼图模式，这里就会跟着显示"))
+                    hintRow(String(localized: "在手机上打开拼图模式后，此处将同步显示"))
                 }
             }
 
@@ -222,7 +222,7 @@ struct BoardExternalDisplayView: View {
             // 两种模式都会走到这儿（多零件的拼豆板、单图纸的高亮页），
             // 所以这句话不能只提其中一个 —— 用户按着提示去开另一个，
             // 只会得出「投屏坏了」的结论。
-            Text("在手机上打开拼图模式，这里就会跟着显示")
+            Text("在手机上打开拼图模式后，此处将同步显示")
                 .font(.title3)
                 .foregroundStyle(.white.opacity(0.7))
         }

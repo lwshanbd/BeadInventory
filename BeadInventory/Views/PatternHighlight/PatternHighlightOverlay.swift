@@ -25,9 +25,9 @@ enum GuideMode: String, CaseIterable {
     case off, five, ten
     var label: String {
         switch self {
-        case .off: return "关闭辅助线"
-        case .five: return "每 5 格"
-        case .ten: return "每 10 格"
+        case .off: return String(localized: "关闭辅助线")
+        case .five: return String(localized: "每 5 格")
+        case .ten: return String(localized: "每 10 格")
         }
     }
     var interval: Int? {

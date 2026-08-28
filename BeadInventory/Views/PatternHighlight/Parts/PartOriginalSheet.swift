@@ -143,7 +143,7 @@ struct PartOriginalSheet: View {
                     .foregroundStyle(Theme.ColorToken.Text.tertiary)
                 // 「没读出图纸」和「这块抠不出来」对用户是同一件事：别等了。
                 // 但必须说成「这次拿不到」而不是转圈 —— 转圈是在让他等一个不会来的东西。
-                Text("图纸上这块这次拿不到，只能看右边识别出来的样子")
+                Text("无法获取该区域的图纸原图，仅显示识别结果")
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Text.tertiary)
                     .multilineTextAlignment(.center)
@@ -223,7 +223,7 @@ struct PartOriginalSheet: View {
             // 出路在哪儿取决于这一屏是从哪开的：核对颜色那屏上面就摆着按钮，
             // 拼豆板那屏得先回核对颜色。说错一句，用户就在导航栈里白跑一趟。
             Text(onRegrid == nil
-                 ? "两边形状对不上，多半是这个零件的格子或者颜色判错了 —— 回「核对颜色」那屏改，改完再回来摆。"
+                 ? "两侧形状不一致，可能是该零件的格子或颜色识别有误，请返回「核对颜色」页面修改后再摆放"
                  : "两边形状对不上，多半是格线没落在豆子的缝上。按上面那个按钮回去重对，对完这一块的颜色会自动重判一遍。")
                 .font(.caption)
                 .foregroundColor(Theme.ColorToken.Text.tertiary)
