@@ -12,6 +12,7 @@ import UIKit
 
 struct AboutView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var showingDataPolicy = false
 
     private var appVersion: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -37,6 +38,7 @@ struct AboutView: View {
         }
         .background(Theme.ColorToken.Surface.background)
         .navigationBarHidden(true)
+        .sheet(isPresented: $showingDataPolicy) { DataUsagePolicyView() }
     }
 
     // MARK: - Hero
@@ -248,6 +250,12 @@ struct AboutView: View {
                     title: "评分 & 反馈",
                     subtitle: "给个评分，帮我改进",
                     action: { requestAppReview() }
+                )
+                BIListRow(
+                    icon: "lock.doc",
+                    iconColor: Theme.ColorToken.Morandi.mist,
+                    title: "数据使用声明",
+                    action: { showingDataPolicy = true }
                 )
                 BIListRow(
                     icon: "book",

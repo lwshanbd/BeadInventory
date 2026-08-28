@@ -231,6 +231,8 @@ struct BeadInventoryApp: App {
 
                     inventoryManager.performInitialLoadIfNeeded(reason: "rootView.onAppear")
                     AppLogger.shared.info("App", "root_view_appeared")
+                    // 投影仪那个安卓 App 的推流：挂上就一直在，连不连得上由它自己判断
+                    ProjectorSession.shared.activate()
                     // App 启动时检查是否有待处理的共享图片
                     sharedImageManager.checkForPendingImage()
 

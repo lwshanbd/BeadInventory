@@ -301,6 +301,8 @@
 		382001082FB3A70D00F5DDE2 /* BeadInventoryTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = BeadInventoryTests; sourceTree = "<group>"; };
 		38FA2CE42F274B2900912E02 /* ShareExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (38FA2CF12F274B2900912E02 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ShareExtension; sourceTree = "<group>"; };
 		DE516C7000000000000DESYS /* Views/DesignSystem */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Views/DesignSystem; sourceTree = "<group>"; };
+		DE516C7100000000000PROJ /* Managers/Projector */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Managers/Projector; sourceTree = "<group>"; };
+		DE516C7200000000000VPRJ /* Views/Projector */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Views/Projector; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -438,6 +440,8 @@
 				A01234560034 /* Managers */,
 				A01234560035 /* Views */,
 				DE516C7000000000000DESYS /* Views/DesignSystem */,
+				DE516C7100000000000PROJ /* Managers/Projector */,
+				DE516C7200000000000VPRJ /* Views/Projector */,
 				A01234560013 /* Assets.xcassets */,
 				38B1A0012F01000100000052 /* colorwithkaka.csv */,
 				38B1A0012F01000100000054 /* allcolors.json */,
@@ -621,6 +625,8 @@
 			);
 			fileSystemSynchronizedGroups = (
 				DE516C7000000000000DESYS /* Views/DesignSystem */,
+				DE516C7100000000000PROJ /* Managers/Projector */,
+				DE516C7200000000000VPRJ /* Views/Projector */,
 			);
 			name = BeadInventory;
 			packageProductDependencies = (
