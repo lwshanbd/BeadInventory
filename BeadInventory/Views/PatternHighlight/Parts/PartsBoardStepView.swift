@@ -265,7 +265,14 @@ struct PartsBoardStepView: View {
         .onChange(of: layoutSignature) { _, _ in refreshInvalid() }
         // 选中谁就把谁的原图抠出来。抠在后台：高清工作图上一块零件几十万像素，
         // 主线程上裁，用户点一下零件界面就顿一下。
-        .task(id: selectedPartId) { await loadOriginal(for: selectedPartId) }
+        //
+        // **对照弹窗开着时听它的，不听板上的选中。** 弹窗里「上一个 / 下一个」翻到的
+        // 那块并没有在板上被选中 —— 只认 `selectedPartId` 的话，翻过去那一边永远是
+        // 一个转不完的圈（`originalState` 拿不到条目就当成还在抠）。
+        // 关掉弹窗后键值退回选中的那块，而它早就是 `.ready` 了，不会重裁一遍。
+        .task(id: inspecting?.id ?? selectedPartId) {
+            await loadOriginal(for: inspecting?.id ?? selectedPartId)
+        }
         // 送外屏必须跟在 footprints 算完之后 —— 外屏只有形状可画，没形状的摆放会被整个跳过
         // （见 BoardCanvas 里那句 `guard let footprint`）。这两件事分开写过一次，
         // 结果是新摆的零件在电视上根本不出现、重排一遍电视上整块空白。
@@ -325,18 +332,28 @@ struct PartsBoardStepView: View {
             )
             .environmentObject(inventoryManager)
         }
-        .sheet(item: $inspecting) { part in
-            PartOriginalSheet(
-                title: name(of: part.id),
-                order: partOrder[part.id] ?? 0,
-                // 判「改过名没有」跟 displayName 用同一把尺（都要去掉空白），
-                // 否则名字里只打了个空格时，标题退回「零件 10」而这一行以为它有名字。
-                showsOrder: part.customName?.trimmingCharacters(in: .whitespaces).isEmpty == false,
-                original: originalState(of: part.id),
-                footprint: part.footprint(turns: 0),
-                colors: colorCache,
-                placement: placementInfo(of: part.id)
-            )
+        // **按 `isPresented` 开，不按 `item` 开。** 弹窗里「上一个 / 下一个」换的是
+        // `inspecting` 本身 —— `sheet(item:)` 换 item 走的是「关掉再开一个」，
+        // 翻一次弹窗就闪一下、还得等它重新升起来。这样写弹窗一直在，只是里面的内容跟着变。
+        .sheet(isPresented: Binding(
+            get: { inspecting != nil },
+            set: { if !$0 { inspecting = nil } }
+        )) {
+            if let part = inspecting {
+                PartOriginalSheet(
+                    title: name(of: part.id),
+                    order: partOrder[part.id] ?? 0,
+                    // 判「改过名没有」跟 displayName 用同一把尺（都要去掉空白），
+                    // 否则名字里只打了个空格时，标题退回「零件 10」而这一行以为它有名字。
+                    showsOrder: part.customName?.trimmingCharacters(in: .whitespaces).isEmpty == false,
+                    original: originalState(of: part.id),
+                    footprint: part.footprint(turns: 0),
+                    colors: colorCache,
+                    placement: placementInfo(of: part.id),
+                    onPrevious: stepAction(from: part.id, by: -1),
+                    onNext: stepAction(from: part.id, by: 1)
+                )
+            }
         }
         .alert("板上有零件间距过近", isPresented: $confirmFinishInvalid) {
             Button("返回调整位置", role: .cancel) { confirmFinishInvalid = false }
@@ -937,6 +954,19 @@ struct PartsBoardStepView: View {
             return
         }
         inspecting = part
+    }
+
+    /// 「上一个 / 下一个」按下去做什么。到头了就返回 nil —— 那一头的按钮变灰。
+    ///
+    /// 翻的是**零件清单的顺序**（也就是板上写的号），不是这块板上的顺序：
+    /// 号是用户唯一记得住的线索，而翻到别的板上的零件时，弹窗里「摆在」那一行会说清楚。
+    private func stepAction(from partId: UUID, by delta: Int) -> (() -> Void)? {
+        guard parts.count > 1,
+              let index = parts.firstIndex(where: { $0.id == partId }) else { return nil }
+        let target = index + delta
+        guard parts.indices.contains(target) else { return nil }
+        let next = parts[target]
+        return { inspecting = next }
     }
 
     /// 把这个零件在图纸上原来那块抠出来。四周留 6% 余量，跟零件清单那屏的小图一个裁法

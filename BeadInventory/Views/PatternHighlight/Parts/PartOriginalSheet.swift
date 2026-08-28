@@ -51,8 +51,16 @@ struct PartOriginalSheet: View {
     /// 核对颜色那屏才给这条路 —— 用户在那儿点开一块，十有八九就是因为觉得它判得不对，
     /// 而「格线没对准」正是判错的头号原因，出路不摆在眼前他只能自己猜要退到第几屏。
     var onRegrid: (() -> Void)?
+    /// 翻到零件清单里的上一个 / 下一个。nil = 到头了，按钮变灰。
+    ///
+    /// 两个都是 nil 时整条底栏不出现（统共就一个零件）。**翻的是零件清单的顺序**，
+    /// 也就是板上写的那个号 —— 翻到的那块可能摆在别的板上，「摆在」那一行会说清楚。
+    var onPrevious: (() -> Void)?
+    var onNext: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
+
+    private var canStep: Bool { onPrevious != nil || onNext != nil }
 
     var body: some View {
         NavigationStack {
@@ -75,8 +83,40 @@ struct PartOriginalSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成") { dismiss() }
                 }
+                if canStep {
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        stepButton("上一个", systemImage: "chevron.left",
+                                   iconLeading: true, action: onPrevious)
+                        Spacer()
+                        stepButton("下一个", systemImage: "chevron.right",
+                                   iconLeading: false, action: onNext)
+                    }
+                }
             }
         }
+    }
+
+    // MARK: - 翻到上一个 / 下一个
+
+    /// 图标和文字得自己拼进 HStack：工具栏里直接给 `Label`，
+    /// 系统只画图标，`labelStyle` 也压不住（这个坑踩过）。
+    private func stepButton(
+        _ title: LocalizedStringKey,
+        systemImage: String,
+        iconLeading: Bool,
+        action: (() -> Void)?
+    ) -> some View {
+        Button {
+            action?()
+        } label: {
+            HStack(spacing: Theme.Spacing.xs) {
+                if iconLeading { Image(systemName: systemImage) }
+                Text(title)
+                if !iconLeading { Image(systemName: systemImage) }
+            }
+            .font(.body)
+        }
+        .disabled(action == nil)
     }
 
     // MARK: - 并排比
@@ -206,7 +246,12 @@ struct PartOriginalSheet: View {
     @ViewBuilder
     private var regridButton: some View {
         if let onRegrid {
-            Button(action: onRegrid) {
+            // **自己关掉自己**，不劳调用方去清那个 item：调用方清了的话，
+            // 弹窗还在退场动画里、里面已经没有零件可画，会闪一下空白。
+            Button {
+                onRegrid()
+                dismiss()
+            } label: {
                 Label("格子没对准，回去重对这一块", systemImage: "grid")
                     .frame(maxWidth: .infinity)
             }

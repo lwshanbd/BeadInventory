@@ -64,6 +64,9 @@ struct PartCellBrushView: View {
 
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) private var dismiss
+    /// 一个物理像素有多少 pt。格线细到这个数以下就不是「细线」了，
+    /// 而是被抗锯齿摊成的一层灰雾，见 `gridLines`。
+    @Environment(\.displayScale) private var displayScale
 
     enum Tool: Hashable { case move, erase, paint }
 
@@ -465,14 +468,14 @@ struct PartCellBrushView: View {
             // 一格小到看不出是格子的时候就别画了 —— 几百条线糊成一片，
             // 反而把底下的格子盖住。
             //
-            // **阈值 6 不是 9。** 9 是「板底还是白的、只描一道线」那会儿定的。现在
+            // **阈值 5 不是 9，也不是 6。** 9 是「板底还是白的、只描一道线」那会儿定的。现在
             // 「这一格有没有豆子」靠的是板底和豆子的颜色差、外加板底那层棋盘纹理
             // （见 `boardBase` / `boardTile`），格线只管
             // 「同色两格之间的缝」—— 也就是只在用户想精确点一格时才要紧，而那时候
-            // 他本来就会放大。降到 6 是为了缩窄「一按对照图纸格线就没了」那个突变：
+            // 他本来就会放大。一路降到 5 是为了缩窄「一按对照图纸格线就没了」那个突变：
             // 分栏把长边砍一半，格子跟着缩（见 `panes`），原来刚过阈值的零件会掉到线以下。
-            // **只是缩窄，没有消掉** —— 窗口从「原始格宽 9～11.7pt」变成「6～7.8pt」。
-            if cw >= 6, ch >= 6 {
+            // **只是缩窄，没有消掉** —— 窗口从「原始格宽 9～11.7pt」变成「5～6.5pt」。
+            if cw >= 5, ch >= 5 {
                 var path = Path()
                 for c in 0...cols {
                     let x = box.minX + CGFloat(c) * cw
@@ -491,11 +494,19 @@ struct PartCellBrushView: View {
                 // 空格四周同样有缝 —— 格线只解决「同色两格之间的缝」，
                 // 「这一格有没有豆子」从头到尾靠的是板底本身（颜色差 + 棋盘纹理），
                 // 那是 `boardColor` 和 `boardTile` 的事。
+                //
                 // 线宽跟着格子缩，别让它吃掉超过八分之一格 —— 6pt 的格子上
-                // 1pt 的线就占了六分之一，一片格子看着像一张网。
-                let hair = min(1.0, cw / 8)
-                context.stroke(path, with: .color(.white.opacity(0.30)), lineWidth: hair)
-                context.stroke(path, with: .color(.black.opacity(0.28)), lineWidth: hair / 2)
+                // 1pt 的线就占了六分之一，一片格子看着像一张网。**但不能细过两个物理像素**：
+                // 再细下去 Canvas 画不出更细的线，只能把它摊在一个像素里按比例调淡 ——
+                // 线还在，人眼已经看不见了。「对照图纸」正好是格子被砍到最小的那一屏，
+                // 用户报的「格子线看不清」就出在这一段。
+                let px = 1 / displayScale
+                let hair = max(px * 2, min(1.0, cw / 8))
+                // 浅深两道都比原来实一档（0.30 / 0.28 → 0.55 / 0.45）。细线本来就只盖住
+                // 一两个像素，再按三成透明去调，落到屏幕上就是一层灰雾。加到这个程度，
+                // 两道线仍然比豆子本身淡，格子看着还是格子、不是一张网。
+                context.stroke(path, with: .color(.white.opacity(0.55)), lineWidth: hair)
+                context.stroke(path, with: .color(.black.opacity(0.45)), lineWidth: max(px, hair / 2))
             }
 
             context.stroke(Path(box), with: .color(Theme.ColorToken.Morandi.honey), lineWidth: 1.5)
