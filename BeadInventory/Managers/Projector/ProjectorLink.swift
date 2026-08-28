@@ -72,6 +72,12 @@ final class ProjectorLink: NSObject, ObservableObject {
     /// 这次是冷启动时的自动尝试。失败就安静收手，不进入「断了一直接」那套。
     private var isAutoAttempt = false
     private var sequence: UInt32 = UInt32(Date().timeIntervalSince1970)
+    /// 最后一次收到对方任何一条消息的时刻。**判断连接死没死靠它，不靠「发送有没有报错」**。
+    ///
+    /// 投影仪那头的 App 被系统回收、或者用户重启了它，TCP 这边可能一点动静都没有：
+    /// 内核照收不误，要等重传耗尽才报错，那是几分钟。这期间手机上一直写着「已连接」，
+    /// 而投影仪早就回到配对屏了 —— 用户两边看着自相矛盾，还不知道该点什么。
+    private var lastInboundAt = Date()
     private var lifecycleObservers: [NSObjectProtocol] = []
 
     private lazy var urlSession: URLSession = {
@@ -84,6 +90,10 @@ final class ProjectorLink: NSObject, ObservableObject {
         config.timeoutIntervalForRequest = 3600
         return URLSession(configuration: config)
     }()
+
+    /// 多久收不到任何消息就判定对方没了。心跳 5 秒一次，留三次的余量 ——
+    /// 短了会在网络抖一下时误判，长了用户会对着一个假的「已连接」发呆。
+    private static let silenceTimeout: TimeInterval = 16
 
     private enum Key {
         static let pairing = "projectorLink.pairing"
@@ -195,6 +205,7 @@ final class ProjectorLink: NSObject, ObservableObject {
                 self.cipher = ProjectorCipher(sessionKey: key)
                 self.retryCount = 0
                 self.isAutoAttempt = false
+                self.lastInboundAt = Date()
                 self.state = .connected(
                     size: CGSize(width: welcome.width, height: welcome.height),
                     device: welcome.device
@@ -285,6 +296,7 @@ final class ProjectorLink: NSObject, ObservableObject {
     }
 
     private func handle(packet: Data) {
+        lastInboundAt = Date()
         guard cipher != nil else { return }
         do {
             let (type, plaintext) = try cipher!.open(packet)
@@ -309,7 +321,14 @@ final class ProjectorLink: NSObject, ObservableObject {
                 try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled else { return }
                 id += 1
-                self?.send(.ping(id))
+                guard let self else { return }
+                // 安卓端每条 ping 都会立刻回 pong。连着几次一点回音都没有，
+                // 说明那头已经不在了，别再干等 TCP 自己超时。
+                if Date().timeIntervalSince(self.lastInboundAt) > Self.silenceTimeout {
+                    self.handleFailure("投影仪没有回应")
+                    return
+                }
+                self.send(.ping(id))
             }
         }
     }

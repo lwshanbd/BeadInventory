@@ -115,6 +115,12 @@ struct ProjectorConnectView: View {
                     .disabled(!canConnect)
             }
 
+            if link.pairing != nil {
+                Section {
+                    Button("重新连接上次的投影仪") { link.reconnectSaved() }
+                }
+            }
+
             if case .waiting(let reason) = link.state {
                 Section {
                     Text(reason)
@@ -142,6 +148,9 @@ struct ProjectorConnectView: View {
                 LabeledContent("画面尺寸", value: "\(Int(size.width)) × \(Int(size.height))")
             }
             Section {
+                // 两端状态对不上时的出路：投影仪那头 App 重启过、或者网络断过又回来，
+                // 这边可能还停在「已连接」。重连一次比让用户猜该点什么强。
+                Button("重新连接") { link.reconnectSaved() }
                 Button("断开连接") { link.disconnect() }
                 Button("忘记这台投影仪", role: .destructive) {
                     link.forgetDevice()
