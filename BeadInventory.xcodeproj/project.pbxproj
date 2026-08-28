@@ -50,6 +50,7 @@
 		385001122FB3A70D00F5DDE2 /* ValidationDiffSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001112FB3A70D00F5DDE2 /* ValidationDiffSheet.swift */; };
 		386001022FB3A70D00F5DDE2 /* GridOCRSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386001012FB3A70D00F5DDE2 /* GridOCRSampler.swift */; };
 		386ECBFA2F332DB600BD92E8 /* AnnouncementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */; };
+		38A1B2C42F900002000LMRM2 /* LocalModelRemovalMigrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A1B2C32F900001000LMRM1 /* LocalModelRemovalMigrator.swift */; };
 		386ECBFC2F332DB600BD92E8 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFB2F332DB600BD92E8 /* BackupManager.swift */; };
 		386ECBFE2F332E1500BD92E8 /* BackupRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */; };
 		38B1A0012F01000100000001 /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B1A0012F01000100000011 /* Brand.swift */; };
@@ -113,9 +114,6 @@
 		CM0014A0000000000001BFIL /* ColorModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CM0014A0000000000001FILE /* ColorModeView.swift */; };
 		CS0001A0000000000001BFIL /* ColorScheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS0001A0000000000001FILE /* ColorScheme.swift */; };
 		PD0001A0000000000001BFIL /* PaletteDeriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = PD0001A0000000000001FILE /* PaletteDeriver.swift */; };
-		D10000000000000000000001 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = D10000000000000000000021 /* MLXLMCommon */; };
-		D10000000000000000000002 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = D10000000000000000000022 /* MLXVLM */; };
-		D10000000000000000000003 /* Hub in Frameworks */ = {isa = PBXBuildFile; productRef = D10000000000000000000023 /* Hub */; };
 		DD0A1B01A0060001DEADBEEF /* DeductionItemRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0A1B01A0060002DEADBEEF /* DeductionItemRow.swift */; };
 		DE0D1C01A0050001DEADBEEF /* DeductionItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0D1C01A0050002DEADBEEF /* DeductionItem.swift */; };
 		DE0D1C03A0050001DEADBEEF /* DeductionResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0D1C03A0050002DEADBEEF /* DeductionResolver.swift */; };
@@ -207,6 +205,7 @@
 		385001112FB3A70D00F5DDE2 /* ValidationDiffSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ValidationDiffSheet.swift; path = BeadInventory/Views/PatternHighlight/ValidationDiffSheet.swift; sourceTree = SOURCE_ROOT; };
 		386001012FB3A70D00F5DDE2 /* GridOCRSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridOCRSampler.swift; sourceTree = "<group>"; };
 		386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnouncementManager.swift; sourceTree = "<group>"; };
+		38A1B2C32F900001000LMRM1 /* LocalModelRemovalMigrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelRemovalMigrator.swift; sourceTree = "<group>"; };
 		386ECBFB2F332DB600BD92E8 /* BackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
 		386ECBFD2F332E1500BD92E8 /* BackupRestoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreView.swift; sourceTree = "<group>"; };
 		38B1A0012F01000100000011 /* Brand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brand.swift; sourceTree = "<group>"; };
@@ -323,9 +322,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D10000000000000000000003 /* Hub in Frameworks */,
-				D10000000000000000000001 /* MLXLMCommon in Frameworks */,
-				D10000000000000000000002 /* MLXVLM in Frameworks */,
 				381060CA2FB3A70D00F5DDE2 /* OpenCV in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -488,6 +484,7 @@
 			children = (
 				386ECBFB2F332DB600BD92E8 /* BackupManager.swift */,
 				386ECBF92F332DB600BD92E8 /* AnnouncementManager.swift */,
+				38A1B2C32F900001000LMRM1 /* LocalModelRemovalMigrator.swift */,
 				CC510001A0050002DEADBEEF /* ColorSimilarityService.swift */,
 				DE0D1C03A0050002DEADBEEF /* DeductionResolver.swift */,
 				38FA2CF62F274C4000912E02 /* SharedImageManager.swift */,
@@ -627,9 +624,6 @@
 			);
 			name = BeadInventory;
 			packageProductDependencies = (
-				D10000000000000000000021 /* MLXLMCommon */,
-				D10000000000000000000022 /* MLXVLM */,
-				D10000000000000000000023 /* Hub */,
 				381060CB2FB3A70D00F5DDE2 /* OpenCV */,
 			);
 			productName = BeadInventory;
@@ -665,8 +659,6 @@
 			);
 			mainGroup = A01234560030;
 			packageReferences = (
-				D10000000000000000000011 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
-				D10000000000000000000012 /* XCRemoteSwiftPackageReference "swift-transformers" */,
 				381060C52FB3A70D00F5DDE2 /* XCRemoteSwiftPackageReference "opencv-spm" */,
 			);
 			productRefGroup = A01234560032 /* Products */;
@@ -793,6 +785,7 @@
 				38B1A0012F01000100000050 /* ColorSystem.swift in Sources */,
 				386ECBFC2F332DB600BD92E8 /* BackupManager.swift in Sources */,
 				386ECBFA2F332DB600BD92E8 /* AnnouncementManager.swift in Sources */,
+				38A1B2C42F900002000LMRM2 /* LocalModelRemovalMigrator.swift in Sources */,
 				38B1A0012F01000100000048 /* CSVImporter.swift in Sources */,
 				38FA2CF72F274C4000912E02 /* SharedImageManager.swift in Sources */,
 				CC510001A0050001DEADBEEF /* ColorSimilarityService.swift in Sources */,
@@ -1216,22 +1209,6 @@
 				minimumVersion = 4.13.0;
 			};
 		};
-		D10000000000000000000011 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
-			requirement = {
-				kind = revision;
-				revision = 6bb84aac13f76ca5e2c3ff312bc072977e684ff4;
-			};
-		};
-		D10000000000000000000012 /* XCRemoteSwiftPackageReference "swift-transformers" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/huggingface/swift-transformers";
-			requirement = {
-				kind = upToNextMinorVersion;
-				minimumVersion = 1.1.3;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1239,21 +1216,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 381060C52FB3A70D00F5DDE2 /* XCRemoteSwiftPackageReference "opencv-spm" */;
 			productName = OpenCV;
-		};
-		D10000000000000000000021 /* MLXLMCommon */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D10000000000000000000011 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
-			productName = MLXLMCommon;
-		};
-		D10000000000000000000022 /* MLXVLM */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D10000000000000000000011 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
-			productName = MLXVLM;
-		};
-		D10000000000000000000023 /* Hub */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D10000000000000000000012 /* XCRemoteSwiftPackageReference "swift-transformers" */;
-			productName = Hub;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

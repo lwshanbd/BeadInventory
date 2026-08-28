@@ -18,7 +18,6 @@ struct ScanView: View {
 
     @EnvironmentObject var inventoryManager: InventoryManager
     @ObservedObject private var aiService = AIServiceManager.shared
-    @ObservedObject private var localModelManager = LocalModelManager.shared
 
     /// 从外部传入的图片（如 Share Extension）
     @Binding var externalImage: UIImage?
@@ -452,12 +451,6 @@ struct ScanView: View {
                     Text(aiService.setupBannerText)
                         .font(.caption2)
                         .foregroundColor(.secondary)
-
-                    if aiService.config.backend == .local,
-                       localModelManager.isDownloading.contains(aiService.config.localModel) {
-                        ProgressView(value: localModelManager.progress(for: aiService.config.localModel))
-                            .progressViewStyle(.linear)
-                    }
                 }
                 .font(.caption)
                 Spacer()
@@ -481,18 +474,6 @@ struct ScanView: View {
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
                     .strokeBorder(Theme.ColorToken.Status.warning.opacity(0.3), lineWidth: 1)
             )
-            .padding(.horizontal)
-        } else if aiService.config.backend == .local {
-            HStack(alignment: .top) {
-                Image(systemName: "iphone.gen3")
-                    .foregroundColor(Theme.ColorToken.Status.info)
-                Text("当前使用 \(aiService.config.localModel.displayName) 本地识别。无需 API，但速度相对更慢，也可能引起发热。")
-                    .font(.caption)
-                Spacer()
-            }
-            .padding()
-            .background(Theme.ColorToken.Status.info.opacity(0.08))
-            .cornerRadius(Theme.Radius.sm)
             .padding(.horizontal)
         }
     }
@@ -3093,7 +3074,7 @@ struct ScanHelpSheet: View {
                             .padding(.top, 24)
 
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("1. 先选择识别方式：推荐配置云端 API（更准更快），也可下载本地模型离线使用")
+                            Text("1. 在设置中配置云端 API（填写 API Key）")
                             Text("2. 裁切图纸，请只保留图纸下方豆量汇总")
                             Text("3. 扫描")
                         }

@@ -526,7 +526,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Those %lld cells were already \u201c%@\u201d \u2014 nothing changed"
+            "value" : "Those %lld cells were already “%@” — nothing changed"
           }
         }
       }
@@ -536,7 +536,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Just changed %lld cells to \u201c%@\u201d"
+            "value" : "Just changed %lld cells to “%@”"
           }
         }
       }
@@ -1015,26 +1015,6 @@
         }
       }
     },
-    "%@ 如果机型较老，建议优先使用云端识别。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ If your device is older, cloud recognition is recommended."
-          }
-        }
-      }
-    },
-    "%@ 已下载，可直接识别" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ downloaded, ready for recognition"
-          }
-        }
-      }
-    },
     "%@ 的 API Key 通常以 \"sk-\" 开头，你当前填写的 Key 格式可能不正确，请确认。" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1345,16 +1325,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "💡 If these projects were imported from an older backup, we recommend turning off \"Restore Stock\"."
-          }
-        }
-      }
-    },
-    "1. 先选择识别方式：推荐配置云端 API（更准更快），也可下载本地模型离线使用" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1. Choose a recognition method: cloud API is recommended (more accurate and faster), or download a local model for offline use."
           }
         }
       }
@@ -2870,40 +2840,6 @@
         }
       }
     },
-    "help.faq.localvscloud.answer" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cloud API (recommended): needs internet and an API key, but is more accurate, faster, and supports more formats. Local model: works offline after download, but accuracy and speed are lower and it takes up device storage."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "推荐使用云端 API：识别更准确、速度更快，支持更多格式，需要网络和 API Key。本地模型仅建议离线场景使用：下载后可脱网使用，但识别准确率和速度较低，且占用本机存储。"
-          }
-        }
-      }
-    },
-    "help.faq.localvscloud.question" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "What's the difference between local and cloud?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本地模型和云端 API 有什么区别？"
-          }
-        }
-      }
-    },
     "help.faq.multisync.answer" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2944,13 +2880,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Make sure the image is clear and only shows the color count table. Try cloud API (usually more accurate than local models). You can manually edit results after scanning."
+            "value" : "Make sure the image is clear and only shows the color count table. You can manually edit results after scanning."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请确保图片清晰，只保留色号统计表格部分。尝试使用云端 API（通常比本地模型更准确）。识别完成后可以手动编辑修正。"
+            "value" : "请确保图片清晰，只保留色号统计表格部分。识别完成后可以手动编辑修正。"
           }
         }
       }
@@ -2978,13 +2914,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "An API key connects to cloud AI services. BeadInventory is free; to avoid charging users, the scan feature requires your own free API key. Alternatively, download a local model to skip API setup entirely."
+            "value" : "An API key connects to cloud AI services. BeadInventory is free; to avoid charging users, the scan feature requires your own free API key."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "API 是连接云端 AI 服务的密钥。啃豆小仓是免费 App，为了不向用户收费，扫描识别功能需要你自己申请一个免费的 API Key。你也可以选择下载本地模型来避免配置 API。"
+            "value" : "API 是连接云端 AI 服务的密钥。啃豆小仓是免费 App，为了不向用户收费，扫描识别功能需要你自己申请一个免费的 API Key。"
           }
         }
       }
@@ -3505,13 +3441,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Go to the Scan tab, take a photo or choose from your album. You need to set up AI recognition first (local model or cloud API)."
+            "value" : "Go to the Scan tab, take a photo or choose from your album. You need to set up the cloud API first (enter your API Key)."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "进入「扫描」Tab，拍照或从相册选择色号统计图片。需要先配置 AI 识别方式（本地模型或云端 API）。"
+            "value" : "进入「扫描」Tab，拍照或从相册选择色号统计图片。需要先配置云端 API（填入 API Key）。"
           }
         }
       }
@@ -3658,13 +3594,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "BeadInventory offers two AI modes: download a local model (recommended for beginners, no setup needed), or configure a cloud API (more accurate). Go to More → Settings → AI Image Recognition."
+            "value" : "BeadInventory runs AI recognition through a cloud API: go to More → Settings → AI Image Recognition, pick a provider and enter your API Key."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "啃豆小仓提供两种 AI 识别方式：下载本地模型（推荐新手，无需配置），或配置云端 API（识别更准确）。进入「更多」→「设置」→「AI 图像识别」进行配置。"
+            "value" : "啃豆小仓的 AI 识别通过云端 API 完成：进入「更多」→「设置」→「AI 图像识别」，选择提供商并填入 API Key。"
           }
         }
       }
@@ -3692,13 +3628,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "In settings, choose 'Cloud', select a provider (Kimi, OpenAI, Anthropic, etc.), then enter your API Key. Cloud recognition is usually more accurate but requires internet."
+            "value" : "In settings, select a provider (Kimi, OpenAI, Anthropic, etc.), then enter your API Key. Recognition requires an internet connection."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在设置中选择「云端」，选择 AI 提供商（Kimi、OpenAI、Anthropic 等），然后填入你的 API Key。云端识别通常更准确，但需要网络连接。"
+            "value" : "在设置中选择 AI 提供商（Kimi、OpenAI、Anthropic 等），然后填入你的 API Key。识别需要网络连接。"
           }
         }
       }
@@ -3709,13 +3645,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Option 2: Cloud API"
+            "value" : "Set up the cloud API"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "方式二：云端 API"
+            "value" : "配置云端 API"
           }
         }
       }
@@ -3784,40 +3720,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "如何编辑识别结果"
-          }
-        }
-      }
-    },
-    "help.scan.localmodel.description" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In settings, choose 'Local', then download the recommended model. Once downloaded, it works offline without any API configuration."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在设置中选择「本地」，然后下载推荐的模型。下载完成后即可使用，无需网络连接，也不需要配置 API。"
-          }
-        }
-      }
-    },
-    "help.scan.localmodel.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Option 1: Local model (recommended for beginners)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "方式一：本地模型（推荐新手）"
           }
         }
       }
@@ -4075,33 +3977,6 @@
         }
       }
     },
-    "下载 %@ · 占用约 %@" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Download %@ · approx. %@ storage"
-          }
-        }
-      }
-    },
-    "下载中" : {
-
-    },
-    "下载中 %lld%%" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Downloading %lld%%"
-          }
-        }
-      }
-    },
-    "下载并使用" : {
-
-    },
     "不再显示" : {
       "localizations" : {
         "en" : {
@@ -4165,9 +4040,6 @@
         }
       }
     },
-    "云端" : {
-
-    },
     "云端：品牌 %@ · 库存 %@ · 项目 %@ · 计划 %@ · 自定义 %@" : {
       "localizations" : {
         "en" : {
@@ -4208,16 +4080,6 @@
         }
       }
     },
-    "云端模型" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cloud Model"
-          }
-        }
-      }
-    },
     "云端统计配置错误" : {
       "localizations" : {
         "en" : {
@@ -4234,16 +4096,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cloud recognition configured"
-          }
-        }
-      }
-    },
-    "云端识别通常更准确也更快，但需要配置 API Key。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cloud recognition is usually more accurate and faster, but requires an API Key."
           }
         }
       }
@@ -4485,9 +4337,6 @@
           }
         }
       }
-    },
-    "使用此模型" : {
-
     },
     "使用统计" : {
       "extractionState" : "stale",
@@ -4933,26 +4782,6 @@
         }
       }
     },
-    "准确度会略低于云端识别，速度相对更慢，也可能带来发热。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Accuracy slightly lower than cloud recognition. Slower and may cause device heating."
-          }
-        }
-      }
-    },
-    "准确度通常高于 0.8B，但首次加载更久，更容易造成发热和内存压力。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Usually more accurate than 0.8B, but takes longer to load initially. Higher risk of heating and memory pressure."
-          }
-        }
-      }
-    },
     "减少" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5073,31 +4902,11 @@
         }
       }
     },
-    "删除 %@？" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete %@?"
-          }
-        }
-      }
-    },
     "删除 %lld 个" : {
 
     },
     "删除「%@」？该操作不可撤销。" : {
 
-    },
-    "删除中" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deleting"
-          }
-        }
-      }
     },
     "删除全部" : {
       "localizations" : {
@@ -5105,16 +4914,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete All"
-          }
-        }
-      }
-    },
-    "删除后会释放本地存储空间；如果之后还要使用，需要重新下载。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deletion frees local storage; you will need to download again to use this model later."
           }
         }
       }
@@ -5156,16 +4955,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete Sub-project"
-          }
-        }
-      }
-    },
-    "删除模型" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete Model"
           }
         }
       }
@@ -5387,16 +5176,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Original Color"
-          }
-        }
-      }
-    },
-    "去下载" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Download"
           }
         }
       }
@@ -6587,17 +6366,6 @@
         }
       }
     },
-    "已下载" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Downloaded"
-          }
-        }
-      }
-    },
     "已使用" : {
       "localizations" : {
         "en" : {
@@ -7086,16 +6854,6 @@
         }
       }
     },
-    "建议按机型选择：iPhone 14 及以上优先尝试 0.8B，iPhone 15 及以上再考虑 2B。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose by device: iPhone 14+ try 0.8B first, iPhone 15+ consider 2B."
-          }
-        }
-      }
-    },
     "开发者" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7170,16 +6928,6 @@
         }
       }
     },
-    "当前使用 %@ 本地识别。无需 API，但速度相对更慢，也可能引起发热。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Currently using %@ on-device recognition. No API needed, but it is slower and may cause the device to heat up."
-          }
-        }
-      }
-    },
     "当前品牌" : {
       "localizations" : {
         "en" : {
@@ -7200,9 +6948,6 @@
         }
       }
     },
-    "当前已选" : {
-
-    },
     "当前状态" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7210,16 +6955,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Current Status"
-          }
-        }
-      }
-    },
-    "当前设备不支持本地模型，需要搭载 A14 及以上芯片的设备" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "On-device models are not supported on this device. An A14 or newer chip is required."
           }
         }
       }
@@ -7240,56 +6975,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This device is not signed in to iCloud. Cloud sync unavailable."
-          }
-        }
-      }
-    },
-    "当前设备约为 iPhone %lld 或更新机型，%@ 可以尝试。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your device is approximately iPhone %lld or newer. %@ is worth trying."
-          }
-        }
-      }
-    },
-    "当前设备约为 iPhone %lld 或更新机型，可优先尝试 2B；如更看重下载体积、速度和发热，也可以选 0.8B。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your device is approximately iPhone %lld or newer. 2B is recommended; choose 0.8B if you prefer smaller download and less heating."
-          }
-        }
-      }
-    },
-    "当前设备约为 iPhone %lld，不建议选择 %@。建议改用云端识别，或退而求其次选择更小的本地模型。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your device is approximately iPhone %lld. %@ is not recommended. Consider cloud recognition, or try a smaller local model."
-          }
-        }
-      }
-    },
-    "当前设备约为 iPhone %lld，更建议使用云端识别；若必须本地运行，请谨慎尝试 0.8B。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your device is approximately iPhone %lld. Cloud recognition is recommended; if local is required, try 0.8B with caution."
-          }
-        }
-      }
-    },
-    "当前设备约为 iPhone 14 系列，建议优先选择 0.8B；2B 负载偏高，不建议。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your device is approximately iPhone 14 series. 0.8B is recommended; 2B has high resource usage and is not recommended."
           }
         }
       }
@@ -7818,26 +7503,6 @@
     "接口不存在（404），请检查 API 地址是否正确" : {
 
     },
-    "推荐 iPhone 14 及以上机型优先选择，门槛更低，下载更小。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recommended for iPhone 14+. Lower requirements, smaller download."
-          }
-        }
-      }
-    },
-    "推荐 iPhone 15 及以上机型选择，效果通常更好，但体积和负载更高。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recommended for iPhone 15+. Usually better results, but larger size and higher resource usage."
-          }
-        }
-      }
-    },
     "提示：iCloud 同步不是实时的，跨设备同步通常需要几秒到几分钟，请稍等一会再查看。" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8298,16 +7963,6 @@
         }
       }
     },
-    "无法转换本地模型返回的 JSON 文本" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cannot convert JSON text from local model"
-          }
-        }
-      }
-    },
     "无法连接到服务器，请检查 API 地址和网络" : {
 
     },
@@ -8657,26 +8312,6 @@
     "本图需要 %lld 颗" : {
 
     },
-    "本地模型" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Local Model"
-          }
-        }
-      }
-    },
-    "本地识别可免去 API 配置，但准确度会略差于云端，速度更慢，也可能造成手机发热。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Local recognition works without API, but is slightly less accurate and slower, and may cause device heating."
-          }
-        }
-      }
-    },
     "本月使用情况" : {
 
     },
@@ -8765,39 +8400,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Model"
-          }
-        }
-      }
-    },
-    "模型文件不完整，请重试下载" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Model file is incomplete, please retry download"
-          }
-        }
-      }
-    },
-    "模型未下载，请先下载" : {
-
-    },
-    "模型正在下载，暂时不能删除" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Model is downloading, cannot delete now"
-          }
-        }
-      }
-    },
-    "正在下载 %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Downloading %@"
           }
         }
       }
@@ -9766,26 +9368,6 @@
         }
       }
     },
-    "约 1.72 GB" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "~1.72 GB"
-          }
-        }
-      }
-    },
-    "约 625 MB" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "~625 MB"
-          }
-        }
-      }
-    },
     "统一数量" : {
       "localizations" : {
         "en" : {
@@ -10376,9 +9958,6 @@
     "设备未连接到互联网" : {
 
     },
-    "设备能力" : {
-
-    },
     "设置" : {
       "localizations" : {
         "en" : {
@@ -10426,17 +10005,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recognition Differences (%lld)"
-          }
-        }
-      }
-    },
-    "识别方式" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recognition Method"
           }
         }
       }
@@ -10536,26 +10104,6 @@
         }
       }
     },
-    "请先下载本地模型" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Please download a local model first"
-          }
-        }
-      }
-    },
-    "请先下载本地模型：%@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Please download the local model first: %@"
-          }
-        }
-      }
-    },
     "请先创建品牌" : {
       "localizations" : {
         "en" : {
@@ -10612,16 +10160,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Please select or create a brand first"
-          }
-        }
-      }
-    },
-    "请先配置云端 API，或下载本地模型" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Please configure cloud API or download a local model"
           }
         }
       }
@@ -11090,9 +10628,6 @@
           }
         }
       }
-    },
-    "配置云端 API 或下载本地模型用于扫描识别" : {
-
     },
     "重复处理" : {
       "localizations" : {
@@ -13618,6 +13153,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Change to %@"
+          }
+        }
+      }
+    },
+    "配置云端 API 用于扫描识别" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configure a cloud API for scan recognition"
+          }
+        }
+      }
+    },
+    "扫描识别需要配置 API Key。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan recognition needs an API Key."
+          }
+        }
+      }
+    },
+    "请先配置云端 API" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please configure the cloud API first"
+          }
+        }
+      }
+    },
+    "本地模型识别已下线" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On-device recognition has been retired"
+          }
+        }
+      }
+    },
+    "已清理本地模型文件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leftover model files cleaned up"
+          }
+        }
+      }
+    },
+    "扫描识别现已统一使用云端 API，识别时图片将上传至你配置的服务商。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan recognition now runs entirely through a cloud API; your image is uploaded to the provider you configure."
+          }
+        }
+      }
+    },
+    "请前往「更多 → 设置 → AI 图像识别」填写 API Key。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to More → Settings → AI Image Recognition to enter an API Key."
+          }
+        }
+      }
+    },
+    "已自动删除此前下载的模型文件，释放 %@ 存储空间。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The previously downloaded model files have been deleted, freeing %@ of storage."
+          }
+        }
+      }
+    },
+    "1. 在设置中配置云端 API（填写 API Key）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. Configure the cloud API in Settings (enter your API Key)"
           }
         }
       }
