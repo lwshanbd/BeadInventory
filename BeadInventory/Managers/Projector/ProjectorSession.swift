@@ -132,6 +132,11 @@ final class ProjectorSession: ObservableObject {
         case .exit:
             // 用户在投影仪上按了返回。跟手机上点「完成」一样收尾：存下来、退出校准。
             if projector.isCalibrating { projector.finishCalibrating() }
+        case .calibrationRequest:
+            // 遥控器要求进校准。板子格数用当前这块的 —— 用户此刻在投影仪那头，
+            // 手机上弹个选单让他回来挑是最糟的做法。
+            guard !projector.isCalibrating, let screen = link.state.screenSize else { return }
+            projector.beginCalibrating(suggestedBoard: nil, screen: screen)
         case .resize:
             // 尺寸变了要按新尺寸重新出图，否则安卓端会把旧图最近邻拉伸。
             syncNow()

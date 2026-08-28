@@ -218,6 +218,11 @@ enum ProjectorInbound {
     case active(ProjectorCorner)
     /// 用户在投影仪上按了返回键，要求退出校准。
     case exit
+    /// 用户在投影仪上长按了确定键，要求**进入**校准。
+    ///
+    /// 人是站在投影仪跟前拿着遥控器的，要他为了「开始校准」走回去摸手机，这个功能
+    /// 就等于没有。
+    case calibrationRequest
     case pong
 
     init?(json: [String: Any]) {
@@ -233,6 +238,8 @@ enum ProjectorInbound {
             self = .active(corner)
         case "exit":
             self = .exit
+        case "calibRequest":
+            self = .calibrationRequest
         case "pong":
             self = .pong
         default:
