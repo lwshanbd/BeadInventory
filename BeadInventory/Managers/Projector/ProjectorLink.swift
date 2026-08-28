@@ -77,7 +77,11 @@ final class ProjectorLink: NSObject, ObservableObject {
     private lazy var urlSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.waitsForConnectivity = false
-        config.timeoutIntervalForRequest = 10
+        // 这是**长连接**，不能按「请求」的超时来管：投影仪模式下用户按十分钟豆子才切
+        // 一次色号，中间本来就没有数据流动。设成 10 秒的话，系统会在一段安静之后把
+        // 连接判成超时掐掉 —— 表现正是「投着投着自己断了」。
+        // 存活由 5 秒一次的心跳保证（安卓端 15 秒收不到消息才断）。
+        config.timeoutIntervalForRequest = 3600
         return URLSession(configuration: config)
     }()
 
@@ -199,6 +203,20 @@ final class ProjectorLink: NSObject, ObservableObject {
                 self.startHeartbeat()
             } catch {
                 guard let self, self.task === task else { return }
+                // 凭据被拒是**终态**，不能进重试循环。
+                //
+                // 6 位短码在投影仪那边每次开 App 都会换一个新的，旧码重试一万次也进不去；
+                // 更糟的是安卓端数到 5 次失败就会把屏幕上那个码整个换掉 —— 于是用户照着
+                // 屏幕抄的码刚输进来就被自己后台的重试顶失效了，表现是「明明照着抄的却
+                // 一直连不上」。密钥被轮换掉时同理，重试也没有意义。
+                if case ProjectorLinkError.denied = error {
+                    self.stoppedByUser = true
+                    self.isAutoAttempt = false
+                    self.teardown(keepState: true)
+                    self.state = .waiting(reason: String(
+                        localized: "配对码不对。投影仪重启后会换一个新码，请照屏幕上显示的重新输入。"))
+                    return
+                }
                 self.handleFailure("握手失败：\(error.localizedDescription)")
             }
         }

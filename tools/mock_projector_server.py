@@ -12,6 +12,9 @@
 启动后打印配对信息（二维码 URI、6 位短码、IP 端口）。iOS 模拟器没有摄像头扫不了码，
 所以调试一律走手输路径：在 App 里填 IP、端口和 6 位短码。
 
+启动后还会在 8080 端口开一个预览页（http://localhost:8080）。用浏览器全屏打开它，
+那就是「投影仪屏幕」—— iPhone 推来的画面会实时显示在上面。
+
 跑起来之后可以敲这些命令模拟遥控器：
 
     corner <tl|tr|br|bl>    切换当前角，发 active
@@ -34,6 +37,7 @@ import struct
 import sys
 import threading
 import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -126,6 +130,9 @@ class MockProjector:
         self.mode = "(未收到)"
         self.frame_count = 0
         self.last_seq = -1
+        self.latest_png: bytes | None = None
+        self.latest_caption = ""
+        self.revision = 0
 
     # ---------- 配对信息 ----------
 
@@ -240,7 +247,8 @@ class MockProjector:
             )
             print(f"        quad={self.format_quad()}")
         elif kind == "caption":
-            print(f"[caption] {message.get('text', '')!r}")
+            self.latest_caption = message.get("text", "")
+            print(f"[caption] {self.latest_caption!r}")
         else:
             print(f"[控制] {message}")
 
@@ -261,6 +269,8 @@ class MockProjector:
             return
         self.last_seq = seq
         self.frame_count += 1
+        self.latest_png = image
+        self.revision += 1
         path = self.out_dir / f"frame-{self.frame_count:03d}-seq{seq}.png"
         path.write_bytes(image)
         note = "" if (width, height) == (self.width, self.height) else "  ← 尺寸与屏幕不一致，真机会最近邻缩放"
@@ -321,6 +331,71 @@ class MockProjector:
                 print("命令：corner <tl|tr|br|bl> / next / move <dx> <dy> / exit / resize <w> <h> / state / quit")
 
 
+# ---------- 预览页：把收到的画面显示出来 ----------
+
+PREVIEW_HTML = """<!doctype html>
+<meta charset="utf-8"><title>模拟投影仪</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  #wrap{height:100%;display:flex;align-items:center;justify-content:center}
+  img{max-width:100%;max-height:100%;image-rendering:pixelated}
+  #empty{color:#555;font:16px -apple-system,sans-serif}
+</style>
+<div id="wrap"><div id="empty">等待 iPhone 推送画面</div></div>
+<script>
+let seen = -1;
+async function tick(){
+  try{
+    const r = await fetch('/rev');
+    const {rev} = await r.json();
+    if (rev !== seen && rev > 0){
+      seen = rev;
+      const img = new Image();
+      img.onload = () => { document.getElementById('wrap').replaceChildren(img); };
+      img.src = '/frame.png?r=' + rev;
+    }
+  }catch(e){}
+  setTimeout(tick, 300);
+}
+tick();
+</script>
+"""
+
+
+class PreviewHandler(BaseHTTPRequestHandler):
+    projector: "MockProjector"
+
+    def do_GET(self) -> None:
+        if self.path.startswith("/rev"):
+            self._send(200, "application/json",
+                       json.dumps({"rev": self.projector.revision}).encode())
+        elif self.path.startswith("/frame.png"):
+            png = self.projector.latest_png
+            if png is None:
+                self._send(404, "text/plain", b"no frame")
+            else:
+                self._send(200, "image/png", png)
+        else:
+            self._send(200, "text/html; charset=utf-8", PREVIEW_HTML.encode())
+
+    def _send(self, code: int, ctype: str, body: bytes) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args: Any) -> None:
+        pass    # 每 300ms 一次轮询，打出来会把协议日志淹掉
+
+
+def start_preview(projector: "MockProjector", port: int) -> None:
+    PreviewHandler.projector = projector
+    server = ThreadingHTTPServer(("0.0.0.0", port), PreviewHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description="模拟安卓投影接收端")
     parser.add_argument("--port", type=int, default=47820)
@@ -328,11 +403,16 @@ async def main() -> None:
     parser.add_argument("--height", type=int, default=1080)
     parser.add_argument("--device-name", default="模拟投影仪")
     parser.add_argument("--out", default="/tmp/bead-projector-frames")
+    parser.add_argument("--preview-port", type=int, default=8080)
     args = parser.parse_args()
 
     projector = MockProjector(args)
     projector.loop = asyncio.get_running_loop()
     projector.print_pairing(local_ipv4(), args.port)
+
+    start_preview(projector, args.preview_port)
+    print(f"  预览页      http://localhost:{args.preview_port}  （浏览器全屏打开当投影仪屏幕）")
+    print("=" * 70)
 
     threading.Thread(target=projector.command_loop, daemon=True).start()
     async with serve(projector.handle, "0.0.0.0", args.port, max_size=32 * 1024 * 1024):

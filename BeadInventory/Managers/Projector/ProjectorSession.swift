@@ -169,7 +169,9 @@ final class ProjectorSession: ObservableObject {
             return
         }
         send(mode: .image)
-        link.send(.caption(content.caption))
+        // 不发 caption：推过去的位图里 `BoardExternalDisplayView` 已经画好了那行图例
+        // （「整张图纸 · 46 × 34 格 ● B8」）。安卓端再画一遍 caption，投影上就是
+        // 上下两行一模一样的字。协议里的 caption 留着不用。
         pushFrame(screen: screen)
     }
 

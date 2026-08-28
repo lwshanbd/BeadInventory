@@ -93,10 +93,23 @@ struct ProjectorConnectView: View {
                         .focused($focusedField, equals: .port)
                 }
                 LabeledContent("配对码") {
-                    TextField("6 位数字", text: $code)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                        .focused($focusedField, equals: .code)
+                    HStack(spacing: Theme.Spacing.xs) {
+                        TextField("6 位数字", text: $code)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .focused($focusedField, equals: .code)
+                        // 投影仪每次重启都会换一个新码，所以这个框天生是要反复重填的。
+                        // 没有清除按钮时，数字键盘只能往后加，旧码删不掉。
+                        if !code.isEmpty {
+                            Button {
+                                code = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(Theme.ColorToken.Text.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
                 Button("连接", action: connectManually)
                     .disabled(!canConnect)
