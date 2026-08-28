@@ -3074,7 +3074,7 @@ struct ScanHelpSheet: View {
                             .padding(.top, 24)
 
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("1. 先在设置里配置云端 API（填入 API Key）")
+                            Text("1. 在设置中配置云端 API（填写 API Key）")
                             Text("2. 裁切图纸，请只保留图纸下方豆量汇总")
                             Text("3. 扫描")
                         }

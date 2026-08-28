@@ -29,23 +29,27 @@ final class LocalModelRemovalMigrator: ObservableObject {
     struct Notice: Equatable {
         /// 这个用户升级前正在用本地识别（图片以前不出手机，现在会上传）
         let wasUsingLocalRecognition: Bool
+        /// 还没配过 API Key。已经配过的人不需要被指去设置页。
+        let needsAPIKey: Bool
         /// 清理掉的模型文件大小，0 表示没删到东西
         let freedBytes: Int64
 
         var title: String {
             wasUsingLocalRecognition
                 ? String(localized: "本地模型识别已下线")
-                : String(localized: "已清理本地模型残留")
+                : String(localized: "已清理本地模型文件")
         }
 
         var message: String {
             var lines: [String] = []
             if wasUsingLocalRecognition {
-                lines.append(String(localized: "你之前用的是手机上的本地模型识别，这个功能已经下线。现在扫描统一走云端 API——识别时图片会上传到你配置的服务商（Kimi / OpenAI 等）。"))
-                lines.append(String(localized: "如果还没填过 API Key，可以在「更多 → 设置 → AI 图像识别」里填。"))
+                lines.append(String(localized: "扫描识别现已统一使用云端 API，识别时图片将上传至你配置的服务商。"))
+                if needsAPIKey {
+                    lines.append(String(localized: "请前往「更多 → 设置 → AI 图像识别」填写 API Key。"))
+                }
             }
             if freedBytes > 0 {
-                lines.append(String(localized: "之前下载的模型文件已经自动删除，给手机腾出了 \(Self.formatted(freedBytes))。"))
+                lines.append(String(localized: "已自动删除此前下载的模型文件，释放 \(Self.formatted(freedBytes)) 存储空间。"))
             }
             return lines.joined(separator: "\n\n")
         }
@@ -96,7 +100,11 @@ final class LocalModelRemovalMigrator: ObservableObject {
                 ])
 
                 if wasUsingLocal || freed > 0 {
-                    self.pendingNotice = Notice(wasUsingLocalRecognition: wasUsingLocal, freedBytes: freed)
+                    self.pendingNotice = Notice(
+                        wasUsingLocalRecognition: wasUsingLocal,
+                        needsAPIKey: !AIServiceManager.shared.isConfigured,
+                        freedBytes: freed
+                    )
                 }
             }
         }

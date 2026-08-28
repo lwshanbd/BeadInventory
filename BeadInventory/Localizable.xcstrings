@@ -13187,16 +13187,6 @@
         }
       }
     },
-    "1. 先在设置里配置云端 API（填入 API Key）" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1. First configure the cloud API in Settings (enter your API Key)"
-          }
-        }
-      }
-    },
     "本地模型识别已下线" : {
       "localizations" : {
         "en" : {
@@ -13207,7 +13197,7 @@
         }
       }
     },
-    "已清理本地模型残留" : {
+    "已清理本地模型文件" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13217,32 +13207,42 @@
         }
       }
     },
-    "你之前用的是手机上的本地模型识别，这个功能已经下线。现在扫描统一走云端 API——识别时图片会上传到你配置的服务商（Kimi / OpenAI 等）。" : {
+    "扫描识别现已统一使用云端 API，识别时图片将上传至你配置的服务商。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You were using on-device recognition, which has been retired. Scanning now goes through a cloud API — your image is uploaded to whichever provider you configure (Kimi, OpenAI, etc.)."
+            "value" : "Scan recognition now runs entirely through a cloud API; your image is uploaded to the provider you configure."
           }
         }
       }
     },
-    "如果还没填过 API Key，可以在「更多 → 设置 → AI 图像识别」里填。" : {
+    "请前往「更多 → 设置 → AI 图像识别」填写 API Key。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If you haven't entered an API Key yet, you can add one under More → Settings → AI Image Recognition."
+            "value" : "Go to More → Settings → AI Image Recognition to enter an API Key."
           }
         }
       }
     },
-    "之前下载的模型文件已经自动删除，给手机腾出了 %@。" : {
+    "已自动删除此前下载的模型文件，释放 %@ 存储空间。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The model files you downloaded earlier have been deleted, freeing up %@ on your phone."
+            "value" : "The previously downloaded model files have been deleted, freeing %@ of storage."
+          }
+        }
+      }
+    },
+    "1. 在设置中配置云端 API（填写 API Key）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. Configure the cloud API in Settings (enter your API Key)"
           }
         }
       }
