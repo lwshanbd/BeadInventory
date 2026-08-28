@@ -49,6 +49,12 @@ struct BoardProjectorSheet: View {
     @ObservedObject private var session = BoardCastSession.shared
     @Environment(\.dismiss) private var dismiss
 
+    /// 自己填过的板子格数。跟多零件模式那一屏读的是同一份偏好 ——
+    /// 桌上那块板就一块，在哪儿填的不该影响另一处点不点得到。
+    @AppStorage("boardCustomSizes") private var customSizes = ""
+    /// 开着「自定义尺寸」那一屏
+    @State private var showingCustomSize = false
+
     /// 按下那一刻，被拖的那个角在外屏上的位置。`DragGesture` 的 `translation` 是
     /// **从按下那一刻累计**的，每帧拿它去加当前值就会越加越远，角直接飞出画面。
     ///
@@ -94,12 +100,25 @@ struct BoardProjectorSheet: View {
                 }
             }
         }
+        // 格数是即时生效的（外屏跟着重新分格），没有「等确认」这一步，
+        // 所以不用像板子那一屏那样推到 onDismiss。
+        .sheet(isPresented: $showingCustomSize) {
+            BoardSizeCustomSheet(
+                initial: BeadBoardSize(cols: projector.boardCols, rows: projector.boardRows)
+            ) { size in
+                customSizes = BeadBoardSize.remember(size, in: customSizes)
+                projector.setBoardSize(size)
+            }
+        }
         .onAppear { projector.beginCalibrating(suggestedBoard: suggestedBoard, screen: screen) }
         // 划走（没点「完成」）跟点「取消」是同一件事。角标也在这里收掉 ——
         // 留着的话，人照着画面按豆子会把那些彩色亮块当成图纸的一部分。
         // 换成格子画之后更要紧了：角标跟真正要按豆子的格子长得一模一样，只有颜色不同。
         // （点「完成」时 `finishCalibrating` 已经收掉了，下面这个 if 不成立。）
         .onDisappear {
+            // 「自定义尺寸」那一屏盖在上面时不算划走 —— 底下这一屏还在，用户只是去填个数。
+            // 真在那时候还原，他对了半天的四个角就没了，而且回来也不会重新 beginCalibrating。
+            guard !showingCustomSize else { return }
             if projector.isCalibrating { projector.cancelCalibrating() }
         }
         // 中途拔线：这一屏已经没有可对的东西了，关掉。
@@ -120,17 +139,12 @@ struct BoardProjectorSheet: View {
                     .foregroundColor(Theme.ColorToken.Text.primary)
                 Spacer()
                 Menu {
-                    ForEach(BeadBoardSize.presets) { size in
-                        Button {
-                            projector.setBoardSize(size)
-                        } label: {
-                            if size.cols == projector.boardCols, size.rows == projector.boardRows {
-                                Label(size.label, systemImage: "checkmark")
-                            } else {
-                                Text(size.label)
-                            }
-                        }
-                    }
+                    BoardSizePicker(
+                        current: BeadBoardSize(cols: projector.boardCols, rows: projector.boardRows),
+                        recents: BeadBoardSize.decodeList(customSizes),
+                        onPick: { projector.setBoardSize($0) },
+                        onCustom: { showingCustomSize = true }
+                    )
                 } label: {
                     HStack(spacing: 4) {
                         Text("\(projector.boardCols) × \(projector.boardRows)")

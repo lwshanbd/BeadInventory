@@ -64,6 +64,9 @@ struct PartsBoardStepView: View {
     /// 而老图纸的 `spacing` 解析出来是 `.tight`，跟着写的话用户换块大板子就把自己
     /// 在别的图纸上选的档洗成紧凑了，而且屏幕上一个字都不会提。
     @AppStorage("partsBoardSpacing") private var preferredSpacing: BoardSpacing = .standard
+    /// 自己填过的板子格数（最近三块，一行 `"60x40,29x29"`）。手上有哪几块板是跟着人走的，
+    /// 不属于任何一张图纸 —— 所以在偏好里，投影仪校准页读的也是这一份。
+    @AppStorage("boardCustomSizes") private var customSizes = ""
 
     @State private var boardIndex = 0
     /// 当前选中的那个「摆放」（不是零件本身 —— 同一个零件只会被摆一次，但选中态属于板上那一份）
@@ -133,6 +136,26 @@ struct PartsBoardStepView: View {
         let id: UUID
     }
 
+    /// 填好了、等这一屏关掉再用的那块板
+    private struct PendingCustomSize {
+        let target: CustomSizeTarget
+        let size: BeadBoardSize
+    }
+
+    /// 自己填完格数之后要干的事。**两条路必须分开**：「加一块」是往后添一块空板，
+    /// 「全部重排成」会把手动挪过的位置全推翻 —— 后者得先弹一次确认。
+    private enum CustomSizeTarget: Identifiable {
+        case addBoard
+        case repack
+
+        var id: String {
+            switch self {
+            case .addBoard: return "add"
+            case .repack: return "repack"
+            }
+        }
+    }
+
     @State private var note: String?
     @State private var noteToken = UUID()
     /// 待确认的「全部重排」。板子尺寸和松紧是同一件事的两半 —— 改哪一个都得整块重摆，
@@ -145,6 +168,10 @@ struct PartsBoardStepView: View {
     @ObservedObject private var cast = BoardCastSession.shared
     /// 开着「对准豆板」那一屏
     @State private var showingProjectorSheet = false
+    /// 正在自己填格数，填完了拿这块板做什么
+    @State private var customSizeTarget: CustomSizeTarget?
+    /// 刚填好、等这一屏关掉再用的那块板（连同它是给哪一条用的）。见 `applyCustomSize`。
+    @State private var pendingCustomSize: PendingCustomSize?
 
     private enum Tab: Hashable { case parts, colors }
 
@@ -259,6 +286,15 @@ struct PartsBoardStepView: View {
                 BoardProjectorSheet(suggestedBoard: board.size, screen: screen)
             }
         }
+        // **填完的板等这一屏关掉再用**：「全部重排成」那条路要弹确认弹窗，而在 sheet
+        // 还没收干净时挂上去的弹窗会被吞掉 —— 用户点了「确定」，屏幕上什么都没发生。
+        .sheet(item: $customSizeTarget, onDismiss: applyCustomSize) { target in
+            BoardSizeCustomSheet(
+                initial: currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
+            ) { size in
+                pendingCustomSize = PendingCustomSize(target: target, size: size)
+            }
+        }
         .task(id: noteToken) {
             guard note != nil else { return }
             try? await Task.sleep(for: .seconds(4))
@@ -328,9 +364,11 @@ struct PartsBoardStepView: View {
                     }
 
                     Menu {
-                        ForEach(BeadBoardSize.presets) { size in
-                            Button(size.label) { addBoard(size: size) }
-                        }
+                        BoardSizePicker(
+                            recents: BeadBoardSize.decodeList(customSizes),
+                            onPick: { addBoard(size: $0) },
+                            onCustom: { customSizeTarget = .addBoard }
+                        )
                     } label: {
                         Label("加一块", systemImage: "plus")
                             .font(.footnote.weight(.medium))
@@ -422,11 +460,14 @@ struct PartsBoardStepView: View {
                 }
             }
             Section("全部重排成") {
-                ForEach(BeadBoardSize.presets) { size in
-                    Button(size.label) {
+                BoardSizePicker(
+                    current: currentBoard?.size,
+                    recents: BeadBoardSize.decodeList(customSizes),
+                    onPick: { size in
                         repackTarget = RepackTarget(size: size, spacing: spacing, pickedSpacing: false)
-                    }
-                }
+                    },
+                    onCustom: { customSizeTarget = .repack }
+                )
             }
             if let board = currentBoard, !board.placements.isEmpty {
                 Button("把这块板清空", role: .destructive) { clearCurrentBoard() }
@@ -1167,6 +1208,26 @@ struct PartsBoardStepView: View {
         // switchTo 顺手把选中清掉了，正是这里要的（理由见函数头注释）
         switchTo(boards.count - 1)
         flash(String(localized: "这块板放不下了，新开了一块"))
+    }
+
+    /// 自己填的那块板落地：记进「自己填过的」，再按当初点的是哪一条走。
+    ///
+    /// 在 sheet 的 `onDismiss` 里跑（理由见挂载处），这时 `customSizeTarget` 已经被清成
+    /// nil 了，所以「点的是哪一条」跟着填好的格数一起存进 `pendingCustomSize`。
+    /// 直接划走没按「确定」时它是 nil，什么都不做。
+    private func applyCustomSize() {
+        guard let pending = pendingCustomSize else { return }
+        pendingCustomSize = nil
+        let size = pending.size
+        customSizes = BeadBoardSize.remember(size, in: customSizes)
+        switch pending.target {
+        case .addBoard:
+            addBoard(size: size)
+        case .repack:
+            // 跟菜单里点常见规格走同一个确认弹窗 —— 重排会把手动挪过的位置全抹掉，
+            // 「自己填的」不该因为多打了两个数就跳过这一问。
+            repackTarget = RepackTarget(size: size, spacing: spacing, pickedSpacing: false)
+        }
     }
 
     private func addBoard(size: BeadBoardSize) {

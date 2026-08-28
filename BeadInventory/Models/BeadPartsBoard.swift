@@ -31,8 +31,12 @@ import Foundation
 
 // MARK: - 板子尺寸
 
-/// 市面上常见的拼豆板规格。用户手上是哪一种由他自己选，不做检测也不做推荐 ——
+/// 一块板多少格。用户手上是哪一种由他自己选，不做检测也不做推荐 ——
 /// 这是买板子时就定好的事实，不是算法能猜的东西。
+///
+/// `presets` 只是几个常见规格，**不是全集**：长方形的板、几块并起来当一整块用的拼台、
+/// 买到的杂牌板，格数都不在这几个里。所以格数还可以自己填（见 `customRange` 和
+/// `BoardSizeCustomSheet`），填过的记在 `decodeList` 那份偏好里，下次直接点。
 struct BeadBoardSize: Hashable, Sendable, Identifiable {
     var cols: Int
     var rows: Int
@@ -48,6 +52,50 @@ struct BeadBoardSize: Hashable, Sendable, Identifiable {
         BeadBoardSize(cols: 100, rows: 100),
         BeadBoardSize(cols: 104, rows: 104)
     ]
+
+    /// 自己填的格数收在这个范围里。
+    ///
+    /// 下界是 5：比这更小的板不存在，而输入框里手一抖打出个 `1` 是常事 —— 一块
+    /// 1 × 1 的板排出来是几百块空板。上界 300 不是物理极限，是「再大就不是一块板了」：
+    /// 市面上最大的一块是 104 格，几块拼台并起来当整块算也就一两百格。
+    static let customRange = 5...300
+
+    var isValidCustom: Bool {
+        BeadBoardSize.customRange.contains(cols) && BeadBoardSize.customRange.contains(rows)
+    }
+
+    var isPreset: Bool { BeadBoardSize.presets.contains(self) }
+
+    // MARK: - 自己填过的那几块板
+
+    // 用户手上是哪几块板，是买板子时就定好的事实，不属于任何一张图纸 ——
+    // 所以存在 `@AppStorage` 里（一行 `"60x40,29x29"`），跟着人走，不进 BeadPartsSheet。
+    // 认不出的段直接丢掉：这份偏好坏了最多是菜单里少一项，不该让谁解不出来。
+
+    static func decodeList(_ raw: String) -> [BeadBoardSize] {
+        raw.split(separator: ",").compactMap { chunk in
+            let parts = chunk.split(separator: "x")
+            guard parts.count == 2,
+                  let cols = Int(parts[0]), let rows = Int(parts[1]) else { return nil }
+            let size = BeadBoardSize(cols: cols, rows: rows)
+            return size.isValidCustom ? size : nil
+        }
+    }
+
+    static func encodeList(_ sizes: [BeadBoardSize]) -> String {
+        sizes.map(\.id).joined(separator: ",")
+    }
+
+    /// 把刚填的这块记到最前面，最多留三块。
+    ///
+    /// 只留三块是因为这是个菜单里的快捷入口，不是一份清单 —— 手上真有第四块板的人，
+    /// 再填一次也就两下的事，而一串记不清哪个是哪个的数字反而让常用那块更难找。
+    static func remember(_ size: BeadBoardSize, in raw: String) -> String {
+        guard size.isValidCustom, !size.isPreset else { return raw }
+        var list = decodeList(raw).filter { $0 != size }
+        list.insert(size, at: 0)
+        return encodeList(Array(list.prefix(3)))
+    }
 }
 
 // MARK: - 摆得多松
