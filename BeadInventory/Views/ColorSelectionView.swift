@@ -186,7 +186,7 @@ struct ColorSelectionView: View {
 
                 // 颜色列表
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         // 这张图纸自己用到的那几个色号排在最前面。判色判错时要改成的
                         // 那一个基本都在这里 —— 不管现在切到哪个系列都一直留着，
                         // 用户翻到别的系列时也不用滚回来找。
@@ -281,7 +281,7 @@ struct ColorSelectionView: View {
     private func colorGroup(_ colors: [BeadColor]) -> some View {
         switch layout {
         case .list:
-            VStack(spacing: 8) {
+            LazyVStack(spacing: 8) {
                 ForEach(colors) { color in
                     ColorSelectRow(
                         color: color,
