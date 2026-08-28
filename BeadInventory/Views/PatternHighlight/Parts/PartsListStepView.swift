@@ -85,7 +85,7 @@ struct PartsListStepView: View {
         }
         .navigationTitle("零件清单")
         .navigationBarTitleDisplayMode(.inline)
-        .alert("零件改名", isPresented: Binding(
+        .alert("重命名零件", isPresented: Binding(
             get: { renamingPart != nil },
             set: { if !$0 { renamingPart = nil } }
         )) {
@@ -93,15 +93,15 @@ struct PartsListStepView: View {
             Button("取消", role: .cancel) { renamingPart = nil }
             Button("保存") { commitRename() }
         } message: {
-            Text("留空就用默认的编号。")
+            Text("留空则使用默认编号。")
         }
-        .alert("这块分不开", isPresented: $splitFailed) {
+        .alert("无法拆分此零件", isPresented: $splitFailed) {
             Button("知道了", role: .cancel) {}
         } message: {
-            Text("在图上它是连成一整片的，找不到下刀的地方。如果确实是两个零件，可以先把它删掉，再在两块上各拖一个框出来。")
+            Text("该区域在图上连成一片，无法自动拆分。如果确实是两个零件，可先将其删除，再分别框选出两个区域。")
         }
         .task { sourceBytes = PatternSourceStore.byteSize(for: projectId) }
-        .alert("这套拼好了？", isPresented: $showingFinishedConfirm) {
+        .alert("确认已完成拼装？", isPresented: $showingFinishedConfirm) {
             Button("拼好了，删掉原图", role: .destructive) {
                 PatternSourceStore.remove(for: projectId)
                 sourceBytes = 0
@@ -305,9 +305,9 @@ struct PartsListStepView: View {
         ScrollView {
             if parts.isEmpty {
                 ContentUnavailableView(
-                    "一个零件也没找到",
+                    "未找到任何零件",
                     systemImage: "square.dashed",
-                    description: Text("多半是上一步的框没圈到零件。回上一步把框挪一下再试；或者直接在图上拖出零件的位置，自己补一个。")
+                    description: Text("可能是上一步的框选范围未覆盖到零件。请返回上一步调整框选后重试，或直接在图上拖拽标出零件位置来手动添加。")
                 )
                 .padding(.top, Theme.Spacing.xxl)
             } else {
@@ -333,7 +333,7 @@ struct PartsListStepView: View {
     private var footer: some View {
         VStack(spacing: Theme.Spacing.md) {
             if addingPart {
-                Text("在漏掉的那块上拖一个框出来。画完这一个就退出来，方便你挪动图片再补下一个。")
+                Text("在遗漏的区域拖拽绘制一个框；完成后会自动退出，以便移动图片继续添加")
                     .font(.footnote)
                     .foregroundStyle(Theme.ColorToken.Morandi.honey)
                     .multilineTextAlignment(.center)
@@ -369,7 +369,7 @@ struct PartsListStepView: View {
                     .disabled(selection.count < 2)
 
                     Button { splitSelected() } label: {
-                        Label("拆开", systemImage: "square.split.2x1").frame(maxWidth: .infinity)
+                        Label("拆分", systemImage: "square.split.2x1").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                     .disabled(selection.count != 1 || splitting)
@@ -391,7 +391,7 @@ struct PartsListStepView: View {
                 addingPart.toggle()
                 if addingPart { selection.removeAll() }
             } label: {
-                Label(addingPart ? "先不补了" : "有零件没框住？补一个",
+                Label(addingPart ? "暂不添加" : "有零件没框住？补一个",
                       systemImage: addingPart ? "xmark" : "plus.viewfinder")
                     .font(.footnote.weight(.medium))
                     .frame(maxWidth: .infinity)

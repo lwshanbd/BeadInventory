@@ -220,7 +220,7 @@ struct PartsBoardStepView: View {
             canvas
             bottomPanel
         }
-        .navigationTitle("摆到拼豆板")
+        .navigationTitle("排布到拼豆板")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { boardMenu }
@@ -297,13 +297,13 @@ struct PartsBoardStepView: View {
                 placement: placementInfo(of: part.id)
             )
         }
-        .alert("板上有零件挨着", isPresented: $confirmFinishInvalid) {
-            Button("回去挪一下", role: .cancel) { confirmFinishInvalid = false }
-            Button("仍然完成") { onFinish() }
+        .alert("板上有零件间距过近", isPresented: $confirmFinishInvalid) {
+            Button("返回调整位置", role: .cancel) { confirmFinishInvalid = false }
+            Button("继续完成") { onFinish() }
         } message: {
-            Text("有 \(invalidPlacements.count) 个零件（描红边那几个）跟旁边挨着了。挨着的豆子烫完会连成一片，得拿剪刀分开，那一刀下去边缘就毁了。")
+            Text("有 \(invalidPlacements.count) 个零件（红边标出）与相邻零件间距不足，熨烫后会粘连，需用剪刀分开，可能损坏边缘")
         }
-        .alert("重新排一遍？", isPresented: Binding(
+        .alert("重新排列？", isPresented: Binding(
             get: { repackTarget != nil },
             set: { if !$0 { repackTarget = nil } }
         )) {
@@ -332,7 +332,7 @@ struct PartsBoardStepView: View {
                             Button(size.label) { addBoard(size: size) }
                         }
                     } label: {
-                        Label("加一块", systemImage: "plus")
+                        Label("新增一块", systemImage: "plus")
                             .font(.footnote.weight(.medium))
                             .padding(.horizontal, Theme.Spacing.md)
                             .padding(.vertical, Theme.Spacing.sm)
@@ -344,7 +344,7 @@ struct PartsBoardStepView: View {
 
             // 挨着的零件必须一直挂在眼前 —— 一句会消失的提示挡不住一块拼出来会粘连的板。
             if !invalidPlacements.isEmpty {
-                Label("描红边那 \(invalidPlacements.count) 个零件跟旁边挨着，烫完会连成一片。拖开一点，或者上面「加一块」板。",
+                Label("红边标出的 \(invalidPlacements.count) 个零件与相邻零件间距不足，熨烫后会粘连。请拖开间距，或点击上方「新增一块」新增板",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Status.error)
@@ -391,7 +391,7 @@ struct PartsBoardStepView: View {
 
     private var boardMenu: some View {
         Menu {
-            Section("零件之间留多宽") {
+            Section("零件间距") {
                 ForEach(BoardSpacing.allCases) { option in
                     Button {
                         guard option != spacing else { return }
@@ -421,7 +421,7 @@ struct PartsBoardStepView: View {
                     }
                 }
             }
-            Section("全部重排成") {
+            Section("全部重新排列为") {
                 ForEach(BeadBoardSize.presets) { size in
                     Button(size.label) {
                         repackTarget = RepackTarget(size: size, spacing: spacing, pickedSpacing: false)
@@ -429,10 +429,10 @@ struct PartsBoardStepView: View {
                 }
             }
             if let board = currentBoard, !board.placements.isEmpty {
-                Button("把这块板清空", role: .destructive) { clearCurrentBoard() }
+                Button("清空这块板", role: .destructive) { clearCurrentBoard() }
             }
             if boards.count > 1, currentBoard?.placements.isEmpty == true {
-                Button("删掉这块空板", role: .destructive) { removeCurrentBoard() }
+                Button("删除这块空板", role: .destructive) { removeCurrentBoard() }
             }
         } label: {
             Image(systemName: "ellipsis.circle")
@@ -455,7 +455,7 @@ struct PartsBoardStepView: View {
                     ContentUnavailableView(
                         "还没有板子",
                         systemImage: "square.grid.3x3",
-                        description: Text("上面「加一块」挑一个尺寸。")
+                        description: Text("请在上方「新增一块」中选择一个尺寸。")
                     )
                 }
 
@@ -611,12 +611,12 @@ struct PartsBoardStepView: View {
                 // 真拼起来才发现「这块边上多认了一颗」「这儿明明该有一颗」是常事。
                 // 那一刻用户手上抓着豆子对着板子，退回核对页去几万格里找那一格是不现实的。
                 Button { brushTarget = BrushTarget(id: placement.partId) } label: {
-                    Label("改格子", systemImage: "eraser").frame(maxWidth: .infinity)
+                    Label("编辑网格", systemImage: "eraser").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
 
                 Button(role: .destructive) { takeOffSelected() } label: {
-                    Label("拿下来", systemImage: "arrow.down.left").frame(maxWidth: .infinity)
+                    Label("移除", systemImage: "arrow.down.left").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
             }
@@ -700,21 +700,21 @@ struct PartsBoardStepView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             HStack {
                 Text(unplaced.isEmpty
-                     ? "零件都摆上去了"
-                     : "还有 \(unplaced.count) 个没摆")
+                     ? "零件已全部放置"
+                     : "还有 \(unplaced.count) 个未摆放")
                     .font(.footnote)
                     .foregroundColor(Theme.ColorToken.Text.secondary)
                 Spacer()
                 if !unplaced.isEmpty {
                     Button { fillRemaining() } label: {
-                        Label("自动排", systemImage: "square.grid.3x3.fill")
+                        Label("自动排列", systemImage: "square.grid.3x3.fill")
                             .font(.footnote.weight(.medium))
                     }
                 }
             }
 
             if unplaced.isEmpty {
-                Text("拼完这块板可以在上面切到下一块。")
+                Text("拼完这块板后，可在上方切换到下一块。")
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Text.tertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -775,13 +775,13 @@ struct PartsBoardStepView: View {
     /// 眼睛要的是「哪几个坑」，不是「这一格是什么色号」。
     private var colorTray: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text(highlightKey.map { "只亮着「\(label(for: $0))」，再点一下取消" }
-                 ?? "点一个颜色，板上只留它是亮的")
+            Text(highlightKey.map { "仅高亮「\(label(for: $0))」，再次点击可取消" }
+                 ?? "选择一个颜色，仅高亮该颜色对应的格子")
                 .font(.footnote)
                 .foregroundColor(Theme.ColorToken.Text.secondary)
 
             if boardColors.isEmpty {
-                Text("这块板还什么都没摆。")
+                Text("这块板尚未放置任何零件。")
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Text.tertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1080,8 +1080,8 @@ struct PartsBoardStepView: View {
     /// 是把他往最贵的那条路上推，而最便宜的出路（退一档，板子不用换）反倒没人告诉他。
     private func unplacedNote(_ count: Int, spacing: BoardSpacing) -> String {
         spacing == .tight
-            ? String(localized: "有 \(count) 个零件比板子还大，换块大的试试")
-            : String(localized: "有 \(count) 个零件在\(spacing.label)间距下放不进去，退一档或者换块大的板")
+            ? String(localized: "有 \(count) 个零件超出板子尺寸，请更换更大的板子")
+            : String(localized: "有 \(count) 个零件在\(spacing.label)间距下无法放入，请调小间距或更换更大的板子")
     }
 
     private func repackAll() {
@@ -1105,8 +1105,8 @@ struct PartsBoardStepView: View {
         // 有摆不下的也照样报板数 —— 这一下是销毁性的（手动挪的位置全没了），
         // 只说坏消息不说结果的话，用户不知道自己现在手上还剩什么。
         flash(packed.unplaced.isEmpty
-              ? String(localized: "按\(target.spacing.label)间距排好了，一共 \(packed.boards.count) 块板")
-              : String(localized: "按\(target.spacing.label)间距排了 \(packed.boards.count) 块板，还有 \(packed.unplaced.count) 个没摆下"))
+              ? String(localized: "已按\(target.spacing.label)间距排列完成，共 \(packed.boards.count) 块板")
+              : String(localized: "已按\(target.spacing.label)间距排列 \(packed.boards.count) 块板，还有 \(packed.unplaced.count) 个未能放入"))
     }
 
     /// 把还没摆的零件接着往板上放：先塞现有的板，塞不下再开新的。
@@ -1127,7 +1127,7 @@ struct PartsBoardStepView: View {
         if !boards.isEmpty { boardSpacing = used }
 
         flash(added > 0
-              ? String(localized: "又摆上去 \(added) 个")
+              ? String(localized: "已新增摆放 \(added) 个")
               : unplacedNote(unplaced.count, spacing: used))
     }
 
@@ -1166,7 +1166,7 @@ struct PartsBoardStepView: View {
         boardSpacing = used
         // switchTo 顺手把选中清掉了，正是这里要的（理由见函数头注释）
         switchTo(boards.count - 1)
-        flash(String(localized: "这块板放不下了，新开了一块"))
+        flash(String(localized: "这块板已放不下，已新开一块。"))
     }
 
     private func addBoard(size: BeadBoardSize) {
@@ -1230,9 +1230,9 @@ struct PartsBoardStepView: View {
             boards[boardIndex].placements[index] = PartPlacement(
                 id: id, partId: old.partId, col: spot.col, row: spot.row, turns: newTurns
             )
-            flash(String(localized: "原地转不开，挪到旁边空地了"))
+            flash(String(localized: "原位置无法旋转，已移至空余位置。"))
         } else {
-            flash(String(localized: "转过来就放不下了，先挪开点别的"))
+            flash(String(localized: "旋转后放不下，请先移开其他零件。"))
         }
     }
 
@@ -1285,11 +1285,11 @@ struct PartsBoardStepView: View {
     private func note(for outcome: PartsBoardRepair.Outcome) -> String? {
         var lines: [String] = []
         if !outcome.removed.isEmpty {
-            lines.append(String(localized: "有 \(outcome.removed.count) 个零件一颗豆子都不剩，已经从板上拿下来（要找回来，回「核对颜色」那屏补格子）"))
+            lines.append(String(localized: "有 \(outcome.removed.count) 个零件已无豆子，已从板上移除（如需恢复，请返回「核对颜色」页面补充格子）"))
         }
         if !outcome.orphaned.isEmpty {
             // 这种回核对页也补不回来 —— 零件本身已经不在图纸上了，说法必须跟上面那条分开
-            lines.append(String(localized: "有 \(outcome.orphaned.count) 块对不上任何零件了，已经从板上清掉"))
+            lines.append(String(localized: "有 \(outcome.orphaned.count) 块无法匹配任何零件，已从板上移除"))
         }
         if outcome.moved.count == 1, let moved = outcome.moved.first {
             // 挪的是用户自己摆的位置，能报名字就报名字 —— 「1 个零件」他还得自己找是哪个
@@ -1377,12 +1377,12 @@ struct PartsBoardStepView: View {
                                    col: session.originCol + session.deltaCol,
                                    row: session.originRow + session.deltaRow) {
             return spacing.margin > 0
-                ? String(localized: "这儿放不下：板子最外面一圈留空，豆子不能压上去")
-                : String(localized: "这儿放不下：伸到板子外面去了")
+                ? String(localized: "此处放不下：板子最外圈需留空，豆子不能超出边界。")
+                : String(localized: "此处放不下：已超出板子范围。")
         }
         return spacing.gap >= 2
-            ? String(localized: "这儿放不下：这一档零件之间要空两格，先把旁边的挪开")
-            : String(localized: "这儿放不下：零件之间要空一格，烫的时候才不会粘住")
+            ? String(localized: "此处放不下：该档位零件间需留两格间距，请先移开相邻零件。")
+            : String(localized: "此处放不下：零件间需留一格间距，熨烫时才不会粘连。")
     }
 
     /// 屏幕上这一点落在哪个零件上。按摆放顺序倒着找 —— 后摆的画在上面，也就该先被摸到。

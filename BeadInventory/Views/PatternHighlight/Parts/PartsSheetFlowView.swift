@@ -169,15 +169,15 @@ struct PartsSheetFlowView: View {
                     // `.missing` 分开处理是同一件事，图片这条路当初漏了。报成「还没有图纸」
                     // 的话用户跑去详情页，图明明就在那儿，然后他没有任何下一步可走。
                     ContentUnavailableView(
-                        "这张图纸这次读不出来",
+                        "本次无法读取此图纸",
                         systemImage: "photo.badge.exclamationmark",
-                        description: Text("图还在项目里，只是这次打不开。退出去再进来试一次；一直这样的话，去详情页重新选一张。")
+                        description: Text("图纸仍保留在项目中，只是本次无法打开。请退出后重新进入再试；若持续失败，请前往详情页重新选择一张。")
                     )
                 } else {
                     ContentUnavailableView(
                         "项目还没有图纸",
                         systemImage: "photo.badge.exclamationmark",
-                        description: Text("先在项目详情里加一张图纸，再回来用多零件模式。")
+                        description: Text("请先在项目详情中添加一张图纸，再使用多零件模式。")
                     )
                 }
             }
@@ -309,40 +309,40 @@ struct PartsSheetFlowView: View {
             // 存不进去就只活在内存里，而屏幕上看起来跟存好了一模一样。
             case .saveFailed:
                 return Alert(
-                    title: Text("这一步没存上"),
-                    message: Text("刚做的这些还没写进项目里，现在关掉就没了。先别关，接着往下走每一步都会再存一次。"),
+                    title: Text("此步骤未保存"),
+                    message: Text("刚完成的操作尚未写入项目，现在关闭将会丢失。请勿关闭，继续往下每一步都会自动保存。"),
                     primaryButton: .cancel(Text("知道了")),
                     secondaryButton: .destructive(Text("仍然关闭")) { dismiss() }
                 )
             // 有进度但打不开：接着做等于拿新结果盖掉旧的那份，得他自己点头。
             case .loadFailed:
                 return Alert(
-                    title: Text("之前的进度这次打不开"),
-                    message: Text("这个项目上次做的零件数据这次读不出来。建议先退出去，过一会儿再进来试试；现在就重做的话，原来那份会被这次的结果盖掉。"),
-                    primaryButton: .cancel(Text("先退出去")) { dismiss() },
-                    secondaryButton: .destructive(Text("重新做一遍")) { overwriteBlocked = false }
+                    title: Text("之前的进度本次无法打开"),
+                    message: Text("此项目上次的零件数据本次无法读取。建议先退出，稍后重新进入再试；若现在重做，原有数据将被本次结果覆盖。"),
+                    primaryButton: .cancel(Text("先退出")) { dismiss() },
+                    secondaryButton: .destructive(Text("重新开始")) { overwriteBlocked = false }
                 )
             case .confirmRedetect:
                 return Alert(
-                    title: Text("重新找一遍零件？"),
-                    message: Text("会按现在圈的范围重找一遍零件。已经找好的零件框、量好的格子、判好的颜色、摆好的拼豆板都跟着作废，要从头再走一遍。"),
+                    title: Text("重新查找零件？"),
+                    message: Text("将按当前框选范围重新查找零件。已识别的零件框、网格、颜色及排布结果都将作废，需要重新完成整个流程。"),
                     primaryButton: .cancel(Text("取消")),
-                    secondaryButton: .destructive(Text("重新找")) { runDetection() }
+                    secondaryButton: .destructive(Text("重新查找")) { runDetection() }
                 )
             // 判色是从头重算每一格，用户在核对页一格一格改过的色号会被整片盖掉 ——
             // 那是几天的活，而在这个改动之前，触发它只要在这一屏点一下。
             case .confirmReclassify:
                 return Alert(
-                    title: Text("重新判一遍颜色？"),
-                    message: Text("会照现在的底色和任意色重看一遍每一格，你在核对页改过的色号全部作废，要重新核对一遍。只是想接着核对的话点「取消」，再点上面那个「回核对颜色」。"),
+                    title: Text("重新识别颜色？"),
+                    message: Text("将按当前底色和任意色重新识别每一格颜色，核对页中修改过的色号将全部作废，需要重新核对。如需继续之前的核对，请点「取消」，再点上方「回核对颜色」。"),
                     primaryButton: .cancel(Text("取消")),
                     secondaryButton: .destructive(Text("重新判色")) { runClassification() }
                 )
             case .classifyNote(let text):
                 return Alert(
-                    title: Text("有零件没看成"),
+                    title: Text("部分零件未识别"),
                     message: Text(text),
-                    primaryButton: .default(Text("回零件清单")) { path = [.list] },
+                    primaryButton: .default(Text("返回零件清单")) { path = [.list] },
                     secondaryButton: .cancel(Text("知道了"))
                 )
             case .legendNote(let text):
@@ -353,8 +353,8 @@ struct PartsSheetFlowView: View {
                 )
             case .detectFoundNothing:
                 return Alert(
-                    title: Text("这块范围里没找到零件"),
-                    message: Text("把框挪到有零件的那一片再试一次 —— 原来的零件还留着。"),
+                    title: Text("该范围内未找到零件"),
+                    message: Text("请将框移动到有零件的区域后重试，原有零件数据仍会保留。"),
                     dismissButton: .cancel(Text("知道了"))
                 )
             }
@@ -626,7 +626,7 @@ struct PartsSheetFlowView: View {
     /// 要是连零件区都圈错了，返回上一屏挪一下框再点一次就是重来。
     private func runDetection() {
         let currentROI = roi
-        busy = "正在找零件…"
+        busy = "正在识别零件…"
 
         Task {
             await prepareWorkImage()
@@ -732,7 +732,7 @@ struct PartsSheetFlowView: View {
                 // 核对页只会显示「一共 0 颗」，用户完全不知道该改哪儿。
                 if result.unreadableParts == result.parts.count, !result.parts.isEmpty {
                     self.prompt = .classifyNote(String(
-                        localized: "所有零件的框里都取不到图，一格颜色都没看出来。多半是框圈得太小，回零件清单改一改再来一次。"
+                        localized: "所有零件的框选区域均无法读取到图像，未能识别出任何颜色。可能是框选范围过小，请返回零件清单调整后重试。"
                     ))
                     return
                 }
@@ -745,7 +745,7 @@ struct PartsSheetFlowView: View {
                 let saved = self.persist()
                 if saved, result.unreadableParts > 0 {
                     self.prompt = .classifyNote(String(
-                        localized: "有 \(result.unreadableParts) 个零件的框里取不到图，它们的格子是空的。回零件清单看看这几个框是不是太小了。"
+                        localized: "有 \(result.unreadableParts) 个零件的选框内无法取得图像，格子为空。请返回零件清单，检查这些选框是否过小"
                     ))
                 } else if saved, let note = result.unknownLegendNote {
                     // 出路不一样（这条是「去核对页看一眼」，上面那条是「回零件清单改框」），

@@ -704,7 +704,7 @@ struct FinishedImageSection: View {
                             Image(systemName: "photo.on.rectangle.angled")
                                 .font(.system(size: 40))
                                 .foregroundColor(.secondary.opacity(0.5))
-                            Text("上传成品图展示你的作品")
+                            Text("上传成品图")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
@@ -838,7 +838,7 @@ struct ProjectImageEditorSheet: View {
         if pendingWrite == .removeImage {
             return "这个项目在拼图模式里已经对好了图纸，而它就是照着这张封面对的。封面移除之后没有图可以对照，得重新来一遍。"
         }
-        return "这个项目在拼图模式里已经对好了图纸，而它是照着现在这张封面对的（这个项目没有图纸原图）。改完取景就对不上了，得重新对一遍。"
+        return "此项目已在拼图模式中完成网格对齐，且是基于当前封面完成的（该项目没有单独的图纸原图）。裁剪后网格将失效，需要重新对齐"
     }
 
     var body: some View {

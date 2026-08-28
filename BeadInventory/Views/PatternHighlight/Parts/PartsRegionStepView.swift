@@ -22,8 +22,8 @@ struct PartsRegionStepView: View {
     // 单图纸模式圈的是「整张图纸」而不是「一堆零件」，除了这两句话之外一模一样：
     // 一个框、两个角、框外压暗、放大看细节。为它复制一份两百行的手势代码，
     // 只会让以后每次改手势都要改两个地方（而且必然漏一个）。
-    var hint: LocalizedStringKey = "拖动方框，把中间这一片零件圈进去。上面的色号表和下面的成品图不用圈。"
-    var actionTitle: LocalizedStringKey = "开始找零件"
+    var hint: LocalizedStringKey = "拖动方框，将中间的零件区域框选进去；上方色号表和下方成品图无需框入。"
+    var actionTitle: LocalizedStringKey = "开始识别零件"
     var actionIcon: String = "square.on.square.dashed"
 
     // 放大查看细节用。角点和框体的单指拖优先级更高，

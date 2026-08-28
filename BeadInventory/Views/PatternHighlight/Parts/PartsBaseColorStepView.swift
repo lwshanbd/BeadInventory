@@ -58,7 +58,7 @@ struct PartsBaseColorStepView: View {
     /// 平面图纸上没有这个概念，摆在那儿只会让用户去猜自己是不是漏点了什么。
     var showsAnyColor: Bool = true
     /// 「底色」那一行的副标题。单图纸上底色是格子之外的留白，不是「零件外面」。
-    var emptyHint: LocalizedStringKey = "零件外面那一片，不用放豆子"
+    var emptyHint: LocalizedStringKey = "零件范围外的区域，无需放置豆子"
     var title: LocalizedStringKey = "底色和任意色"
 
     /// 「不重判，原样回核对颜色」。**非 nil 就等于「图上已经有判过的格子」**：
@@ -197,8 +197,8 @@ struct PartsBaseColorStepView: View {
                     slot: .anyColor,
                     title: String(localized: "任意色"),
                     hint: anyColorHex == nil
-                        ? "色号表里写「任意色」的那种豆子，没有就不用点"
-                        : "用什么颜色的豆子拼都行",
+                        ? "色号表中标注为「任意色」的豆子，若没有可不选。"
+                        : "使用任意颜色的豆子拼装均可",
                     hex: anyColorHex
                 )
             }
@@ -211,8 +211,8 @@ struct PartsBaseColorStepView: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text(activeSlot == .empty
-                     ? "现在点图上的**底色**"
-                     : "现在点图上的**任意色**豆子")
+                     ? "请点击图上的**底色**"
+                     : "请点击图上标记为**任意色**的豆子")
                     .font(.footnote)
                     .foregroundStyle(Theme.ColorToken.Morandi.honey)
             }
@@ -220,7 +220,7 @@ struct PartsBaseColorStepView: View {
             if let onKeepExisting {
                 // 刚改完底色就按「回核对颜色」＝什么都不会变。这一句是那次点击的唯一说法。
                 if repickedThisVisit {
-                    Text("改了底色要重新判色才生效，直接回去看还是原来那批颜色。")
+                    Text("修改底色后需要重新识别颜色才能生效，否则返回后仍是原来的识别结果。")
                         .font(.footnote)
                         .foregroundStyle(Theme.ColorToken.Morandi.honey)
                         .multilineTextAlignment(.center)
@@ -230,7 +230,7 @@ struct PartsBaseColorStepView: View {
                 // 从核对页返回落到这一屏时，用户九成九是想回去接着核对。
                 // 主按钮就是那件事，而且什么都不重算。
                 Button(action: onKeepExisting) {
-                    Label("回核对颜色", systemImage: "checklist")
+                    Label("返回核对颜色", systemImage: "checklist")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -241,7 +241,7 @@ struct PartsBaseColorStepView: View {
                 // 带个图标：上面那条取色失败提示也是红色 footnote，光看颜色和字号
                 // 分不出哪一行是能点的。撑到 44pt 也是为这个 —— 小归小，不能点不中。
                 Button(action: onContinue) {
-                    Label("重新判色（核对时改过的色号会清掉）", systemImage: "arrow.clockwise")
+                    Label("重新识别颜色（核对时修改过的色号将被清除）", systemImage: "arrow.clockwise")
                         .font(.footnote)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -295,7 +295,7 @@ struct PartsBaseColorStepView: View {
                 Spacer(minLength: Theme.Spacing.sm)
 
                 if hex != nil, slot == .anyColor {
-                    Button("清掉") { anyColorHex = nil; repickedThisVisit = true }
+                    Button("清除") { anyColorHex = nil; repickedThisVisit = true }
                         .font(.caption)
                         .buttonStyle(.plain)
                         .foregroundColor(Theme.ColorToken.Status.error)
@@ -348,7 +348,7 @@ struct PartsBaseColorStepView: View {
             guard let hex else {
                 // 屏幕上正写着「现在点图上的任意色豆子」，用户照做了。
                 // 静默 return 的话他只会一直点，什么都不发生。
-                note = String(localized: "这里取不到颜色，换个地方点点看。要是哪儿都取不到，退回第一屏，用上面的提示条补一张原图就清楚了。")
+                note = String(localized: "无法取到该处颜色，请更换位置重试；若始终无法取色，请返回第一步，通过提示条补充原图")
                 return
             }
             note = nil

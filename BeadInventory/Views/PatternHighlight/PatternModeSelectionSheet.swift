@@ -45,7 +45,7 @@ struct PatternModeSelectionSheet: View {
                         icon: "square.grid.3x3.square",
                         tint: Theme.ColorToken.Morandi.mauve,
                         title: "单图纸模式",
-                        subtitle: "一张平面图纸，逐格高亮对照着拼",
+                        subtitle: "单张平面图纸，逐格高亮比对拼装",
                         showsChevron: true
                     ) {
                         onSelectSinglePattern()
@@ -56,7 +56,7 @@ struct PatternModeSelectionSheet: View {
                         icon: "cube.transparent",
                         tint: Theme.ColorToken.Morandi.mist,
                         title: "多零件模式",
-                        subtitle: "一张图纸上排着几十个小零件，常见于立体拼图",
+                        subtitle: "一张图纸上排列着数十个小零件，常见于立体拼图",
                         showsChevron: true
                     ) {
                         onSelectMultiPart()

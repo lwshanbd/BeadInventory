@@ -130,7 +130,7 @@ struct CustomColorEditView: View {
                     .foregroundStyle(Theme.ColorToken.Text.primary)
                 Text(isEditing
                      ? "修改 HEX 会同步到所有品牌"
-                     : "添加后可在下方启用想用的品牌")
+                     : "添加后可在下方启用所需品牌")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
             }

@@ -169,22 +169,22 @@ struct PartCellBrushView: View {
                     // 「还没判过色」在这儿是假话，它会把用户支去重判一遍色 ——
                     // 那一步会洗掉他手工核对过的所有颜色，而且救不了这个问题。
                     ContentUnavailableView(
-                        "这一块对不上任何零件了",
+                        "该区域未匹配到任何零件",
                         systemImage: "exclamationmark.triangle",
-                        description: Text("退出去回零件清单看看。在这儿改也存不下来。")
+                        description: Text("请退出返回零件清单，此处的修改无法保存。")
                     )
                 } else if loaded {
                     ContentUnavailableView(
-                        "这一块还没判过色",
+                        "该区域尚未识别颜色",
                         systemImage: "eyedropper",
-                        description: Text("先走一遍「看每格什么颜色」，再回来擦或者补。")
+                        description: Text("请先完成「核对颜色」，再返回进行清除或填补。")
                     )
                 } else {
                     ProgressView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .navigationTitle("擦掉 / 补上")
+            .navigationTitle("清除 / 填补")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -348,7 +348,7 @@ struct PartCellBrushView: View {
 
             // 「拖它挪画面」只有放大之后才做得到 —— `clampPan` 在 zoom == 1 时把 pan
             // 夹成 .zero，那时候按提示去拖，画面纹丝不动也没有任何反馈。
-            paneCaption(zoom > 1 ? "图纸原图 · 只能看，拖它挪画面" : "图纸原图 · 只能看")
+            paneCaption(zoom > 1 ? "图纸原图 · 仅供查看，拖它挪画面" : "图纸原图 · 仅供查看")
         }
         .clipped()
     }
@@ -647,20 +647,20 @@ struct PartCellBrushView: View {
                 warning("这一块对不上任何零件了，改的东西存不下来。退出去回零件清单看看。",
                         icon: "exclamationmark.triangle.fill", isError: true)
             } else if overlayStale {
-                warning("这一层这次没画出来，屏幕上的格子不作数 —— 底下那个颗数才是准的。",
+                warning("本次未能渲染该图层，当前屏幕格子不代表实际状态，请以下方颗数为准",
                         icon: "exclamationmark.triangle", isError: true)
             } else if pickUnusable {
-                warning("挑的那个色号在这张图纸的色号体系里没有对应的，换一个。",
+                warning("所选色号在此图纸的色号体系中没有对应项，请更换一个色号。",
                         icon: "paintpalette", isError: true)
             } else if imageUnavailable {
-                warning("这次取不到图纸上的这一块，没法对照图纸 —— 照着手上的实物改。",
+                warning("本次无法读取图纸上的该区域，无法对照图纸，请参照实物修改。",
                         icon: "photo.badge.exclamationmark", isError: false)
             }
 
             Picker("", selection: $tool) {
-                Text("挪图").tag(Tool.move)
-                Text("擦掉").tag(Tool.erase)
-                Text("补上").tag(Tool.paint)
+                Text("移动").tag(Tool.move)
+                Text("清除").tag(Tool.erase)
+                Text("填补").tag(Tool.paint)
             }
             .pickerStyle(.segmented)
             .onChange(of: tool) { _, new in
@@ -820,16 +820,16 @@ struct PartCellBrushView: View {
 
     private var hint: String {
         switch tool {
-        case .move: return String(localized: "拖动看图，两指捏合放大。要改格子，上面换「擦掉」或「补上」。")
+        case .move: return String(localized: "拖动查看图纸，双指捏合可缩放。如需编辑格子，请在上方切换为「清除」或「填补」。")
         // 画笔状态下拖动是画，不是挪 —— 放大之后想看旁边那块，得知道从哪儿挪。
         // 分栏时图纸那一块就是现成的把手（那儿只挪不画），收起来时只能切回「挪图」。
         // **别写「上面那条」**：`panes` 沿画布长边切，横屏时图纸在左边。
         case .erase:
             return showsCompare
-                ? String(localized: "手指划过要去掉的格子。放大后想挪，拖图纸那一块。")
-                : String(localized: "手指划过要去掉的格子。放大后想挪，先切回「挪图」。")
+                ? String(localized: "用手指划过需要清除的格子。放大后如需平移，请拖动图纸区域。")
+                : String(localized: "用手指划过需要清除的格子。放大后如需平移，请先切换回「移动」。")
         case .paint:
-            if paintFill == nil { return String(localized: "先在上面挑一个色号，再划过要补上的格子。") }
+            if paintFill == nil { return String(localized: "请先在上方选择一个色号，再划过需要填补的格子。") }
             return showsCompare
                 ? String(localized: "手指划过要补上的格子。放大后想挪，拖图纸那一块。")
                 : String(localized: "手指划过要补上的格子。放大后想挪，先切回「挪图」。")

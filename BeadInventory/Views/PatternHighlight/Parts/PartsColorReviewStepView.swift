@@ -292,7 +292,7 @@ struct PartsColorReviewStepView: View {
                     // 名字跟拼豆板那屏的按钮一致，两处是同一件事。
                     HStack(spacing: 4) {
                         Image(systemName: "eraser")
-                        Text("改格子")
+                        Text("编辑网格")
                     }
                 }
                 // 量颜色的那几秒也关掉。挡屏的那层盖不住导航栏（overlay 加在 VStack 上，
@@ -526,7 +526,7 @@ struct PartsColorReviewStepView: View {
     private func brushSubject(for id: UUID) -> String {
         if let subjectLabel { return subjectLabel }
         guard let index = parts.firstIndex(where: { $0.id == id }) else {
-            return String(localized: "这一块")
+            return String(localized: "该区域")
         }
         return parts[index].displayName(order: index)
     }
@@ -633,7 +633,7 @@ struct PartsColorReviewStepView: View {
     /// 排序开着时顶上那条字。**必须有**：格子的先后一变，用户第一反应是「图纸怎么乱了」——
     /// 得当场告诉他现在是按什么排的、该往哪儿看。
     private var sortHint: some View {
-        Label("同一种颜色排在一起，最不像「\(label(for: selectedGroup))」的排在最前面",
+        Label("同色相邻排列，与「\(label(for: selectedGroup))」差异最大的排最前",
               systemImage: "arrow.up.arrow.down")
             .font(.caption)
             .foregroundStyle(Theme.ColorToken.Text.secondary)
@@ -670,7 +670,7 @@ struct PartsColorReviewStepView: View {
             // 而这一条存在的全部意义就是那个按钮。
             Image(systemName: "clock.arrow.circlepath")
                 .foregroundStyle(Theme.ColorToken.Text.secondary)
-            Text("刚把 \(edit.cells.count) 格改成「\(label(for: edit.newFill))」")
+            Text("已将 \(edit.cells.count) 格改为「\(label(for: edit.newFill))」")
                 .monospacedDigit()
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(Theme.ColorToken.Text.secondary)
@@ -696,7 +696,7 @@ struct PartsColorReviewStepView: View {
                 // 多零件模式几十个零件要好几秒，得报个数；单张图纸太快，报了反而闪一下
                 Text(samplingProgress.map {
                     String(localized: "正在看每格原本是什么颜色…（\($0.done)/\($0.total)）")
-                } ?? String(localized: "正在看每格原本是什么颜色…"))
+                } ?? String(localized: "正在识别每格颜色…"))
                     .font(.footnote)
                     .monospacedDigit()
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
@@ -722,9 +722,9 @@ struct PartsColorReviewStepView: View {
                 if let refs = groupCells {
                     if refs.isEmpty {
                         ContentUnavailableView(
-                            "这个颜色一格也没有",
+                            "此颜色没有对应的格子",
                             systemImage: "square.dashed",
-                            description: Text("上面换一个色号看看。")
+                            description: Text("请在上方更换一个色号。")
                         )
                         .padding(.top, Theme.Spacing.xxl)
                     } else {
@@ -995,7 +995,7 @@ struct PartsColorReviewStepView: View {
                 if selection.isEmpty {
                     Text(unconfirmed.isEmpty
                          ? "每个色号都核对过了"
-                         : "还有 \(unconfirmed.count) 个没核对")
+                         : "还有 \(unconfirmed.count) 个未核对")
                         .font(.footnote)
                         .foregroundStyle(Theme.ColorToken.Text.secondary)
                         // 右边挤着两个按钮，字一大这句就放不下。HStack 里的 Text 空间不够时
@@ -1024,7 +1024,7 @@ struct PartsColorReviewStepView: View {
                     marqueeFrames = [:]
                     if !marquee { cellFrames = [:] }
                 } label: {
-                    Label(marquee ? "选完了" : "拖着框选",
+                    Label(marquee ? "选完了" : "拖动框选",
                           systemImage: marquee ? "checkmark" : "rectangle.dashed")
                         .font(.footnote.weight(.medium))
                         .lineLimit(1)
@@ -1042,7 +1042,7 @@ struct PartsColorReviewStepView: View {
                     pickedCodes = []
                     showingCodePicker = true
                 } label: {
-                    Label(selection.isEmpty ? "这类都改成…" : "改成别的色号", systemImage: "paintpalette")
+                    Label(selection.isEmpty ? "这类都改成…" : "更改为其他色号", systemImage: "paintpalette")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
@@ -1075,7 +1075,7 @@ struct PartsColorReviewStepView: View {
             Button(action: confirmCurrentGroup) {
                 Label(confirmed.contains(groupKey(selectedGroup))
                       ? "「\(label(for: selectedGroup))」已核对"
-                      : "「\(label(for: selectedGroup))」没问题，看下一个",
+                      : "「\(label(for: selectedGroup))」确认无误",
                       systemImage: "checkmark.circle")
                     .frame(maxWidth: .infinity)
             }
@@ -1254,7 +1254,7 @@ struct PartsColorReviewStepView: View {
                 // 一格都没量到（图全没抠出来）就别把这份结果存下来：存了之后再点「排序」
                 // 会走上面那条快路径，永远不会再量一次，用户除了退出整条流程没有别的办法。
                 guard modes.contains(where: { $0.contains { $0.contains { $0 >= 0 } } }) else {
-                    note = String(localized: "取不到图纸上的颜色，排不了序。回去看看零件的框是不是圈得太小。")
+                    note = String(localized: "无法读取图纸上的颜色，无法排序。请返回检查零件的框选范围是否过小。")
                     return
                 }
                 cellModes = modes
@@ -1271,7 +1271,7 @@ struct PartsColorReviewStepView: View {
     private func turnSortOn(using modes: [[[Int32]]]) {
         guard let ordered = sorted(cells(of: selectedGroup), using: modes) else {
             sortByColor = false
-            note = String(localized: "这一片的原图取不到，排不了序。")
+            note = String(localized: "该区域原图无法读取，无法排序。")
             return
         }
         sortByColor = true
@@ -1494,7 +1494,7 @@ struct PartsColorReviewStepView: View {
         // 一格都没变（在选色盘里挑回了这一组本来的色号）。**必须说一句** ——
         // 屏幕上什么都不动的话，用户不知道是自己挑错了还是这个按钮坏了。
         guard !edits.isEmpty else {
-            note = String(localized: "这 \(selection.count) 格本来就是「\(label(for: fill))」，没有改动")
+            note = String(localized: "所选 \(selection.count) 格已是「\(label(for: fill))」，未作修改")
             selection.removeAll()
             return
         }
@@ -1702,7 +1702,7 @@ private struct PartBrushPickerSheet: View {
 
     /// 挑完要拿去干什么。同一张列表两处在用（改格子 / 看原图），
     /// 标题不跟着变的话，用户点开「看零件」看到的是「改哪一块的格子」。
-    var title: LocalizedStringKey = "改哪一块的格子"
+    var title: LocalizedStringKey = "选择要编辑的区域"
     let rows: [Row]
     let colors: [String: Color]
     let onPick: (UUID) -> Void

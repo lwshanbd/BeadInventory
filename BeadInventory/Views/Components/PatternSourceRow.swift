@@ -193,15 +193,15 @@ struct PatternSourceRow: View {
     private var status: some View {
         if let stored {
             if stored.preview == nil {
-                Text("这份图纸读不出来了")
+                Text("无法读取该图纸原图")
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Status.error)
-                Text("拼图模式会退回用封面。重新选一张就好。")
+                Text("拼图模式将改用封面显示，请重新选择原图")
                     .font(.caption2)
                     .foregroundColor(.secondary.opacity(0.7))
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("拼图模式用的是这张")
+                Text("拼图模式使用此原图")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 // 量不出大小时就不写 —— 「零字节」比不说更糟。
@@ -219,7 +219,7 @@ struct PatternSourceRow: View {
             Text("没有图纸原图")
                 .font(.caption)
                 .foregroundColor(.secondary)
-            Text("拼图模式会拿封面凑合，一格豆子的像素少一半。相册里还留着原图就选一下。")
+            Text("拼图模式将改用封面显示，单格像素信息会减半。如相册中仍保留原图，可重新选择")
                 .font(.caption2)
                 .foregroundColor(.secondary.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
@@ -253,22 +253,22 @@ struct PatternSourceRow: View {
 
     private func failureText(_ failure: PickFailure) -> String {
         switch failure {
-        case .unreadable: return "这张图取不出来。如果它还在 iCloud 里，等下载完再试。"
-        case .saveFailed: return "没存进去，可能是手机空间不够。原来那张还在。"
-        case .removeFailed: return "没删掉，稍后再试。"
+        case .unreadable: return "无法读取该图片。如仍在 iCloud 下载中，请稍后重试"
+        case .saveFailed: return "保存失败，可能是设备存储空间不足。原图纸未受影响"
+        case .removeFailed: return "删除失败，请稍后重试"
         }
     }
 
     private var replaceMessage: String {
         let base = stored == nil
-            ? "拼图模式以后就用这张来看每一格的颜色。"
-            : "现在这张会被盖掉。它不进 iCloud、也不在备份里，换掉就找不回来了。"
+            ? "拼图模式将使用此图片查看每一格的颜色"
+            : "当前图片将被覆盖，且不会同步至 iCloud 或纳入备份，替换后无法恢复"
         guard hasPatternWork else { return base }
         return base + "\n\n这个项目在拼图模式里已经对好了格子，换了图纸就对不上了，得重新对一遍。"
     }
 
     private var removeMessage: String {
-        let base = "拼图模式仍然能用，但只能拿封面凑合，看格子会糊一些。它不进 iCloud、也不在备份里，删了要重新从相册选。"
+        let base = "拼图模式仍可使用，但将改用封面显示，格子会较模糊。原图不会同步至 iCloud 或纳入备份，删除后需重新从相册选择"
         guard hasPatternWork else { return base }
         return base + "\n\n而且这个项目已经对好了格子 —— 退回用封面之后多半对不上，得重新对一遍。"
     }

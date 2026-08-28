@@ -38,8 +38,8 @@ struct PatternSourceBanner: View {
                         .foregroundStyle(Theme.ColorToken.Morandi.honey)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(failed
-                             ? "这张图读不出来，换一张试试。"
-                             : "现在用的是压缩过的副本，放大到一颗豆子会糊。相册里还留着这张图纸的原图吗？")
+                             ? "无法读取此图，请更换一张。"
+                             : "当前使用的是压缩副本，放大到单颗豆子会模糊。相册中是否仍保留这张图纸的原图？")
                             .font(.footnote)
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
                             .fixedSize(horizontal: false, vertical: true)

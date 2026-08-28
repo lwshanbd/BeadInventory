@@ -115,7 +115,7 @@ struct BoardProjectorSheet: View {
     private var boardSizeRow: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             HStack {
-                Text("你手上那块豆板")
+                Text("手中的拼豆板")
                     .font(.subheadline.weight(.medium))
                     .foregroundColor(Theme.ColorToken.Text.primary)
                 Spacer()
@@ -140,7 +140,7 @@ struct BoardProjectorSheet: View {
                     }
                 }
             }
-            Text("投影里那个方框会分成这么多格，四个角对到板子四个角上之后，一格正好一个孔。格数说错，中间就会越偏越多。")
+            Text("投影画面中的方框会按设定格数划分，四角对准板子四角后，每格对应一个孔位。若格数设置有误，偏差会随位置累积增大。")
                 .font(.caption)
                 .foregroundColor(Theme.ColorToken.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -161,7 +161,7 @@ struct BoardProjectorSheet: View {
         if let suggestedBoard,
            suggestedBoard.cols != projector.boardCols || suggestedBoard.rows != projector.boardRows {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                Text("这一屏摆的是 \(suggestedBoard.label) 的板，跟上面对不上。")
+                Text("当前投影显示的是「\(suggestedBoard.label)」板型，与设置不一致")
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Status.warning)
                     .fixedSize(horizontal: false, vertical: true)
@@ -182,20 +182,20 @@ struct BoardProjectorSheet: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             // 「对准了」得有个用户自己看得出来的判据，所以两条胳膊要跟箭尖写在一句话里：
             // 光看箭尖那一格，差半格是看不出来的；顺着板边亮的那几个孔歪没歪，一眼就是一眼。
-            Text("投影里四个角上各有一个直角记号。把拐角那个亮块，拖到豆板同一个角最角上的那个孔里 —— 两条胳膊会顺着板边再亮几个孔，这几个孔都照上了，这个角就对准了。")
+            Text("投影画面四角各有一个直角标记，请将角上的亮块拖到豆板同一角最外侧的孔位——沿板边会有几个孔随之亮起，全部对齐即表示该角已校准。")
                 .font(.subheadline)
                 .foregroundColor(Theme.ColorToken.Text.primary)
                 .fixedSize(horizontal: false, vertical: true)
             // 四个角对上、中间却偏了，是用户自己发现不了的一类错（镜头畸变、桌面不平）。
             // 记号画在畸变最大的几处，把这件事变成「看那几块光有没有照进孔里」。
             // 不提「格数选错」：正中间恰好是常见错法的零点，查不出来（见 `ProjectorAlignmentMarks`）。
-            Text("四条边的正中间还各有一个白色的 T，板子正中间是一个白十字。这几处也照进孔里，中间就没有偏。")
+            Text("四条边的中点各有一个白色 T 形标记，板子正中是一个白色十字。将这些标记对准对应孔位，即可确认中心未偏移。")
                 .font(.caption)
                 .foregroundColor(Theme.ColorToken.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
             // 斜着投是常态，而这正是四个角要分别拖的原因 —— 说一句，用户才不会以为
             // 「投出来是梯形」是自己没摆正。
-            Text("投影仪斜着照没关系：四个角对上之后，App 会把画面掰回正方形，中间的格子自动就对齐了。")
+            Text("投影仪无需垂直投射：四角对齐后，App 会自动将画面校正为正方形，中间的格子随之自动对齐。")
                 .font(.caption)
                 .foregroundColor(Theme.ColorToken.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -203,7 +203,7 @@ struct BoardProjectorSheet: View {
             // 会投到桌面上。多零件模式不会遇到（那块板就是实物板），那边不说这句 ——
             // 这一屏本来就已经三段字了。
             if suggestedBoard == nil {
-                Text("图纸比豆板大的时候，超出板子的格子会投到桌面上：先拼板子上这一块，拼完把豆板挪到下一块位置再拼。")
+                Text("当图纸大于豆板时，超出部分会投射到桌面上：请先拼完板子上的这一部分，再将豆板移至下一位置继续拼装。")
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Text.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -462,18 +462,18 @@ struct BoardProjectorSheet: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundColor(Theme.ColorToken.Text.primary)
                 Spacer()
-                Text("一下走 ¼ 格")
+                Text("每次移动 ¼ 格")
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Text.tertiary)
             }
 
             HStack(spacing: Theme.Spacing.lg) {
-                arrowPad(caption: String(localized: "挪 \(projector.activeCorner.number) 这个角")) { dx, dy in
+                arrowPad(caption: String(localized: "调整\(projector.activeCorner.number)角位置")) { dx, dy in
                     projector.nudgeActiveCorner(dx: dx * step, dy: dy * step, screen: screen)
                 }
                 // 桌子被碰一下、投影仪蹭歪一点，形状没变、整体偏了。四个角重对一遍
                 // 是没必要的，而这恰恰是拼到一半最常发生的事。
-                arrowPad(caption: String(localized: "整块一起挪")) { dx, dy in
+                arrowPad(caption: String(localized: "整体移动")) { dx, dy in
                     projector.nudgeWholeQuad(dx: dx * step, dy: dy * step, screen: screen)
                 }
             }
@@ -532,7 +532,7 @@ struct BoardProjectorSheet: View {
     /// 而手机上这三个点照样在变，等于告诉他「已经生效了」。所以那种情况直接说出来。
     private var highlightColorRow: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text("亮的格子什么颜色")
+            Text("点亮格子的颜色")
                 .font(.subheadline.weight(.medium))
                 .foregroundColor(Theme.ColorToken.Text.primary)
 
@@ -550,20 +550,20 @@ struct BoardProjectorSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if session.content?.highlightKeys.isEmpty ?? true {
-                Text("现在一个色号都没点，板子上一格都不亮 —— 回上一屏点一个色号，才看得出这几种颜色的差别。")
+                Text("当前未选中色号，板上不会高亮。请返回上一屏选择一个色号，以查看颜色差异。")
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Status.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             if projector.highlight.style == .custom {
-                ColorPicker("挑一个颜色", selection: customColorBinding, supportsOpacity: false)
+                ColorPicker("选择颜色", selection: customColorBinding, supportsOpacity: false)
                     .font(.subheadline)
                 // 挑了个暗色只说一句，不替他改掉 —— 屋里很黑、板子反光的时候，
                 // 压暗可能正是他要的。但「投出来一格都不亮」看着就是投屏坏了，
                 // 不说的话他会回去查校准。
                 if ProjectorHighlightPaint.isTooDarkToProject(projector.highlight.custom) {
-                    Text("这个颜色偏暗，投影仪打出来的格子可能不太看得清。")
+                    Text("这个颜色偏暗，投影出的格子可能不易分辨。")
                         .font(.caption)
                         .foregroundColor(Theme.ColorToken.Status.warning)
                         .fixedSize(horizontal: false, vertical: true)
@@ -630,9 +630,9 @@ struct BoardProjectorSheet: View {
                 projector.resetToFilling()
                 dismiss()
             } label: {
-                Label("关掉投影仪模式", systemImage: "arrow.counterclockwise")
+                Label("关闭投影仪模式", systemImage: "arrow.counterclockwise")
             }
-            Text("接的是电视、不是投影仪时用这个：画面回到整块板铺满屏幕，这组对好的四个角也一并清掉。")
+            Text("连接电视（而非投影仪）时使用此选项：画面将恢复为整块板铺满屏幕，已校准的四角数据也会一并清除。")
                 .font(.caption)
                 .foregroundColor(Theme.ColorToken.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -659,9 +659,9 @@ struct ProjectorStatusChip: View {
         Button(action: action) {
             HStack(spacing: 2) {
                 if projector.isOn {
-                    Label("投影仪模式 · 只亮当前色号，点这里重新对板", systemImage: "videoprojector")
+                    Label("投影仪模式 · 仅高亮当前色号，点击可重新校准", systemImage: "videoprojector")
                 } else {
-                    Label("投屏中 · 投到豆板上？点这里开投影仪模式", systemImage: "tv")
+                    Label("投屏中 · 需要投射到豆板上？点击开启投影仪模式", systemImage: "tv")
                 }
                 // 光把文字变成按钮，用户看不出它可以点（改之前那儿就是一个纯状态标记，
                 // 长得一模一样）。

@@ -779,7 +779,7 @@ class HistoryManager: ObservableObject {
                 // 让用户再点一次，而 addProject 不去重，点第二次就是两个同 id 的项目。
                 // 多零件进度没跟上就单独说一句，别让他以为东西都在。
                 if !restorePartsSheet(from: snapshot, into: manager) {
-                    revertWarning = String(localized: "项目回来了，但它的多零件进度没能一起还原。")
+                    revertWarning = String(localized: "项目已恢复，但其多零件进度未能一并还原")
                     // 批量撤回时这句话会被合并进汇总，日志是唯一能逐条查到的地方
                     AppLogger.shared.error("History", "undo_parts_sheet_lost", metadata: [
                         "projectId": snapshot.id.uuidString, "kind": "projectDelete"
@@ -906,7 +906,7 @@ class HistoryManager: ObservableObject {
                 print("[History] 恢复计划: \(parentProject.name) (包含 \(deleteSnapshot.deletedChildren.count) 个子项目)")
                 // 计划和子项目都已经建回去了 —— 理由同 .projectDelete 分支
                 if missing > 0 {
-                    revertWarning = String(localized: "计划回来了，但其中 \(missing) 个项目的多零件进度没能一起还原。")
+                    revertWarning = String(localized: "计划已恢复，但其中 \(missing) 个项目的多零件进度未能一并还原")
                     AppLogger.shared.error("History", "undo_parts_sheet_lost", metadata: [
                         "projectId": deleteSnapshot.deletedProject.id.uuidString,
                         "kind": "planDelete", "projects": missing
@@ -920,7 +920,7 @@ class HistoryManager: ObservableObject {
                 let project = restoreProject(from: snapshot)
                 manager.addPlannedProject(project)
                 if !restorePartsSheet(from: snapshot, into: manager) {
-                    revertWarning = String(localized: "项目回来了，但它的多零件进度没能一起还原。")
+                    revertWarning = String(localized: "项目已恢复，但其多零件进度未能一并还原")
                     AppLogger.shared.error("History", "undo_parts_sheet_lost", metadata: [
                         "projectId": snapshot.id.uuidString, "kind": "planDeleteLegacy"
                     ])

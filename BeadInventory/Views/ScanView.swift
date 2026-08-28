@@ -1153,7 +1153,7 @@ struct ImageSelectionSection: View {
             .tint(Theme.ColorToken.Morandi.mauve)
 
             Text(keepPatternSource
-                 ? "拼图模式需要原图才能看清每一格的颜色。原图保存在本机，不占用 iCloud，拼完后可以删除。"
+                 ? "拼图模式需要保留原图才能看清每格颜色，原图存于本机，不占用 iCloud 空间。完成拼图后可删除"
                  : "这张图纸将无法使用拼图模式。以后需要时，可以在拼图模式里重新选择原图。")
                 .font(.caption2)
                 .foregroundColor(.secondary)
@@ -1180,7 +1180,7 @@ struct ImageSelectionSection: View {
             .padding(.top, 4)
 
             VStack(spacing: 4) {
-                Text("选一张图纸开始识别")
+                Text("选择图纸开始识别")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.ColorToken.Text.primary)
                 Text("支持表格、色号统计、拼图等图纸")
@@ -1543,7 +1543,7 @@ struct RecognizedResultsSectionNew: View {
 
             // 提示 pill
             HStack {
-                Text("← 左滑任意一行可编辑、改品牌或删除")
+                Text("← 左滑任意一行可编辑、更换品牌或删除")
                     .font(.caption2)
                     .foregroundStyle(Theme.ColorToken.Text.tertiary)
                 Spacer()
@@ -1714,7 +1714,7 @@ struct RecognizedItemRowNew: View {
                 // 「改品牌」：不限缺豆场景，任何颜色都能切到同色系下的其他品牌。
                 // handler 只翻 state，真正的选择走下面的 confirmationDialog。
                 SwipeActionItem(
-                    "改品牌",
+                    "更换品牌",
                     systemImage: "arrow.left.arrow.right",
                     tint: Theme.ColorToken.Morandi.honey
                 ) {
@@ -1777,7 +1777,7 @@ struct RecognizedItemRowNew: View {
                         Button {
                             onApplyPreferredBrand(nil)
                         } label: {
-                            Label("改回主品牌", systemImage: "arrow.uturn.backward")
+                            Label("切换回主品牌", systemImage: "arrow.uturn.backward")
                         }
                         Divider()
                     }
@@ -1832,7 +1832,7 @@ struct RecognizedItemRowNew: View {
                 }
             }
             if isBrandOverridden {
-                Button("改回主品牌", role: .destructive) {
+                Button("切换回主品牌", role: .destructive) {
                     onApplyPreferredBrand(nil)
                 }
             }
@@ -1845,7 +1845,7 @@ struct RecognizedItemRowNew: View {
     /// confirmationDialog 标题：色号
     private var brandPickerTitle: String {
         let code = matchedColor?.displayCode(for: colorSystem) ?? item.colorCode
-        return String(localized: "改用品牌 · \(code)")
+        return String(localized: "更换品牌 · \(code)")
     }
 
     /// confirmationDialog 副标题：数量
@@ -2017,7 +2017,7 @@ struct RecognizedItemRowNew: View {
                 Image(systemName: "sparkles")
                     .font(.caption)
                     .foregroundStyle(Theme.ColorToken.Morandi.honey)
-                Text("试试用")
+                Text("改用")
                     .font(.caption2)
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
                 Text(brand.name)
@@ -2547,7 +2547,7 @@ struct ThumbnailPreviewSection: View {
                         )
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("列表里显示的就是这张")
+                        Text("列表中显示的即为此图")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         // 用户报障的根子就是把这两件事当成了一件：他在这里裁了一刀，
@@ -2562,7 +2562,7 @@ struct ThumbnailPreviewSection: View {
                                 .foregroundColor(.secondary.opacity(0.7))
                                 .fixedSize(horizontal: false, vertical: true)
                         } else {
-                            Text("这个项目没有单独的图纸，拼图模式用的就是这张")
+                            Text("此项目没有单独的图纸原图，拼图模式将直接使用此封面")
                                 .font(.caption2)
                                 .foregroundColor(.secondary.opacity(0.7))
                                 .fixedSize(horizontal: false, vertical: true)
@@ -2586,7 +2586,7 @@ struct ThumbnailPreviewSection: View {
                         Text("暂无封面")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text("不加也行，列表里会显示一个占位图")
+                        Text("未添加时列表将显示占位图")
                             .font(.caption2)
                             .foregroundColor(.secondary.opacity(0.7))
                     }
@@ -3120,7 +3120,7 @@ struct ScanHelpSheet: View {
                             .padding(.top, 24)
 
                         VStack(spacing: 4) {
-                            Text("上边的叫「表格」，下边的叫「色号统计」")
+                            Text("上方为「表格」，下方为「色号统计」")
                             Text("目前啃豆小仓无法直接识别你的「图纸」")
                         }
                             .font(.body)

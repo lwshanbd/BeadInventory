@@ -132,7 +132,7 @@ enum ProjectorHighlightStyle: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .pattern: return String(localized: "跟着图纸")
+        case .pattern: return String(localized: "按图纸颜色投影")
         case .white: return String(localized: "白色")
         case .custom: return String(localized: "自定义")
         }
@@ -143,11 +143,11 @@ enum ProjectorHighlightStyle: String, CaseIterable, Identifiable {
     var explanation: String {
         switch self {
         case .pattern:
-            return String(localized: "按色号本来的颜色投。黑、深蓝这类投出来是不亮的，会自动提到最亮 —— 色相还在，深浅没了：黑和白都是白光。")
+            return String(localized: "按色号原本的颜色投影，黑色、深蓝等较暗的颜色会自动提亮至最高亮度：色相保留，明暗信息丢失，黑色与白色都会显示为白光。")
         case .white:
-            return String(localized: "不管当前是哪个色号，一律投白光。板子上最亮、边界最清楚，代价是同时点亮两个色号时它们长得一样。")
+            return String(localized: "无论当前是哪个色号，均投射白光，板上亮度最高、边界最清晰；代价是同时高亮两个色号时无法区分。")
         case .custom:
-            return String(localized: "一律投你挑的这个颜色。白板子上白光晃眼、或者屋里灯偏黄看不清时，换一个更好认的颜色。代价跟白色一样：同时点亮两个色号时它们长得一样。")
+            return String(localized: "始终投射所选颜色。适合白光刺眼或室内灯光偏黄时更换为更易辨认的颜色，代价同白光模式：无法区分同时高亮的两个色号。")
         }
     }
 }

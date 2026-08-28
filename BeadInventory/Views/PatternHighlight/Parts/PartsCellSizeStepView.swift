@@ -273,7 +273,7 @@ struct PartsCellSizeStepView: View {
             canvas
             footer
         }
-        .navigationTitle("量格子")
+        .navigationTitle("测量网格")
         .navigationBarTitleDisplayMode(.inline)
         // 翻到指定那一块。**认 `focusPartId` 本身，不能只在 `onAppear` 里做一次**：
         // 这一屏被 push 回来时 `onAppear` 发不发是 SwiftUI 的事，赌不得。
@@ -298,10 +298,10 @@ struct PartsCellSizeStepView: View {
                                  set: { if !$0 { deletingPart = nil } }),
             titleVisibility: .visible
         ) {
-            Button("删掉", role: .destructive) { deleteCurrentPart() }
+            Button("删除", role: .destructive) { deleteCurrentPart() }
             Button("取消", role: .cancel) { deletingPart = nil }
         } message: {
-            Text("它已经判好的颜色、在拼豆板上的位置都会一起没掉。")
+            Text("已识别的颜色和拼豆板上的位置将一并被清除。")
         }
         .confirmationDialog(
             "重新对格子大小？",
@@ -362,7 +362,7 @@ struct PartsCellSizeStepView: View {
                 gestureCatcher
 
                 if estimating {
-                    ProgressView("正在量…")
+                    ProgressView("正在测量…")
                         .padding()
                         .background(.regularMaterial)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
@@ -516,12 +516,12 @@ struct PartsCellSizeStepView: View {
                         resetView()
                         if let sample { Task { await refit(part: sample) } }
                     } label: {
-                        Label("就用这个大小", systemImage: "checkmark")
+                        Label("使用此大小", systemImage: "checkmark")
                             .font(.footnote.weight(.medium))
                     }
                 }
 
-                Text("黄框就是一格：拖框身挪位置，拖右下角的圆点改大小。空白处拖动是移动图片。")
+                Text("黄色方框代表一格：拖动框体可移动位置，拖动右下角圆点可调整大小；在空白处拖动可平移图片。")
                     .font(.footnote)
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
                     .multilineTextAlignment(.center)
@@ -538,9 +538,9 @@ struct PartsCellSizeStepView: View {
                         // 是在讲系统内部出了什么事，用户要的是「我能干嘛、代价是什么」。
                         // 「每个零件各有各的格线」在单图纸模式下也是废话：一共就一张图纸。
                         Text(pitchLocked
-                             ? "颜色判好了：推格线可以，改格子大小要重判一次。"
+                             ? "颜色已识别：可调整格线位置，但调整网格大小需要重新识别一次。"
                              : (samples.count > 1
-                                ? "网格线要落在豆子和豆子的缝上。每个零件各有各的格线。"
+                                ? "网格线需对齐豆子之间的间隙。每个零件的网格线各自独立。"
                                 : "网格线要落在豆子和豆子的缝上。"))
                             .font(.footnote)
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
@@ -593,7 +593,7 @@ struct PartsCellSizeStepView: View {
                             Button {
                                 enterPicking()
                             } label: {
-                                Label("重选格子大小", systemImage: "square.dashed.inset.filled")
+                                Label("重新选择网格大小", systemImage: "square.dashed.inset.filled")
                                     .font(.footnote)
                             }
                             .disabled(estimating || pitchLocked)
@@ -656,7 +656,7 @@ struct PartsCellSizeStepView: View {
             // 剩下的不想一个个看了，随时能走。最后一个零件上不显示 —— 那时它和上面
             // 那个按钮是同一件事，摆两个只会让人以为有区别。
             if onReturn == nil, !isLastSample {
-                Button("不看了，完成") {
+                Button("跳过并完成") {
                     Task {
                         await refitAllParts()
                         onContinue()
@@ -676,8 +676,8 @@ struct PartsCellSizeStepView: View {
 
     /// 主按钮上写什么。三种情形三句话，说的都是**按下去会去哪儿**。
     private var mainActionTitle: LocalizedStringKey {
-        if onReturn != nil { return "对好了，回核对颜色" }
-        return isLastSample ? "对齐了，看每格什么颜色" : "对齐了，看下一个"
+        if onReturn != nil { return "返回核对颜色" }
+        return isLastSample ? "已对齐，查看每格颜色" : "已对齐，查看下一个"
     }
 
     private var mainActionIcon: String {
@@ -886,7 +886,7 @@ struct PartsCellSizeStepView: View {
     private var cellPixelsText: String {
         let px = cellPixels
         guard px > 0 else { return "—" }
-        return String(format: "%.2f 像素", px)
+        return String(format: String(localized: "%.2f 像素"), px)
     }
 
     /// 加减号一次动多少源图像素。
