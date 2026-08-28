@@ -109,7 +109,20 @@ struct MoreView: View {
                                 iconColor: Theme.ColorToken.Morandi.honey,
                                 title: "历史记录",
                                 subtitle: "查看操作记录，支持撤回",
-                                trailing: .new,
+                                trailing: .new
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            ProjectorConnectView()
+                        } label: {
+                            MoreCardRow(
+                                icon: "videoprojector",
+                                iconColor: Theme.ColorToken.Morandi.mauve,
+                                title: "投影仪",
+                                subtitle: "将拼图画面投送到投影仪",
+                                trailing: .chevron,
                                 isLast: true
                             )
                         }

@@ -168,6 +168,7 @@ struct PartsBoardStepView: View {
     @ObservedObject private var cast = BoardCastSession.shared
     /// 开着「对准豆板」那一屏
     @State private var showingProjectorSheet = false
+    @State private var showingConnectSheet = false
     /// 正在自己填格数，填完了拿这块板做什么
     @State private var customSizeTarget: CustomSizeTarget?
     /// 刚填好、等这一屏关掉再用的那块板（连同它是给哪一条用的）。见 `applyCustomSize`。
@@ -283,6 +284,7 @@ struct PartsBoardStepView: View {
         // 校准的收尾挂在呈现方：那一屏自己 `onDisappear` 判不准「是真被关掉了，还是
         // 只是被『自定义尺寸』盖住了」，判错的代价是外屏上的角标再也不消失（而角标跟
         // 真正要按豆子的格子长得一模一样），下次进去也不会重新拍快照。
+        .sheet(isPresented: $showingConnectSheet) { ProjectorConnectSheet() }
         .sheet(isPresented: $showingProjectorSheet, onDismiss: {
             if BoardProjector.shared.isCalibrating { BoardProjector.shared.cancelCalibrating() }
         }) {
@@ -408,6 +410,8 @@ struct PartsBoardStepView: View {
                     // 状态标记 + 投影仪模式的入口，写法见 `ProjectorStatusChip`
                     if cast.externalConnected {
                         ProjectorStatusChip { showingProjectorSheet = true }
+                    } else {
+                        ProjectorConnectChip { showingConnectSheet = true }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
