@@ -17,6 +17,7 @@
 
 跑起来之后可以敲这些命令模拟遥控器：
 
+    hang                    下一条连接收下 hello 之后不回 welcome（再敲一次恢复）
     calib                   模拟遥控器长按确定键，发 calibRequest 请求进校准
     corner <tl|tr|br|bl>    切换当前角，发 active
     move <dx> <dy>          当前角移动多少像素，发 quad
@@ -129,6 +130,11 @@ class MockProjector:
         self.cols = 0
         self.rows = 0
         self.mode = "(未收到)"
+        # 收下 hello 之后故意不回 welcome。用来验 iOS 端握手超时那条路：
+        # 「投影仪收下了连接却不应答」是真机上最常见的一种卡死（那头 Wi-Fi 抖一下、
+        # App 正忙、被 ROM 掐了），而正常跑的 mock 一定会回 welcome 或 denied，
+        # 永远走不到那儿。
+        self.hang_handshake = False
         self.frame_count = 0
         self.last_seq = -1
         self.latest_png: bytes | None = None
@@ -164,6 +170,9 @@ class MockProjector:
                 await websocket.send(json.dumps({"t": "denied"}))
                 print("[拒绝] hello 不是文本帧")
                 return
+            if self.hang_handshake:
+                print("[挂起] 收下 hello 之后不回 welcome —— iOS 端应在 8 秒后超时并重试")
+                await asyncio.Future()      # 永远不返回，连接就这么挂着
             hello = json.loads(hello_raw)
             if hello.get("t") != "hello" or hello.get("proto") != 1:
                 await websocket.send(json.dumps({"t": "denied"}))
@@ -326,6 +335,9 @@ class MockProjector:
                 self.width, self.height = int(rest[0]), int(rest[1])
                 self.send_soon({"t": "resize", "w": self.width, "h": self.height})
                 print(f"→ resize {self.width}×{self.height}")
+            elif command == "hang":
+                self.hang_handshake = not self.hang_handshake
+                print(f"→ 握手挂起 {'开' if self.hang_handshake else '关'}")
             elif command == "state":
                 print(
                     f"mode={self.mode} 已收 {self.frame_count} 帧 seq={self.last_seq} "
@@ -333,7 +345,7 @@ class MockProjector:
                 )
             else:
                 print("命令：calib / corner <tl|tr|br|bl> / next / move <dx> <dy> / exit"
-                      " / resize <w> <h> / state / quit")
+                      " / resize <w> <h> / hang / state / quit")
 
 
 # ---------- 预览页：把收到的画面显示出来 ----------

@@ -197,12 +197,14 @@ struct SinglePatternHighlightStepView: View {
         // 离开这一屏就把电视上的东西撤掉：留着的话用户已经走了，电视上还停着一张
         // 他不再看的图纸 —— 而这一屏是被 push 上来的，退出去是很随手的动作。
         .onDisappear { BoardCastSession.shared.stop() }
-        // 校准的收尾挂在这儿，理由同 PartsBoardStepView：那一屏自己分不清「被关掉了」
-        // 和「被『自定义尺寸』盖住了」。
-        // 遥控器长按确定键要求校准，理由同 PartsBoardStepView。
+        // 遥控器长按确定键要求校准，连同「先把别的 sheet 收掉」的理由，
+        // 都同 PartsBoardStepView。
         .onReceive(BoardProjector.shared.remoteCalibrationRequest) { _ in
+            showingDiffSheet = false
             showingProjectorSheet = true
         }
+        // 校准的收尾挂在这儿，理由同 PartsBoardStepView：那一屏自己分不清「被关掉了」
+        // 和「被『自定义尺寸』盖住了」。
         .sheet(isPresented: $showingProjectorSheet, onDismiss: {
             if BoardProjector.shared.isCalibrating { BoardProjector.shared.cancelCalibrating() }
         }) {

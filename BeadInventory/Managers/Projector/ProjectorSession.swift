@@ -181,18 +181,20 @@ final class ProjectorSession: ObservableObject {
             projector.activeCorner = corner
             lastCalibrationSignature = calibrationSignature()
         case .exit:
-            // 用户在投影仪上按了返回。跟手机上点「完成」一样收尾：存下来、退出校准。
+            // 用户在投影仪上按了返回。这里只做「完成」的一半 —— 存下来、退出校准；
+            // 手机上那一页由它自己关（`BoardProjectorSheet` 盯着 `isCalibrating`）。
             if projector.isCalibrating { projector.finishCalibrating() }
         case .calibrationRequest:
-            // **只转发请求，不在这里 beginCalibrating。** 直接置校准态的话手机上不会
-            // 出现任何界面，而推流从此只走校准分支 —— 投影仪停在原地，用户手上没有
-            // 任何能退出它的东西，只能重启 App。让板子那一屏把校准页弹出来，
-            // 开和关就都在同一页里，「完成 / 取消」始终在手边。
-            //
-            // 手机上没开着板子那一屏（content 为 nil）就不响应：那时候没有板可对，
-            // 弹出来也是一屏空的。
-            guard !projector.isCalibrating, link.state.isConnected,
-                  BoardCastSession.shared.content != nil else { return }
+            // **只转发请求，不在这里 beginCalibrating**，理由见
+            // `BoardProjector.remoteCalibrationRequest`。
+            guard !projector.isCalibrating else { return }
+            // 手机上没开着板子那一屏就没有板可对，弹出来也是一屏空的。但用户此刻正站在
+            // 投影仪跟前按遥控器，两端都不动、日志里再一个字都没有的话，事后没人查得出
+            // 他到底按没按。
+            guard BoardCastSession.shared.content != nil else {
+                AppLogger.shared.warning("Projector", "calib_request_no_board")
+                return
+            }
             projector.remoteCalibrationRequest.send()
         case .resize:
             // 尺寸变了要按新尺寸重新出图，否则安卓端会把旧图最近邻拉伸。
