@@ -184,10 +184,16 @@ final class ProjectorSession: ObservableObject {
             // 用户在投影仪上按了返回。跟手机上点「完成」一样收尾：存下来、退出校准。
             if projector.isCalibrating { projector.finishCalibrating() }
         case .calibrationRequest:
-            // 遥控器要求进校准。格数沿用上次存的那套（`suggestedBoard: nil`）——
-            // 用户此刻在投影仪那头，手机上弹个选单让他回来挑是最糟的做法。
-            guard !projector.isCalibrating, let screen = link.state.screenSize else { return }
-            projector.beginCalibrating(suggestedBoard: nil, screen: screen)
+            // **只转发请求，不在这里 beginCalibrating。** 直接置校准态的话手机上不会
+            // 出现任何界面，而推流从此只走校准分支 —— 投影仪停在原地，用户手上没有
+            // 任何能退出它的东西，只能重启 App。让板子那一屏把校准页弹出来，
+            // 开和关就都在同一页里，「完成 / 取消」始终在手边。
+            //
+            // 手机上没开着板子那一屏（content 为 nil）就不响应：那时候没有板可对，
+            // 弹出来也是一屏空的。
+            guard !projector.isCalibrating, link.state.isConnected,
+                  BoardCastSession.shared.content != nil else { return }
+            projector.remoteCalibrationRequest.send()
         case .resize:
             // 尺寸变了要按新尺寸重新出图，否则安卓端会把旧图最近邻拉伸。
             syncNow()

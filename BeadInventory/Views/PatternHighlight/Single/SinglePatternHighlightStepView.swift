@@ -199,6 +199,10 @@ struct SinglePatternHighlightStepView: View {
         .onDisappear { BoardCastSession.shared.stop() }
         // 校准的收尾挂在这儿，理由同 PartsBoardStepView：那一屏自己分不清「被关掉了」
         // 和「被『自定义尺寸』盖住了」。
+        // 遥控器长按确定键要求校准，理由同 PartsBoardStepView。
+        .onReceive(BoardProjector.shared.remoteCalibrationRequest) { _ in
+            showingProjectorSheet = true
+        }
         .sheet(isPresented: $showingProjectorSheet, onDismiss: {
             if BoardProjector.shared.isCalibrating { BoardProjector.shared.cancelCalibrating() }
         }) {
