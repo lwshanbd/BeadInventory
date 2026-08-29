@@ -287,6 +287,10 @@ final class ProjectorLink: NSObject, ObservableObject {
     /// 时限：对方接受了 TCP 却不回 `welcome`（安卓端卡死、端口填错连到别的服务上、
     /// 本地网络权限还没批），这个 await 就一直挂着 —— 心跳还没起来，重连也排不上，
     /// 用户看到的是一个转不完的圈。
+    ///
+    /// **握手是整条链路上唯一没有看门狗的一段。** 连上之后有心跳兜着：16 秒收不到
+    /// 回音就 `handleFailure` → `teardown` → 掐 socket，自己能爬出来。而心跳是握手
+    /// 成功之后才起的，所以卡在这一段就只能靠这里自己了断。
     private static func handshakeWithTimeout(
         task: URLSessionWebSocketTask, credential: String, ikm: Data
     ) async throws -> (SymmetricKey, Welcome) {
@@ -294,6 +298,17 @@ final class ProjectorLink: NSObject, ObservableObject {
             group.addTask { try await handshake(task: task, credential: credential, ikm: ikm) }
             group.addTask {
                 try await Task.sleep(for: .seconds(8))
+                // 这一句不能省，`cancelAll()` 代替不了它。
+                //
+                // 超时分支抛错之后，task group 还要等另一个分支结束才返回，而那个分支
+                // 卡在 `URLSessionWebSocketTask.receive()` 里 —— 这个调用**不理会 Swift
+                // 的任务取消**（实测：只 cancelAll 的话 20 秒后仍然没返回）。能把它放
+                // 出来的只有掐掉 socket 本身，而 `teardown()` 里那句 cancel 要等这里先
+                // 返回才轮得到 —— 绕成一个圈，谁也等不到谁。
+                //
+                // 症状：iOS 永远停在「正在连接」，不重试也不报错，手机上做什么投影仪
+                // 都没反应，只有重启 App 能解开。而每次断线重连都会走这里一遍。
+                task.cancel(with: .goingAway, reason: nil)
                 throw ProjectorLinkError.badHandshake("投影仪没有回应")
             }
             defer { group.cancelAll() }

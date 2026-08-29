@@ -122,7 +122,13 @@ final class ProjectorSession: ObservableObject {
             BoardCastSession.shared.externalConnected = true
             lastSentMode = nil          // 新连接，模式和校准参数都要重发一遍
             lastCalibrationSignature = nil
-            syncNow()
+            // 把 size 直接传下去，不能让 syncNow 自己去读 `link.state`。
+            //
+            // `@Published` 是在 **willSet** 里发出去的：这个回调跑的时候，`link.state`
+            // 读出来还是上一个值（`.connecting`），`screenSize` 是 nil —— syncNow 会在
+            // 第一行就掉头走人，一个字节都不发。表现是每次断线重连之后投影仪停在旧画面
+            // 不动，直到用户在手机上碰点什么才恢复。
+            syncNow(screen: size)
         case .idle:
             // 用户主动断开，没什么好等的。
             disconnectGrace?.cancel()
@@ -204,8 +210,10 @@ final class ProjectorSession: ObservableObject {
         }
     }
 
-    private func syncNow() {
-        guard let screen = link.state.screenSize else { return }
+    /// `screen` 由调用方给的时候用给的那份。连上那一刻必须这么传，原因见
+    /// `handle(state:)` 里的注释。
+    private func syncNow(screen: CGSize? = nil) {
+        guard let screen = screen ?? link.state.screenSize else { return }
         let projector = BoardProjector.shared
         let content = BoardCastSession.shared.content
 
