@@ -285,6 +285,20 @@ struct PartsBoardStepView: View {
         // 只是被『自定义尺寸』盖住了」，判错的代价是外屏上的角标再也不消失（而角标跟
         // 真正要按豆子的格子长得一模一样），下次进去也不会重新拍快照。
         .sheet(isPresented: $showingConnectSheet) { ProjectorConnectSheet() }
+        // 遥控器长按确定键要求校准。人就站在投影仪跟前，这一下之后手机上必须真的
+        // 有一页开着 —— 校准态的开和关都挂在这一页上（见 `remoteCalibrationRequest`）。
+        //
+        // **先把这一屏上别的 sheet 收掉。** 同一时刻只能呈现一个：别的开着时直接置真，
+        // 页面弹不出来，而这个标志位不会被系统复位、就一直停在 true —— 之后用户回到
+        // 手机上点那个投影 chip（做的事同样是置真）也没反应了，只能退出这一屏再进来。
+        // 而「在连接页里配好、把手机搁桌上走到投影仪那头」正是第一次架机器的主路径。
+        .onReceive(BoardProjector.shared.remoteCalibrationRequest) { _ in
+            showingConnectSheet = false
+            customSizeTarget = nil
+            brushTarget = nil
+            inspecting = nil
+            showingProjectorSheet = true
+        }
         .sheet(isPresented: $showingProjectorSheet, onDismiss: {
             if BoardProjector.shared.isCalibrating { BoardProjector.shared.cancelCalibrating() }
         }) {

@@ -35,6 +35,7 @@
 //  哪个颜色看得清。三种投法见 `ProjectorHighlightStyle`，跟四个角一起存、一起还原。
 //
 
+import Combine
 import SwiftUI
 
 /// 四个角标各自的颜色。手机上和外屏上必须是同一套 —— 用户就是靠颜色认
@@ -79,6 +80,19 @@ final class BoardProjector: ObservableObject {
     /// 亮的格子投什么颜色。外屏画格子、外屏图例、手机上那条样例条都读它
     /// （见 `ProjectorHighlightPaint`）。
     @Published private(set) var highlight: ProjectorHighlightPaint
+
+    /// 用户在投影仪跟前长按了遥控器的确定键。手机上正显示着板子的那一屏收到之后
+    /// **把校准页弹出来**，由那一页的 `onAppear` 去调 `beginCalibrating`。
+    ///
+    /// 绕这一圈是必须的：`isCalibrating` 的开和关得始终绑在同一页的生死上。
+    /// 从网络那头直接把它置真的话，手机上不会出现任何界面 —— 而没有界面就没有
+    /// 「取消」：他拖歪的那几个角只会被后来的 `finishCalibrating` 原样存下来，
+    /// 还原不回去。（退出校准本身还有遥控器返回键那条路，堵死的是「反悔」。）
+    ///
+    /// 是 `PassthroughSubject` 不是 `@Published`：它表示「刚刚按了一下」这个事件，
+    /// 不是一个状态。用 `@Published` 的话，之后每次进板子那一屏都会在订阅的一瞬间
+    /// 收到上一次的值 —— 用户什么都没按，校准页自己弹出来。
+    let remoteCalibrationRequest = PassthroughSubject<Void, Never>()
 
     /// 进校准页那一刻的整组值。取消时全组还原 —— 用户是趴在桌上对着实物拖出来的，
     /// 手一滑就被覆盖、还没有退路，是这一屏最容易惹人恼火的地方。

@@ -127,6 +127,22 @@ struct BoardProjectorSheet: View {
                 dismiss()
             }
         }
+        // 遥控器按了返回：`ProjectorSession` 已经调过 `finishCalibrating()` 收好尾了，
+        // 这一页得跟着关掉。
+        //
+        // 留着的话有两重坏：手机上显示着一页「正在校准」而实际早就不在校准态（拖角
+        // 不生效、点「取消」也还原不了，快照已经清了）；更要命的是呈现方那个
+        // `showingProjectorSheet` 一直是 true，用户在投影仪跟前再长按一次确定键，
+        // 置真的是同一个值 —— SwiftUI 不重新呈现，`onAppear` 不跑，校准根本开不起来。
+        //
+        // 「完成」那条路是先 `finishCalibrating()` 再 `dismiss()`，这儿多关一次无害；
+        // 「取消」那条 `isCalibrating` 在页面消失之后才变 false，碰不到这儿。
+        .onChange(of: projector.isCalibrating) { _, calibrating in
+            if !calibrating {
+                showingCustomSize = false
+                dismiss()
+            }
+        }
     }
 
     // MARK: - 你的豆板多少格

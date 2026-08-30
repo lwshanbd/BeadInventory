@@ -122,7 +122,13 @@ final class ProjectorSession: ObservableObject {
             BoardCastSession.shared.externalConnected = true
             lastSentMode = nil          // 新连接，模式和校准参数都要重发一遍
             lastCalibrationSignature = nil
-            syncNow()
+            // 把 size 直接传下去，不能让 syncNow 自己去读 `link.state`。
+            //
+            // `@Published` 是在 **willSet** 里发出去的：这个回调跑的时候，`link.state`
+            // 读出来还是上一个值（`.connecting`），`screenSize` 是 nil —— syncNow 会在
+            // 第一行就掉头走人，一个字节都不发。表现是每次断线重连之后投影仪停在旧画面
+            // 不动，直到用户在手机上碰点什么才恢复。
+            syncNow(screen: size)
         case .idle:
             // 用户主动断开，没什么好等的。
             disconnectGrace?.cancel()
@@ -175,13 +181,21 @@ final class ProjectorSession: ObservableObject {
             projector.activeCorner = corner
             lastCalibrationSignature = calibrationSignature()
         case .exit:
-            // 用户在投影仪上按了返回。跟手机上点「完成」一样收尾：存下来、退出校准。
+            // 用户在投影仪上按了返回。这里只做「完成」的一半 —— 存下来、退出校准；
+            // 手机上那一页由它自己关（`BoardProjectorSheet` 盯着 `isCalibrating`）。
             if projector.isCalibrating { projector.finishCalibrating() }
         case .calibrationRequest:
-            // 遥控器要求进校准。格数沿用上次存的那套（`suggestedBoard: nil`）——
-            // 用户此刻在投影仪那头，手机上弹个选单让他回来挑是最糟的做法。
-            guard !projector.isCalibrating, let screen = link.state.screenSize else { return }
-            projector.beginCalibrating(suggestedBoard: nil, screen: screen)
+            // **只转发请求，不在这里 beginCalibrating**，理由见
+            // `BoardProjector.remoteCalibrationRequest`。
+            guard !projector.isCalibrating else { return }
+            // 手机上没开着板子那一屏就没有板可对，弹出来也是一屏空的。但用户此刻正站在
+            // 投影仪跟前按遥控器，两端都不动、日志里再一个字都没有的话，事后没人查得出
+            // 他到底按没按。
+            guard BoardCastSession.shared.content != nil else {
+                AppLogger.shared.warning("Projector", "calib_request_no_board")
+                return
+            }
+            projector.remoteCalibrationRequest.send()
         case .resize:
             // 尺寸变了要按新尺寸重新出图，否则安卓端会把旧图最近邻拉伸。
             syncNow()
@@ -204,8 +218,10 @@ final class ProjectorSession: ObservableObject {
         }
     }
 
-    private func syncNow() {
-        guard let screen = link.state.screenSize else { return }
+    /// `screen` 由调用方给的时候用给的那份。连上那一刻必须这么传，原因见
+    /// `handle(state:)` 里的注释。
+    private func syncNow(screen: CGSize? = nil) {
+        guard let screen = screen ?? link.state.screenSize else { return }
         let projector = BoardProjector.shared
         let content = BoardCastSession.shared.content
 

@@ -70,10 +70,22 @@ final class ProjectorLink: NSObject, ObservableObject {
     private var receiveLoop: Task<Void, Never>?
     private var reconnect: Task<Void, Never>?
     private var retryCount = 0
-    /// 不处于自动重连模式。**初值为真**（还没开始过），另外用户点「断开」、凭据被拒、
-    /// 冷启动那次静默失败都会置真 —— 名字里的 byUser 只覆盖其中一种情况。
-    private var stoppedByUser = true
-    /// 这次是冷启动时的自动尝试。失败就安静收手，不进入「断了一直接」那套。
+    /// 为什么现在不在「断了就往回接」的模式里。`nil` = 正在连或已经连上，断了会自己接。
+    ///
+    /// 分开记原因，是因为**回前台时该不该再试一次，取决于当初为什么停的**：
+    /// 用户自己点的「断开」不该被偷偷复活，凭据不对再试一万次也是同样的结果，
+    /// 而冷启动那次没连上（投影仪还没开机）恰恰值得在他把 App 拿到手上时再试一次。
+    private enum StopReason {
+        /// 还没开始过，或者用户点了「断开连接」。
+        case idle
+        /// 上一次一次性尝试没连上（冷启动那次，或者之后某次回前台补的那次）。
+        case autoAttemptFailed
+        /// 配对码不对、或者加密通道校验不过。只能等用户重新扫码 / 重输。
+        case needsPairing
+    }
+    private var stopReason: StopReason? = .idle
+    /// 这次是一次性的自动尝试（冷启动那次，或回前台补的那次）。
+    /// 失败就安静收手，不进入「断了一直接」那套。
     private var isAutoAttempt = false
     /// 握手之后解不开包的次数。密钥路径对不上时每次重连都会走到这里，
     /// 无限重连是白转 —— 连着几次就该停下来让用户重新配对。
@@ -104,6 +116,12 @@ final class ProjectorLink: NSObject, ObservableObject {
     /// 短了会在网络抖一下时误判，长了用户会对着一个假的「已连接」发呆。
     private static let silenceTimeout: TimeInterval = 16
 
+    /// 安卓端报画面尺寸的两条路（握手的 `welcome` 和中途的 `resize`）共用这把尺子。
+    /// 只查一条的话，另一条送进来的 0 会让之后**每一帧都在 `ProjectorSession.pushFrame`
+    /// 的尺寸检查处被丢掉** —— 链路活着、心跳正常、手机上写着「投屏中」，
+    /// 而投影仪停在旧画面。
+    private static let validScreenSide = 1...16384
+
     private enum Key {
         static let pairing = "projectorLink.pairing"
         static let sequence = "projectorLink.lastSequence"
@@ -132,19 +150,20 @@ final class ProjectorLink: NSObject, ObservableObject {
     /// 配一台新的（扫码或手输之后）。会立刻连上去。
     func connect(to pairing: ProjectorPairing) {
         self.pairing = pairing
-        stoppedByUser = false
+        stopReason = nil
         isAutoAttempt = false
         retryCount = 0
         startConnecting()
     }
 
-    /// 冷启动时拿存着的那台试一次。
+    /// 拿存着的那台试一次。冷启动调一次，之后每次回前台、上一次也是这么放弃的，
+    /// 再补一次（见 `observeLifecycle`）。
     ///
-    /// **只试一次**：投影仪没开机时无限重连纯粹是耗电，而用户此刻大概率根本没打算
+    /// **每次只试一次**：投影仪没开机时无限重连纯粹是耗电，而用户此刻大概率根本没打算
     /// 投屏。他真要用的时候会去点「连接」，那之后才进入「断了就一直往回接」的模式。
     func attemptAutoConnect() {
-        guard pairing != nil, stoppedByUser else { return }
-        stoppedByUser = false
+        guard pairing != nil, stopReason != nil else { return }
+        stopReason = nil
         isAutoAttempt = true
         retryCount = 0
         startConnecting()
@@ -153,7 +172,7 @@ final class ProjectorLink: NSObject, ObservableObject {
     /// 用上次配过的那台再连一次。没配过就什么都不做。
     func reconnectSaved() {
         guard pairing != nil else { return }
-        stoppedByUser = false
+        stopReason = nil
         isAutoAttempt = false
         retryCount = 0
         startConnecting()
@@ -161,7 +180,7 @@ final class ProjectorLink: NSObject, ObservableObject {
 
     /// 用户主动断开。不清掉配对信息，下次还能一键连回来。
     func disconnect() {
-        stoppedByUser = true
+        stopReason = .idle
         teardown()
         state = .idle
     }
@@ -212,13 +231,21 @@ final class ProjectorLink: NSObject, ObservableObject {
     // MARK: - 连接
 
     private func startConnecting() {
+        // 这两个分支都要写 `stopReason`：它们既不重连也不往下走，`stopReason` 却
+        // 留在 nil 上 —— 于是 `attemptAutoConnect` 的 guard 从此永不成立，冷启动自动连
+        // 那条路被静默关掉，而 App 内部还以为自己在重连模式里。用户看到的是一屏钉死的
+        // 提示，界面文案本来就在让他重新配对，语义正好是 `.needsPairing`。
         guard let pairing, let credential = pairing.credential, let ikm = pairing.handshakeIKM else {
+            stopReason = .needsPairing
+            isAutoAttempt = false
             state = .waiting(reason: String(localized: "配对信息已失效，请重新扫码或输入配对码"))
             return
         }
         // 用户把地址抄错（多打一个空格、少一位）时，说「配对信息不完整」是误导 ——
         // 他的配对信息很完整，是地址不合法。
         guard let url = pairing.webSocketURL else {
+            stopReason = .needsPairing
+            isAutoAttempt = false
             state = .waiting(reason: String(localized: "投影仪地址格式不正确，请核对屏幕上显示的地址"))
             return
         }
@@ -263,7 +290,7 @@ final class ProjectorLink: NSObject, ObservableObject {
                 // 一直连不上」。密钥被轮换掉时同理，重试也没有意义。
                 if case ProjectorLinkError.denied = error {
                     AppLogger.shared.info("Projector", "pairing_denied")
-                    self.stoppedByUser = true
+                    self.stopReason = .needsPairing
                     self.isAutoAttempt = false
                     self.teardown(keepState: true)
                     self.state = .waiting(reason: String(
@@ -287,6 +314,10 @@ final class ProjectorLink: NSObject, ObservableObject {
     /// 时限：对方接受了 TCP 却不回 `welcome`（安卓端卡死、端口填错连到别的服务上、
     /// 本地网络权限还没批），这个 await 就一直挂着 —— 心跳还没起来，重连也排不上，
     /// 用户看到的是一个转不完的圈。
+    ///
+    /// **握手是整条链路上唯一没有看门狗的一段。** 连上之后有心跳兜着：16 秒收不到
+    /// 回音就 `handleFailure` → `teardown` → 掐 socket，自己能爬出来。而心跳是握手
+    /// 成功之后才起的，所以卡在这一段就只能靠这里自己了断。
     private static func handshakeWithTimeout(
         task: URLSessionWebSocketTask, credential: String, ikm: Data
     ) async throws -> (SymmetricKey, Welcome) {
@@ -294,6 +325,24 @@ final class ProjectorLink: NSObject, ObservableObject {
             group.addTask { try await handshake(task: task, credential: credential, ikm: ikm) }
             group.addTask {
                 try await Task.sleep(for: .seconds(8))
+                // 握手如果在这最后一瞬间成功了，这个分支已经输了 —— 别再去掐一条
+                // 刚连上的连接（那会让用户看到「连上了立刻又断一下」）。
+                // 两个分支是真并发的（`addTask` 不继承 actor），`cancelAll()` 拦不住
+                // 一个已经从 sleep 里醒来的任务，只能自己查一下。
+                try Task.checkCancellation()
+                // 下面这一句不能省，`cancelAll()` 代替不了它。
+                //
+                // 超时分支抛错之后，task group 还要等另一个分支结束才返回，而那个分支
+                // 卡在 `URLSessionWebSocketTask.receive()` 里 —— 这个调用**不理会 Swift
+                // 的任务取消**（实测：只 cancelAll 的话 20 秒后仍然没返回）。能把它放
+                // 出来的只有掐掉 socket 本身，而 `teardown()` 里那句 cancel 要等这里先
+                // 返回才轮得到 —— 绕成一个圈，谁也等不到谁。
+                //
+                // 症状：iOS 永远停在「正在连接」，不重试也不报错，手机上做什么投影仪
+                // 都没反应。**自动那条路自己爬不出来** —— 只有用户切个后台再回来、
+                // 或者手动点「重新连接」才会掐掉 socket，等于把恢复的责任推给了一个
+                // 不知道自己该做什么的人。而每次断线重连都会走这里一遍。
+                task.cancel(with: .goingAway, reason: nil)
                 throw ProjectorLinkError.badHandshake("投影仪没有回应")
             }
             defer { group.cancelAll() }
@@ -340,8 +389,9 @@ final class ProjectorLink: NSObject, ObservableObject {
             throw ProjectorLinkError.badHandshake("缺少 welcome 字段")
         }
         // 安卓端在拿到 display metrics 之前会报 0×0。放过去的话：握手成功、chip 亮起
-        // 「投影中」、而每一帧都在 pushFrame 的尺寸检查处被丢掉，投影永远是黑的。
-        guard (1...16384).contains(width), (1...16384).contains(height) else {
+        // 「投屏中」、而每一帧都在 `ProjectorSession.pushFrame` 的尺寸检查处被丢掉，
+        // 投影永远是黑的。
+        guard validScreenSide.contains(width), validScreenSide.contains(height) else {
             throw ProjectorLinkError.badHandshake("投影仪报告的画面尺寸无效")
         }
         let key = ProjectorCipher.deriveSessionKey(ikm: ikm, salt: salt)
@@ -379,7 +429,14 @@ final class ProjectorLink: NSObject, ObservableObject {
                   let json = try JSONSerialization.jsonObject(with: plaintext) as? [String: Any],
                   let inbound = ProjectorInbound(json: json) else { return }
             if case .resize(let w, let h) = inbound, case .connected(_, let device) = state {
-                state = .connected(size: CGSize(width: w, height: h), device: device)
+                if Self.validScreenSide.contains(w), Self.validScreenSide.contains(h) {
+                    state = .connected(size: CGSize(width: w, height: h), device: device)
+                } else {
+                    // 不采纳，保留当前那份已知可用的尺寸 —— 手上有个好的，
+                    // 没道理换成一个会让之后每一帧都被丢掉的。
+                    AppLogger.shared.error("Projector", "resize_size_invalid",
+                                           metadata: ["size": "\(w)x\(h)"])
+                }
             }
             decryptFailures = 0
             onInbound?(inbound)
@@ -391,7 +448,7 @@ final class ProjectorLink: NSObject, ObservableObject {
             // （见 `ProjectorPairing.handshakeIKM`）。那种情况下重连一万次也是同样的结果，
             // 用户看到的是一个永远在「正在连接 / 连接中断」之间跳的界面。
             if decryptFailures >= 3 {
-                stoppedByUser = true
+                stopReason = .needsPairing
                 teardown(keepState: true)
                 state = .waiting(reason: String(
                     localized: "与投影仪的加密通道校验失败，请重新扫码或输入配对码。"))
@@ -429,17 +486,17 @@ final class ProjectorLink: NSObject, ObservableObject {
             "reason": reason, "retry": "\(retryCount)"
         ])
         teardown(keepState: true)
-        guard !stoppedByUser else {
+        guard stopReason == nil else {
             state = .idle
             return
         }
         if isAutoAttempt {
-            // 冷启动那一次没连上：投影仪多半没开机。安静收手，别让界面上出现
+            // 这一次自动尝试没连上：投影仪多半没开机。安静收手，别让界面上出现
             // 一个用户没要求过的失败提示。
             AppLogger.shared.info("Projector", "auto_connect_gave_up",
                                   metadata: ["reason": reason])
             isAutoAttempt = false
-            stoppedByUser = true
+            stopReason = .autoAttemptFailed
             state = .idle
             return
         }
@@ -458,7 +515,7 @@ final class ProjectorLink: NSObject, ObservableObject {
         reconnect = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
-            guard let self, !self.stoppedByUser else { return }
+            guard let self, self.stopReason == nil else { return }
             self.startConnecting()
         }
     }
@@ -485,7 +542,7 @@ final class ProjectorLink: NSObject, ObservableObject {
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                guard let self, !self.stoppedByUser else { return }
+                guard let self, self.stopReason == nil else { return }
                 self.teardown(keepState: true)
                 self.state = .waiting(reason: String(localized: "回到 App 后会自动重新连接"))
             }
@@ -494,9 +551,25 @@ final class ProjectorLink: NSObject, ObservableObject {
             forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                guard let self, !self.stoppedByUser else { return }
-                self.retryCount = 0
-                self.startConnecting()
+                guard let self else { return }
+                switch self.stopReason {
+                case nil:
+                    // 复位 `isAutoAttempt`：切后台时已经跟用户承诺过「回到 App 后会自动
+                    // 重新连接」，这一次就该按正常连接对待 —— 失败要说话、要进重连循环。
+                    // 不复位的话，冷启动那次尝试还在飞时切出去再回来，这一次失败会走进
+                    // 「安静收手」那条分支，屏幕上那句承诺就这么无声地作废了。
+                    self.isAutoAttempt = false
+                    self.retryCount = 0
+                    self.startConnecting()
+                case .autoAttemptFailed:
+                    // 冷启动那次没连上（投影仪多半没开机），当时安静收手了。用户现在
+                    // 正把 App 拿到手上，投影仪大概也开着了 —— 再试一次，比让他自己
+                    // 想起来去设置里点「重新连接」强。仍然只试一次，不进重连循环。
+                    self.attemptAutoConnect()
+                case .idle, .needsPairing:
+                    // 用户自己断的、或者凭据不对。这两种都得他动手，别自作主张连回去。
+                    break
+                }
             }
         })
     }
