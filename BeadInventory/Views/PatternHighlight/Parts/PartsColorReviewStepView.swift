@@ -354,7 +354,9 @@ struct PartsColorReviewStepView: View {
                 partId: target.id,
                 parts: $parts,
                 colorSystem: colorSystem,
-                subject: brushSubject(for: target.id),
+                subject: { brushSubject(for: $0) },
+                // 翻页按零件清单的顺序走。单图纸模式只有一块，按钮不会出现。
+                siblings: parts.map(\.id),
                 allowsAnyColor: allowsAnyColor,
                 onCommit: {
                     onPersist()
@@ -395,26 +397,37 @@ struct PartsColorReviewStepView: View {
         // 选中谁就抠谁的原图。抠在后台：高清工作图上一块零件几十万像素，
         // 在主线程上裁，用户点一下界面就顿一下。
         .task(id: inspecting?.id) { await loadOriginal(for: inspecting?.id) }
-        .sheet(item: $inspecting, onDismiss: {
+        // **按 `isPresented` 开，不按 `item` 开。** 弹窗里「上一个 / 下一个」换的是
+        // `inspecting` 本身 —— `sheet(item:)` 换 item 走的是「关掉再开一个」，
+        // 翻一次弹窗就闪一下、还得等它重新升起来。这样写弹窗一直在，只是里面的内容跟着变。
+        .sheet(isPresented: Binding(
+            get: { inspecting != nil },
+            set: { if !$0 { inspecting = nil } }
+        ), onDismiss: {
             // 对照屏关干净了再跳回「量格子」，理由见 `pendingRegridId`
             if let id = pendingRegridId {
                 pendingRegridId = nil
                 onRegridPart?(id)
             }
-        }) { part in
-            PartOriginalSheet(
-                title: brushSubject(for: part.id),
-                order: (parts.firstIndex(where: { $0.id == part.id }) ?? 0) + 1,
-                // 判「改过名没有」跟 displayName 用同一把尺（都要去掉空白），
-                // 否则名字里只打了个空格时，标题退回「零件 10」而这一行以为它有名字。
-                showsOrder: part.customName?.trimmingCharacters(in: .whitespaces).isEmpty == false,
-                original: originalState(of: part.id),
-                footprint: part.footprint(turns: 0),
-                colors: swatchColors,
-                // 这一屏还没走到摆板子，「摆在哪块板」无从谈起
-                placement: nil,
-                onRegrid: { pendingRegridId = part.id; inspecting = nil }
-            )
+        }) {
+            if let part = inspecting {
+                PartOriginalSheet(
+                    title: brushSubject(for: part.id),
+                    order: (parts.firstIndex(where: { $0.id == part.id }) ?? 0) + 1,
+                    // 判「改过名没有」跟 displayName 用同一把尺（都要去掉空白），
+                    // 否则名字里只打了个空格时，标题退回「零件 10」而这一行以为它有名字。
+                    showsOrder: part.customName?.trimmingCharacters(in: .whitespaces).isEmpty == false,
+                    original: originalState(of: part.id),
+                    footprint: part.footprint(turns: 0),
+                    colors: swatchColors,
+                    // 这一屏还没走到摆板子，「摆在哪块板」无从谈起
+                    placement: nil,
+                    // 关弹窗那一下由弹窗自己做（见 `PartOriginalSheet.regridButton`）
+                    onRegrid: { pendingRegridId = part.id },
+                    onPrevious: stepAction(from: part.id, by: -1),
+                    onNext: stepAction(from: part.id, by: 1)
+                )
+            }
         }
         // 别处（流程容器）给某一块补判过之后，铺出来的那片格子必须跟着刷新。
         // 不刷的话，补出来的那一块在这一屏一格都不出现 —— 正是用户报的
@@ -453,6 +466,18 @@ struct PartsColorReviewStepView: View {
     }
 
     // MARK: - 看这一块原来长什么样
+
+    /// 「上一个 / 下一个」按下去做什么。到头了就返回 nil —— 那一头的按钮变灰。
+    ///
+    /// 翻的是零件清单的顺序，也就是弹窗标题上那个号。
+    private func stepAction(from partId: UUID, by delta: Int) -> (() -> Void)? {
+        guard parts.count > 1,
+              let index = parts.firstIndex(where: { $0.id == partId }) else { return nil }
+        let target = index + delta
+        guard parts.indices.contains(target) else { return nil }
+        let next = parts[target]
+        return { inspecting = next }
+    }
 
     /// 按「看零件」之后的事：先看选中的格子指不指得出唯一一块，指不出来才让他挑。
     private func startInspect() {
