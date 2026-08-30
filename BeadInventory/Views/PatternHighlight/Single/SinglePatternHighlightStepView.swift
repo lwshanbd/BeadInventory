@@ -81,7 +81,8 @@ struct SinglePatternHighlightStepView: View {
                              size: canvasSize, zoom: zoom, pan: pan)
     }
 
-    /// 图上每个色号有多少格，多的排前面。
+    /// 图上每个色号有多少格，多的排前面（颗数一样时的次序见 `BeadColorTally` ——
+    /// 用户是照着这条色号条一个一个拼的，两个色号换了位置就会漏拼一个）。
     private var entries: [ColorPaletteBar.Entry] {
         var counts: [String: Int] = [:]
         for row in grid.cellColorCodes {
@@ -90,13 +91,11 @@ struct SinglePatternHighlightStepView: View {
             }
         }
         let legend = Set(legendUsage.map(\.colorCode))
-        return counts
-            .map {
-                ColorPaletteBar.Entry(code: $0.key, count: $0.value,
-                                      isExtra: !legend.contains($0.key),
-                                      color: color(for: $0.key))
-            }
-            .sorted { $0.count > $1.count }
+        return BeadColorTally.ordered(counts).map {
+            ColorPaletteBar.Entry(code: $0.key, count: $0.count,
+                                  isExtra: !legend.contains($0.key),
+                                  color: color(for: $0.key))
+        }
     }
 
     /// 图纸色号表，**色号翻成当前体系的显示码之后**的样子。

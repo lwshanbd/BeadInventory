@@ -1371,7 +1371,9 @@ struct PartCellBrushView: View {
         var colors: [String: Color] = ["#any": Theme.ColorToken.Morandi.mauve]
         var options: [PaletteOption] = []
         var candidates: [BeadColor] = []
-        for key in counts.keys.sorted(by: { (counts[$0] ?? 0) > (counts[$1] ?? 0) }) {
+        // 顺序跟色号条别处一致（`BeadColorTally`）：颗数一样的色号在这儿跳来跳去，
+        // 用户补格子时会点错色号，而补错的那一格他多半不会再回头检查。
+        for (key, _) in BeadColorTally.ordered(counts) {
             guard let fill = fills[key] else { continue }
             switch fill {
             case .code(let code):

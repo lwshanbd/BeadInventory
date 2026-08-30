@@ -1136,7 +1136,7 @@ struct PartsColorReviewStepView: View {
         var key: String
     }
 
-    /// 色号按颗数从多到少，**「空白」永远排最后**。
+    /// 色号按颗数从多到少（颗数一样时的次序见 `BeadColorTally`），**「空白」永远排最后**。
     ///
     /// 空格数量比任何一个色号都大（零件轮廓外面、矩形四角、中间镂空全是空），
     /// 按颗数排会把真正要核对的色号全挤到后面去，所以钉在末尾。
@@ -1155,7 +1155,9 @@ struct PartsColorReviewStepView: View {
             }
         }
         let all = counts.map { Group(fill: $0.value.fill, count: $0.value.count, key: $0.key) }
-        let beads = all.filter { $0.fill != .empty }.sorted { $0.count > $1.count }
+        let beads = all.filter { $0.fill != .empty }
+            .sorted { BeadColorTally.precedes((key: $0.key, count: $0.count),
+                                              (key: $1.key, count: $1.count)) }
         return beads + all.filter { $0.fill == .empty }
     }
 
@@ -1193,9 +1195,10 @@ struct PartsColorReviewStepView: View {
     /// 按**图纸写的**颗数从多到少排 —— 跟上面那条色号栏不是一个顺序，那条按**认出多少颗**
     /// 排。两个数不一样正是「认出 X 颗 / 图纸写 Y 颗」那个对照存在的理由。
     private var patternColors: [BeadColor] {
-        legendCounts
-            .sorted { $0.value > $1.value }
-            .compactMap { bead(for: $0.key) }
+        // 主序是「图纸写的颗数」，颗数并列时按色号（`BeadColorTally`）——
+        // 选色盘每打开一次都要重排，不定死次序的话同一张图纸每次开出来的
+        // 前几个色号位置都不一样，用户得重新找一遍。
+        BeadColorTally.ordered(legendCounts).compactMap { bead(for: $0.key) }
     }
 
     /// 当前正在核对的这一组是哪颗豆子。只用来决定选色盘打开时停在哪个系列 ——

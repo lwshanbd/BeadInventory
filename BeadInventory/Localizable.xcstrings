@@ -71,6 +71,36 @@
         }
       }
     },
+    "已完成 %lld / %lld 个颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$lld colors done"
+          }
+        }
+      }
+    },
+    "标记已完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark done"
+          }
+        }
+      }
+    },
+    "标记未完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark not done"
+          }
+        }
+      }
+    },
     "行数" : {
       "localizations" : {
         "en" : {
@@ -297,6 +327,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Replace"
+          }
+        }
+      }
+    },
+    "这块板的颜色已全部完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every color on this board is done"
           }
         }
       }

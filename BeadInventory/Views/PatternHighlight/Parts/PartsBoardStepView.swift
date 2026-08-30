@@ -131,6 +131,8 @@ struct PartsBoardStepView: View {
     @State private var invalidPlacements: Set<UUID> = []
     /// 板上还有挨着的零件时按了「完成」
     @State private var confirmFinishInvalid = false
+    /// 按了几次「标记已完成」。只拿来给触觉当触发器。
+    @State private var doneToggles = 0
 
     private struct BrushTarget: Identifiable {
         let id: UUID
@@ -278,7 +280,11 @@ struct PartsBoardStepView: View {
         // （见 BoardCanvas 里那句 `guard let footprint`）。这两件事分开写过一次，
         // 结果是新摆的零件在电视上根本不出现、重排一遍电视上整块空白。
         .task(id: shapeSignature) {
-            footprints = makeFootprints()
+            let shapes = makeFootprints()
+            footprints = shapes
+            // 形状刚算完，这时候才知道每块板上现在到底有哪些色号。
+            // 传值不读 `footprints`：写完同一轮读回来不保证拿到新值。
+            pruneDoneColors(using: shapes)
             publishToExternalDisplay()
         }
         // 形状没变、只是挪了位置或者换了高亮，也要重送。
@@ -859,14 +865,29 @@ struct PartsBoardStepView: View {
 
     /// 这块板上用到的颜色。点一下只剩它是亮的 —— 抓一把 H7 的时候，
     /// 眼睛要的是「哪几个坑」，不是「这一格是什么色号」。
+    ///
+    /// 拼完一个色就在这儿按一下「标记已完成」，色号上挂个勾，然后自动跳到下一个没拼的。
+    /// 一块板十几个色号，拼上好几个晚上、中途还会被打断 —— 靠脑子记「刚才拼到哪个色」
+    /// 是记不住的，而漏掉一个色往往要等整板烫完才发现。
     private var colorTray: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text(highlightKey.map { "仅高亮「\(label(for: $0))」，再次点击可取消" }
-                 ?? "选择一个颜色，仅高亮该颜色对应的格子")
-                .font(.footnote)
-                .foregroundColor(Theme.ColorToken.Text.secondary)
+        // **只算一次**：`boardColors` 要把板上每一颗豆子数一遍（一块 50×50 的板两千多格），
+        // 而这一段要用到它四回。写成 `boardColors.xxx` 四次就是数四遍。
+        let colors = boardColors
+        let board = currentBoard
+        let done = colors.filter { board?.isColorDone($0.key, count: $0.count) ?? false }.count
+        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+                Text(highlightKey.map { "仅高亮「\(label(for: $0))」，再次点击可取消" }
+                     ?? "选择一个颜色，仅高亮该颜色对应的格子")
+                    .font(.footnote)
+                    .foregroundColor(Theme.ColorToken.Text.secondary)
 
-            if boardColors.isEmpty {
+                Spacer(minLength: Theme.Spacing.sm)
+
+                doneControl(colors: colors, doneCount: done)
+            }
+
+            if colors.isEmpty {
                 Text("这块板尚未放置任何零件。")
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Text.tertiary)
@@ -875,11 +896,12 @@ struct PartsBoardStepView: View {
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: Theme.Spacing.sm) {
-                        ForEach(boardColors, id: \.key) { entry in
+                        ForEach(colors, id: \.key) { entry in
                             Button {
                                 highlightKey = highlightKey == entry.key ? nil : entry.key
                             } label: {
-                                colorChip(key: entry.key, count: entry.count)
+                                colorChip(key: entry.key, count: entry.count,
+                                          isDone: board?.isColorDone(entry.key, count: entry.count) ?? false)
                             }
                             .buttonStyle(.plain)
                         }
@@ -889,9 +911,41 @@ struct PartsBoardStepView: View {
                 .frame(height: 76)
             }
         }
+        .haptic(.success, trigger: doneToggles)
     }
 
-    private func colorChip(key: String, count: Int) -> some View {
+    /// 选中一个色号时才有：这个色拼完了没有。
+    ///
+    /// 放在提示行右边，不做成色块上的小按钮 —— 40 点的色块上再叠一个能点的勾，
+    /// 手指点下去分不清是要高亮还是要打勾，而这两件事的后果差很远。
+    @ViewBuilder
+    private func doneControl(colors: [(key: String, count: Int)], doneCount: Int) -> some View {
+        if let key = highlightKey, let count = colors.first(where: { $0.key == key })?.count {
+            let isDone = currentBoard?.isColorDone(key, count: count) ?? false
+            Button {
+                toggleColorDone(key: key, count: count, wasDone: isDone, colors: colors)
+            } label: {
+                // 两句分开写，不写成 `Label(isDone ? "A" : "B", ...)`：三元里两个字面量
+                // 会让 `Label` 挑到 `StringProtocol` 那个重载，文案就不进本地化表了。
+                if isDone {
+                    Label("标记未完成", systemImage: "arrow.uturn.backward").font(.footnote)
+                } else {
+                    Label("标记已完成", systemImage: "checkmark.circle").font(.footnote)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(isDone ? Theme.ColorToken.Text.secondary : Theme.ColorToken.Status.success)
+        } else if doneCount > 0 {
+            // 没选色号时报个进度。回到这一屏第一眼要知道的就是「还剩几个色没拼」。
+            Text("已完成 \(doneCount) / \(colors.count) 个颜色")
+                .font(.footnote.monospacedDigit())
+                .foregroundColor(Theme.ColorToken.Text.secondary)
+                .fixedSize()
+        }
+    }
+
+    private func colorChip(key: String, count: Int, isDone: Bool) -> some View {
         let isOn = highlightKey == key
         return VStack(spacing: 4) {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -902,9 +956,26 @@ struct PartsBoardStepView: View {
                         .stroke(isOn ? Theme.ColorToken.Morandi.honey : Theme.ColorToken.Border.default,
                                 lineWidth: isOn ? 3 : 1)
                 )
+                // 勾挂在色块右上角，**色块本身一点都不能压暗**：用户就是靠这块颜色
+                // 去认手上那袋豆子的，蒙一层灰它就跟旁边那个相近色分不开了。
+                //
+                // 压在色块里面、不往外探（早先 `offset` 探出去过）：这条色号条外面
+                // 套着一个高 76 的横向 ScrollView，探出上边的那半个勾会被它切掉。
+                // 底下垫一圈白：绿勾落在绿豆子上时，不垫就跟底色糊成一团。
+                .overlay(alignment: .topTrailing) {
+                    if isDone {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 14))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(Theme.ColorToken.Text.onAccent,
+                                             Theme.ColorToken.Status.success)
+                            .background(Circle().fill(Theme.ColorToken.Text.onAccent))
+                            .padding(2)
+                    }
+                }
             Text(label(for: key))
                 .font(.caption2.weight(.medium))
-                .foregroundColor(Theme.ColorToken.Text.primary)
+                .foregroundColor(isDone ? Theme.ColorToken.Text.secondary : Theme.ColorToken.Text.primary)
                 .lineLimit(1)
             Text("\(count) 颗")
                 .font(.caption2.monospacedDigit())
@@ -912,6 +983,36 @@ struct PartsBoardStepView: View {
         }
         .frame(width: 56)
         .contentShape(Rectangle())
+    }
+
+    /// 打勾 / 取消打勾。
+    ///
+    /// 打完勾自动跳到下一个还没拼的色号 —— 用户此刻手上刚放下一把豆子，下一步一定是
+    /// 「那接着拼哪个」。让他自己回色号条上找的话，找的正是那几个颗数相同、看起来
+    /// 差不多的色号。全部拼完就取消高亮并说一声，别停在最后一个色上假装还有事做。
+    private func toggleColorDone(key: String, count: Int, wasDone: Bool,
+                                 colors: [(key: String, count: Int)]) {
+        guard boards.indices.contains(boardIndex) else { return }
+        if wasDone {
+            boards[boardIndex].clearColorDone(key)
+        } else {
+            // **在本地这份拷贝上打勾，再拿它去找下一个**，不写完再从 `boards` 读回来 ——
+            // 写完同一轮读回来不保证拿到新值（`DragSession` 就是栽在这上面），
+            // 读回旧值的话「下一个」会挑中刚打完勾的这个，用户点一下等于原地没动。
+            var board = boards[boardIndex]
+            board.markColorDone(key, count: count)
+            boards[boardIndex] = board
+            // 手上正抓着一把豆子、眼睛在板子上，这一下值得有个手感 —— 不用抬头
+            // 确认自己到底点着没有。取消那一下不给：那是撤销，本来就要看着屏幕做。
+            doneToggles += 1
+            if let next = colors.first(where: { !board.isColorDone($0.key, count: $0.count) }) {
+                highlightKey = next.key
+            } else {
+                highlightKey = nil
+                flash(String(localized: "这块板的颜色已全部完成"))
+            }
+        }
+        onPersist()
     }
 
     // MARK: - 板子和零件
@@ -1071,6 +1172,11 @@ struct PartsBoardStepView: View {
         }
     }
 
+    /// 这块板上每个色号有多少颗，多的排前面。
+    ///
+    /// 顺序的规矩在 `BeadColorTally` —— 颗数一样时也得排得死死的。这条色号条是用户
+    /// 一个色一个色往下拼的清单，两个颗数相同的色号换了位置，他会当成已经拼过的那个，
+    /// 直接跳过去。
     private var boardColors: [(key: String, count: Int)] {
         guard let board = currentBoard else { return [] }
         var counts: [String: Int] = [:]
@@ -1078,7 +1184,7 @@ struct PartsBoardStepView: View {
             guard let footprint = footprints[placement.id] else { continue }
             for bead in footprint.beads { counts[bead.key, default: 0] += 1 }
         }
-        return counts.map { (key: $0.key, count: $0.value) }.sorted { $0.count > $1.count }
+        return BeadColorTally.ordered(counts)
     }
 
     private func label(for key: String) -> String {
@@ -1122,6 +1228,31 @@ struct PartsBoardStepView: View {
     private func refreshInvalid() {
         let found = PartsBoardRepair.offendingPlacements(in: boards, parts: parts, spacing: spacing)
         if invalidPlacements != found { invalidPlacements = found }
+    }
+
+    /// 板上已经没有的色号，把它的「已完成」标记一并去掉。
+    ///
+    /// 不去掉的话那个勾会诈尸：零件被拿下来、或者那个色号被擦光之后标记还留在数据里，
+    /// 等哪天零件又摆回这块板、颗数正好对上，勾就自己回来了 —— 而用户根本没拼过它，
+    /// 照着勾跳过去正好漏一色。
+    private func pruneDoneColors(using shapes: [UUID: PartFootprint]) {
+        for index in boards.indices where boards[index].doneColors != nil {
+            var keys: Set<String> = []
+            var ready = true
+            for placement in boards[index].placements {
+                guard let footprint = shapes[placement.id] else { ready = false; break }
+                for bead in footprint.beads { keys.insert(bead.key) }
+            }
+            // 形状还没算全的那一帧先别动：这时候看到的色号是不全的，
+            // 照着它删等于把用户刚打的勾抹掉。下一次算完了再说。
+            guard ready else { continue }
+            var board = boards[index]
+            board.pruneDoneColors(keeping: keys)
+            // **没变就别写**：这个 `task` 每次板子一动就跑，无条件写回会把
+            // 「有没有改过、要不要存盘」那个标记一直顶起来，白存一整张图纸的 JSON。
+            guard board.doneColors != boards[index].doneColors else { continue }
+            boards[index] = board
+        }
     }
 
     private func makeFootprints() -> [UUID: PartFootprint] {
