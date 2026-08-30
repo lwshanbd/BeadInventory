@@ -51,11 +51,15 @@ struct PartCellBrushView: View {
     /// 而「这一格多认了一颗」照样改得了：识别结果那一层自己就是一张图。
     /// 只是那时候没有原图可比，用户只能照着手上的实物改。
     let work: PartsWorkImage?
+    /// 进来时改的是哪一块。**之后可能被翻页换掉** —— 真正在改的那一块看 `currentId`。
     let partId: UUID
     @Binding var parts: [BeadPart]
     let colorSystem: ColorSystem
-    /// 底下写的是在改哪一块（「零件 3」/「整张图纸」）
-    var subject: String
+    /// 底下写的是在改哪一块（「零件 3」/「整张图纸」）。
+    /// 翻页会换零件，所以只能给一个按 id 现问的闭包，不能给一句写死的话。
+    var subject: (UUID) -> String
+    /// 能翻到哪些零件，按零件清单的顺序。少于两块时翻页按钮整个不出现。
+    var siblings: [UUID] = []
     /// 有没有「任意色」这一档。单图纸模式没有（同 `PartsColorReviewStepView.allowsAnyColor`）。
     var allowsAnyColor: Bool = true
     /// 改完落盘：这一屏只改内存里的零件，不写进项目的话，
@@ -116,7 +120,7 @@ struct PartCellBrushView: View {
     /// 往零件里写过东西（决定关掉时要不要落盘）。
     /// 「取消」那一次还原也算 —— 还原本身也得落盘，把之前写进去的盖回去。
     @State private var changed = false
-    /// 写不回零件（`partId` 在 `parts` 里找不到了）。这时候屏幕上画什么都没用，
+    /// 写不回零件（`currentId` 在 `parts` 里找不到了）。这时候屏幕上画什么都没用，
     /// 得当场告诉用户，别让他白擦一屏。
     @State private var writeFailed = false
     /// 图纸这一块没取到（没有原图、裁失败、或者只裁到一半）。这一屏承诺的是
@@ -141,6 +145,15 @@ struct PartCellBrushView: View {
     /// 中间要读上一次划到哪一格；@State 写完同一轮读回来不保证是新值
     /// （`PartsBoardStepView.DragSession` 就是栽在这上面）。
     @State private var stroke = StrokeState()
+
+    /// 翻页翻到了哪一块。nil = 还在进来时那一块。
+    ///
+    /// 单独一个 @State 而不是把 `partId` 改成 Binding：调用方是拿 `sheet(item:)` 开这一屏的，
+    /// 换掉那个 item 等于「关掉再开一个」，翻一次就闪一下。这一屏自己换零件、自己重载。
+    @State private var activeId: UUID?
+
+    /// 现在真正在改的那一块
+    private var currentId: UUID { activeId ?? partId }
 
     private struct Change {
         let row: Int
@@ -204,7 +217,9 @@ struct PartCellBrushView: View {
                 }
             }
         }
-        .task { await load() }
+        // 跟着 `currentId` 走：翻页把它换掉，`load` 就会为新那一块再跑一遍
+        //（`step` 已经把 `loaded` 放回 false）。
+        .task(id: currentId) { await load() }
         .onDisappear {
             // 落盘放在这里，不放在「完成」上：下拉关掉弹窗也是关掉，
             // 那时候格子早就写回零件了，不存的话用户下次进来看到的是没改过的样子。
@@ -733,11 +748,19 @@ struct PartCellBrushView: View {
                 .disabled(strokes.isEmpty)
             }
 
-            HStack(spacing: Theme.Spacing.md) {
-                Text("\(subject) · 现在 \(beadCount) 颗")
+            HStack(spacing: Theme.Spacing.sm) {
+                // 翻页**贴着零件名放**：翻的就是它。摆到别处去的话，两个箭头管什么
+                // 得先猜一遍，而这一行本来就写着「零件 34」。
+                if siblings.count > 1 {
+                    stepButton("chevron.left", label: "上一个零件") { step(-1) }
+                }
+                Text("\(subject(currentId)) · 现在 \(beadCount) 颗")
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(Theme.ColorToken.Text.primary)
-                Spacer()
+                if siblings.count > 1 {
+                    stepButton("chevron.right", label: "下一个零件") { step(1) }
+                }
+                Spacer(minLength: Theme.Spacing.xs)
                 // 要判「图纸上这儿到底有没有豆子」，按一下把图纸拉到旁边那一块，
                 // 两块同一块地方、同一个倍数，扫一眼就对得上。收起来则格子占满整屏。
                 //
@@ -845,6 +868,27 @@ struct PartCellBrushView: View {
         .contentShape(Capsule())
     }
 
+    /// 翻到上一个 / 下一个零件。到头那一头变灰，不是消失 ——
+    /// 消失的话这一行的宽度会跳一下，而用户正盯着旁边那个颗数看。
+    private func stepButton(
+        _ systemName: String,
+        label: LocalizedStringKey,
+        action: @escaping () -> Void
+    ) -> some View {
+        let enabled = neighbour(systemName == "chevron.left" ? -1 : 1) != nil
+        return Button(action: action) {
+            Image(systemName: systemName)
+                .font(.footnote.weight(.bold))
+                .frame(width: 30, height: 30)
+                .background(Theme.ColorToken.Surface.elevated)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(enabled ? Theme.ColorToken.Text.primary : Theme.ColorToken.Text.tertiary)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+    }
+
     private func zoomButton(_ systemName: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
@@ -881,7 +925,7 @@ struct PartCellBrushView: View {
     private var cols: Int { cells.first?.count ?? 0 }
 
     private var part: BeadPart? {
-        parts.first { $0.id == partId }
+        parts.first { $0.id == currentId }
     }
 
     /// 格子矩阵在整张图纸上占的那块（归一化）。跟 `BeadPart.cellRect` 用的是同一块 ——
@@ -1059,14 +1103,14 @@ struct PartCellBrushView: View {
     /// get→mutate→set，而单图纸模式那个 binding 的 getter 是现拼出来的，
     /// 第二次读到的可能还是旧值（见 `cells` 的注释）。
     private func commit() {
-        guard let index = parts.firstIndex(where: { $0.id == partId }) else {
+        guard let index = parts.firstIndex(where: { $0.id == currentId }) else {
             // 屏幕上每一笔都照画不误（`cells` 是这一屏自己的），但一个字节都写不出去，
             // 而 `changed` 停在 false 连落盘都不会试 —— 用户擦五十格、看着全生效、
             // 按完成、回来一格没变。这种必须当场说，不能等他自己发现。
             guard !writeFailed else { return }
             writeFailed = true
             AppLogger.shared.error("PartCellBrush", "commit_part_missing", metadata: [
-                "partId": partId.uuidString,
+                "partId": currentId.uuidString,
                 "parts": "\(parts.count)"
             ])
             return
@@ -1167,6 +1211,59 @@ struct PartCellBrushView: View {
         }
     }
 
+    // MARK: - 翻到上一个 / 下一个零件
+
+    /// 那个方向上还有没有零件。到头了、或者压根不给翻，返回 nil —— 按钮跟着变灰。
+    private func neighbour(_ delta: Int) -> UUID? {
+        guard siblings.count > 1,
+              let index = siblings.firstIndex(of: currentId) else { return nil }
+        let target = index + delta
+        guard siblings.indices.contains(target) else { return nil }
+        return siblings[target]
+    }
+
+    /// 翻到另一块零件。
+    ///
+    /// **先把这一块落盘再走。** 这一屏一笔画完只写回内存里的零件，落盘是关掉时那一下
+    /// （`onCommit`，见 `.onDisappear`）—— 不在这儿补一次的话，用户翻过三块、
+    /// 中途 App 被切走，前两块的改动就没了。
+    ///
+    /// 存完，「进来时的样子」也跟着换成新那一块：**「取消」从此只还原眼前这一块**，
+    /// 翻过页的前几块不会被一起撤掉。这是有意的 —— 一个按钮撤掉用户十分钟前
+    /// 在别的零件上做的事，比撤不掉更难受。
+    private func step(_ delta: Int) {
+        guard let next = neighbour(delta) else { return }
+        endStroke()
+        // 捏合的锚点是按上一块的几何算的，不结算的话新那一块进来第一下手势直接被吞。
+        settlePinch()
+        if changed { onCommit() }
+
+        activeId = next
+        // `load` 自己有 `guard !loaded`，不放回去的话新那一块永远读不进来。
+        loaded = false
+        cells = []
+        original = []
+        strokes = []
+        changed = false
+        beadCount = 0
+        overlay = nil
+        overlayStale = false
+        image = nil
+        imageRect = .zero
+        region = .zero
+        imageUnavailable = false
+        writeFailed = false
+        pickUnusable = false
+        // 倍数和平移是按上一块的行列数夹出来的（`clampPan`），留着的话
+        // 新那一块进来就悬在半空，而用户以为自己点开了个空零件。
+        zoom = 1
+        lastZoom = 1
+        pan = .zero
+        lastPan = .zero
+        // 工具和「补上」用的色号**故意留着**：翻页多半就是拿同一个工具、同一个色号
+        // 接着改下一块（色号能留住的理由见 `buildPalette` 末尾）。
+    }
+
     // MARK: - 载入
 
     private func load() async {
@@ -1177,7 +1274,7 @@ struct PartCellBrushView: View {
             // 这个 id 根本不在 parts 里，判多少遍色都没用。
             writeFailed = true
             AppLogger.shared.error("PartCellBrush", "part_missing_on_open", metadata: [
-                "partId": partId.uuidString
+                "partId": currentId.uuidString
             ])
             return
         }
@@ -1190,7 +1287,7 @@ struct PartCellBrushView: View {
               part.cols == part.cells.first?.count else {
             if part.hasCells {
                 AppLogger.shared.error("PartCellBrush", "cells_shape_mismatch", metadata: [
-                    "partId": partId.uuidString,
+                    "partId": currentId.uuidString,
                     "rows": "\(part.rows)", "cols": "\(part.cols)",
                     "cellRows": "\(part.cells.count)", "cellCols": "\(part.cells.first?.count ?? 0)"
                 ])
@@ -1221,7 +1318,7 @@ struct PartCellBrushView: View {
             imageUnavailable = true
             if let work {
                 AppLogger.shared.warning("PartCellBrush", "brush_region_unusable", metadata: [
-                    "partId": partId.uuidString,
+                    "partId": currentId.uuidString,
                     "area": "\(area)", "workRegion": "\(work.region)"
                 ])
             }
@@ -1246,7 +1343,7 @@ struct PartCellBrushView: View {
         if cropped == nil {
             imageUnavailable = true
             AppLogger.shared.warning("PartCellBrush", "brush_crop_failed", metadata: [
-                "partId": partId.uuidString,
+                "partId": currentId.uuidString,
                 "crop": "\(cropRect)",
                 "region": "\(source.region)",
                 "workSize": "\(source.image.size)"
@@ -1298,6 +1395,12 @@ struct PartCellBrushView: View {
         paletteOptions = options
         overlayColors = colors
         sheetColors = candidates
+        // **已经挑好一个还能用的就别动它。** 翻到下一块零件时这个函数会再跑一遍，
+        // 而色号栏数的是整张图纸（翻页前后一模一样）—— 无条件拨回默认值等于
+        // 把用户刚挑的色号吞掉，而他多半正是要拿同一个色号去补下一块。
+        if let current = paintFill, options.contains(where: { $0.key == current.groupKey }) {
+            return
+        }
         // 默认补最常用的那个色号。
         //
         // **一个都没有时不能瞎给一个。** 早先这里退回 `.anyColor`，而单图纸模式压根没有

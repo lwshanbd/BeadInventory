@@ -318,7 +318,9 @@ struct PartsBoardStepView: View {
                 partId: target.id,
                 parts: $parts,
                 colorSystem: colorSystem,
-                subject: name(of: target.id),
+                subject: { name(of: $0) },
+                // 翻页按零件清单的顺序走，跟弹窗里那条「上一个 / 下一个」同一把尺
+                siblings: parts.map(\.id),
                 // 这一屏只有多零件模式走得到，「任意色」那一档是有的。显式写出来 ——
                 // 靠默认值恰好对，是下一个人删掉这一屏的前提时才会发现的那种对。
                 allowsAnyColor: true,

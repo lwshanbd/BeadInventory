@@ -354,7 +354,9 @@ struct PartsColorReviewStepView: View {
                 partId: target.id,
                 parts: $parts,
                 colorSystem: colorSystem,
-                subject: brushSubject(for: target.id),
+                subject: { brushSubject(for: $0) },
+                // 翻页按零件清单的顺序走。单图纸模式只有一块，按钮不会出现。
+                siblings: parts.map(\.id),
                 allowsAnyColor: allowsAnyColor,
                 onCommit: {
                     onPersist()
