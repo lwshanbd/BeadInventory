@@ -206,7 +206,12 @@ struct PartsBoard: Identifiable, Codable, Equatable, Sendable {
     ///
     /// 记颗数而不是只记一个「拼过了」：板上的格子随时能擦 / 补（`PartCellBrushView`），
     /// 补进来三颗 H7 之后那个勾还挂着的话，用户照着勾把它跳过去，正好漏掉那三颗 ——
-    /// 而这个标记本来就是为了防漏。颗数对不上就当没标记过，勾自己消失。
+    /// 而这个标记本来就是为了防漏。颗数对不上就当没标记过：`pruneDoneColors(matching:)`
+    /// 会把这条记录**删掉**，不是遮住 —— 遮住的话颗数哪天绕回原值，勾就自己回来了。
+    ///
+    /// 颗数是个便宜的指纹，**持平的改动它认不出来**：擦掉三颗 H7、又在别处补三颗 H7，
+    /// 或者一格 H7 换成 A1、同时一格 A1 换成 H7 —— 总数没变，勾留着。这是记颗数换来的，
+    /// 不是漏了；真要认出来，存的得是格子集合的指纹而不是一个数。
     ///
     /// 跟着板走，不是跟着零件走：同一个色号在第 1 块板上拼完了，第 2 块板上还没拼。
     ///
@@ -244,11 +249,18 @@ struct PartsBoard: Identifiable, Codable, Equatable, Sendable {
         doneColors = next.isEmpty ? nil : next
     }
 
-    /// 板上已经没有的色号，标记跟着作废 —— 零件被挪去别的板、或者那个色号被擦光了。
-    /// 留着的话，用户把零件挪回来时会看到一个不知道哪来的勾。
-    mutating func pruneDoneColors(keeping keys: Set<String>) {
+    /// 跟板上现在的颗数对不上的标记，一律作废。`counts` 传这块板现在每个色号有多少颗。
+    ///
+    /// **要的是删掉，不是遮住。** `isColorDone` 那句相等判断只管这一帧显不显示；标记本身
+    /// 留在数据里的话，颗数绕回原值那一刻勾就自己回来了：H7 拼完打勾（12 颗）→ 擦掉一格
+    /// （11 颗，勾消失）→ 又在别处补一格（12 颗）→ 勾回来了，可那颗新的用户根本没按上去，
+    /// 照着勾跳过去正好漏一色。而这份标记跟着整张图纸落盘，这条潜伏记录会跨天跨启动一直留着。
+    ///
+    /// 代价是零件挪去别的板再挪回来、颗数临时变一下又变回来，勾都得重打一次。两个方向的
+    /// 代价不对等：误报「没完成」只是多核对一遍，误报「已完成」是拆板重拼，所以偏保守这边。
+    mutating func pruneDoneColors(matching counts: [String: Int]) {
         guard let current = doneColors else { return }
-        let kept = current.filter { keys.contains($0.key) }
+        let kept = current.filter { counts[$0.key] == $0.value }
         doneColors = kept.isEmpty ? nil : kept
     }
 }

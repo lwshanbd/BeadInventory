@@ -1230,29 +1230,36 @@ struct PartsBoardStepView: View {
         if invalidPlacements != found { invalidPlacements = found }
     }
 
-    /// 板上已经没有的色号，把它的「已完成」标记一并去掉。
+    /// 跟板上现在的颗数对不上的「已完成」标记，在这儿一并作废。
     ///
-    /// 不去掉的话那个勾会诈尸：零件被拿下来、或者那个色号被擦光之后标记还留在数据里，
-    /// 等哪天零件又摆回这块板、颗数正好对上，勾就自己回来了 —— 而用户根本没拼过它，
-    /// 照着勾跳过去正好漏一色。
+    /// 不作废的话那个勾会诈尸：零件被拿下来、色号被擦光、或者颗数改了又改回来之后，标记
+    /// 还留在数据里，等颗数正好对上勾就自己回来了 —— 而用户根本没拼过它，照着勾跳过去
+    /// 正好漏一色。
     private func pruneDoneColors(using shapes: [UUID: PartFootprint]) {
+        var changed = false
         for index in boards.indices where boards[index].doneColors != nil {
-            var keys: Set<String> = []
+            var counts: [String: Int] = [:]
             var ready = true
             for placement in boards[index].placements {
                 guard let footprint = shapes[placement.id] else { ready = false; break }
-                for bead in footprint.beads { keys.insert(bead.key) }
+                for bead in footprint.beads { counts[bead.key, default: 0] += 1 }
             }
-            // 形状还没算全的那一帧先别动：这时候看到的色号是不全的，
-            // 照着它删等于把用户刚打的勾抹掉。下一次算完了再说。
+            // 这块板上还挂着已经不在图纸里的零件（`makeFootprints` 找不到 partId 就跳过它），
+            // 此刻数出来的颗数是缺的，照着它删等于把用户刚打的勾抹掉。`revalidateBoards` 里的
+            // `PartsBoardRepair` 会把这种孤儿摆放摘掉，签名一变这里再跑一次 —— 这条依赖别断，
+            // 断了这些标记就再也清不掉。
             guard ready else { continue }
             var board = boards[index]
-            board.pruneDoneColors(keeping: keys)
-            // **没变就别写**：这个 `task` 每次板子一动就跑，无条件写回会把
+            board.pruneDoneColors(matching: counts)
+            // **没变就别写**：零件增删 / 转向 / 换板 / 擦补格子都会跑到这儿，无条件写回会把
             // 「有没有改过、要不要存盘」那个标记一直顶起来，白存一整张图纸的 JSON。
             guard board.doneColors != boards[index].doneColors else { continue }
             boards[index] = board
+            changed = true
         }
+        // 作废了就立刻落盘，理由同 `revalidateBoards`：库里那份跟屏幕上不一致本身就是坑
+        //（投屏、导出、下次进来读到的都是旧的）。而「永久作废」不写下去就不叫永久。
+        if changed { onPersist() }
     }
 
     private func makeFootprints() -> [UUID: PartFootprint] {

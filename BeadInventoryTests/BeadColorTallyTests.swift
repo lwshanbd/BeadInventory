@@ -90,12 +90,44 @@ final class BeadColorTallyTests: XCTestCase {
         board.markColorDone("H7", count: 12)
         board.markColorDone("A1", count: 4)
 
-        board.pruneDoneColors(keeping: ["A1"])
+        board.pruneDoneColors(matching: ["A1": 4])
         XCTAssertFalse(board.isColorDone("H7", count: 12))
         XCTAssertTrue(board.isColorDone("A1", count: 4))
 
-        board.pruneDoneColors(keeping: [])
+        board.pruneDoneColors(matching: [:])
         XCTAssertNil(board.doneColors)
+    }
+
+    /// **擦掉一格再补回一格，勾不能自己回来。**
+    ///
+    /// `isColorDone` 那句相等判断只管这一帧显不显示。标记要是只被遮住、没删掉，颗数绕回
+    /// 原值那一刻勾就回来了 —— 而补进来那颗豆子用户根本没按上去，照着勾跳过去正好漏一色。
+    /// 这是这套机制最该防的一种漏拼，屏幕上一点看不出来。
+    func testCountBouncingBackDoesNotRevive() {
+        var board = makeBoard()
+        board.markColorDone("H7", count: 12)
+
+        // 擦掉一格：11 颗，对不上，标记就地作废
+        board.pruneDoneColors(matching: ["H7": 11])
+        XCTAssertNil(board.doneColors)
+
+        // 又在别处补一格，回到 12 颗 —— 勾不能回来
+        XCTAssertFalse(board.isColorDone("H7", count: 12))
+        board.pruneDoneColors(matching: ["H7": 12])
+        XCTAssertFalse(board.isColorDone("H7", count: 12))
+    }
+
+    /// 色号还在板上、颗数也没变的，一个都不能误删 —— 勾无缘无故消失，用户会以为
+    /// App 把他几个晚上的进度弄丢了。
+    func testPruneKeepsMarksThatStillMatch() {
+        var board = makeBoard()
+        board.markColorDone("H7", count: 12)
+        board.markColorDone("A1", count: 4)
+
+        // A1 的颗数变了，H7 没变：只该掉 A1
+        board.pruneDoneColors(matching: ["H7": 12, "A1": 5, "B2": 9])
+        XCTAssertTrue(board.isColorDone("H7", count: 12))
+        XCTAssertFalse(board.isColorDone("A1", count: 4))
     }
 
     // MARK: - 存量图纸
