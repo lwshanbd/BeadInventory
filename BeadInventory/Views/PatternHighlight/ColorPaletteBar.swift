@@ -18,6 +18,8 @@ struct ColorPaletteBar: View {
         /// 这个色号不在图纸的色号表里（多半是判色时套到了一个表上没有的色号）。
         /// 用虚线圈标出来 —— 它照样能点亮，但值得用户看一眼。
         let isExtra: Bool
+        /// 这个色号已经标过「拼完了」。角上挂个勾，色号本身压淡一档。
+        let isDone: Bool
         /// 这颗豆子长什么样。**由调用方查好再传进来**：色号→颜色这件事按色号体系分流
         /// （MARD 走 `findColor(byMardCode:)`，别的走 `findColor(byCode:preferSystem:)`），
         /// 这里自己扫一遍 `availableColors` 会跟核对页查出不同的颜色 ——
@@ -68,10 +70,24 @@ struct ColorPaletteBar: View {
                             )
                             : AnyView(EmptyView())
                     )
+                    // 勾压在圆点里面、**不往外探**：这条色号条是横向 ScrollView，
+                    // 探出边的那半个勾会被它切掉。底下垫一圈白 —— 绿勾落在绿豆子上时，
+                    // 不垫就跟底色糊成一团。圆点本身一点都不压暗：用户就是靠这块颜色
+                    // 去认手上那袋豆子的。
+                    .overlay(alignment: .topTrailing) {
+                        if entry.isDone {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 12))
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(Theme.ColorToken.Text.onAccent,
+                                                 Theme.ColorToken.Status.success)
+                                .background(Circle().fill(Theme.ColorToken.Text.onAccent))
+                        }
+                    }
                 Text(entry.code)
                     .font(.caption2)
                     .lineLimit(1)
-                    .foregroundStyle(entry.isExtra ? .secondary : .primary)
+                    .foregroundStyle(entry.isExtra || entry.isDone ? .secondary : .primary)
                 Text("\(entry.count)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(Theme.ColorToken.Text.secondary)

@@ -84,6 +84,8 @@ struct SinglePatternFlowView: View {
     /// 不能拿 `currentGrid` 里的 `lastCalibratedAt` 当信号 —— 那是每次求值现取的 `Date()`，
     /// 父视图任何一次 body 重算都会让它变，于是几万格被反复重建（正好是它想避免的事）。
     @State private var revision = 0
+    /// 这张图纸上哪些色号已经拼完了。语义（为什么记的是格数）见 `BeadPatternGrid.doneColors`。
+    @State private var doneColors: [String: Int] = [:]
 
     enum Step: Hashable { case grid, baseColor, review, highlight }
 
@@ -131,6 +133,13 @@ struct SinglePatternFlowView: View {
     private func tracked<Value>(_ binding: Binding<Value>) -> Binding<Value> {
         Binding(get: { binding.wrappedValue },
                 set: { dirty = true; revision &+= 1; binding.wrappedValue = $0 })
+    }
+
+    /// 同 `tracked`，但**不碰 `revision`**：打个勾并没有改动任何一格，而 revision 一动
+    /// 就会把送外屏那份几万格整个重建一遍（见 `castSignature`）—— 每打一个勾卡一下。
+    private func markedDirty<Value>(_ binding: Binding<Value>) -> Binding<Value> {
+        Binding(get: { binding.wrappedValue },
+                set: { dirty = true; binding.wrappedValue = $0 })
     }
 
     var body: some View {
@@ -341,6 +350,9 @@ struct SinglePatternFlowView: View {
                 work: work,
                 grid: grid,
                 revision: revision,
+                doneColors: markedDirty($doneColors),
+                // 打一个勾就存一次。一张图纸能拼好几个晚上，中途退出去不该把勾丢了。
+                onPersist: { persist() },
                 onRecalibrate: { path = [] },
                 onFinish: { save() }
             )
@@ -364,6 +376,7 @@ struct SinglePatternFlowView: View {
                 guard let first = newValue.first else { return }
                 dirty = true
                 sheet = first
+                pruneDoneColors(against: first)
             }
         )
     }
@@ -389,6 +402,7 @@ struct SinglePatternFlowView: View {
         guard sheet.rows > 0, sheet.cols > 0 else { return nil }
         let area = sheet.gridRect ?? sheet.bounds
         guard area.width > 0, area.height > 0 else { return nil }
+        let matrix = codeMatrix
         return BeadPatternGrid(
             // 老四角**只在还没用新流程重对过时**才作数。无条件用它的话：
             // 老项目重新量完格子，corners 仍是老的（可能是梯形）而 rows/cols/cells 是新的
@@ -396,7 +410,7 @@ struct SinglePatternFlowView: View {
             corners: (calibration == nil ? legacyCorners : nil) ?? Self.corners(of: area),
             rows: sheet.rows,
             cols: sheet.cols,
-            cellColorCodes: codeMatrix,
+            cellColorCodes: matrix,
             lastCalibratedAt: Date(),
             // 存原图的真实像素尺寸 —— 下次进来拿它认「图换没换过」（见 load）
             sourceImageSize: sourcePixelSize == .zero ? (overview?.size ?? .zero) : sourcePixelSize,
@@ -404,8 +418,25 @@ struct SinglePatternFlowView: View {
             roi: roi,
             calibration: calibration,
             emptyHex: emptyHex,
-            gridConfirmed: sheet.gridConfirmed
+            gridConfirmed: sheet.gridConfirmed,
+            doneColors: persistedDoneColors(matching: matrix)
         )
+    }
+
+    /// 存盘时再对一次账：只留下跟**这一份矩阵**对得上的勾（一个都不剩就写 nil，
+    /// 别在每张图纸里塞一份空字典）。
+    ///
+    /// `pruneDoneColors(against:)` 已经在改格子那一下清过一遍了，这里是第二道 ——
+    /// 那一下清完紧接着就要存，而 @State 写完同一轮读回来不保证拿到新值：读回旧的
+    /// 就等于把刚作废的勾又写回库里，下次格数绕回原值它就诈尸了。
+    private func persistedDoneColors(matching matrix: [[String?]]) -> [String: Int]? {
+        guard !doneColors.isEmpty else { return nil }
+        var counts: [String: Int] = [:]
+        for row in matrix {
+            for case let code? in row { counts[code, default: 0] += 1 }
+        }
+        let kept = doneColors.filter { counts[$0.key] == $0.value }
+        return kept.isEmpty ? nil : kept
     }
 
     /// `cells` → 存盘用的色号矩阵。空格写 nil（`BeadPatternGrid` 从第一版起就是这么约定的，
@@ -424,6 +455,26 @@ struct SinglePatternFlowView: View {
             }
         }
         return matrix
+    }
+
+    /// 格子改过之后，跟图上现在的格数对不上的勾一律**删掉**。
+    ///
+    /// 删而不是遮：只靠「相等才算完成」那句判断的话，格数哪天绕回原值，勾就自己回来了 ——
+    /// 擦掉一格 H7（勾消失）、又在别处补一格（勾回来），而补进来那格用户根本没按上去，
+    /// 照着勾跳过去正好漏一色。整套取舍见 `BeadPatternGrid.doneColors`。
+    ///
+    /// 数的是**传进来的这份**，不是 `sheet` —— @State 同一轮写完读回来不保证拿到新值，
+    /// 读回旧的就是拿改动前的格数去对，等于没清。
+    private func pruneDoneColors(against part: BeadPart) {
+        guard !doneColors.isEmpty else { return }
+        var counts: [String: Int] = [:]
+        for row in part.cells {
+            for case .code(let code) in row { counts[code, default: 0] += 1 }
+        }
+        let kept = doneColors.filter { counts[$0.key] == $0.value }
+        guard kept.count != doneColors.count else { return }
+        doneColors = kept
+        dirty = true
     }
 
     private static func corners(of rect: CGRect) -> GridCorners {
@@ -502,6 +553,7 @@ struct SinglePatternFlowView: View {
             self.roi = grid.roi ?? area
             self.calibration = grid.calibration
             self.emptyHex = grid.emptyHex
+            self.doneColors = grid.doneColors ?? [:]
             // 老数据（还没用新流程重对过）才保留原来的四角，理由见 `legacyCorners`
             self.legacyCorners = grid.calibration == nil ? grid.corners : nil
             // 判断落点要用这个局部值，**不要写完 `sheet` 再读回来** ——
@@ -773,6 +825,7 @@ struct SinglePatternFlowView: View {
                     return
                 }
                 self.sheet = judged
+                self.pruneDoneColors(against: judged)
                 self.dirty = true
                 self.revision &+= 1
                 guard self.persist() else { return }   // 存不上会自己弹「这一步没存上」

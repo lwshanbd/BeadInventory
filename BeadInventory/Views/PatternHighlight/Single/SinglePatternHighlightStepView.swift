@@ -8,6 +8,12 @@
 //  在图纸上找出它该去的那几百格。所以这一屏只做一件事 —— 点一个色号，
 //  **图上除了它以外全部压暗**。
 //
+//  ## 这个色拼完了
+//
+//  一张图纸十几个色号，拼上好几个晚上、中途还会被打断 —— 靠脑子记「刚才拼到哪个色」
+//  是记不住的，而漏掉一个色往往要等整张烫完才发现。所以点中一个色号之后，色号条上边
+//  多一个「标记已完成」：色号角上挂个勾，然后自动跳到下一个还没拼的。
+//
 //  ## 放大不能用 scaleEffect
 //
 //  用户会把图纸放大到能数清一颗一颗豆子。`scaleEffect` 是图层变换，走双线性平滑，
@@ -35,6 +41,10 @@ struct SinglePatternHighlightStepView: View {
     let grid: BeadPatternGrid
     /// 图纸内容改过几次。**送外屏那份的重算信号就是它** —— 见 `castSignature`。
     let revision: Int
+    /// 这张图纸上哪些色号已经拼完了（存进 `BeadPatternGrid.doneColors`，语义见那里）。
+    @Binding var doneColors: [String: Int]
+    /// 打完勾立刻落盘。一张图纸能拼好几个晚上，中途退出去不该把勾丢了。
+    let onPersist: () -> Void
     /// 「重新对一遍」——退回第一屏。
     let onRecalibrate: () -> Void
     /// 「完成」——存好，关掉整个流程。
@@ -52,6 +62,8 @@ struct SinglePatternHighlightStepView: View {
     @State private var castColors: [String: Color] = [:]
 
     @State private var highlightedCodes: Set<String> = []
+    /// 按了几次「标记已完成」。只拿来给触觉当触发器。
+    @State private var doneToggles = 0
     @State private var guideMode: GuideMode = .off
     @State private var showingDiffSheet = false
     @State private var dismissedBanner = false
@@ -94,6 +106,7 @@ struct SinglePatternHighlightStepView: View {
         return BeadColorTally.ordered(counts).map {
             ColorPaletteBar.Entry(code: $0.key, count: $0.count,
                                   isExtra: !legend.contains($0.key),
+                                  isDone: doneColors[$0.key] == $0.count,
                                   color: color(for: $0.key))
         }
     }
@@ -152,7 +165,7 @@ struct SinglePatternHighlightStepView: View {
                 ProjectorStatusChip { showingProjectorSheet = true }
                     .padding(.horizontal, Theme.Spacing.md)
             }
-            ColorPaletteBar(entries: entries, highlightedCodes: $highlightedCodes)
+            palette
         }
         .navigationTitle(currentProject.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -224,6 +237,87 @@ struct SinglePatternHighlightStepView: View {
                 }
             )
         }
+    }
+
+    // MARK: - 色号条
+
+    /// 底下那条色号条，连同它上边那行「这个色拼完了」。
+    ///
+    /// **`entries` 只求一次**：它要把几万格数一遍，而这一段要用到它三回 ——
+    /// 写成 `entries.xxx` 三次就是数三遍，每次点色号都数。
+    private var palette: some View {
+        let entries = self.entries
+        let done = entries.filter(\.isDone).count
+        return VStack(spacing: 0) {
+            if !entries.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+                    Text("已完成 \(done) / \(entries.count) 个颜色")
+                        .font(.footnote.monospacedDigit())
+                        .foregroundColor(Theme.ColorToken.Text.secondary)
+                    Spacer(minLength: Theme.Spacing.sm)
+                    doneControl(entries: entries)
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .background(.regularMaterial)
+            }
+            ColorPaletteBar(entries: entries, highlightedCodes: $highlightedCodes)
+        }
+        .haptic(.success, trigger: doneToggles)
+    }
+
+    /// 只点亮**一个**色号时才有：这个色拼完了没有。
+    ///
+    /// 放在色号条上边，不做成圆点上的小按钮 —— 32 点的圆点上再叠一个能点的勾，
+    /// 手指点下去分不清是要高亮还是要打勾，而这两件事的后果差很远（同拼板那屏）。
+    /// 一次点亮好几个色号时不出现：那时候「这个色」指的是哪一个没有答案。
+    @ViewBuilder
+    private func doneControl(entries: [ColorPaletteBar.Entry]) -> some View {
+        if highlightedCodes.count == 1,
+           let entry = entries.first(where: { highlightedCodes.contains($0.code) }) {
+            Button {
+                toggleDone(entry, in: entries)
+            } label: {
+                // 两句分开写，不写成 `Label(entry.isDone ? "A" : "B", ...)`：三元里两个
+                // 字面量会让 `Label` 挑到 `StringProtocol` 那个重载，文案就不进本地化表了。
+                if entry.isDone {
+                    Label("标记未完成", systemImage: "arrow.uturn.backward").font(.footnote)
+                } else {
+                    Label("标记已完成", systemImage: "checkmark.circle").font(.footnote)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(entry.isDone ? Theme.ColorToken.Text.secondary : Theme.ColorToken.Status.success)
+        }
+    }
+
+    /// 打勾 / 取消打勾。
+    ///
+    /// 打完勾自动跳到下一个还没拼的色号 —— 用户此刻手上刚放下一把豆子，下一步一定是
+    /// 「那接着拼哪个」。让他自己回色号条上找的话，找的正是那几个格数相同、看起来
+    /// 差不多的色号。接了电视的话那头的高亮跟着换（`highlightedCodes` 一变就重发），
+    /// 人不用低头找。全部拼完就取消高亮，别停在最后一个色上假装还有事做。
+    private func toggleDone(_ entry: ColorPaletteBar.Entry, in entries: [ColorPaletteBar.Entry]) {
+        if entry.isDone {
+            doneColors.removeValue(forKey: entry.code)
+        } else {
+            // **在本地这份拷贝上打勾，再拿它去找下一个**，不写完再从 `doneColors` 读回来 ——
+            // 写完同一轮读回来不保证拿到新值，读回旧值的话「下一个」会挑中刚打完勾的这个，
+            // 用户点一下等于原地没动。
+            var marks = doneColors
+            marks[entry.code] = entry.count
+            doneColors = marks
+            // 手上正抓着一把豆子、眼睛在图纸上，这一下值得有个手感。
+            // 取消那一下不给：那是撤销，本来就要看着屏幕做。
+            doneToggles += 1
+            if let next = entries.first(where: { marks[$0.code] != $0.count }) {
+                highlightedCodes = [next.code]
+            } else {
+                highlightedCodes = []
+            }
+        }
+        onPersist()
     }
 
     // MARK: - 跟色号表对不上的提示
