@@ -392,7 +392,10 @@ struct PartsBoardStepView: View {
             Button("取消", role: .cancel) { repackTarget = nil }
             Button("重新排", role: .destructive) { repackAll() }
         } message: {
-            Text("会按 \(repackTarget?.size.label ?? "") 的板子、\(repackTarget?.spacing.label ?? "")间距重新摆一遍，你手动挪过的位置就没了。")
+            // 重排造的是全新的板子，勾一律清空 —— 零件会被重新分到别的板上，而标记是
+            // 按板记的，迁过去没有意义。所以这里要说清楚，不是想办法保留：用户按「确定」
+            // 之前得知道自己同意的是「几个晚上的进度记录一起没」，不只是摆位。
+            Text("会按 \(repackTarget?.size.label ?? "") 的板子、\(repackTarget?.spacing.label ?? "")间距重新摆一遍，你手动挪过的位置和各块板上的已完成标记都会清空。")
         }
     }
 
@@ -1262,6 +1265,29 @@ struct PartsBoardStepView: View {
         if changed { onPersist() }
     }
 
+    /// 这个零件挪了位置 / 转了向，它用到的那几个色号的「已完成」标记跟着作废。
+    ///
+    /// 颗数一颗没变，所以 `pruneDoneColors` 那条路发现不了；而它认的 `shapeSignature`
+    /// 又故意不含位置（见 `shapeSignature` 的注释），挪一下连跑都不会跑。可板上的豆子
+    /// 是照着原来那个位置按上去的 —— 零件一挪，那片豆子整个要重摆，勾还挂着的话用户
+    /// 下次接着拼时会直接跳过它。
+    ///
+    /// 只清这个零件用到的色号：同一块板上别的色跟这次挪动没关系，一并清掉的话用户
+    /// 得重打一遍勾。
+    ///
+    /// 旋转那条路进来时 `footprints` 还是转之前那份（要等 `.task` 重算），不影响 ——
+    /// 转向不改色号，前后用到的色号是同一批。
+    private func clearDoneColors(touchedBy placementId: UUID) {
+        guard boards.indices.contains(boardIndex),
+              boards[boardIndex].doneColors != nil,
+              let footprint = footprints[placementId] else { return }
+        var board = boards[boardIndex]
+        for key in Set(footprint.beads.map(\.key)) { board.clearColorDone(key) }
+        guard board.doneColors != boards[boardIndex].doneColors else { return }
+        boards[boardIndex] = board
+        onPersist()
+    }
+
     private func makeFootprints() -> [UUID: PartFootprint] {
         var result: [UUID: PartFootprint] = [:]
         for board in boards {
@@ -1488,12 +1514,15 @@ struct PartsBoardStepView: View {
             boards[boardIndex].placements[index] = PartPlacement(
                 id: id, partId: old.partId, col: col, row: row, turns: newTurns
             )
+            clearDoneColors(touchedBy: id)
         } else if let spot = PartsBoardPacker.firstFit(newFootprint, occupancy: occupancy) {
             boards[boardIndex].placements[index] = PartPlacement(
                 id: id, partId: old.partId, col: spot.col, row: spot.row, turns: newTurns
             )
+            clearDoneColors(touchedBy: id)
             flash(String(localized: "原位置无法旋转，已移至空余位置。"))
         } else {
+            // 没转成，板上什么都没变 —— 勾不能动。
             flash(String(localized: "旋转后放不下，请先移开其他零件。"))
         }
     }
@@ -1627,6 +1656,7 @@ struct PartsBoardStepView: View {
         guard let index = boards[boardIndex].placements.firstIndex(where: { $0.id == id }) else { return }
         boards[boardIndex].placements[index].col = session.originCol + session.deltaCol
         boards[boardIndex].placements[index].row = session.originRow + session.deltaRow
+        clearDoneColors(touchedBy: id)
     }
 
     /// 松手弹回去了，为什么。

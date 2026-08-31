@@ -12237,12 +12237,12 @@
         }
       }
     },
-    "会按 %@ 的板子、%@间距重新摆一遍，你手动挪过的位置就没了。" : {
+    "会按 %@ 的板子、%@间距重新摆一遍，你手动挪过的位置和各块板上的已完成标记都会清空。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Everything will be laid out again on %1$@ boards at %2$@ spacing. Any pieces you moved by hand will be reset."
+            "value" : "Everything will be laid out again on %1$@ boards at %2$@ spacing. Any pieces you moved by hand and the completed-color marks on every board will be cleared."
           }
         }
       }
