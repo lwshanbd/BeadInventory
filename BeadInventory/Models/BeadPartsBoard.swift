@@ -201,15 +201,92 @@ struct PartsBoard: Identifiable, Codable, Equatable, Sendable {
     var cols: Int
     var rows: Int
     var placements: [PartPlacement]
+    /// 这块板上哪些色号已经拼完了。key 是色号（`PartCellFill.groupKey`），
+    /// value 是**按下「已完成」那一刻，这块板上这个色号有多少颗**。
+    ///
+    /// 记颗数而不是只记一个「拼过了」：板上的格子随时能擦 / 补（`PartCellBrushView`），
+    /// 补进来三颗 H7 之后那个勾还挂着的话，用户照着勾把它跳过去，正好漏掉那三颗 ——
+    /// 而这个标记本来就是为了防漏。颗数对不上就当没标记过：`pruneDoneColors(matching:)`
+    /// 会把这条记录**删掉**，不是遮住 —— 遮住的话颗数哪天绕回原值，勾就自己回来了。
+    ///
+    /// 颗数是个便宜的指纹，**持平的改动它认不出来**：擦掉三颗 H7、又在别处补三颗 H7，
+    /// 或者一格 H7 换成 A1、同时一格 A1 换成 H7 —— 总数没变，勾留着。这是记颗数换来的，
+    /// 不是漏了；真要认出来，存的得是格子集合的指纹而不是一个数。
+    ///
+    /// 跟着板走，不是跟着零件走：同一个色号在第 1 块板上拼完了，第 2 块板上还没拼。
+    ///
+    /// 刻意用 Optional（理由同 `BeadPartsSheet.boards`）：合成的 `init(from:)` 不认
+    /// 属性默认值，缺字段一律抛错 —— 存量图纸会整份打不开。
+    var doneColors: [String: Int]?
 
-    init(id: UUID = UUID(), size: BeadBoardSize, placements: [PartPlacement] = []) {
+    init(id: UUID = UUID(), size: BeadBoardSize, placements: [PartPlacement] = [],
+         doneColors: [String: Int]? = nil) {
         self.id = id
         self.cols = size.cols
         self.rows = size.rows
         self.placements = placements
+        self.doneColors = doneColors
     }
 
     var size: BeadBoardSize { BeadBoardSize(cols: cols, rows: rows) }
+
+    // MARK: - 这个色拼完了
+
+    /// 这个色号在这块板上算不算已经拼完。`count` 传板上现在有多少颗。
+    func isColorDone(_ key: String, count: Int) -> Bool {
+        doneColors?[key] == count
+    }
+
+    mutating func markColorDone(_ key: String, count: Int) {
+        var next = doneColors ?? [:]
+        next[key] = count
+        doneColors = next
+    }
+
+    mutating func clearColorDone(_ key: String) {
+        guard var next = doneColors else { return }
+        next.removeValue(forKey: key)
+        doneColors = next.isEmpty ? nil : next
+    }
+
+    /// 跟板上现在的颗数对不上的标记，一律作废。`counts` 传这块板现在每个色号有多少颗。
+    ///
+    /// **要的是删掉，不是遮住。** `isColorDone` 那句相等判断只管这一帧显不显示；标记本身
+    /// 留在数据里的话，颗数绕回原值那一刻勾就自己回来了：H7 拼完打勾（12 颗）→ 擦掉一格
+    /// （11 颗，勾消失）→ 又在别处补一格（12 颗）→ 勾回来了，可那颗新的用户根本没按上去，
+    /// 照着勾跳过去正好漏一色。而这份标记跟着整张图纸落盘，这条潜伏记录会跨天跨启动一直留着。
+    ///
+    /// 代价是零件挪去别的板再挪回来、颗数临时变一下又变回来，勾都得重打一次。两个方向的
+    /// 代价不对等：误报「没完成」只是多核对一遍，误报「已完成」是拆板重拼，所以偏保守这边。
+    mutating func pruneDoneColors(matching counts: [String: Int]) {
+        guard let current = doneColors else { return }
+        let kept = current.filter { counts[$0.key] == $0.value }
+        doneColors = kept.isEmpty ? nil : kept
+    }
+}
+
+// MARK: - 色号条的顺序
+
+/// 色号条 / 色号列表的排序规则 —— 判色、拼板、投影、补格子四处共用这一份。
+///
+/// **颗数一样时必须有一个说得死的次序。** 只写「颗数从多到少」的话，几个颗数相同的
+/// 色号谁前谁后由字典的遍历顺序决定：改一格色号、翻一块板、重进一次这一屏，它们的
+/// 相对位置就换一次。而用户是照着这条色号条一个一个抓豆子拼的 —— 两个色号前后一换，
+/// 他会以为后面那个已经拼过，直接跳过去，那一板就漏了一个色，得拆开重拼。
+///
+/// 并列时按色号本身排，并且用 `localizedStandardCompare`：H7 在 H10 前面
+///（纯字典序会把 H10 排到 H7 前面，色号条上看着就是乱的）。
+enum BeadColorTally {
+    /// 颗数多的在前；一样多时按色号排。
+    static func precedes(_ lhs: (key: String, count: Int), _ rhs: (key: String, count: Int)) -> Bool {
+        if lhs.count != rhs.count { return lhs.count > rhs.count }
+        return lhs.key.localizedStandardCompare(rhs.key) == .orderedAscending
+    }
+
+    /// 把「色号 → 颗数」按上面这条规矩排成一条。
+    static func ordered(_ counts: [String: Int]) -> [(key: String, count: Int)] {
+        counts.map { (key: $0.key, count: $0.value) }.sorted { precedes($0, $1) }
+    }
 }
 
 // MARK: - 零件转向之后长什么样
