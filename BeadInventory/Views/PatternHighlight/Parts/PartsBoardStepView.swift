@@ -74,6 +74,8 @@ struct PartsBoardStepView: View {
     /// 正在高亮的色号（`PartCellFill.groupKey`）。nil = 正常显示
     @State private var highlightKey: String?
     @State private var tab: Tab = .parts
+    /// 已经自动切过一次「颜色」页签了（见 `showColorsIfAllPlaced`）。
+    @State private var didAutoShowColors = false
 
     // 画布
     @State private var canvasSize: CGSize = .zero
@@ -262,7 +264,10 @@ struct PartsBoardStepView: View {
             // 排完（或者本来就有板子）之后先体检一遍：别处改过的格子可能已经把
             // 这块板改成非法的了，而用户看到板子就是在这儿。见 `revalidateBoards`。
             revalidateBoards()
+            showColorsIfAllPlaced()
         }
+        // 最后一个零件摆上板的那一刻，下半屏跟着换页
+        .onChange(of: unplaced.isEmpty) { _, _ in showColorsIfAllPlaced() }
         // 板子一动就重算「还有谁站不住」。拖动、转向、拿下来、加一块、重排、切板子 ——
         // 每一处都得算，而它们分散在八九个函数里，所以认签名不认调用点。
         .onChange(of: layoutSignature) { _, _ in refreshInvalid() }
@@ -650,16 +655,7 @@ struct PartsBoardStepView: View {
             if let id = selection, let placement = currentBoard?.placements.first(where: { $0.id == id }) {
                 selectedPanel(placement)
             } else {
-                Picker("", selection: $tab) {
-                    Text("零件").tag(Tab.parts)
-                    Text("颜色").tag(Tab.colors)
-                }
-                .pickerStyle(.segmented)
-
-                switch tab {
-                case .parts: partsTray
-                case .colors: colorTray
-                }
+                trayTabs
             }
 
             // 板上还有挨着的零件时先拦一下。**不是禁用按钮** —— 灰着不说话，用户
@@ -674,6 +670,40 @@ struct PartsBoardStepView: View {
         }
         .padding()
         .background(.regularMaterial)
+    }
+
+    /// 「零件 / 颜色」两个页签，连同当前那一页的内容。
+    ///
+    /// **「颜色」那一格上写着还剩几个色没拼。** 用户停在「零件」这一页时，屏幕上原先
+    /// 没有一个字提到「标记已完成」这件事存在 —— 连「已完成 3 / 12 个颜色」那行进度
+    /// 也写在色号条里面，切不过去就永远看不见。真实反馈是「我不知道那个按钮在哪儿」，
+    /// 而他不是没找到按钮，是没有任何线索告诉他该往哪儿找。
+    ///
+    /// **`boardColors` 只算一次**：它要把板上每一颗豆子数一遍（一块 50×50 的板两千多格），
+    /// 页签和色号条两边都要用。也正因为这一遍不便宜，这段才没有并进 `bottomPanel` ——
+    /// 选中一个零件时下半屏整个换成那块零件的大图，那时候一颗豆子都不用数。
+    private var trayTabs: some View {
+        let colors = boardColors
+        let board = currentBoard
+        let done = colors.filter { board?.isColorDone($0.key, count: $0.count) ?? false }.count
+        return VStack(spacing: Theme.Spacing.md) {
+            Picker("", selection: $tab) {
+                Text("零件").tag(Tab.parts)
+                // 两句分开写，不写成 `Text(colors.isEmpty ? "A" : "B")`：三元里两个字面量
+                // 会让 `Text` 挑到 `String` 那个重载，文案就不进本地化表了。
+                if colors.isEmpty {
+                    Text("颜色").tag(Tab.colors)
+                } else {
+                    Text("颜色 · \(done) / \(colors.count)").tag(Tab.colors)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            switch tab {
+            case .parts: partsTray
+            case .colors: colorTray(colors: colors, doneCount: done)
+            }
+        }
     }
 
     /// 选中之后的下半屏：这是几号 · 图纸上长什么样 · 能对它做什么。
@@ -872,12 +902,11 @@ struct PartsBoardStepView: View {
     /// 拼完一个色就在这儿按一下「标记已完成」，色号上挂个勾，然后自动跳到下一个没拼的。
     /// 一块板十几个色号，拼上好几个晚上、中途还会被打断 —— 靠脑子记「刚才拼到哪个色」
     /// 是记不住的，而漏掉一个色往往要等整板烫完才发现。
-    private var colorTray: some View {
-        // **只算一次**：`boardColors` 要把板上每一颗豆子数一遍（一块 50×50 的板两千多格），
-        // 而这一段要用到它四回。写成 `boardColors.xxx` 四次就是数四遍。
-        let colors = boardColors
+    ///
+    /// 色号和「拼完了几个」由 `trayTabs` 算好传进来 —— 页签上那个数跟这里必须是
+    /// 同一份，各算各的就是把板上两千多格数两遍。
+    private func colorTray(colors: [(key: String, count: Int)], doneCount done: Int) -> some View {
         let board = currentBoard
-        let done = colors.filter { board?.isColorDone($0.key, count: $0.count) ?? false }.count
         return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
                 Text(highlightKey.map { "仅高亮「\(label(for: $0))」，再次点击可取消" }
@@ -1318,6 +1347,21 @@ struct PartsBoardStepView: View {
     }
 
     // MARK: - 排版
+
+    /// 零件全摆上板之后，下半屏默认停在「颜色」。
+    ///
+    /// 到这一步零件条已经没什么可做了（没有一个零件在等着摆），而用户接下来干的事
+    /// 就是抓一把豆子按色往板上按 —— 那正是「颜色」这一页。默认停在「零件」的话，
+    /// 他要先想到去切一下页签，才看得见色号条和「标记已完成」。
+    ///
+    /// **只做一次。** 他要是自己切回「零件」（想再看看几号零件摆在哪），
+    /// 不能下一帧又被推回来。拿下一个零件时 `takeOffSelected` 会切回「零件」，
+    /// 那是那一下动作自己的事，跟这里无关。
+    private func showColorsIfAllPlaced() {
+        guard !didAutoShowColors, !parts.isEmpty, !boards.isEmpty, unplaced.isEmpty else { return }
+        didAutoShowColors = true
+        tab = .colors
+    }
 
     private func autoPackIfNeeded() {
         guard !didAutoPack else { return }
