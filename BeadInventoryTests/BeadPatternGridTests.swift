@@ -84,6 +84,43 @@ final class BeadPatternGridTests: XCTestCase {
         XCTAssertNil(decoded.patternGrid)
     }
 
+    // MARK: - 这个色拼完了
+
+    /// 存了勾的图纸，一来一回还是那些勾。丢了的话用户几个晚上的进度就没了。
+    func testDoneColorsRoundTrip() throws {
+        var grid = makeSampleGrid()
+        grid.doneColors = ["M24": 3]
+
+        let decoded = try JSONDecoder().decode(
+            BeadPatternGrid.self, from: JSONEncoder().encode(grid))
+        XCTAssertEqual(decoded, grid)
+        XCTAssertEqual(decoded.doneColors?["M24"], 3)
+    }
+
+    /// 没有 `doneColors` 这个字段的老图纸照样解得出来 ——
+    /// 解不出来的代价是整张图纸打不开，用户几天的活全没了。
+    func testDecodesGridSavedBeforeDoneColors() throws {
+        let json = """
+        {
+          "corners" : {
+            "topLeft" : [ 0.1, 0.1 ],
+            "topRight" : [ 0.9, 0.1 ],
+            "bottomLeft" : [ 0.1, 0.9 ],
+            "bottomRight" : [ 0.9, 0.9 ]
+          },
+          "rows" : 1,
+          "cols" : 2,
+          "cellColorCodes" : [ [ "M24", null ] ],
+          "lastCalibratedAt" : 700000000,
+          "sourceImageSize" : [ 1024, 1024 ],
+          "colorSystem" : "MARD"
+        }
+        """
+        let grid = try JSONDecoder().decode(BeadPatternGrid.self, from: Data(json.utf8))
+        XCTAssertEqual(grid.cols, 2)
+        XCTAssertNil(grid.doneColors)
+    }
+
     // MARK: - SwiftData 转换测试
 
     func testSDProjectRecordRoundTrip() throws {
