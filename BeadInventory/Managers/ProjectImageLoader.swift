@@ -162,6 +162,101 @@ actor ProjectImageLoader {
         return (true, image)
     }
 
+    // MARK: - 备份用:单次 fetch 取回一个项目的全部 blob
+
+    /// 一个项目的全部 blob。
+    struct ProjectBlobs: Sendable {
+        let thumbnail: Data?
+        let finishedImage: Data?
+        let displayThumbnail: Data?
+        let patternGridData: Data?
+        /// 多零件图纸。**必须跟其它 blob 同批取** —— 它不在这份快照里的话，
+        /// 归档就会声称"这个项目没有零件数据"，恢复端照办把用户的多零件进度清掉。
+        let partsSheetData: Data?
+    }
+
+    enum LoadError: Error, CustomStringConvertible {
+        case fetchFailed(projectId: UUID, underlying: String)
+        /// 行在 metadata 快照之后消失了(通常是用户删了这个项目)。
+        /// **可重试失败** —— 下次备份基于新的快照就一致了。
+        case projectRowMissing(projectId: UUID)
+
+        var description: String {
+            switch self {
+            case .fetchFailed(let id, let e): return "读取项目 \(id) 的图片失败: \(e)"
+            case .projectRowMissing(let id): return "项目 \(id) 在备份过程中消失（可能已被删除）"
+            }
+        }
+    }
+
+    /// 取回一个项目的全部 blob —— **单次 fetch,同一事务视图**。
+    ///
+    /// ## 为什么必须是单次 fetch(而不是逐列调上面那组单列方法)
+    ///
+    /// 备份的一致性语义是「逐记录一致」(产品裁决)。分几次取,同一个项目的几张图会来自
+    /// 不同时刻 —— 用户在备份期间改了图,归档里就可能是"新缩略图 + 旧成品图"这种
+    /// 自身矛盾的记录。单次 fetch 才让"逐记录一致"名副其实。
+    ///
+    /// 内存代价是**一个项目的全部 blob 同时在内存**(约两张图量级),仍然与项目总数无关 ——
+    /// 这跟"全表物化"是两回事。
+    ///
+    /// ## 为什么 throw 而不是返回 nil
+    ///
+    /// 上面那组单列方法把「真的没图」和「fetch 抛错」**都返回 nil**(错误只进了日志)。
+    /// 对视图层那是合理的降级;但对备份是致命的 ——
+    ///
+    ///     一次瞬时读取失败 → 备份记成"这条没图" → 恢复时按"完整快照"语义显式清空
+    ///       → 图被永久删除
+    ///
+    /// 也就是说"读失败"会被转写成"用户删了图"。备份路径必须能区分这两者,所以这里
+    /// 用 throw 把失败暴露出去,由调用方决定终止整次备份。
+    func blobs(for projectId: UUID) throws -> ProjectBlobs {
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        descriptor.fetchLimit = 1
+        descriptor.propertiesToFetch = [
+            \.thumbnail, \.finishedImage, \.displayThumbnail, \.patternGridData, \.partsSheetData
+        ]
+        do {
+            let context = ModelContext(container)
+            guard let row = try context.fetch(descriptor).first else {
+                // **行消失必须抛错,不能返回全 nil。**
+                //
+                // metadata 快照是在这之前取的,所以"快照里有、现在没有"意味着用户在备份
+                // 期间删掉了这个项目。若在这里返回全 nil,归档里就会写成
+                // **「项目还在、图全没有」** —— 而恢复端按"字段缺失即显式清空"处理,
+                // 于是恢复会**复活一个已删除的项目、并且它的图全丢**。
+                // 那是一份内部自相矛盾的备份,比备份失败糟得多。
+                //
+                // 也刻意**不**在这里"跳过该项目":`first == nil` 只说明没查到行,
+                // 不能断定原因就是"用户删了"。把"查不到"直接翻译成"已删除"正是
+                // 本方法存在要修的那类歧义(见下方 throw 的理由)。
+                // 抛出可重试失败:本次归档的 `.partial` 会被 `write` 的 defer 回收,
+                // 下次基于新快照整份重来。
+                throw LoadError.projectRowMissing(projectId: projectId)
+            }
+            return ProjectBlobs(
+                thumbnail: row.thumbnail,
+                finishedImage: row.finishedImage,
+                displayThumbnail: row.displayThumbnail,
+                patternGridData: row.patternGridData,
+                partsSheetData: row.partsSheetData
+            )
+        } catch let error as LoadError {
+            // **必须先透传自己的错误。** 上面 `projectRowMissing` 的 throw 就在这个
+            // do 块内，被下面的兜底 catch 接住的话会重新包成 `fetchFailed` ——
+            // 于是"行消失"这个 case 永远不会以它自己的身份被观测到，而它上面那段
+            // 注释论证的正是这两者必须分开。
+            throw error
+        } catch {
+            AppLogger.shared.error("ProjectImageLoader", "blobs_fetch_failed", metadata: [
+                "projectId": projectId.uuidString, "error": "\(error)"
+            ])
+            throw LoadError.fetchFailed(projectId: projectId, underlying: "\(error)")
+        }
+    }
+
     // MARK: - 测试探针
 
     /// 供 `ProjectImageLoaderTests` 钉住「取图不在主线程」这条不变量。

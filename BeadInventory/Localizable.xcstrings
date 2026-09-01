@@ -11,6 +11,26 @@
         }
       }
     },
+    "上次恢复未完成，当前数据可能不完整" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last restore did not finish — your data may be incomplete"
+          }
+        }
+      }
+    },
+    "上次自动备份被中断，本周已暂停自动备份。手动备份成功后会自动恢复。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last automatic backup was interrupted, so it is paused for this week. A successful manual backup will resume it."
+          }
+        }
+      }
+    },
     "下一个零件" : {
       "localizations" : {
         "en" : {
@@ -71,12 +91,74 @@
         }
       }
     },
+    "备份失败，请检查存储空间后重试" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup failed. Check available storage and try again."
+          }
+        }
+      }
+    },
+    "备份完成" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup complete"
+          }
+        }
+      }
+    },
     "已完成 %lld / %lld 个颜色" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld of %2$lld colors done"
+          }
+        }
+      }
+    },
+    "恢复中断" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore Interrupted"
+          }
+        }
+      }
+    },
+    "找不到该备份，可能已被删除。请从下方列表选择其它备份恢复。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This backup can't be found — it may have been deleted. Choose another backup from the list below."
+          }
+        }
+      }
+    },
+    "数据未能写入存储，恢复已中止，原有数据未被改动（%@）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The data couldn't be written to storage. The restore was cancelled and your existing data was not changed (%@)."
+          }
+        }
+      }
+    },
+    "无法建立恢复日志，恢复已中止，原有数据未被改动：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't create the restore log. The restore was cancelled and your existing data was not changed: %@"
           }
         }
       }
@@ -97,6 +179,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mark not done"
+          }
+        }
+      }
+    },
+    "立即备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back Up Now"
           }
         }
       }
@@ -337,6 +429,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Every color on this board is done"
+          }
+        }
+      }
+    },
+    "这将用 %@ 的备份替换当前所有数据。此操作不可撤销。\n这是旧格式备份，不含拼图模式的网格标定，恢复后这部分需要重新标定。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This will replace all current data with the backup from %@. This can't be undone.\nThis is an old-format backup and doesn't include pattern-mode grid calibration, which will need to be redone after restoring."
           }
         }
       }
@@ -10719,6 +10821,16 @@
         }
       }
     },
+    "重新恢复" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore Again"
+          }
+        }
+      }
+    },
     "重新标定" : {
       "localizations" : {
         "en" : {
@@ -10957,6 +11069,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Projects"
+          }
+        }
+      }
+    },
+    "项目 %@ 的图片写入失败，恢复已中断，数据可能不完整" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't write the images for project %@. The restore was interrupted and your data may be incomplete."
+          }
+        }
+      }
+    },
+    "项目 %@ 的图片读取失败，恢复已中断，数据可能不完整" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't read the images for project %@. The restore was interrupted and your data may be incomplete."
           }
         }
       }
