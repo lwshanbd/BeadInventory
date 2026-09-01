@@ -191,10 +191,10 @@ actor ProjectImageLoader {
 
     /// 取回一个项目的全部 blob —— **单次 fetch,同一事务视图**。
     ///
-    /// ## 为什么必须是单次 fetch(而不是调四遍上面的单列方法)
+    /// ## 为什么必须是单次 fetch(而不是逐列调上面那组单列方法)
     ///
-    /// 备份的一致性语义是「逐记录一致」(产品裁决)。分四次取,同一个项目的四张图会来自
-    /// 四个不同时刻 —— 用户在备份期间改了图,归档里就可能是"新缩略图 + 旧成品图"这种
+    /// 备份的一致性语义是「逐记录一致」(产品裁决)。分几次取,同一个项目的几张图会来自
+    /// 不同时刻 —— 用户在备份期间改了图,归档里就可能是"新缩略图 + 旧成品图"这种
     /// 自身矛盾的记录。单次 fetch 才让"逐记录一致"名副其实。
     ///
     /// 内存代价是**一个项目的全部 blob 同时在内存**(约两张图量级),仍然与项目总数无关 ——
@@ -225,14 +225,15 @@ actor ProjectImageLoader {
                 //
                 // metadata 快照是在这之前取的,所以"快照里有、现在没有"意味着用户在备份
                 // 期间删掉了这个项目。若在这里返回全 nil,归档里就会写成
-                // **「项目还在、四张图都没有」** —— 而恢复端按"字段缺失即显式清空"处理,
+                // **「项目还在、图全没有」** —— 而恢复端按"字段缺失即显式清空"处理,
                 // 于是恢复会**复活一个已删除的项目、并且它的图全丢**。
                 // 那是一份内部自相矛盾的备份,比备份失败糟得多。
                 //
                 // 也刻意**不**在这里"跳过该项目":`first == nil` 只说明没查到行,
                 // 不能断定原因就是"用户删了"。把"查不到"直接翻译成"已删除"正是
                 // 本方法存在要修的那类歧义(见下方 throw 的理由)。
-                // 抛出可重试失败,让本次备份保留为 `.partial`,下次基于新快照重来即可。
+                // 抛出可重试失败:本次归档的 `.partial` 会被 `write` 的 defer 回收,
+                // 下次基于新快照整份重来。
                 throw LoadError.projectRowMissing(projectId: projectId)
             }
             return ProjectBlobs(
@@ -242,6 +243,12 @@ actor ProjectImageLoader {
                 patternGridData: row.patternGridData,
                 partsSheetData: row.partsSheetData
             )
+        } catch let error as LoadError {
+            // **必须先透传自己的错误。** 上面 `projectRowMissing` 的 throw 就在这个
+            // do 块内，被下面的兜底 catch 接住的话会重新包成 `fetchFailed` ——
+            // 于是"行消失"这个 case 永远不会以它自己的身份被观测到，而它上面那段
+            // 注释论证的正是这两者必须分开。
+            throw error
         } catch {
             AppLogger.shared.error("ProjectImageLoader", "blobs_fetch_failed", metadata: [
                 "projectId": projectId.uuidString, "error": "\(error)"

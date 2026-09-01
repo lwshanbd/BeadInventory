@@ -55,7 +55,7 @@ class BackupManager {
 
     // MARK: - 周检查
 
-    /// 本周是否已完成过备份（标记在写盘成功后才更新，见 performBackup）。
+    /// 本周是否已完成过备份（标记在写盘成功后才更新，见 performArchiveBackup）。
     private func hasBackedUpThisWeek(now: Date = Date()) -> Bool {
         guard let lastBackupDate = UserDefaults.standard.object(forKey: lastBackupDateKey) as? Date else {
             return false
@@ -65,8 +65,8 @@ class BackupManager {
 
     /// 检查是否需要进行每周备份。
     ///
-    /// 自 v2.0.x 起：备份阶段会从 SwiftData 把所有项目的 thumbnail / finishedImage 取出来 base64
-    /// 编进 JSON（v1.x 起就这样，只是以前在 InventoryManager.projects 里现成有图）。
+    /// 备份阶段会逐项目从 SwiftData 取图写进归档。取图在 `ProjectImageLoader`（后台 actor）
+    /// 上做，主线程只出一次 blob-free 的 metadata 快照。
     /// 在 cold-start 的 onAppear 同步路径里跑这玩意儿可能撞 scene-create watchdog，
     /// 所以把执行延后一个 tick + 5s、走 Task：让首屏先 commit，避免首帧渲染期间被卡。
     @MainActor func checkAndPerformWeeklyBackupIfNeeded(inventoryManager: InventoryManager) {
@@ -74,6 +74,17 @@ class BackupManager {
         //    据此抑制那一周，避免"最容易被杀的那段"每次启动都重来一遍。
         if BackupAttemptStore.consumeResidualIfNeeded() {
             isAutomaticBackupSuppressed = true
+        }
+
+        // ①' 上次恢复没跑完 → 不备份。
+        //    此时库处于"metadata 是新的、图只写了一部分"的半恢复状态，把它备下来
+        //    等于把半损坏当成正常快照留档，还会挤掉真备份的槽位。
+        //    用户在备份页点「重新恢复」把它跑完，日志清掉之后自动备份自然恢复。
+        if let residual = RestoreJournal.residual() {
+            AppLogger.shared.warning("BackupManager", "automatic_backup_skipped_restore_residual", metadata: [
+                "archive": (residual.archivePath as NSString).lastPathComponent
+            ])
+            return
         }
 
         // ② 被抑制的周直接跳过。解除条件是一次**手动**备份成功。
@@ -98,8 +109,9 @@ class BackupManager {
         // 注意：备份仍然要在 MainActor 上跑（SwiftData mainContext 限定主线程），
         // 但它不会再卡在第一帧 commit 里 —— iOS watchdog 不会因此再 0x8BADF00D。
         //
-        // 再延后 5s：备份要逐项目从 SwiftData 取图 + base64（全程主线程），跟启动后紧接着的
-        // initial load / 首次用户交互挤在同一窗口会明显掉帧。
+        // 再延后 5s：备份仍要读盘、写盘、算校验和，跟启动后紧接着的 initial load /
+        // 首次用户交互挤在同一窗口会明显掉帧。（这条延后原本是为了躲主线程 base64，
+        // 那条路径已经没了；理由换成避开启动窗口，结论不变。）
         //
         // **任务现在被持有且可取消**（原来是 fire-and-forget，scenePhase 的
         // .background / .inactive 分支只 stop 了迁移器，对备份一个字都没管 ——
@@ -107,7 +119,7 @@ class BackupManager {
         backupTask = Task { @MainActor [weak self] in
             defer { self?.backupTask = nil }
             // 取消 = 跳过本次备份（标记未写，下次启动重试）。
-            // 不能用 try?：取消时 sleep 立即抛错，吞掉后 performBackup 会在 t≈0 无延迟执行，
+            // 不能用 try?：取消时 sleep 立即抛错，吞掉后 performArchiveBackup 会在 t≈0 无延迟执行，
             // 恰好落回 5s 想避开的启动窗口 —— 取消语义整个反转。
             do {
                 try await Task.sleep(nanoseconds: 5_000_000_000)
@@ -129,7 +141,9 @@ class BackupManager {
             // **自动备份对他们永久失效，且没有任何提示** —— 而库越大越容易踩中，
             // 恰好是最输不起的那批用户。
             guard await self.waitForInitialLoad(inventoryManager) else {
-                self.isAutomaticBackupSuppressed = true
+                // **不置 `isAutomaticBackupSuppressed`。** 这里什么都没被抑制 ——
+                // 标记没写，下次启动会正常重试。置位的话备份页会显示
+                // 「上次自动备份被中断，本周已暂停自动备份」，与事实相反。
                 AppLogger.shared.warning("BackupManager", "archive_backup_deferred_load_timeout")
                 return
             }
@@ -164,17 +178,18 @@ class BackupManager {
 
     /// 生产路径的备份 —— 走流式归档写出器。
     ///
-    /// 与被它取代的 JSON 路径的差别(同库同机实测,Release 级优化):
+    /// 与被它取代的 JSON 路径的差别:
     ///
-    ///     检查点峰值   813 MB → 67 MB（全程平坦，不再随项目数增长）
-    ///     产出体积     548 MB → 422 MB（省掉 base64 的 +33%）
-    ///     patternGrid  丢失   → 保住（旧格式压根没写这个字段）
+    ///     峰值内存     随项目数线性增长 → 与项目总数无关（受单个项目的 blob 总量约束）
+    ///     产出体积     省掉 base64 白付的 +33%
+    ///     patternGrid  丢失 → 保住（旧格式压根没写这个字段）
+    ///     partsSheet   保住（旧 JSON 有，新格式初版漏了，见 BackupArchive 的格式定义）
     ///
     /// 图片经 `ProjectImageLoader` 逐项目取(单次 fetch,同一事务视图),写完即释放,
     /// 主线程只做一次 blob-free 的 metadata 快照。
     ///
     /// 峰值受**单个项目的 blob 总量**约束,不是"单张图" —— 逐记录一致要求一次取回
-    /// 该项目的四个 blob。关键是它**不随项目总数增长**,那才是 F1 的病灶形状。
+    /// 该项目的全部 blob。关键是它**不随项目总数增长**,那才是病灶形状。
     @discardableResult
     @MainActor func performArchiveBackup(
         inventoryManager: InventoryManager, isManual: Bool = false
@@ -243,7 +258,12 @@ class BackupManager {
 
         // 开工记录：**必须在任何重活之前落盘**。进程被 SIGKILL 时没机会写"我被中断了"，
         // 只能反过来：先落"进行中"，正常收尾清掉；下次启动读到残留即判定中断。
-        BackupAttemptStore.beginAttempt()
+        // 哨兵落不下去就放弃本次备份 —— 见 `beginAttempt` 的返回值说明。
+        guard BackupAttemptStore.beginAttempt() else {
+            AppLogger.shared.error("BackupManager", "archive_backup_aborted_no_sentinel")
+            print("[BackupManager] 无法记录备份哨兵，跳过本次备份")
+            return false
+        }
 
 
         // 主线程只取 blob-free 的 metadata 快照（projects 缓存本来就不带 blob）。
@@ -367,7 +387,8 @@ class BackupManager {
 
     /// 回收中断的备份写出留下的 `.beadbackup.partial`。
     ///
-    /// **只在启动时调用一次。** 正在写的那一份也叫 `.partial`，备份进行中扫会把它删掉。
+    /// **可以在任何时候调用。** 安全性由 `BackupArchiveWriter.sweepStalePartials` 的
+    /// in-flight 认领 + 时间阈值两道运行时检查保证，不依赖调用时机（详见该函数注释）。
     func sweepStaleBackupPartials() {
         guard let dir = backupDirectory else { return }
         BackupArchiveWriter.sweepStalePartials(in: dir)
@@ -425,10 +446,22 @@ class BackupManager {
         var result: [BackupInfo] = []
 
         // ① 新格式：.beadbackup 目录。stats 从 manifest 读 —— manifest 只含 metadata，
-        //    体积与图片无关（实测 669 项目约 1 MB）。
+        //    体积与图片无关（只有 metadata，量级是 MB 而不是 GB）。
         for url in BackupArchiveWriter.listArchives(in: backupDir) {
             let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-            let date = (attrs?[.creationDate] as? Date) ?? Date.distantPast
+            // 兜底方向必须是**保守 = 保留**。列表按 date 降序，`cleanupOldBackups`
+            // 删的是排在最后的那些 —— 兜底成 `distantPast` 的话，一次瞬时的属性读取
+            // 失败会被转写成"这是最老的备份"然后把它删掉。用 `distantFuture` 让它
+            // 排在最前、不参与轮转淘汰，宁可多留一份。
+            let date: Date
+            if let creationDate = attrs?[.creationDate] as? Date {
+                date = creationDate
+            } else {
+                AppLogger.shared.warning("BackupManager", "archive_attrs_unreadable", metadata: [
+                    "name": url.lastPathComponent
+                ])
+                date = .distantFuture
+            }
             var stats: BackupStats?
             var size: Int64 = 0
             let manifestURL = url.appendingPathComponent("manifest.json")
@@ -453,7 +486,7 @@ class BackupManager {
         //
         // 这里**刻意不读文件内容**。原实现为了取 stats 会
         // `Data(contentsOf:)` + `JSONSerialization` 把**每一个**备份整个读进内存并完整解析 ——
-        // 单份实测 548 MB，保留 8 份就是打开备份列表这个动作本身要读 4.4 GB。
+        // 旧格式单份可达数百 MB，保留 8 份的话，打开备份列表这个动作本身就要读几个 GB。
         // 那是与 F1 完全同类的 OOM，而且发生在用户主动点进来的页面上。
         // 旧备份的 stats 显示为空是完全可以接受的代价。
         if let files = try? FileManager.default.contentsOfDirectory(
@@ -499,11 +532,10 @@ class BackupManager {
         switch backup.format {
         case .archiveV1:
             // **校验必须离开主 actor。** `validate()` 是无隔离的 static func，从 @MainActor
-            // 调用就跑在主线程上，而它要读遍并 SHA-256 每一个 blob（实测约 422 MB）；
+            // 调用就跑在主线程上，而它要读遍并 SHA-256 每一个 blob（GB 量级）；
             // 紧接着 `apply` 再读一遍。原来这条路径外面套的
             // `DispatchQueue.main.asyncAfter` 什么也没买到 —— 调用点本来就在主线程。
-            // 合计约 850 MB 同步 I/O + 哈希卡住 UI，正是本分支的诊断代码要追查的
-            // 看门狗形状（0x8BADF00D）。导入路径早已这么拆，恢复路径此前没跟上。
+            // 两遍全量同步 I/O + 哈希卡住 UI，正是本 PR 在修的那个看门狗形状（0x8BADF00D）。
             //
             // `apply` 留在主 actor：它写 SwiftData mainContext，本来就必须在主线程。
             let url = backup.fileURL
@@ -514,6 +546,12 @@ class BackupManager {
             AppLogger.shared.info("BackupManager", "archive_restore_completed", metadata: [
                 "projects": report.manifest.projects.count, "blobs": report.blobCount
             ])
+            // 与 legacy 路径同理（见 `restoreLegacyJSONBackup` 末尾的长注释）：
+            // restore 会改写 displayThumbnail，而协调器只在 scenePhase 转 .active 时启动，
+            // 恢复是在前台做的、不会触发新 transition。不显式重启的话，需要 backfill 的
+            // 项目要等下次启动，中间列表全走现场降级。stop + start 是 idempotent 的。
+            ThumbnailMigrationCoordinator.shared.stop()
+            ThumbnailMigrationCoordinator.shared.start(inventoryManager: manager)
         case .legacyJSON:
             try restoreLegacyJSONBackup(from: backup, to: manager)
         }
@@ -869,7 +907,7 @@ class BackupManager {
         }
 
         // **round-10 review I2**：restore 路径 force-clear 了老备份的 stale displayThumbnail
-        //（见 line ~615 effectiveProvided=true + effectiveDisplay=nil），但**不会**自动让
+        //（见本方法里构造 entries 处的 effectiveProvided=true + effectiveDisplay=nil），但**不会**自动让
         // 迁移协调器再扫一遍 —— 协调器只在 scenePhase .active transition 时 start。restore
         // 是在前台 .active 状态下触发的，**不会**触发新 transition。
         // 如果协调器已经跑完 + isRunning=false → restore 后清空的 displayThumbnail 要等下次
@@ -898,14 +936,24 @@ class BackupManager {
 
     private func cleanupOldBackups() {
         let backups = getBackupList()
+        guard backups.count > maxBackupCount else { return }
 
-        if backups.count > maxBackupCount {
-            let toDelete = backups.suffix(from: maxBackupCount)
-            for backup in toDelete {
-                _ = deleteBackup(backup)
+        // 上次恢复没跑完时，日志指向的那份归档是**唯一能把库修回去的材料**，
+        // 轮转不许碰它 —— 删掉它，用户就永远停在半恢复状态了。
+        let protectedPath = RestoreJournal.residual()
+            .map { URL(fileURLWithPath: $0.archivePath).standardizedFileURL }
+
+        var deleted = 0
+        for backup in backups.suffix(from: maxBackupCount) {
+            if let protectedPath, backup.fileURL.standardizedFileURL == protectedPath {
+                AppLogger.shared.warning("BackupManager", "cleanup_skipped_restore_source", metadata: [
+                    "name": backup.fileName
+                ])
+                continue
             }
-            print("[BackupManager] 清理了 \(toDelete.count) 个旧备份")
+            if deleteBackup(backup) { deleted += 1 }
         }
+        print("[BackupManager] 清理了 \(deleted) 个旧备份")
     }
 
     // MARK: - 错误类型

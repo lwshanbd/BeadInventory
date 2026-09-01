@@ -6,11 +6,10 @@
 //
 //  ## 它取代的是什么
 //
-//  旧的每周自动备份把整库编成一个巨型 JSON,图片走 base64 塞在里面。实测(Release 构建、
-//  真实 669 项目库):
+//  旧的每周自动备份把整库编成一个巨型 JSON,图片走 base64 塞在里面:
 //
-//      388 MB 原始 blob → 518 MB base64 字符串**同时驻留** → JSONSerialization 再物化一份
-//      → 落盘 548 MB;主线程阻塞 3.14 秒
+//      每张图的 base64 **同时驻留**,再由 JSONSerialization 物化一份完整副本,
+//      峰值随项目数线性增长;3244 项目的真机上主线程就此停摆并被看门狗杀掉
 //
 //  两个独立的病灶:
 //    1. **base64 的 +33% 是白付的** —— 图片本来就是二进制,没有任何理由编成文本;
@@ -21,7 +20,8 @@
 //
 //  **峰值内存受"单个项目的 blob 总量"约束,与项目总数无关。**
 //  注意不是"单张最大图" —— 写出时 `blobs(for:)` 会一次取回同一项目的全部 blob
-//  (逐记录一致所必需),恢复时也是先读四个再写;理论上界是 5 × `maxBlobBytes`。
+//  (逐记录一致所必需),恢复时也是先读全部再写;恢复侧的理论上界是
+//  blob 种类数 × `maxBlobBytes`(写出侧没有这个上界 —— blob 直接来自 store)。
 //  真正被消掉的是"随项目总数线性增长"这个 F1 形状,而不是"恒为一张图"。
 //  早期注释写成"峰值 = 单张最大图"是不准确的,已更正。
 //
@@ -35,8 +35,7 @@
 //        blobs/<uuid>.grid
 //        blobs/<uuid>.parts
 //
-//  `patternGrid` 也进了归档 —— 旧 JSON 格式一直漏着它(`BackupManager` 源码里自注
-//  「S4 follow-up:把 patternGrid 加进备份导出 JSON」),恢复后用户的网格标定会丢。
+//  `patternGrid` 也进了归档 —— 旧 JSON 格式一直漏着它,恢复后用户的网格标定会丢。
 //
 //  ## 原子提交
 //
@@ -453,7 +452,7 @@ enum BackupArchiveWriter {
                 continue
             }
             // 用 attributesOfItem 而非 resourceValues —— 后者按 URL 实例缓存
-            //（这个坑在 BackupTransfer.requireRegularFile 里已经踩过一次）。
+            //（只匹配后缀不看类型的话，一个名字对得上的普通文件会被当成半成品目录处理）。
             if let attrs = try? fm.attributesOfItem(atPath: url.path),
                let modified = attrs[.modificationDate] as? Date,
                Date().timeIntervalSince(modified) < staleThreshold {
@@ -492,7 +491,7 @@ enum BackupArchiveWriter {
 
     /// 写一个二进制条目并返回其引用(含 sha256)。
     ///
-    /// `data` 在本函数返回后即无引用 —— 调用方也不持有,所以峰值恒为单张。
+    /// 本函数自身不额外持有 `data`；整体峰值见文件头（调用方在写出期间持有该项目的全部 blob）。
     private static func writeBlob(
         _ data: Data, name: String, in blobsURL: URL, root: URL
     ) throws -> ArchivedBlobRef {
@@ -546,8 +545,16 @@ enum BackupArchiveReader {
     ///
     /// 原来直接 `Data(contentsOf:)` 整个读进来 —— 一个几 GB 的 manifest 就能在校验开始
     /// 之前把进程干掉。**先看文件大小再决定读不读**,与单条 blob 同理。
-    /// 32 MB 对一个只含 metadata 的 JSON 是极宽的余量(实测 669 项目约 1 MB)。
+    /// 32 MB 对一个只含 metadata 的 JSON 是极宽的余量(几千个项目也只有 MB 量级)。
     static let maxManifestBytes: Int64 = 32 * 1024 * 1024
+
+    /// 本版本**能读**的最低格式版本。
+    ///
+    /// **升 `currentFormatVersion` 时不要跟着动它。** 两者曾经是同一个常量，
+    /// 那意味着把版本号提到 2 的那一次发版，用户盘上每一份 v1 归档会立刻全部变成
+    /// "格式版本高于当前版本，无法读取"（文案还是反的）—— 一次发版就毁掉全部历史备份，
+    /// 而备份的全部意义就是历史那份还在。
+    static let minimumReadableFormatVersion = 1
 
     /// 条目数与总量上限。防的是"每条都不超限、但条数无限"这种绕过方式。
     static let maxProjects = 100_000
@@ -559,6 +566,20 @@ enum BackupArchiveReader {
         let root: URL
         let totalBlobBytes: Int64
         let blobCount: Int
+
+        /// **刻意收成 `fileprivate`。**
+        ///
+        /// 这个类型存在的唯一理由是当"已校验"的凭证：`apply` 只收 `ValidationReport`
+        /// 而不是 URL，传不进来一份没验过的归档。而全 `let` 属性 struct 的合成
+        /// memberwise init 是 internal —— 单模块里谁都能凭空造一个喂进去，
+        /// 凭证就退化成了参数包，那条不变量重新变成靠纪律维持。
+        /// 唯一的构造点是 `validate(archiveAt:)`，与它同文件。
+        fileprivate init(manifest: BackupArchiveManifest, root: URL, totalBlobBytes: Int64, blobCount: Int) {
+            self.manifest = manifest
+            self.root = root
+            self.totalBlobBytes = totalBlobBytes
+            self.blobCount = blobCount
+        }
     }
 
     enum ValidationError: Error, CustomStringConvertible {
@@ -645,9 +666,12 @@ enum BackupArchiveReader {
             throw ValidationError.manifestUndecodable("\(error)")
         }
 
-        // **精确匹配，不是 `<=`。** 原来写 `<= current` 等于放行 0 和负数版本 ——
-        // 只有 v1 存在，任何别的值都说明这不是我们写出来的东西，不该"尽力而为"解析。
-        guard manifest.formatVersion == BackupArchiveWriter.currentFormatVersion else {
+        // **闭区间，不是 `<=`，也不是相等。**
+        // 写 `<= current` 等于放行 0 和负数版本；写 `== current` 则会在
+        // `currentFormatVersion` 升到 2 的那天让盘上所有 v1 归档变成不可读
+        // （见 `minimumReadableFormatVersion`）。
+        let readable = minimumReadableFormatVersion...BackupArchiveWriter.currentFormatVersion
+        guard readable.contains(manifest.formatVersion) else {
             throw ValidationError.unsupportedFormatVersion(manifest.formatVersion)
         }
 
@@ -912,7 +936,9 @@ extension BackupArchiveReader {
     ///
     /// 只覆盖 `apply` 会写的那六个字段 —— 多存无益，少存就会留下不一致。
     /// 这些都是值类型数组/可选值，拷贝是 O(条目数) 的指针搬运，不含任何图片字节
-    /// （`ProjectRecord` 恒不带 blob）。669 项目实测量级与一次 metadata 快照相同。
+    /// （`ProjectRecord` 在 `apply` 的调用时序下只含 metadata —— 这是时序保证，不是类型保证：
+    /// `ProjectRecord` 本身是有 blob 字段的，legacy 恢复路径就会临时塞带图的进去。
+    /// 别在别的时序下复用本类型，否则会拷进几百 MB）。
     struct InMemorySnapshot {
         private let brands: [Brand]
         private let brandStocks: [BrandStock]
@@ -948,7 +974,7 @@ extension BackupArchiveReader {
     /// 图片**逐条**读取写入:`readBlob` 一次一个。与写出侧对称,受"单个项目的 blob 总量"
     /// 约束(本方法会先把一个项目的全部 blob 读出来再写),而不是"恒为一张图"。**不要**改成先收集成数组再一次性交给
     /// `restoreProjectBlobsFromBackup` —— 那个签名一次收全部条目,正是写出器刚修掉的
-    /// OOM 形状(388 MB 图会一次性全进内存)。
+    /// OOM 形状(整库的图会一次性全进内存)。
     @MainActor
     static func apply(
         _ report: ValidationReport,
@@ -985,7 +1011,13 @@ extension BackupArchiveReader {
         // 所以失败路径必须**同步**把内存还原成它进来时的样子，一个字段都不差。
         let rollback = InMemorySnapshot(of: manager)
 
-        // ① metadata 整体替换（语义就是"替换全部数据"，不是合并）
+        // ① metadata 替换（语义是"替换全部数据"，不是合并）。
+        //
+        // **已知偏差（follow-up）**：这里赋值后走的是 `saveDataReportingOutcome()` 的
+        // 常规增量保存路径，它对"备份里没有、store 里有"的品牌不会删除。也就是说
+        // 恢复后可能残留空壳品牌，与确认弹窗里"替换当前所有数据"的措辞不完全一致。
+        // 修它需要一条专用的 restore metadata 事务（按 manifest 精确增删改），
+        // 不复用 CloudKit 增量合并逻辑 —— 改动面大，不放在这次崩溃修复里。
         manager.brands = m.brands.map {
             Brand(id: $0.id, name: $0.name, sortOrder: $0.sortOrder, createdAt: $0.createdAt,
                   lowStockThreshold: $0.lowStockThreshold,
@@ -1065,6 +1097,10 @@ extension BackupArchiveReader {
             }
 
             // 单条调用 —— 见方法注释里关于 OOM 形状的说明。
+            //
+            // `refreshMetadata: false`：那个刷新会起一个全表扫描，每条都刷的话
+            // N 个项目 = N 次并发全库扫描 + N 次 revision bump（每 bump 一次屏幕上
+            // 所有 row 重取图）。循环结束后统一刷一次，见下方。
             let result = manager.restoreProjectBlobsFromBackup([(
                 id: p.id,
                 thumbnail: thumbnail,
@@ -1079,7 +1115,7 @@ extension BackupArchiveReader {
                 partsSheetProvided: true,
                 displayThumbnail: display,
                 displayThumbnailProvided: true
-            )])
+            )], refreshMetadata: false)
 
             // **返回值必须检查。** 原来这里是 `_ =` —— 写失败被静默吞掉，
             // 结果是"部分 blob 没写进去"的库照样被标成恢复完成。
@@ -1090,6 +1126,10 @@ extension BackupArchiveReader {
 
             onProgress(index + 1, total)
         }
+
+        // 循环里逐条写时刻意跳过了元数据刷新（见上），这里统一补一次：重建四个 ID 集合
+        // 并 bump 一次 revision，让屏幕上的视图拿到恢复后的图。
+        manager.refreshProjectBlobMetadata()
 
         // 只有走到这里才算完成 —— 日志此时才清除。
         RestoreJournal.finish()

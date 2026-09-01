@@ -213,6 +213,9 @@ struct BackupRestoreView: View {
             do {
                 try await BackupManager.shared.restoreBackup(from: backup, to: inventoryManager)
                 isRestoring = false
+                // 日志已被 `RestoreJournal.finish()` 删掉，这里同步刷新 @State，
+                // 否则刚成功恢复完，屏幕顶上还挂着红色的"上次恢复未完成"。
+                restoreResidual = RestoreJournal.residual()
                 showingSuccess = true
             } catch {
                 isRestoring = false
@@ -234,7 +237,12 @@ struct BackupRestoreView: View {
     /// 用 `"\(error)"` 而非 `localizedDescription` —— 这些错误只符合
     /// `CustomStringConvertible`，后者会产出 "…error 3." 之类的系统乱码。
     private func presentRestoreFailure(_ error: Error) {
-        restoreDidMutateStore = (error as? BackupArchiveReader.RestoreError)?.didMutateStore ?? false
+        // 兜底看**日志残留**而不是假定"库没被动过"。`retryResidualRestore` 只在库已经
+        // 半恢复时才可能被点到，而它第一步 `validate()` 抛的是 `ValidationError` ——
+        // 兜成 false 的话标题会变成「恢复失败」，按本文件自己的口径那等于告诉用户
+        // "数据没被动、可以放心重试"，与事实相反。
+        restoreDidMutateStore = (error as? BackupArchiveReader.RestoreError)?.didMutateStore
+            ?? (RestoreJournal.residual() != nil)
         restoreError = "\(error)"
         restoreResidual = RestoreJournal.residual()
         showingError = true

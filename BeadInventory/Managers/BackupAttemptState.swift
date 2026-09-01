@@ -7,14 +7,15 @@
 //  ## 它修的是什么
 //
 //  原实现只有一个「本周已备份」时间戳,而且写在**写盘成功之后**
-//  (`BackupManager.performBackup` 的 `do` 块内)。后果是:
+//  (`BackupManager` 的备份写出 `do` 块内)。后果是:
 //
 //      备份途中被杀 → 标记从未写入 → hasBackedUpThisWeek() 下次仍为 false
 //        → 下次启动原样重来 → 再被杀 → …
 //
-//  这是一个**结构上无法自行退出的循环**。而备份恰恰是启动窗口里最重的一段
-//  (主线程累积全库图片的 base64,实测 388 MB 图片 → 518 MB 字符串同时驻留,
-//  主线程阻塞 3.14 秒),于是"最容易被杀的那段"和"被杀就无限重试的那段"是同一段。
+//  这是一个**结构上无法自行退出的循环**。而备份**曾经**是启动窗口里最重的一段
+//  (主线程累积全库图片的 base64),于是"最容易被杀的那段"和"被杀就无限重试的那段"
+//  是同一段。改成流式写出后峰值已经平掉,但被 jetsam / 看门狗打断的可能性依然存在,
+//  所以这个状态机保留。
 //
 //  ## 为什么不能只用一个布尔值 / 只把标记提前写
 //
@@ -36,8 +37,8 @@
 //
 //  纯文件操作,不依赖 SwiftData / InventoryManager。原子写 + `synchronize()`。
 //
-//  注:这是本仓库第三处「原子写 + fsync 小 JSON」(另两处是 `LaunchDiagnostics` 与
-//  `F1BenchmarkRecorder`)。等这批工作落定后值得抽一个共用小工具;现在不动
+//  注:本仓库另一处「原子写 + fsync 小 JSON」是 `RestoreJournal`。两处稳定下来之后
+//  值得抽一个共用小工具;现在不动
 //  已验证过的那两处,避免为重构引入回归。
 
 import Foundation
@@ -96,9 +97,34 @@ enum BackupAttemptStore {
         directoryURL?.appendingPathComponent("attempt.json")
     }
 
+    /// 见 `consumeResidualIfNeeded`。进程级一次性闸。
+    @MainActor private static var didConsumeResidualThisLaunch = false
+
     static func load() -> BackupState {
-        guard let url = fileURL,
-              let data = try? Data(contentsOf: url) else { return BackupState() }
+        guard let url = fileURL else {
+            AppLogger.shared.error("BackupState", "state_location_unavailable")
+            return interruptedFallback(reason: "noLocation")
+        }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            // 首次运行,正常。
+            //
+            // **两个 code 都要认**：`Data(contentsOf:)` 对不存在的文件抛的是
+            // `fileReadNoSuchFile`(260) 而不是 `fileNoSuchFile`(4)。只认后者的话，
+            // 每一次全新安装都会走进下面的"读不出来"分支、被抑制掉当周备份 ——
+            // 模拟器上第一次跑就撞到了。
+            return BackupState()
+        } catch {
+            // **读失败不能和"文件不存在"压成同一个结果。** 前者（权限 / IO / 数据保护
+            // 未解锁）返回空状态的话,残留就看不见了 —— 而这个文件存在的唯一理由
+            // 就是让残留可见。按被中断处理。
+            AppLogger.shared.error("BackupState", "state_unreadable_treating_as_interrupted", metadata: [
+                "error": "\(error)"
+            ])
+            return interruptedFallback(reason: "unreadable")
+        }
         do {
             return try JSONDecoder().decode(BackupState.self, from: data)
         } catch {
@@ -107,18 +133,36 @@ enum BackupAttemptStore {
             AppLogger.shared.warning("BackupState", "state_undecodable_treating_as_interrupted", metadata: [
                 "bytes": data.count, "error": "\(error)"
             ])
-            return BackupState(inFlight: nil, suppressedWeekKey: weekKey(), lastDeferredReason: "undecodable")
+            return interruptedFallback(reason: "undecodable")
         }
     }
 
-    private static func save(_ state: BackupState) {
-        guard let dir = directoryURL, let url = fileURL else { return }
+    /// 状态读不出来时的兜底：按"上次被中断"处理,抑制当周。
+    ///
+    /// **必须把兜底状态写回盘**。否则损坏的文件永远不会被修复,而 `load()` 每次都会
+    /// 用**当时**的 `weekKey()` 重新合成一份抑制 —— 下一周再来一次,抑制就从"单周"
+    /// 变成了永久,自动备份再也不会跑,而横幅还在说"上次自动备份被中断"。
+    /// 写回之后,这一周过去抑制就自然失效。
+    private static func interruptedFallback(reason: String) -> BackupState {
+        let repaired = BackupState(inFlight: nil, suppressedWeekKey: weekKey(), lastDeferredReason: reason)
+        save(repaired)
+        return repaired
+    }
+
+    /// - Returns: 是否确实落盘。**调用方在"哨兵必须先在盘上"的场景要检查它** ——
+    ///   见 `beginAttempt`。
+    @discardableResult
+    private static func save(_ state: BackupState) -> Bool {
+        guard let dir = directoryURL, let url = fileURL else {
+            AppLogger.shared.error("BackupState", "state_location_unavailable_on_save")
+            return false
+        }
         if !FileManager.default.fileExists(atPath: dir.path) {
             do {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             } catch {
                 AppLogger.shared.error("BackupState", "create_directory_failed", metadata: ["error": "\(error)"])
-                return
+                return false
             }
         }
         do {
@@ -130,8 +174,10 @@ enum BackupAttemptStore {
                 try? handle.synchronize()
                 try? handle.close()
             }
+            return true
         } catch {
             AppLogger.shared.error("BackupState", "persist_failed", metadata: ["error": "\(error)"])
+            return false
         }
     }
 
@@ -142,8 +188,17 @@ enum BackupAttemptStore {
     /// 读到残留 = 上一次尝试没有正常收尾 = 进程被中断 → 抑制该记录所属的那一周。
     ///
     /// - Returns: 本次是否发现并处理了残留(供调用方记日志 / 弹提示)。
+    /// `@MainActor`：本方法带一个进程级一次性闸（见下），靠主 actor 串行化，
+    /// 不另引入锁。唯一调用方 `checkAndPerformWeeklyBackupIfNeeded` 本来就在主 actor 上。
+    @MainActor
     @discardableResult
     static func consumeResidualIfNeeded() -> Bool {
+        // **本进程只消费一次。** 根视图 onAppear 可能重入,若此时本进程自己的备份
+        // 正在写(inFlight 是我们刚写的),第二次调用会把它当成"上次被杀"的残留,
+        // 于是错误地抑制整整一周。残留判定只对"启动时盘上已有的记录"成立。
+        guard !didConsumeResidualThisLaunch else { return false }
+        didConsumeResidualThisLaunch = true
+
         var state = load()
         guard let residual = state.inFlight else { return false }
 
@@ -173,12 +228,18 @@ enum BackupAttemptStore {
     }
 
     /// 开工。**必须在真正开始生成备份内容之前调用。**
-    static func beginAttempt(week: String = weekKey(), phase: String = "start") {
+    ///
+    /// - Returns: 哨兵是否确实落盘。**落不下去调用方就该放弃本次备份** ——
+    ///   哨兵不在盘上,进程被杀后下次启动读不到残留,于是不抑制、原样重来,
+    ///   正是本文件要打断的那个循环。而磁盘将满既是哨兵写失败的原因、
+    ///   也是备份被杀的原因,两者高度相关。放弃一次备份 ≪ 无限崩溃循环。
+    @discardableResult
+    static func beginAttempt(week: String = weekKey(), phase: String = "start") -> Bool {
         var state = load()
         state.inFlight = BackupAttemptRecord(
             attemptID: UUID(), weekKey: week, startedAt: Date(), phase: phase
         )
-        save(state)
+        return save(state)
     }
 
     static func updatePhase(_ phase: String) {

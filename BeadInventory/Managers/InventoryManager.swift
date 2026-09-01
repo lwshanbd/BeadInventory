@@ -1138,7 +1138,7 @@ class InventoryManager: ObservableObject {
     //      `ColorSystem(rawValue: colorSystemRaw ?? "") ?? .mard`，nil 读出来本来就是
     //      `.mard`。迁移做的事是把读取时已经生效的默认值持久化一遍，语义零变化。
     //   2. **代价与收益完全不成比例** —— 它是裸 `FetchDescriptor<SDProjectRecord>()`
-    //      （不带 `propertiesToFetch`），fetch 阶段就把全表四个 blob 列物化进内存；
+    //      （不带 `propertiesToFetch`），fetch 阶段就把全表的 blob 列物化进内存；
     //      随后逐行赋值 + 单次 `context.save()`，而 SQLite 改任何一列都要重写整条记录
     //      （含 inline 的图片 overflow page）。等于为了一个默认值把整个图库重写一遍，
     //      并把同样体量推给 CloudKit。
@@ -2403,17 +2403,6 @@ class InventoryManager: ObservableObject {
     func saveData() {
         _ = saveDataReportingOutcome()
     }
-
-    #if DEBUG
-    /// 只给测试用：把管理器标成"初始加载已完成"，让 `saveData` 走到真正的落盘分支。
-    ///
-    /// 没有它就无法测归档恢复的成功路径 —— 单测里的 `InventoryManager` 从不跑
-    /// `performInitialLoadIfNeeded`，`isDataLoaded` 恒为 false，每次保存都在
-    /// `.notLoaded` 上短路。DEBUG-only，不进生产二进制。
-    func markDataLoadedForTesting() {
-        isDataLoaded = true
-    }
-    #endif
 
     /// 与 `saveData()` 同一实现，但**报告结果**。
     ///
@@ -4343,7 +4332,7 @@ class InventoryManager: ObservableObject {
     /// `UIImage(data:)` 的真正解码 / 上屏由 UIKit 推迟到 draw time。
     /// **视图侧调用方**走 `.task { }` 的好处是：(1) `await` 让出本帧调度窗口，让首屏 commit
     /// 不在同一 runloop tick 里把 fetch 也吃掉；(2) Task 可取消，切走时不残留。
-    /// 周备份路径则是主线程同步循环调用（BackupManager.createBackupData），不在上述框架内。
+    /// 备份路径不走这里 —— 它用 `ProjectImageLoader.blobs(for:)`（后台 actor，单次 fetch）。
     /// 真正想"完全脱离主 actor"需要后台 ModelActor —— 留 follow-up。
     ///
     /// 错误处理：把 SwiftData 抛错和「真的没图」区分开。前者写日志返回 nil（避免静默吞错让
@@ -4845,6 +4834,11 @@ class InventoryManager: ObservableObject {
     /// 调用方应在循环结束后由本方法内部统一调一次 `refreshProjectBlobMetadata()` 重建
     /// 三个 ID 集合，避免逐条增量更新引入抖动。
     ///
+    /// **逐条调用本方法的调用方必须传 `refreshMetadata: false`，并在循环结束后自己调
+    /// 一次 `refreshProjectBlobMetadata()`。** 后者会起一个全表扫描；每条都刷的话，
+    /// N 个项目 = N 次并发全库扫描（每次带 2 秒 busy timeout），而主线程正在做 N 次
+    /// save 抢同一个库 —— 库越大的用户，恢复越可能把 App 拖垮。
+    ///
     /// - Returns: `RestoreBlobsResult` — `succeeded` 是成功写入的条目数，`failedIDs`
     ///   是 _setProjectBlobsDirectly 返回 false 的项目 ID 列表（context 缺失 / SD record
     ///   不存在 / save 抛错）。调用方应检查返回值；至少打印失败计数让备份 UI
@@ -4852,7 +4846,8 @@ class InventoryManager: ObservableObject {
     @MainActor
     @discardableResult
     func restoreProjectBlobsFromBackup(
-        _ entries: [(id: UUID, thumbnail: Data?, finishedImage: Data?, patternGridData: Data?, patternGridProvided: Bool, partsSheetData: Data?, partsSheetProvided: Bool, displayThumbnail: Data?, displayThumbnailProvided: Bool)]
+        _ entries: [(id: UUID, thumbnail: Data?, finishedImage: Data?, patternGridData: Data?, patternGridProvided: Bool, partsSheetData: Data?, partsSheetProvided: Bool, displayThumbnail: Data?, displayThumbnailProvided: Bool)],
+        refreshMetadata: Bool = true
     ) -> RestoreBlobsResult {
         var failedIDs: [UUID] = []
         for entry in entries {
@@ -4875,7 +4870,9 @@ class InventoryManager: ObservableObject {
         // 内部 _setProjectBlobsDirectly 已经在增量更新四个 Set，但整批操作后
         // 跑一次 refreshProjectBlobMetadata 更稳：能纠正任何中途 catch 漏更的状态，
         // 同时再 bump 一次 revision 让所有视图 .task(id:) 重取。
-        refreshProjectBlobMetadata()
+        if refreshMetadata {
+            refreshProjectBlobMetadata()
+        }
         if !failedIDs.isEmpty {
             logError("restore_blobs_partial_failure", metadata: [
                 "totalCount": entries.count,
