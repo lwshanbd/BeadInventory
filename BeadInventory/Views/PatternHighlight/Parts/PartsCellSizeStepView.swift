@@ -31,6 +31,12 @@
 //  更早还试过「每个零件拿自己的 bbox 均分」。那个是错的：bbox 带一圈抗锯齿毛边，
 //  每个零件毛边多少不一样，均分出来的格线跟豆子缝没有关系。要按图上的周期信号去找。
 //
+//  **正在看的那一块，格线位置只认 `frameOrigin` 一个来源。** 屏幕上画的那片格线是从它
+//  铺出来的，写回去的也必须是同一张。`phase(of:)`（上一张网格的左上角）只能用在不在
+//  屏幕上的那些零件身上 —— 它跟 `frameOrigin` 差着整数个「当时的」格子，格距一改，
+//  这个前提当场作废，两张网格能差出小半格。同理，`refitAllParts` 也不重找当前这一块：
+//  用户刚拿眼睛验过的东西，不该在他按下一个按钮时被估计器改掉。
+//
 //  ## 两个状态，一次只看一样东西
 //
 //    看网格   默认。整片网格铺在零件上，用来判断对没对齐；方向键整体推格线。
@@ -101,8 +107,6 @@ struct PartsCellSizeStepView: View {
     @State private var estimating = true
     /// 是不是正在重选一格的大小。true 时只显示黄框，不显示网格线。
     @State private var picking = false
-    /// 上一次「按当前格距给所有零件定位」用的是多大的格子。
-    @State private var alignedAtCellWidth: Double?
     /// 正要删掉的那个零件。删一个零件会连带丢掉它已经判好的颜色和摆好的位置，
     /// 而这一屏是一下就能点到的，所以问一句。
     @State private var deletingPart: BeadPart?
@@ -831,9 +835,6 @@ struct PartsCellSizeStepView: View {
                 self.calibration = fixed
             }
             syncFrameToLattice()
-            // 存下来的那份相位就是按这个格距定的（甚至可能是用户手推过的），
-            // 不记一笔的话第一次按「看下一个」会被当成「格距变了」，把它自动推回去。
-            alignedAtCellWidth = self.calibration?.cellWidth
             return
         }
         let source = work
@@ -845,8 +846,6 @@ struct PartsCellSizeStepView: View {
         // 宁可给个明显不对的初值让用户去拉，也不要空着让他面对一张没有网格线的图。
         calibration = measured ?? fallbackCalibration()
         estimating = false
-        // 刚量出来的相位就是配这个格距的，不用再重对一遍
-        alignedAtCellWidth = calibration?.cellWidth
         syncFrameToLattice()
         writeBack()
         // 第一次量整张图纸时，`loadSample` 里那一次对焦跑在 calibration 还没算出来的时候，
@@ -928,6 +927,17 @@ struct PartsCellSizeStepView: View {
     private func loadSample() async {
         guard let sample else { return }
         resetView()
+        // **先把 `frameOrigin` 挪到新零件上，别等裁完图。**
+        //
+        // `sample` 是算出来的，`sampleIndex` 一改它当场就是新零件了；而 `frameOrigin`
+        // 原来要等下面那次裁图 await 完才跟上。这中间的几百毫秒里 `frameOrigin` 属于
+        // **上一块**零件，用户这时候点一下加减号，`writeBack` 就拿上一块的格线起点
+        // 写到新零件头上（上一块要是自己锁着格距的，那个起点跟全局压根不是一套）。
+        // 写完 `syncFrameToLattice` 又照着这个脏值把屏幕画出来，屏幕和存档「一致」了，
+        // 用户看不出任何异常。
+        //
+        // 这一步只用 `sample.bounds` 和格距，跟图裁没裁好没关系，所以放前面没有代价。
+        syncFrameToLattice()
         let source = work
         // 四周留一点余量，让用户看得见零件外沿那一圈是不是也被网格线切到了
         let padded = sample.bounds
@@ -980,7 +990,13 @@ struct PartsCellSizeStepView: View {
     ///
     /// 这不改变网格本身 —— 格线是无限铺开的，挑哪一格显示都一样。挑中间那格是因为
     /// 左上角那一格多半压在零件外面的空白上，框里一片粉，看不出格子边界对没对齐。
-    private func syncFrameToLattice() {
+    ///
+    /// - Parameter keepingPartPhase: 沿不沿用这个零件已有的格线位置。默认沿用 ——
+    ///   翻回一个对过的零件，看到的必须还是他对好的那张。
+    ///   「自动对齐」传 false：那一下刚在整张图上重新量出一条格线，沿用旧的等于把
+    ///   量出来的结果原样扔掉，而用户按那个按钮就是要这一块被重新弄好
+    ///   （屏幕上纹丝不动，他只会以为按钮坏了）。
+    private func syncFrameToLattice(keepingPartPhase: Bool = true) {
         guard let sample else { return }
         // 确认过的零件整套（格距 + 格线）都用它自己的；否则拿全局格距，
         // 格线位置能用它自己的就用它自己的，没有才从全局那份推一格出来当起点。
@@ -993,7 +1009,7 @@ struct PartsCellSizeStepView: View {
         } else {
             guard let calibration, calibration.isUsable else { return }
             base = calibration
-            if let rect = sample.gridRect {
+            if keepingPartPhase, let rect = sample.gridRect {
                 base.originX = Double(rect.minX)
                 base.originY = Double(rect.minY)
             }
@@ -1008,14 +1024,13 @@ struct PartsCellSizeStepView: View {
     /// 从同一张全局网格推出来的（`PartsGrid` 把 bounds 吸到全局格线上），格距一变，
     /// 那批格线该落在哪儿就得重算。不重算的话用户看到的是「我明明调对了，下一个还是偏」。
     ///
-    /// 只在**格子大小**变过时才跑：
-    /// - 格距没变就没什么可重算的，每按一次「看下一个」都重跑一遍纯属让人等；
-    /// - 而且这里只重找相位。用户拿方向键手推过格线的话，再跑一次自动定相位会把他
-    ///   刚推的推回去 —— 大小没变时绝不能碰。
-    /// 拿当前格距，把**每个零件**各自的格线重新找一遍。
-    ///
     /// 只找相位，不动格距 —— 格距是用户定的。某个零件找不出来（太小、装不下四格，
     /// 或者图上没有周期信号）就保持它现在的格线不动，总好过跳到一个瞎猜的地方。
+    ///
+    /// **正在看的那一块不重找。** 用户刚在它身上把格线调到位、眼睛验过了，这一下要是
+    /// 拿估计器再量一遍，他按「跳过并完成」看到的就是「我明明调对了，一按就跑了」——
+    /// 跟这一屏原来那个「只调大小不算数」是同一种难受。屏幕上那块以他看到的为准，
+    /// 跟 `writeBack` 一个规矩。
     private func refitAllParts() async {
         guard let calibration, calibration.isUsable else { return }
         let source = work
@@ -1038,11 +1053,12 @@ struct PartsCellSizeStepView: View {
         // 那是不够的：applyGrid 会拿当前格距重算 rows/cols，格距一改，
         // 用户对好的零件行列数当场变掉，判过色的连 cells 都跟着错位。相位没被推走，
         // 但网格已经不是他确认的那张了。锁住的就整个别碰。
+        let currentId = sample?.id
         for index in parts.indices where !isLocked(parts[index]) {
             let id = parts[index].id
+            guard id != currentId else { continue }
             applyGrid(to: index, phase: fitted[id] ?? phase(of: parts[index]), calibration: calibration)
         }
-        alignedAtCellWidth = calibration.cellWidth
         syncFrameToLattice()
     }
 
@@ -1107,9 +1123,8 @@ struct PartsCellSizeStepView: View {
             self.calibration?.originX = Double(fitted.x)
             self.calibration?.originY = Double(fitted.y)
         }
-        // 这一下本来就是「格距和相位一起重来」，重对过了
-        alignedAtCellWidth = self.calibration?.cellWidth
-        syncFrameToLattice()
+        // 刚量出来的那条格线要落到当前这一块上，别被它自己的旧格线顶掉 —— 见参数注释。
+        syncFrameToLattice(keepingPartPhase: false)
         writeBack()
     }
 
@@ -1129,20 +1144,32 @@ struct PartsCellSizeStepView: View {
         //
         // 底下那个 `writeBackCurrentPart` 不是把这个例外放回来：它只在当前零件**没锁**时
         // 走得到，改的是「拿哪个点当格线起点」，不是「要不要碰锁住的零件」。
+        //
+        // 认循环开始时的那个 id，别在循环里反复读 `sample` —— 那是个每次都要走一遍
+        // `parts` binding 的计算属性，而「当前是哪一个」这件事在这一轮里是定死的。
+        let currentId = sample?.id
         for index in parts.indices where !isLocked(parts[index]) {
-            // **正在看的这个是例外：它的格线以屏幕上那个黄框（`frameOrigin`）为准。**
-            //
-            // `phase(of:)` 拿的是它上一张网格的左上角，那个点跟黄框差着整数个**旧**格子。
-            // 格距一改，「差整数格」当场就不成立了 —— 从旧左上角铺出来的网格，
-            // 和用户正盯着的那张（从黄框铺出来的）能差出小半格。
-            //
-            // 而这个差没有任何一条路会自己补上：推方向键（`writeBackCurrentPart`）、
-            // 翻到别的零件再回来（`refit` + `syncFrameToLattice`）都按黄框重来一遍，
-            // 光调格子大小却不会。于是「屏幕上明明对齐了，存下来的是偏的」——
-            // 判完色回来重对格子、只动了大小的那一次，用户看到的就是白改。
-            if parts[index].id == sample?.id {
+            let id = parts[index].id
+            if id == currentId {
+                // **正在看的这个走 `frameOrigin`，不走 `phase(of:)`。**
+                //
+                // `phase(of:)` 拿的是它上一张网格的左上角（还没有网格的话退回全局那份），
+                // 那个点跟屏幕上这片格线的起点差着整数个**旧**格子。格距一改，
+                // 「差整数格」当场就不成立了 —— 从旧左上角铺出来的网格，和用户正盯着的
+                // 那张能差出小半格。
+                //
+                // 而光调格子大小是唯一不会把这个差补回来的操作：推方向键直接拿
+                // `frameOrigin` 当起点重铺（`writeBackCurrentPart`）；翻到别的零件是
+                // 反过来 —— `refit` 重新量一个相位铺好网格，再由 `syncFrameToLattice`
+                // 把 `frameOrigin` 吸到这张新网格上（锁住的零件跳过 `refit`，靠
+                // `ownCalibration` 自洽）。两条路走完屏幕和存档总是同一张网格，
+                // 只有调大小这一下会岔开：「屏幕上明明对齐了，存下来的是偏的」。
                 writeBackCurrentPart()
-            } else {
+            } else if id != focusPartId {
+                // 从核对页指名回来重对的那一块不碰。它跟别的零件不一样：离开这一屏时
+                // `finishRegrid` 会把它锁上，`refitAllParts` 于是跳过它 —— 没有人再给它
+                // 重新量相位。这里要是按旧左上角给它换个格距，它带着一张漂了小半格的网格
+                // 直接进重判，而用户以为自己对齐的是另一张。保持原样，等他翻回去自己调。
                 applyGrid(to: index, phase: phase(of: parts[index]), calibration: calibration)
             }
         }
