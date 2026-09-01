@@ -1126,8 +1126,25 @@ struct PartsCellSizeStepView: View {
         // 不动等于按了没反应」。那个理由现在由 `setCellPitch` 承担了 —— 在确认过的零件上
         // 调格距只改它自己、根本不碰全局这个数，所以这个例外既用不上，又会在别的路径
         // （比如自动对齐改了全局格距）把用户对好的零件顺手推走。
+        //
+        // 底下那个 `writeBackCurrentPart` 不是把这个例外放回来：它只在当前零件**没锁**时
+        // 走得到，改的是「拿哪个点当格线起点」，不是「要不要碰锁住的零件」。
         for index in parts.indices where !isLocked(parts[index]) {
-            applyGrid(to: index, phase: phase(of: parts[index]), calibration: calibration)
+            // **正在看的这个是例外：它的格线以屏幕上那个黄框（`frameOrigin`）为准。**
+            //
+            // `phase(of:)` 拿的是它上一张网格的左上角，那个点跟黄框差着整数个**旧**格子。
+            // 格距一改，「差整数格」当场就不成立了 —— 从旧左上角铺出来的网格，
+            // 和用户正盯着的那张（从黄框铺出来的）能差出小半格。
+            //
+            // 而这个差没有任何一条路会自己补上：推方向键（`writeBackCurrentPart`）、
+            // 翻到别的零件再回来（`refit` + `syncFrameToLattice`）都按黄框重来一遍，
+            // 光调格子大小却不会。于是「屏幕上明明对齐了，存下来的是偏的」——
+            // 判完色回来重对格子、只动了大小的那一次，用户看到的就是白改。
+            if parts[index].id == sample?.id {
+                writeBackCurrentPart()
+            } else {
+                applyGrid(to: index, phase: phase(of: parts[index]), calibration: calibration)
+            }
         }
     }
 
