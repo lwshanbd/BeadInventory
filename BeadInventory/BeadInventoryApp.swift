@@ -236,6 +236,12 @@ struct BeadInventoryApp: App {
                     // App 启动时检查是否有待处理的共享图片
                     sharedImageManager.checkForPendingImage()
 
+                    // 清扫上次中断留下的半成品归档（`.beadbackup.partial`）。
+                    // 放后台队列：它要遍历目录、看文件属性，不该占启动的主线程。
+                    Task.detached(priority: .utility) {
+                        BackupManager.shared.sweepStaleBackupPartials()
+                    }
+
                     // 检查并执行每周自动备份
                     BackupManager.shared.checkAndPerformWeeklyBackupIfNeeded(inventoryManager: inventoryManager)
                     // 启动时检查 iCloud 状态
@@ -299,6 +305,9 @@ struct BeadInventoryApp: App {
                 // 注：协调器的 SwiftData I/O 全部在后台 ModelContext（build 180 watchdog 修复），
                 // 即使 stop() 时仍有一次 fetch/save 在飞行中，也不占主线程、不影响 5s suspend 应答。
                 ThumbnailMigrationCoordinator.shared.stop()
+                // 自动备份同样要停 —— 之前这里只停了迁移器，备份是 fire-and-forget，
+                // 一路跑到系统挂起。它正是最容易在切后台时被看门狗杀掉的那段。
+                BackupManager.shared.stop()
             case .inactive:
                 // .inactive 频繁出现（例如控制中心、系统弹窗），先取消待执行刷新；
                 // 若首次加载已完成，则补一次保守保存，降低系统在 .inactive 直接终止时的数据丢失风险。
@@ -310,6 +319,9 @@ struct BeadInventoryApp: App {
                 }
                 themeManager.flushPersistenceNow()
                 ThumbnailMigrationCoordinator.shared.stop()
+                // 自动备份同样要停 —— 之前这里只停了迁移器，备份是 fire-and-forget，
+                // 一路跑到系统挂起。它正是最容易在切后台时被看门狗杀掉的那段。
+                BackupManager.shared.stop()
             case .active:
                 print("[App] 应用恢复活跃状态")
                 if hasSeenInitialActivePhase {

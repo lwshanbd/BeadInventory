@@ -19,6 +19,14 @@ final class AppLogger {
     static let shared = AppLogger()
 
     private let queue = DispatchQueue(label: "com.beadinventory.logger", qos: .utility)
+    /// 标记「当前是否已经在 `queue` 上」。
+    ///
+    /// `flushNow()` 要同步等落盘,实现是 `queue.sync`。但 `queue` 是**普通串行队列** ——
+    /// 从队列自身再 `sync` 回去必然死锁。日志调用点遍布全工程(含 logger 自己的
+    /// 失败分支),不能假设调用方一定在队列外。所以用 specific key 认一下身份:
+    /// 已在队列上就直接调 `flushLocked()`,不再 `sync`。
+    private static let queueIdentityKey = DispatchSpecificKey<UInt8>()
+    private static let queueIdentityValue: UInt8 = 1
     private let formatter: ISO8601DateFormatter
 
     private var activeFileURL: URL?
@@ -38,6 +46,8 @@ final class AppLogger {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         self.formatter = formatter
+
+        queue.setSpecific(key: Self.queueIdentityKey, value: Self.queueIdentityValue)
 
         queue.async { [weak self] in
             guard let self else { return }
@@ -62,6 +72,37 @@ final class AppLogger {
             flushLocked()
             closeActiveFileLocked()
         }
+    }
+
+    /// 同步把缓冲刷到磁盘,并对文件做一次 `synchronize()`。
+    ///
+    /// **为什么需要它:** 常规写入是异步缓冲的(`maxBufferedBytes` 8KB / `flushDelay` 1.5s),
+    /// 启动阶段那几条关键面包屑在被看门狗或 jetsam 杀掉时**大概率还没落盘** ——
+    /// 崩得越早证据越少,这正是"实在定位不出原因"的结构性成因之一。
+    /// 关键节点(开库前后、阶段标记变更)后必须调本方法。
+    ///
+    /// **不要在高频路径上调** —— 它是同步的,且带一次 fsync。
+    ///
+    /// 关于 `synchronize()`:对「进程被 SIGKILL」这个主要威胁模型,普通写入其实已经够了
+    /// (字节进了内核页缓存,进程死亡不影响)。这里仍然 fsync 是为了覆盖掉电 / panic,
+    /// 代价在关键节点上可以接受。
+    func flushNow() {
+        // 已经在 queue 上就直接干活 —— 再 sync 回自己是死锁(见 queueIdentityKey)。
+        if DispatchQueue.getSpecific(key: Self.queueIdentityKey) == Self.queueIdentityValue {
+            flushLocked()
+            syncActiveFileLocked()
+            return
+        }
+        queue.sync {
+            flushLocked()
+            syncActiveFileLocked()
+        }
+    }
+
+    private func syncActiveFileLocked() {
+        guard let handle = activeHandle else { return }
+        // 失败不上报:logger 永远不该打断 App 流程,而且这里已经是尽力而为的最后一步。
+        try? handle.synchronize()
     }
 
     func debug(_ category: String, _ message: String, metadata: [String: Any] = [:]) {
