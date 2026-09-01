@@ -319,9 +319,16 @@ struct BeadInventoryApp: App {
                 }
                 themeManager.flushPersistenceNow()
                 ThumbnailMigrationCoordinator.shared.stop()
-                // 自动备份同样要停 —— 之前这里只停了迁移器，备份是 fire-and-forget，
-                // 一路跑到系统挂起。它正是最容易在切后台时被看门狗杀掉的那段。
-                BackupManager.shared.stop()
+                // **自动备份刻意不在这里停。**
+                //
+                // `.inactive` 不等于「即将挂起」—— 下拉控制中心、来一条通知横幅、弹一次
+                // Face ID 都会触发它，而 App 还在前台。备份是启动后 5 秒才开始的，
+                // 在这里取消的话，那段窗口里随便来一条通知就会把本周的备份掐掉，
+                // 而 `checkAndPerformWeeklyBackupIfNeeded` 只在 onAppear 调一次、不会重来 ——
+                // 用户那边的表现是「这周没有备份」，且界面上一个字都不说。
+                //
+                // 真正要防的是「跑到系统挂起被看门狗杀掉」，那条路径必然经过 `.background`
+                // （active → inactive → background），在那里停就够了。
             case .active:
                 print("[App] 应用恢复活跃状态")
                 if hasSeenInitialActivePhase {
