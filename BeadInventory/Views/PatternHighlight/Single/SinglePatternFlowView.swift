@@ -208,7 +208,11 @@ struct SinglePatternFlowView: View {
                                 },
                                 subjectLabel: "整张图纸",
                                 allowsDelete: false,
-                                regridCost: "判好的颜色会清掉，之后要再判一次。框和位置不动。"
+                                // 代价要说全：重对格子大小会把 cells 清空，于是所有「已完成」标记
+                                // 一并作废（见 pruneDoneColors(against:)）。只说「颜色会清掉」的话，
+                                // 用户重判完颜色发现色号都回来了、进度却从 8/12 变成 0/12，
+                                // 而他不知道是自己哪一下造成的 —— 那是他几个晚上的活。
+                                regridCost: "判好的颜色会清掉，之后要再判一次；标记过「已完成」的色号也会一并清掉。框和位置不动。"
                             )
                         case .baseColor:
                             PartsBaseColorStepView(
@@ -297,7 +301,9 @@ struct SinglePatternFlowView: View {
             case .confirmRecrop:
                 return Alert(
                     title: Text("换了范围，颜色要重判一遍"),
-                    message: Text("框住的范围变了，格子也就跟着变了。已经核对好的颜色会作废，要从量格子那一步重走。"),
+                    // 这条路最终会走到量格子屏重对格子大小，所以代价跟 `regridCost` 是同一份 ——
+                    // 两处必须一起说，不然用户在哪一屏点头都不算数。
+                    message: Text("框住的范围变了，格子也就跟着变了。已经核对好的颜色会作废，标记过「已完成」的色号也会一并清掉，要从量格子那一步重走。"),
                     primaryButton: .cancel(Text("取消")),
                     // 说了作废就真的作废。留着的话，用户要是没走完「判色」那一步就退出去，
                     // 存进库里的会是「新的格子范围 + 旧的那批颜色」—— 高亮出来整片错位，
@@ -326,7 +332,9 @@ struct SinglePatternFlowView: View {
             case .confirmReclassify:
                 return Alert(
                     title: Text("重新识别颜色？"),
-                    message: Text("会照现在的底色重看一遍每一格，你在核对页改过的色号全部作废，要重新核对一遍。只是想接着核对的话点「取消」，再点上面那个「返回核对颜色」。"),
+                    // 这条跟上面两条不一样：重判之后颗数没变的色号，勾是留着的
+                    // （`pruneDoneColors` 只删对不上的那些），所以话不能说成「全清」。
+                    message: Text("会照现在的底色重看一遍每一格，你在核对页改过的色号全部作废，要重新核对一遍；重判之后颗数变了的色号，「已完成」标记也跟着作废。只是想接着核对的话点「取消」，再点上面那个「返回核对颜色」。"),
                     primaryButton: .cancel(Text("取消")),
                     secondaryButton: .destructive(Text("重新判色")) { runClassification() }
                 )
@@ -426,6 +434,9 @@ struct SinglePatternFlowView: View {
     /// 存盘时再对一次账：只留下跟**这一份矩阵**对得上的勾（一个都不剩就写 nil，
     /// 别在每张图纸里塞一份空字典）。
     ///
+    /// 数的是**要写进库的那一份矩阵**，跟 `codeCounts(of:)` 是同一个口径
+    /// （`codeMatrix` 和它按同一道 `rows × cols` 夹）—— 三处口径必须一致，理由见那里。
+    ///
     /// `pruneDoneColors(against:)` 已经在改格子那一下清过一遍了，这里是第二道 ——
     /// 那一下清完紧接着就要存，而 @State 写完同一轮读回来不保证拿到新值：读回旧的
     /// 就等于把刚作废的勾又写回库里，下次格数绕回原值它就诈尸了。
@@ -465,16 +476,41 @@ struct SinglePatternFlowView: View {
     ///
     /// 数的是**传进来的这份**，不是 `sheet` —— @State 同一轮写完读回来不保证拿到新值，
     /// 读回旧的就是拿改动前的格数去对，等于没清。
+    ///
+    /// 删掉时记一条日志：用户报「我的勾自己没了」时，得分得清是哪条路清的
+    /// （重对格子大小 / 核对页改格子 / 重新判色）。这条流程里别的丢弃都留了痕。
     private func pruneDoneColors(against part: BeadPart) {
         guard !doneColors.isEmpty else { return }
-        var counts: [String: Int] = [:]
-        for row in part.cells {
-            for case .code(let code) in row { counts[code, default: 0] += 1 }
-        }
+        // 数一遍就够 —— 写进 filter 闭包里就是每个勾把几万格重数一遍
+        let counts = Self.codeCounts(of: part)
         let kept = doneColors.filter { counts[$0.key] == $0.value }
         guard kept.count != doneColors.count else { return }
+        AppLogger.shared.info("SinglePattern", "done_colors_pruned", metadata: [
+            "projectId": project.id.uuidString,
+            "dropped": "\(doneColors.count - kept.count)",
+            "kept": "\(kept.count)"
+        ])
         doneColors = kept
         dirty = true
+    }
+
+    /// 图上每个色号有多少格。
+    ///
+    /// **必须跟 `codeMatrix` 一样按 `rows × cols` 夹一道** —— 打勾时记下的数来自
+    /// 高亮页的 `entries`，而它数的是 `grid.cellColorCodes`，也就是夹过的 `codeMatrix`。
+    /// 作废时要是拿没夹的 `cells` 全量去数，`cells` 的维度哪天超出 `rows × cols`
+    /// （今天三条造 cells 的路都是严格 rows×cols，所以现在还撞不上），
+    /// 两边就会数出不同的数：勾能正常打上、正常存盘，但此后**任何一次格子改动都会把
+    /// 所有勾一次清光** —— 用户看到的是「我明明只擦了一格，十几个勾全没了」。
+    private static func codeCounts(of part: BeadPart) -> [String: Int] {
+        guard part.hasCells, part.rows > 0, part.cols > 0 else { return [:] }
+        var counts: [String: Int] = [:]
+        for r in 0..<min(part.rows, part.cells.count) {
+            for c in 0..<min(part.cols, part.cells[r].count) {
+                if case .code(let code) = part.cells[r][c] { counts[code, default: 0] += 1 }
+            }
+        }
+        return counts
     }
 
     private static func corners(of rect: CGRect) -> GridCorners {
