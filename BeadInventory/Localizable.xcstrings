@@ -113,6 +113,16 @@
         }
       }
     },
+    "颜色 · 完成 %1$lld/%2$lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colors · %1$lld/%2$lld done"
+          }
+        }
+      }
+    },
     "已完成 %lld / %lld 个颜色" : {
       "localizations" : {
         "en" : {
