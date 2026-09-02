@@ -164,7 +164,8 @@ struct BoardCanvasRenderer {
     /// **点亮了色号时这些号一个都不画**（见 `drawBadges`）—— 那一屏的规矩是「除了那个色号，
     /// 别的都让路」，号也不例外。调用方照常传，画不画由这里定，两块屏幕才不会一块写一块不写。
     var labels: [UUID: String] = [:]
-    var selection: UUID?
+    /// 描亮边的那些摆放。一个也行、一组也行 —— 板上多选时勾中的每一块都得看得出来。
+    var selected: Set<UUID> = []
     var moving: Moving?
     /// 跟旁边挨上了、又挪不开的那些摆放。
     ///
@@ -301,7 +302,7 @@ struct BoardCanvasRenderer {
                 }
             }
 
-            let isSelected = selection == placement.id || moving != nil
+            let isSelected = selected.contains(placement.id) || moving != nil
             let outline: Color = (blocked || touching)
                 ? Theme.ColorToken.Status.error
                 : (isSelected ? Theme.ColorToken.Morandi.honey

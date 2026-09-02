@@ -13578,6 +13578,36 @@
           }
         }
       }
+    },
+    "取下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove"
+          }
+        }
+      }
+    },
+    "移到新板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move to a new board"
+          }
+        }
+      }
+    },
+    "已取下 %lld 个，回到零件条" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removed %lld pieces back to the tray"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
