@@ -171,6 +171,42 @@ enum BoardSpacing: String, CaseIterable, Codable, Sendable, Identifiable {
     }
 }
 
+// MARK: - 按什么次序上板
+
+/// 自动排版时零件按什么次序摆到板上。
+///
+/// 两种排法排出来的板都合法 —— 间距判定是同一份 `BoardOccupancy.canPlace`，
+/// 差别只有一个：板上的号是不是从 1 顺着数下来的。省板的那种是先大后小往空位里塞，
+/// 排出来 3 号可能在板子右下角、17 号在正中间；照着图纸一个一个找零件的人，
+/// 每找一个都要把整块板扫一遍。
+///
+/// 这是**用户的偏好，不跟着图纸存**：它只影响自动排的那一下，排完就变成板上的坐标了，
+/// 之后拖动、校验、体检都跟它无关。`BoardSpacing` 不一样 —— 那一档排完还要拿去校验
+/// 拖动，所以必须跟着图纸走。
+enum BoardLayout: String, CaseIterable, Sendable, Identifiable {
+    /// 先大后小往空位里塞，两种扫法比一比谁开的板少。
+    case compact
+    /// 从 1 号开始，一行一行往下摆。
+    case numbered
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .compact: return String(localized: "最少板子")
+        case .numbered: return String(localized: "零件编号顺序")
+        }
+    }
+
+    /// 菜单里跟在名字后面的一句话。说的是选了它板子上会变成什么样。
+    var detail: String {
+        switch self {
+        case .compact: return String(localized: "大件小件穿插着塞，用掉的板子最少")
+        case .numbered: return String(localized: "从 1 号起一行一行摆，可能多用几块板")
+        }
+    }
+}
+
 // MARK: - 一个零件摆在板上
 
 struct PartPlacement: Identifiable, Codable, Equatable, Sendable {
@@ -938,26 +974,42 @@ enum PartsBoardPacker {
     ///
     /// 普通件的板排在前面：用户是从第 1 块板开始拼的，先拿到手的该是成品主体，
     /// 而不是一板插件。
+    ///
+    /// 以上说的是省板那条路。用户在菜单里选了按编号排时走的是 `shelfPack`：
+    /// 不排序、不比板数，从 1 号一行一行往下摆（`layout`）。
     static func pack(
         parts: [BeadPart],
         size: BeadBoardSize,
-        spacing: BoardSpacing
+        spacing: BoardSpacing,
+        layout: BoardLayout = .compact
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
-        let regular = packGroup(parts.filter { !$0.isConnectorPart }, size: size, spacing: spacing)
-        let connectors = packGroup(parts.filter(\.isConnectorPart), size: size, spacing: spacing)
+        let regular = packGroup(parts.filter { !$0.isConnectorPart },
+                                size: size, spacing: spacing, layout: layout)
+        let connectors = packGroup(parts.filter(\.isConnectorPart),
+                                   size: size, spacing: spacing, layout: layout)
         return (regular.boards + connectors.boards, regular.unplaced + connectors.unplaced)
     }
 
     /// 把**同一类**零件（要么全是插件，要么全不是）铺到板上。两种扫法各跑一遍，
     /// 谁开的板少用谁，排完每块板整体挪到中间。
     ///
+    /// 用户选了按编号排就走 `shelfPack`，那条路不比板数也不排序 —— 它换来的正是板数。
+    ///
     /// 组内全同类，所以 `placeOne` 那道分板判断在这条路上恒真 —— 传 `connectorIds`
     /// 只为签名对得上，真正靠它挡住混装的是 `fillRemaining` 那条路。
     private static func packGroup(
         _ parts: [BeadPart],
         size: BeadBoardSize,
-        spacing: BoardSpacing
+        spacing: BoardSpacing,
+        layout: BoardLayout
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
+        if layout == .numbered {
+            var byNumber = shelfPack(parts, size: size, spacing: spacing)
+            for index in byNumber.boards.indices {
+                recenter(&byNumber.boards[index], parts: parts, spacing: spacing)
+            }
+            return byNumber
+        }
         let items = ordered(parts)
         let connectors = connectorIds(in: parts)
         var result = pack(items, size: size, spacing: spacing,
@@ -994,6 +1046,86 @@ enum PartsBoardPacker {
                         connectorIds: connectorIds, strategy: strategy) == nil {
                 unplaced.append(item.part.id)
             }
+        }
+
+        return (boards, unplaced)
+    }
+
+    /// 从 1 号零件开始一行一行往下摆：这一行摆满了另起一行，板子摆满了另起一块板。
+    ///
+    /// 顺序就是 `parts` 的顺序，一个都不重排 —— 零件条上和板上写的号都是零件在清单里
+    /// 排第几（见 `BeadPart.displayName`），重排一次这个号就没法照着图纸找了。
+    /// 所以这条路不排序、不比板数，也不挑「哪个空位更好」：它拿板子换的就是这件事。
+    ///
+    /// 位置按**包围盒**算：同一行里两个零件的盒子隔 `gap` 列，两行之间隔 `gap` 行，
+    /// 于是任意两颗豆子之间至少隔 `gap` 格，跟居中排出来的板一样合法。尽管如此，
+    /// 落位前还是过一遍 `canPlace` —— 「放得下吗」只认它那一处判定，而这条路要是
+    /// 哪天算错了，用户是烫到那儿才发现的。撞上了就另起一块板，不硬塞。
+    ///
+    /// 摆不下先换行、再换板，不靠转 90° 去凑当前这一行：转过来的零件跟图纸上看到的
+    /// 对不上，而这条路的全部意义就是照着号找得到。只有原方向连一块空板都放不下时
+    /// 才转（细长件常常只有转过来才进得去）。
+    private static func shelfPack(
+        _ parts: [BeadPart],
+        size: BeadBoardSize,
+        spacing: BoardSpacing
+    ) -> (boards: [PartsBoard], unplaced: [UUID]) {
+        let margin = spacing.margin
+        let gap = spacing.gap
+        let usableCols = size.cols - 2 * margin
+        let usableRows = size.rows - 2 * margin
+
+        var boards: [PartsBoard] = []
+        var occupancies: [BoardOccupancy] = []
+        var unplaced: [UUID] = []
+        // 当前这一行：左端游标、行顶在第几行、行里最高的那个零件多高
+        var cursorCol = margin
+        var shelfRow = margin
+        var shelfHeight = 0
+
+        func openBoard() {
+            boards.append(PartsBoard(size: size))
+            occupancies.append(BoardOccupancy(cols: size.cols, rows: size.rows, spacing: spacing))
+            cursorCol = margin
+            shelfRow = margin
+            shelfHeight = 0
+        }
+
+        for part in parts {
+            let options = candidates(for: part)
+            // 一颗豆子都没有的零件不占地方，也不算「没摆下」（跟 `ordered` 的口径一致）
+            guard let first = options.first, !first.footprint.isEmpty else { continue }
+            // 原方向优先。挑的是「一块空板装得下的朝向」，跟游标现在在哪儿无关。
+            guard let chosen = options.first(where: {
+                $0.footprint.width <= usableCols && $0.footprint.height <= usableRows
+            }) else {
+                unplaced.append(part.id)
+                continue
+            }
+
+            let shape = chosen.footprint
+            if boards.isEmpty { openBoard() }
+            if cursorCol + shape.width > size.cols - margin {
+                cursorCol = margin
+                shelfRow += shelfHeight + gap
+                shelfHeight = 0
+            }
+            if shelfRow + shape.height > size.rows - margin { openBoard() }
+            if !occupancies[boards.count - 1].canPlace(shape,
+                                                       col: cursorCol - shape.minCol,
+                                                       row: shelfRow - shape.minRow) {
+                openBoard()
+            }
+
+            let index = boards.count - 1
+            let col = cursorCol - shape.minCol
+            let row = shelfRow - shape.minRow
+            boards[index].placements.append(PartPlacement(
+                partId: part.id, col: col, row: row, turns: chosen.turns
+            ))
+            occupancies[index].add(shape, col: col, row: row)
+            cursorCol += shape.width + gap
+            shelfHeight = max(shelfHeight, shape.height)
         }
 
         return (boards, unplaced)

@@ -13608,6 +13608,66 @@
           }
         }
       }
+    },
+    "排列方式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How pieces are laid out"
+          }
+        }
+      }
+    },
+    "最少板子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fewest boards"
+          }
+        }
+      }
+    },
+    "零件编号顺序" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Piece number order"
+          }
+        }
+      }
+    },
+    "大件小件穿插着塞，用掉的板子最少" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Big and small pieces slotted together, using as few boards as possible"
+          }
+        }
+      }
+    },
+    "从 1 号起一行一行摆，可能多用几块板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laid out row by row from piece 1; may need a few more boards"
+          }
+        }
+      }
+    },
+    "接下来自动排列时用「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-arrange will use “%@” from now on"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

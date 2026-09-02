@@ -64,6 +64,10 @@ struct PartsBoardStepView: View {
     /// 而老图纸的 `spacing` 解析出来是 `.tight`，跟着写的话用户换块大板子就把自己
     /// 在别的图纸上选的档洗成紧凑了，而且屏幕上一个字都不会提。
     @AppStorage("partsBoardSpacing") private var preferredSpacing: BoardSpacing = .standard
+    /// 自动排版按什么次序上板。**不跟着图纸存**，理由见 `BoardLayout` ——
+    /// 它只在自动排的那一下起作用，排完板上就只剩坐标了。所以菜单上的勾说的是
+    /// 「下次自动排按哪种来」，不是「眼前这几块板当初是怎么排的」。
+    @AppStorage("partsBoardLayout") private var preferredLayout: BoardLayout = .compact
     /// 自己填过的板子格数（最近三块，一行 `"60x40,29x29"`）。手上有哪几块板是跟着人走的，
     /// 不属于任何一张图纸 —— 所以在偏好里，投影仪校准页读的也是这一份。
     @AppStorage(BeadBoardSize.recentsKey) private var customSizes = ""
@@ -198,6 +202,7 @@ struct PartsBoardStepView: View {
         /// 那种情况下 `spacing` 是这张图纸原本就带的，把它写回全局偏好等于
         /// 拿一张老图纸的 `.tight` 覆盖掉用户在别处选的档（见 `preferredSpacing`）。
         var pickedSpacing: Bool
+        var layout: BoardLayout
     }
 
     /// 这一屏所有「放得下吗」的判断都得用这一档 —— 自动排、点零件条落位、拖动校验。
@@ -560,7 +565,8 @@ struct PartsBoardStepView: View {
                         // 悄悄推翻。所以换档就是一次「全部重排」，走同一个确认弹窗。
                         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
                         if boards.contains(where: { !$0.placements.isEmpty }) {
-                            repackTarget = RepackTarget(size: size, spacing: option, pickedSpacing: true)
+                            repackTarget = RepackTarget(size: size, spacing: option,
+                                                        pickedSpacing: true, layout: preferredLayout)
                             return
                         }
                         // 板上什么都没摆，没什么可重排的，直接改。
@@ -582,12 +588,39 @@ struct PartsBoardStepView: View {
                     }
                 }
             }
+            Section("排列方式") {
+                ForEach(BoardLayout.allCases) { option in
+                    Button {
+                        guard option != preferredLayout else { return }
+                        // 跟换松紧一样：板上已经摆着东西，换排法就是一次全部重排，
+                        // 走同一个确认弹窗 —— 手动挪过的位置和已完成标记都要清空。
+                        let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
+                        if boards.contains(where: { !$0.placements.isEmpty }) {
+                            repackTarget = RepackTarget(size: size, spacing: spacing,
+                                                        pickedSpacing: false, layout: option)
+                            return
+                        }
+                        // 板上什么都没摆，没什么可重排的。这一支屏幕上不会有任何变化，
+                        // 所以得说一句 —— 一次点击要么有效果，要么有说法。
+                        preferredLayout = option
+                        flash(String(localized: "接下来自动排列时用「\(option.label)」"))
+                    } label: {
+                        if option == preferredLayout {
+                            Label(option.label, systemImage: "checkmark")
+                        } else {
+                            Text(option.label)
+                        }
+                        Text(option.detail)
+                    }
+                }
+            }
             Section("全部重新排列为") {
                 BoardSizePicker(
                     current: currentBoard?.size,
                     recents: BeadBoardSize.decodeList(customSizes),
                     onPick: { size in
-                        repackTarget = RepackTarget(size: size, spacing: spacing, pickedSpacing: false)
+                        repackTarget = RepackTarget(size: size, spacing: spacing,
+                                                    pickedSpacing: false, layout: preferredLayout)
                     },
                     onCustom: { pendingCustomSize = nil; customSizeTarget = .repack }
                 )
@@ -1575,7 +1608,8 @@ struct PartsBoardStepView: View {
         guard boards.isEmpty, !parts.isEmpty else { return }
         let size = BeadBoardSize(cols: savedCols, rows: savedRows)
         let used = spacing
-        let packed = PartsBoardPacker.pack(parts: parts.filter(\.hasCells), size: size, spacing: used)
+        let packed = PartsBoardPacker.pack(parts: parts.filter(\.hasCells), size: size,
+                                           spacing: used, layout: preferredLayout)
         boards = packed.boards
         // 一块板都没排出来（零件全都放不进去）就是「还没排过」，那一档不能落定 ——
         // 落定了 `spacing` 就不再听偏好，用户在菜单里换档会变成点了没反应。
@@ -1607,8 +1641,12 @@ struct PartsBoardStepView: View {
         // 只有用户亲手选了松紧才动偏好，理由见 `preferredSpacing` 和 `RepackTarget.pickedSpacing`。
         // 写在确认之后：弹窗上点「取消」不该改任何东西。
         if target.pickedSpacing { preferredSpacing = target.spacing }
+        // 排法不跟着图纸存（见 `preferredLayout`），偏好照写不误：这一支下面就按它排，
+        // 而别的路子里 `target.layout` 本来就是从它取的，写回去等于没动。
+        preferredLayout = target.layout
         let packed = PartsBoardPacker.pack(parts: parts.filter(\.hasCells),
-                                           size: target.size, spacing: target.spacing)
+                                           size: target.size, spacing: target.spacing,
+                                           layout: target.layout)
         boards = packed.boards
         boardSpacing = packed.boards.isEmpty ? nil : target.spacing
         boardIndex = 0
@@ -1724,7 +1762,8 @@ struct PartsBoardStepView: View {
     private func placeOnNewBoards(_ chosen: [BeadPart]) -> Set<UUID> {
         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
         let used = spacing
-        let packed = PartsBoardPacker.pack(parts: chosen, size: size, spacing: used)
+        let packed = PartsBoardPacker.pack(parts: chosen, size: size,
+                                           spacing: used, layout: preferredLayout)
         guard !packed.boards.isEmpty else {
             flash(unplacedNote(chosen.count, spacing: used))
             return Set(chosen.map(\.id))
@@ -1799,7 +1838,8 @@ struct PartsBoardStepView: View {
         case .repack:
             // 跟菜单里点常见规格走同一个确认弹窗 —— 重排会把手动挪过的位置全抹掉，
             // 「自己填的」不该因为多打了两个数就跳过这一问。
-            repackTarget = RepackTarget(size: size, spacing: spacing, pickedSpacing: false)
+            repackTarget = RepackTarget(size: size, spacing: spacing,
+                                                    pickedSpacing: false, layout: preferredLayout)
         }
     }
 
