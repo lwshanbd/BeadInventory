@@ -30,6 +30,7 @@
 		9EADAAF39F6A4175B437D9D8 /* PartsRegionStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04C9CA7455A24A53A45A88CE /* PartsRegionStepView.swift */; };
 		E830B69F9EBC438AA6B3541F /* PartsListStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFE2EC263D7F43A1B5CD47BD /* PartsListStepView.swift */; };
 		B7A1E0C14F0A4E1D9C2A0003 /* PartsBaseColorStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0004 /* PartsBaseColorStepView.swift */; };
+		B7A1E0C14F0A4E1D9C2A0C07 /* PatternFinishPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0C08 /* PatternFinishPrompt.swift */; };
 		B7A1E0C14F0A4E1D9C2A0007 /* PartsBoardStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0008 /* PartsBoardStepView.swift */; };
 		B7A1E0C14F0A4E1D9C2A0107 /* BoardCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0108 /* BoardCanvas.swift */; };
 		B7A1E0C14F0A4E1D9C2A0B07 /* BoardSizeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0B08 /* BoardSizeSheet.swift */; };
@@ -186,6 +187,7 @@
 		04C9CA7455A24A53A45A88CE /* PartsRegionStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsRegionStepView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsRegionStepView.swift; sourceTree = SOURCE_ROOT; };
 		EFE2EC263D7F43A1B5CD47BD /* PartsListStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsListStepView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsListStepView.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0004 /* PartsBaseColorStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsBaseColorStepView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsBaseColorStepView.swift; sourceTree = SOURCE_ROOT; };
+		B7A1E0C14F0A4E1D9C2A0C08 /* PatternFinishPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternFinishPrompt.swift; path = BeadInventory/Views/PatternHighlight/PatternFinishPrompt.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0008 /* PartsBoardStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsBoardStepView.swift; path = BeadInventory/Views/PatternHighlight/Parts/PartsBoardStepView.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0108 /* BoardCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BoardCanvas.swift; path = BeadInventory/Views/PatternHighlight/Parts/BoardCanvas.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0B08 /* BoardSizeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BoardSizeSheet.swift; path = BeadInventory/Views/PatternHighlight/Parts/BoardSizeSheet.swift; sourceTree = SOURCE_ROOT; };
@@ -391,6 +393,7 @@
 				385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */,
 				3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */,
 				385001112FB3A70D00F5DDE2 /* ValidationDiffSheet.swift */,
+				B7A1E0C14F0A4E1D9C2A0C08 /* PatternFinishPrompt.swift */,
 			);
 			path = PatternHighlight;
 			sourceTree = "<group>";
@@ -825,6 +828,7 @@
 				E830B69F9EBC438AA6B3541F /* PartsListStepView.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0003 /* PartsBaseColorStepView.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0007 /* PartsBoardStepView.swift in Sources */,
+				B7A1E0C14F0A4E1D9C2A0C07 /* PatternFinishPrompt.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0107 /* BoardCanvas.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0407 /* PartOriginalSheet.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0B07 /* BoardSizeSheet.swift in Sources */,

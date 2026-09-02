@@ -207,6 +207,7 @@ struct PartsSheetFlowView: View {
                             boards: tracked($boards),
                             boardSpacing: tracked($boardSpacing),
                             colorSystem: project.colorSystem,
+                            projectId: project.id,
                             onPersist: { persist() },
                             onFinish: { save() }
                         )
