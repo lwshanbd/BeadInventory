@@ -854,11 +854,13 @@ struct PartsBoardStepView: View {
                 } else if !unplaced.isEmpty {
                     Button("选择") { self.picking = true }
                         .font(.footnote.weight(.medium))
-                    // 两条路的差别是「动不动已经摆好的板」，这在拼的时候是件大事：
-                    // 塞进现有板的空隙会让本来已经拼了一半的板又多出几个零件。
+                    // 写「优先」不写「填入现有板」：这一条塞不下照样会开新板
+                    // （见 PartsBoardPacker.placeOne），两条路的差别只是**先不先动
+                    // 已经摆好的板** —— 而那在拼的时候是件大事：塞进空隙会让本来
+                    // 已经拼了一半的板又多出几个零件。写成互斥的两条就是在骗人。
                     Menu {
-                        Button("填入现有板子") { fillRemaining() }
-                        Button("另起新板摆放") { placeOnNewBoards(unplaced) }
+                        Button("优先填入现有板") { fillRemaining() }
+                        Button("摆到新板") { placeOnNewBoards(unplaced) }
                     } label: {
                         Label("自动排列", systemImage: "square.grid.3x3.fill")
                             .font(.footnote.weight(.medium))
@@ -1541,29 +1543,38 @@ struct PartsBoardStepView: View {
     }
 
     /// 多选之后落位。两条路只差一件事：动不动已经摆好的板。
+    /// 多选之后落位。**摆上去的取消勾选，没摆上的原样勾着。**
+    ///
+    /// 早先是动手之前先 `endPicking()`：板子放不下时提示写着「可改为『摆到新板』」，
+    /// 而那个按钮已经跟多选态一起消失了，勾也全没了 —— 用户要照着提示做，得重新
+    /// 点「选择」再把刚才那几个一个个勾回来。留着没摆上的那几个还顺带回答了
+    /// 「是哪几个没摆上」：条里同时躺着他本来就没勾的零件，长得一模一样。
     private func placePicked(onNewBoard: Bool) {
         let chosen = pickedParts
         guard !chosen.isEmpty else { return }
-        endPicking()
-        if onNewBoard {
-            placeOnNewBoards(chosen)
-        } else {
-            placeOnCurrentBoard(chosen)
-        }
+        picks = onNewBoard ? placeOnNewBoards(chosen) : placeOnCurrentBoard(chosen)
+        if picks.isEmpty { picking = false }
     }
 
     /// 把这一批塞进当前这块板的空隙里。**塞不下的就留在零件条里，不替他开新板** ——
     /// 用户刚按的那个按钮上写着板号，东西却落到另一块板上，比放不下更难受。
-    private func placeOnCurrentBoard(_ chosen: [BeadPart]) {
-        guard boards.indices.contains(boardIndex) else { return }
+    ///
+    /// - Returns: 没摆上的那几个。
+    @discardableResult
+    private func placeOnCurrentBoard(_ chosen: [BeadPart]) -> Set<UUID> {
+        guard boards.indices.contains(boardIndex) else { return Set(chosen.map(\.id)) }
         let used = spacing
         var occupancy = PartsBoardPacker.occupancy(of: boards[boardIndex], parts: parts, spacing: used)
         var added = 0
+        var missed: Set<UUID> = []
 
         // 先大后小、原方向优先，跟自动排走的是同一套规矩
         for item in PartsBoardPacker.ordered(chosen) {
             let options = PartsBoardPacker.candidates(for: item.part, footprint: item.footprint)
-            guard let hit = PartsBoardPacker.fit(options, in: occupancy) else { continue }
+            guard let hit = PartsBoardPacker.fit(options, in: occupancy) else {
+                missed.insert(item.part.id)
+                continue
+            }
             boards[boardIndex].placements.append(PartPlacement(
                 partId: item.part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
             ))
@@ -1572,32 +1583,36 @@ struct PartsBoardStepView: View {
         }
         if added > 0 { boardSpacing = used }
 
-        let missed = chosen.count - added
-        if missed == 0 {
+        if missed.isEmpty {
             flash(String(localized: "已摆上 \(added) 个"))
         } else if added == 0 {
-            flash(String(localized: "板 \(boardIndex + 1) 已放不下这 \(missed) 个，可改为「摆到新板」"))
+            flash(String(localized: "板 \(boardIndex + 1) 已放不下这 \(missed.count) 个，可改为「摆到新板」"))
         } else {
-            flash(String(localized: "已摆上 \(added) 个，还有 \(missed) 个这块板放不下"))
+            flash(String(localized: "已摆上 \(added) 个，还有 \(missed.count) 个这块板放不下"))
         }
+        return missed
     }
 
     /// 另起板子摆这一批。**已经摆好的板一格都不动** —— 用户走这条路多半正是因为
-    /// 不想让它们回到原来那块板上（从板上移除下来的零件，单点回去还是落回原处）。
+    /// 不想让它们回到原来那块板上（从板上移除下来的零件，单点回去还是落回这块板）。
     /// 一块新板装不下就再开一块，摆法跟进屏自动排是同一条路。
-    private func placeOnNewBoards(_ chosen: [BeadPart]) {
+    ///
+    /// - Returns: 没摆上的那几个（比板子还大的）。
+    @discardableResult
+    private func placeOnNewBoards(_ chosen: [BeadPart]) -> Set<UUID> {
         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
         let used = spacing
         let packed = PartsBoardPacker.pack(parts: chosen, size: size, spacing: used)
         guard !packed.boards.isEmpty else {
             flash(unplacedNote(chosen.count, spacing: used))
-            return
+            return Set(chosen.map(\.id))
         }
 
         let first = boards.count
         boards.append(contentsOf: packed.boards)
         boardSpacing = used
-        // 切过去：新板在最后一块，不切的话屏幕上一点变化都没有，用户不知道东西去哪了
+        // 切到新板里的第一块（一批可能开出好几块，拼是从第一块开始的）——
+        // 不切的话屏幕上一点变化都没有，用户不知道东西去哪了
         switchTo(first)
 
         let placed = chosen.count - packed.unplaced.count
@@ -1606,6 +1621,7 @@ struct PartsBoardStepView: View {
             lines.append(unplacedNote(packed.unplaced.count, spacing: used))
         }
         flash(lines.joined(separator: "；"))
+        return Set(packed.unplaced)
     }
 
     /// 点了零件条里的一个零件：落到当前这块板上；这块满了就新开一块并切过去。

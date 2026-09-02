@@ -13469,22 +13469,12 @@
         }
       }
     },
-    "填入现有板子" : {
+    "优先填入现有板" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fill existing boards"
-          }
-        }
-      }
-    },
-    "另起新板摆放" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Arrange on new boards"
+            "value" : "Fill existing boards first"
           }
         }
       }
@@ -13519,7 +13509,7 @@
         }
       }
     },
-    "板 %1$lld 已放不下这 %2$lld 个，可改为「摆到新板」" : {
+    "板 %lld 已放不下这 %lld 个，可改为「摆到新板」" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13529,7 +13519,7 @@
         }
       }
     },
-    "已摆上 %1$lld 个，还有 %2$lld 个这块板放不下" : {
+    "已摆上 %lld 个，还有 %lld 个这块板放不下" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13539,7 +13529,7 @@
         }
       }
     },
-    "已新增 %1$lld 块板，摆上 %2$lld 个零件" : {
+    "已新增 %lld 块板，摆上 %lld 个零件" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
