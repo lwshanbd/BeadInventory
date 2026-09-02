@@ -399,9 +399,9 @@ extension BeadPart {
 /// 只有 `canPlace` 一处判定，自动排、点零件条落位、拖动校验全都走它 ——
 /// 少判一处就是一条能钻的缝，而钻进去的后果要等用户拼到那儿才发现。
 ///
-/// （`firstFit` 的扫描范围、`blockedByEdge`、`PartsBoardRepair.offendingPlacements` 各有
-/// 一份 margin 算术：一个为了少扫、一个为了分辨失败原因、一个为了一次扫完整块板。
-/// 前两处不参与判定，第三处参与。margin 要是哪天不再是 0/1，这四处一起改。）
+/// （`firstFit` 和 `centerFit` 的扫描范围、`blockedByEdge`、`PartsBoardRepair.offendingPlacements`
+/// 各有一份 margin 算术：两个为了少扫、一个为了分辨失败原因、一个为了一次扫完整块板。
+/// 前三处不参与判定，最后一处参与。margin 要是哪天不再是 0/1，这五处一起改。）
 struct BoardOccupancy: Sendable {
     let cols: Int
     let rows: Int
@@ -645,9 +645,14 @@ enum PartsBoardRepair {
 
 /// 把零件铺到板上。
 ///
-/// 用的是「从上到下、从左到右找第一个放得下的地方」，零件按高矮排过序。
+/// 零件按大小排过序（先大后小），一个一个往**离板心最近的空位**上放，
+/// 排完再把整块板上的东西挪到板正中间。所以三五个零件不会缩在左上角，
+/// 而是摆在板中央 —— 板子拿在手上，中间那一块最好够着，边上那一圈最容易碰掉。
+///
 /// 不追求最优装箱：多塞进去一两个零件的收益，远不如「排出来的样子跟图纸上
 /// 差不多、用户一眼认得出哪个是哪个」重要 —— 而且他随时能自己拖。
+/// 但**不能因为好看而多开一块板**（多一块板 = 多烫一次），所以 `pack` 还留着
+/// 从左上角一行行排的老路当兜底，见那儿的注释。
 ///
 /// 留多宽（`BoardSpacing`）由调用方给，这里不挑也不猜：它是用户选的，
 /// 而且必须跟拖动校验用的是同一档，否则自动排出来的样子一拖就变成非法的。
@@ -667,9 +672,14 @@ enum PartsBoardPacker {
         return occupancy
     }
 
-    /// 在这块板上找第一个放得下的位置（返回的是零件矩阵左上角该放哪儿）。
+    /// 从左上角逐行往下找第一个放得下的位置（返回的是零件矩阵左上角该放哪儿）。
     /// 扫的范围是**去掉留边之后**那一块 —— 留边里的格子建表时就标死了，
     /// 扫进去只是白扫一遍。
+    ///
+    /// 自动排默认走的是 `centerFit`，不是这一份。这一份留给两件事：`pack` 装不下时
+    /// 的兜底档（团贴着角长，边角剩的碎片少），以及「原地放不下了，另找个地方」
+    /// （旋转救急、`PartsBoardRepair` 挪零件）—— 那两种情况下零件本来就在别处，
+    /// 硬往板心挪只会让用户更找不着它。
     ///
     /// 但底下那两个 `usable` 判断松不得：换回 `<= occupancy.rows` 的话，
     /// 50 行的板配 49 高的零件、margin 为 1，下面那个区间会变成 `1...0` —— 直接崩，
@@ -694,6 +704,69 @@ enum PartsBoardPacker {
         return nil
     }
 
+    /// 找位置的两种扫法。**两种都只挑「放得下」的位置，合法性判定是同一份**
+    /// （`BoardOccupancy.canPlace`），差别只在放得下的那些位置里挑哪一个。
+    enum Strategy: Sendable {
+        /// 离板心最近的那个。零件少的时候摆出来是板正中间的一团。
+        case center
+        /// 从左上角逐行往下数第一个。团贴着角长，只有两条边挨着空地，
+        /// 边角剩下的碎片比 `center` 少 —— 板子快装满时它塞得进更多。
+        case topLeft
+    }
+
+    /// 在这块板上找**离板心最近**的那个放得下的位置（返回的是零件矩阵左上角该放哪儿）。
+    ///
+    /// 远近算的是「零件包围盒的中心」到「板中心」的直线距离，全程整数：
+    /// `2 * c + width - cols` 就是横向偏移的两倍，这样既不用浮点，也不用操心
+    /// 奇偶格除不尽该往哪边倒。
+    ///
+    /// 看着是把整块板扫了一遍，其实很便宜：两道 `>= bestCost` 剪枝挡在 `canPlace`
+    /// 前面，真去数豆子的位置只有寥寥几个，剩下的是一万来次整数加乘（100 × 100 的板）。
+    /// 行那道剪枝成立，是因为 `cost = rowCost + dc²` —— 横向再准也不可能比 `rowCost` 小。
+    ///
+    /// 边界上的讲究跟 `firstFit` 完全一样（那两个 `usable` 判断松不得），理由见那边。
+    static func centerFit(
+        _ footprint: PartFootprint,
+        occupancy: BoardOccupancy
+    ) -> (col: Int, row: Int)? {
+        guard !footprint.isEmpty,
+              footprint.width <= occupancy.usableCols,
+              footprint.height <= occupancy.usableRows else { return nil }
+        let margin = occupancy.spacing.margin
+        var best: (col: Int, row: Int)?
+        var bestCost = Int.max
+
+        for r in margin...(occupancy.rows - margin - footprint.height) {
+            let dr = 2 * r + footprint.height - occupancy.rows
+            let rowCost = dr * dr
+            if rowCost >= bestCost { continue }
+            for c in margin...(occupancy.cols - margin - footprint.width) {
+                let dc = 2 * c + footprint.width - occupancy.cols
+                let cost = rowCost + dc * dc
+                if cost >= bestCost { continue }
+                let col = c - footprint.minCol
+                let row = r - footprint.minRow
+                if occupancy.canPlace(footprint, col: col, row: row) {
+                    bestCost = cost
+                    best = (col, row)
+                }
+            }
+        }
+        return best
+    }
+
+    /// 按指定的扫法找位置
+    static func spot(
+        _ footprint: PartFootprint,
+        occupancy: BoardOccupancy,
+        strategy: Strategy
+    ) -> (col: Int, row: Int)? {
+        switch strategy {
+        case .center: return centerFit(footprint, occupancy: occupancy)
+        case .topLeft: return firstFit(footprint, occupancy: occupancy)
+        }
+    }
+
     /// 一个零件的一种摆法
     struct Candidate: Sendable {
         let turns: Int
@@ -710,14 +783,17 @@ enum PartsBoardPacker {
         ]
     }
 
-    /// 在一块板上找第一个放得下的摆法
+    /// 在一块板上找一种放得下的摆法：先按 `candidates` 的次序挑朝向（原方向优先），
+    /// 挑中的那个朝向再按 `strategy` 定位置。
     static func fit(
         _ candidates: [Candidate],
-        in occupancy: BoardOccupancy
+        in occupancy: BoardOccupancy,
+        strategy: Strategy = .center
     ) -> (candidate: Candidate, col: Int, row: Int)? {
         for candidate in candidates {
-            guard let spot = firstFit(candidate.footprint, occupancy: occupancy) else { continue }
-            return (candidate, spot.col, spot.row)
+            guard let hit = spot(candidate.footprint, occupancy: occupancy, strategy: strategy)
+            else { continue }
+            return (candidate, hit.col, hit.row)
         }
         return nil
     }
@@ -730,6 +806,9 @@ enum PartsBoardPacker {
     /// 它复用的是 `candidates` + `fit`，不是这条逐块板试过去的规矩。
     /// `occupancies` 跟 `boards` 一一对应，会跟着一起更新。
     ///
+    /// 往**已经摆好的板**上加零件时不要事后调 `recenter` —— 用户手动挪过的位置
+    /// 会跟着一起动。这条路本来就只管新来的那一个。
+    ///
     /// - Returns: 落在第几块板上；连一整块空板都放不下（零件比板子还大）时返回 nil。
     @discardableResult
     static func placeOne(
@@ -738,12 +817,13 @@ enum PartsBoardPacker {
         into boards: inout [PartsBoard],
         occupancies: inout [BoardOccupancy],
         size: BeadBoardSize,
-        spacing: BoardSpacing
+        spacing: BoardSpacing,
+        strategy: Strategy = .center
     ) -> Int? {
         let options = candidates(for: part, footprint: footprint)
 
         for index in boards.indices {
-            guard let hit = fit(options, in: occupancies[index]) else { continue }
+            guard let hit = fit(options, in: occupancies[index], strategy: strategy) else { continue }
             boards[index].placements.append(PartPlacement(
                 partId: part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
             ))
@@ -752,7 +832,7 @@ enum PartsBoardPacker {
         }
 
         var occupancy = BoardOccupancy(cols: size.cols, rows: size.rows, spacing: spacing)
-        guard let hit = fit(options, in: occupancy) else { return nil }
+        guard let hit = fit(options, in: occupancy, strategy: strategy) else { return nil }
         var board = PartsBoard(size: size)
         board.placements.append(PartPlacement(
             partId: part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
@@ -766,23 +846,93 @@ enum PartsBoardPacker {
     /// 把 `parts` 全部铺到尺寸为 `size` 的板上，一块放不下就再开一块。
     /// 比板子还大的零件放不进去，会留在返回值的 `unplaced` 里 —— 这种情况用户
     /// 只能换更大的板，得让他看见，不能悄悄吞掉。
+    ///
+    /// 默认从板心往外排。但中心那一团四周都贴着空地，边角比从左上角一行行排更容易
+    /// 剩下塞不进东西的碎片 —— 板子快装满时，同样一批零件它可能要多开一块板，
+    /// 而多一块板就是让用户多烫一次。所以**两种排法都跑一遍，谁开的板少用谁**，
+    /// 平手时用居中的那份。跑两遍的代价是几毫秒（为什么这么便宜见 `centerFit`），
+    /// 换来的是「好看」不必拿板数去买。
+    ///
+    /// 排完还要把每块板整体挪到中间（`recenter`）：一个一个往最近的空位塞，
+    /// 塞着塞着整团就会往某一边偏。
     static func pack(
         parts: [BeadPart],
         size: BeadBoardSize,
         spacing: BoardSpacing
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
+        let items = ordered(parts)
+        var result = pack(items, size: size, spacing: spacing, strategy: .center)
+        // 一块板就装完了、也没有装不下的，那已经不可能更少，不必再跑一遍
+        if result.boards.count > 1 || !result.unplaced.isEmpty {
+            let compact = pack(items, size: size, spacing: spacing, strategy: .topLeft)
+            if (compact.boards.count, compact.unplaced.count)
+                < (result.boards.count, result.unplaced.count) {
+                result = compact
+            }
+        }
+        for index in result.boards.indices {
+            recenter(&result.boards[index], parts: parts, spacing: spacing)
+        }
+        return result
+    }
+
+    private static func pack(
+        _ items: [(part: BeadPart, footprint: PartFootprint)],
+        size: BeadBoardSize,
+        spacing: BoardSpacing,
+        strategy: Strategy
+    ) -> (boards: [PartsBoard], unplaced: [UUID]) {
         var boards: [PartsBoard] = []
         var occupancies: [BoardOccupancy] = []
         var unplaced: [UUID] = []
 
-        for item in ordered(parts) {
+        for item in items {
             if placeOne(item.part, footprint: item.footprint, into: &boards,
-                        occupancies: &occupancies, size: size, spacing: spacing) == nil {
+                        occupancies: &occupancies, size: size, spacing: spacing,
+                        strategy: strategy) == nil {
                 unplaced.append(item.part.id)
             }
         }
 
         return (boards, unplaced)
+    }
+
+    /// 把一块板上的零件整体挪到板正中间。
+    ///
+    /// 只做整体平移，零件之间的相对位置一格不动 —— 挪之前不粘连，挪完也不会粘连，
+    /// 不用再验一遍。挪多少按**豆子的包围盒**算，不按 `cells` 矩阵的左上角：
+    /// 矩阵四周通常还带着一圈空白（见文件头的坐标约定），拿它算的话板上看着还是偏的。
+    ///
+    /// 只给全量重排（`pack`）用。板上已经有用户自己挪过的零件时别调它，
+    /// 那会把他摆好的东西整体推走。
+    ///
+    /// 包围盒比可用范围还宽（换过间距档、或者板子本来就装不下）时原地不动：
+    /// 那种板子本来就已经不合法，硬居中只会把零件推到板外去。
+    static func recenter(_ board: inout PartsBoard, parts: [BeadPart], spacing: BoardSpacing) {
+        let byId = Dictionary(parts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var minCol = Int.max, minRow = Int.max, maxCol = Int.min, maxRow = Int.min
+        for placement in board.placements {
+            guard let footprint = byId[placement.partId]?.footprint(turns: placement.turns),
+                  !footprint.isEmpty else { continue }
+            minCol = min(minCol, placement.col + footprint.minCol)
+            minRow = min(minRow, placement.row + footprint.minRow)
+            maxCol = max(maxCol, placement.col + footprint.minCol + footprint.width - 1)
+            maxRow = max(maxRow, placement.row + footprint.minRow + footprint.height - 1)
+        }
+        guard minCol <= maxCol, minRow <= maxRow else { return }
+
+        let margin = spacing.margin
+        let slackCols = board.cols - 2 * margin - (maxCol - minCol + 1)
+        let slackRows = board.rows - 2 * margin - (maxRow - minRow + 1)
+        guard slackCols >= 0, slackRows >= 0 else { return }
+
+        let dCol = margin + slackCols / 2 - minCol
+        let dRow = margin + slackRows / 2 - minRow
+        guard dCol != 0 || dRow != 0 else { return }
+        for index in board.placements.indices {
+            board.placements[index].col += dCol
+            board.placements[index].row += dRow
+        }
     }
 
     /// 摆放顺序：先大后小 —— 大件先占位，小件才好往缝里塞。
