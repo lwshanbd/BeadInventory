@@ -82,8 +82,8 @@ struct PartsBoardStepView: View {
     /// 板上正处在多选状态
     @State private var boardPicking = false
     /// 板上勾中的那些**摆放**（不是零件）。选中态历来挂在摆放上（见 `selection`），
-    /// 这里跟着它走；换板子、零件被体检摘掉都会让里面的 id 过期，一律经
-    /// `boardPicked` 跟当前这块板对一遍。
+    /// 这里跟着它走；零件被体检摘掉会让里面的 id 过期，一律经 `boardPicked`
+    /// 跟当前这块板对一遍。（换板子、清空板子那几条路直接 `endBoardPicking`。）
     @State private var boardPicks: Set<UUID> = []
     /// 已经自动切过一次「颜色」页签了（见 `showColorsIfAllPlaced`）。
     @State private var didAutoShowColors = false
@@ -251,7 +251,7 @@ struct PartsBoardStepView: View {
         /// 拖动过程中板上别的东西不会变，没必要每帧重算。
         var occupancy: BoardOccupancy?
         /// 多选态下落指摸到的那个摆放。那时候拖动只平移画布（`placement` 一直是 nil），
-        /// 勾不勾要等抬手才知道 —— 手指挪超过 10 点就不算点按了。
+        /// 勾不勾要等抬手才知道 —— 挪得够远就不算点按了（阈值见 `gestureCatcher` 的 onEnded）。
         var pickTarget: UUID?
 
         func reset() {
@@ -671,7 +671,11 @@ struct PartsBoardStepView: View {
                         }
                         .onEnded { value in
                             let moved = hypot(value.translation.width, value.translation.height)
-                            if moved < 10 {
+                            // 捏合缩放最常见的手法是按住一点、另一根手指往外撑 —— 那一指
+                            // 几乎没动，抬手就成了「点按」。onChanged 挡了，这儿也得挡：
+                            // 不挡的话放大一下会顺手勾中/取消一个零件，而「已选 N 个」
+                            // 那个数字没人盯着。
+                            if moved < 10, pinchContentAnchor == nil {
                                 endAsTap()
                             } else if session.placement != nil {
                                 // 抬手这一下要按**最终**位置重算一次。手指移动的最后一段
@@ -1709,8 +1713,10 @@ struct PartsBoardStepView: View {
         return missed
     }
 
-    /// 另起板子摆这一批。**已经摆好的板一格都不动** —— 用户走这条路多半正是因为
-    /// 不想让它们回到原来那块板上（从板上移除下来的零件，单点回去还是落回这块板）。
+    /// 另起板子摆这一批。**这里一格都不动已经摆好的板** —— 用户走这条路多半正是因为
+    /// 不想让它们回到原来那块板上（从板上取下来的零件，单点回去还是落回这块板）。
+    /// 从板上「移到新板」那条路要先摘走原摆放，那一步在调用方做，而且要等这里排完
+    /// 才知道摘哪几个（见 `movePickedToNewBoard`）。
     /// 一块新板装不下就再开一块，摆法跟进屏自动排是同一条路。
     ///
     /// - Returns: 没摆上的那几个（比板子还大的）。
@@ -1825,6 +1831,8 @@ struct PartsBoardStepView: View {
         boards[boardIndex].placements = []
         selection = nil
         highlightKey = nil
+        // 板上一个摆放都没有了，多选面板会停在「已选 0 个」加两个灰按钮上，出不去
+        endBoardPicking()
     }
 
     private func removeCurrentBoard() {
@@ -1947,7 +1955,7 @@ struct PartsBoardStepView: View {
 
     // MARK: - 板上多选
 
-    /// 板上勾中、而且确实还在这块板上的那些摆放。零件被体检摘掉、或者用户换了块板，
+    /// 板上勾中、而且确实还在这块板上的那些摆放。格子被擦空的零件会被体检摘掉，
     /// `boardPicks` 里的 id 就过期了 —— 跟零件条那边的 `pickedParts` 是同一个路数。
     private var boardPicked: Set<UUID> {
         guard let board = currentBoard else { return [] }
@@ -1957,7 +1965,8 @@ struct PartsBoardStepView: View {
     private func startBoardPicking(with id: UUID) {
         boardPicks = [id]
         boardPicking = true
-        // 选中态让位给多选：底下那半屏换成多选面板，板上的亮边改由 boardPicks 说了算
+        // 清掉选中态，决定的是**退出多选之后回哪儿**：回零件条，不是回这块零件的
+        // 大图。（面板和亮边不靠它 —— 那两处都先判 `boardPicking`。）
         selection = nil
     }
 
@@ -1970,8 +1979,11 @@ struct PartsBoardStepView: View {
         if boardPicks.contains(id) { boardPicks.remove(id) } else { boardPicks.insert(id) }
     }
 
-    /// 一起取下来，回零件条。**不弹提示**：板上少了这几块、底下换回零件条并写着
-    /// 「还有 N 个未摆放」，比一句会消失的话说得清楚。
+    /// 一起取下来，回零件条。
+    ///
+    /// **要说一句。** 单个取下不用说（板上少一块，眼睛跟着那一块走），批量不行：
+    /// 零件条那行写的是全量（8 个变 11 个，没人做这个减法），而且板子放大着的时候
+    /// 取下的那几块可能压根不在视野里。
     private func takeOffPicked() {
         guard boards.indices.contains(boardIndex) else { return }
         let picked = boardPicked
@@ -1980,21 +1992,34 @@ struct PartsBoardStepView: View {
         endBoardPicking()
         dropHighlightIfGone()
         tab = .parts
+        flash(String(localized: "已取下 \(picked.count) 个，回到零件条"))
     }
 
-    /// 一起挪到另起的一块板上。**先从这块板上摘下来再排** —— 不摘的话它们还占着原板，
-    /// 而新板是空的，跟这次移动没关系；摘完走的是零件条那边同一条路（见 `placeOnNewBoards`），
-    /// 所以「一块新板装不下就再开一块」「比板子还大的留在零件条里并说明」都是现成的。
+    /// 一起挪到另起的一块板上。摆法走的是零件条那边同一条路（见 `placeOnNewBoards`），
+    /// 所以「一块新板装不下就再开一块」是现成的。
+    ///
+    /// **先排再摘，而且只摘真的落到新板上的那几个。** 反过来写（先摘干净再排）看着更
+    /// 顺，但排是会失败的：板上现在就可能有比板子还大的零件（体检挪不动，只描了红边），
+    /// 它放不进任何一块空板。那时候先摘的写法就是 —— 零件从板上消失了，屏幕上只剩
+    /// 一句「请更换更大的板子」，而它一秒钟前就在这块板上，用户手动摆的位置也没了。
+    ///
+    /// 按零件筛而不是按摆放筛（`movedIds`）：找不到零件的孤儿摆放压根没进 `moving`，
+    /// 也就没被排过，不能跟着一起摘走（它归进屏那道体检管）。
     private func movePickedToNewBoard() {
-        guard boards.indices.contains(boardIndex) else { return }
+        let source = boardIndex
+        guard boards.indices.contains(source) else { return }
         let picked = boardPicked
-        guard !picked.isEmpty else { return }
-        let moving = boards[boardIndex].placements
+        let moving = boards[source].placements
             .filter { picked.contains($0.id) }
             .compactMap { placement in parts.first { $0.id == placement.partId } }
-        boards[boardIndex].placements.removeAll { picked.contains($0.id) }
+        guard !moving.isEmpty else { return }
         endBoardPicking()
-        placeOnNewBoards(moving)
+
+        // placeOnNewBoards 会切到新板，boardIndex 从这里开始就不是原来那块了
+        let movedIds = Set(moving.map(\.id)).subtracting(placeOnNewBoards(moving))
+        boards[source].placements.removeAll {
+            picked.contains($0.id) && movedIds.contains($0.partId)
+        }
     }
 
     // MARK: - 手势

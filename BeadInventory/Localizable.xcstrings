@@ -13584,7 +13584,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Take off"
+            "value" : "Remove"
           }
         }
       }
@@ -13595,6 +13595,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Move to a new board"
+          }
+        }
+      }
+    },
+    "已取下 %lld 个，回到零件条" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removed %lld pieces back to the tray"
           }
         }
       }
