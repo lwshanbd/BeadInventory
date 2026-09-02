@@ -69,7 +69,7 @@ struct PartsCellSizeStepView: View {
 
     // 单图纸模式（`SinglePatternFlowView`）对的是**整张图纸**，它把整张图纸当成一个
     // 「零件」交给这一屏 —— 量格子这件事两种模式一模一样，没有理由再写一份。
-    // 下面两个开关只改称呼和一个按钮，算法一个字都不分叉。
+    // 下面三个开关只改称呼和两处控件，算法一个字都不分叉。
     /// 这一屏在对什么。nil = 「零件 N」+「第几 / 共几个」（多零件）。
     var subjectLabel: LocalizedStringKey?
     /// 能不能删掉当前这个。单图纸不能：删掉整张图纸没有任何意义。
@@ -333,7 +333,7 @@ struct PartsCellSizeStepView: View {
     /// 「插件」开关。
     ///
     /// **不用 `Toggle` + `.toggleStyle(.button)`**：那套的选中态是交给按钮样式画的，
-    /// 在这一屏（深色、小号）上开和关几乎看不出差别，而这是一个按下去在本屏没有任何
+    /// 在这一屏这个字号上开和关几乎看不出差别，而这是一个按下去在本屏没有任何
     /// 其它反馈的开关 —— 分不出状态就等于按了不知道有没有按上。这里照拼豆板那排板子片
     /// 的写法来：选中 = 填色 + 描边，隔着一米也认得出。
     private func connectorChip(for part: BeadPart) -> some View {

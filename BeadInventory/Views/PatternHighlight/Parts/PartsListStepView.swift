@@ -563,8 +563,11 @@ struct PartsListStepView: View {
                 // 检测跑在后台，这期间用户照样能删零件、合并、点别的框，
                 // 下标早就不是当初那个了 —— 必须按 id 重新定位（同 addPart）。
                 guard let index = parts.firstIndex(where: { $0.id == id }) else { return }
+                // 插件标记跟着拆出来的每一块走（同合并那条）：一块插件拆成两块，
+                // 两块都还是插件。不带的话用户得回「量格子」逐块重标，而他记得自己标过。
                 let replacements = mine.map {
-                    BeadPart(rowBand: target.rowBand, bounds: $0.bounds)
+                    BeadPart(rowBand: target.rowBand, bounds: $0.bounds,
+                             isConnector: target.isConnector)
                 }
                 var next = parts
                 next.remove(at: index)

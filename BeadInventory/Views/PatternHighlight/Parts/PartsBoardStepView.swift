@@ -208,16 +208,17 @@ struct PartsBoardStepView: View {
         boardSpacing ?? preferredSpacing
     }
 
-    /// 被标成插件的那些零件（在「量格子」那屏标的）。板子归哪一类、零件条上画不画
-    /// 那个角标，都认它。现算不缓存 —— 零件最多几十个，而缓存要跟着 `parts` 的每一次
-    /// 改动同步，漏一次就是一块标错类的板。
+    /// 被标成插件的那些零件（在「量格子」那屏标的）。判板子归哪一类认它；
+    /// 零件条上那个角标不走这里，直接读 `part.isConnectorPart`。
+    /// 现算不缓存 —— 零件最多几十个，而缓存要跟着 `parts` 的每一次改动同步，
+    /// 漏一次就是一块标错类的板。
     private var connectorIds: Set<UUID> { PartsBoardPacker.connectorIds(in: parts) }
 
     /// 有板子上插件和别的零件混着摆。
     ///
-    /// 自动排版不会排出这种板（见 `PartsBoardPacker.placeOne`），所以它只有两个来源：
-    /// 用户自己把插件点到了这块板上，或者板早就排好了、事后才有零件被标成插件。
-    /// 后者是常事 —— 而这时候屏幕上不会有任何变化，用户以为那个标记没生效。
+    /// 自动排版不会排出这种板（见 `PartsBoardPacker.pack`），所以它的来源是用户自己
+    /// 把插件点到了这块板上，或者板早就排好了、事后才有零件被标成插件或者取消标记。
+    /// 后两条是常事 —— 而这时候屏幕上不会有任何变化，用户以为那个标记没生效。
     private var hasMixedBoard: Bool {
         let connectors = connectorIds
         guard !connectors.isEmpty else { return false }
@@ -472,7 +473,9 @@ struct PartsBoardStepView: View {
             // 插件的标记是在三屏之前按的，而板子这边只有「多出来一块板」这一个变化 ——
             // 不说一句的话，用户看到的是自己标了插件、板子却没分开。
             if hasMixedBoard {
-                Text("插件与其它零件摆在同一块板上。用右上角菜单「全部重新排列为」可让插件单独成板。")
+                // 说「重新选一次板子尺寸」不说「全部重新排列为」：那是菜单里的分组标题，
+                // 底下挂的是一排尺寸，照着找按钮的人找不到。
+                Text("插件与其它零件摆在同一块板上。在右上角菜单里重新选一次板子尺寸，可让插件单独成板。")
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Text.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1575,7 +1578,8 @@ struct PartsBoardStepView: View {
         let connectors = PartsBoardPacker.connectorIds(in: parts)
 
         // 摆放规矩（先大后小、先原方向后转 90°、先塞现有板再开新板、插件不跟别的零件同板）
-        // 全在 packer 里，跟进屏自动排走的是同一条路
+        // 全在 packer 里。只有一条跟 `pack` 不一样：那边普通件先排、插件后排，
+        // 所以插件板落在最后；这里是两类混着按大小来的，插件板不一定排在后面。
         for item in PartsBoardPacker.ordered(unplaced) {
             if PartsBoardPacker.placeOne(item.part, footprint: item.footprint, into: &boards,
                                          occupancies: &occupancies, size: size, spacing: used,

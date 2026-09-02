@@ -278,20 +278,22 @@ enum BoardPartsKind: Sendable, Equatable {
     case empty
     case regular
     case connectors
-    /// 两类混在同一块板上。自动排版不再往里添东西 —— 添哪一类都是把混装弄得更深。
-    ///
-    /// 走到这一步只有两条路：用户自己把零件点上去的，或者板早就排好了、
-    /// 事后才有零件被标成插件。两种都是用户的东西，不能替他推翻（重排会清掉
-    /// 手动挪过的位置和已完成标记），所以这里只是不再插手，由界面去说。
+    /// 两类混在同一块板上。来源有三条：用户自己把零件点上去的，或者板早就排好了、
+    /// 事后才有零件被标成插件、或者被取消标记。三种都是用户的东西，不能替他推翻
+    /// （重排会清掉手动挪过的位置和已完成标记），所以只是由界面说一句，见
+    /// `PartsBoardStepView.hasMixedBoard`。
     case mixed
 
     /// 这块板收不收这个零件
+    ///
+    /// **混装板照收**：它已经混了，再放一个进去用户并不多失去什么，重排一次全都回来。
+    /// 拒收才是真的有代价 —— 那块板会从此退出「优先填入现有板」，用户看到的是凭空
+    /// 多开几块板、而它明明还空着一半，屏幕上没有一个字解释得了。多一块板 = 多烫一次。
     func accepts(connector: Bool) -> Bool {
         switch self {
-        case .empty: return true
+        case .empty, .mixed: return true
         case .regular: return !connector
         case .connectors: return connector
-        case .mixed: return false
         }
     }
 }
@@ -872,9 +874,11 @@ enum PartsBoardPacker {
     /// 它复用的是 `candidates` + `fit`，不是这条逐块板试过去的规矩。
     /// `occupancies` 跟 `boards` 一一对应，会跟着一起更新。
     ///
-    /// 插件只落在插件板上、别的零件只落在别的板上（`connectorIds` + `BoardPartsKind`）——
-    /// 这条判断必须在「放得下吗」之前，不然一个插件会因为第 1 块板还有空位就落在那儿，
-    /// 用户标的那一下等于没标。
+    /// 插件只落在插件板上、别的零件只落在别的板上（`connectorIds` + `BoardPartsKind`）。
+    /// 少了这道判断，一个插件会因为第 1 块板还有空位就落在那儿，用户标的那一下等于没标。
+    /// 它排在「放得下吗」前面只是为了少扫一遍（`partsKind` 过一遍 `placements` 就完了，
+    /// 而 `centerFit` 找不到位置时整块板每一格都要问一遍 `canPlace`）——
+    /// 两道都是 `continue`，对调顺序排出来的板一模一样。
     ///
     /// - Returns: 落在第几块板上；连一整块空板都放不下（零件比板子还大）时返回 nil。
     @discardableResult
@@ -928,16 +932,33 @@ enum PartsBoardPacker {
     /// 那一份时整团本来就贴在角上，**那一步是把零件搬到中间的唯一一步** ——
     /// 删了它，多块板的情况直接退回这一版要修的那个问题。
     ///
-    /// **普通零件先排、插件后排**，所以插件板落在最后几块。反过来的话，图纸上最大的
-    /// 那个零件要是插件，第 1 块板就成了插件板 —— 而用户是从第 1 块板开始拼的，
-    /// 先拿到手的应该是成品的主体。分不分板本身由 `placeOne` 保证，跟这里的顺序无关；
-    /// 两组各自「先大后小」（`ordered` 跑两遍），组内的规矩一点没变。
+    /// **插件跟别的零件不共用一块板**，所以它们是两个各自独立的装箱问题，各排各的、
+    /// 各自挑更省板的那一趟。合成一趟只比一次总板数是不行的：普通件那组适合居中排、
+    /// 插件那组适合从角上排时，两种「全用同一种扫法」的方案都不是最省的，白多一块板。
+    ///
+    /// 普通件的板排在前面：用户是从第 1 块板开始拼的，先拿到手的该是成品主体，
+    /// 而不是一板插件。
     static func pack(
         parts: [BeadPart],
         size: BeadBoardSize,
         spacing: BoardSpacing
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
-        let items = ordered(parts.filter { !$0.isConnectorPart }) + ordered(parts.filter(\.isConnectorPart))
+        let regular = packGroup(parts.filter { !$0.isConnectorPart }, size: size, spacing: spacing)
+        let connectors = packGroup(parts.filter(\.isConnectorPart), size: size, spacing: spacing)
+        return (regular.boards + connectors.boards, regular.unplaced + connectors.unplaced)
+    }
+
+    /// 把**同一类**零件（要么全是插件，要么全不是）铺到板上。两种扫法各跑一遍，
+    /// 谁开的板少用谁，排完每块板整体挪到中间。
+    ///
+    /// 组内全同类，所以 `placeOne` 那道分板判断在这条路上恒真 —— 传 `connectorIds`
+    /// 只为签名对得上，真正靠它挡住混装的是 `fillRemaining` 那条路。
+    private static func packGroup(
+        _ parts: [BeadPart],
+        size: BeadBoardSize,
+        spacing: BoardSpacing
+    ) -> (boards: [PartsBoard], unplaced: [UUID]) {
+        let items = ordered(parts)
         let connectors = connectorIds(in: parts)
         var result = pack(items, size: size, spacing: spacing,
                           connectorIds: connectors, strategy: .center)
@@ -945,7 +966,6 @@ enum PartsBoardPacker {
         // 比的只是板数：`unplaced` 跟扫法无关 —— 一个零件进 `unplaced` 的唯一条件是
         // 连**一块空板**都放不下，而空板上两种扫法的成败判据是同一个（那两道 `usable`），
         // 所以两趟的 `unplaced` 必然一样多，拿它当第二关键字是白写。
-        //（插件那道分板判断不影响这条：空板谁都收得下，见 `BoardPartsKind.accepts`。）
         if result.boards.count > 1 {
             let compact = pack(items, size: size, spacing: spacing,
                                connectorIds: connectors, strategy: .topLeft)
