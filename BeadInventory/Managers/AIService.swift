@@ -35,8 +35,9 @@ struct AIConfig: Codable, Equatable {
     static let defaultGeminiURL = "https://generativelanguage.googleapis.com/v1beta"
 
     // 2026-07 更新。均需支持图像输入（识别用）。
-    // Kimi：默认 K2.6（长期可用）；K3（2026-07-16 发布，原生视觉）可选；K2.5 平台 8/31 落日，仅存量用户可用
-    static let kimiModels = ["kimi-k2.6", "kimi-k3", "kimi-k2.5"]
+    // Kimi：默认 K2.6（长期可用）；K3（2026-07-16 发布，原生视觉）可选。
+    // K2.5 平台已停服，从列表移除；存量用户存的还是 K2.5 时，normalizedConfig 会在加载时把它落到 K2.6。
+    static let kimiModels = ["kimi-k2.6", "kimi-k3"]
     // OpenAI：GPT-5.6 家族（2026-07-09）：luna 入门 / terra 中档 / sol 旗舰
     static let openAIModels = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"]
     // Anthropic：Claude 5 家族（fable 5 = 最新旗舰）+ Opus 4.8 / Haiku 4.5
