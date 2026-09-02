@@ -79,6 +79,12 @@ struct PartsBoardStepView: View {
     /// 多选勾中的零件 id。里面可能有已经不在条里的（放上板了、格子被擦空了），
     /// 所以一律经 `pickedParts` 过一道，别直接拿它数数或者摆放。
     @State private var picks: Set<UUID> = []
+    /// 板上正处在多选状态
+    @State private var boardPicking = false
+    /// 板上勾中的那些**摆放**（不是零件）。选中态历来挂在摆放上（见 `selection`），
+    /// 这里跟着它走；换板子、零件被体检摘掉都会让里面的 id 过期，一律经
+    /// `boardPicked` 跟当前这块板对一遍。
+    @State private var boardPicks: Set<UUID> = []
     /// 已经自动切过一次「颜色」页签了（见 `showColorsIfAllPlaced`）。
     @State private var didAutoShowColors = false
 
@@ -244,10 +250,14 @@ struct PartsBoardStepView: View {
         /// 落指时算好的占位表（已经把被拖的那个零件排除掉）。
         /// 拖动过程中板上别的东西不会变，没必要每帧重算。
         var occupancy: BoardOccupancy?
+        /// 多选态下落指摸到的那个摆放。那时候拖动只平移画布（`placement` 一直是 nil），
+        /// 勾不勾要等抬手才知道 —— 手指挪超过 10 点就不算点按了。
+        var pickTarget: UUID?
 
         func reset() {
             active = false
             placement = nil
+            pickTarget = nil
             deltaCol = 0
             deltaRow = 0
             valid = true
@@ -706,7 +716,10 @@ struct PartsBoardStepView: View {
     /// 确认「板上这块 = 图纸上那块」。零件条和色号条那会儿一个都用不上，让位给图。
     private var bottomPanel: some View {
         VStack(spacing: Theme.Spacing.md) {
-            if let id = selection, let placement = currentBoard?.placements.first(where: { $0.id == id }) {
+            if boardPicking {
+                boardPickPanel
+            } else if let id = selection,
+                      let placement = currentBoard?.placements.first(where: { $0.id == id }) {
                 selectedPanel(placement)
             } else {
                 trayTabs
@@ -777,10 +790,16 @@ struct PartsBoardStepView: View {
                     .foregroundColor(Theme.ColorToken.Text.primary)
                     .lineLimit(1)
                 Spacer(minLength: Theme.Spacing.sm)
-                // 明写一个出口。选中之后零件条和色号条都让位了，只靠「点板上空白处取消」
-                // 的话，用户想切回颜色高亮会以为那两条没了。
-                Button("收起") { selection = nil }
-                    .font(.footnote)
+                // 两个按钮之间比 HStack 的间距再宽一点，否则「多选 收起」挤在一起像一句话
+                HStack(spacing: Theme.Spacing.md) {
+                    // 入口放在这儿，不另起一处：想一起挪几个零件的人，手上正选着其中一个。
+                    // 从他已经选中的这个开始勾，比让他先找一个「多选」开关再重新点一遍短。
+                    Button("多选") { startBoardPicking(with: placement.id) }
+                    // 明写一个出口。选中之后零件条和色号条都让位了，只靠「点板上空白处取消」
+                    // 的话，用户想切回颜色高亮会以为那两条没了。
+                    Button("收起") { selection = nil }
+                }
+                .font(.footnote)
             }
 
             partPreview(placement)
@@ -798,13 +817,48 @@ struct PartsBoardStepView: View {
                 }
                 .buttonStyle(.bordered)
 
-                Button(role: .destructive) { takeOffSelected() } label: {
-                    Label("移除", systemImage: "arrow.down.left").frame(maxWidth: .infinity)
+                // 写「取下」不写「移除」：零件是回到零件条里去了，随时能再摆上来，
+                // 而「移除」听着像是把这个零件从图纸上删了。
+                Button { takeOffSelected() } label: {
+                    Label("取下", systemImage: "arrow.down.left").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
             }
             .font(.footnote)
             .lineLimit(1)
+        }
+    }
+
+    /// 板上多选时的下半屏：勾了几个 · 拿它们怎么办。
+    ///
+    /// **不画缩略图**。这一屏勾中的零件在板上是描了亮边的，那才是用户正在看的地方；
+    /// 底下再摆一排小图只会让他在两处之间来回对号。
+    private var boardPickPanel: some View {
+        let picked = boardPicked
+        return VStack(spacing: Theme.Spacing.sm) {
+            HStack {
+                Text("已选 \(picked.count) 个")
+                    .font(.footnote)
+                    .foregroundColor(Theme.ColorToken.Text.secondary)
+                Spacer(minLength: Theme.Spacing.sm)
+                Button("取消") { endBoardPicking() }
+                    .font(.footnote.weight(.medium))
+            }
+
+            HStack(spacing: Theme.Spacing.sm) {
+                Button { takeOffPicked() } label: {
+                    Label("取下", systemImage: "arrow.down.left").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
+                Button { movePickedToNewBoard() } label: {
+                    Label("移到新板", systemImage: "square.on.square").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+            .font(.footnote)
+            .lineLimit(1)
+            .disabled(picked.isEmpty)
         }
     }
 
@@ -882,9 +936,9 @@ struct PartsBoardStepView: View {
     ///
     /// ## 为什么还要一个「选择」
     ///
-    /// 单点只认**当前这块板**（见 `place`），而零件条里躺着的很多是刚从这块板上移除
-    /// 下来的 —— 用户移除它，往往就是因为不想让它待在这块板上；点一下它又原样回去了，
-    /// 想把它们凑成另起的一块板，之前一个办法都没有。移除只完成了一半，另一半在这里：
+    /// 单点只认**当前这块板**（见 `place`），而零件条里躺着的很多是刚从这块板上取下来
+    /// 的 —— 用户取下它，往往就是因为不想让它待在这块板上；点一下它又落回去了，
+    /// 想把它们凑成另起的一块板，之前一个办法都没有。取下只完成了一半，另一半在这里：
     /// 勾几个，一次摆到别处去。
     private var partsTray: some View {
         // 全摆完了就不该还停在多选态（那时条里一个零件都没有，「已选 0 个」没有意义）。
@@ -1558,6 +1612,7 @@ struct PartsBoardStepView: View {
         highlightKey = nil
         // 零件全被重新分了一遍板，勾着的那几个已经不是用户当初勾的那件事了
         endPicking()
+        endBoardPicking()
         resetView()
         // 说清「按哪一档排的、排成几块」：换松紧最直观的反馈就是板数变了几块，
         // 而看到板数之前用户得先确认自己换的那一档真的生效了。
@@ -1759,6 +1814,8 @@ struct PartsBoardStepView: View {
         guard boards.indices.contains(index) else { return }
         boardIndex = index
         selection = nil
+        // 勾的是这块板上的摆放，换一块板它们就不在眼前了
+        endBoardPicking()
         dropHighlightIfGone()
         resetView()
     }
@@ -1888,10 +1945,67 @@ struct PartsBoardStepView: View {
         tab = .parts
     }
 
+    // MARK: - 板上多选
+
+    /// 板上勾中、而且确实还在这块板上的那些摆放。零件被体检摘掉、或者用户换了块板，
+    /// `boardPicks` 里的 id 就过期了 —— 跟零件条那边的 `pickedParts` 是同一个路数。
+    private var boardPicked: Set<UUID> {
+        guard let board = currentBoard else { return [] }
+        return boardPicks.intersection(board.placements.map(\.id))
+    }
+
+    private func startBoardPicking(with id: UUID) {
+        boardPicks = [id]
+        boardPicking = true
+        // 选中态让位给多选：底下那半屏换成多选面板，板上的亮边改由 boardPicks 说了算
+        selection = nil
+    }
+
+    private func endBoardPicking() {
+        boardPicking = false
+        boardPicks = []
+    }
+
+    private func toggleBoardPick(_ id: UUID) {
+        if boardPicks.contains(id) { boardPicks.remove(id) } else { boardPicks.insert(id) }
+    }
+
+    /// 一起取下来，回零件条。**不弹提示**：板上少了这几块、底下换回零件条并写着
+    /// 「还有 N 个未摆放」，比一句会消失的话说得清楚。
+    private func takeOffPicked() {
+        guard boards.indices.contains(boardIndex) else { return }
+        let picked = boardPicked
+        guard !picked.isEmpty else { return }
+        boards[boardIndex].placements.removeAll { picked.contains($0.id) }
+        endBoardPicking()
+        dropHighlightIfGone()
+        tab = .parts
+    }
+
+    /// 一起挪到另起的一块板上。**先从这块板上摘下来再排** —— 不摘的话它们还占着原板，
+    /// 而新板是空的，跟这次移动没关系；摘完走的是零件条那边同一条路（见 `placeOnNewBoards`），
+    /// 所以「一块新板装不下就再开一块」「比板子还大的留在零件条里并说明」都是现成的。
+    private func movePickedToNewBoard() {
+        guard boards.indices.contains(boardIndex) else { return }
+        let picked = boardPicked
+        guard !picked.isEmpty else { return }
+        let moving = boards[boardIndex].placements
+            .filter { picked.contains($0.id) }
+            .compactMap { placement in parts.first { $0.id == placement.partId } }
+        boards[boardIndex].placements.removeAll { picked.contains($0.id) }
+        endBoardPicking()
+        placeOnNewBoards(moving)
+    }
+
     // MARK: - 手势
 
-    /// 手指几乎没动 = 点按。选中 / 取消选中。
+    /// 手指几乎没动 = 点按。选中 / 取消选中；多选态下是勾 / 取消勾。
     private func endAsTap() {
+        if boardPicking {
+            // 点空白处什么都不做：这时候一勾之差就是重勾一遍，不能让手指划歪一下就清空
+            if let id = session.pickTarget { toggleBoardPick(id) }
+            return
+        }
         guard session.placement != nil else {
             selection = nil
             return
@@ -1902,6 +2016,12 @@ struct PartsBoardStepView: View {
 
     private func beginDrag(at point: CGPoint) {
         guard let board = currentBoard, let hit = placement(at: point) else { return }
+        // 多选态下不挪零件：这时候手指落在零件上是要勾它，而拖动一律留给平移画布 ——
+        // 勾几个之前多半要先把板子拖到看得见的地方。
+        if boardPicking {
+            session.pickTarget = hit.id
+            return
+        }
         session.placement = hit.id
         session.originCol = hit.col
         session.originRow = hit.row
@@ -2036,7 +2156,7 @@ struct PartsBoardStepView: View {
             colorCache: colorCache,
             highlightKeys: highlightKey.map { [$0] } ?? [],
             labels: labels(for: board),
-            selection: selection,
+            selected: boardPicking ? boardPicked : selection.map { [$0] } ?? [],
             moving: drag.map {
                 .init(placement: $0.placement, deltaCol: $0.deltaCol,
                       deltaRow: $0.deltaRow, valid: $0.valid)

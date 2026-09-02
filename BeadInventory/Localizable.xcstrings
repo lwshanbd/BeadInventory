@@ -13578,6 +13578,26 @@
           }
         }
       }
+    },
+    "取下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take off"
+          }
+        }
+      }
+    },
+    "移到新板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move to a new board"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
