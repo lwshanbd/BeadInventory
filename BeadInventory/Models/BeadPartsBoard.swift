@@ -399,9 +399,11 @@ extension BeadPart {
 /// 只有 `canPlace` 一处判定，自动排、点零件条落位、拖动校验全都走它 ——
 /// 少判一处就是一条能钻的缝，而钻进去的后果要等用户拼到那儿才发现。
 ///
-/// （`firstFit` 和 `centerFit` 的扫描范围、`blockedByEdge`、`PartsBoardRepair.offendingPlacements`
-/// 各有一份 margin 算术：两个为了少扫、一个为了分辨失败原因、一个为了一次扫完整块板。
-/// 前三处不参与判定，最后一处参与。margin 要是哪天不再是 0/1，这五处一起改。）
+/// （`firstFit` 和 `centerFit` 的扫描范围、`blockedByEdge`、`PartsBoardRepair.offendingPlacements`、
+/// `PartsBoardPacker.recenter` 各有一份 margin 算术：两个为了少扫、一个为了分辨失败原因、
+/// 一个为了一次扫完整块板、一个为了算居中该挪多少格。前三处不参与判定；后两处一个参与判定，
+/// 一个**直接产出落盘的坐标**（算错了零件就压进留边，而那一处没有任何下游会发现）。
+/// margin 要是哪天不再是 0/1，这六处一起改。）
 struct BoardOccupancy: Sendable {
     let cols: Int
     let rows: Int
@@ -651,8 +653,9 @@ enum PartsBoardRepair {
 ///
 /// 不追求最优装箱：多塞进去一两个零件的收益，远不如「排出来的样子跟图纸上
 /// 差不多、用户一眼认得出哪个是哪个」重要 —— 而且他随时能自己拖。
-/// 但**不能因为好看而多开一块板**（多一块板 = 多烫一次），所以 `pack` 还留着
-/// 从左上角一行行排的老路当兜底，见那儿的注释。
+/// 但**不能因为好看而多开一块板**（多一块板 = 多烫一次），所以 `pack` 把从左上角
+/// 一行行排的老路也跑一遍，谁开的板少用谁 —— 排到第二块板时赢的多半是老路，
+/// 那不是兜底，是常态，见 `pack` 的注释。
 ///
 /// 留多宽（`BoardSpacing`）由调用方给，这里不挑也不猜：它是用户选的，
 /// 而且必须跟拖动校验用的是同一档，否则自动排出来的样子一拖就变成非法的。
@@ -676,10 +679,11 @@ enum PartsBoardPacker {
     /// 扫的范围是**去掉留边之后**那一块 —— 留边里的格子建表时就标死了，
     /// 扫进去只是白扫一遍。
     ///
-    /// 自动排默认走的是 `centerFit`，不是这一份。这一份留给两件事：`pack` 装不下时
-    /// 的兜底档（团贴着角长，边角剩的碎片少），以及「原地放不下了，另找个地方」
-    /// （旋转救急、`PartsBoardRepair` 挪零件）—— 那两种情况下零件本来就在别处，
-    /// 硬往板心挪只会让用户更找不着它。
+    /// 自动排默认走的是 `centerFit`，不是这一份。这一份留给两件事：`pack` 的第二趟
+    /// （团贴着角长，边角剩的碎片少 —— 只要排到第二块板，赢的多半是它，别当它是
+    /// 极少触发的兜底给优化掉了），以及「原地放不下了，另找个地方」（旋转救急、
+    /// `PartsBoardRepair` 挪零件）—— 那两种情况下零件本来就在别处，硬往板心挪
+    /// 只会让用户更找不着它。
     ///
     /// 但底下那两个 `usable` 判断松不得：换回 `<= occupancy.rows` 的话，
     /// 50 行的板配 49 高的零件、margin 为 1，下面那个区间会变成 `1...0` —— 直接崩，
@@ -716,12 +720,15 @@ enum PartsBoardPacker {
 
     /// 在这块板上找**离板心最近**的那个放得下的位置（返回的是零件矩阵左上角该放哪儿）。
     ///
-    /// 远近算的是「零件包围盒的中心」到「板中心」的直线距离，全程整数：
+    /// 远近算的是「零件包围盒的中心」到「板中心」的距离的平方，全程整数：
     /// `2 * c + width - cols` 就是横向偏移的两倍，这样既不用浮点，也不用操心
     /// 奇偶格除不尽该往哪边倒。
     ///
-    /// 看着是把整块板扫了一遍，其实很便宜：两道 `>= bestCost` 剪枝挡在 `canPlace`
-    /// 前面，真去数豆子的位置只有寥寥几个，剩下的是一万来次整数加乘（100 × 100 的板）。
+    /// 两道 `>= bestCost` 剪枝得**先找到一个位置**才起作用（`bestCost` 初值是 `Int.max`）。
+    /// 找得到的时候收敛很快：100 × 100 的板上放一个 10 × 10 的零件，只数了 340 次豆子。
+    /// **找不到的时候一次都不生效**，整块板每一格都要问一遍 `canPlace` —— 跟 `firstFit`
+    /// 找不到时一样贵，而 `placeOne` 逐块板试过去时，前面每一块满板走的正是这条。
+    /// 实测仍然够快（100 × 100、50 个零件，两趟一共 19 ms），但别当它是免费的。
     /// 行那道剪枝成立，是因为 `cost = rowCost + dc²` —— 横向再准也不可能比 `rowCost` 小。
     ///
     /// 边界上的讲究跟 `firstFit` 完全一样（那两个 `usable` 判断松不得），理由见那边。
@@ -785,6 +792,11 @@ enum PartsBoardPacker {
 
     /// 在一块板上找一种放得下的摆法：先按 `candidates` 的次序挑朝向（原方向优先），
     /// 挑中的那个朝向再按 `strategy` 定位置。
+    ///
+    /// 默认 `.center`，所以走这条路的入口全都跟着居中排：点零件条落位、多选摆到当前板、
+    /// 把没摆的接着往板上塞。它们**没有 `pack` 那样两趟比一比**，板子快满的时候可能比
+    /// 从左上角排多开一块。这是拿装箱率换「落位跟自动排看起来是一回事」，认了；
+    /// 真要省板的入口，显式传 `.topLeft`。
     static func fit(
         _ candidates: [Candidate],
         in occupancy: BoardOccupancy,
@@ -805,9 +817,6 @@ enum PartsBoardPacker {
     /// 「点零件条里的零件」不走这里：那条只认用户当时看着的那块板（见 PartsBoardStepView.place），
     /// 它复用的是 `candidates` + `fit`，不是这条逐块板试过去的规矩。
     /// `occupancies` 跟 `boards` 一一对应，会跟着一起更新。
-    ///
-    /// 往**已经摆好的板**上加零件时不要事后调 `recenter` —— 用户手动挪过的位置
-    /// 会跟着一起动。这条路本来就只管新来的那一个。
     ///
     /// - Returns: 落在第几块板上；连一整块空板都放不下（零件比板子还大）时返回 nil。
     @discardableResult
@@ -850,11 +859,12 @@ enum PartsBoardPacker {
     /// 默认从板心往外排。但中心那一团四周都贴着空地，边角比从左上角一行行排更容易
     /// 剩下塞不进东西的碎片 —— 板子快装满时，同样一批零件它可能要多开一块板，
     /// 而多一块板就是让用户多烫一次。所以**两种排法都跑一遍，谁开的板少用谁**，
-    /// 平手时用居中的那份。跑两遍的代价是几毫秒（为什么这么便宜见 `centerFit`），
-    /// 换来的是「好看」不必拿板数去买。
+    /// 平手时用居中的那份。只要排到第二块板，赢的多半是左上角那一份。
     ///
-    /// 排完还要把每块板整体挪到中间（`recenter`）：一个一个往最近的空位塞，
-    /// 塞着塞着整团就会往某一边偏。
+    /// 排完还要把每块板整体挪到中间（`recenter`）。两条路都需要它，理由还不一样：
+    /// 居中排是一个一个往最近的空位塞的，塞着塞着整团会往某一边偏；而选中左上角
+    /// 那一份时整团本来就贴在角上，**那一步是把零件搬到中间的唯一一步** ——
+    /// 删了它，多块板的情况直接退回这一版要修的那个问题。
     static func pack(
         parts: [BeadPart],
         size: BeadBoardSize,
@@ -862,13 +872,13 @@ enum PartsBoardPacker {
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
         let items = ordered(parts)
         var result = pack(items, size: size, spacing: spacing, strategy: .center)
-        // 一块板就装完了、也没有装不下的，那已经不可能更少，不必再跑一遍
-        if result.boards.count > 1 || !result.unplaced.isEmpty {
+        // 只有一块板（或者一块都排不出来）已经不可能更少，不必再跑一遍。
+        // 比的只是板数：`unplaced` 跟扫法无关 —— 一个零件进 `unplaced` 的唯一条件是
+        // 连**一块空板**都放不下，而空板上两种扫法的成败判据是同一个（那两道 `usable`），
+        // 所以两趟的 `unplaced` 必然一样多，拿它当第二关键字是白写。
+        if result.boards.count > 1 {
             let compact = pack(items, size: size, spacing: spacing, strategy: .topLeft)
-            if (compact.boards.count, compact.unplaced.count)
-                < (result.boards.count, result.unplaced.count) {
-                result = compact
-            }
+            if compact.boards.count < result.boards.count { result = compact }
         }
         for index in result.boards.indices {
             recenter(&result.boards[index], parts: parts, spacing: spacing)
@@ -903,12 +913,13 @@ enum PartsBoardPacker {
     /// 不用再验一遍。挪多少按**豆子的包围盒**算，不按 `cells` 矩阵的左上角：
     /// 矩阵四周通常还带着一圈空白（见文件头的坐标约定），拿它算的话板上看着还是偏的。
     ///
-    /// 只给全量重排（`pack`）用。板上已经有用户自己挪过的零件时别调它，
-    /// 那会把他摆好的东西整体推走。
+    /// **`private` 是有意的**，别放出去：它只在 `pack` 刚造出来的板上成立。板上有用户
+    /// 手动挪过的零件时调它，会把人家摆好的东西整体推走；而 `parts` 里少了板上某个零件时，
+    /// 那个摆放不进包围盒却照样跟着平移，能被推到板外去。
     ///
     /// 包围盒比可用范围还宽（换过间距档、或者板子本来就装不下）时原地不动：
     /// 那种板子本来就已经不合法，硬居中只会把零件推到板外去。
-    static func recenter(_ board: inout PartsBoard, parts: [BeadPart], spacing: BoardSpacing) {
+    private static func recenter(_ board: inout PartsBoard, parts: [BeadPart], spacing: BoardSpacing) {
         let byId = Dictionary(parts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var minCol = Int.max, minRow = Int.max, maxCol = Int.min, maxRow = Int.min
         for placement in board.placements {
