@@ -74,6 +74,8 @@ struct PartsCellSizeStepView: View {
     var subjectLabel: LocalizedStringKey?
     /// 能不能删掉当前这个。单图纸不能：删掉整张图纸没有任何意义。
     var allowsDelete = true
+    /// 能不能把当前这个标成插件。单图纸不能：一共就一张图纸，没有「分开排板」这件事。
+    var allowsConnectorMark = true
     /// 「清掉颜色重新对格子」到底会清掉多少。**默认按多零件说实话**：
     /// 那边「再判一次」走的是 `runClassification()`，它重判**整张图纸的每一个零件**
     /// 并整个替换 `parts` —— 只说「清掉这一个」是骗人，四十九个零件手工核对过的
@@ -328,6 +330,52 @@ struct PartsCellSizeStepView: View {
         sampleIndex = min(sampleIndex, max(0, samples.count - 1))
     }
 
+    /// 「插件」开关。
+    ///
+    /// **不用 `Toggle` + `.toggleStyle(.button)`**：那套的选中态是交给按钮样式画的，
+    /// 在这一屏（深色、小号）上开和关几乎看不出差别，而这是一个按下去在本屏没有任何
+    /// 其它反馈的开关 —— 分不出状态就等于按了不知道有没有按上。这里照拼豆板那排板子片
+    /// 的写法来：选中 = 填色 + 描边，隔着一米也认得出。
+    private func connectorChip(for part: BeadPart) -> some View {
+        let on = part.isConnectorPart
+        return Button {
+            setConnector(!on, for: part)
+        } label: {
+            Label("插件", systemImage: "puzzlepiece.extension.fill")
+                .font(.footnote.weight(.medium))
+                .foregroundColor(on
+                                 ? Theme.ColorToken.Morandi.mauve
+                                 : Theme.ColorToken.Text.secondary)
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.xs)
+                .background(
+                    Capsule().fill(on
+                                   ? Theme.ColorToken.Morandi.mauve.opacity(0.22)
+                                   : Theme.ColorToken.Surface.elevated)
+                )
+                .overlay(
+                    Capsule().stroke(on ? Theme.ColorToken.Morandi.mauve : Color.clear,
+                                     lineWidth: 1.5)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 标 / 取消标插件。
+    ///
+    /// 取消时写回 nil 而不是 false：这个字段的缺省就是「不是插件」，
+    /// 存个 false 进去只会让每张图纸的 JSON 白长一截。
+    ///
+    /// 这里**不碰网格、不碰颜色**，所以不必像改格线那样作废什么东西 ——
+    /// 标不标插件只影响最后排板子时它落在哪一块板上。
+    private func setConnector(_ on: Bool, for part: BeadPart) {
+        guard let index = parts.firstIndex(where: { $0.id == part.id }) else { return }
+        parts[index].isConnector = on ? true : nil
+        // 标一个存一个，跟点「对齐了」一样：一张图纸四十九个零件是能横跨好几天的活，
+        // 不该等到走完整条流程才落盘。
+        onConfirmPart()
+    }
+
     // MARK: - 画布
 
     private var canvas: some View {
@@ -500,6 +548,24 @@ struct PartsCellSizeStepView: View {
                         Text("\(sampleIndex + 1) / \(samples.count)")
                             .font(.footnote.monospacedDigit())
                             .foregroundColor(Theme.ColorToken.Text.tertiary)
+                    }
+                }
+
+                // 插件的标记摆在这一屏，是因为这里是唯一一个「一个零件一个零件过一遍」的
+                // 地方：用户翻到哪一块，眼前就是那一块的大图，认得出它是不是插件。
+                // 零件清单那屏是一片缩略图，看不清；到了拼豆板那屏，板已经排完了。
+                if allowsConnectorMark {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        connectorChip(for: sample)
+
+                        // 这一句说的是按下去之后板子会变成什么样，不是「插件是什么」。
+                        // 不写的话，这个开关按下去在本屏一点变化都没有 ——
+                        // 效果要翻过三屏、到拼豆板那儿才看得见。
+                        Text("排拼豆板时单独占一块板")
+                            .font(.caption)
+                            .foregroundColor(Theme.ColorToken.Text.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
                     }
                 }
             }

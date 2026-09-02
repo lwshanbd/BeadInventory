@@ -454,6 +454,9 @@ struct PartsListStepView: View {
         merged.cols = 0
         merged.cells = []
         merged.gridConfirmed = nil
+        // `isConnector` 刻意不清：它说的是「这块零件是干什么用的」，不是网格的一个状态
+        // —— 两块插件合成一块还是插件。混着选的沿用第一块，用户在「量格子」那屏一眼
+        // 就看得见，也改得掉。
 
         var remaining = parts.filter { !selection.contains($0.id) }
         remaining.append(merged)

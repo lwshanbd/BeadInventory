@@ -208,6 +208,22 @@ struct PartsBoardStepView: View {
         boardSpacing ?? preferredSpacing
     }
 
+    /// 被标成插件的那些零件（在「量格子」那屏标的）。板子归哪一类、零件条上画不画
+    /// 那个角标，都认它。现算不缓存 —— 零件最多几十个，而缓存要跟着 `parts` 的每一次
+    /// 改动同步，漏一次就是一块标错类的板。
+    private var connectorIds: Set<UUID> { PartsBoardPacker.connectorIds(in: parts) }
+
+    /// 有板子上插件和别的零件混着摆。
+    ///
+    /// 自动排版不会排出这种板（见 `PartsBoardPacker.placeOne`），所以它只有两个来源：
+    /// 用户自己把插件点到了这块板上，或者板早就排好了、事后才有零件被标成插件。
+    /// 后者是常事 —— 而这时候屏幕上不会有任何变化，用户以为那个标记没生效。
+    private var hasMixedBoard: Bool {
+        let connectors = connectorIds
+        guard !connectors.isEmpty else { return false }
+        return boards.contains { $0.partsKind(connectorIds: connectors) == .mixed }
+    }
+
     /// 一次拖动的现场。见 `session` 的注释。
     ///
     /// 挪了几格、放不放得下也记在这里，不去读 `drag`：手指抬起来那一下要用这两个值
@@ -453,11 +469,21 @@ struct PartsBoardStepView: View {
                     .padding(.horizontal, Theme.Spacing.lg)
             }
 
+            // 插件的标记是在三屏之前按的，而板子这边只有「多出来一块板」这一个变化 ——
+            // 不说一句的话，用户看到的是自己标了插件、板子却没分开。
+            if hasMixedBoard {
+                Text("插件与其它零件摆在同一块板上。用右上角菜单「全部重新排列为」可让插件单独成板。")
+                    .font(.caption)
+                    .foregroundColor(Theme.ColorToken.Text.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Theme.Spacing.lg)
+            }
+
             if let board = currentBoard {
                 // 投屏那一行单独占一行：它那句话本身就够长，跟板子摘要挤在同一行的话
                 // 两边都会被截断，而这两句都是用来「扫一眼确认」的。
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("\(board.size.label) · 摆了 \(board.placements.count) 个零件 · \(beadCount(of: board)) 颗豆子")
+                    Text(boardSummary(board))
                         .font(.caption.monospacedDigit())
                         .foregroundColor(Theme.ColorToken.Text.secondary)
                     // 状态标记 + 投影仪模式的入口，写法见 `ProjectorStatusChip`
@@ -475,9 +501,28 @@ struct PartsBoardStepView: View {
         .background(Theme.ColorToken.Surface.background)
     }
 
+    /// 板头那一行摘要。插件板要在最前面点出来 —— 拼这块板时手上抓的是另一批豆子，
+    /// 而板号和格数说不出这件事。
+    private func boardSummary(_ board: PartsBoard) -> String {
+        let base = String(localized:
+            "\(board.size.label) · 摆了 \(board.placements.count) 个零件 · \(beadCount(of: board)) 颗豆子")
+        guard board.partsKind(connectorIds: connectorIds) == .connectors else { return base }
+        return String(localized: "插件板 · \(base)")
+    }
+
     private func boardChip(index: Int, board: PartsBoard) -> some View {
         let isSelected = index == boardIndex
-        return Text("板 \(index + 1)")
+        // 插件板在这一排里要认得出来：用户拼到这块板时手上换的是另一批豆子，
+        // 而板号本身说不出这件事。
+        let isConnectorBoard = board.partsKind(connectorIds: connectorIds) == .connectors
+        return HStack(spacing: 4) {
+            Text("板 \(index + 1)")
+            if isConnectorBoard {
+                Image(systemName: "puzzlepiece.extension.fill")
+                    .font(.caption2)
+                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
+            }
+        }
             .font(.footnote.weight(.medium))
             .foregroundColor(Theme.ColorToken.Text.primary)
             .padding(.horizontal, Theme.Spacing.md)
@@ -932,6 +977,15 @@ struct PartsBoardStepView: View {
                 // 用户才知道刚放上去的是哪一个。
                 orderBadge(part.id, size: 9)
                     .padding(3)
+                // 条里也要认得出插件：点一下就落到当前这块板上（见 `place`），
+                // 而那块板多半不是插件板。要不要放是用户的事，但他得看得见自己在放什么。
+                if part.isConnectorPart {
+                    Image(systemName: "puzzlepiece.extension.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(3)
+                }
                 // 勾选圈画在右下角，避开左上角的号。没勾的也画一个空圈 ——
                 // 不画的话，多选态和平时长得一模一样，用户会以为点了没反应。
                 if picking {
@@ -1517,12 +1571,15 @@ struct PartsBoardStepView: View {
         let used = spacing
         var occupancies = boards.map { PartsBoardPacker.occupancy(of: $0, parts: parts, spacing: used) }
         var added = 0
+        // 认的是**全部**零件而不是待摆的那几个：板上归谁是由板上已经摆着的东西决定的。
+        let connectors = PartsBoardPacker.connectorIds(in: parts)
 
-        // 摆放规矩（先大后小、先原方向后转 90°、先塞现有板再开新板）全在 packer 里，
-        // 跟进屏自动排走的是同一条路
+        // 摆放规矩（先大后小、先原方向后转 90°、先塞现有板再开新板、插件不跟别的零件同板）
+        // 全在 packer 里，跟进屏自动排走的是同一条路
         for item in PartsBoardPacker.ordered(unplaced) {
             if PartsBoardPacker.placeOne(item.part, footprint: item.footprint, into: &boards,
-                                         occupancies: &occupancies, size: size, spacing: used) != nil {
+                                         occupancies: &occupancies, size: size, spacing: used,
+                                         connectorIds: connectors) != nil {
                 added += 1
             }
         }

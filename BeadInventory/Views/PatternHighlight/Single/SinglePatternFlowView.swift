@@ -208,6 +208,8 @@ struct SinglePatternFlowView: View {
                                 },
                                 subjectLabel: "整张图纸",
                                 allowsDelete: false,
+                                // 一共就一张图纸，没有「跟别的零件分开排板」这回事
+                                allowsConnectorMark: false,
                                 // 代价要说全：重对格子大小会把 cells 清空，于是所有「已完成」标记
                                 // 一并作废（见 pruneDoneColors(against:)）。只说「颜色会清掉」的话，
                                 // 用户重判完颜色发现色号都回来了、进度却从 8/12 变成 0/12，

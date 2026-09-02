@@ -265,6 +265,55 @@ struct PartsBoard: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+// MARK: - 一块板上摆的是哪一类零件
+
+/// 插件要跟别的零件分开摆（见 `BeadPart.isConnector`），所以自动排版之前得先知道
+/// 「这块板现在归谁」。
+///
+/// **不给 `PartsBoard` 存这么一个字段**：板上摆的东西一直在变（放上去、拿下来、
+/// 整块清空、重排），存字段就得在每一处改动之后记得同步它，漏一处就是一块
+/// 标着「插件板」、上面却躺着普通零件的板。从摆放现算的结论不会过期。
+enum BoardPartsKind: Sendable, Equatable {
+    /// 还什么都没摆，两类都能上
+    case empty
+    case regular
+    case connectors
+    /// 两类混在同一块板上。自动排版不再往里添东西 —— 添哪一类都是把混装弄得更深。
+    ///
+    /// 走到这一步只有两条路：用户自己把零件点上去的，或者板早就排好了、
+    /// 事后才有零件被标成插件。两种都是用户的东西，不能替他推翻（重排会清掉
+    /// 手动挪过的位置和已完成标记），所以这里只是不再插手，由界面去说。
+    case mixed
+
+    /// 这块板收不收这个零件
+    func accepts(connector: Bool) -> Bool {
+        switch self {
+        case .empty: return true
+        case .regular: return !connector
+        case .connectors: return connector
+        case .mixed: return false
+        }
+    }
+}
+
+extension PartsBoard {
+    /// 这块板上现在摆的是哪一类零件。`connectorIds` 是被标成插件的那些零件。
+    func partsKind(connectorIds: Set<UUID>) -> BoardPartsKind {
+        var hasConnector = false
+        var hasRegular = false
+        for placement in placements {
+            if connectorIds.contains(placement.partId) {
+                hasConnector = true
+            } else {
+                hasRegular = true
+            }
+            if hasConnector, hasRegular { return .mixed }
+        }
+        if hasConnector { return .connectors }
+        return hasRegular ? .regular : .empty
+    }
+}
+
 // MARK: - 色号条的顺序
 
 /// 色号条 / 色号列表的排序规则 —— 判色、拼板、投影、补格子四处共用这一份。
@@ -660,6 +709,11 @@ enum PartsBoardRepair {
 /// 留多宽（`BoardSpacing`）由调用方给，这里不挑也不猜：它是用户选的，
 /// 而且必须跟拖动校验用的是同一档，否则自动排出来的样子一拖就变成非法的。
 enum PartsBoardPacker {
+    /// 被标成插件的那些零件。自动排版的几处都拿它把两类零件分开摆。
+    static func connectorIds(in parts: [BeadPart]) -> Set<UUID> {
+        Set(parts.filter(\.isConnectorPart).map(\.id))
+    }
+
     /// 板上已经摆了的东西占了哪些格。`ignoring` 用来在拖某个零件时把它自己排除掉。
     static func occupancy(
         of board: PartsBoard,
@@ -818,6 +872,10 @@ enum PartsBoardPacker {
     /// 它复用的是 `candidates` + `fit`，不是这条逐块板试过去的规矩。
     /// `occupancies` 跟 `boards` 一一对应，会跟着一起更新。
     ///
+    /// 插件只落在插件板上、别的零件只落在别的板上（`connectorIds` + `BoardPartsKind`）——
+    /// 这条判断必须在「放得下吗」之前，不然一个插件会因为第 1 块板还有空位就落在那儿，
+    /// 用户标的那一下等于没标。
+    ///
     /// - Returns: 落在第几块板上；连一整块空板都放不下（零件比板子还大）时返回 nil。
     @discardableResult
     static func placeOne(
@@ -827,11 +885,15 @@ enum PartsBoardPacker {
         occupancies: inout [BoardOccupancy],
         size: BeadBoardSize,
         spacing: BoardSpacing,
+        connectorIds: Set<UUID>,
         strategy: Strategy = .center
     ) -> Int? {
         let options = candidates(for: part, footprint: footprint)
+        let isConnector = connectorIds.contains(part.id)
 
         for index in boards.indices {
+            guard boards[index].partsKind(connectorIds: connectorIds).accepts(connector: isConnector)
+            else { continue }
             guard let hit = fit(options, in: occupancies[index], strategy: strategy) else { continue }
             boards[index].placements.append(PartPlacement(
                 partId: part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
@@ -865,19 +927,28 @@ enum PartsBoardPacker {
     /// 居中排是一个一个往最近的空位塞的，塞着塞着整团会往某一边偏；而选中左上角
     /// 那一份时整团本来就贴在角上，**那一步是把零件搬到中间的唯一一步** ——
     /// 删了它，多块板的情况直接退回这一版要修的那个问题。
+    ///
+    /// **普通零件先排、插件后排**，所以插件板落在最后几块。反过来的话，图纸上最大的
+    /// 那个零件要是插件，第 1 块板就成了插件板 —— 而用户是从第 1 块板开始拼的，
+    /// 先拿到手的应该是成品的主体。分不分板本身由 `placeOne` 保证，跟这里的顺序无关；
+    /// 两组各自「先大后小」（`ordered` 跑两遍），组内的规矩一点没变。
     static func pack(
         parts: [BeadPart],
         size: BeadBoardSize,
         spacing: BoardSpacing
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
-        let items = ordered(parts)
-        var result = pack(items, size: size, spacing: spacing, strategy: .center)
+        let items = ordered(parts.filter { !$0.isConnectorPart }) + ordered(parts.filter(\.isConnectorPart))
+        let connectors = connectorIds(in: parts)
+        var result = pack(items, size: size, spacing: spacing,
+                          connectorIds: connectors, strategy: .center)
         // 只有一块板（或者一块都排不出来）已经不可能更少，不必再跑一遍。
         // 比的只是板数：`unplaced` 跟扫法无关 —— 一个零件进 `unplaced` 的唯一条件是
         // 连**一块空板**都放不下，而空板上两种扫法的成败判据是同一个（那两道 `usable`），
         // 所以两趟的 `unplaced` 必然一样多，拿它当第二关键字是白写。
+        //（插件那道分板判断不影响这条：空板谁都收得下，见 `BoardPartsKind.accepts`。）
         if result.boards.count > 1 {
-            let compact = pack(items, size: size, spacing: spacing, strategy: .topLeft)
+            let compact = pack(items, size: size, spacing: spacing,
+                               connectorIds: connectors, strategy: .topLeft)
             if compact.boards.count < result.boards.count { result = compact }
         }
         for index in result.boards.indices {
@@ -890,6 +961,7 @@ enum PartsBoardPacker {
         _ items: [(part: BeadPart, footprint: PartFootprint)],
         size: BeadBoardSize,
         spacing: BoardSpacing,
+        connectorIds: Set<UUID>,
         strategy: Strategy
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
         var boards: [PartsBoard] = []
@@ -899,7 +971,7 @@ enum PartsBoardPacker {
         for item in items {
             if placeOne(item.part, footprint: item.footprint, into: &boards,
                         occupancies: &occupancies, size: size, spacing: spacing,
-                        strategy: strategy) == nil {
+                        connectorIds: connectorIds, strategy: strategy) == nil {
                 unplaced.append(item.part.id)
             }
         }
