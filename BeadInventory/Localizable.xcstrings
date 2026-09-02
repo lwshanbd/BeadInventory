@@ -13538,6 +13538,46 @@
           }
         }
       }
+    },
+    "插件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connector"
+          }
+        }
+      }
+    },
+    "排拼豆板时单独占一块板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gets a board to itself"
+          }
+        }
+      }
+    },
+    "插件与其它零件摆在同一块板上。用右上角菜单「全部重新排列为」可让插件单独成板。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connectors are sharing a board with other parts. Use “Rearrange all as” in the top-right menu to give them a board of their own."
+          }
+        }
+      }
+    },
+    "插件板 · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connector board · %@"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

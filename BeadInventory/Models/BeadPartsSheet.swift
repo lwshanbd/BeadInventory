@@ -172,6 +172,19 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
     /// 缺字段解出 nil（等于没确认过）；写成非 Optional 的 Bool 会让所有存量图纸解码直接抛。
     var gridConfirmed: Bool?
 
+    /// 这是一个插件。
+    ///
+    /// 立体拼豆的图纸上有一类零件不是成品的一部分：它们插在别的零件之间，把整个立体
+    /// 结构撑住（榫卯里那个榫）。这类零件用户会想跟其它零件分开拼 —— 所以**自动排版时**
+    /// 它们单独占板，不跟别的零件混在一块板上（见 `PartsBoardPacker`）。
+    /// 用户亲手把它点到别的板上不拦：那是他看着板号按下去的，见 `BoardPartsKind.mixed`。
+    ///
+    /// 图上看不出来：插件和普通零件都是一块像素画，「这块是用来插的」只写在图纸的
+    /// 说明里、或者干脆只在拼过的人脑子里。所以这件事只能由用户指认，不猜。
+    ///
+    /// **Optional 是为了老数据**（理由同 `gridConfirmed`）。
+    var isConnector: Bool?
+
     init(
         id: UUID = UUID(),
         customName: String? = nil,
@@ -181,7 +194,8 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
         rows: Int = 0,
         cols: Int = 0,
         cells: [[PartCellFill]] = [],
-        gridConfirmed: Bool? = nil
+        gridConfirmed: Bool? = nil,
+        isConnector: Bool? = nil
     ) {
         self.id = id
         self.customName = customName
@@ -192,12 +206,16 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
         self.cols = cols
         self.cells = cells
         self.gridConfirmed = gridConfirmed
+        self.isConnector = isConnector
     }
 
     var hasCells: Bool { !cells.isEmpty }
 
     /// 用户亲手确认过这个零件的网格
     var isGridConfirmed: Bool { gridConfirmed == true }
+
+    /// 用户把这个零件标成了插件
+    var isConnectorPart: Bool { isConnector == true }
 
     /// 这个零件落在全局网格上的那块区域。全图共用一张网格，所以这里不带任何
     /// 「这个零件自己的」参数 —— 换个零件看，格线还是那批格线。

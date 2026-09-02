@@ -252,4 +252,32 @@ final class PartsBoardRepairTests: XCTestCase {
         XCTAssertTrue(second.isEmpty, "第二遍不该再报改动")
         XCTAssertEqual(boards, settled, "第二遍不该再动板子")
     }
+
+    // MARK: - 老图纸打得开
+
+    /// 没有 `isConnector` / `gridConfirmed` 的存量零件照样解得出来。
+    ///
+    /// 这一条**在模拟器里走一遍永远抓不到**：开发自己造的图纸一定带这两个字段，
+    /// 只有用户库里的老图纸会撞上。而它塌下来的样子是整张图纸打不开
+    /// （`decodePartsSheet` 把解码错误 catch 掉、返回 nil），用户丢的是几天的活。
+    ///
+    /// 守的是下一个来「清理」这两个三态字段的人：把 `Bool?` 改成 `Bool = false`
+    /// 看着更干净，但合成的解码器不认属性默认值，缺字段照样抛。
+    func testDecodesPartSavedBeforeConnectorFlag() throws {
+        let json = """
+        {
+          "id" : "3F2A9C10-5B7E-4D21-8A66-1C0E4B9D7F35",
+          "rowBand" : 0,
+          "bounds" : [[0, 0], [0.2, 0.3]],
+          "rows" : 0,
+          "cols" : 0,
+          "cells" : []
+        }
+        """
+        let part = try JSONDecoder().decode(BeadPart.self, from: Data(json.utf8))
+        XCTAssertNil(part.isConnector)
+        XCTAssertNil(part.gridConfirmed)
+        XCTAssertFalse(part.isConnectorPart)
+        XCTAssertFalse(part.isGridConfirmed)
+    }
 }
