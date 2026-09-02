@@ -13468,6 +13468,76 @@
           }
         }
       }
+    },
+    "优先填入现有板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fill existing boards first"
+          }
+        }
+      }
+    },
+    "摆到板 %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Place on board %lld"
+          }
+        }
+      }
+    },
+    "摆到新板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Place on a new board"
+          }
+        }
+      }
+    },
+    "已摆上 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Placed %lld pieces"
+          }
+        }
+      }
+    },
+    "板 %lld 已放不下这 %lld 个，可改为「摆到新板」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Board %1$lld has no room for these %2$lld pieces — try “Place on a new board”"
+          }
+        }
+      }
+    },
+    "已摆上 %lld 个，还有 %lld 个这块板放不下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Placed %1$lld pieces; %2$lld more don’t fit on this board"
+          }
+        }
+      }
+    },
+    "已新增 %lld 块板，摆上 %lld 个零件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added %1$lld boards and placed %2$lld pieces"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

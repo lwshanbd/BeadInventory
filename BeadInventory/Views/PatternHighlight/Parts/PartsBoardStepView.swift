@@ -74,6 +74,11 @@ struct PartsBoardStepView: View {
     /// 正在高亮的色号（`PartCellFill.groupKey`）。nil = 正常显示
     @State private var highlightKey: String?
     @State private var tab: Tab = .parts
+    /// 零件条正处在多选状态
+    @State private var picking = false
+    /// 多选勾中的零件 id。里面可能有已经不在条里的（放上板了、格子被擦空了），
+    /// 所以一律经 `pickedParts` 过一道，别直接拿它数数或者摆放。
+    @State private var picks: Set<UUID> = []
     /// 已经自动切过一次「颜色」页签了（见 `showColorsIfAllPlaced`）。
     @State private var didAutoShowColors = false
 
@@ -826,17 +831,37 @@ struct PartsBoardStepView: View {
     /// 还没摆上板的零件。点一下就落到当前这块板上 ——
     /// 从这么小一个缩略图一路拖到放大了的板上，手指中途一抖就得重来。
     /// 落位之后再拖着挪，起手点是板上那个实实在在的零件。
+    ///
+    /// ## 为什么还要一个「选择」
+    ///
+    /// 单点只认**当前这块板**（见 `place`），而零件条里躺着的很多是刚从这块板上移除
+    /// 下来的 —— 用户移除它，往往就是因为不想让它待在这块板上；点一下它又原样回去了，
+    /// 想把它们凑成另起的一块板，之前一个办法都没有。移除只完成了一半，另一半在这里：
+    /// 勾几个，一次摆到别处去。
     private var partsTray: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            HStack {
-                Text(unplaced.isEmpty
-                     ? "零件已全部放置"
-                     : "还有 \(unplaced.count) 个未摆放")
+        // 全摆完了就不该还停在多选态（那时条里一个零件都没有，「已选 0 个」没有意义）。
+        // 状态本身留着不清，是为了让这一句成为唯一的判断口径。
+        let picking = self.picking && !unplaced.isEmpty
+        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.md) {
+                Text(trayCaption(picking: picking))
                     .font(.footnote)
                     .foregroundColor(Theme.ColorToken.Text.secondary)
-                Spacer()
-                if !unplaced.isEmpty {
-                    Button { fillRemaining() } label: {
+                Spacer(minLength: 0)
+                if picking {
+                    Button("取消") { endPicking() }
+                        .font(.footnote.weight(.medium))
+                } else if !unplaced.isEmpty {
+                    Button("选择") { self.picking = true }
+                        .font(.footnote.weight(.medium))
+                    // 写「优先」不写「填入现有板」：这一条塞不下照样会开新板
+                    // （见 PartsBoardPacker.placeOne），两条路的差别只是**先不先动
+                    // 已经摆好的板** —— 而那在拼的时候是件大事：塞进空隙会让本来
+                    // 已经拼了一半的板又多出几个零件。写成互斥的两条就是在骗人。
+                    Menu {
+                        Button("优先填入现有板") { fillRemaining() }
+                        Button("摆到新板") { placeOnNewBoards(unplaced) }
+                    } label: {
                         Label("自动排列", systemImage: "square.grid.3x3.fill")
                             .font(.footnote.weight(.medium))
                     }
@@ -853,18 +878,51 @@ struct PartsBoardStepView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: Theme.Spacing.sm) {
                         ForEach(unplaced) { part in
-                            Button { place(part) } label: { trayCell(part) }
-                                .buttonStyle(.plain)
+                            Button {
+                                if picking { togglePick(part.id) } else { place(part) }
+                            } label: {
+                                trayCell(part, picking: picking, picked: picks.contains(part.id))
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal, 2)
                 }
                 .frame(height: 76)
+
+                if picking {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        // 写「摆到板 3」不写「摆到当前板」：上面那排板子片就是按「板 N」
+                        // 标的，用户按之前得知道东西会落到哪一块。
+                        if currentBoard != nil {
+                            Button { placePicked(onNewBoard: false) } label: {
+                                Text("摆到板 \(boardIndex + 1)").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        Button { placePicked(onNewBoard: true) } label: {
+                            Text("摆到新板").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .font(.footnote)
+                    .lineLimit(1)
+                    .disabled(pickedParts.isEmpty)
+                }
             }
         }
     }
 
-    private func trayCell(_ part: BeadPart) -> some View {
+    private func trayCaption(picking: Bool) -> String {
+        if picking {
+            return String(localized: "已选 \(pickedParts.count) 个")
+        }
+        return unplaced.isEmpty
+            ? String(localized: "零件已全部放置")
+            : String(localized: "还有 \(unplaced.count) 个未摆放")
+    }
+
+    private func trayCell(_ part: BeadPart, picking: Bool = false, picked: Bool = false) -> some View {
         let footprint = part.footprint(turns: 0)
         return VStack(spacing: 2) {
             ZStack(alignment: .topLeading) {
@@ -874,6 +932,18 @@ struct PartsBoardStepView: View {
                 // 用户才知道刚放上去的是哪一个。
                 orderBadge(part.id, size: 9)
                     .padding(3)
+                // 勾选圈画在右下角，避开左上角的号。没勾的也画一个空圈 ——
+                // 不画的话，多选态和平时长得一模一样，用户会以为点了没反应。
+                if picking {
+                    Image(systemName: picked ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(picked
+                                         ? Theme.ColorToken.Morandi.mauve
+                                         : Theme.ColorToken.Text.tertiary)
+                        .background(Circle().fill(Theme.ColorToken.Surface.background))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(3)
+                }
             }
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
@@ -881,7 +951,8 @@ struct PartsBoardStepView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
-                    .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+                    .stroke(picked ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default,
+                            lineWidth: picked ? 2 : 1)
             )
             Text("\(footprint.width)×\(footprint.height)")
                 .font(.caption2.monospacedDigit())
@@ -1070,6 +1141,11 @@ struct PartsBoardStepView: View {
     private var unplaced: [BeadPart] {
         let placed = placedIds
         return parts.filter { !placed.contains($0.id) && $0.beadCount > 0 }
+    }
+
+    /// 多选真正勾住的那几个。以零件条现在的内容为准，勾过之后又不在条里的自动作数没了。
+    private var pickedParts: [BeadPart] {
+        unplaced.filter { picks.contains($0.id) }
     }
 
     /// 当前选中的是哪个零件（选中态挂在「摆放」上，这里翻成零件）
@@ -1423,6 +1499,8 @@ struct PartsBoardStepView: View {
         boardIndex = 0
         selection = nil
         highlightKey = nil
+        // 零件全被重新分了一遍板，勾着的那几个已经不是用户当初勾的那件事了
+        endPicking()
         resetView()
         // 说清「按哪一档排的、排成几块」：换松紧最直观的反馈就是板数变了几块，
         // 而看到板数之前用户得先确认自己换的那一档真的生效了。
@@ -1453,6 +1531,97 @@ struct PartsBoardStepView: View {
         flash(added > 0
               ? String(localized: "已新增摆放 \(added) 个")
               : unplacedNote(unplaced.count, spacing: used))
+    }
+
+    private func togglePick(_ id: UUID) {
+        if picks.contains(id) { picks.remove(id) } else { picks.insert(id) }
+    }
+
+    private func endPicking() {
+        picking = false
+        picks = []
+    }
+
+    /// 多选之后落位。两条路只差一件事：动不动已经摆好的板。
+    /// 多选之后落位。**摆上去的取消勾选，没摆上的原样勾着。**
+    ///
+    /// 早先是动手之前先 `endPicking()`：板子放不下时提示写着「可改为『摆到新板』」，
+    /// 而那个按钮已经跟多选态一起消失了，勾也全没了 —— 用户要照着提示做，得重新
+    /// 点「选择」再把刚才那几个一个个勾回来。留着没摆上的那几个还顺带回答了
+    /// 「是哪几个没摆上」：条里同时躺着他本来就没勾的零件，长得一模一样。
+    private func placePicked(onNewBoard: Bool) {
+        let chosen = pickedParts
+        guard !chosen.isEmpty else { return }
+        picks = onNewBoard ? placeOnNewBoards(chosen) : placeOnCurrentBoard(chosen)
+        if picks.isEmpty { picking = false }
+    }
+
+    /// 把这一批塞进当前这块板的空隙里。**塞不下的就留在零件条里，不替他开新板** ——
+    /// 用户刚按的那个按钮上写着板号，东西却落到另一块板上，比放不下更难受。
+    ///
+    /// - Returns: 没摆上的那几个。
+    @discardableResult
+    private func placeOnCurrentBoard(_ chosen: [BeadPart]) -> Set<UUID> {
+        guard boards.indices.contains(boardIndex) else { return Set(chosen.map(\.id)) }
+        let used = spacing
+        var occupancy = PartsBoardPacker.occupancy(of: boards[boardIndex], parts: parts, spacing: used)
+        var added = 0
+        var missed: Set<UUID> = []
+
+        // 先大后小、原方向优先，跟自动排走的是同一套规矩
+        for item in PartsBoardPacker.ordered(chosen) {
+            let options = PartsBoardPacker.candidates(for: item.part, footprint: item.footprint)
+            guard let hit = PartsBoardPacker.fit(options, in: occupancy) else {
+                missed.insert(item.part.id)
+                continue
+            }
+            boards[boardIndex].placements.append(PartPlacement(
+                partId: item.part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
+            ))
+            occupancy.add(hit.candidate.footprint, col: hit.col, row: hit.row)
+            added += 1
+        }
+        if added > 0 { boardSpacing = used }
+
+        if missed.isEmpty {
+            flash(String(localized: "已摆上 \(added) 个"))
+        } else if added == 0 {
+            flash(String(localized: "板 \(boardIndex + 1) 已放不下这 \(missed.count) 个，可改为「摆到新板」"))
+        } else {
+            flash(String(localized: "已摆上 \(added) 个，还有 \(missed.count) 个这块板放不下"))
+        }
+        return missed
+    }
+
+    /// 另起板子摆这一批。**已经摆好的板一格都不动** —— 用户走这条路多半正是因为
+    /// 不想让它们回到原来那块板上（从板上移除下来的零件，单点回去还是落回这块板）。
+    /// 一块新板装不下就再开一块，摆法跟进屏自动排是同一条路。
+    ///
+    /// - Returns: 没摆上的那几个（比板子还大的）。
+    @discardableResult
+    private func placeOnNewBoards(_ chosen: [BeadPart]) -> Set<UUID> {
+        let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
+        let used = spacing
+        let packed = PartsBoardPacker.pack(parts: chosen, size: size, spacing: used)
+        guard !packed.boards.isEmpty else {
+            flash(unplacedNote(chosen.count, spacing: used))
+            return Set(chosen.map(\.id))
+        }
+
+        let first = boards.count
+        boards.append(contentsOf: packed.boards)
+        boardSpacing = used
+        // 切到新板里的第一块（一批可能开出好几块，拼是从第一块开始的）——
+        // 不切的话屏幕上一点变化都没有，用户不知道东西去哪了
+        switchTo(first)
+
+        let placed = chosen.count - packed.unplaced.count
+        var lines = [String(localized: "已新增 \(packed.boards.count) 块板，摆上 \(placed) 个零件")]
+        if !packed.unplaced.isEmpty {
+            lines.append(unplacedNote(packed.unplaced.count, spacing: used))
+        }
+        flash(lines.joined(separator: "；"))
+        return Set(packed.unplaced)
     }
 
     /// 点了零件条里的一个零件：落到当前这块板上；这块满了就新开一块并切过去。
