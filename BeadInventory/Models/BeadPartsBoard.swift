@@ -183,10 +183,16 @@ enum BoardSpacing: String, CaseIterable, Codable, Sendable, Identifiable {
 /// 这是**用户的偏好，不跟着图纸存**：它只影响自动排的那一下，排完就变成板上的坐标了，
 /// 之后拖动、校验、体检都跟它无关。`BoardSpacing` 不一样 —— 那一档排完还要拿去校验
 /// 拖动，所以必须跟着图纸走。
+///
+/// 代价是没有任何地方记得住「眼前这几块板当初是按什么排的」，所以菜单上那个勾说的是
+/// 「下次自动排按哪种来」。别拿加 `Codable` 去补这件事：`@AppStorage` 认不出 rawValue
+/// 是退回默认档，合成的 `Decodable` 是**抛** —— 同样加一档新排法，前者代价是一个偏好被
+/// 重置，后者代价是整张图纸打不开（见 `BoardSpacing` 那段「加第四档之前先看这里」）。
+/// 真要让板子记住自己是怎么排的，该在图纸里另存一个字段，而不是给这个枚举加 Codable。
 enum BoardLayout: String, CaseIterable, Sendable, Identifiable {
     /// 先大后小往空位里塞，两种扫法比一比谁开的板少。
     case compact
-    /// 从 1 号开始，一行一行往下摆。
+    /// 按传进来的次序（也就是零件在清单里的次序）一行一行往下摆。
     case numbered
 
     var id: String { rawValue }
@@ -194,15 +200,15 @@ enum BoardLayout: String, CaseIterable, Sendable, Identifiable {
     var label: String {
         switch self {
         case .compact: return String(localized: "最少板子")
-        case .numbered: return String(localized: "零件编号顺序")
+        case .numbered: return String(localized: "零件编号")
         }
     }
 
     /// 菜单里跟在名字后面的一句话。说的是选了它板子上会变成什么样。
     var detail: String {
         switch self {
-        case .compact: return String(localized: "大件小件穿插着塞，用掉的板子最少")
-        case .numbered: return String(localized: "从 1 号起一行一行摆，可能多用几块板")
+        case .compact: return String(localized: "大件小件混着排，用掉的板子最少")
+        case .numbered: return String(localized: "零件按编号一行一行摆，可能多用几块板")
         }
     }
 }
@@ -734,6 +740,10 @@ enum PartsBoardRepair {
 
 /// 把零件铺到板上。
 ///
+/// 下面这几段说的是默认那一档（`BoardLayout.compact`，板子用得最少）。用户可以改成
+/// 按零件编号排，那条路不排序、不比板数、也不用 `centerFit`，见 `shelfPack`。
+/// 两条路共用的只有三件事：插件单独占板、排完整体居中、合法性一律问 `canPlace`。
+///
 /// 零件按大小排过序（先大后小），一个一个往**离板心最近的空位**上放，
 /// 排完再把整块板上的东西挪到板正中间。所以三五个零件不会缩在左上角，
 /// 而是摆在板中央 —— 板子拿在手上，中间那一块最好够着，边上那一圈最容易碰掉。
@@ -975,13 +985,14 @@ enum PartsBoardPacker {
     /// 普通件的板排在前面：用户是从第 1 块板开始拼的，先拿到手的该是成品主体，
     /// 而不是一板插件。
     ///
-    /// 以上说的是省板那条路。用户在菜单里选了按编号排时走的是 `shelfPack`：
-    /// 不排序、不比板数，从 1 号一行一行往下摆（`layout`）。
+    /// 挑扫法、比板数那几段只对省板那一档成立；分插件板、普通件的板排在前面，
+    /// 两条路一样（分组在 `packGroup` 之前）。按编号排走的是 `shelfPack`。
     static func pack(
         parts: [BeadPart],
         size: BeadBoardSize,
         spacing: BoardSpacing,
-        layout: BoardLayout = .compact
+        // 刻意不给默认值：漏传一个默认档，用户选的排法就悄悄不生效，而屏幕上一个字都不会提。
+        layout: BoardLayout
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
         let regular = packGroup(parts.filter { !$0.isConnectorPart },
                                 size: size, spacing: spacing, layout: layout)
@@ -990,13 +1001,12 @@ enum PartsBoardPacker {
         return (regular.boards + connectors.boards, regular.unplaced + connectors.unplaced)
     }
 
-    /// 把**同一类**零件（要么全是插件，要么全不是）铺到板上。两种扫法各跑一遍，
-    /// 谁开的板少用谁，排完每块板整体挪到中间。
+    /// 把**同一类**零件（要么全是插件，要么全不是）铺到板上，排完每块板整体挪到中间。
+    /// 省板那一档两种扫法各跑一遍、谁开的板少用谁；按编号排走 `shelfPack`，
+    /// 不比板数也不排序 —— 它换来的正是板数。
     ///
-    /// 用户选了按编号排就走 `shelfPack`，那条路不比板数也不排序 —— 它换来的正是板数。
-    ///
-    /// 组内全同类，所以 `placeOne` 那道分板判断在这条路上恒真 —— 传 `connectorIds`
-    /// 只为签名对得上，真正靠它挡住混装的是 `fillRemaining` 那条路。
+    /// 下面这句只管省板那一支：组内全同类，所以 `placeOne` 那道分板判断在这条路上恒真
+    /// —— 传 `connectorIds` 只为签名对得上，真正靠它挡住混装的是 `fillRemaining` 那条路。
     private static func packGroup(
         _ parts: [BeadPart],
         size: BeadBoardSize,
@@ -1019,9 +1029,9 @@ enum PartsBoardPacker {
         // 连**一块空板**都放不下，而空板上两种扫法的成败判据是同一个（那两道 `usable`），
         // 所以两趟的 `unplaced` 必然一样多，拿它当第二关键字是白写。
         if result.boards.count > 1 {
-            let compact = pack(items, size: size, spacing: spacing,
-                               connectorIds: connectors, strategy: .topLeft)
-            if compact.boards.count < result.boards.count { result = compact }
+            let fromCorner = pack(items, size: size, spacing: spacing,
+                                  connectorIds: connectors, strategy: .topLeft)
+            if fromCorner.boards.count < result.boards.count { result = fromCorner }
         }
         for index in result.boards.indices {
             recenter(&result.boards[index], parts: parts, spacing: spacing)
@@ -1051,16 +1061,21 @@ enum PartsBoardPacker {
         return (boards, unplaced)
     }
 
-    /// 从 1 号零件开始一行一行往下摆：这一行摆满了另起一行，板子摆满了另起一块板。
+    /// 按传进来的次序一行一行往下摆：这一行摆满了另起一行，板子摆满了另起一块板。
     ///
-    /// 顺序就是 `parts` 的顺序，一个都不重排 —— 零件条上和板上写的号都是零件在清单里
-    /// 排第几（见 `BeadPart.displayName`），重排一次这个号就没法照着图纸找了。
-    /// 所以这条路不排序、不比板数，也不挑「哪个空位更好」：它拿板子换的就是这件事。
+    /// **调用方必须按零件在清单里的次序传**，这里一个都不重排。板上和零件条上写的号
+    /// 就是那个次序（见 `BeadPart.displayName(order:)`），传进来乱了，排出来的号也乱，
+    /// 而用户选这一档要的正是「照着号找得到」。所以这条路不排序、不比板数、也不挑
+    /// 「哪个空位更好」：它拿板子换的就是这件事。
+    ///
+    /// 摆出来的号不保证连号：插件是单独一组排的（见 `pack`），传进来的也可能只是
+    /// 用户勾中的那几个。所以界面上说的是「按零件编号」，不是「从 1 号数到 N」。
     ///
     /// 位置按**包围盒**算：同一行里两个零件的盒子隔 `gap` 列，两行之间隔 `gap` 行，
-    /// 于是任意两颗豆子之间至少隔 `gap` 格，跟居中排出来的板一样合法。尽管如此，
-    /// 落位前还是过一遍 `canPlace` —— 「放得下吗」只认它那一处判定，而这条路要是
-    /// 哪天算错了，用户是烫到那儿才发现的。撞上了就另起一块板，不硬塞。
+    /// 于是任意两颗豆子之间至少隔 `gap` 格，跟居中排出来的板一样合法。落位前那道
+    /// `canPlace` 因此恒真，留着是因为「放得下吗」只认它那一处判定 —— 这条路直接
+    /// 产出落盘的坐标，自己发明一套判据的话，算错了要等用户烫到那一格才发现。
+    /// 它真触发的话是另起一块板（新板上必过：朝向那一步已经保证宽高塞得进可用区）。
     ///
     /// 摆不下先换行、再换板，不靠转 90° 去凑当前这一行：转过来的零件跟图纸上看到的
     /// 对不上，而这条路的全部意义就是照着号找得到。只有原方向连一块空板都放不下时
@@ -1137,7 +1152,8 @@ enum PartsBoardPacker {
     /// 不用再验一遍。挪多少按**豆子的包围盒**算，不按 `cells` 矩阵的左上角：
     /// 矩阵四周通常还带着一圈空白（见文件头的坐标约定），拿它算的话板上看着还是偏的。
     ///
-    /// **`private` 是有意的**，别放出去：它只在 `pack` 刚造出来的板上成立。板上有用户
+    /// **`private` 是有意的**，别放出去：它只在自动排刚造出来的板上成立
+    /// （两条路都走它 —— `pack` 那一趟和 `shelfPack` 那一趟）。板上有用户
     /// 手动挪过的零件时调它，会把人家摆好的东西整体推走；而 `parts` 里少了板上某个零件时，
     /// 那个摆放不进包围盒却照样跟着平移，能被推到板外去。
     ///

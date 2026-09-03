@@ -438,7 +438,11 @@ struct PartsBoardStepView: View {
             // 重排造的是全新的板子，勾一律清空 —— 零件会被重新分到别的板上，而标记是
             // 按板记的，迁过去没有意义。所以这里要说清楚，不是想办法保留：用户按「确定」
             // 之前得知道自己同意的是「几个晚上的进度记录一起没」，不只是摆位。
-            Text("会按 \(repackTarget?.size.label ?? "") 的板子、\(repackTarget?.spacing.label ?? "")间距重新摆一遍，你手动挪过的位置和各块板上的已完成标记都会清空。")
+            // 三条路都走这个弹窗（换尺寸、换间距、换排列方式），所以三样都得念一遍：
+            // 从排列方式那一节进来时，尺寸和间距一个都没变，只说这两样等于把用户没动的
+            // 东西念了一遍，而他真正要确认的那一下（连着几个晚上的已完成标记一起清空）
+            // 屏幕上一个字都没有。
+            Text("会按 \(repackTarget?.size.label ?? "") 的板子、\(repackTarget?.spacing.label ?? "")间距重新摆一遍，排列方式为「\(repackTarget?.layout.label ?? "")」。你手动挪过的位置和各块板上的已完成标记都会清空。")
         }
     }
 
@@ -591,9 +595,14 @@ struct PartsBoardStepView: View {
             Section("排列方式") {
                 ForEach(BoardLayout.allCases) { option in
                     Button {
-                        guard option != preferredLayout else { return }
                         // 跟换松紧一样：板上已经摆着东西，换排法就是一次全部重排，
                         // 走同一个确认弹窗 —— 手动挪过的位置和已完成标记都要清空。
+                        //
+                        // **点已经打勾的那一档也照样重排。** 这个勾说的是「下次自动排按哪种来」，
+                        // 不是「眼前这几块板当初是怎么排的」（排法不跟着图纸存，见 `preferredLayout`）：
+                        // 在别的图纸上换过档之后回到这张，勾会打在一档跟板上看到的对不上的排法上。
+                        // 那时候用户点的正是这个勾，拦住他就成了点了没反应，而唯一的出路
+                        // （去「全部重新排列为」再选一遍同样的尺寸）没人想得到。
                         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
                         if boards.contains(where: { !$0.placements.isEmpty }) {
                             repackTarget = RepackTarget(size: size, spacing: spacing,
@@ -602,8 +611,10 @@ struct PartsBoardStepView: View {
                         }
                         // 板上什么都没摆，没什么可重排的。这一支屏幕上不会有任何变化，
                         // 所以得说一句 —— 一次点击要么有效果，要么有说法。
+                        // （点的就是已经勾着的那一档也照说：写回同一个值没有代价，
+                        // 而静默返回正是这一屏刚修掉的毛病。）
                         preferredLayout = option
-                        flash(String(localized: "接下来自动排列时用「\(option.label)」"))
+                        flash(String(localized: "接下来排到板上时用「\(option.label)」"))
                     } label: {
                         if option == preferredLayout {
                             Label(option.label, systemImage: "checkmark")
@@ -1657,15 +1668,21 @@ struct PartsBoardStepView: View {
         endBoardPicking()
         resetView()
         // 说清「按哪一档排的、排成几块」：换松紧最直观的反馈就是板数变了几块，
-        // 而看到板数之前用户得先确认自己换的那一档真的生效了。
+        // 而看到板数之前用户得先确认自己换的那一档真的生效了。排列方式同理，而且更要紧
+        // —— 多用一两块板正是「按编号排」换来的，不说的话这笔账会算到间距头上。
         // 有摆不下的也照样报板数 —— 这一下是销毁性的（手动挪的位置全没了），
         // 只说坏消息不说结果的话，用户不知道自己现在手上还剩什么。
         flash(packed.unplaced.isEmpty
-              ? String(localized: "已按\(target.spacing.label)间距排列完成，共 \(packed.boards.count) 块板")
-              : String(localized: "已按\(target.spacing.label)间距排列 \(packed.boards.count) 块板，还有 \(packed.unplaced.count) 个未能放入"))
+              ? String(localized: "已按\(target.spacing.label)间距、\(target.layout.label)排好，共 \(packed.boards.count) 块板")
+              : String(localized: "已按\(target.spacing.label)间距、\(target.layout.label)排好 \(packed.boards.count) 块板，还有 \(packed.unplaced.count) 个未能放入"))
     }
 
     /// 把还没摆的零件接着往板上放：先塞现有的板，塞不下再开新的。
+    ///
+    /// **这条路不认排列方式**（`preferredLayout`），一直是先大后小往空隙里塞。
+    /// 往已经摆好的板的缝里塞东西，本来就排不出「一行一行按号数下来」的次序 ——
+    /// 硬按号塞出来的既不是编号序，也比先大后小塞得少。选了按编号排还想要整齐的号，
+    /// 走的是旁边那条「摆到新板」。
     private func fillRemaining() {
         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
         let used = spacing
@@ -1762,11 +1779,16 @@ struct PartsBoardStepView: View {
     private func placeOnNewBoards(_ chosen: [BeadPart]) -> Set<UUID> {
         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
         let used = spacing
-        let packed = PartsBoardPacker.pack(parts: chosen, size: size,
+        // 按零件编号重排一遍再交给 packer。「按编号排」认的就是传进来的次序
+        // （见 `PartsBoardPacker.shelfPack`），而从板上勾走的那几个是按**摆放**顺序来的
+        // —— 直接传进去，新板上的号就不是升序的，用户刚选的那一档等于没选。
+        let ids = Set(chosen.map(\.id))
+        let ordered = parts.filter { ids.contains($0.id) }
+        let packed = PartsBoardPacker.pack(parts: ordered, size: size,
                                            spacing: used, layout: preferredLayout)
         guard !packed.boards.isEmpty else {
-            flash(unplacedNote(chosen.count, spacing: used))
-            return Set(chosen.map(\.id))
+            flash(unplacedNote(ordered.count, spacing: used))
+            return ids
         }
 
         let first = boards.count
@@ -1776,7 +1798,7 @@ struct PartsBoardStepView: View {
         // 不切的话屏幕上一点变化都没有，用户不知道东西去哪了
         switchTo(first)
 
-        let placed = chosen.count - packed.unplaced.count
+        let placed = ordered.count - packed.unplaced.count
         var lines = [String(localized: "已新增 \(packed.boards.count) 块板，摆上 \(placed) 个零件")]
         if !packed.unplaced.isEmpty {
             lines.append(unplacedNote(packed.unplaced.count, spacing: used))
@@ -1839,7 +1861,7 @@ struct PartsBoardStepView: View {
             // 跟菜单里点常见规格走同一个确认弹窗 —— 重排会把手动挪过的位置全抹掉，
             // 「自己填的」不该因为多打了两个数就跳过这一问。
             repackTarget = RepackTarget(size: size, spacing: spacing,
-                                                    pickedSpacing: false, layout: preferredLayout)
+                                        pickedSpacing: false, layout: preferredLayout)
         }
     }
 
