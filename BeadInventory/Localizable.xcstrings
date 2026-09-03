@@ -12399,26 +12399,6 @@
         }
       }
     },
-    "已按%@间距排列完成，共 %lld 块板" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Done at %1$@ spacing — %2$lld boards"
-          }
-        }
-      }
-    },
-    "已按%@间距排列 %lld 块板，还有 %lld 个未能放入" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%2$lld boards at %1$@ spacing — %3$lld pieces didn't fit"
-          }
-        }
-      }
-    },
     "有 %lld 个零件在%@间距下无法放入，请调小间距或更换更大的板子" : {
       "localizations" : {
         "en" : {
@@ -12435,16 +12415,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pieces you place from now on use %@ spacing"
-          }
-        }
-      }
-    },
-    "会按 %@ 的板子、%@间距重新摆一遍，你手动挪过的位置和各块板上的已完成标记都会清空。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Everything will be laid out again on %1$@ boards at %2$@ spacing. Any pieces you moved by hand and the completed-color marks on every board will be cleared."
           }
         }
       }
@@ -13665,6 +13635,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Removed %lld pieces back to the tray"
+          }
+        }
+      }
+    },
+    "排列方式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How pieces are laid out"
+          }
+        }
+      }
+    },
+    "最少板子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fewest boards"
+          }
+        }
+      }
+    },
+    "零件编号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Piece number"
+          }
+        }
+      }
+    },
+    "大件小件混着排，用掉的板子最少" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Big and small pieces mixed together, using as few boards as possible"
+          }
+        }
+      }
+    },
+    "零件按编号一行一行摆，可能多用几块板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pieces laid out row by row in number order; may need a few more boards"
+          }
+        }
+      }
+    },
+    "接下来排到板上时用「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pieces will be laid out by “%@” from now on"
+          }
+        }
+      }
+    },
+    "会按 %@ 的板子、%@间距重新摆一遍，排列方式为「%@」。你手动挪过的位置和各块板上的已完成标记都会清空。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Everything will be laid out again on %@ boards with %@ spacing, arranged by “%@”. Pieces you moved by hand and the done marks on every board will be cleared."
+          }
+        }
+      }
+    },
+    "已按%@间距、%@排好，共 %lld 块板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laid out with %@ spacing, arranged by %@ — %lld boards in total"
+          }
+        }
+      }
+    },
+    "已按%@间距、%@排好 %lld 块板，还有 %lld 个未能放入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laid out with %@ spacing, arranged by %@ — %lld boards, %lld pieces still don't fit"
           }
         }
       }
