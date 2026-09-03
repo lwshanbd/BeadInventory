@@ -140,9 +140,9 @@ struct PartsBoardStepView: View {
     @State private var invalidPlacements: Set<UUID> = []
     /// 板上还有挨着的零件时按了「完成」
     @State private var confirmFinishInvalid = false
-    /// 按过「不再询问」的项目 id（见 `PatternFinishPrompt`）。菜单里那个勾要跟着它变，
+    /// 「完成」之前要不要问一句，按项目记（见 `PatternFinishPrompt`）。菜单里那个勾要跟着它变，
     /// 所以是 `@AppStorage` 而不是直接读 `UserDefaults`。
-    @AppStorage(PatternFinishPrompt.storageKey) private var finishPromptSkips = ""
+    @AppStorage(PatternFinishPrompt.storageKey) private var finishPrompt = PatternFinishPrompt(rawValue: "")
     /// 还有颜色没标记完成时按了「完成」（见 `PatternFinishPrompt`）
     @State private var confirmFinish = false
     /// 弹确认那一刻几块板加起来还剩几个颜色没标记。**存下来，不在 message 里现算** ——
@@ -402,17 +402,25 @@ struct PartsBoardStepView: View {
         }
         .alert("板上有零件间距过近", isPresented: $confirmFinishInvalid) {
             Button("返回调整位置", role: .cancel) { confirmFinishInvalid = false }
-            Button("继续完成") { onFinish() }
+            // 写「完成并退出」不写「继续完成」：这条路绕开了「还有颜色没标记完成」那道确认
+            //（理由见下面那个 alert 上的注释），是这一屏唯一一条不会告诉用户「按下去流程就关了」
+            // 的出口。那句话塞进正文会把「烫完会粘连」冲淡，写在按钮上正好。
+            // 推到下一轮的理由同下面那个 alert。
+            Button("完成并退出") { DispatchQueue.main.async { onFinish() } }
         } message: {
             Text("有 \(invalidPlacements.count) 个零件（红边标出）与相邻零件间距不足，熨烫后会粘连，需用剪刀分开，可能损坏边缘")
         }
         // 还有颜色没拼完就先问一句 —— 理由和「本项目不再询问」的去处见 PatternFinishPrompt。
         // 间距那一条已经拦过的就不再拦第二道：连着弹两个弹窗，第二个必然是被闭眼点掉的。
         .alert("还有颜色没有标记完成", isPresented: $confirmFinish) {
-            Button("完成") { onFinish() }
+            // `onFinish` 一律推到下一轮再走。它背后的 `persist()` 存不上时会在父视图里
+            // 置起「存盘失败」那句话，而从一个正在收尾的 alert 的按钮闭包里置起另一个 alert，
+            // `.alert(item:)` 收尾那一下写回 nil 会把它吞掉 —— 用户点完「完成」屏幕上
+            // 什么都不会发生，也没有任何说法（见 SinglePatternFlowView.requestClassification）。
+            Button("完成") { DispatchQueue.main.async { onFinish() } }
             Button("完成，本项目不再询问") {
-                setAsksBeforeFinish(false)
-                onFinish()
+                finishPrompt.setAsksBeforeFinishing(false, for: projectId)
+                DispatchQueue.main.async { onFinish() }
             }
             Button("继续拼", role: .cancel) {}
         } message: {
@@ -556,8 +564,9 @@ struct PartsBoardStepView: View {
                     onCustom: { pendingCustomSize = nil; customSizeTarget = .repack }
                 )
             }
-            // 弹窗里那个「不再询问」是一扇单向门，得留个地方推回去。
-            Button { setAsksBeforeFinish(!asksBeforeFinish) } label: {
+            // 弹窗里点过「本项目不再询问」就回不去了，得在这儿留个开关打回来。
+            // 跟弹窗一样，只管当前这个项目。
+            Button { finishPrompt.setAsksBeforeFinishing(!asksBeforeFinish, for: projectId) } label: {
                 if asksBeforeFinish {
                     Label("完成前询问", systemImage: "checkmark")
                 } else {
@@ -1331,7 +1340,8 @@ struct PartsBoardStepView: View {
 
     // MARK: - 完成
 
-    /// 按下「完成」。先拦间距，再拦「还有颜色没拼完」，都过了才真的走。
+    /// 按下「完成」。**间距有问题就只弹间距那一个**，颜色这道不再问（理由见
+    /// `confirmFinishInvalid` 那条 alert 上的注释）；间距没问题才看颜色。
     ///
     /// 全部标记完了不问、按过「不再询问」不问 —— 一个二次确认要是每次都弹，
     /// 用户学会的是闭着眼睛点掉它，那它就等于不存在了。
@@ -1340,7 +1350,10 @@ struct PartsBoardStepView: View {
             confirmFinishInvalid = true
             return
         }
-        let remaining = unfinishedColorCount
+        // **形状当场算，不读 `footprints`。** 那份缓存是 `.task(id: shapeSignature)` 填的，
+        // 它落后一步的时候数不到豆子，而数不到会被当成「这块板拼完了」直接放行 ——
+        // 正好是这一屏要拦的那件事。一次点击遍历一遍所有摆放，代价可以忽略。
+        let remaining = unfinishedColorCount(using: makeFootprints())
         guard remaining > 0, asksBeforeFinish else {
             onFinish()
             return
@@ -1350,29 +1363,33 @@ struct PartsBoardStepView: View {
     }
 
     private var asksBeforeFinish: Bool {
-        !PatternFinishPrompt.isSkipped(projectId, in: finishPromptSkips)
+        finishPrompt.asksBeforeFinishing(projectId)
     }
 
-    private func setAsksBeforeFinish(_ asks: Bool) {
-        finishPromptSkips = PatternFinishPrompt.setting(!asks, for: projectId, in: finishPromptSkips)
-    }
-
-    /// 几块板加起来还有几个颜色没标记完成。
+    /// 还有几个颜色没标记完成。
     ///
     /// **数所有板，不是只数当前这块。** 用户可能正停在第二块板上，而第一块还剩三个色号 ——
     /// 只看眼前这块的话，那三个色号在他按「完成」时一声不吭地过去了。
-    /// 只在按「完成」那一下算一次，不当成属性每帧求。
-    private var unfinishedColorCount: Int {
-        var total = 0
+    ///
+    /// **按色号去重，不是把每块板的数目加起来。** 标记是按板记的（`PartsBoard.isColorDone`），
+    /// 同一个 H7 在三块板上都没打勾，累加出来是 3 —— 而用户知道这套图纸只剩一个色号没拼。
+    /// 弹窗那句话说的是「几个颜色」，就得是颜色的个数。
+    ///
+    /// 写成 func 不写成计算属性：它要把每块板上每一颗豆子过一遍，带括号的调用才提示
+    /// 「这个要花钱」，别顺手写进 `body` 或者 alert 的 `message`。
+    private func unfinishedColorCount(using shapes: [UUID: PartFootprint]) -> Int {
+        var pending: Set<String> = []
         for board in boards {
             var counts: [String: Int] = [:]
             for placement in board.placements {
-                guard let footprint = footprints[placement.id] else { continue }
+                guard let footprint = shapes[placement.id] else { continue }
                 for bead in footprint.beads { counts[bead.key, default: 0] += 1 }
             }
-            total += counts.filter { !board.isColorDone($0.key, count: $0.value) }.count
+            for (key, count) in counts where !board.isColorDone(key, count: count) {
+                pending.insert(key)
+            }
         }
-        return total
+        return pending.count
     }
 
     private func label(for key: String) -> String {

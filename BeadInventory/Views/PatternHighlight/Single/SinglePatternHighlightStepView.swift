@@ -64,13 +64,13 @@ struct SinglePatternHighlightStepView: View {
     @State private var highlightedCodes: Set<String> = []
     /// 按了几次「标记已完成」。只拿来给触觉当触发器。
     @State private var doneToggles = 0
-    /// 按过「不再询问」的项目 id（见 `PatternFinishPrompt`）。菜单里那个勾要跟着它变，
+    /// 「完成」之前要不要问一句，按项目记（见 `PatternFinishPrompt`）。菜单里那个勾要跟着它变，
     /// 所以是 `@AppStorage` 而不是直接读 `UserDefaults`。
-    @AppStorage(PatternFinishPrompt.storageKey) private var finishPromptSkips = ""
+    @AppStorage(PatternFinishPrompt.storageKey) private var finishPrompt = PatternFinishPrompt(rawValue: "")
     /// 还有色号没标记完成时按了「完成」（见 `PatternFinishPrompt`）
     @State private var confirmFinish = false
     /// 弹确认那一刻还剩几个色号没标记。**存下来，不在 message 里现算** ——
-    /// 数它要把几万格遍历一遍，而弹窗开着的这段时间这个数不会变。
+    /// `body` 每跑一次已经把几万格数过一遍了（`entries`），写进 message 就是再数一遍。
     @State private var unfinishedCount = 0
     @State private var guideMode: GuideMode = .off
     @State private var showingDiffSheet = false
@@ -202,8 +202,9 @@ struct SinglePatternHighlightStepView: View {
                     Button(action: onRecalibrate) {
                         Label("重新对一遍", systemImage: "square.grid.3x3.square")
                     }
-                    // 弹窗里那个「不再询问」是一扇单向门，得留个地方推回去。
-                    Button { setAsksBeforeFinish(!asksBeforeFinish) } label: {
+                    // 弹窗里点过「本项目不再询问」就回不去了，得在这儿留个开关打回来。
+                    // 跟弹窗一样，只管当前这个项目。
+                    Button { finishPrompt.setAsksBeforeFinishing(!asksBeforeFinish, for: project.id) } label: {
                         if asksBeforeFinish {
                             Label("完成前询问", systemImage: "checkmark")
                         } else {
@@ -244,10 +245,14 @@ struct SinglePatternHighlightStepView: View {
         }
         // 还有色号没拼完就先问一句 —— 理由和「本项目不再询问」的去处见 PatternFinishPrompt。
         .alert("还有颜色没有标记完成", isPresented: $confirmFinish) {
-            Button("完成") { onFinish() }
+            // `onFinish` 一律推到下一轮再走。它背后的 `persist()` 存不上时会在父视图里
+            // 置起「存盘失败」那句话，而从一个正在收尾的 alert 的按钮闭包里置起另一个 alert，
+            // `.alert(item:)` 收尾那一下写回 nil 会把它吞掉 —— 用户点完「完成」屏幕上
+            // 什么都不会发生，也没有任何说法（见 SinglePatternFlowView.requestClassification）。
+            Button("完成") { DispatchQueue.main.async { onFinish() } }
             Button("完成，本项目不再询问") {
-                setAsksBeforeFinish(false)
-                onFinish()
+                finishPrompt.setAsksBeforeFinishing(false, for: project.id)
+                DispatchQueue.main.async { onFinish() }
             }
             Button("继续拼", role: .cancel) {}
         } message: {
@@ -364,11 +369,7 @@ struct SinglePatternHighlightStepView: View {
     }
 
     private var asksBeforeFinish: Bool {
-        !PatternFinishPrompt.isSkipped(project.id, in: finishPromptSkips)
-    }
-
-    private func setAsksBeforeFinish(_ asks: Bool) {
-        finishPromptSkips = PatternFinishPrompt.setting(!asks, for: project.id, in: finishPromptSkips)
+        finishPrompt.asksBeforeFinishing(project.id)
     }
 
     // MARK: - 跟色号表对不上的提示

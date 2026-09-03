@@ -133,6 +133,16 @@
         }
       }
     },
+    "完成并退出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finish and Exit"
+          }
+        }
+      }
+    },
     "完成前询问" : {
       "localizations" : {
         "en" : {
