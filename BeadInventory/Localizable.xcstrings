@@ -133,6 +133,66 @@
         }
       }
     },
+    "完成并退出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finish and Exit"
+          }
+        }
+      }
+    },
+    "完成前询问" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask Before Finishing"
+          }
+        }
+      }
+    },
+    "还有颜色没有标记完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some colors aren’t marked done"
+          }
+        }
+      }
+    },
+    "还有 %lld 个颜色没有标记完成。现在完成会退出这个项目，进度已保存，下次可以接着拼。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld colors aren’t marked done yet. Finishing closes this project. Your progress is saved, so you can pick up where you left off."
+          }
+        }
+      }
+    },
+    "完成，本项目不再询问" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finish, Don’t Ask Again"
+          }
+        }
+      }
+    },
+    "继续拼" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Building"
+          }
+        }
+      }
+    },
     "恢复中断" : {
       "localizations" : {
         "en" : {

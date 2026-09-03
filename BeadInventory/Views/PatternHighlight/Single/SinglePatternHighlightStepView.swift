@@ -64,6 +64,14 @@ struct SinglePatternHighlightStepView: View {
     @State private var highlightedCodes: Set<String> = []
     /// 按了几次「标记已完成」。只拿来给触觉当触发器。
     @State private var doneToggles = 0
+    /// 「完成」之前要不要问一句，按项目记（见 `PatternFinishPrompt`）。菜单里那个勾要跟着它变，
+    /// 所以是 `@AppStorage` 而不是直接读 `UserDefaults`。
+    @AppStorage(PatternFinishPrompt.storageKey) private var finishPrompt = PatternFinishPrompt(rawValue: "")
+    /// 还有色号没标记完成时按了「完成」（见 `PatternFinishPrompt`）
+    @State private var confirmFinish = false
+    /// 弹确认那一刻还剩几个色号没标记。**存下来，不在 message 里现算** ——
+    /// `body` 每跑一次已经把几万格数过一遍了（`entries`），写进 message 就是再数一遍。
+    @State private var unfinishedCount = 0
     @State private var guideMode: GuideMode = .off
     @State private var showingDiffSheet = false
     @State private var dismissedBanner = false
@@ -194,12 +202,21 @@ struct SinglePatternHighlightStepView: View {
                     Button(action: onRecalibrate) {
                         Label("重新对一遍", systemImage: "square.grid.3x3.square")
                     }
+                    // 弹窗里点过「本项目不再询问」就回不去了，得在这儿留个开关打回来。
+                    // 跟弹窗一样，只管当前这个项目。
+                    Button { finishPrompt.setAsksBeforeFinishing(!asksBeforeFinish, for: project.id) } label: {
+                        if asksBeforeFinish {
+                            Label("完成前询问", systemImage: "checkmark")
+                        } else {
+                            Text("完成前询问")
+                        }
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("完成", action: onFinish)
+                Button("完成", action: requestFinish)
             }
         }
         .task(id: "\(work.image.size)|\(grid.rows)x\(grid.cols)") { await load() }
@@ -225,6 +242,21 @@ struct SinglePatternHighlightStepView: View {
                 // 让用户自己点一下，猜一个图纸尺寸当板子格数只会把中间的格子全对歪。
                 BoardProjectorSheet(suggestedBoard: nil, screen: screen)
             }
+        }
+        // 还有色号没拼完就先问一句 —— 理由和「本项目不再询问」的去处见 PatternFinishPrompt。
+        .alert("还有颜色没有标记完成", isPresented: $confirmFinish) {
+            // `onFinish` 一律推到下一轮再走。它背后的 `persist()` 存不上时会在父视图里
+            // 置起「存盘失败」那句话，而从一个正在收尾的 alert 的按钮闭包里置起另一个 alert，
+            // `.alert(item:)` 收尾那一下写回 nil 会把它吞掉 —— 用户点完「完成」屏幕上
+            // 什么都不会发生，也没有任何说法（见 SinglePatternFlowView.requestClassification）。
+            Button("完成") { DispatchQueue.main.async { onFinish() } }
+            Button("完成，本项目不再询问") {
+                finishPrompt.setAsksBeforeFinishing(false, for: project.id)
+                DispatchQueue.main.async { onFinish() }
+            }
+            Button("继续拼", role: .cancel) {}
+        } message: {
+            Text("还有 \(unfinishedCount) 个颜色没有标记完成。现在完成会退出这个项目，进度已保存，下次可以接着拼。")
         }
         .sheet(isPresented: $showingDiffSheet) {
             ValidationDiffSheet(
@@ -318,6 +350,26 @@ struct SinglePatternHighlightStepView: View {
             }
         }
         onPersist()
+    }
+
+    // MARK: - 完成
+
+    /// 按下「完成」。还有色号没标记完成就先弹一句确认，其余情况照旧直接走。
+    ///
+    /// 全部标记完了不问、按过「不再询问」不问 —— 一个二次确认要是每次都弹，
+    /// 用户学会的是闭着眼睛点掉它，那它就等于不存在了。
+    private func requestFinish() {
+        let remaining = entries.filter { !$0.isDone }.count
+        guard remaining > 0, asksBeforeFinish else {
+            onFinish()
+            return
+        }
+        unfinishedCount = remaining
+        confirmFinish = true
+    }
+
+    private var asksBeforeFinish: Bool {
+        finishPrompt.asksBeforeFinishing(project.id)
     }
 
     // MARK: - 跟色号表对不上的提示
