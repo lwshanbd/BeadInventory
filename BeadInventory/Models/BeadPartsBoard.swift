@@ -1077,9 +1077,22 @@ enum PartsBoardPacker {
     /// 产出落盘的坐标，自己发明一套判据的话，算错了要等用户烫到那一格才发现。
     /// 它真触发的话是另起一块板（新板上必过：朝向那一步已经保证宽高塞得进可用区）。
     ///
-    /// 摆不下先换行、再换板，不靠转 90° 去凑当前这一行：转过来的零件跟图纸上看到的
-    /// 对不上，而这条路的全部意义就是照着号找得到。只有原方向连一块空板都放不下时
-    /// 才转（细长件常常只有转过来才进得去）。
+    /// 每个零件先按原方向找位置：这一行摆得下就摆这一行，摆不下另起一行。
+    /// **只有原方向在这块板上再没地方了才转 90°** —— 转过来还能留在这块板上，就别开新板。
+    ///
+    /// 转过来的零件跟图纸上看到的对不上，所以能不转就不转 —— 但不转的代价不能是多一块板。
+    /// 早先这里只在「原方向连一块空板都放不下」时才转，于是一个横着差两列、竖过来就进得去的
+    /// 零件会直接另起一块板，它和后面所有零件一起搬到新板上，而上一块板明明还空着大半 ——
+    /// 用户看到的就是「新板上这个零件明明塞得进上一块板」。多一块板 = 多烫一次，
+    /// 这个代价比认一下朝向大得多。
+    ///
+    /// **但转的门槛只能是「否则就要开新板」，不能是「否则就要换行」**：转过来的零件高多少
+    /// 由它原来多宽决定，一个横条竖起来塞进当前这一行，整行的高度就被它顶上去，这一行下面
+    /// 那一大条全废了。同一张 66 个零件的图纸实测：门槛放到换行，100 × 100 的板要 6 块，
+    /// 比一次都不转还多一块；收在开新板是 5 块，跟不转持平，而 50 × 50 的板 21 块降到 20 块。
+    ///
+    /// 换行和换板都不回头填：行末右边、矮零件下面剩的空隙照样空着。回头填的话号就断了，
+    /// 而编号顺序是这一档的全部意义。所以这一档本来就比省板那一档费板。
     private static func shelfPack(
         _ parts: [BeadPart],
         size: BeadBoardSize,
@@ -1087,8 +1100,6 @@ enum PartsBoardPacker {
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
         let margin = spacing.margin
         let gap = spacing.gap
-        let usableCols = size.cols - 2 * margin
-        let usableRows = size.rows - 2 * margin
 
         var boards: [PartsBoard] = []
         var occupancies: [BoardOccupancy] = []
@@ -1106,26 +1117,57 @@ enum PartsBoardPacker {
             shelfHeight = 0
         }
 
+        /// 包围盒左上角摆在 (col, row) 时，这个朝向还在板子的可用范围里吗。
+        /// 只问板边，不问挨不挨着别的零件 —— 行内隔 gap 列、行间隔 gap 行是这条路自己
+        /// 保证的，落位前那道 `canPlace` 才是判定。
+        func fitsOnBoard(_ shape: PartFootprint, col: Int, row: Int) -> Bool {
+            col + shape.width <= size.cols - margin && row + shape.height <= size.rows - margin
+        }
+
+        /// 这一行到头了，游标挪到下一行开头
+        func startNewShelf() {
+            cursorCol = margin
+            shelfRow += shelfHeight + gap
+            shelfHeight = 0
+        }
+
         for part in parts {
             let options = candidates(for: part)
             // 一颗豆子都没有的零件不占地方，也不算「没摆下」（跟 `ordered` 的口径一致）
-            guard let first = options.first, !first.footprint.isEmpty else { continue }
-            // 原方向优先。挑的是「一块空板装得下的朝向」，跟游标现在在哪儿无关。
-            guard let chosen = options.first(where: {
-                $0.footprint.width <= usableCols && $0.footprint.height <= usableRows
-            }) else {
+            guard let upright = options.first, !upright.footprint.isEmpty else { continue }
+            let turned = options.dropFirst()
+            if boards.isEmpty { openBoard() }
+            let nextShelfRow = shelfRow + shelfHeight + gap
+            var picked: Candidate?
+
+            if fitsOnBoard(upright.footprint, col: cursorCol, row: shelfRow) {
+                picked = upright
+            } else if fitsOnBoard(upright.footprint, col: margin, row: nextShelfRow) {
+                startNewShelf()
+                picked = upright
+            } else if let hit = turned.first(where: {
+                // 原方向在这块板上再没地方了。转过来还留得住就转，别开新板。
+                fitsOnBoard($0.footprint, col: cursorCol, row: shelfRow)
+            }) {
+                picked = hit
+            } else if let hit = turned.first(where: {
+                fitsOnBoard($0.footprint, col: margin, row: nextShelfRow)
+            }) {
+                startNewShelf()
+                picked = hit
+            } else if let hit = options.first(where: {
+                fitsOnBoard($0.footprint, col: margin, row: margin)
+            }) {
+                openBoard()
+                picked = hit
+            }
+            // 都不行 = 两个朝向都比一块空板还大，只能让用户换板子
+            guard let chosen = picked else {
                 unplaced.append(part.id)
                 continue
             }
 
             let shape = chosen.footprint
-            if boards.isEmpty { openBoard() }
-            if cursorCol + shape.width > size.cols - margin {
-                cursorCol = margin
-                shelfRow += shelfHeight + gap
-                shelfHeight = 0
-            }
-            if shelfRow + shape.height > size.rows - margin { openBoard() }
             if !occupancies[boards.count - 1].canPlace(shape,
                                                        col: cursorCol - shape.minCol,
                                                        row: shelfRow - shape.minRow) {
