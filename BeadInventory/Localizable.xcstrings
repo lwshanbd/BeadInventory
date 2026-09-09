@@ -13679,12 +13679,12 @@
         }
       }
     },
-    "零件按编号一行一行摆，可能多用几块板" : {
+    "号相近的零件排在同一块板上，可能多用几块板" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pieces laid out row by row in number order; may need a few more boards"
+            "value" : "Pieces with nearby numbers share a board; may need a few more boards"
           }
         }
       }

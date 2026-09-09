@@ -192,7 +192,7 @@ enum BoardSpacing: String, CaseIterable, Codable, Sendable, Identifiable {
 enum BoardLayout: String, CaseIterable, Sendable, Identifiable {
     /// 先大后小往空位里塞，两种扫法比一比谁开的板少。
     case compact
-    /// 按传进来的次序（也就是零件在清单里的次序）一行一行往下摆。
+    /// 按传进来的次序（也就是零件在清单里的次序）一块板一块板地装，号相近的装在一块板上。
     case numbered
 
     var id: String { rawValue }
@@ -208,7 +208,7 @@ enum BoardLayout: String, CaseIterable, Sendable, Identifiable {
     var detail: String {
         switch self {
         case .compact: return String(localized: "大件小件混着排，用掉的板子最少")
-        case .numbered: return String(localized: "零件按编号一行一行摆，可能多用几块板")
+        case .numbered: return String(localized: "号相近的零件排在同一块板上，可能多用几块板")
         }
     }
 }
@@ -741,7 +741,7 @@ enum PartsBoardRepair {
 /// 把零件铺到板上。
 ///
 /// 下面这几段说的是默认那一档（`BoardLayout.compact`，板子用得最少）。用户可以改成
-/// 按零件编号排，那条路不排序、不比板数、也不用 `centerFit`，见 `shelfPack`。
+/// 按零件编号排，那条路不排序、不比板数、也不用 `centerFit`，见 `numberedPack`。
 /// 两条路共用的只有三件事：插件单独占板、排完整体居中、合法性一律问 `canPlace`。
 ///
 /// 零件按大小排过序（先大后小），一个一个往**离板心最近的空位**上放，
@@ -986,7 +986,7 @@ enum PartsBoardPacker {
     /// 而不是一板插件。
     ///
     /// 挑扫法、比板数那几段只对省板那一档成立；分插件板、普通件的板排在前面，
-    /// 两条路一样（分组在 `packGroup` 之前）。按编号排走的是 `shelfPack`。
+    /// 两条路一样（分组在 `packGroup` 之前）。按编号排走的是 `numberedPack`。
     static func pack(
         parts: [BeadPart],
         size: BeadBoardSize,
@@ -1002,7 +1002,7 @@ enum PartsBoardPacker {
     }
 
     /// 把**同一类**零件（要么全是插件，要么全不是）铺到板上，排完每块板整体挪到中间。
-    /// 省板那一档两种扫法各跑一遍、谁开的板少用谁；按编号排走 `shelfPack`，
+    /// 省板那一档两种扫法各跑一遍、谁开的板少用谁；按编号排走 `numberedPack`，
     /// 不比板数也不排序 —— 它换来的正是板数。
     ///
     /// 下面这句只管省板那一支：组内全同类，所以 `placeOne` 那道分板判断在这条路上恒真
@@ -1014,7 +1014,7 @@ enum PartsBoardPacker {
         layout: BoardLayout
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
         if layout == .numbered {
-            var byNumber = shelfPack(parts, size: size, spacing: spacing)
+            var byNumber = numberedPack(parts, size: size, spacing: spacing)
             for index in byNumber.boards.indices {
                 recenter(&byNumber.boards[index], parts: parts, spacing: spacing)
             }
@@ -1061,128 +1061,73 @@ enum PartsBoardPacker {
         return (boards, unplaced)
     }
 
-    /// 按传进来的次序一行一行往下摆：这一行摆满了另起一行，板子摆满了另起一块板。
+    /// 按传进来的次序，一个一个往**当前这块板**上塞：这块板上哪儿都放不下了，才另起一块板。
     ///
     /// **调用方必须按零件在清单里的次序传**，这里一个都不重排。板上和零件条上写的号
-    /// 就是那个次序（见 `BeadPart.displayName(order:)`），传进来乱了，排出来的号也乱，
-    /// 而用户选这一档要的正是「照着号找得到」。所以这条路不排序、不比板数、也不挑
-    /// 「哪个空位更好」：它拿板子换的就是这件事。
+    /// 就是那个次序（见 `BeadPart.displayName(order:)`），传进来乱了，排出来的号也乱。
+    ///
+    /// ## 这一档保证的是什么
+    ///
+    /// **号相近的零件在同一块板上**：一块板装的是连着的一段号，翻到第几块板就知道该找
+    /// 第几十号，不用把每块板都扫一遍。一旦开了新板就再也不回头看前面的板，段与段
+    /// 因此不会咬在一起 —— 前一块板上的号一定都比后一块板上的小。
+    ///
+    /// **板内不保证严格从 1 数下来。** 位置是从左上角逐行扫第一个放得下的地方
+    /// （`Strategy.topLeft`），所以小零件会插进前面剩下的缝里，大体上仍是从左上往右下
+    /// 号越排越大，但中间会跳。早先这里是一行一行摆的（摆满换行、行高由行里最高的
+    /// 那个零件定），号在板内严格递增，代价是每一行下面都吊着一条谁也用不上的空白。
+    /// 同一张 66 个零件的图纸实测（紧凑间距）：一行行摆，100 × 100 要 5 块板、
+    /// 50 × 50 要 21 块；改成逐个往缝里塞之后是 4 块和 16 块。多一块板 = 多烫一次，
+    /// 这个代价比号在板内跳一下大得多。
     ///
     /// 摆出来的号不保证连号：插件是单独一组排的（见 `pack`），传进来的也可能只是
     /// 用户勾中的那几个。所以界面上说的是「按零件编号」，不是「从 1 号数到 N」。
     ///
-    /// 位置按**包围盒**算：同一行里两个零件的盒子隔 `gap` 列，两行之间隔 `gap` 行，
-    /// 于是任意两颗豆子之间至少隔 `gap` 格，跟居中排出来的板一样合法。落位前那道
-    /// `canPlace` 因此恒真，留着是因为「放得下吗」只认它那一处判定 —— 这条路直接
-    /// 产出落盘的坐标，自己发明一套判据的话，算错了要等用户烫到那一格才发现。
-    /// 它真触发的话是另起一块板（新板上必过：朝向那一步已经保证宽高塞得进可用区）。
+    /// ## 朝向和判定
     ///
-    /// 每个零件先按原方向找位置：这一行摆得下就摆这一行，摆不下另起一行。
-    /// **只有原方向在这块板上再没地方了才转 90°** —— 转过来还能留在这块板上，就别开新板。
+    /// 朝向的次序在 `candidates` 里：原方向先在整块板上找一遍，哪儿都放不下才转 90°。
+    /// 转过来的零件跟图纸上看到的对不上，能不转就不转，但不转的代价不能是多一块板。
     ///
-    /// 转过来的零件跟图纸上看到的对不上，所以能不转就不转 —— 但不转的代价不能是多一块板。
-    /// 早先这里只在「原方向连一块空板都放不下」时才转，于是一个横着差两列、竖过来就进得去的
-    /// 零件会直接另起一块板，它和后面所有零件一起搬到新板上，而上一块板明明还空着大半 ——
-    /// 用户看到的就是「新板上这个零件明明塞得进上一块板」。多一块板 = 多烫一次，
-    /// 这个代价比认一下朝向大得多。
-    ///
-    /// **但转的门槛只能是「否则就要开新板」，不能是「否则就要换行」**：转过来的零件高多少
-    /// 由它原来多宽决定，一个横条竖起来塞进当前这一行，整行的高度就被它顶上去，这一行下面
-    /// 那一大条全废了。同一张 66 个零件的图纸实测：门槛放到换行，100 × 100 的板要 6 块，
-    /// 比一次都不转还多一块；收在开新板是 5 块，跟不转持平，而 50 × 50 的板 21 块降到 20 块。
-    ///
-    /// 换行和换板都不回头填：行末右边、矮零件下面剩的空隙照样空着。回头填的话号就断了，
-    /// 而编号顺序是这一档的全部意义。所以这一档本来就比省板那一档费板。
-    private static func shelfPack(
+    /// 「放得下吗」全走 `BoardOccupancy.canPlace`（`firstFit` 内部问的就是它），
+    /// 跟省板那一档、跟拖动校验是同一处判定。这条路直接产出落盘的坐标，自己发明一套
+    /// 判据的话，算错了要等用户烫到那一格才发现。
+    private static func numberedPack(
         _ parts: [BeadPart],
         size: BeadBoardSize,
         spacing: BoardSpacing
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
-        let margin = spacing.margin
-        let gap = spacing.gap
-
         var boards: [PartsBoard] = []
         var occupancies: [BoardOccupancy] = []
         var unplaced: [UUID] = []
-        // 当前这一行：左端游标、行顶在第几行、行里最高的那个零件多高
-        var cursorCol = margin
-        var shelfRow = margin
-        var shelfHeight = 0
 
         func openBoard() {
             boards.append(PartsBoard(size: size))
             occupancies.append(BoardOccupancy(cols: size.cols, rows: size.rows, spacing: spacing))
-            cursorCol = margin
-            shelfRow = margin
-            shelfHeight = 0
-        }
-
-        /// 包围盒左上角摆在 (col, row) 时，这个朝向还在板子的可用范围里吗。
-        /// 只问板边，不问挨不挨着别的零件 —— 行内隔 gap 列、行间隔 gap 行是这条路自己
-        /// 保证的，落位前那道 `canPlace` 才是判定。
-        func fitsOnBoard(_ shape: PartFootprint, col: Int, row: Int) -> Bool {
-            col + shape.width <= size.cols - margin && row + shape.height <= size.rows - margin
-        }
-
-        /// 这一行到头了，游标挪到下一行开头
-        func startNewShelf() {
-            cursorCol = margin
-            shelfRow += shelfHeight + gap
-            shelfHeight = 0
         }
 
         for part in parts {
             let options = candidates(for: part)
             // 一颗豆子都没有的零件不占地方，也不算「没摆下」（跟 `ordered` 的口径一致）
-            guard let upright = options.first, !upright.footprint.isEmpty else { continue }
-            let turned = options.dropFirst()
+            guard let first = options.first, !first.footprint.isEmpty else { continue }
             if boards.isEmpty { openBoard() }
-            let nextShelfRow = shelfRow + shelfHeight + gap
-            var picked: Candidate?
 
-            if fitsOnBoard(upright.footprint, col: cursorCol, row: shelfRow) {
-                picked = upright
-            } else if fitsOnBoard(upright.footprint, col: margin, row: nextShelfRow) {
-                startNewShelf()
-                picked = upright
-            } else if let hit = turned.first(where: {
-                // 原方向在这块板上再没地方了。转过来还留得住就转，别开新板。
-                fitsOnBoard($0.footprint, col: cursorCol, row: shelfRow)
-            }) {
-                picked = hit
-            } else if let hit = turned.first(where: {
-                fitsOnBoard($0.footprint, col: margin, row: nextShelfRow)
-            }) {
-                startNewShelf()
-                picked = hit
-            } else if let hit = options.first(where: {
-                fitsOnBoard($0.footprint, col: margin, row: margin)
-            }) {
+            // 只问最后那一块板。问前面的板就是回头填，号会在板之间来回跳。
+            var hit = fit(options, in: occupancies[boards.count - 1], strategy: .topLeft)
+            if hit == nil {
                 openBoard()
-                picked = hit
+                hit = fit(options, in: occupancies[boards.count - 1], strategy: .topLeft)
             }
-            // 都不行 = 两个朝向都比一块空板还大，只能让用户换板子
-            guard let chosen = picked else {
+            // 空板上都放不下 = 两个朝向都比一块板还大，只能让用户换板子
+            guard let spot = hit else {
                 unplaced.append(part.id)
                 continue
             }
 
-            let shape = chosen.footprint
-            if !occupancies[boards.count - 1].canPlace(shape,
-                                                       col: cursorCol - shape.minCol,
-                                                       row: shelfRow - shape.minRow) {
-                openBoard()
-            }
-
             let index = boards.count - 1
-            let col = cursorCol - shape.minCol
-            let row = shelfRow - shape.minRow
             boards[index].placements.append(PartPlacement(
-                partId: part.id, col: col, row: row, turns: chosen.turns
+                partId: part.id, col: spot.col, row: spot.row, turns: spot.candidate.turns
             ))
-            occupancies[index].add(shape, col: col, row: row)
-            cursorCol += shape.width + gap
-            shelfHeight = max(shelfHeight, shape.height)
+            occupancies[index].add(spot.candidate.footprint, col: spot.col, row: spot.row)
         }
 
         return (boards, unplaced)
@@ -1195,7 +1140,7 @@ enum PartsBoardPacker {
     /// 矩阵四周通常还带着一圈空白（见文件头的坐标约定），拿它算的话板上看着还是偏的。
     ///
     /// **`private` 是有意的**，别放出去：它只在自动排刚造出来的板上成立
-    /// （两条路都走它 —— `pack` 那一趟和 `shelfPack` 那一趟）。板上有用户
+    /// （两条路都走它 —— `pack` 那一趟和 `numberedPack` 那一趟）。板上有用户
     /// 手动挪过的零件时调它，会把人家摆好的东西整体推走；而 `parts` 里少了板上某个零件时，
     /// 那个摆放不进包围盒却照样跟着平移，能被推到板外去。
     ///

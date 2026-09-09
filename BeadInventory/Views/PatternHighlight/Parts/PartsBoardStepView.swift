@@ -1872,7 +1872,7 @@ struct PartsBoardStepView: View {
         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
         let used = spacing
         // 按零件编号重排一遍再交给 packer。「按编号排」认的就是传进来的次序
-        // （见 `PartsBoardPacker.shelfPack`），而从板上勾走的那几个是按**摆放**顺序来的
+        // （见 `PartsBoardPacker.numberedPack`），而从板上勾走的那几个是按**摆放**顺序来的
         // —— 直接传进去，新板上的号就不是升序的，用户刚选的那一档等于没选。
         let ids = Set(chosen.map(\.id))
         let ordered = parts.filter { ids.contains($0.id) }
