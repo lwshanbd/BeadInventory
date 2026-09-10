@@ -176,9 +176,12 @@ enum BoardSpacing: String, CaseIterable, Codable, Sendable, Identifiable {
 /// 自动排版时零件按什么次序摆到板上。
 ///
 /// 两种排法排出来的板都合法 —— 间距判定是同一份 `BoardOccupancy.canPlace`，
-/// 差别只有一个：板上的号是不是从 1 顺着数下来的。省板的那种是先大后小往空位里塞，
-/// 排出来 3 号可能在板子右下角、17 号在正中间；照着图纸一个一个找零件的人，
-/// 每找一个都要把整块板扫一遍。
+/// 差别只有一个：**同一块板上的号是不是连着的一段**。省板的那种是先大后小往空位里塞，
+/// 排出来 3 号可能在第 1 块板的右下角、17 号在第 3 块板的正中间；照着图纸一个一个
+/// 找零件的人，每找一个都要把**每一块板**都扫一遍。按编号那种只用扫一块。
+///
+/// 按编号那种**不保证板内从 1 顺着数下来**（小零件会插回前面剩的缝里，见
+/// `PartsBoardPacker.numberedPack`）—— 那是拿来换板数的，别当成 bug 改回去。
 ///
 /// 这是**用户的偏好，不跟着图纸存**：它只影响自动排的那一下，排完就变成板上的坐标了，
 /// 之后拖动、校验、体检都跟它无关。`BoardSpacing` 不一样 —— 那一档排完还要拿去校验
@@ -496,7 +499,7 @@ extension BeadPart {
 /// `PartsBoardPacker.recenter` 各有一份 margin 算术：两个为了少扫、一个为了分辨失败原因、
 /// 一个为了一次扫完整块板、一个为了算居中该挪多少格。前三处不参与判定；后两处一个参与判定，
 /// 一个**直接产出落盘的坐标**（算错了零件就压进留边，而那一处没有任何下游会发现）。
-/// margin 要是哪天不再是 0/1，这六处一起改。）
+/// margin 要是哪天不再是 0/1，这五处一起改。）
 struct BoardOccupancy: Sendable {
     let cols: Int
     let rows: Int
@@ -742,7 +745,9 @@ enum PartsBoardRepair {
 ///
 /// 下面这几段说的是默认那一档（`BoardLayout.compact`，板子用得最少）。用户可以改成
 /// 按零件编号排，那条路不排序、不比板数、也不用 `centerFit`，见 `numberedPack`。
-/// 两条路共用的只有三件事：插件单独占板、排完整体居中、合法性一律问 `canPlace`。
+/// 两条路共用的行为保证有三件：插件单独占板、排完整体居中、合法性一律问 `canPlace`。
+/// 找位置那一套也是共用的（`candidates` + `fit`），差别只在 `Strategy`：按编号排
+/// 固定走 `.topLeft`，省板那一档两种扫法各跑一遍。
 ///
 /// 零件按大小排过序（先大后小），一个一个往**离板心最近的空位**上放，
 /// 排完再把整块板上的东西挪到板正中间。所以三五个零件不会缩在左上角，
@@ -1072,6 +1077,11 @@ enum PartsBoardPacker {
     /// 第几十号，不用把每块板都扫一遍。一旦开了新板就再也不回头看前面的板，段与段
     /// 因此不会咬在一起 —— 前一块板上的号一定都比后一块板上的小。
     ///
+    /// **这条只在同一组零件之内成立。** `pack` 会先把插件和普通件拆成两组各排各的，
+    /// 再把插件板接在普通件的板后面（理由见 `pack`）。所以这批零件里只要有插件，
+    /// 跨到插件板那一段，号就会往回跳。要改成全局按号排下来，得先重新定义插件板
+    /// 摆在哪儿，不是这个函数能决定的事。
+    ///
     /// **板内不保证严格从 1 数下来。** 位置是从左上角逐行扫第一个放得下的地方
     /// （`Strategy.topLeft`），所以小零件会插进前面剩下的缝里，大体上仍是从左上往右下
     /// 号越排越大，但中间会跳。早先这里是一行一行摆的（摆满换行、行高由行里最高的
@@ -1091,6 +1101,10 @@ enum PartsBoardPacker {
     /// 「放得下吗」全走 `BoardOccupancy.canPlace`（`firstFit` 内部问的就是它），
     /// 跟省板那一档、跟拖动校验是同一处判定。这条路直接产出落盘的坐标，自己发明一套
     /// 判据的话，算错了要等用户烫到那一格才发现。
+    ///
+    /// 返回的坐标是**居中之前**的：零件贴着左上角排，`packGroup` 排完再把每块板整体
+    /// 挪到板中间（`recenter`）。那一步是纯平移，号的相对次序不变，但用户在板上看到的
+    /// 位置跟这里算出来的差一个偏移。
     private static func numberedPack(
         _ parts: [BeadPart],
         size: BeadBoardSize,
@@ -1100,34 +1114,42 @@ enum PartsBoardPacker {
         var occupancies: [BoardOccupancy] = []
         var unplaced: [UUID] = []
 
-        func openBoard() {
-            boards.append(PartsBoard(size: size))
-            occupancies.append(BoardOccupancy(cols: size.cols, rows: size.rows, spacing: spacing))
-        }
-
         for part in parts {
             let options = candidates(for: part)
             // 一颗豆子都没有的零件不占地方，也不算「没摆下」（跟 `ordered` 的口径一致）
             guard let first = options.first, !first.footprint.isEmpty else { continue }
-            if boards.isEmpty { openBoard() }
 
             // 只问最后那一块板。问前面的板就是回头填，号会在板之间来回跳。
-            var hit = fit(options, in: occupancies[boards.count - 1], strategy: .topLeft)
-            if hit == nil {
-                openBoard()
-                hit = fit(options, in: occupancies[boards.count - 1], strategy: .topLeft)
-            }
-            // 空板上都放不下 = 两个朝向都比一块板还大，只能让用户换板子
-            guard let spot = hit else {
-                unplaced.append(part.id)
-                continue
+            let onLast = boards.isEmpty
+                ? nil
+                : fit(options, in: occupancies[occupancies.count - 1], strategy: .topLeft)
+
+            let chosen: (candidate: Candidate, col: Int, row: Int)
+            if let onLast {
+                chosen = onLast
+            } else {
+                // 这块板上没缝了。**先在一块空板上问一遍，再决定要不要开板** ——
+                // 反过来写（先开板、放不下才记 `unplaced`）那块空板就留在结果里了：
+                // 用户翻出几块什么都没有的白板，而「共 N 块板」把它算进去；更糟的是
+                // `PartsBoardStepView.autoPackIfNeeded` 靠「一块板都没排出来」判断
+                // 「还没排过」来决定间距档要不要落定，空板会把那道保护骗过去。
+                // 省板那一档的 `placeOne` 就是这个次序：先 `fit` 成功，才造板。
+                let blank = BoardOccupancy(cols: size.cols, rows: size.rows, spacing: spacing)
+                guard let onBlank = fit(options, in: blank, strategy: .topLeft) else {
+                    // 一块空板都放不下 = 两个朝向都比板子还大，只能让用户换板子
+                    unplaced.append(part.id)
+                    continue
+                }
+                boards.append(PartsBoard(size: size))
+                occupancies.append(blank)
+                chosen = onBlank
             }
 
             let index = boards.count - 1
             boards[index].placements.append(PartPlacement(
-                partId: part.id, col: spot.col, row: spot.row, turns: spot.candidate.turns
+                partId: part.id, col: chosen.col, row: chosen.row, turns: chosen.candidate.turns
             ))
-            occupancies[index].add(spot.candidate.footprint, col: spot.col, row: spot.row)
+            occupancies[index].add(chosen.candidate.footprint, col: chosen.col, row: chosen.row)
         }
 
         return (boards, unplaced)

@@ -1772,8 +1772,9 @@ struct PartsBoardStepView: View {
     /// 把还没摆的零件接着往板上放：先塞现有的板，塞不下再开新的。
     ///
     /// **这条路不认排列方式**（`preferredLayout`），一直是先大后小往空隙里塞。
-    /// 往已经摆好的板的缝里塞东西，本来就排不出「一行一行按号数下来」的次序 ——
-    /// 硬按号塞出来的既不是编号序，也比先大后小塞得少。选了按编号排还想要整齐的号，
+    /// 往已经摆好的板的缝里塞东西，破坏的正是按编号排唯一保证的那件事 ——
+    /// 「一块板装连着的一段号」：新塞进去的零件号比板上已有的都大，塞完那块板上的号
+    /// 就断了。硬按号塞还比先大后小塞得少。选了按编号排还想要整齐的号，
     /// 走的是旁边那条「摆到新板」。
     private func fillRemaining() {
         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
@@ -1873,7 +1874,7 @@ struct PartsBoardStepView: View {
         let used = spacing
         // 按零件编号重排一遍再交给 packer。「按编号排」认的就是传进来的次序
         // （见 `PartsBoardPacker.numberedPack`），而从板上勾走的那几个是按**摆放**顺序来的
-        // —— 直接传进去，新板上的号就不是升序的，用户刚选的那一档等于没选。
+        // —— 直接传进去，新板装的就不是连着的一段号，用户刚选的那一档等于没选。
         let ids = Set(chosen.map(\.id))
         let ordered = parts.filter { ids.contains($0.id) }
         let packed = PartsBoardPacker.pack(parts: ordered, size: size,
