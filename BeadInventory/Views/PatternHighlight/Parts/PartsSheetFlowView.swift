@@ -73,6 +73,8 @@ struct PartsSheetFlowView: View {
     /// 非 nil 时「量格子」那屏一进去就翻到它，主按钮也变成「对好了，回核对颜色」——
     /// 用户是为一块回来的，让他把剩下四十八块再翻一遍才走得掉是说不过去的。
     @State private var regridTarget: UUID?
+    /// 返回清单重新框选后，继续查看离开时的零件；用身份避免增删后串号。
+    @State private var lastGridPartId: UUID?
 
     /// 这次会话真的改过东西。
     ///
@@ -657,6 +659,7 @@ struct PartsSheetFlowView: View {
                 return
             }
             self.parts = detected.map { BeadPart(rowBand: $0.rowBand, bounds: $0.bounds) }
+            lastGridPartId = nil
             // 换了零件区就等于换了一张图纸，之前量的格子、判的色、摆好的板子全部作废。
             // 板子必须一起清：placement 指的是旧零件的 id，留着就是一板子孤儿 ——
             // 板上画不出东西，又因为 boards 非空进不了自动排版，那一屏成了死胡同。
@@ -770,6 +773,8 @@ struct PartsSheetFlowView: View {
                 path = [.list, .cellSize, .baseColor]
             },
             focusPartId: regridTarget,
+            resumePartId: lastGridPartId,
+            onLeavePart: { lastGridPartId = $0 },
             // 从核对页跳过来的才有回程按钮。**闭包在，就说明是那一趟** ——
             // 用 `regridTarget != nil` 现算，别缓存成一个 Bool：
             // 那样退出去再进来会剩一个通向空处的按钮。
