@@ -85,6 +85,9 @@ struct PartsCellSizeStepView: View {
     /// 一进来就翻到这一块。核对页点「看零件 → 回去重对这一块」时给 ——
     /// 不给的话用户落在第一个零件上，还得自己在四十九块里翻到刚才那一块。
     var focusPartId: UUID?
+    /// 普通返回时恢复的位置，与核对颜色页指定的返工目标分开。
+    var resumePartId: UUID?
+    var onLeavePart: ((UUID?) -> Void)?
     /// 「对好了，回核对颜色」。非 nil 时主按钮变成它。
     ///
     /// 用户是特地为某一块回来的，不该被逼着把剩下四十八块也一路翻到底 ——
@@ -98,8 +101,11 @@ struct PartsCellSizeStepView: View {
     /// 他还得自己回上一步重判一次 —— 那是另一件事，不该顺手在这里做掉。
     var clearsColorsWhenGridMoves = false
 
-    /// 当前正在看哪个零件（按面积从大到小）。大零件格线多，最容易看出没对齐。
+    /// 当前正在看哪个零件，顺序与零件清单一致。
     @State private var sampleIndex = 0
+    @State private var restoredPosition = false
+    @State private var showingPartJump = false
+    @State private var partNumberInput = ""
     @State private var sampleImage: UIImage?
     /// 画布画的是整张图纸的哪一块（归一化）
     @State private var sampleRegion: CGRect = .zero
@@ -286,6 +292,30 @@ struct PartsCellSizeStepView: View {
         // `initial: true` 让它照样赶在底下那两个 `.task` 之前 —— 晚一步的话
         // `loadSample` 会先给第一个零件白裁一张图，正确那一块的图也跟着晚出来。
         .onChange(of: focusPartId, initial: true) { _, _ in focusRequestedPart() }
+        .onDisappear { onLeavePart?(sample?.id) }
+        .toolbar {
+            if subjectLabel == nil, samples.count > 1 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("跳转到零件") {
+                        partNumberInput = ""
+                        showingPartJump = true
+                    }
+                    .disabled(estimating || picking)
+                }
+            }
+        }
+        .alert("跳转到零件", isPresented: $showingPartJump) {
+            TextField("零件编号", text: $partNumberInput)
+                .keyboardType(.numberPad)
+            Button("跳转") {
+                guard let index = jumpPartIndex else { return }
+                sampleIndex = index
+            }
+            .disabled(jumpPartIndex == nil)
+            Button("取消", role: .cancel) { }
+        } message: {
+            Text("请输入 1–\(samples.count) 之间的零件编号")
+        }
         // 工作图也算进 id：进来时先拿到的是低清兜底版，高清版在后台裁好之后才换上来。
         // 认零件的 **id** 而不是下标：删掉一个非末尾的零件时下标不变，后面那个顶上来 ——
         // 只认下标的话这一句不会重跑，画布上留着的还是已经删掉那个零件的图，
@@ -744,6 +774,12 @@ struct PartsCellSizeStepView: View {
     /// 是不是最后一个要看的零件
     private var isLastSample: Bool { sampleIndex >= samples.count - 1 }
 
+    private var jumpPartIndex: Int? {
+        guard let number = Int(partNumberInput.trimmingCharacters(in: .whitespacesAndNewlines)),
+              (1...max(1, samples.count)).contains(number), !samples.isEmpty else { return nil }
+        return number - 1
+    }
+
     /// 主按钮上写什么。三种情形三句话，说的都是**按下去会去哪儿**。
     private var mainActionTitle: LocalizedStringKey {
         if onReturn != nil { return "返回核对颜色" }
@@ -761,11 +797,18 @@ struct PartsCellSizeStepView: View {
             // 这一趟结束了（容器把 `regridTarget` 收掉了）。这里也收干净 ——
             // 不收的话，用户为**同一块**再回来一次时 id 没变，下面那道判断会以为已经翻过了。
             focusedPartId = nil
+            if !restoredPosition {
+                restoredPosition = true
+                sampleIndex = samples.firstIndex(where: { $0.id == resumePartId })
+                    ?? samples.firstIndex(where: { !$0.isGridConfirmed && !$0.hasCells })
+                    ?? 0
+            }
             return
         }
         guard focusedPartId != focusPartId,
               let index = samples.firstIndex(where: { $0.id == focusPartId }) else { return }
         focusedPartId = focusPartId
+        restoredPosition = true
         sampleIndex = index
     }
 

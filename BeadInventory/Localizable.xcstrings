@@ -1,6 +1,54 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "跳转到零件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jump to Part"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳转到零件"
+          }
+        }
+      }
+    },
+    "跳转" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jump"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳转"
+          }
+        }
+      }
+    },
+    "请输入 1–%lld 之间的零件编号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter a part number from 1 to %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入 1–%lld 之间的零件编号"
+          }
+        }
+      }
+    },
     "上一个零件" : {
       "localizations" : {
         "en" : {
