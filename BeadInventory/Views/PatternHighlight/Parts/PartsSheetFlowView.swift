@@ -65,6 +65,11 @@ struct PartsSheetFlowView: View {
     @State private var boards: [PartsBoard] = []
     /// 这套板子是按哪一档松紧排的。跟 `boards` 一起存，理由见 `BeadPartsSheet.boardSpacing`。
     @State private var boardSpacing: BoardSpacing?
+    /// AI 读色号表读出来的原始用量。计划用量会被格子颗数换掉，核对页的参照得读这一份，
+    /// 理由见 `BeadPartsSheet.legendUsage`。`load()` 里定下来，之后不改。
+    @State private var legendUsage: [BeadUsage]?
+    /// 上次把计划用量换成格子颗数时的颗数，见 `BeadPartsSheet.syncedCellCounts`。
+    @State private var syncedCellCounts: [String: Int]?
 
     @State private var busy: String?
 
@@ -399,7 +404,8 @@ struct PartsSheetFlowView: View {
             self.overwriteBlocked = true
             self.prompt = .loadFailed
         case .missing:
-            break
+            // 第一次进来，计划里的用量还是 AI 读的那份，趁没被换掉先留下来。
+            self.legendUsage = project.beadUsage
         case .loaded(let saved):
             self.roi = saved.roi
             self.parts = saved.parts
@@ -430,13 +436,24 @@ struct PartsSheetFlowView: View {
             // 一套已经不存在的板子的松紧排，而不是用户当前的偏好。
             self.boardSpacing = live.isEmpty ? nil : (saved.boardSpacing ?? .tight)
 
-            // 上一版排好的板子也要算数。只在存进度时同步的话，这次不改任何东西
-            // 就退出去的用户，扣库存扣的还是 AI 当初读出来的那份数。
-            // **拿 `live` 不拿 `saved.boards`**：孤儿摆位刚在上面剔掉，
-            // 它们指向的零件已经不在了，跟着算等于凭空多扣一批豆子。
-            var placed = saved
-            placed.boards = live.isEmpty ? nil : live
-            inventoryManager.syncPlannedUsageFromPartsBoards(project.id, sheet: placed)
+            // 老图纸没有另存过 AI 那份用量，这时计划里的还是它，拷一份过来。
+            let legend = saved.legendUsage ?? project.beadUsage
+            self.legendUsage = legend
+            self.syncedCellCounts = saved.syncedCellCounts
+
+            // 以前就判完色的图纸，这次不改任何东西退出去的话，计划里还是 AI 读的数。
+            // 所以进来就同步一次。格子没变过的不会动计划（见 `syncPlannedUsageFromPartsSheet`）。
+            // 局部变量组一份图纸去同步，不读刚写的 @State：同一轮里读回来不保证是新值。
+            var current = saved
+            current.legendUsage = legend
+            if let counts = inventoryManager.syncPlannedUsageFromPartsSheet(project.id, sheet: current) {
+                current.boards = live.isEmpty ? nil : live
+                current.boardSpacing = live.isEmpty ? nil : (saved.boardSpacing ?? .tight)
+                current.syncedCellCounts = counts
+                self.syncedCellCounts = counts
+                // 记下这次同步时的颗数。写不进去也不要紧：下次进来再比一遍，计划已经是这个数，不会重复改。
+                inventoryManager.updateProjectPartsSheet(project.id, sheet: current)
+            }
 
             // 上次做到哪儿，这次就从哪儿接着来。
             //
@@ -462,6 +479,12 @@ struct PartsSheetFlowView: View {
         await prepareWorkImage()
     }
 
+    /// AI 读色号表读出来的那份用量。`load()` 之前还没定下来时退回计划里的，
+    /// 那时候计划还没被这一趟同步改过。
+    private var legend: [BeadUsage] {
+        legendUsage ?? project.beadUsage
+    }
+
     /// 上一步 AI 读色号表得到的「这张图纸每个色号多少颗」。核对颜色那屏拿它当参照，
     /// 也拿它当「改色号时优先给哪几个候选」的依据 —— 图纸上就用了这么些颜色。
     /// 同一个色号被记了多次时相加 —— 表格识别偶尔会把一个色号拆成两行。
@@ -478,7 +501,7 @@ struct PartsSheetFlowView: View {
     /// 要根治得在扫描那步给 beadUsage 记一个「匹配上了没有」的标记。
     /// 查不到色号的那一支反而是安全的：key 原样留着，匹配不上任何一组，只是不显示对照数。
     private var legendCounts: [String: Int] {
-        project.beadUsage.reduce(into: [:]) { result, usage in
+        legend.reduce(into: [:]) { result, usage in
             let key = inventoryManager.findColor(byMardCode: usage.colorCode)?
                 .displayCode(for: project.colorSystem) ?? usage.colorCode
             result[key, default: 0] += usage.quantity
@@ -716,7 +739,7 @@ struct PartsSheetFlowView: View {
         let snapshot = parts
         let currentROI = roi
         let colorSystem = project.colorSystem
-        let legend = project.beadUsage.map(\.colorCode)
+        let legend = self.legend.map(\.colorCode)
         let colors = inventoryManager.beadColors
         let base = emptyHex
         let any = anyColorHex
@@ -847,7 +870,7 @@ struct PartsSheetFlowView: View {
         let table = palette
         let currentROI = roi
         let colorSystem = project.colorSystem
-        let legend = project.beadUsage.map(\.colorCode)
+        let legend = self.legend.map(\.colorCode)
         let colors = inventoryManager.beadColors
         let base = emptyHex
         let any = anyColorHex
@@ -934,7 +957,9 @@ struct PartsSheetFlowView: View {
             emptyHex: emptyHex,
             anyColorHex: anyColorHex,
             boards: boards.isEmpty ? nil : boards,
-            boardSpacing: boards.isEmpty ? nil : boardSpacing
+            boardSpacing: boards.isEmpty ? nil : boardSpacing,
+            legendUsage: legendUsage,
+            syncedCellCounts: syncedCellCounts
         )
         guard inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet) else {
             // 没写进去。这里绝不能算了 —— 用户手上这些东西全在内存里，
@@ -951,10 +976,15 @@ struct PartsSheetFlowView: View {
             prompt = .saveFailed(saveAttempt)
             return false
         }
-        // 板上摆着几颗，扣库存就扣几颗。计划里原来那份数是扫描那步 AI 读色号表读来的，
-        // 到这一步已经有更实在的答案了。自己判断该不该改、改不改得动（见方法注释），
-        // 所以这里无条件调一次就行；它不影响图纸本身存没存上。
-        inventoryManager.syncPlannedUsageFromPartsBoards(project.id, sheet: sheet)
+        // 格子对完是多少颗，扣库存就扣多少颗。该不该改由方法自己判断（见方法注释）。
+        // 同步的结果不参与这里的返回值：图纸已经存上了，计划没改成也不回滚它。
+        if let counts = inventoryManager.syncPlannedUsageFromPartsSheet(project.id, sheet: sheet) {
+            syncedCellCounts = counts
+            var synced = sheet
+            synced.syncedCellCounts = counts
+            // 再写一次把颗数记进图纸。写不进去时下次存进度会再比一遍，计划已经是这个数，不会重复改。
+            inventoryManager.updateProjectPartsSheet(project.id, sheet: synced)
+        }
         dirty = false
         return true
     }
