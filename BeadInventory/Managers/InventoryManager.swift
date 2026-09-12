@@ -4267,6 +4267,60 @@ class InventoryManager: ObservableObject {
         }
     }
 
+    /// 多零件图纸排完板之后，把这个计划的豆子用量改成**板上实际摆着的颗数**。
+    ///
+    /// 计划里原来那份数是扫描那步 AI 读色号表读出来的，图纸印多少就是多少；而用户
+    /// 把零件一个一个摆上板之后，板上摆着几颗才是他真要抓几颗（没摆上板的零件不算，
+    /// 理由见 `PartsBoardUsage`）。两者对不上时以板上的为准。
+    ///
+    /// **只动还没执行的计划。** 已经执行过的项目里那份用量是「当时从库存里扣走了多少」
+    /// 的记录，改它会让记录跟库存对不上号。父项目也不动：它的数是几个子项目加起来的。
+    ///
+    /// 没排板子、或者算出来跟现在存着的一模一样时什么都不做 —— 多零件流程每走完一步
+    /// 都会存一次进度，不挡住的话每一步都要白记一条历史、白写一次库。
+    ///
+    /// - Returns: 这次真的改了。
+    @discardableResult
+    func syncPlannedUsageFromPartsBoards(_ projectId: UUID, sheet: BeadPartsSheet) -> Bool {
+        guard let index = projects.firstIndex(where: { $0.id == projectId && $0.isPlanned }),
+              !isParentProject(projectId) else {
+            return false
+        }
+
+        let colorSystem = sheet.colorSystem
+        let derived = PartsBoardUsage.beadUsage(in: sheet) { code, isAnyColor in
+            // 「任意色」那一条落在自定义色号上，本体系色表里没有它 —— 必须走带自定义
+            // 色号兜底的那个重载。格子里的色号则相反，得按图纸自己的体系解释。
+            if isAnyColor {
+                return findColor(byCode: code)?.mardCode
+            }
+            // MARD 不能走 `findColor(byCode:preferSystem:)` —— 那个重载在 preferSystem
+            // 为 .mard 时一律返回 nil（MARD 自己那一路留给了 `findColor(byMardCode:)`）。
+            let color = colorSystem == .mard
+                ? findColor(byMardCode: code)
+                : findColor(byCode: code, preferSystem: colorSystem)
+            return color?.mardCode
+        }
+
+        guard !derived.isEmpty,
+              !PartsBoardUsage.isSameUsage(projects[index].beadUsage, derived) else {
+            return false
+        }
+
+        historyManager.recordProject(type: .planUpdate, project: projects[index])
+
+        projects[index].beadUsage = derived
+        projects[index].totalBeads = derived.reduce(0) { $0 + $1.quantity }
+        saveData()
+
+        logInfo("planned_usage_synced_from_boards", metadata: [
+            "projectId": projectId.uuidString,
+            "colors": derived.count,
+            "totalBeads": projects[index].totalBeads
+        ])
+        return true
+    }
+
     /// 更新计划项目单个颜色的数量
     func updatePlannedProjectUsage(_ projectId: UUID, colorCode: String, newQuantity: Int) {
         if let index = projects.firstIndex(where: { $0.id == projectId && $0.isPlanned }) {

@@ -430,6 +430,14 @@ struct PartsSheetFlowView: View {
             // 一套已经不存在的板子的松紧排，而不是用户当前的偏好。
             self.boardSpacing = live.isEmpty ? nil : (saved.boardSpacing ?? .tight)
 
+            // 上一版排好的板子也要算数。只在存进度时同步的话，这次不改任何东西
+            // 就退出去的用户，扣库存扣的还是 AI 当初读出来的那份数。
+            // **拿 `live` 不拿 `saved.boards`**：孤儿摆位刚在上面剔掉，
+            // 它们指向的零件已经不在了，跟着算等于凭空多扣一批豆子。
+            var placed = saved
+            placed.boards = live.isEmpty ? nil : live
+            inventoryManager.syncPlannedUsageFromPartsBoards(project.id, sheet: placed)
+
             // 上次做到哪儿，这次就从哪儿接着来。
             //
             // 之前只认「拆过零件 → 回到清单」这一档，于是判完色、改完色号退出去再进来，
@@ -943,6 +951,10 @@ struct PartsSheetFlowView: View {
             prompt = .saveFailed(saveAttempt)
             return false
         }
+        // 板上摆着几颗，扣库存就扣几颗。计划里原来那份数是扫描那步 AI 读色号表读来的，
+        // 到这一步已经有更实在的答案了。自己判断该不该改、改不改得动（见方法注释），
+        // 所以这里无条件调一次就行；它不影响图纸本身存没存上。
+        inventoryManager.syncPlannedUsageFromPartsBoards(project.id, sheet: sheet)
         dirty = false
         return true
     }
