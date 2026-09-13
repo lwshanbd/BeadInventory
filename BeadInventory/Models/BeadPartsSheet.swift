@@ -306,8 +306,8 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
     var palette: [PartsPaletteEntry]
     /// 第 2 步的产物，第 1 步为 nil
     var calibration: PartsGridCalibration?
-    /// 用户给「任意色」最终指定的色号。预留字段：目前只是存下来跟着图纸走，
-    /// 还没有哪一步会拿它去扣库存。
+    /// 任意色的格子扣到哪个色号上（自定义色号的色号，或者 mardCode）。
+    /// 目前没有哪个界面会写它，恒为 nil，这时扣到 `PartsSheetUsage.anyColorCode` 上。
     var anyColorCode: String?
     /// 用户在图上指认的**底色**（`RRGGBB`）。每张图纸底色都不一样，
     /// 不先摘出去，那一大片空白会被硬套到最近的色号上。nil = 还没指认，判色时自己猜。
@@ -328,6 +328,20 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
     /// 同样是 Optional（理由见 `boards`）；老图纸解出 nil —— 当年只有一种排法，
     /// 那一档现在叫 `BoardSpacing.tight`。
     var boardSpacing: BoardSpacing?
+    /// 扫描那步 AI 读色号表读出来的用量，原样留一份。
+    ///
+    /// 计划的豆子用量会被核对完的格子颗数换掉（见 `PartsSheetUsage`），可核对页还要拿
+    /// AI 读的数当参照：「认出 X 颗 / 图纸写 Y 颗」里的 Y、选色盘里优先列出的颜色、
+    /// 重新判色时的图例，都得是图纸上印的那份。不另存的话，一换掉 Y 就永远等于 X，
+    /// 判错了也看不出来。第一次进多零件模式时从计划里拷过来，之后不再改。
+    ///
+    /// Optional 是为了老数据（理由见 `boards`）。
+    var legendUsage: [BeadUsage]?
+    /// 上一次把计划用量换成格子颗数时，格子里各色号是多少颗（`PartCellFill.groupKey` → 颗数）。
+    ///
+    /// 格子没变就不再动计划：用户在计划详情里手调过的数（比如某色多备几颗），
+    /// 不能因为他又进来看了一眼就被盖掉。只有格子真的改了才重新同步。
+    var syncedCellCounts: [String: Int]?
     var lastUpdatedAt: Date
 
     init(
@@ -342,6 +356,8 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
         anyColorHex: String? = nil,
         boards: [PartsBoard]? = nil,
         boardSpacing: BoardSpacing? = nil,
+        legendUsage: [BeadUsage]? = nil,
+        syncedCellCounts: [String: Int]? = nil,
         lastUpdatedAt: Date = Date()
     ) {
         self.roi = roi
@@ -355,6 +371,8 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
         self.anyColorHex = anyColorHex
         self.boards = boards
         self.boardSpacing = boardSpacing
+        self.legendUsage = legendUsage
+        self.syncedCellCounts = syncedCellCounts
         self.lastUpdatedAt = lastUpdatedAt
     }
 

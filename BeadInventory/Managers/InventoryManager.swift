@@ -3771,18 +3771,16 @@ class InventoryManager: ObservableObject {
         let beforeProject = project
 
         // 执行库存扣减（批量操作，不逐个保存）
-        for usage in project.beadUsage {
-            _ = deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity, shouldSave: false)
-        }
+        let deducted = deductUsages(project.beadUsage, projectId: projectId, brandId: brandId)
 
         // 更新项目状态
         projects[index].isPlanned = false
         projects[index].brandId = brandId
         projects[index].executedDate = Date()
-        // 更新 beadUsage 的 isDeducted 状态
+        // 更新 beadUsage 的 isDeducted 状态：扣不动的（色号认不出、这个品牌没这一行）如实记成没扣
         projects[index].beadUsage = project.beadUsage.map { usage in
             BeadUsage(id: usage.id, colorCode: usage.colorCode, brandId: brandId,
-                      quantity: usage.quantity, isDeducted: true)
+                      quantity: usage.quantity, isDeducted: deducted.contains(usage.id))
         }
 
         // 如果这是一个子项目，检查父项目是否还有其他未执行的子项目
@@ -3809,6 +3807,26 @@ class InventoryManager: ObservableObject {
         return true
     }
 
+    /// 逐条扣库存（不保存），返回真的扣成了的那几条的 id。
+    ///
+    /// 以前这里丢掉 `deductFromStock` 的返回值、一律记成已扣。多零件图纸的用量里一定带着
+    /// 「任意色」这一行，用户没建同名自定义色号时它扣不动，却会显示成已扣，库存一颗没动。
+    private func deductUsages(_ usages: [BeadUsage], projectId: UUID, brandId: UUID) -> Set<UUID> {
+        var deducted: Set<UUID> = []
+        for usage in usages {
+            if deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity, shouldSave: false) {
+                deducted.insert(usage.id)
+            } else {
+                logWarning("plan_execute_deduct_failed", metadata: [
+                    "projectId": projectId.uuidString,
+                    "colorCode": usage.colorCode,
+                    "quantity": usage.quantity
+                ])
+            }
+        }
+        return deducted
+    }
+
     /// 执行计划父项目及其所有子项目
     private func executePlannedParentProject(_ parentId: UUID, withBrand brandId: UUID) -> Bool {
         guard let parentIndex = projects.firstIndex(where: { $0.id == parentId }) else {
@@ -3821,9 +3839,7 @@ class InventoryManager: ObservableObject {
         // 执行所有子项目的库存扣减（批量操作，不逐个保存）
         for child in children {
             if let childIndex = projects.firstIndex(where: { $0.id == child.id }) {
-                for usage in child.beadUsage {
-                    _ = deductFromStock(brandId: brandId, colorCode: usage.colorCode, amount: usage.quantity, shouldSave: false)
-                }
+                let deducted = deductUsages(child.beadUsage, projectId: child.id, brandId: brandId)
 
                 // 更新子项目状态
                 projects[childIndex].isPlanned = false
@@ -3831,7 +3847,7 @@ class InventoryManager: ObservableObject {
                 projects[childIndex].executedDate = Date()
                 projects[childIndex].beadUsage = child.beadUsage.map { usage in
                     BeadUsage(id: usage.id, colorCode: usage.colorCode, brandId: brandId,
-                              quantity: usage.quantity, isDeducted: true)
+                              quantity: usage.quantity, isDeducted: deducted.contains(usage.id))
                 }
             }
         }
@@ -4265,6 +4281,87 @@ class InventoryManager: ObservableObject {
             projects[index].totalBeads = newBeadUsage.reduce(0) { $0 + $1.quantity }
             saveData()
         }
+    }
+
+    /// 多零件图纸判完色之后，把这个计划的豆子用量换成**格子里数出来的颗数**。
+    ///
+    /// 计划里原来那份数是扫描那步 AI 读色号表读出来的，会读错。用户在多零件模式里一格一格
+    /// 对过颜色，对完是多少就是多少（数法和「为什么跟拼豆板无关」见 `PartsSheetUsage`）。
+    ///
+    /// 下面这些情况什么都不做，返回 nil：
+    /// - 项目已经执行过。那份用量是「当时从库存扣走了多少」的记录，改了就跟库存对不上。
+    /// - 父项目。它的数是几个子项目加起来的。
+    /// - 有零件等着补判色，或者一个判过色的零件都没有。数出来缺一块，拿去改计划会少扣。
+    /// - 格子颗数跟上次同步时一样（`sheet.syncedCellCounts`）。用户之后在计划详情里手调过的数
+    ///   不能因为他又进来看了一眼就被盖掉。
+    ///
+    /// 真的改了会记一条带前后快照的「修改计划」，撤销能把用量改回去。
+    ///
+    /// - Returns: 调用方要记进 `sheet.syncedCellCounts` 的颗数。计划本来就是这个数时也返回它，
+    ///   这样下次格子没变就不用再比一遍。
+    @discardableResult
+    func syncPlannedUsageFromPartsSheet(_ projectId: UUID, sheet: BeadPartsSheet) -> [String: Int]? {
+        guard let index = projects.firstIndex(where: { $0.id == projectId && $0.isPlanned }),
+              !isParentProject(projectId),
+              let counts = PartsSheetUsage.cellCounts(in: sheet),
+              counts != sheet.syncedCellCounts else {
+            return nil
+        }
+
+        let colorSystem = sheet.colorSystem
+        // 格子里的码按图纸自己的体系解释。MARD 不能走 `findColor(byCode:preferSystem:)`：
+        // 那个重载在 preferSystem 为 .mard 时一律返回 nil，MARD 自己那一路是 `findColor(byMardCode:)`。
+        // 非 MARD 那一路只查预设色，自定义色号要单独兜一下。
+        // 两边都不用 `findColor(byCode:)`：它跨品牌查，卡卡的 B11（黑）会被查成 MARD 的 B11（橄榄绿）。
+        func resolveInSheetSystem(_ code: String) -> String? {
+            if colorSystem == .mard { return findColor(byMardCode: code)?.mardCode }
+            return findColor(byCode: code, preferSystem: colorSystem)?.mardCode
+                ?? getCustomColor(byCode: code)?.mardCode
+        }
+        let derived = PartsSheetUsage.beadUsage(
+            from: counts,
+            anyColorCode: sheet.anyColorCode ?? PartsSheetUsage.anyColorCode
+        ) { code, source in
+            switch source {
+            case .cellCode:
+                return resolveInSheetSystem(code)
+            case .anyColor:
+                // 任意色约定落在自定义色号上，先认自定义色号，再按图纸体系兜底。
+                return getCustomColor(byCode: code)?.mardCode ?? resolveInSheetSystem(code)
+            }
+        }
+
+        // 格子全是空的：这张图纸一颗豆子都数不出来，多半是判色出了问题，不拿它清空计划。
+        guard !derived.isEmpty else { return nil }
+        guard !PartsSheetUsage.isSameUsage(projects[index].beadUsage, derived) else { return counts }
+
+        let before = projects[index]
+        projects[index].beadUsage = derived
+        projects[index].totalBeads = derived.reduce(0) { $0 + $1.quantity }
+        let outcome = saveDataReportingOutcome()
+        historyManager.recordPlanUsageUpdate(beforeProject: before, afterProject: projects[index])
+
+        let metadata: [String: Any] = [
+            "projectId": projectId.uuidString,
+            "colors": derived.count,
+            "totalBeads": projects[index].totalBeads,
+            "saveOutcome": outcome.kind
+        ]
+        if outcome.isPersisted {
+            logInfo("planned_usage_synced_from_parts_sheet", metadata: metadata)
+        } else {
+            // 内存里已经换了，下次 saveData 会带上；但这次没落盘，事后查「扣的数不对」时要看得到。
+            logWarning("planned_usage_sync_not_persisted", metadata: metadata)
+        }
+        return counts
+    }
+
+    /// 撤销「按格子颗数更新用量」时，把计划的用量写回去。不记历史（撤销路径自己管）。
+    func restorePlannedProjectUsage(_ projectId: UUID, beadUsage: [BeadUsage]) {
+        guard let index = projects.firstIndex(where: { $0.id == projectId && $0.isPlanned }) else { return }
+        projects[index].beadUsage = beadUsage
+        projects[index].totalBeads = beadUsage.reduce(0) { $0 + $1.quantity }
+        saveData()
     }
 
     /// 更新计划项目单个颜色的数量

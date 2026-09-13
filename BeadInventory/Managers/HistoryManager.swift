@@ -342,6 +342,48 @@ class HistoryManager: ObservableObject {
         print("[History] 记录计划执行: \(afterProject.name)")
     }
 
+    /// 记录「计划用量按多零件图纸的格子颗数更新」。
+    ///
+    /// 走 `.planUpdate`，但跟 `recordProject(type: .planUpdate)` 不一样：这里的前后快照是两份。
+    /// 撤销时靠「前后两份用量不一样」认出这是一条改过用量的记录，才把用量写回去。
+    /// 普通的改名、换封面记录前后是同一份，撤销它们不会顺手动用量。
+    func recordPlanUsageUpdate(beforeProject: ProjectRecord, afterProject: ProjectRecord) {
+        guard !isReverting else { return }
+
+        func snapshot(of project: ProjectRecord) -> Data? {
+            let usages = project.beadUsage.map {
+                BeadUsageSnapshot(colorCode: $0.colorCode, brandId: $0.brandId, quantity: $0.quantity, isDeducted: $0.isDeducted)
+            }
+            return try? JSONEncoder().encode(ProjectSnapshot(
+                id: project.id,
+                name: project.name,
+                date: project.date,
+                totalBeads: project.totalBeads,
+                brandId: project.brandId,
+                isArchived: project.isArchived,
+                parentId: project.parentId,
+                isPlanned: project.isPlanned,
+                executedDate: project.executedDate,
+                beadUsages: usages,
+                thumbnail: nil,
+                finishedImage: nil,
+                colorSystem: project.colorSystem,
+                capturesImages: false,
+                completedDate: project.completedDate
+            ))
+        }
+
+        let record = HistoryRecord(
+            operationType: .planUpdate,
+            entityName: afterProject.name,
+            beforeSnapshot: snapshot(of: beforeProject),
+            afterSnapshot: snapshot(of: afterProject)
+        )
+        records.insert(record, at: 0)
+        trimRecords()
+        saveData()
+    }
+
     /// 记录项目合并操作
     /// - Parameter partsSheetDataByProjectId: 参与合并的项目里，行会被删掉那些的多零件图纸
     ///   原始字节（同 `recordProject` 的 partsSheetData —— 它不在 ProjectRecord 上）。
@@ -945,11 +987,25 @@ class HistoryManager: ObservableObject {
                     // 万一未来 planned project 也支持成品图就自动跟上。
                     manager.updateProjectFinishedImage(snapshot.id, finishedImage: snapshot.finishedImage)
                 }
+                // 前后快照的用量不一样，说明这条记录改的就是用量（`recordPlanUsageUpdate`）。
+                // 只在这种时候写回用量：普通改名记录前后是同一份，撤销它不该顺手把后来改过的用量也退回去。
+                if let afterData = record.afterSnapshot,
+                   let after = try? JSONDecoder().decode(ProjectSnapshot.self, from: afterData),
+                   Self.usageTable(snapshot.beadUsages) != Self.usageTable(after.beadUsages) {
+                    let usages = snapshot.beadUsages.map {
+                        BeadUsage(colorCode: $0.colorCode, brandId: $0.brandId, quantity: $0.quantity, isDeducted: $0.isDeducted)
+                    }
+                    manager.restorePlannedProjectUsage(snapshot.id, beadUsage: usages)
+                }
                 manager.updatePlannedProjectName(snapshot.id, newName: snapshot.name)
                 return true
             }
             return false
         }
+    }
+
+    private static func usageTable(_ usages: [BeadUsageSnapshot]) -> [String: Int] {
+        usages.reduce(into: [:]) { $0[$1.colorCode, default: 0] += $1.quantity }
     }
 
     /// 项目行重建之后，把快照里的多零件图纸补写回去。
