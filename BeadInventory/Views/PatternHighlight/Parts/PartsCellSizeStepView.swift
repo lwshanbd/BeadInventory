@@ -32,7 +32,8 @@
 //  每个零件毛边多少不一样，均分出来的格线跟豆子缝没有关系。要按图上的周期信号去找。
 //
 //  **正在看的那一块，格线位置只认 `frameOrigin` 一个来源。** 屏幕上画的那片格线是从它
-//  铺出来的，写回去的也必须是同一张。`phase(of:)`（上一张网格的左上角）只能用在不在
+//  铺出来的，写回去的也必须是同一张（手指正拖着格线时屏幕上画的是临时的 `liveOrigin`，
+//  松手才落回 `frameOrigin`）。`phase(of:)`（上一张网格的左上角）只能用在不在
 //  屏幕上的那些零件身上 —— 它跟 `frameOrigin` 差着整数个「当时的」格子，格距一改，
 //  这个前提当场作废，两张网格能差出小半格。同理，`refitAllParts` 也不重找当前这一块：
 //  用户刚拿眼睛验过的东西，不该在他按下一个按钮时被估计器改掉。
@@ -161,9 +162,9 @@ struct PartsCellSizeStepView: View {
     @State private var lastPan: CGSize = .zero
     @State private var pinchContentAnchor: CGPoint?
 
-    /// 这一次单指拖动在干什么。落指的位置决定，中途不变。
-    /// `grid`：看网格状态下拖整片格线。
-    private enum DragMode { case pan, move, resize, grid }
+    /// 这一次单指拖动在干什么。开始时定下，中途不变。
+    /// `grid`：看网格状态下拖整片格线，记着是哪个零件 —— 拖到一半换了零件，松手不能写到新零件上。
+    private enum DragMode { case pan, move, resize, grid(partId: UUID) }
     @State private var dragMode: DragMode?
     /// 手指正拖着格线时，格线跟着手指走到哪儿了（归一化）。**松手才写进 `frameOrigin`。**
     ///
@@ -474,8 +475,8 @@ struct PartsCellSizeStepView: View {
     /// 手势层。单指：落指的位置决定这一拖是「挪格子」「改大小」「推格线」还是「移动图片」——
     /// 用户不用先切模式。双指：捏合放大，同时跟着两指中点移动图片。
     ///
-    /// 看网格状态下单指拖动一律是推格线：整片网格铺满画布，分不出「空白处」，
-    /// 移动图片只能交给双指。手势层为什么是 UIKit 写的见 `CanvasTouchLayer`。
+    /// 看网格状态下单指拖动就是推格线（还在测量、没有网格时除外）：推格线是这一屏最主要的事，
+    /// 不该让用户先找准落点；移动图片交给双指。手势层为什么是 UIKit 写的见 `CanvasTouchLayer`。
     private var gestureCatcher: some View {
         CanvasTouchLayer(
             onOneFingerBegan: { beginDrag(at: $0) },
@@ -501,31 +502,47 @@ struct PartsCellSizeStepView: View {
         case .resize:
             resize(by: translation)
         case .grid:
-            let d = transform.normalizedDelta(translation)
-            liveOrigin = CGPoint(x: dragStartOrigin.x + d.width,
-                                 y: dragStartOrigin.y + d.height)
-        default:
+            liveOrigin = pixelSnappedOrigin(moving: translation)
+        case .pan:
             pan = clampPan(CGSize(width: lastPan.width + translation.width,
                                   height: lastPan.height + translation.height))
+        case nil:
+            break
         }
+    }
+
+    /// 起点加上手指的位移，**按整源图像素走**，跟方向键一个步长。
+    ///
+    /// 不取整的话，手指点一下带的一两点抖动也算「挪过」：`writeBackCurrentPart` 的容差是 1e-9，
+    /// 多零件模式下判过色的零件当场被清掉颜色。取整之后不到一个像素就是原地不动。
+    private func pixelSnappedOrigin(moving translation: CGSize) -> CGPoint {
+        guard let image = sampleImage, image.size.width > 0, image.size.height > 0,
+              sampleRegion.width > 0, sampleRegion.height > 0 else { return dragStartOrigin }
+        let d = transform.normalizedDelta(translation)
+        let pxW = sampleRegion.width / image.size.width
+        let pxH = sampleRegion.height / image.size.height
+        return CGPoint(x: dragStartOrigin.x + (d.width / pxW).rounded() * pxW,
+                       y: dragStartOrigin.y + (d.height / pxH).rounded() * pxH)
     }
 
     private func dragEnded() {
         switch dragMode {
         case .pan:
             lastPan = pan
-        case .grid:
-            // 这时候要是正好在测量（翻到新零件的自动对齐刚开始跑），拖出来的位置
-            // 等它跑完也会被盖掉 —— 跟按方向键一样。
-            if let liveOrigin { frameOrigin = liveOrigin }
+        case .grid(let partId):
+            // 没挪够一个像素就不写：`frameOrigin` 一赋值就会触发写回。
+            // 拖到一半换了零件（另一只手点了「下一个」）也不写，这个位置是上一块的。
+            if let liveOrigin, liveOrigin != dragStartOrigin, partId == sample?.id {
+                frameOrigin = liveOrigin
+            }
             liveOrigin = nil
-        default:
+        case .move, .resize, nil:
             break
         }
         dragMode = nil
     }
 
-    /// 第二根手指到了：刚才那一小段单指拖动不是用户想要的，原样撤回。
+    /// 第二根手指到了，或者系统取消了触摸：刚才那一小段单指拖动不是用户想要的，原样撤回。
     private func dragCancelled() {
         switch dragMode {
         case .pan: pan = lastPan
@@ -550,8 +567,8 @@ struct PartsCellSizeStepView: View {
 
     private func beginDrag(at point: CGPoint) {
         guard picking else {
-            if grid != nil, !estimating {
-                dragMode = .grid
+            if grid != nil, !estimating, let sample {
+                dragMode = .grid(partId: sample.id)
                 dragStartOrigin = frameOrigin
             } else {
                 dragMode = .pan
