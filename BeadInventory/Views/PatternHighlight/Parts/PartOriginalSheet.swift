@@ -22,6 +22,8 @@ struct PartOriginalSheet: View {
         let boardNumber: Int
         /// 顺时针转了几个 90°。**必须说**：板上那块是转过的，跟原图对不上不是识别错了。
         let turns: Int
+        /// 板上是翻过来摆的。同理必须说：翻过的零件跟原图左右是反的。
+        var mirrored = false
     }
 
     /// 图纸原图现在处于哪一步。**必须是三选一，不能用「一张 nil 的图 + 一个 Bool」凑**：
@@ -223,9 +225,16 @@ struct PartOriginalSheet: View {
     /// 转过的零件必须写出来。不写的话用户拿板上那块跟左边原图一比，
     /// 发现「躺倒了」，第一反应是识别错了 —— 其实是排版时为了放得下特地转的。
     private func boardText(_ placement: Placement) -> String {
-        placement.turns == 0
-            ? String(localized: "第 \(placement.boardNumber) 块板")
-            : String(localized: "第 \(placement.boardNumber) 块板 · 转了 \(placement.turns * 90)°")
+        switch (placement.mirrored, placement.turns) {
+        case (false, 0):
+            return String(localized: "第 \(placement.boardNumber) 块板")
+        case (false, let turns):
+            return String(localized: "第 \(placement.boardNumber) 块板 · 转了 \(turns * 90)°")
+        case (true, 0):
+            return String(localized: "第 \(placement.boardNumber) 块板 · 镜像")
+        case (true, let turns):
+            return String(localized: "第 \(placement.boardNumber) 块板 · 镜像 · 转了 \(turns * 90)°")
+        }
     }
 
     private func row(label: String, value: String) -> some View {

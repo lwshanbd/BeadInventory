@@ -46,16 +46,17 @@ final class PartsSheetUsageTests: XCTestCase {
         XCTAssertEqual(usage(of: makeSheet(parts: [a, b])), ["H7": 3, "A1": 1])
     }
 
-    /// 同一个零件在板上摆了两遍，颗数也不翻倍。
-    func testBoardPlacementsDoNotChangeCounts() {
+    /// 在板上复制出来的那份是真要多拼的，豆子按两份算；没摆上板的零件照样按一份算。
+    func testCopiedPlacementsMultiplyCountsButUnplacedStillCountsOnce() {
         let part = makePart([["H7", "A1"]])
+        let unplaced = makePart([["H7", nil]])
         let boards = [
             PartsBoard(size: BeadBoardSize(cols: 50, rows: 50),
                        placements: [PartPlacement(partId: part.id, col: 0, row: 0)]),
             PartsBoard(size: BeadBoardSize(cols: 50, rows: 50),
-                       placements: [PartPlacement(partId: part.id, col: 10, row: 10)])
+                       placements: [PartPlacement(partId: part.id, col: 10, row: 10, mirrored: true)])
         ]
-        XCTAssertEqual(usage(of: makeSheet(parts: [part], boards: boards)), ["H7": 1, "A1": 1])
+        XCTAssertEqual(usage(of: makeSheet(parts: [part, unplaced], boards: boards)), ["H7": 3, "A1": 2])
     }
 
     /// 有零件划好了网格却没有格子（重调网格之后等着补判色），数出来缺一块，不能给答案。
