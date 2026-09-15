@@ -39,13 +39,14 @@
 //
 //  ## 两个状态，一次只看一样东西
 //
-//    看网格   默认。整片网格铺在零件上，用来判断对没对齐；方向键整体推格线。
+//    看网格   默认。整片网格铺在零件上，用来判断对没对齐。单指按住拖就是整片推格线，
+//             方向键一次推一个像素收尾；双指捏合放大、双指拖动移动图片。
 //    重选格子 点「重选格子大小」进入。**网格线全部隐藏**，只剩一个黄框 ——
 //             要精调一格的大小时，满屏的网格线只会碍事。
 //
 //  重选态里框就是**一格**，像截图软件那样：拖框身平移、拖右下角的把手改大小。
 //  进这个状态会自动放大到一格有近百点，手指才够得着；空白处单指拖动是移动图片，
-//  两指捏合放大 —— 跟「找零件」那屏一个规矩。
+//  两指捏合放大、两指拖动也能移动图片。
 //
 //  两条踩过的坑，不要再回去：
 //
@@ -158,12 +159,18 @@ struct PartsCellSizeStepView: View {
     @State private var lastZoom: CGFloat = 1
     @State private var pan: CGSize = .zero
     @State private var lastPan: CGSize = .zero
-    @State private var pinchScreenPoint: CGPoint = .zero
     @State private var pinchContentAnchor: CGPoint?
 
     /// 这一次单指拖动在干什么。落指的位置决定，中途不变。
-    private enum DragMode { case pan, move, resize }
+    /// `grid`：看网格状态下拖整片格线。
+    private enum DragMode { case pan, move, resize, grid }
     @State private var dragMode: DragMode?
+    /// 手指正拖着格线时，格线跟着手指走到哪儿了（归一化）。**松手才写进 `frameOrigin`。**
+    ///
+    /// 不能边拖边写：`frameOrigin` 一变就触发 `writeBackCurrentPart`，判过色的零件
+    /// 在多零件模式下会被当场清掉颜色。第二根手指落下时（其实是要捏合）这一小段拖动得撤回，
+    /// 写进去再改回来，颜色已经没了。
+    @State private var liveOrigin: CGPoint?
     @State private var dragStartOrigin: CGPoint = .zero
     @State private var dragStartCell: CGSize = .zero
 
@@ -258,7 +265,11 @@ struct PartsCellSizeStepView: View {
 
     /// 当前零件落在它自己那张网格上的那块（行列数就是从这儿来的）
     private var grid: PartsGrid? {
-        guard let sample, let c = sampleCalibration else { return nil }
+        guard let sample, var c = sampleCalibration else { return nil }
+        if let liveOrigin {
+            c.originX = Double(liveOrigin.x)
+            c.originY = Double(liveOrigin.y)
+        }
         return PartsGrid(covering: sample.bounds, calibration: c)
     }
 
@@ -460,57 +471,94 @@ struct PartsCellSizeStepView: View {
         .clipped()
     }
 
-    /// 手势层。落指的位置决定这一拖是「挪格子」「改大小」还是「移动图片」——
-    /// 用户不用先切模式，也不会出现「想移动图片结果把格子拽跑了」。
+    /// 手势层。单指：落指的位置决定这一拖是「挪格子」「改大小」「推格线」还是「移动图片」——
+    /// 用户不用先切模式。双指：捏合放大，同时跟着两指中点移动图片。
+    ///
+    /// 看网格状态下单指拖动一律是推格线：整片网格铺满画布，分不出「空白处」，
+    /// 移动图片只能交给双指。手势层为什么是 UIKit 写的见 `CanvasTouchLayer`。
     private var gestureCatcher: some View {
-        Color.clear
-            .contentShape(Rectangle())
-            .gesture(
-                SimultaneousGesture(
-                    DragGesture(minimumDistance: 1)
-                        .onChanged { value in
-                            if dragMode == nil { beginDrag(at: value.startLocation) }
-                            switch dragMode {
-                            case .move:
-                                let d = transform.normalizedDelta(value.translation)
-                                frameOrigin = CGPoint(x: dragStartOrigin.x + d.width,
-                                                      y: dragStartOrigin.y + d.height)
-                            case .resize:
-                                resize(by: value.translation)
-                            default:
-                                pan = clampPan(CGSize(width: lastPan.width + value.translation.width,
-                                                      height: lastPan.height + value.translation.height))
-                            }
-                        }
-                        .onEnded { _ in
-                            if dragMode == .pan { lastPan = pan }
-                            dragMode = nil
-                        },
-                    MagnifyGesture()
-                        .onChanged { value in
-                            if pinchContentAnchor == nil {
-                                pinchScreenPoint = value.startLocation
-                                pinchContentAnchor = unzoomed(value.startLocation)
-                            }
-                            guard let anchor = pinchContentAnchor else { return }
-                            zoom = max(1, min(16, lastZoom * value.magnification))
-                            let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
-                            pan = clampPan(CGSize(
-                                width: pinchScreenPoint.x - center.x - (anchor.x - center.x) * zoom,
-                                height: pinchScreenPoint.y - center.y - (anchor.y - center.y) * zoom
-                            ))
-                        }
-                        .onEnded { _ in
-                            lastZoom = zoom
-                            lastPan = pan
-                            pinchContentAnchor = nil
-                        }
-                )
-            )
+        CanvasTouchLayer(
+            onOneFingerBegan: { beginDrag(at: $0) },
+            onOneFingerChanged: { dragChanged($0) },
+            onOneFingerEnded: { dragEnded() },
+            onOneFingerCancel: { dragCancelled() },
+            onTwoFingerBegan: { pinchContentAnchor = unzoomed($0) },
+            onTwoFingerChanged: { pinchChanged(center: $0, scale: $1) },
+            onTwoFingerEnded: {
+                lastZoom = zoom
+                lastPan = pan
+                pinchContentAnchor = nil
+            }
+        )
+    }
+
+    private func dragChanged(_ translation: CGSize) {
+        switch dragMode {
+        case .move:
+            let d = transform.normalizedDelta(translation)
+            frameOrigin = CGPoint(x: dragStartOrigin.x + d.width,
+                                  y: dragStartOrigin.y + d.height)
+        case .resize:
+            resize(by: translation)
+        case .grid:
+            let d = transform.normalizedDelta(translation)
+            liveOrigin = CGPoint(x: dragStartOrigin.x + d.width,
+                                 y: dragStartOrigin.y + d.height)
+        default:
+            pan = clampPan(CGSize(width: lastPan.width + translation.width,
+                                  height: lastPan.height + translation.height))
+        }
+    }
+
+    private func dragEnded() {
+        switch dragMode {
+        case .pan:
+            lastPan = pan
+        case .grid:
+            // 这时候要是正好在测量（翻到新零件的自动对齐刚开始跑），拖出来的位置
+            // 等它跑完也会被盖掉 —— 跟按方向键一样。
+            if let liveOrigin { frameOrigin = liveOrigin }
+            liveOrigin = nil
+        default:
+            break
+        }
+        dragMode = nil
+    }
+
+    /// 第二根手指到了：刚才那一小段单指拖动不是用户想要的，原样撤回。
+    private func dragCancelled() {
+        switch dragMode {
+        case .pan: pan = lastPan
+        case .move: frameOrigin = dragStartOrigin
+        case .resize: resize(by: .zero)
+        case .grid: liveOrigin = nil
+        case nil: break
+        }
+        dragMode = nil
+    }
+
+    /// 两指开始时底下那一点，钉在两指现在的中点上：放大和移动一次算完。
+    private func pinchChanged(center: CGPoint, scale: CGFloat) {
+        guard let anchor = pinchContentAnchor else { return }
+        zoom = max(1, min(16, lastZoom * scale))
+        let mid = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+        pan = clampPan(CGSize(
+            width: center.x - mid.x - (anchor.x - mid.x) * zoom,
+            height: center.y - mid.y - (anchor.y - mid.y) * zoom
+        ))
     }
 
     private func beginDrag(at point: CGPoint) {
-        guard picking, let frameRect else {
+        guard picking else {
+            if grid != nil, !estimating {
+                dragMode = .grid
+                dragStartOrigin = frameOrigin
+            } else {
+                dragMode = .pan
+            }
+            return
+        }
+        guard let frameRect else {
             dragMode = .pan
             return
         }
