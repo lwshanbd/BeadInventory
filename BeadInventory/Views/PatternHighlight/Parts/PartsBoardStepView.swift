@@ -75,7 +75,7 @@ struct PartsBoardStepView: View {
     @AppStorage(BeadBoardSize.recentsKey) private var customSizes = ""
 
     @State private var boardIndex = 0
-    /// 当前选中的那个「摆放」（不是零件本身 —— 同一个零件只会被摆一次，但选中态属于板上那一份）
+    /// 当前选中的那个「摆放」（不是零件本身 —— 同一个零件复制过就不止一份，选中态属于板上那一份）
     @State private var selection: UUID?
     /// 正在高亮的色号（`PartCellFill.groupKey`）。nil = 正常显示
     @State private var highlightKey: String?
@@ -890,9 +890,35 @@ struct PartsBoardStepView: View {
 
             partPreview(placement)
 
+            // 两排：上面一排只改朝向（板上占的地方跟着变，零件还是这一个），
+            // 下面一排是对这个零件本身做的事。
             HStack(spacing: Theme.Spacing.sm) {
-                Button { rotateSelected() } label: {
+                Button { reorientSelected(quarterTurns: 1) } label: {
                     Label("转 90°", systemImage: "rotate.right").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
+                // 按两次「转 90°」也能转过来，但中间那一下是横着的：细长件横过来原地放不下，
+                // 会被挪去别处，再转一下就回不到原来的位置了。转 180° 包围盒不变，基本都能原地转。
+                Button { reorientSelected(quarterTurns: 2) } label: {
+                    Label("转 180°", systemImage: "arrow.uturn.down").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
+                Button { reorientSelected(quarterTurns: 0, mirror: true) } label: {
+                    Label("镜像", systemImage: "flip.horizontal")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+            .font(.footnote)
+            .lineLimit(1)
+
+            HStack(spacing: Theme.Spacing.sm) {
+                // 图纸上只画了一只耳朵、或者临时想多拼一个备用，都是这一下。
+                // 复制出来的那份也要扣豆子（见 `PartsSheetUsage`）。
+                Button { duplicateSelected() } label: {
+                    Label("复制", systemImage: "plus.square.on.square").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
 
@@ -1003,9 +1029,9 @@ struct PartsBoardStepView: View {
         }
         .buttonStyle(.plain)
         .overlay(alignment: .topLeading) {
-            // 板上那块是转过的，跟这张图对不上不是判错了 —— 不说的话用户会以为识别坏了。
-            if placement.turns != 0 {
-                Text("板上转了 \(placement.turns * 90)° 放")
+            // 板上那块是转过 / 翻过的，跟这张图对不上不是判错了 —— 不说的话用户会以为识别坏了。
+            if let text = orientationNote(placement) {
+                Text(text)
                     .font(.caption2)
                     .foregroundColor(Theme.ColorToken.Text.secondary)
                     .padding(.horizontal, Theme.Spacing.sm)
@@ -1013,6 +1039,16 @@ struct PartsBoardStepView: View {
                     .background(Capsule().fill(.regularMaterial))
                     .padding(Theme.Spacing.sm)
             }
+        }
+    }
+
+    /// 板上这份跟图纸原图朝向不一样时，写在大图角上的那句话。朝向一样时是 nil。
+    private func orientationNote(_ placement: PartPlacement) -> String? {
+        switch (placement.isMirrored, placement.turns) {
+        case (false, 0): return nil
+        case (false, let turns): return String(localized: "板上转了 \(turns * 90)° 放")
+        case (true, 0): return String(localized: "板上镜像放")
+        case (true, let turns): return String(localized: "板上镜像、转了 \(turns * 90)° 放")
         }
     }
 
@@ -1048,7 +1084,7 @@ struct PartsBoardStepView: View {
                     // 已经拼了一半的板又多出几个零件。写成互斥的两条就是在骗人。
                     Menu {
                         Button("优先填入现有板") { fillRemaining() }
-                        Button("摆到新板") { placeOnNewBoards(unplaced) }
+                        Button("摆到新板") { placeOnNewBoards(PartsBoardPacker.Piece.one(each: unplaced)) }
                     } label: {
                         Label("自动排列", systemImage: "square.grid.3x3.fill")
                             .font(.footnote.weight(.medium))
@@ -1362,10 +1398,19 @@ struct PartsBoardStepView: View {
     }
 
     /// 这个零件摆在第几块板上、转了几次。没摆上板时是 nil。
+    ///
+    /// 复制过的零件不止一份，这时说的是**选中的那一份**：用户是点着它打开对照的，
+    /// 报另一份的板号和朝向，他会以为自己这份摆错了。
     private func placementInfo(of partId: UUID) -> PartOriginalSheet.Placement? {
+        if let board = currentBoard,
+           let hit = board.placements.first(where: { $0.id == selection && $0.partId == partId }) {
+            return PartOriginalSheet.Placement(boardNumber: boardIndex + 1, turns: hit.turns,
+                                               mirrored: hit.isMirrored)
+        }
         for (index, board) in boards.enumerated() {
             guard let hit = board.placements.first(where: { $0.partId == partId }) else { continue }
-            return PartOriginalSheet.Placement(boardNumber: index + 1, turns: hit.turns)
+            return PartOriginalSheet.Placement(boardNumber: index + 1, turns: hit.turns,
+                                               mirrored: hit.isMirrored)
         }
         return nil
     }
@@ -1572,7 +1617,7 @@ struct PartsBoardStepView: View {
     /// 直接去数格子是不行的：这一句每渲染一帧都要算一次，而单图纸模式一张图纸七万格。
     private var shapeSignature: String {
         boards.flatMap { board in
-            board.placements.map { "\($0.id)|\($0.partId)|\($0.turns)" }
+            board.placements.map { "\($0.id)|\($0.partId)|\($0.turns)|\($0.isMirrored)" }
         }.joined(separator: ",") + "#\(cellsRevision)"
     }
 
@@ -1583,7 +1628,7 @@ struct PartsBoardStepView: View {
         for board in boards {
             signature += "|\(board.cols)x\(board.rows)"
             for placement in board.placements {
-                signature += "|\(placement.id)@\(placement.col),\(placement.row),\(placement.turns)"
+                signature += "|\(placement.id)@\(placement.col),\(placement.row),\(placement.turns),\(placement.isMirrored)"
             }
         }
         return signature
@@ -1654,7 +1699,7 @@ struct PartsBoardStepView: View {
         for board in boards {
             for placement in board.placements {
                 guard let part = parts.first(where: { $0.id == placement.partId }) else { continue }
-                result[placement.id] = part.footprint(turns: placement.turns)
+                result[placement.id] = part.footprint(for: placement)
             }
         }
         return result
@@ -1711,8 +1756,8 @@ struct PartsBoardStepView: View {
         guard boards.isEmpty, !parts.isEmpty else { return }
         let size = BeadBoardSize(cols: savedCols, rows: savedRows)
         let used = spacing
-        let packed = PartsBoardPacker.pack(parts: parts.filter(\.hasCells), size: size,
-                                           spacing: used, layout: preferredLayout)
+        let packed = PartsBoardPacker.pack(pieces: PartsBoardPacker.Piece.one(each: parts.filter(\.hasCells)),
+                                           size: size, spacing: used, layout: preferredLayout)
         boards = packed.boards
         // 一块板都没排出来（零件全都放不进去）就是「还没排过」，那一档不能落定 ——
         // 落定了 `spacing` 就不再听偏好，用户在菜单里换档会变成点了没反应。
@@ -1747,7 +1792,8 @@ struct PartsBoardStepView: View {
         // 排法不跟着图纸存（见 `preferredLayout`），偏好照写不误：这一支下面就按它排，
         // 而别的路子里 `target.layout` 本来就是从它取的，写回去等于没动。
         preferredLayout = target.layout
-        let packed = PartsBoardPacker.pack(parts: parts.filter(\.hasCells),
+        // 按板上现有的份数排：复制出来的那份、镜像过的那份都得留着（见 `PartsBoardPacker.Piece`）。
+        let packed = PartsBoardPacker.pack(pieces: PartsBoardPacker.Piece.keeping(parts.filter(\.hasCells), from: boards),
                                            size: target.size, spacing: target.spacing,
                                            layout: target.layout)
         boards = packed.boards
@@ -1820,7 +1866,7 @@ struct PartsBoardStepView: View {
     private func placePicked(onNewBoard: Bool) {
         let chosen = pickedParts
         guard !chosen.isEmpty else { return }
-        picks = onNewBoard ? placeOnNewBoards(chosen) : placeOnCurrentBoard(chosen)
+        picks = onNewBoard ? placeOnNewBoards(PartsBoardPacker.Piece.one(each: chosen)) : placeOnCurrentBoard(chosen)
         if picks.isEmpty { picking = false }
     }
 
@@ -1869,15 +1915,19 @@ struct PartsBoardStepView: View {
     ///
     /// - Returns: 没摆上的那几个（比板子还大的）。
     @discardableResult
-    private func placeOnNewBoards(_ chosen: [BeadPart]) -> Set<UUID> {
+    private func placeOnNewBoards(_ chosen: [PartsBoardPacker.Piece]) -> Set<UUID> {
         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
         let used = spacing
         // 按零件编号重排一遍再交给 packer。「按编号排」认的就是传进来的次序
         // （见 `PartsBoardPacker.numberedPack`），而从板上勾走的那几个是按**摆放**顺序来的
         // —— 直接传进去，新板装的就不是连着的一段号，用户刚选的那一档等于没选。
-        let ids = Set(chosen.map(\.id))
-        let ordered = parts.filter { ids.contains($0.id) }
-        let packed = PartsBoardPacker.pack(parts: ordered, size: size,
+        // 同一个零件复制过的话会出现不止一份，所以是排序，不是按 id 从 `parts` 里筛。
+        let ids = Set(chosen.map(\.part.id))
+        let ordered = chosen.enumerated().sorted {
+            let lhs = partOrder[$0.element.part.id] ?? 0, rhs = partOrder[$1.element.part.id] ?? 0
+            return lhs != rhs ? lhs < rhs : $0.offset < $1.offset
+        }.map(\.element)
+        let packed = PartsBoardPacker.pack(pieces: ordered, size: size,
                                            spacing: used, layout: preferredLayout)
         guard !packed.boards.isEmpty else {
             flash(unplacedNote(ordered.count, spacing: used))
@@ -1998,7 +2048,13 @@ struct PartsBoardStepView: View {
 
     // MARK: - 选中之后能干的事
 
-    private func rotateSelected() {
+    /// 转向 / 镜像当前选中的这份。
+    ///
+    /// 镜像是**按板上看到的样子左右翻**，不是在零件自己的方向上翻：零件躺倒放着的时候，
+    /// 在它自己的方向上左右翻，板上看着是上下翻了，跟按钮上画的对不上。
+    /// 形状的约定是「先翻、再转」（`BeadPart.footprint(turns:mirrored:)`），
+    /// 板上左右翻一下等于 H·R^t·H^m = R^(-t)·H^(1-m)，所以翻的时候转向要跟着取反。
+    private func reorientSelected(quarterTurns: Int, mirror: Bool = false) {
         guard let id = selection,
               boards.indices.contains(boardIndex),
               let index = boards[boardIndex].placements.firstIndex(where: { $0.id == id }),
@@ -2006,9 +2062,10 @@ struct PartsBoardStepView: View {
         else { return }
 
         let old = boards[boardIndex].placements[index]
-        let oldFootprint = part.footprint(turns: old.turns)
-        let newTurns = (old.turns + 1) % 4
-        let newFootprint = part.footprint(turns: newTurns)
+        let oldFootprint = part.footprint(for: old)
+        let newMirrored = mirror ? !old.isMirrored : old.isMirrored
+        let newTurns = (mirror ? 4 - old.turns : old.turns) + quarterTurns
+        let newFootprint = part.footprint(turns: newTurns, mirrored: newMirrored)
         guard !newFootprint.isEmpty else { return }
 
         // 转完尽量还在原地：让新旧两块的中心对上，不然零件会莫名其妙跳到别处
@@ -2021,19 +2078,76 @@ struct PartsBoardStepView: View {
                                                    spacing: spacing, ignoring: id)
         if occupancy.canPlace(newFootprint, col: col, row: row) {
             boards[boardIndex].placements[index] = PartPlacement(
-                id: id, partId: old.partId, col: col, row: row, turns: newTurns
+                id: id, partId: old.partId, col: col, row: row, turns: newTurns, mirrored: newMirrored
             )
             clearDoneColors(touchedBy: id)
         } else if let spot = PartsBoardPacker.firstFit(newFootprint, occupancy: occupancy) {
             boards[boardIndex].placements[index] = PartPlacement(
-                id: id, partId: old.partId, col: spot.col, row: spot.row, turns: newTurns
+                id: id, partId: old.partId, col: spot.col, row: spot.row, turns: newTurns, mirrored: newMirrored
             )
             clearDoneColors(touchedBy: id)
-            flash(String(localized: "原位置无法旋转，已移至空余位置。"))
+            flash(mirror
+                  ? String(localized: "原位置无法镜像，已移至空余位置。")
+                  : String(localized: "原位置无法旋转，已移至空余位置。"))
         } else {
             // 没转成，板上什么都没变 —— 勾不能动。
-            flash(String(localized: "旋转后放不下，请先移开其他零件。"))
+            flash(mirror
+                  ? String(localized: "镜像后放不下，请先移开其他零件。")
+                  : String(localized: "旋转后放不下，请先移开其他零件。"))
         }
+    }
+
+    /// 选中的这份再摆一份，朝向和镜像跟它一样。
+    ///
+    /// 先塞当前这块板，塞不下再开一块同样大的新板 —— 跟零件条点一下落位是同一个规矩
+    /// （见 `place`）。朝向先试跟原来一样的，放不下再转 90°。
+    ///
+    /// **摆完选中新的那份**：跟 `place` 不选中正好相反。这里用户手上正选着一个零件，
+    /// 复制完要是还选着原来那个，新的那份落在板上哪儿他得自己找；选中新的，亮边直接指给他看。
+    private func duplicateSelected() {
+        guard let id = selection,
+              let source = currentBoard?.placements.first(where: { $0.id == id }),
+              let part = parts.first(where: { $0.id == source.partId }) else { return }
+        let options = [source.turns, source.turns + 1].map { turns in
+            PartsBoardPacker.Candidate(turns: turns, mirrored: source.isMirrored,
+                                       footprint: part.footprint(turns: turns, mirrored: source.isMirrored))
+        }
+        let used = spacing
+        // 份数在改 `boards` 之前数好：写完同一轮读回来不保证拿到新值（见 `DragSession`）
+        let total = copies(of: part.id) + 1
+
+        if let board = currentBoard,
+           let hit = PartsBoardPacker.fit(
+               options, in: PartsBoardPacker.occupancy(of: board, parts: parts, spacing: used)) {
+            let copy = PartPlacement(partId: part.id, col: hit.col, row: hit.row,
+                                     turns: hit.candidate.turns, mirrored: hit.candidate.mirrored)
+            boards[boardIndex].placements.append(copy)
+            selection = copy.id
+            flash(String(localized: "已复制，现在共 \(total) 份"))
+            return
+        }
+
+        let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
+        guard let hit = PartsBoardPacker.fit(
+            options, in: BoardOccupancy(cols: size.cols, rows: size.rows, spacing: used)) else {
+            flash(unplacedNote(1, spacing: used))
+            return
+        }
+        let copy = PartPlacement(partId: part.id, col: hit.col, row: hit.row,
+                                 turns: hit.candidate.turns, mirrored: hit.candidate.mirrored)
+        let boardNumber = boards.count + 1
+        var board = PartsBoard(size: size)
+        board.placements.append(copy)
+        boards.append(board)
+        boardSpacing = used
+        switchTo(boards.count - 1)
+        selection = copy.id
+        flash(String(localized: "这块板已放不下，已复制到新的第 \(boardNumber) 块板，现在共 \(total) 份"))
+    }
+
+    /// 这个零件在所有板上一共摆了几份
+    private func copies(of partId: UUID) -> Int {
+        boards.reduce(0) { $0 + $1.placements.filter { $0.partId == partId }.count }
     }
 
     /// 零件的格子被改过之后，板上跟着要处理的事。
@@ -2164,14 +2278,18 @@ struct PartsBoardStepView: View {
         let source = boardIndex
         guard boards.indices.contains(source) else { return }
         let picked = boardPicked
+        // 带着镜像走：翻过的那份挪到新板上还得是翻过的，不然左耳右耳就成了两只左耳
         let moving = boards[source].placements
             .filter { picked.contains($0.id) }
-            .compactMap { placement in parts.first { $0.id == placement.partId } }
+            .compactMap { placement in
+                parts.first { $0.id == placement.partId }
+                    .map { PartsBoardPacker.Piece(part: $0, mirrored: placement.isMirrored) }
+            }
         guard !moving.isEmpty else { return }
         endBoardPicking()
 
         // placeOnNewBoards 会切到新板，boardIndex 从这里开始就不是原来那块了
-        let movedIds = Set(moving.map(\.id)).subtracting(placeOnNewBoards(moving))
+        let movedIds = Set(moving.map(\.part.id)).subtracting(placeOnNewBoards(moving))
         boards[source].placements.removeAll {
             picked.contains($0.id) && movedIds.contains($0.partId)
         }

@@ -49,7 +49,7 @@ final class PartsBoardNumberedLayoutTests: XCTestCase {
         let wide = makePart(cols: 18, rows: 4)
         let tall = makePart(cols: 4, rows: 18)
         let parts = [wide, tall]
-        let result = PartsBoardPacker.pack(parts: parts,
+        let result = PartsBoardPacker.pack(pieces: PartsBoardPacker.Piece.one(each: parts),
                                            size: BeadBoardSize(cols: 20, rows: 20),
                                            spacing: .tight, layout: .numbered)
         XCTAssertEqual(result.boards.count, 1)
@@ -65,7 +65,7 @@ final class PartsBoardNumberedLayoutTests: XCTestCase {
     /// 「原方向优先」，不是「只有一个朝向能进」。
     func testPartsKeepTheirOrientationWhenItFits() {
         let parts = (0..<4).map { _ in makePart(cols: 6, rows: 10) }
-        let result = PartsBoardPacker.pack(parts: parts,
+        let result = PartsBoardPacker.pack(pieces: PartsBoardPacker.Piece.one(each: parts),
                                            size: BeadBoardSize(cols: 30, rows: 30),
                                            spacing: .tight, layout: .numbered)
         XCTAssertEqual(result.boards.count, 1)
@@ -87,7 +87,7 @@ final class PartsBoardNumberedLayoutTests: XCTestCase {
         let tall = makePart(cols: 15, rows: 18)
         let small = makePart(cols: 3, rows: 3)
         let parts = [corner, tall, small]
-        let result = PartsBoardPacker.pack(parts: parts,
+        let result = PartsBoardPacker.pack(pieces: PartsBoardPacker.Piece.one(each: parts),
                                            size: BeadBoardSize(cols: 20, rows: 20),
                                            spacing: .tight, layout: .numbered)
         XCTAssertEqual(result.boards.count, 1)
@@ -109,7 +109,7 @@ final class PartsBoardNumberedLayoutTests: XCTestCase {
         let parts = [makePart(cols: 4, rows: 4), makePart(cols: 15, rows: 18),
                      makePart(cols: 19, rows: 19), makePart(cols: 3, rows: 3)]
         let order = Dictionary(uniqueKeysWithValues: parts.enumerated().map { ($1.id, $0) })
-        let result = PartsBoardPacker.pack(parts: parts,
+        let result = PartsBoardPacker.pack(pieces: PartsBoardPacker.Piece.one(each: parts),
                                            size: BeadBoardSize(cols: 20, rows: 20),
                                            spacing: .tight, layout: .numbered)
 
@@ -140,7 +140,7 @@ final class PartsBoardNumberedLayoutTests: XCTestCase {
         let big = makePart(cols: 40, rows: 40)
         let parts = [makePart(cols: 5, rows: 5), big,
                      makePart(cols: 5, rows: 5), makePart(cols: 5, rows: 5)]
-        let result = PartsBoardPacker.pack(parts: parts,
+        let result = PartsBoardPacker.pack(pieces: PartsBoardPacker.Piece.one(each: parts),
                                            size: BeadBoardSize(cols: 20, rows: 20),
                                            spacing: .tight, layout: .numbered)
         XCTAssertEqual(result.unplaced, [big.id])
@@ -153,7 +153,7 @@ final class PartsBoardNumberedLayoutTests: XCTestCase {
     /// 界面靠「排出来的板是空数组」认定「还没排过」，那一档才不会被落定。
     func testAllPartsOversizedYieldsNoBoards() {
         let parts = (0..<3).map { _ in makePart(cols: 40, rows: 40) }
-        let result = PartsBoardPacker.pack(parts: parts,
+        let result = PartsBoardPacker.pack(pieces: PartsBoardPacker.Piece.one(each: parts),
                                            size: BeadBoardSize(cols: 20, rows: 20),
                                            spacing: .tight, layout: .numbered)
         XCTAssertTrue(result.boards.isEmpty)
