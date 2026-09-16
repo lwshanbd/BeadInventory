@@ -4,7 +4,7 @@
 //
 //  核对完颜色之后按格子颗数扣库存。这件事错了屏幕上什么都看不出来：扣减清单照样是
 //  一列色号加一列数字，只是数字不对，等用户拼到一半发现豆子不够才知道。
-//  这里只管数法本身：所有零件的格子都算、跟拼豆板无关、等着补判色时不给答案、空格不算、
+//  这里只管数法本身：所有零件的格子都算、复制过的乘份数、摆没摆上板不影响、等着补判色时不给答案、空格不算、
 //  任意色有去处、翻不出来的码不丢。真实的色号翻译在 `PartsSheetUsageSyncTests`。
 //
 
@@ -46,16 +46,25 @@ final class PartsSheetUsageTests: XCTestCase {
         XCTAssertEqual(usage(of: makeSheet(parts: [a, b])), ["H7": 3, "A1": 1])
     }
 
-    /// 同一个零件在板上摆了两遍，颗数也不翻倍。
-    func testBoardPlacementsDoNotChangeCounts() {
-        let part = makePart([["H7", "A1"]])
-        let boards = [
-            PartsBoard(size: BeadBoardSize(cols: 50, rows: 50),
-                       placements: [PartPlacement(partId: part.id, col: 0, row: 0)]),
-            PartsBoard(size: BeadBoardSize(cols: 50, rows: 50),
-                       placements: [PartPlacement(partId: part.id, col: 10, row: 10)])
-        ]
-        XCTAssertEqual(usage(of: makeSheet(parts: [part], boards: boards)), ["H7": 1, "A1": 1])
+    /// 复制过的零件按要拼的份数乘，没复制的按一份。
+    func testCopiesMultiplyCounts() {
+        var copied = makePart([["H7", "A1"]])
+        copied.copies = 2
+        let single = makePart([["H7", nil]])
+        XCTAssertEqual(usage(of: makeSheet(parts: [copied, single])), ["H7": 3, "A1": 2])
+    }
+
+    /// 份数记在零件上，跟板上摆了几份无关：取下一份待会儿再摆，扣减不能跟着少。
+    func testTakingCopiesOffTheBoardDoesNotChangeCounts() {
+        var part = makePart([["H7", "A1"]])
+        part.copies = 2
+        let both = [PartsBoard(size: BeadBoardSize(cols: 50, rows: 50), placements: [
+            PartPlacement(partId: part.id, col: 0, row: 0),
+            PartPlacement(partId: part.id, col: 10, row: 10, mirrored: true)
+        ])]
+        let none = [PartsBoard(size: BeadBoardSize(cols: 50, rows: 50))]
+        XCTAssertEqual(usage(of: makeSheet(parts: [part], boards: both)), ["H7": 2, "A1": 2])
+        XCTAssertEqual(usage(of: makeSheet(parts: [part], boards: none)), ["H7": 2, "A1": 2])
     }
 
     /// 有零件划好了网格却没有格子（重调网格之后等着补判色），数出来缺一块，不能给答案。

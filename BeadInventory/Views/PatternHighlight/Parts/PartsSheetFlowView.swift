@@ -442,7 +442,7 @@ struct PartsSheetFlowView: View {
             self.syncedCellCounts = saved.syncedCellCounts
 
             // 以前就判完色的图纸，这次不改任何东西退出去的话，计划里还是 AI 读的数。
-            // 所以进来就同步一次。格子没变过的不会动计划（见 `syncPlannedUsageFromPartsSheet`）。
+            // 所以进来就同步一次。格子和份数都没变过的不会动计划（见 `syncPlannedUsageFromPartsSheet`）。
             // 局部变量组一份图纸去同步，不读刚写的 @State：同一轮里读回来不保证是新值。
             var current = saved
             current.legendUsage = legend

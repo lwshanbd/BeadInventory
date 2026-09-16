@@ -1,6 +1,116 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "转 180°" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotate 180°"
+          }
+        }
+      }
+    },
+    "镜像" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mirror"
+          }
+        }
+      }
+    },
+    "原位置无法镜像，已移至空余位置。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No room to mirror in place — moved to a free spot"
+          }
+        }
+      }
+    },
+    "镜像后放不下，请先移开其他零件。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It won’t fit mirrored — move something else out of the way first"
+          }
+        }
+      }
+    },
+    "已复制，现在共 %lld 份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicated — %lld copies now"
+          }
+        }
+      }
+    },
+    "这块板已放不下，已复制到新的第 %lld 块板，现在共 %lld 份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No room on this board — duplicated onto new board %lld, %lld copies now"
+          }
+        }
+      }
+    },
+    "板上转了 %lld° 放" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotated %lld° on the board"
+          }
+        }
+      }
+    },
+    "板上镜像放" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mirrored on the board"
+          }
+        }
+      }
+    },
+    "板上镜像、转了 %lld° 放" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mirrored and rotated %lld° on the board"
+          }
+        }
+      }
+    },
+    "第 %lld 块板 · 镜像" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Board %lld · Mirrored"
+          }
+        }
+      }
+    },
+    "第 %lld 块板 · 镜像 · 转了 %lld°" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Board %lld · Mirrored · Rotated %lld°"
+          }
+        }
+      }
+    },
     "跳转到零件" : {
       "localizations" : {
         "en" : {

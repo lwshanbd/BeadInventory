@@ -8,15 +8,20 @@
 //  AI 会读错。多零件模式里用户把每个零件切成格子、一格一格对过颜色，对完是多少就是多少。
 //  所以格子判完色之后，计划的用量换成格子里数出来的颗数，扣库存按它扣。
 //
-//  ## 数的是所有零件的格子，跟摆没摆上板无关
+//  ## 数的是所有零件的格子 × 要拼几份，跟摆没摆上板无关
 //
-//  拼豆板那一屏只管「这些零件分几块板烫」，一个零件摆不摆、摆几遍，都不改变这张图纸
+//  拼豆板那一屏只管「这些零件分几块板烫」，一个零件摆不摆、摆在第几块板上，都不改变这张图纸
 //  要用多少颗豆子。早先这里按板上的摆位数，结果取下零件扣减数就跟着变，是错的。
 //
-//  ## 跟核对颜色那一屏数的是同一个数
+//  份数是另一回事：用户在板上点「复制」，是想多拼一个（图纸上只画了一只耳朵），多拼的那份
+//  豆子是真要用掉的。所以乘的是 `BeadPart.copyCount` —— 它记在零件上，取下一份只是把它放回
+//  零件条待会儿再摆，份数不变，扣减也不变。
+//
+//  ## 跟核对颜色那一屏数的是同一种数法
 //
 //  核对页把所有零件现有的格子加起来（`PartsColorReviewStepView.groups`），这里照抄这个数法，
-//  用户在核对页看到几颗，计划就是几颗。还没划网格的零件没有格子，两边都不算。
+//  没有复制过零件时，用户在核对页看到几颗，计划就是几颗。复制了的话计划会多出那几份：
+//  核对页是拿来跟图纸上印的数对的，图纸上可没画多拼的那份。还没划网格的零件没有格子，两边都不算。
 //
 //  ## 有零件等着重新判色时不算
 //
@@ -46,6 +51,7 @@ enum PartsSheetUsage {
     static let anyColorCode = "任意色"
 
     /// 所有零件的格子里，每类格子有几颗（`PartCellFill.groupKey` → 颗数，不含空格）。
+    /// 复制过的零件乘上要拼的份数，理由见文件头。
     ///
     /// 一个判过色的零件都没有、或者有零件等着补判色时返回 nil，理由见文件头。
     static func cellCounts(in sheet: BeadPartsSheet) -> [String: Int]? {
@@ -53,9 +59,10 @@ enum PartsSheetUsage {
         guard !awaitingJudgement, sheet.parts.contains(where: \.hasCells) else { return nil }
         var counts: [String: Int] = [:]
         for part in sheet.parts {
+            let times = part.copyCount
             for row in part.cells {
                 for cell in row where cell.needsBead {
-                    counts[cell.groupKey, default: 0] += 1
+                    counts[cell.groupKey, default: 0] += times
                 }
             }
         }

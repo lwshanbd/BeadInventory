@@ -227,8 +227,19 @@ struct PartPlacement: Identifiable, Codable, Equatable, Sendable {
     /// 顺时针转了几个 90°（0~3）。拼豆转 90° 拼出来是一样的，
     /// 细长的零件竖着放不下、横着放得下时全靠它。
     var turns: Int
+    /// 左右翻过来摆。跟转向不一样，镜像拼出来是**另一个零件**：图纸上只画了左耳，
+    /// 右耳就是它的镜像。形状是先在零件自己的方向上翻、再转 `turns` 次
+    /// （实现见 `BeadPart.footprint(turns:mirrored:)`）。界面上那个「镜像」按钮翻的是
+    /// **板上看到的**左右，换算见 `PartsBoardStepView.reorientSelected`。
+    ///
+    /// 只读：外面改朝向一律新造一个摆放。留着 `var` 的话「没翻」会有 nil 和 false 两种存法，
+    /// 而 `PartPlacement` 是 `Equatable` —— 两种存法不相等，拿它比「板子改没改」就会误判。
+    ///
+    /// **Optional 是为了老数据**：合成的 `init(from:)` 对 Optional 用 decodeIfPresent，
+    /// 缺字段解出 nil（等于没翻）；写成非 Optional 的 Bool 会让所有存量图纸解码直接抛。
+    private(set) var mirrored: Bool?
 
-    init(id: UUID = UUID(), partId: UUID, col: Int, row: Int, turns: Int = 0) {
+    init(id: UUID = UUID(), partId: UUID, col: Int, row: Int, turns: Int = 0, mirrored: Bool = false) {
         self.id = id
         self.partId = partId
         self.col = col
@@ -236,7 +247,11 @@ struct PartPlacement: Identifiable, Codable, Equatable, Sendable {
         // 转 4 次等于没转，所以只有 0~3 有意义。这里就归一化掉：
         // 形状缓存是拿 turns 当键的，留着 4 的话同一个朝向会被当成两种形状白算一遍。
         self.turns = ((turns % 4) + 4) % 4
+        // 没翻存 nil，理由同 `BeadPart.isConnector`：缺省就是没翻，存个 false 只会让 JSON 白长一截
+        self.mirrored = mirrored ? true : nil
     }
+
+    var isMirrored: Bool { mirrored == true }
 }
 
 // MARK: - 一块板
@@ -480,8 +495,18 @@ extension BeadPart {
         return out
     }
 
-    func footprint(turns: Int) -> PartFootprint {
-        PartFootprint(cells: rotatedCells(turns: turns))
+    /// 先左右翻（`mirrored`），再顺时针转 `turns` 个 90° 之后的形状
+    func footprint(turns: Int, mirrored: Bool = false) -> PartFootprint {
+        guard mirrored else { return PartFootprint(cells: rotatedCells(turns: turns)) }
+        var flipped = self
+        flipped.cells = cells.map { Array($0.reversed()) }
+        return PartFootprint(cells: flipped.rotatedCells(turns: turns))
+    }
+
+    /// 这个零件按某个摆放的朝向摆在板上的形状。板上所有「这块占哪几格」都该走这里，
+    /// 漏传镜像的话，判定用的形状跟画出来的对不上，两个零件会贴着摆上去。
+    func footprint(for placement: PartPlacement) -> PartFootprint {
+        footprint(turns: placement.turns, mirrored: placement.isMirrored)
     }
 }
 
@@ -630,7 +655,7 @@ enum PartsBoardRepair {
                     outcome.orphaned.append(placement.partId)
                     return true
                 }
-                guard part.footprint(turns: placement.turns).isEmpty else { return false }
+                guard part.footprint(for: placement).isEmpty else { return false }
                 outcome.removed.append(placement.partId)
                 return true
             }
@@ -640,7 +665,7 @@ enum PartsBoardRepair {
                 guard let slot = boards[index].placements.firstIndex(where: { $0.id == offender }),
                       let part = byId[boards[index].placements[slot].partId] else { continue }
                 let placement = boards[index].placements[slot]
-                let footprint = part.footprint(turns: placement.turns)
+                let footprint = part.footprint(for: placement)
                 let occupancy = PartsBoardPacker.occupancy(of: boards[index], parts: parts,
                                                            spacing: spacing, ignoring: placement.id)
                 // 前一个零件挪走之后这个可能自己就合法了，所以每次都重新问一遍
@@ -687,7 +712,7 @@ enum PartsBoardRepair {
         var shapes: [(id: UUID, footprint: PartFootprint, col: Int, row: Int)] = []
         for (order, placement) in board.placements.enumerated() {
             guard let part = byId[placement.partId] else { continue }
-            let footprint = part.footprint(turns: placement.turns)
+            let footprint = part.footprint(for: placement)
             shapes.append((placement.id, footprint, placement.col, placement.row))
             let tag = Int32(order)
             for bead in footprint.beads {
@@ -767,6 +792,43 @@ enum PartsBoardPacker {
         Set(parts.filter(\.isConnectorPart).map(\.id))
     }
 
+    /// 要往板上摆的一份零件。
+    ///
+    /// 一个零件不一定只摆一份：用户在板上点「复制」就是想多拼一个，复制出来的那份还可能是镜像的
+    /// （左耳 → 右耳）。要拼几份是零件自己的属性（`BeadPart.copyCount`），哪几份翻过来
+    /// 只有板上知道，所以排版前要把这两件事合成一张「份」的清单。
+    struct Piece: Sendable {
+        let part: BeadPart
+        let mirrored: Bool
+
+        /// 每个零件一份、都不翻。进屏第一次排、零件条里挑几个摆，都是这种。
+        static func one(each parts: [BeadPart]) -> [Piece] {
+            parts.map { Piece(part: $0, mirrored: false) }
+        }
+
+        /// 每个零件排满它要拼的份数，翻没翻沿用板上现有的那几份，次序跟 `parts` 一致，
+        /// 同一个零件的几份挨在一起（`numberedPack` 要求这样传）。
+        ///
+        /// 板上现有的份数可能比要拼的少（用户取下了一份、或者上次重排没放下），
+        /// 缺的那几份补成不翻的；比要拼的多就照单全收，不去截断 —— 板上摆着的东西
+        /// 是用户亲手摆的，重排只该换位置，不该替他扔掉一份。
+        static func keeping(_ parts: [BeadPart], from boards: [PartsBoard]) -> [Piece] {
+            var mirrors: [UUID: [Bool]] = [:]
+            for board in boards {
+                for placement in board.placements {
+                    mirrors[placement.partId, default: []].append(placement.isMirrored)
+                }
+            }
+            return parts.flatMap { part in
+                var flags = mirrors[part.id] ?? []
+                if flags.count < part.copyCount {
+                    flags += Array(repeating: false, count: part.copyCount - flags.count)
+                }
+                return flags.map { Piece(part: part, mirrored: $0) }
+            }
+        }
+    }
+
     /// 板上已经摆了的东西占了哪些格。`ignoring` 用来在拖某个零件时把它自己排除掉。
     static func occupancy(
         of board: PartsBoard,
@@ -777,7 +839,7 @@ enum PartsBoardPacker {
         var occupancy = BoardOccupancy(cols: board.cols, rows: board.rows, spacing: spacing)
         for placement in board.placements where placement.id != ignoring {
             guard let part = parts.first(where: { $0.id == placement.partId }) else { continue }
-            occupancy.add(part.footprint(turns: placement.turns), col: placement.col, row: placement.row)
+            occupancy.add(part.footprint(for: placement), col: placement.col, row: placement.row)
         }
         return occupancy
     }
@@ -884,16 +946,26 @@ enum PartsBoardPacker {
     /// 一个零件的一种摆法
     struct Candidate: Sendable {
         let turns: Int
+        /// 这一份翻没翻。**没有默认值是故意的**：`footprint` 必须是按这个朝向算出来的，
+        /// 漏传一个 false 就会出现「摆上去的是翻过的形状、记下来的摆放却没翻」——
+        /// 画出来和判定用的形状从此对不上。
+        let mirrored: Bool
         let footprint: PartFootprint
     }
 
     /// 这个零件可以怎么摆。先试原方向（跟图纸上看到的一致，用户好认），
-    /// 再试转 90°（细长件常常转过来才放得下）。
+    /// 再试转 90°（细长件常常转过来才放得下）。镜像不是一种「摆法」，是另一个零件，
+    /// 所以两个朝向翻不翻由调用方定死，这里不拿它去试。
     /// `footprint` 是已经算好的原方向形状 —— 算它要重建一整个旋转矩阵，能省则省。
-    static func candidates(for part: BeadPart, footprint: PartFootprint? = nil) -> [Candidate] {
+    static func candidates(
+        for part: BeadPart,
+        mirrored: Bool = false,
+        footprint: PartFootprint? = nil
+    ) -> [Candidate] {
         [
-            Candidate(turns: 0, footprint: footprint ?? part.footprint(turns: 0)),
-            Candidate(turns: 1, footprint: part.footprint(turns: 1))
+            Candidate(turns: 0, mirrored: mirrored,
+                      footprint: footprint ?? part.footprint(turns: 0, mirrored: mirrored)),
+            Candidate(turns: 1, mirrored: mirrored, footprint: part.footprint(turns: 1, mirrored: mirrored))
         ]
     }
 
@@ -935,6 +1007,7 @@ enum PartsBoardPacker {
     @discardableResult
     static func placeOne(
         _ part: BeadPart,
+        mirrored: Bool = false,
         footprint: PartFootprint? = nil,
         into boards: inout [PartsBoard],
         occupancies: inout [BoardOccupancy],
@@ -943,7 +1016,7 @@ enum PartsBoardPacker {
         connectorIds: Set<UUID>,
         strategy: Strategy = .center
     ) -> Int? {
-        let options = candidates(for: part, footprint: footprint)
+        let options = candidates(for: part, mirrored: mirrored, footprint: footprint)
         let isConnector = connectorIds.contains(part.id)
 
         for index in boards.indices {
@@ -951,7 +1024,8 @@ enum PartsBoardPacker {
             else { continue }
             guard let hit = fit(options, in: occupancies[index], strategy: strategy) else { continue }
             boards[index].placements.append(PartPlacement(
-                partId: part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
+                partId: part.id, col: hit.col, row: hit.row,
+                turns: hit.candidate.turns, mirrored: hit.candidate.mirrored
             ))
             occupancies[index].add(hit.candidate.footprint, col: hit.col, row: hit.row)
             return index
@@ -961,7 +1035,8 @@ enum PartsBoardPacker {
         guard let hit = fit(options, in: occupancy, strategy: strategy) else { return nil }
         var board = PartsBoard(size: size)
         board.placements.append(PartPlacement(
-            partId: part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
+            partId: part.id, col: hit.col, row: hit.row,
+            turns: hit.candidate.turns, mirrored: hit.candidate.mirrored
         ))
         occupancy.add(hit.candidate.footprint, col: hit.col, row: hit.row)
         boards.append(board)
@@ -969,7 +1044,7 @@ enum PartsBoardPacker {
         return boards.count - 1
     }
 
-    /// 把 `parts` 全部铺到尺寸为 `size` 的板上，一块放不下就再开一块。
+    /// 把 `pieces` 全部铺到尺寸为 `size` 的板上，一块放不下就再开一块。
     /// 比板子还大的零件放不进去，会留在返回值的 `unplaced` 里 —— 这种情况用户
     /// 只能换更大的板，得让他看见，不能悄悄吞掉。
     ///
@@ -992,16 +1067,17 @@ enum PartsBoardPacker {
     ///
     /// 挑扫法、比板数那几段只对省板那一档成立；分插件板、普通件的板排在前面，
     /// 两条路一样（分组在 `packGroup` 之前）。按编号排走的是 `numberedPack`。
+    /// 排的是「份」不是零件（见 `Piece`）：`unplaced` 里一个零件没摆下几份就出现几次。
     static func pack(
-        parts: [BeadPart],
+        pieces: [Piece],
         size: BeadBoardSize,
         spacing: BoardSpacing,
         // 刻意不给默认值：漏传一个默认档，用户选的排法就悄悄不生效，而屏幕上一个字都不会提。
         layout: BoardLayout
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
-        let regular = packGroup(parts.filter { !$0.isConnectorPart },
+        let regular = packGroup(pieces.filter { !$0.part.isConnectorPart },
                                 size: size, spacing: spacing, layout: layout)
-        let connectors = packGroup(parts.filter(\.isConnectorPart),
+        let connectors = packGroup(pieces.filter(\.part.isConnectorPart),
                                    size: size, spacing: spacing, layout: layout)
         return (regular.boards + connectors.boards, regular.unplaced + connectors.unplaced)
     }
@@ -1013,19 +1089,20 @@ enum PartsBoardPacker {
     /// 下面这句只管省板那一支：组内全同类，所以 `placeOne` 那道分板判断在这条路上恒真
     /// —— 传 `connectorIds` 只为签名对得上，真正靠它挡住混装的是 `fillRemaining` 那条路。
     private static func packGroup(
-        _ parts: [BeadPart],
+        _ pieces: [Piece],
         size: BeadBoardSize,
         spacing: BoardSpacing,
         layout: BoardLayout
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
+        let parts = pieces.map(\.part)
         if layout == .numbered {
-            var byNumber = numberedPack(parts, size: size, spacing: spacing)
+            var byNumber = numberedPack(pieces, size: size, spacing: spacing)
             for index in byNumber.boards.indices {
                 recenter(&byNumber.boards[index], parts: parts, spacing: spacing)
             }
             return byNumber
         }
-        let items = ordered(parts)
+        let items = ordered(pieces: pieces)
         let connectors = connectorIds(in: parts)
         var result = pack(items, size: size, spacing: spacing,
                           connectorIds: connectors, strategy: .center)
@@ -1045,7 +1122,7 @@ enum PartsBoardPacker {
     }
 
     private static func pack(
-        _ items: [(part: BeadPart, footprint: PartFootprint)],
+        _ items: [(piece: Piece, footprint: PartFootprint)],
         size: BeadBoardSize,
         spacing: BoardSpacing,
         connectorIds: Set<UUID>,
@@ -1056,10 +1133,10 @@ enum PartsBoardPacker {
         var unplaced: [UUID] = []
 
         for item in items {
-            if placeOne(item.part, footprint: item.footprint, into: &boards,
-                        occupancies: &occupancies, size: size, spacing: spacing,
+            if placeOne(item.piece.part, mirrored: item.piece.mirrored, footprint: item.footprint,
+                        into: &boards, occupancies: &occupancies, size: size, spacing: spacing,
                         connectorIds: connectorIds, strategy: strategy) == nil {
-                unplaced.append(item.part.id)
+                unplaced.append(item.piece.part.id)
             }
         }
 
@@ -1068,7 +1145,7 @@ enum PartsBoardPacker {
 
     /// 按传进来的次序，一个一个往**当前这块板**上塞：这块板上哪儿都放不下了，才另起一块板。
     ///
-    /// **调用方必须按零件在清单里的次序传**，这里一个都不重排。板上和零件条上写的号
+    /// **调用方必须按零件在清单里的次序传，同一个零件的几份要挨着**，这里一个都不重排。板上和零件条上写的号
     /// 就是那个次序（见 `BeadPart.displayName(order:)`），传进来乱了，排出来的号也乱。
     ///
     /// ## 这一档保证的是什么
@@ -1106,7 +1183,7 @@ enum PartsBoardPacker {
     /// 挪到板中间（`recenter`）。那一步是纯平移，号的相对次序不变，但用户在板上看到的
     /// 位置跟这里算出来的差一个偏移。
     private static func numberedPack(
-        _ parts: [BeadPart],
+        _ pieces: [Piece],
         size: BeadBoardSize,
         spacing: BoardSpacing
     ) -> (boards: [PartsBoard], unplaced: [UUID]) {
@@ -1114,8 +1191,8 @@ enum PartsBoardPacker {
         var occupancies: [BoardOccupancy] = []
         var unplaced: [UUID] = []
 
-        for part in parts {
-            let options = candidates(for: part)
+        for piece in pieces {
+            let options = candidates(for: piece.part, mirrored: piece.mirrored)
             // 一颗豆子都没有的零件不占地方，也不算「没摆下」（跟 `ordered` 的口径一致）
             guard let first = options.first, !first.footprint.isEmpty else { continue }
 
@@ -1137,7 +1214,7 @@ enum PartsBoardPacker {
                 let blank = BoardOccupancy(cols: size.cols, rows: size.rows, spacing: spacing)
                 guard let onBlank = fit(options, in: blank, strategy: .topLeft) else {
                     // 一块空板都放不下 = 两个朝向都比板子还大，只能让用户换板子
-                    unplaced.append(part.id)
+                    unplaced.append(piece.part.id)
                     continue
                 }
                 boards.append(PartsBoard(size: size))
@@ -1147,7 +1224,8 @@ enum PartsBoardPacker {
 
             let index = boards.count - 1
             boards[index].placements.append(PartPlacement(
-                partId: part.id, col: chosen.col, row: chosen.row, turns: chosen.candidate.turns
+                partId: piece.part.id, col: chosen.col, row: chosen.row,
+                turns: chosen.candidate.turns, mirrored: chosen.candidate.mirrored
             ))
             occupancies[index].add(chosen.candidate.footprint, col: chosen.col, row: chosen.row)
         }
@@ -1172,7 +1250,7 @@ enum PartsBoardPacker {
         let byId = Dictionary(parts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var minCol = Int.max, minRow = Int.max, maxCol = Int.min, maxRow = Int.min
         for placement in board.placements {
-            guard let footprint = byId[placement.partId]?.footprint(turns: placement.turns),
+            guard let footprint = byId[placement.partId]?.footprint(for: placement),
                   !footprint.isEmpty else { continue }
             minCol = min(minCol, placement.col + footprint.minCol)
             minRow = min(minRow, placement.row + footprint.minRow)
@@ -1197,9 +1275,10 @@ enum PartsBoardPacker {
 
     /// 摆放顺序：先大后小 —— 大件先占位，小件才好往缝里塞。
     /// 形状先算好再排序，别放进比较器里：那样每比一次都要重建一遍旋转矩阵。
-    static func ordered(_ parts: [BeadPart]) -> [(part: BeadPart, footprint: PartFootprint)] {
-        parts
-            .map { (part: $0, footprint: $0.footprint(turns: 0)) }
+    /// 排的是「份」。镜像不改包围盒的宽高，但形状得按翻过的算：它要直接拿去摆。
+    static func ordered(pieces: [Piece]) -> [(piece: Piece, footprint: PartFootprint)] {
+        pieces
+            .map { (piece: $0, footprint: $0.part.footprint(turns: 0, mirrored: $0.mirrored)) }
             .filter { !$0.footprint.isEmpty }
             .sorted {
                 ($0.footprint.height, $0.footprint.width) > ($1.footprint.height, $1.footprint.width)
