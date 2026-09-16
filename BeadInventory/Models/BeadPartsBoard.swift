@@ -228,11 +228,16 @@ struct PartPlacement: Identifiable, Codable, Equatable, Sendable {
     /// 细长的零件竖着放不下、横着放得下时全靠它。
     var turns: Int
     /// 左右翻过来摆。跟转向不一样，镜像拼出来是**另一个零件**：图纸上只画了左耳，
-    /// 右耳就是它的镜像。形状是先在零件自己的方向上翻、再转 `turns` 次（见 `BeadPart.footprint(for:)`）。
+    /// 右耳就是它的镜像。形状是先在零件自己的方向上翻、再转 `turns` 次
+    /// （实现见 `BeadPart.footprint(turns:mirrored:)`）。界面上那个「镜像」按钮翻的是
+    /// **板上看到的**左右，换算见 `PartsBoardStepView.reorientSelected`。
+    ///
+    /// 只读：外面改朝向一律新造一个摆放。留着 `var` 的话「没翻」会有 nil 和 false 两种存法，
+    /// 而 `PartPlacement` 是 `Equatable` —— 两种存法不相等，拿它比「板子改没改」就会误判。
     ///
     /// **Optional 是为了老数据**：合成的 `init(from:)` 对 Optional 用 decodeIfPresent，
     /// 缺字段解出 nil（等于没翻）；写成非 Optional 的 Bool 会让所有存量图纸解码直接抛。
-    var mirrored: Bool?
+    private(set) var mirrored: Bool?
 
     init(id: UUID = UUID(), partId: UUID, col: Int, row: Int, turns: Int = 0, mirrored: Bool = false) {
         self.id = id
@@ -790,8 +795,8 @@ enum PartsBoardPacker {
     /// 要往板上摆的一份零件。
     ///
     /// 一个零件不一定只摆一份：用户在板上点「复制」就是想多拼一个，复制出来的那份还可能是镜像的
-    /// （左耳 → 右耳）。重排会把所有摆放推倒重来，要是只按零件排，多拼的那份和镜像就一声不响地
-    /// 没了 —— 少拼一个零件、少扣一份豆子，而屏幕上只有一句「共 N 块板」。所以排的是「份」。
+    /// （左耳 → 右耳）。要拼几份是零件自己的属性（`BeadPart.copyCount`），哪几份翻过来
+    /// 只有板上知道，所以排版前要把这两件事合成一张「份」的清单。
     struct Piece: Sendable {
         let part: BeadPart
         let mirrored: Bool
@@ -801,8 +806,12 @@ enum PartsBoardPacker {
             parts.map { Piece(part: $0, mirrored: false) }
         }
 
-        /// 按板上现有的摆放数出每个零件摆几份、每份翻没翻，次序跟 `parts` 一致。
-        /// 板上一份都没有的零件照样排一份（重排本来就会把取下的零件放回板上）。
+        /// 每个零件排满它要拼的份数，翻没翻沿用板上现有的那几份，次序跟 `parts` 一致，
+        /// 同一个零件的几份挨在一起（`numberedPack` 要求这样传）。
+        ///
+        /// 板上现有的份数可能比要拼的少（用户取下了一份、或者上次重排没放下），
+        /// 缺的那几份补成不翻的；比要拼的多就照单全收，不去截断 —— 板上摆着的东西
+        /// 是用户亲手摆的，重排只该换位置，不该替他扔掉一份。
         static func keeping(_ parts: [BeadPart], from boards: [PartsBoard]) -> [Piece] {
             var mirrors: [UUID: [Bool]] = [:]
             for board in boards {
@@ -811,7 +820,11 @@ enum PartsBoardPacker {
                 }
             }
             return parts.flatMap { part in
-                (mirrors[part.id] ?? [false]).map { Piece(part: part, mirrored: $0) }
+                var flags = mirrors[part.id] ?? []
+                if flags.count < part.copyCount {
+                    flags += Array(repeating: false, count: part.copyCount - flags.count)
+                }
+                return flags.map { Piece(part: part, mirrored: $0) }
             }
         }
     }
@@ -933,7 +946,10 @@ enum PartsBoardPacker {
     /// 一个零件的一种摆法
     struct Candidate: Sendable {
         let turns: Int
-        var mirrored = false
+        /// 这一份翻没翻。**没有默认值是故意的**：`footprint` 必须是按这个朝向算出来的，
+        /// 漏传一个 false 就会出现「摆上去的是翻过的形状、记下来的摆放却没翻」——
+        /// 画出来和判定用的形状从此对不上。
+        let mirrored: Bool
         let footprint: PartFootprint
     }
 
@@ -1028,7 +1044,7 @@ enum PartsBoardPacker {
         return boards.count - 1
     }
 
-    /// 把 `parts` 全部铺到尺寸为 `size` 的板上，一块放不下就再开一块。
+    /// 把 `pieces` 全部铺到尺寸为 `size` 的板上，一块放不下就再开一块。
     /// 比板子还大的零件放不进去，会留在返回值的 `unplaced` 里 —— 这种情况用户
     /// 只能换更大的板，得让他看见，不能悄悄吞掉。
     ///
@@ -1129,7 +1145,7 @@ enum PartsBoardPacker {
 
     /// 按传进来的次序，一个一个往**当前这块板**上塞：这块板上哪儿都放不下了，才另起一块板。
     ///
-    /// **调用方必须按零件在清单里的次序传**，这里一个都不重排。板上和零件条上写的号
+    /// **调用方必须按零件在清单里的次序传，同一个零件的几份要挨着**，这里一个都不重排。板上和零件条上写的号
     /// 就是那个次序（见 `BeadPart.displayName(order:)`），传进来乱了，排出来的号也乱。
     ///
     /// ## 这一档保证的是什么
@@ -1259,11 +1275,7 @@ enum PartsBoardPacker {
 
     /// 摆放顺序：先大后小 —— 大件先占位，小件才好往缝里塞。
     /// 形状先算好再排序，别放进比较器里：那样每比一次都要重建一遍旋转矩阵。
-    static func ordered(_ parts: [BeadPart]) -> [(part: BeadPart, footprint: PartFootprint)] {
-        ordered(pieces: Piece.one(each: parts)).map { (part: $0.piece.part, footprint: $0.footprint) }
-    }
-
-    /// 同上，排的是「份」。镜像不改包围盒的宽高，但形状得按翻过的算：它要直接拿去摆。
+    /// 排的是「份」。镜像不改包围盒的宽高，但形状得按翻过的算：它要直接拿去摆。
     static func ordered(pieces: [Piece]) -> [(piece: Piece, footprint: PartFootprint)] {
         pieces
             .map { (piece: $0, footprint: $0.part.footprint(turns: 0, mirrored: $0.mirrored)) }

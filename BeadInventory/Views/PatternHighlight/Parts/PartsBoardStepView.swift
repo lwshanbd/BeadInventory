@@ -890,8 +890,9 @@ struct PartsBoardStepView: View {
 
             partPreview(placement)
 
-            // 两排：上面一排只改朝向（板上占的地方跟着变，零件还是这一个），
-            // 下面一排是对这个零件本身做的事。
+            // 两排：上面一排改这一份在板上怎么摆（转向、镜像），不增减份数；
+            // 下面一排增减份数（复制、取下），外加改零件的格子 —— 编辑网格改的是零件本身，
+            // 复制过的话所有份跟着变。
             HStack(spacing: Theme.Spacing.sm) {
                 Button { reorientSelected(quarterTurns: 1) } label: {
                     Label("转 90°", systemImage: "rotate.right").frame(maxWidth: .infinity)
@@ -1084,7 +1085,7 @@ struct PartsBoardStepView: View {
                     // 已经拼了一半的板又多出几个零件。写成互斥的两条就是在骗人。
                     Menu {
                         Button("优先填入现有板") { fillRemaining() }
-                        Button("摆到新板") { placeOnNewBoards(PartsBoardPacker.Piece.one(each: unplaced)) }
+                        Button("摆到新板") { placeOnNewBoards(remainingPieces(of: unplaced)) }
                     } label: {
                         Label("自动排列", systemImage: "square.grid.3x3.fill")
                             .font(.footnote.weight(.medium))
@@ -1143,11 +1144,12 @@ struct PartsBoardStepView: View {
         }
         return unplaced.isEmpty
             ? String(localized: "零件已全部放置")
-            : String(localized: "还有 \(unplaced.count) 个未摆放")
+            : String(localized: "还有 \(unplacedCount) 个未摆放")
     }
 
     private func trayCell(_ part: BeadPart, picking: Bool = false, picked: Bool = false) -> some View {
         let footprint = part.footprint(turns: 0)
+        let remaining = remainingCopies(of: part)
         return VStack(spacing: 2) {
             ZStack(alignment: .topLeading) {
                 PartShapeThumbnail(footprint: footprint, colors: colorCache)
@@ -1163,6 +1165,17 @@ struct PartsBoardStepView: View {
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(Theme.ColorToken.Morandi.mauve)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(3)
+                }
+                // 还差几份。写「×2」是因为图纸上多拼的零件就是这么标的，用户认得。
+                if remaining > 1 {
+                    Text("×\(remaining)")
+                        .font(.caption2.weight(.bold).monospacedDigit())
+                        .foregroundColor(Theme.ColorToken.Text.primary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Theme.ColorToken.Surface.background))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                         .padding(3)
                 }
                 // 勾选圈画在右下角，避开左上角的号。没勾的也画一个空圈 ——
@@ -1192,6 +1205,13 @@ struct PartsBoardStepView: View {
                 .foregroundColor(Theme.ColorToken.Text.secondary)
         }
         .contentShape(Rectangle())
+        // 复制过的零件点一下只摆一份，剩下的还留在条里。不写出来还差几份的话，
+        // 用户点完看它还在，会以为没点上。
+        .contextMenu {
+            if part.copyCount > 1 {
+                Button("不拼这一份", role: .destructive) { dropCopy(of: part.id) }
+            }
+        }
     }
 
     /// 编号胶囊。跟「零件清单」那屏缩略图上那个长一样 —— 同一个号在两屏之间
@@ -1362,18 +1382,45 @@ struct PartsBoardStepView: View {
         boards.indices.contains(boardIndex) ? boards[boardIndex] : nil
     }
 
-    private var placedIds: Set<UUID> {
-        Set(boards.flatMap { $0.placements.map(\.partId) })
+    /// 每个零件在所有板上摆了几份
+    private var placedCounts: [UUID: Int] {
+        var result: [UUID: Int] = [:]
+        for board in boards {
+            for placement in board.placements { result[placement.partId, default: 0] += 1 }
+        }
+        return result
     }
 
-    /// 还没摆上板、而且**真的有豆子**的零件。
+    /// 还有份没摆上板、而且**真的有豆子**的零件。
     ///
     /// 整块都是空的那种（框歪了框到一片背景上）不算 —— 它没有一颗豆子可放，
     /// 摆上去也什么都不会出现。之前没滤掉，零件条里就挂着一个 0×0 的空方块，
     /// 点它没反应，还一直写着「还有 1 个没摆」，用户永远摆不完。
+    ///
+    /// 复制过的零件按**份**算：摆了一份还差一份时，它照样留在条里，点一下再摆一份。
     private var unplaced: [BeadPart] {
-        let placed = placedIds
-        return parts.filter { !placed.contains($0.id) && $0.beadCount > 0 }
+        let placed = placedCounts
+        return parts.filter { $0.beadCount > 0 && (placed[$0.id] ?? 0) < $0.copyCount }
+    }
+
+    /// 零件条里还差几份没摆
+    private var unplacedCount: Int {
+        let placed = placedCounts
+        return unplaced.reduce(0) { $0 + $1.copyCount - (placed[$1.id] ?? 0) }
+    }
+
+    /// 这个零件还差几份没摆上板
+    private func remainingCopies(of part: BeadPart) -> Int {
+        max(0, part.copyCount - (placedCounts[part.id] ?? 0))
+    }
+
+    /// 这几个零件还差的那些份，交给 packer 用。复制过的零件还差两份就出现两次。
+    /// 都不翻：翻不翻是用户在板上一份一份点的，自动排不替他决定（见 `PartsBoardPacker.Piece`）。
+    private func remainingPieces(of chosen: [BeadPart]) -> [PartsBoardPacker.Piece] {
+        chosen.flatMap { part in
+            Array(repeating: PartsBoardPacker.Piece(part: part, mirrored: false),
+                  count: remainingCopies(of: part))
+        }
     }
 
     /// 多选真正勾住的那几个。以零件条现在的内容为准，勾过之后又不在条里的自动作数没了。
@@ -1397,10 +1444,11 @@ struct PartsBoardStepView: View {
         return result
     }
 
-    /// 这个零件摆在第几块板上、转了几次。没摆上板时是 nil。
+    /// 这个零件摆在第几块板上、转了几次、翻没翻。没摆上板时是 nil。
     ///
     /// 复制过的零件不止一份，这时说的是**选中的那一份**：用户是点着它打开对照的，
-    /// 报另一份的板号和朝向，他会以为自己这份摆错了。
+    /// 报另一份的板号和朝向，他会以为自己这份摆错了。对照弹窗里翻到别的零件时没有选中的份，
+    /// 报的是它在板上的第一份。
     private func placementInfo(of partId: UUID) -> PartOriginalSheet.Placement? {
         if let board = currentBoard,
            let hit = board.placements.first(where: { $0.id == selection && $0.partId == partId }) {
@@ -1756,7 +1804,9 @@ struct PartsBoardStepView: View {
         guard boards.isEmpty, !parts.isEmpty else { return }
         let size = BeadBoardSize(cols: savedCols, rows: savedRows)
         let used = spacing
-        let packed = PartsBoardPacker.pack(pieces: PartsBoardPacker.Piece.one(each: parts.filter(\.hasCells)),
+        // 用 `keeping` 而不是「每个零件一份」：这一屏进来之前用户可能已经复制过零件
+        //（复制完退出去、再进来），份数记在零件上，排的时候要按它排满。
+        let packed = PartsBoardPacker.pack(pieces: PartsBoardPacker.Piece.keeping(parts.filter(\.hasCells), from: boards),
                                            size: size, spacing: used, layout: preferredLayout)
         boards = packed.boards
         // 一块板都没排出来（零件全都放不进去）就是「还没排过」，那一档不能落定 ——
@@ -1833,8 +1883,8 @@ struct PartsBoardStepView: View {
         // 摆放规矩（先大后小、先原方向后转 90°、先塞现有板再开新板、插件不跟别的零件同板）
         // 全在 packer 里。只有一条跟 `pack` 不一样：那边普通件先排、插件后排，
         // 所以插件板落在最后；这里是两类混着按大小来的，插件板不一定排在后面。
-        for item in PartsBoardPacker.ordered(unplaced) {
-            if PartsBoardPacker.placeOne(item.part, footprint: item.footprint, into: &boards,
+        for item in PartsBoardPacker.ordered(pieces: remainingPieces(of: unplaced)) {
+            if PartsBoardPacker.placeOne(item.piece.part, footprint: item.footprint, into: &boards,
                                          occupancies: &occupancies, size: size, spacing: used,
                                          connectorIds: connectors) != nil {
                 added += 1
@@ -1844,7 +1894,7 @@ struct PartsBoardStepView: View {
 
         flash(added > 0
               ? String(localized: "已新增摆放 \(added) 个")
-              : unplacedNote(unplaced.count, spacing: used))
+              : unplacedNote(unplacedCount, spacing: used))
     }
 
     private func togglePick(_ id: UUID) {
@@ -1866,7 +1916,7 @@ struct PartsBoardStepView: View {
     private func placePicked(onNewBoard: Bool) {
         let chosen = pickedParts
         guard !chosen.isEmpty else { return }
-        picks = onNewBoard ? placeOnNewBoards(PartsBoardPacker.Piece.one(each: chosen)) : placeOnCurrentBoard(chosen)
+        picks = onNewBoard ? placeOnNewBoards(remainingPieces(of: chosen)) : placeOnCurrentBoard(chosen)
         if picks.isEmpty { picking = false }
     }
 
@@ -1882,15 +1932,15 @@ struct PartsBoardStepView: View {
         var added = 0
         var missed: Set<UUID> = []
 
-        // 先大后小、原方向优先，跟自动排走的是同一套规矩
-        for item in PartsBoardPacker.ordered(chosen) {
-            let options = PartsBoardPacker.candidates(for: item.part, footprint: item.footprint)
+        // 先大后小、原方向优先，跟自动排走的是同一套规矩。复制过的零件还差几份就摆几份。
+        for item in PartsBoardPacker.ordered(pieces: remainingPieces(of: chosen)) {
+            let options = PartsBoardPacker.candidates(for: item.piece.part, footprint: item.footprint)
             guard let hit = PartsBoardPacker.fit(options, in: occupancy) else {
-                missed.insert(item.part.id)
+                missed.insert(item.piece.part.id)
                 continue
             }
             boards[boardIndex].placements.append(PartPlacement(
-                partId: item.part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
+                partId: item.piece.part.id, col: hit.col, row: hit.row, turns: hit.candidate.turns
             ))
             occupancy.add(hit.candidate.footprint, col: hit.col, row: hit.row)
             added += 1
@@ -1913,7 +1963,8 @@ struct PartsBoardStepView: View {
     /// 才知道摘哪几个（见 `movePickedToNewBoard`）。
     /// 一块新板装不下就再开一块，摆法跟进屏自动排是同一条路。
     ///
-    /// - Returns: 没摆上的那几个（比板子还大的）。
+    /// - Returns: 没摆上的那几个**零件 id**（比板子还大的）。同一个零件的几份只出现一次 ——
+    ///   几份的包围盒一样大，要么全摆得下，要么全摆不下，所以按零件算不会漏。
     @discardableResult
     private func placeOnNewBoards(_ chosen: [PartsBoardPacker.Piece]) -> Set<UUID> {
         let size = currentBoard?.size ?? BeadBoardSize(cols: savedCols, rows: savedRows)
@@ -2090,7 +2141,7 @@ struct PartsBoardStepView: View {
                   ? String(localized: "原位置无法镜像，已移至空余位置。")
                   : String(localized: "原位置无法旋转，已移至空余位置。"))
         } else {
-            // 没转成，板上什么都没变 —— 勾不能动。
+            // 没转成 / 没翻成，板上什么都没变 —— 勾不能动。
             flash(mirror
                   ? String(localized: "镜像后放不下，请先移开其他零件。")
                   : String(localized: "旋转后放不下，请先移开其他零件。"))
@@ -2098,6 +2149,10 @@ struct PartsBoardStepView: View {
     }
 
     /// 选中的这份再摆一份，朝向和镜像跟它一样。
+    ///
+    /// 份数写在**零件**上（`BeadPart.copies`），不是靠数板上摆了几份：摆放随时会因为重排
+    /// 放不下、格子被擦空、用户取下一份而消失，份数跟着丢的话，多拼的那份和它那份豆子
+    /// 就一声不响地没了。板上那一份只是「这一份现在摆在这儿」。
     ///
     /// 先塞当前这块板，塞不下再开一块同样大的新板 —— 跟零件条点一下落位是同一个规矩
     /// （见 `place`）。朝向先试跟原来一样的，放不下再转 90°。
@@ -2107,20 +2162,21 @@ struct PartsBoardStepView: View {
     private func duplicateSelected() {
         guard let id = selection,
               let source = currentBoard?.placements.first(where: { $0.id == id }),
-              let part = parts.first(where: { $0.id == source.partId }) else { return }
+              let index = parts.firstIndex(where: { $0.id == source.partId }) else { return }
+        let part = parts[index]
         let options = [source.turns, source.turns + 1].map { turns in
             PartsBoardPacker.Candidate(turns: turns, mirrored: source.isMirrored,
                                        footprint: part.footprint(turns: turns, mirrored: source.isMirrored))
         }
         let used = spacing
-        // 份数在改 `boards` 之前数好：写完同一轮读回来不保证拿到新值（见 `DragSession`）
-        let total = copies(of: part.id) + 1
+        let total = part.copyCount + 1
 
         if let board = currentBoard,
            let hit = PartsBoardPacker.fit(
                options, in: PartsBoardPacker.occupancy(of: board, parts: parts, spacing: used)) {
             let copy = PartPlacement(partId: part.id, col: hit.col, row: hit.row,
                                      turns: hit.candidate.turns, mirrored: hit.candidate.mirrored)
+            parts[index].copies = total
             boards[boardIndex].placements.append(copy)
             selection = copy.id
             flash(String(localized: "已复制，现在共 \(total) 份"))
@@ -2135,6 +2191,7 @@ struct PartsBoardStepView: View {
         }
         let copy = PartPlacement(partId: part.id, col: hit.col, row: hit.row,
                                  turns: hit.candidate.turns, mirrored: hit.candidate.mirrored)
+        parts[index].copies = total
         let boardNumber = boards.count + 1
         var board = PartsBoard(size: size)
         board.placements.append(copy)
@@ -2145,9 +2202,18 @@ struct PartsBoardStepView: View {
         flash(String(localized: "这块板已放不下，已复制到新的第 \(boardNumber) 块板，现在共 \(total) 份"))
     }
 
-    /// 这个零件在所有板上一共摆了几份
-    private func copies(of partId: UUID) -> Int {
-        boards.reduce(0) { $0 + $1.placements.filter { $0.partId == partId }.count }
+    /// 少拼一份。零件条里长按复制过的零件走这条。
+    ///
+    /// 只减份数，不动板上的摆放：条里那几份本来就没摆上板。减到只剩一份时把字段清回 nil，
+    /// 跟没复制过的零件存成同一个样子。
+    private func dropCopy(of partId: UUID) {
+        guard let index = parts.firstIndex(where: { $0.id == partId }),
+              parts[index].copyCount > 1 else { return }
+        let next = parts[index].copyCount - 1
+        parts[index].copies = next > 1 ? next : nil
+        flash(next > 1
+              ? String(localized: "这个零件改为拼 \(next) 份")
+              : String(localized: "这个零件改为只拼 1 份"))
     }
 
     /// 零件的格子被改过之后，板上跟着要处理的事。
@@ -2198,14 +2264,18 @@ struct PartsBoardStepView: View {
     /// 根本不缺这一句 —— 所以它压根不进这条提示。
     private func note(for outcome: PartsBoardRepair.Outcome) -> String? {
         var lines: [String] = []
-        if !outcome.removed.isEmpty {
-            lines.append(String(localized: "有 \(outcome.removed.count) 个零件已无豆子，已从板上移除（如需恢复，请返回「核对颜色」页面补充格子）"))
+        // 数的是零件不是摆放：复制过的零件一次会摘掉好几份，说「有 2 个零件已无豆子」
+        // 而清单里只有 1 个，用户会去找那个不存在的零件。
+        let removed = Set(outcome.removed).count
+        let orphaned = Set(outcome.orphaned).count
+        if removed > 0 {
+            lines.append(String(localized: "有 \(removed) 个零件已无豆子，已从板上移除（如需恢复，请返回「核对颜色」页面补充格子）"))
         }
-        if !outcome.orphaned.isEmpty {
+        if orphaned > 0 {
             // 这种回核对页也补不回来 —— 零件本身已经不在图纸上了，说法必须跟上面那条分开
-            lines.append(String(localized: "有 \(outcome.orphaned.count) 块无法匹配任何零件，已从板上移除"))
+            lines.append(String(localized: "有 \(orphaned) 块无法匹配任何零件，已从板上移除"))
         }
-        if outcome.moved.count == 1, let moved = outcome.moved.first {
+        if Set(outcome.moved).count == 1, let moved = outcome.moved.first {
             // 挪的是用户自己摆的位置，能报名字就报名字 —— 「1 个零件」他还得自己找是哪个
             lines.append(String(localized: "「\(name(of: moved))」原地放不下，挪到旁边空地了"))
         } else if !outcome.moved.isEmpty {
@@ -2214,6 +2284,8 @@ struct PartsBoardStepView: View {
         return lines.isEmpty ? nil : lines.joined(separator: "；")
     }
 
+    /// 取下一份：只是从板上拿下来，回零件条待会儿再摆。**不动零件要拼几份** ——
+    /// 用户取下它多半是不想让它待在这块板上，不是不拼了。真要少拼一份，走零件条里的长按菜单。
     private func takeOffSelected() {
         guard let id = selection, boards.indices.contains(boardIndex) else { return }
         boards[boardIndex].placements.removeAll { $0.id == id }

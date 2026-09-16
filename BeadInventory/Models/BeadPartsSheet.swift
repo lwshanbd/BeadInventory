@@ -185,6 +185,18 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
     /// **Optional 是为了老数据**（理由同 `gridConfirmed`）。
     var isConnector: Bool?
 
+    /// 这个零件一共要拼几份。nil = 一份。
+    ///
+    /// **记在零件上，不去数板上摆了几份。** 板上的摆放随时会少：重排时放不下、格子被擦空
+    /// 被体检摘掉、用户自己取下一份先不拼。份数要是从板上反推，这几种情况都会让多拼的那份
+    /// 一声不响地没掉 —— 少拼一个零件、少扣一份豆子，而屏幕上一个字都不会提。
+    ///
+    /// 扣多少颗豆子按它算（见 `PartsSheetUsage`）。哪几份是镜像的不在这儿，那是每份
+    /// 摆在板上的事，记在 `PartPlacement.mirrored` 上。
+    ///
+    /// **Optional 是为了老数据**（理由同 `gridConfirmed`）。
+    var copies: Int?
+
     init(
         id: UUID = UUID(),
         customName: String? = nil,
@@ -195,7 +207,8 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
         cols: Int = 0,
         cells: [[PartCellFill]] = [],
         gridConfirmed: Bool? = nil,
-        isConnector: Bool? = nil
+        isConnector: Bool? = nil,
+        copies: Int? = nil
     ) {
         self.id = id
         self.customName = customName
@@ -207,6 +220,7 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
         self.cells = cells
         self.gridConfirmed = gridConfirmed
         self.isConnector = isConnector
+        self.copies = copies
     }
 
     var hasCells: Bool { !cells.isEmpty }
@@ -216,6 +230,9 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
 
     /// 用户把这个零件标成了插件
     var isConnectorPart: Bool { isConnector == true }
+
+    /// 要拼几份。「一份」有 nil 和 1 两种存法，别的地方一律问这里，不要自己判 `copies`。
+    var copyCount: Int { max(1, copies ?? 1) }
 
     /// 这个零件落在全局网格上的那块区域。全图共用一张网格，所以这里不带任何
     /// 「这个零件自己的」参数 —— 换个零件看，格线还是那批格线。
@@ -337,10 +354,11 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
     ///
     /// Optional 是为了老数据（理由见 `boards`）。
     var legendUsage: [BeadUsage]?
-    /// 上一次把计划用量换成格子颗数时，格子里各色号是多少颗（`PartCellFill.groupKey` → 颗数）。
+    /// 上一次把计划用量换成格子颗数时，格子里各色号是多少颗（`PartCellFill.groupKey` → 颗数，
+    /// 已经乘过每个零件要拼几份）。
     ///
-    /// 格子没变就不再动计划：用户在计划详情里手调过的数（比如某色多备几颗），
-    /// 不能因为他又进来看了一眼就被盖掉。只有格子真的改了才重新同步。
+    /// 这个数没变就不再动计划：用户在计划详情里手调过的数（比如某色多备几颗），
+    /// 不能因为他又进来看了一眼就被盖掉。格子改了、或者复制 / 少拼了一份，才重新同步。
     var syncedCellCounts: [String: Int]?
     var lastUpdatedAt: Date
 

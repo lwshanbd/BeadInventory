@@ -33,15 +33,19 @@ final class PartsBoardCopiesTests: XCTestCase {
         XCTAssertEqual(beads(part.footprint(for: placement)), beads(part.footprint(turns: 0, mirrored: true)))
     }
 
-    /// 重排要保留板上的份数和镜像：一份原样、一份镜像，排完还是一份原样、一份镜像。
-    /// 板上一份都没摆的零件照样排一份。
+    /// 重排排的是零件要拼的份数，翻没翻沿用板上现有的那几份。
+    ///
+    /// 镜像那份**排在前面**：省板那一档会让第一个零件去开新板，而开新板和塞进已有板是
+    /// `placeOne` 里两处各自新建摆放的地方，两处都得把镜像带上。排在后面的话，漏了其中
+    /// 一处也测不出来 —— 用户那边就是右耳重排完变回左耳，最后拼出两只左耳。
     func testRepackKeepsCopiesAndMirrors() {
-        let copied = makeLPart()
-        let takenOff = makeLPart()
-        let parts = [copied, takenOff]
+        var copied = makeLPart()
+        copied.copies = 2
+        let single = makeLPart()
+        let parts = [copied, single]
         let before = [PartsBoard(size: BeadBoardSize(cols: 20, rows: 20), placements: [
-            PartPlacement(partId: copied.id, col: 1, row: 1),
-            PartPlacement(partId: copied.id, col: 6, row: 1, turns: 3, mirrored: true)
+            PartPlacement(partId: copied.id, col: 1, row: 1, turns: 3, mirrored: true),
+            PartPlacement(partId: copied.id, col: 6, row: 1)
         ])]
 
         for layout in BoardLayout.allCases {
@@ -52,10 +56,24 @@ final class PartsBoardCopiesTests: XCTestCase {
             XCTAssertTrue(result.unplaced.isEmpty, "\(layout)")
             XCTAssertEqual(placements.filter { $0.partId == copied.id }.map(\.isMirrored).sorted { !$0 && $1 },
                            [false, true], "\(layout)")
-            XCTAssertEqual(placements.filter { $0.partId == takenOff.id }.count, 1, "\(layout)")
+            XCTAssertEqual(placements.filter { $0.partId == single.id }.count, 1, "\(layout)")
             XCTAssertTrue(PartsBoardRepair.offendingPlacements(in: result.boards, parts: parts,
                                                                spacing: .standard).isEmpty, "\(layout)")
         }
+    }
+
+    /// 板上一份都没摆的零件，重排照样按它要拼的份数排回来 ——
+    /// 上次重排放不下、或者用户取下了先不拼，份数都不能跟着丢。
+    func testRepackRestoresCopiesThatAreNotOnAnyBoard() {
+        var part = makeLPart()
+        part.copies = 3
+        let pieces = PartsBoardPacker.Piece.keeping([part], from: [])
+        XCTAssertEqual(pieces.count, 3)
+        XCTAssertEqual(pieces.map(\.mirrored), [false, false, false])
+
+        let result = PartsBoardPacker.pack(pieces: pieces, size: BeadBoardSize(cols: 10, rows: 10),
+                                           spacing: .standard, layout: .compact)
+        XCTAssertEqual(result.boards.flatMap(\.placements).count, 3)
     }
 
     /// 老图纸的摆放 JSON 里没有镜像字段，照样解得出来，而且算没翻。
