@@ -569,6 +569,12 @@ struct PartsBoardStepView: View {
         let isConnectorBoard = board.partsKind(connectorIds: connectorIds) == .connectors
         return HStack(spacing: 4) {
             Text("板 \(index + 1)")
+            // 拼完的板在这一排里一眼能挑出来：几块板轮着拼，回来时要知道哪块已经收工了。
+            if isBoardFinished(board) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundColor(Theme.ColorToken.Status.success)
+            }
             if isConnectorBoard {
                 Image(systemName: "puzzlepiece.extension.fill")
                     .font(.caption2)
@@ -708,6 +714,21 @@ struct PartsBoardStepView: View {
 
                 gestureCatcher
 
+                // 整块板的颜色都标完了，板子正中叠一个大对号。
+                // 不接点按：用户可能还要拖零件、放大核对，对号只是个标记。
+                if let board = currentBoard, isBoardFinished(board) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 96, weight: .semibold))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(Theme.ColorToken.Text.onAccent,
+                                         Theme.ColorToken.Status.success)
+                        .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
+                        .opacity(0.9)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
+                }
+
                 if let note {
                     Text(note)
                         .font(.footnote)
@@ -726,6 +747,8 @@ struct PartsBoardStepView: View {
         }
         .clipped()
         .animation(.easeInOut(duration: 0.2), value: note)
+        .animation(.spring(response: 0.35, dampingFraction: 0.6),
+                   value: currentBoard.map(isBoardFinished) ?? false)
     }
 
     private var gestureCatcher: some View {
@@ -1588,6 +1611,20 @@ struct PartsBoardStepView: View {
             for bead in footprint.beads { counts[bead.key, default: 0] += 1 }
         }
         return BeadColorTally.ordered(counts)
+    }
+
+    /// 这块板上的每个颜色都标记完成了。空板不算拼完。
+    ///
+    /// 颗数从 `footprints` 数，跟色号条上的勾同一个口径：形状还没算出来时数不到豆子，
+    /// 当成没拼完，不会先冒出一个对号再消失。
+    private func isBoardFinished(_ board: PartsBoard) -> Bool {
+        guard let done = board.doneColors, !done.isEmpty else { return false }
+        var counts: [String: Int] = [:]
+        for placement in board.placements {
+            guard let footprint = footprints[placement.id] else { return false }
+            for bead in footprint.beads { counts[bead.key, default: 0] += 1 }
+        }
+        return !counts.isEmpty && counts.allSatisfy { board.isColorDone($0.key, count: $0.value) }
     }
 
     // MARK: - 完成
