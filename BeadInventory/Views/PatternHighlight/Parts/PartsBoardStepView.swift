@@ -160,6 +160,11 @@ struct PartsBoardStepView: View {
     @State private var unfinishedCount = 0
     /// 按了几次「标记已完成」。只拿来给触觉当触发器。
     @State private var doneToggles = 0
+    /// 拼完之后按了「取消完成」的板。颜色的勾都留着，只是不再显示整板对号。
+    ///
+    /// 用户取消完成是想回头核对，不是要把十几个颜色重新勾一遍，所以不动 `doneColors`。
+    /// 只记在这一屏：退出再进来，勾全在的板照样显示对号。
+    @State private var reopenedBoards: Set<UUID> = []
 
     private struct BrushTarget: Identifiable {
         let id: UUID
@@ -569,6 +574,12 @@ struct PartsBoardStepView: View {
         let isConnectorBoard = board.partsKind(connectorIds: connectorIds) == .connectors
         return HStack(spacing: 4) {
             Text("板 \(index + 1)")
+            // 拼完的板在这一排里一眼能挑出来：几块板轮着拼，回来时要知道哪块已经收工了。
+            if showsFinishedMark(board) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundColor(Theme.ColorToken.Status.success)
+            }
             if isConnectorBoard {
                 Image(systemName: "puzzlepiece.extension.fill")
                     .font(.caption2)
@@ -689,7 +700,8 @@ struct PartsBoardStepView: View {
     // MARK: - 中：板子
 
     private var canvas: some View {
-        GeometryReader { geo in
+        let showsCheckmark = currentBoard.map(showsFinishedMark) ?? false
+        return GeometryReader { geo in
             ZStack(alignment: .topLeading) {
                 Theme.ColorToken.Surface.subtle
 
@@ -707,6 +719,22 @@ struct PartsBoardStepView: View {
                 }
 
                 gestureCatcher
+
+                // 整块板的颜色都标完了，画布正中叠一个大对号。
+                // 不接点按：用户可能还要拖零件、放大核对，对号只是个标记。
+                // 想回头核对时，在颜色页按「取消完成」收起它。
+                if showsCheckmark {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 96, weight: .semibold))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(Theme.ColorToken.Text.onAccent,
+                                         Theme.ColorToken.Status.success)
+                        .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
+                        .opacity(0.9)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
+                }
 
                 if let note {
                     Text(note)
@@ -726,6 +754,7 @@ struct PartsBoardStepView: View {
         }
         .clipped()
         .animation(.easeInOut(duration: 0.2), value: note)
+        .animation(.spring(response: 0.35, dampingFraction: 0.6), value: showsCheckmark)
     }
 
     private var gestureCatcher: some View {
@@ -1297,6 +1326,28 @@ struct PartsBoardStepView: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .tint(isDone ? Theme.ColorToken.Text.secondary : Theme.ColorToken.Status.success)
+        } else if let board = currentBoard, isBoardFinished(board) {
+            // 整块板拼完了。这里给一个取消的入口：用户想回头核对时，对号不该一直压在板子上。
+            // 两句分开写，理由同上。
+            if reopenedBoards.contains(board.id) {
+                Button {
+                    reopenedBoards.remove(board.id)
+                } label: {
+                    Label("标记已完成", systemImage: "checkmark.circle").font(.footnote)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(Theme.ColorToken.Status.success)
+            } else {
+                Button {
+                    reopenedBoards.insert(board.id)
+                } label: {
+                    Label("取消完成", systemImage: "arrow.uturn.backward").font(.footnote)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(Theme.ColorToken.Text.secondary)
+            }
         } else if doneCount > 0 {
             // 没选色号时报个进度。回到这一屏第一眼要知道的就是「还剩几个色没拼」。
             Text("已完成 \(doneCount) / \(colors.count) 个颜色")
@@ -1354,6 +1405,9 @@ struct PartsBoardStepView: View {
     private func toggleColorDone(key: String, count: Int, wasDone: Bool,
                                  colors: [(key: String, count: Int)]) {
         guard boards.indices.contains(boardIndex) else { return }
+        // 动了任何一个颜色的勾，之前按过的「取消完成」就作废：
+        // 核对完把最后一个颜色重新勾上，对号应该回来。
+        reopenedBoards.remove(boards[boardIndex].id)
         if wasDone {
             boards[boardIndex].clearColorDone(key)
         } else {
@@ -1588,6 +1642,26 @@ struct PartsBoardStepView: View {
             for bead in footprint.beads { counts[bead.key, default: 0] += 1 }
         }
         return BeadColorTally.ordered(counts)
+    }
+
+    /// 这块板上的每个颜色都标记完成了。空板不算拼完。
+    ///
+    /// 颗数从 `footprints` 数。只要有一个摆放还没算出形状，就直接算没拼完，
+    /// 判法同 `pruneDoneColors` 里的 `ready`。**别学 `boardColors` 跳过缺形状的摆放**：
+    /// 跳过的话颗数偏少，对号会先冒出来，等形状算完又消失。
+    private func isBoardFinished(_ board: PartsBoard) -> Bool {
+        guard let done = board.doneColors, !done.isEmpty else { return false }
+        var counts: [String: Int] = [:]
+        for placement in board.placements {
+            guard let footprint = footprints[placement.id] else { return false }
+            for bead in footprint.beads { counts[bead.key, default: 0] += 1 }
+        }
+        return !counts.isEmpty && counts.allSatisfy { board.isColorDone($0.key, count: $0.value) }
+    }
+
+    /// 板子上和板号旁边要不要显示对号：拼完了，而且用户没有按「取消完成」。
+    private func showsFinishedMark(_ board: PartsBoard) -> Bool {
+        !reopenedBoards.contains(board.id) && isBoardFinished(board)
     }
 
     // MARK: - 完成
