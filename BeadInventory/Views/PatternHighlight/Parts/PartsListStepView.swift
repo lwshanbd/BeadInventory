@@ -560,26 +560,38 @@ struct PartsListStepView: View {
             var options = PartsDetectionOptions()
             options.minAreaRatio = 0.01        // 相对这个小框
             options.maxWorkingPixels = 250_000
-            // 检测范围要比用户画的框往外放一圈。一是背景色靠「区域四周一圈的众数」估，
-            // 贴着零件边缘取全是描边的黑（同 splitSelected）；二是检测器会把宽或高占满
-            // 检测范围 95% 的连通域当成图纸边框丢掉 —— 拿用户画的框直接去检测，
-            // **他框得越准，零件本体越容易整个被滤掉**，最后只剩零件内部的小色块。
-            let padded = drawn.insetBy(dx: -drawn.width * 0.12, dy: -drawn.height * 0.12)
-                .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
-            let found = PartsDetector.detect(in: work, roi: padded, options: options)
-            // 放大过的框会把邻居蹭进来，只留主体落在用户框里的（同 splitSelected）。
-            let mine = found.map(\.bounds).filter { box in
-                let overlap = box.intersection(drawn)
-                guard !overlap.isNull else { return false }
-                let own = box.width * box.height
-                return own > 0 && overlap.width * overlap.height > own * 0.5
+            // 检测范围就是用户画的那个框，取里面**面积最大**的那块连通域。
+            // 下面这两句跟 6560da1（#65 引入时）一字不差；再往下的两道守卫是 #118 加了
+            // 把手之后才需要的，那时候还没有「用户抢先改过框」这回事。
+            //
+            // 这段的来历值得写下来，不然还会有人再改一遍：
+            //   · #118 把它整段删掉了 —— 当时的理解是「用户画多大就是多大」，错的；
+            //     用户要的是系统先帮着画准，画不准再拖把手调。
+            //   · #122 把它放回来，但顺手换成了「往外放一圈再检测 + 取所有块的并集」，
+            //     想挡住两种翻车：框贴得太紧时零件本体被 PartsDetector.isFrameLine 丢掉
+            //     （它扔掉宽或高占检测范围 95% 以上的连通域，框画得越准越容易中招，
+            //     框会塌成零件内部的一小块 —— 这个在 48 个零件的图纸上复现过，不是纸上谈兵），
+            //     以及零件描边断了被切成两块、只收到一半。
+            //   · 用户的反馈是「现在几乎不识别了」：并集把框里的碎块全包进去，
+            //     收出来跟他画的差不多大，等于没收。于是换回这一版。
+            //
+            // 取舍就是这么定的：那两种翻车少见，真碰上拖把手改一下就行；
+            // 而「每次都收不动」是每次都要受的。宁可偶尔收歪。
+            //
+            // 比的是外接矩形面积，不是前景像素数（`DetectedPart.pixelArea`）。刻意的，
+            // 跟 #65 那版保持一致 —— 换成像素数就不是同一个行为了，不是笔误。
+            let found = PartsDetector.detect(in: work, roi: drawn, options: options)
+            guard let biggest = found.max(by: {
+                $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height
+            }) else {
+                // 保持用户画的框是对的，不用弹提示（屏幕上什么都没变，他不会困惑）。
+                // 但要留一行：这条链路一声不响，用户报「我画的框从来不收紧」时，
+                // 没有它就分不清是框里真没东西，还是工作图压根没裁出来。
+                AppLogger.shared.info("PartsList", "autofit_found_nothing", metadata: [
+                    "drawn": "\(drawn)"
+                ])
+                return
             }
-            // **取并集，不取最大的一块。** 用户要自己画这个框，多半就是因为这块零件
-            // 描边断了、镂空太大，同一个算法在小框里跑多半还是把它切成几块；
-            // 取最大的那块等于把框收成半个零件，剩下半块的豆子从此不在格子里，
-            // 一路到扣库存都不会有人提一句。
-            guard var tightened = mine.first else { return }
-            for box in mine.dropFirst() { tightened = tightened.union(box) }
             await MainActor.run {
                 // 检测跑在后台，这期间用户照样能删零件、拖把手改这个框，甚至已经翻到下一屏
                 // 把格子量好了。所以三道门：按 id 重新定位（下标早就不是当初那个）；
@@ -590,7 +602,7 @@ struct PartsListStepView: View {
                       sameRect(parts[index].bounds, drawn),
                       parts[index].gridRect == nil else { return }
                 // 走统一入口：改框就得清掉派生的网格数据，这条规则只该有一处实现。
-                applyBounds(tightened, to: id)
+                applyBounds(biggest.bounds, to: id)
             }
         }
     }
