@@ -203,7 +203,15 @@ struct PartsListStepView: View {
                         isPinching: pinchContentAnchor != nil,
                         preview: $boxPreview,
                         onCommit: { commitBounds($0, to: selected.id) },
-                        onTapBody: { toggle(selected.id) }
+                        onTap: { point in
+                            let n = transform.normalized(point)
+                            // 落在这个框里就是取消选中它。不走 toggleHit：那边取的是
+                            // 「面积最小」的命中框，框里套着更小的零件时（补框时框大了一圈、
+                            // 或者合并出来的大框），点框身会把里面那个小的选进来变成「已选 2 个」，
+                            // 跟用户点下去的意思正好相反。
+                            if selected.bounds.contains(n) { toggle(selected.id) }
+                            else { toggleHit(atNormalized: n) }
+                        }
                     )
                     // 换一个零件就是一套新的拖动状态。系统中途打断手势时不会回调 onEnded，
                     // 没有这一行的话，残留的拖动状态会带到下一个选中的零件上。
@@ -515,10 +523,13 @@ struct PartsListStepView: View {
 
     /// 在图上拖一个框 = 补一个算法漏掉的零件。
     ///
-    /// **拖成什么样就是什么样，不再跑检测。** 以前画完会在后台对这个框跑一次连通域，
-    /// 把框「收缩」到零件的实际边界 —— 可用户之所以要自己画，正是因为算法认不出这块；
-    /// 让同一个算法再改一遍用户画的框，认不出时就把框改歪，用户白画。
-    /// 画得不准，靠选中后的边把手和框内拖动自己修（见 `PartEditHandles`）。
+    /// **用户拖个大概就行：框先按拖出来的样子进清单，再在框里跑一次连通域收到零件边上。**
+    /// 手指划出来的框总比零件大一圈，留着它，「量格子」那步这个零件就多出一圈空格子，
+    /// 排到拼豆板上也白占地方。收完不对，选中拖把手改就是了（见 `PartEditHandles`）——
+    /// 自动收紧和手动微调是接力，不是二选一。
+    ///
+    /// **框里什么都没找到就保持用户画的那个框**：算法认不出的零件正是用户要自己框的，
+    /// 这时候不能因为「没找到」就把框改掉或者丢掉。
     ///
     /// 两个角点（整张图纸的归一化坐标）→ 一个新零件。夹在零件区里：
     /// 框外面本来就不该有零件，手指滑出去也不算数。
@@ -541,6 +552,47 @@ struct PartsListStepView: View {
         // 可补零件状态下单指拖是画框，图根本挪不动。于是「不退出」反而把人锁死在原地。
         // 现在画完立刻交还单指（=挪图），要补下一个再点一次按钮，多一次点击换回自由移动。
         addingPart = false
+
+        // 后台把框收紧到零件的实际边界
+        let id = newPart.id
+        let drawn = inImage
+        Task.detached(priority: .userInitiated) {
+            var options = PartsDetectionOptions()
+            options.minAreaRatio = 0.01        // 相对这个小框
+            options.maxWorkingPixels = 250_000
+            // 检测范围要比用户画的框往外放一圈。一是背景色靠「区域四周一圈的众数」估，
+            // 贴着零件边缘取全是描边的黑（同 splitSelected）；二是检测器会把宽或高占满
+            // 检测范围 95% 的连通域当成图纸边框丢掉 —— 拿用户画的框直接去检测，
+            // **他框得越准，零件本体越容易整个被滤掉**，最后只剩零件内部的小色块。
+            let padded = drawn.insetBy(dx: -drawn.width * 0.12, dy: -drawn.height * 0.12)
+                .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+            let found = PartsDetector.detect(in: work, roi: padded, options: options)
+            // 放大过的框会把邻居蹭进来，只留主体落在用户框里的（同 splitSelected）。
+            let mine = found.map(\.bounds).filter { box in
+                let overlap = box.intersection(drawn)
+                guard !overlap.isNull else { return false }
+                let own = box.width * box.height
+                return own > 0 && overlap.width * overlap.height > own * 0.5
+            }
+            // **取并集，不取最大的一块。** 用户要自己画这个框，多半就是因为这块零件
+            // 描边断了、镂空太大，同一个算法在小框里跑多半还是把它切成几块；
+            // 取最大的那块等于把框收成半个零件，剩下半块的豆子从此不在格子里，
+            // 一路到扣库存都不会有人提一句。
+            guard var tightened = mine.first else { return }
+            for box in mine.dropFirst() { tightened = tightened.union(box) }
+            await MainActor.run {
+                // 检测跑在后台，这期间用户照样能删零件、拖把手改这个框，甚至已经翻到下一屏
+                // 把格子量好了。所以三道门：按 id 重新定位（下标早就不是当初那个）；
+                // 框已经不是画出来的那个就不动它（用户抢先改过的比这个结果新）；
+                // 已经量过格子的也不动 —— 这一步是后台悄悄发生的，不能让它把框换掉、
+                // 留下一套按老框算的网格。
+                guard let index = parts.firstIndex(where: { $0.id == id }),
+                      sameRect(parts[index].bounds, drawn),
+                      parts[index].gridRect == nil else { return }
+                // 走统一入口：改框就得清掉派生的网格数据，这条规则只该有一处实现。
+                applyBounds(tightened, to: id)
+            }
+        }
     }
 
     /// 新零件归到哪一行：取竖直方向上离它最近的那个已有零件的行号。
@@ -720,6 +772,14 @@ private struct PartsBoxOverlay: View {
     }
 }
 
+/// 四条边都差不到 1e-9 就算同一个框。不用 `==`：重新拼一个矩形时
+/// `(minY + h) - minY` 常常不等于 `h`，逐位比较会把「没动」判成「改了」。
+private func sameRect(_ a: CGRect, _ b: CGRect) -> Bool {
+    let eps: CGFloat = 1e-9
+    return abs(a.minX - b.minX) < eps && abs(a.minY - b.minY) < eps
+        && abs(a.maxX - b.maxX) < eps && abs(a.maxY - b.maxY) < eps
+}
+
 // MARK: - 选中零件后的编辑把手（改大小 / 挪位置）
 
 /// 只在「正好选中一个零件」时出现：算法框歪了（框太大压到邻居、偏了一点），
@@ -751,12 +811,19 @@ private struct PartEditHandles: View {
     let isPinching: Bool
     @Binding var preview: CGRect?
     let onCommit: (CGRect) -> Void
-    let onTapBody: () -> Void
+    /// 在把手层上轻点一下（没拖动）。**把手不吃点按**：这一层盖住了选中的框和它四周
+    /// 一圈热区，自己把点按吞掉的话，那一圈里的邻居零件就点不中了 —— 图纸上零件挨得近，
+    /// 想选的下一个往往正好落在这圈里，用户看到的就是「点哪儿都没反应」。
+    /// 交给上层按画布坐标去命中，点框身还是取消选中，点到邻居就选邻居。
+    let onTap: (CGPoint) -> Void
 
     /// 框的最小边长（归一化）。只用来挡「把边拖过了对侧」；已经比它还窄的框
     /// （一颗豆宽的边条）不会因为按一下把手就被撑开，见 `resized`。
     private let minSide: CGFloat = 0.006
-    /// 手指在屏幕上挪不到这么远，就当没拖：框身上算轻点，把手上什么都不做。
+    /// 手指在屏幕上挪不到这么远，就当没拖，按下的那一点交回上层去命中零件。
+    /// 落在框外的把手热区上才交：那一圈正是「邻居点不中」要救的地方；
+    /// 落在框里的那半边算摸把手没摸准，什么都不做 —— 转发过去就成了取消选中，
+    /// 用户想捏把手，手一抖，选中和把手一起没了。
     private let dragSlop: CGFloat = 4
 
     private enum Edge { case top, bottom, left, right }
@@ -779,7 +846,8 @@ private struct PartEditHandles: View {
         let r = transform.screenRect(shownBounds)
         ZStack {
             // 框内：单指拖 = 挪动整个框；轻点 = 取消选中（沿用「点框身取消」的老行为，
-            // 不然把手盖住框身后，想取消这个选中反而没地方点了）。
+            // 不然把手盖住框身后，想取消这个选中反而没地方点了）。轻点同样交给上层，
+            // 由它按落点决定是取消选中还是选别的零件。
             //
             // 拖动和轻点并进同一个 DragGesture，按松手时挪了多远区分：两个手势 Simultaneous
             // 挂着的话，拖完松手会连带触发一次轻点（见 gestureCatcher 里的实测）。
@@ -793,7 +861,9 @@ private struct PartEditHandles: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in dragChanged(.move, value.translation) }
-                        .onEnded { value in dragEnded(.move, value.translation) }
+                        .onEnded { value in
+                            dragEnded(.move, value.translation, at: value.startLocation)
+                        }
                 )
                 // 放大到框盖住大半个画布时，框身不再接手势，单指拖交还给画布挪图。
                 // 否则放大之后手指落在哪儿都是框，想把图挪到某条边附近去调它都做不到。
@@ -850,11 +920,14 @@ private struct PartEditHandles: View {
                 .contentShape(Rectangle())
                 .position(hotCenter)
                 .gesture(
-                    // 只用 translation，不读手指位置：整次拖动按「相对起点挪了多少」算，
-                    // 起点就是零件现在的框，跟手指按在热区的哪一点无关。
+                    // 改大小只认 translation：整次拖动按「相对起点挪了多少」算，起点就是
+                    // 零件现在的框，跟手指按在热区的哪一点无关。按下的位置只在判成轻点时用，
+                    // 交给上层去命中零件。
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in dragChanged(.edge(edge), value.translation) }
-                        .onEnded { value in dragEnded(.edge(edge), value.translation) }
+                        .onEnded { value in
+                            dragEnded(.edge(edge), value.translation, at: value.startLocation)
+                        }
                 )
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .fill(Color.orange)
@@ -884,7 +957,9 @@ private struct PartEditHandles: View {
         }
     }
 
-    private func dragEnded(_ kind: DragKind, _ translation: CGSize) {
+    /// - Parameter start: 手指按下的位置。两处手势都挂在 `.position` **之后**的视图上，
+    ///   那个视图铺满画布，所以这个点就是画布坐标，可以直接交给上层去命中零件。
+    private func dragEnded(_ kind: DragKind, _ translation: CGSize, at start: CGPoint) {
         guard let ended = session, ended.kind == kind else { return }
         let final = preview
         session = nil
@@ -893,19 +968,11 @@ private struct PartEditHandles: View {
 
         let distance = hypot(translation.width, translation.height)
         if distance < dragSlop {
-            if kind == .move { onTapBody() }
+            if kind == .move || !transform.screenRect(bounds).contains(start) { onTap(start) }
             return
         }
-        guard let final, !Self.sameRect(final, bounds) else { return }
+        guard let final, !sameRect(final, bounds) else { return }
         onCommit(final)
-    }
-
-    /// 四条边都差不到 1e-9 就算同一个框。不用 `==`：`resized` 重新拼矩形时
-    /// `(minY + h) - minY` 常常不等于 `h`，逐位比较会把「没动」判成「改了」。
-    static func sameRect(_ a: CGRect, _ b: CGRect) -> Bool {
-        let eps: CGFloat = 1e-9
-        return abs(a.minX - b.minX) < eps && abs(a.minY - b.minY) < eps
-            && abs(a.maxX - b.maxX) < eps && abs(a.maxY - b.maxY) < eps
     }
 
     /// 整体平移，夹住四边别拖出零件区。
