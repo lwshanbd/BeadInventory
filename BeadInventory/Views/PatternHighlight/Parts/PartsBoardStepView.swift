@@ -160,11 +160,16 @@ struct PartsBoardStepView: View {
     @State private var unfinishedCount = 0
     /// 按了几次「标记已完成」。只拿来给触觉当触发器。
     @State private var doneToggles = 0
-    /// 拼完之后按了「取消完成」的板。颜色的勾都留着，只是不再显示整板对号。
+    /// 颜色全勾完了、但还没按「确认完成」的板。两种来路：刚勾完最后一个颜色，
+    /// 或者拼完之后按了「取消完成」。
     ///
-    /// 用户取消完成是想回头核对，不是要把十几个颜色重新勾一遍，所以不动 `doneColors`。
-    /// 只记在这一屏：退出再进来，勾全在的板照样显示对号。
-    @State private var reopenedBoards: Set<UUID> = []
+    /// 这种板不挂对号，而是**整块板一起高亮**（见 `highlightKeys(for:)`）：一个色一个色拼的时候
+    /// 只看得见那一个色，漏放、放错位的豆子要等所有颜色一起亮出来才对得出来。
+    /// 用户对着实物核一遍，按「确认完成」，对号才出来。
+    ///
+    /// 不动 `doneColors`：回头核对不是要把十几个颜色重新勾一遍。
+    /// 只记在这一屏：退出再进来，勾全在的板直接显示对号。
+    @State private var unconfirmedBoards: Set<UUID> = []
 
     private struct BrushTarget: Identifiable {
         let id: UUID
@@ -1267,8 +1272,15 @@ struct PartsBoardStepView: View {
         let board = currentBoard
         return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
-                Text(highlightKey.map { "仅高亮「\(label(for: $0))」，再次点击可取消" }
-                     ?? "选择一个颜色，仅高亮该颜色对应的格子")
+                Group {
+                    if let key = highlightKey {
+                        Text("仅高亮「\(label(for: key))」，再次点击可取消")
+                    } else if let board, isReviewing(board) {
+                        Text("已高亮整块板，核对无误后确认完成")
+                    } else {
+                        Text("选择一个颜色，仅高亮该颜色对应的格子")
+                    }
+                }
                     .font(.footnote)
                     .foregroundColor(Theme.ColorToken.Text.secondary)
 
@@ -1327,20 +1339,21 @@ struct PartsBoardStepView: View {
             .controlSize(.small)
             .tint(isDone ? Theme.ColorToken.Text.secondary : Theme.ColorToken.Status.success)
         } else if let board = currentBoard, isBoardFinished(board) {
-            // 整块板拼完了。这里给一个取消的入口：用户想回头核对时，对号不该一直压在板子上。
-            // 两句分开写，理由同上。
-            if reopenedBoards.contains(board.id) {
+            // 整块板的颜色都勾完了。还没确认就给「确认完成」；确认过的给一个取消的入口：
+            // 用户想回头核对时，对号不该一直压在板子上。两句分开写，理由同上。
+            if unconfirmedBoards.contains(board.id) {
                 Button {
-                    reopenedBoards.remove(board.id)
+                    unconfirmedBoards.remove(board.id)
+                    doneToggles += 1
                 } label: {
-                    Label("标记已完成", systemImage: "checkmark.circle").font(.footnote)
+                    Label("确认完成", systemImage: "checkmark.circle").font(.footnote)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .tint(Theme.ColorToken.Status.success)
             } else {
                 Button {
-                    reopenedBoards.insert(board.id)
+                    unconfirmedBoards.insert(board.id)
                 } label: {
                     Label("取消完成", systemImage: "arrow.uturn.backward").font(.footnote)
                 }
@@ -1405,9 +1418,6 @@ struct PartsBoardStepView: View {
     private func toggleColorDone(key: String, count: Int, wasDone: Bool,
                                  colors: [(key: String, count: Int)]) {
         guard boards.indices.contains(boardIndex) else { return }
-        // 动了任何一个颜色的勾，之前按过的「取消完成」就作废：
-        // 核对完把最后一个颜色重新勾上，对号应该回来。
-        reopenedBoards.remove(boards[boardIndex].id)
         if wasDone {
             boards[boardIndex].clearColorDone(key)
         } else {
@@ -1423,7 +1433,10 @@ struct PartsBoardStepView: View {
             if let next = colors.first(where: { !board.isColorDone($0.key, count: $0.count) }) {
                 highlightKey = next.key
             } else {
+                // 最后一个颜色也勾上了：先不挂对号，整块板一起亮出来给用户核对一遍，
+                // 确认了对号才出来（见 `unconfirmedBoards`）。
                 highlightKey = nil
+                unconfirmedBoards.insert(board.id)
                 flash(String(localized: "这块板的颜色已全部完成"))
             }
         }
@@ -1659,9 +1672,28 @@ struct PartsBoardStepView: View {
         return !counts.isEmpty && counts.allSatisfy { board.isColorDone($0.key, count: $0.value) }
     }
 
-    /// 板子上和板号旁边要不要显示对号：拼完了，而且用户没有按「取消完成」。
+    /// 板子上和板号旁边要不要显示对号：拼完了，而且用户已经确认过。
     private func showsFinishedMark(_ board: PartsBoard) -> Bool {
-        !reopenedBoards.contains(board.id) && isBoardFinished(board)
+        !unconfirmedBoards.contains(board.id) && isBoardFinished(board)
+    }
+
+    /// 这块板正在「整板高亮、等确认」：颜色全勾完了还没确认，而且用户没在单看某一个色。
+    ///
+    /// 先查集合再数豆子：绝大多数时候集合里没有这块板，`isBoardFinished` 那一遍就省了。
+    private func isReviewing(_ board: PartsBoard) -> Bool {
+        highlightKey == nil && unconfirmedBoards.contains(board.id) && isBoardFinished(board)
+    }
+
+    /// 板上（和电视上）点亮哪些色号。选了一个色就是那一个；整板核对时是板上所有色号 ——
+    /// 全部按高亮的样子画：方块画满、粗格线压在豆子上面、零件编号让路，数格子核对最清楚。
+    private func highlightKeys(for board: PartsBoard) -> Set<String> {
+        if let highlightKey { return [highlightKey] }
+        guard isReviewing(board) else { return [] }
+        var keys: Set<String> = []
+        for placement in board.placements {
+            for bead in footprints[placement.id]?.beads ?? [] { keys.insert(bead.key) }
+        }
+        return keys
     }
 
     // MARK: - 完成
@@ -2567,7 +2599,8 @@ struct PartsBoardStepView: View {
     ///
     /// 只看当前这块板：送出去的本来就只有它。
     private var castSignature: String {
-        var signature = "\(boardIndex)|\(boards.count)|\(highlightKey ?? "")|\(colorCache.count)|\(cellsRevision)"
+        let reviewing = currentBoard.map(isReviewing) ?? false
+        var signature = "\(boardIndex)|\(boards.count)|\(highlightKey ?? "")|\(reviewing)|\(colorCache.count)|\(cellsRevision)"
         // 描红的是哪几块也要送 —— 只送个数的话，一红一好地换人时电视上标错块。
         signature += "|" + invalidPlacements.map(\.uuidString).sorted().joined(separator: ",")
         for placement in currentBoard?.placements ?? [] {
@@ -2585,7 +2618,7 @@ struct PartsBoardStepView: View {
             board: board,
             footprints: footprints,
             colorCache: colorCache,
-            highlightKeys: highlightKey.map { [$0] } ?? [],
+            highlightKeys: highlightKeys(for: board),
             caption: String(localized: "第 \(boardIndex + 1) / \(boards.count) 块"),
             labels: labels(for: board),
             invalid: invalidPlacements
@@ -2598,7 +2631,7 @@ struct PartsBoardStepView: View {
             board: board,
             footprints: footprints,
             colorCache: colorCache,
-            highlightKeys: highlightKey.map { [$0] } ?? [],
+            highlightKeys: highlightKeys(for: board),
             labels: labels(for: board),
             selected: boardPicking ? boardPicked : selection.map { [$0] } ?? [],
             moving: drag.map {
