@@ -560,26 +560,18 @@ struct PartsListStepView: View {
             var options = PartsDetectionOptions()
             options.minAreaRatio = 0.01        // 相对这个小框
             options.maxWorkingPixels = 250_000
-            // 检测范围要比用户画的框往外放一圈。一是背景色靠「区域四周一圈的众数」估，
-            // 贴着零件边缘取全是描边的黑（同 splitSelected）；二是检测器会把宽或高占满
-            // 检测范围 95% 的连通域当成图纸边框丢掉 —— 拿用户画的框直接去检测，
-            // **他框得越准，零件本体越容易整个被滤掉**，最后只剩零件内部的小色块。
-            let padded = drawn.insetBy(dx: -drawn.width * 0.12, dy: -drawn.height * 0.12)
-                .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
-            let found = PartsDetector.detect(in: work, roi: padded, options: options)
-            // 放大过的框会把邻居蹭进来，只留主体落在用户框里的（同 splitSelected）。
-            let mine = found.map(\.bounds).filter { box in
-                let overlap = box.intersection(drawn)
-                guard !overlap.isNull else { return false }
-                let own = box.width * box.height
-                return own > 0 && overlap.width * overlap.height > own * 0.5
-            }
-            // **取并集，不取最大的一块。** 用户要自己画这个框，多半就是因为这块零件
-            // 描边断了、镂空太大，同一个算法在小框里跑多半还是把它切成几块；
-            // 取最大的那块等于把框收成半个零件，剩下半块的豆子从此不在格子里，
-            // 一路到扣库存都不会有人提一句。
-            guard var tightened = mine.first else { return }
-            for box in mine.dropFirst() { tightened = tightened.union(box) }
+            // 检测范围就是用户画的那个框，取里面**面积最大**的那块连通域 ——
+            // 这段跟多零件模式一路用下来的版本一字不差，用户反馈就是好用。
+            //
+            // 中间试过「往外放一圈再检测 + 取所有块的并集」，想挡住两种理论上的翻车
+            // （框贴得太紧时零件被当成图纸边框滤掉、零件描边断了被切成两块只收到一半）。
+            // 实测是把好用的功能改坏了：并集会把框里的碎块全包进去，收出来跟用户画的
+            // 差不多大，用户的感受是「几乎不识别了」。那两种情况本来就少见，真碰上了
+            // 拖把手改一下就是了 —— 宁可偶尔收歪，也不要每次都收不动。
+            let found = PartsDetector.detect(in: work, roi: drawn, options: options)
+            guard let biggest = found.max(by: {
+                $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height
+            }) else { return }
             await MainActor.run {
                 // 检测跑在后台，这期间用户照样能删零件、拖把手改这个框，甚至已经翻到下一屏
                 // 把格子量好了。所以三道门：按 id 重新定位（下标早就不是当初那个）；
@@ -590,7 +582,7 @@ struct PartsListStepView: View {
                       sameRect(parts[index].bounds, drawn),
                       parts[index].gridRect == nil else { return }
                 // 走统一入口：改框就得清掉派生的网格数据，这条规则只该有一处实现。
-                applyBounds(tightened, to: id)
+                applyBounds(biggest.bounds, to: id)
             }
         }
     }
