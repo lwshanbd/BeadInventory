@@ -70,6 +70,13 @@ struct ScanView: View {
     @State private var extraPages: [ExtraPatternPage] = []
     @State private var extraPhotoItems: [PhotosPickerItem] = []
     @State private var isLoadingExtraPages = false
+    /// 「重新选择」时加 1。追加图纸读得慢（iCloud 上的要先下载），读完时主图可能已经换了，
+    /// 代号对不上就把这批结果扔掉，免得挂到新主图下面。
+    @State private var extraPagesGeneration = 0
+    /// 拼好的原图，连同拼的是哪几张追加图纸。建项目前拼好，建项目时直接存。
+    @State private var stitchedSource: (pageIds: [UUID], data: Data)?
+    @State private var isStitching = false
+    @State private var showingStitchFailed = false
 
     // 图片固定功能
     @State private var isImagePinned = false         // 是否固定图片在顶部
@@ -154,7 +161,7 @@ struct ScanView: View {
                                     originalByteCount: sourceByteCount,
                                     extraPages: extraPages,
                                     extraPhotoItems: $extraPhotoItems,
-                                    isLoadingExtraPages: isLoadingExtraPages,
+                                    isLoadingExtraPages: isLoadingExtraPages || isStitching,
                                     onRemoveExtraPage: { id in
                                         extraPages.removeAll { $0.id == id }
                                     },
@@ -285,6 +292,11 @@ struct ScanView: View {
                 }
             } message: {
                 Text("将创建包含 \(totalBeads) 颗豆子（\(recognizedItems.count) 种颜色）的计划项目。执行时需要选择品牌。")
+            }
+            .alert("图纸合并失败", isPresented: $showingStitchFailed) {
+                Button("好", role: .cancel) { }
+            } message: {
+                Text("追加的图纸中有无法读取的图片。请移除后重试。")
             }
             .alert("图片加载失败", isPresented: $showingPhotoLoadError) {
                 Button("知道了", role: .cancel) {}
@@ -418,6 +430,7 @@ struct ScanView: View {
     private func handleExtraPhotoItems(_ items: [PhotosPickerItem]) {
         guard !items.isEmpty else { return }
         isLoadingExtraPages = true
+        let generation = extraPagesGeneration
         Task {
             var loaded: [ExtraPatternPage] = []
             var failures = 0
@@ -437,6 +450,7 @@ struct ScanView: View {
                 }
             }
             await MainActor.run {
+                guard generation == extraPagesGeneration else { return }
                 extraPages.append(contentsOf: loaded)
                 // 清空选择，下次再点「+」是一次全新的选择，不会把这几张又追加一遍
                 extraPhotoItems = []
@@ -451,8 +465,8 @@ struct ScanView: View {
     }
 
     /// 「保留原图」旁边显示的大小：上面那张 + 追加的几张。
-    /// 上面那张不是从相册选的（拍照、分享进来）就没有这份字节，这时只在有追加图时报追加那部分也不对，
-    /// 所以干脆不报。
+    /// 有追加图时实际存的是拼好后重新编码的 PNG，大小会不一样，这里只是个估计。
+    /// 上面那张不是从相册选的（拍照、分享进来）就没有这份字节，只报追加那部分也不对，所以干脆不报。
     private var sourceByteCount: Int? {
         guard let main = pickedOriginalData?.count else { return nil }
         return main + extraPages.reduce(0) { $0 + $1.data.count }
@@ -492,6 +506,7 @@ struct ScanView: View {
     /// 两张图取景不同不要紧：拼图模式一次会话里只认一张（有原图用原图、没有才退回封面，
     /// 见 `SinglePatternFlowView.load`）。单张模式还会把对格子时那张的尺寸记进
     /// `BeadPatternGrid.sourceImageSize`，下次进来宽高比对不上就作废网格；零件模式没有这道检查。
+    /// 有追加图纸时原图是拼出来的长图，跟封面必然不同，见 `preparePatternSource`。
     ///
     /// 用户在上传那一屏把「留原图」关掉时返回 nil，一个字节都不写。
     ///
@@ -504,21 +519,43 @@ struct ScanView: View {
         return PatternSourceStore.lossless(originalImage ?? thumbnailImage)
     }
 
-    /// 建完项目后把原图存下来。有追加图纸时，先把它们和上面那张拼成一张再存。
+    /// 有追加图纸时，先把它们和上面那张拼成一张原图，再往下走（弹建计划确认 / 进扣减复核）。
     ///
-    /// 拼图要解码好几张大图、再编一张大 PNG，放主线程上会卡住扫描页，所以放后台。
-    /// 这几秒内进拼图模式会先看到封面（跟没留原图时一样），不会出错。
-    /// 拼失败就退回只存上面那张，至少那一页的零件还能用。
-    private func savePatternSource(for projectId: UUID) {
-        guard let main = patternSourceData() else { return }
-        let extras = extraPages.map(\.data)
-        guard !extras.isEmpty else {
-            PatternSourceStore.save(main, for: projectId)
+    /// 必须在建项目**之前**拼好。以前是建完项目再在后台拼：那几秒里进多零件模式会先拿封面
+    /// 框零件，长图落盘后坐标全错位；拼失败还只能悄悄退回第一张，追加的零件就这么丢了。
+    /// 现在拼失败就停在这一页告诉用户，状态都还在，移掉读不了的那张再试。
+    private func preparePatternSource(then proceed: @escaping () -> Void) {
+        let pageIds = extraPages.map(\.id)
+        guard !pageIds.isEmpty, stitchedSource?.pageIds != pageIds,
+              let main = patternSourceData() else {
+            proceed()
             return
         }
-        Task.detached(priority: .userInitiated) {
-            let stitched = PatternSourceStore.stitched([main] + extras)
-            PatternSourceStore.save(stitched ?? main, for: projectId)
+        let pages = [main] + extraPages.map(\.data)
+        isStitching = true
+        Task {
+            let data = await Task.detached(priority: .userInitiated) {
+                PatternSourceStore.stitched(pages)
+            }.value
+            await MainActor.run {
+                isStitching = false
+                guard let data else {
+                    showingStitchFailed = true
+                    return
+                }
+                stitchedSource = (pageIds, data)
+                proceed()
+            }
+        }
+    }
+
+    /// 建完项目后把原图存下来。有追加图纸时存的是 `preparePatternSource` 拼好的那张。
+    private func savePatternSource(for projectId: UUID) {
+        guard let main = patternSourceData() else { return }
+        if let stitchedSource, stitchedSource.pageIds == extraPages.map(\.id) {
+            PatternSourceStore.save(stitchedSource.data, for: projectId)
+        } else {
+            PatternSourceStore.save(main, for: projectId)
         }
     }
 
@@ -754,8 +791,9 @@ struct ScanView: View {
             ScanBottomCTABar(
                 totalBeads: totalBeads,
                 canDeduct: brandMatchesScanSystem,
-                onPlan: { showingCreatePlan = true },
-                onDeduct: { prepareDeduction() }
+                isBusy: isStitching || isLoadingExtraPages,
+                onPlan: { preparePatternSource { showingCreatePlan = true } },
+                onDeduct: { preparePatternSource { prepareDeduction() } }
             )
         }
     }
@@ -767,11 +805,11 @@ struct ScanView: View {
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 Button {
-                    showingCreatePlan = true
+                    preparePatternSource { showingCreatePlan = true }
                 } label: {
                     Label("仅创建计划，不扣减", systemImage: "calendar.badge.plus")
                 }
-                .disabled(recognizedItems.isEmpty)
+                .disabled(recognizedItems.isEmpty || isStitching || isLoadingExtraPages)
 
                 Divider()
 
@@ -1020,6 +1058,9 @@ struct ScanView: View {
         // 追加的图纸是跟上面那张配套的，换了那张就一起清掉
         extraPages = []
         extraPhotoItems = []
+        extraPagesGeneration += 1
+        isLoadingExtraPages = false
+        stitchedSource = nil
         isImagePinned = false
         // 「留不留原图」是**这一张**的决定，不能带到下一张去 —— 上一张不留，
         // 不代表下一张也不留。回到设置里那个默认值。
@@ -1126,14 +1167,14 @@ struct ImageSelectionSection: View {
     @Binding var isPinned: Bool
     /// 这一张要不要留原图（见 ScanView 里同名 State 的注释）
     @Binding var keepPatternSource: Bool
-    /// 相册那份原始字节有多大。相机拍的、Share Extension 传进来的没有这份字节，就是 nil，
-    /// 那时不写数字，免得报一个还没编码出来、多半不准的大小。
+    /// 要留的原图大概多大：上面那张的原始字节，加上追加几张的。见 `ScanView.sourceByteCount`。
+    /// 相机拍的、Share Extension 传进来的没有原始字节，就是 nil，那时不写数字。
     var originalByteCount: Int?
     /// 追加的图纸（见 ScanView.extraPages）
-    var extraPages: [ScanView.ExtraPatternPage] = []
+    var extraPages: [ScanView.ExtraPatternPage]
     @Binding var extraPhotoItems: [PhotosPickerItem]
-    var isLoadingExtraPages = false
-    var onRemoveExtraPage: (UUID) -> Void = { _ in }
+    var isLoadingExtraPages: Bool
+    var onRemoveExtraPage: (UUID) -> Void
     var hasRecognizedItems: Bool
     /// 「重新选择」。不能只把 `selectedImage` 置 nil —— 上一张图的封面和原始字节
     /// 还留在 ScanView 里，见 `ScanView.resetPickedImage()`。
@@ -3401,6 +3442,8 @@ enum RecognizedResultsFilter: Hashable {
 struct ScanBottomCTABar: View {
     let totalBeads: Int
     let canDeduct: Bool
+    /// 追加图纸还在读取或正在合并。这时两个按钮都不能点，免得项目少了几张图纸。
+    let isBusy: Bool
     let onPlan: () -> Void
     let onDeduct: () -> Void
 
@@ -3431,7 +3474,12 @@ struct ScanBottomCTABar: View {
             // 扣减 N 颗（filled mauve）
             Button(action: onDeduct) {
                 HStack(spacing: 6) {
-                    Image(systemName: "minus.circle.fill")
+                    if isBusy {
+                        ProgressView()
+                            .tint(Theme.ColorToken.Text.onAccent)
+                    } else {
+                        Image(systemName: "minus.circle.fill")
+                    }
                     Text("扣减 \(totalBeads) 颗")
                 }
                 .font(.headline)
@@ -3446,6 +3494,7 @@ struct ScanBottomCTABar: View {
             }
             .disabled(!canDeduct)
         }
+        .disabled(isBusy)
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.sm)
         .background(.bar)

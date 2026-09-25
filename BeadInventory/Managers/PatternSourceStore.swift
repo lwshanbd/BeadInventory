@@ -45,6 +45,9 @@
 //  （它不同步）、用户点过「拼好了」的。所以**调用方必须能在没有原图时照常工作**，
 //  退回用 SwiftData 里那份压缩图，只是糊一点。
 //
+//  例外：几张图纸拼成的原图（见 `stitched`）跟封面取景不同，封面只有第一张。
+//  这类项目没了原图，多零件模式就不只是变糊：追加那几张上的零件不在封面上，零件框也会错位。
+//
 
 import Foundation
 import UIKit
@@ -215,8 +218,8 @@ enum PatternSourceStore {
 
 extension PatternSourceStore {
 
-    /// 拼出来的那张图最多多少像素。多零件模式解码零件区的预算是 6000 万像素
-    /// （`PartsSheetFlowView.workPixelBudget`），超过它也会被那边等比缩回来；
+    /// 拼出来的那张图最多多少像素。拼图模式和多零件模式解码整张原图的上限都是 6000 万像素
+    /// （两边都叫 `workPixelBudget`），超过它也会被那边等比缩回来；
     /// 这里再留点余量，因为拼的时候画布和正在画的那一页同时在内存里。
     private static let stitchedPixelBudget = 48_000_000
 
@@ -225,7 +228,7 @@ extension PatternSourceStore {
     /// ## 为什么是拼成一张，而不是让拼图模式认多张图
     ///
     /// 有的立体图纸零件太多，作者分成两三张图发。色号统计表只有一张，AI 识别那一步
-    /// 只看那张就够；可多零件模式、投影模式要的是**所有零件**。这两个模式从头到尾
+    /// 只看那张就够；可多零件模式（包括从它投屏）要的是**所有零件**。拼图模式从头到尾
     /// 按「一个项目一张原图」写（零件坐标是相对整张图归一化的），拼成一张长图，
     /// 它们一行都不用改就能看到所有零件。
     ///
@@ -237,10 +240,11 @@ extension PatternSourceStore {
     /// 页与页之间留一道底色的空白，免得上一页底边和下一页顶边的零件贴在一起，
     /// 被当成一个零件。
     ///
-    /// 总像素超过预算时所有页**一起**等比缩小，相对大小不变。
+    /// 画布（最宽那页的宽 × 总高，窄页右边空着的也算）超过预算时，所有页**一起**等比缩小，
+    /// 相对大小不变。
     ///
     /// - Returns: 无损 PNG。只有一页时原样返回那一页的字节。任何一页解不出来就返回 nil，
-    ///   调用方退回只存第一页（缺一页总比整个项目没有原图强）。
+    ///   由调用方告诉用户（见 `ScanView.preparePatternSource`）。
     static func stitched(_ pages: [Data]) -> Data? {
         guard pages.count > 1 else { return pages.first }
 
@@ -250,8 +254,12 @@ extension PatternSourceStore {
             return nil
         }
         let nativeSizes = sizes.compactMap { $0 }
-        let totalPixels = nativeSizes.reduce(0.0) { $0 + Double($1.width * $1.height) }
-        let scale = min(1, (Double(stitchedPixelBudget) / max(totalPixels, 1)).squareRoot())
+        // 按画布算，不按各页面积之和：一张很宽加一张很长的，面积加起来不大，画布却大得多。
+        let nativeWidth = nativeSizes.map(\.width).max() ?? 1
+        let nativeHeight = nativeSizes.reduce(0) { $0 + $1.height }
+            + max(16, nativeWidth * 0.02) * CGFloat(nativeSizes.count - 1)
+        let canvasPixels = Double(nativeWidth * nativeHeight)
+        let scale = min(1, (Double(stitchedPixelBudget) / max(canvasPixels, 1)).squareRoot())
 
         let pageSizes = nativeSizes.map {
             CGSize(width: max(1, ($0.width * scale).rounded()), height: max(1, ($0.height * scale).rounded()))
@@ -267,6 +275,8 @@ extension PatternSourceStore {
         let format = UIGraphicsImageRendererFormat.default()
         format.scale = 1
         format.opaque = true
+        // 广色域机器上默认可能按每通道 16 位开画布，内存翻倍。图纸用不着。
+        format.preferredRange = .standard
         var failed = false
         let image = UIGraphicsImageRenderer(
             size: CGSize(width: canvasWidth, height: canvasHeight), format: format
@@ -320,6 +330,8 @@ extension PatternSourceStore {
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
         ctx.draw(corner, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        // 透明底的 PNG 读出来是 (0,0,0,0)，直接用会把空白涂成黑色，多零件模式会把黑块当零件
+        guard pixel[3] > 200 else { return nil }
         return UIColor(red: CGFloat(pixel[0]) / 255, green: CGFloat(pixel[1]) / 255,
                        blue: CGFloat(pixel[2]) / 255, alpha: 1)
     }
