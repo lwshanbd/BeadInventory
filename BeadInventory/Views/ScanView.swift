@@ -73,6 +73,10 @@ struct ScanView: View {
     /// 「重新选择」时加 1。追加图纸读得慢（iCloud 上的要先下载），读完时主图可能已经换了，
     /// 代号对不上就把这批结果扔掉，免得挂到新主图下面。
     @State private var extraPagesGeneration = 0
+    /// 刚选进来、还没裁切的追加图纸，一张一张弹裁切框
+    @State private var extraCropQueue: [UIImage] = []
+    @State private var croppingExtraPage: ExtraCropItem?
+    @State private var extraLoadFailures = 0
     /// 拼好的原图，连同拼的是哪几张追加图纸。建项目前拼好，建项目时直接存。
     @State private var stitchedSource: (pageIds: [UUID], data: Data)?
     @State private var isStitching = false
@@ -102,11 +106,18 @@ struct ScanView: View {
         var preferredBrandId: UUID? = nil
     }
 
-    /// 一张追加的图纸。只留原始字节和一张小预览，不解码全图 —— 用户可能一次追加好几张大图。
+    /// 一张追加的图纸：裁好之后的无损 PNG 和一张小预览。不留全图的 UIImage，
+    /// 用户可能一次追加好几张大图。
     struct ExtraPatternPage: Identifiable {
         let id = UUID()
         let data: Data
         let preview: UIImage
+    }
+
+    /// 排队等裁切的那一张
+    struct ExtraCropItem: Identifiable {
+        let id = UUID()
+        let image: UIImage
     }
 
     var totalBeads: Int {
@@ -243,6 +254,11 @@ struct ScanView: View {
                     }
                 } else {
                     Color.black.onAppear { showingCropView = false }
+                }
+            }
+            .fullScreenCover(item: $croppingExtraPage, onDismiss: showNextExtraCrop) { item in
+                ImageCropView(image: item.image) { cropped in
+                    addCroppedExtraPage(cropped)
                 }
             }
             .fullScreenCover(isPresented: $showingThumbnailCrop) {
@@ -426,24 +442,23 @@ struct ScanView: View {
         }
     }
 
-    /// 追加图纸（可以一次选好几张）。只读字节、出一张小预览，不解码全图。
+    /// 追加图纸（可以一次选好几张）。读进来之后排队，一张一张弹裁切框，
+    /// 用户只留零件那一块再加进去（见 `showNextExtraCrop`）。
     private func handleExtraPhotoItems(_ items: [PhotosPickerItem]) {
         guard !items.isEmpty else { return }
         isLoadingExtraPages = true
         let generation = extraPagesGeneration
         Task {
-            var loaded: [ExtraPatternPage] = []
+            var loaded: [UIImage] = []
             var failures = 0
             for item in items {
                 do {
                     guard let data = try await item.loadTransferable(type: Data.self),
-                          let preview = await Task.detached(priority: .userInitiated, operation: {
-                              ImageDownsampler.downsampleToUIImage(data, maxPixelSize: 240)
-                          }).value else {
+                          let image = UIImage(data: data) else {
                         failures += 1
                         continue
                     }
-                    loaded.append(ExtraPatternPage(data: data, preview: preview))
+                    loaded.append(image)
                 } catch {
                     AppLogger.shared.error("Scan", "extra_page_load_failed", metadata: ["error": "\(error)"])
                     failures += 1
@@ -451,14 +466,54 @@ struct ScanView: View {
             }
             await MainActor.run {
                 guard generation == extraPagesGeneration else { return }
-                extraPages.append(contentsOf: loaded)
                 // 清空选择，下次再点「+」是一次全新的选择，不会把这几张又追加一遍
                 extraPhotoItems = []
                 isLoadingExtraPages = false
                 if failures > 0 {
                     AppLogger.shared.warning("Scan", "extra_pages_partially_failed", metadata: ["failed": failures])
-                    photoLoadErrorMessage = String(localized: "有 \(failures) 张图片无法读取，未添加。")
-                    showingPhotoLoadError = true
+                    // 裁切框开着时弹不出提示，等这一批裁完再说
+                    extraLoadFailures += failures
+                }
+                extraCropQueue.append(contentsOf: loaded)
+                showNextExtraCrop()
+            }
+        }
+    }
+
+    /// 弹出队列里下一张的裁切框。裁切框关掉（裁好或取消）时再调一次，直到队列空。
+    /// 取消 = 这张不要了，直接跳过。
+    private func showNextExtraCrop() {
+        guard croppingExtraPage == nil else { return }
+        if extraCropQueue.isEmpty {
+            if extraLoadFailures > 0 {
+                photoLoadErrorMessage = String(localized: "有 \(extraLoadFailures) 张图片无法读取，未添加。")
+                showingPhotoLoadError = true
+                extraLoadFailures = 0
+            }
+            return
+        }
+        croppingExtraPage = ExtraCropItem(image: extraCropQueue.removeFirst())
+    }
+
+    /// 裁好的一张加进追加图纸。存成无损 PNG：拼原图时要逐格看颜色，不能再压一道。
+    private func addCroppedExtraPage(_ cropped: UIImage) {
+        let generation = extraPagesGeneration
+        isLoadingExtraPages = true
+        Task {
+            let page = await Task.detached(priority: .userInitiated) { () -> ExtraPatternPage? in
+                guard let data = PatternSourceStore.lossless(cropped),
+                      let preview = ImageDownsampler.downsampleToUIImage(data, maxPixelSize: 240) else { return nil }
+                return ExtraPatternPage(data: data, preview: preview)
+            }.value
+            await MainActor.run {
+                guard generation == extraPagesGeneration else { return }
+                isLoadingExtraPages = false
+                if let page {
+                    extraPages.append(page)
+                } else {
+                    AppLogger.shared.error("Scan", "extra_page_encode_failed", metadata: [:])
+                    extraLoadFailures += 1
+                    showNextExtraCrop()
                 }
             }
         }
@@ -1060,6 +1115,8 @@ struct ScanView: View {
         extraPhotoItems = []
         extraPagesGeneration += 1
         isLoadingExtraPages = false
+        extraCropQueue = []
+        extraLoadFailures = 0
         stitchedSource = nil
         isImagePinned = false
         // 「留不留原图」是**这一张**的决定，不能带到下一张去 —— 上一张不留，
