@@ -401,6 +401,36 @@
         }
       }
     },
+    "确认完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm Done"
+          }
+        }
+      }
+    },
+    "取消完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undo Done"
+          }
+        }
+      }
+    },
+    "已高亮整块板，核对无误后确认完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Whole board highlighted. Check it, then confirm."
+          }
+        }
+      }
+    },
     "标记未完成" : {
       "localizations" : {
         "en" : {
