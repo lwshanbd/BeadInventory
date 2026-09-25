@@ -64,6 +64,13 @@ struct ScanView: View {
     /// 设置里那个开关只决定这里的**初值**（见 `PatternSourceStore.keepsSourceByDefault`）。
     @State private var keepPatternSource = PatternSourceStore.keepsSourceByDefault
 
+    /// 追加的图纸：零件分在好几张图上、色号统计表只在上面那张的情况。
+    /// AI 只识别上面那张；这几张建项目时跟它拼成一张存成原图，给多零件模式和投影模式用
+    /// （见 `PatternSourceStore.stitched`）。
+    @State private var extraPages: [ExtraPatternPage] = []
+    @State private var extraPhotoItems: [PhotosPickerItem] = []
+    @State private var isLoadingExtraPages = false
+
     // 图片固定功能
     @State private var isImagePinned = false         // 是否固定图片在顶部
 
@@ -86,6 +93,13 @@ struct ScanView: View {
         /// 用户在缺豆建议行上「应用推荐品牌」时记下的目标品牌；
         /// 进入 DeductionResolver 时会调用 overrideBrand(...) 落地。
         var preferredBrandId: UUID? = nil
+    }
+
+    /// 一张追加的图纸。只留原始字节和一张小预览，不解码全图 —— 用户可能一次追加好几张大图。
+    struct ExtraPatternPage: Identifiable {
+        let id = UUID()
+        let data: Data
+        let preview: UIImage
     }
 
     var totalBeads: Int {
@@ -137,7 +151,13 @@ struct ScanView: View {
                                     showingCropView: $showingCropView,
                                     isPinned: $isImagePinned,
                                     keepPatternSource: $keepPatternSource,
-                                    originalByteCount: pickedOriginalData?.count,
+                                    originalByteCount: sourceByteCount,
+                                    extraPages: extraPages,
+                                    extraPhotoItems: $extraPhotoItems,
+                                    isLoadingExtraPages: isLoadingExtraPages,
+                                    onRemoveExtraPage: { id in
+                                        extraPages.removeAll { $0.id == id }
+                                    },
                                     hasRecognizedItems: !recognizedItems.isEmpty,
                                     onReselect: resetPickedImage,
                                     onManualTap: { showingManualEntry = true }
@@ -278,6 +298,9 @@ struct ScanView: View {
             .onChange(of: selectedPhotoItem) { _, newItem in
                 handlePhotoItemChange(newItem)
             }
+            .onChange(of: extraPhotoItems) { _, newItems in
+                handleExtraPhotoItems(newItems)
+            }
             .onChange(of: selectedImage) { _, newImage in
                 // 当从相机获取图片时，也设置原图和缩略图
                 if let image = newImage, originalImage == nil {
@@ -391,6 +414,50 @@ struct ScanView: View {
         }
     }
 
+    /// 追加图纸（可以一次选好几张）。只读字节、出一张小预览，不解码全图。
+    private func handleExtraPhotoItems(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty else { return }
+        isLoadingExtraPages = true
+        Task {
+            var loaded: [ExtraPatternPage] = []
+            var failures = 0
+            for item in items {
+                do {
+                    guard let data = try await item.loadTransferable(type: Data.self),
+                          let preview = await Task.detached(priority: .userInitiated, operation: {
+                              ImageDownsampler.downsampleToUIImage(data, maxPixelSize: 240)
+                          }).value else {
+                        failures += 1
+                        continue
+                    }
+                    loaded.append(ExtraPatternPage(data: data, preview: preview))
+                } catch {
+                    AppLogger.shared.error("Scan", "extra_page_load_failed", metadata: ["error": "\(error)"])
+                    failures += 1
+                }
+            }
+            await MainActor.run {
+                extraPages.append(contentsOf: loaded)
+                // 清空选择，下次再点「+」是一次全新的选择，不会把这几张又追加一遍
+                extraPhotoItems = []
+                isLoadingExtraPages = false
+                if failures > 0 {
+                    AppLogger.shared.warning("Scan", "extra_pages_partially_failed", metadata: ["failed": failures])
+                    photoLoadErrorMessage = String(localized: "有 \(failures) 张图片无法读取，未添加。")
+                    showingPhotoLoadError = true
+                }
+            }
+        }
+    }
+
+    /// 「保留原图」旁边显示的大小：上面那张 + 追加的几张。
+    /// 上面那张不是从相册选的（拍照、分享进来）就没有这份字节，这时只在有追加图时报追加那部分也不对，
+    /// 所以干脆不报。
+    private var sourceByteCount: Int? {
+        guard let main = pickedOriginalData?.count else { return nil }
+        return main + extraPages.reduce(0) { $0 + $1.data.count }
+    }
+
     private func handleExternalImageChange(_ newImage: UIImage?) {
         if let image = newImage {
             clearState()
@@ -435,6 +502,24 @@ struct ScanView: View {
         guard keepPatternSource else { return nil }
         if let pickedOriginalData { return pickedOriginalData }
         return PatternSourceStore.lossless(originalImage ?? thumbnailImage)
+    }
+
+    /// 建完项目后把原图存下来。有追加图纸时，先把它们和上面那张拼成一张再存。
+    ///
+    /// 拼图要解码好几张大图、再编一张大 PNG，放主线程上会卡住扫描页，所以放后台。
+    /// 这几秒内进拼图模式会先看到封面（跟没留原图时一样），不会出错。
+    /// 拼失败就退回只存上面那张，至少那一页的零件还能用。
+    private func savePatternSource(for projectId: UUID) {
+        guard let main = patternSourceData() else { return }
+        let extras = extraPages.map(\.data)
+        guard !extras.isEmpty else {
+            PatternSourceStore.save(main, for: projectId)
+            return
+        }
+        Task.detached(priority: .userInitiated) {
+            let stitched = PatternSourceStore.stitched([main] + extras)
+            PatternSourceStore.save(stitched ?? main, for: projectId)
+        }
     }
 
     // MARK: - 主 body 的子片段（拆分以减轻类型检查复杂度）
@@ -833,9 +918,7 @@ struct ScanView: View {
         inventoryManager.addProject(project) // addProject 内部已调用 saveData()
         // 封面存进去了再留原图，免得留下一个对不上任何项目的孤儿文件。
         // clearState() 会把图丢掉，所以必须在它之前。
-        if let source = patternSourceData() {
-            PatternSourceStore.save(source, for: project.id)
-        }
+        savePatternSource(for: project.id)
 
         clearState()
 
@@ -892,9 +975,7 @@ struct ScanView: View {
             colorSystem: scanColorSystem
         )
         inventoryManager.addPlannedProject(project)
-        if let source = patternSourceData() {
-            PatternSourceStore.save(source, for: project.id)
-        }
+        savePatternSource(for: project.id)
 
         // 清除结果
         clearState()
@@ -936,6 +1017,9 @@ struct ScanView: View {
         originalImage = nil
         thumbnailImage = nil
         pickedOriginalData = nil
+        // 追加的图纸是跟上面那张配套的，换了那张就一起清掉
+        extraPages = []
+        extraPhotoItems = []
         isImagePinned = false
         // 「留不留原图」是**这一张**的决定，不能带到下一张去 —— 上一张不留，
         // 不代表下一张也不留。回到设置里那个默认值。
@@ -1045,6 +1129,11 @@ struct ImageSelectionSection: View {
     /// 相册那份原始字节有多大。相机拍的、Share Extension 传进来的没有这份字节，就是 nil，
     /// 那时不写数字，免得报一个还没编码出来、多半不准的大小。
     var originalByteCount: Int?
+    /// 追加的图纸（见 ScanView.extraPages）
+    var extraPages: [ScanView.ExtraPatternPage] = []
+    @Binding var extraPhotoItems: [PhotosPickerItem]
+    var isLoadingExtraPages = false
+    var onRemoveExtraPage: (UUID) -> Void = { _ in }
     var hasRecognizedItems: Bool
     /// 「重新选择」。不能只把 `selectedImage` 置 nil —— 上一张图的封面和原始字节
     /// 还留在 ScanView 里，见 `ScanView.resetPickedImage()`。
@@ -1102,6 +1191,11 @@ struct ImageSelectionSection: View {
                 }
 
                 keepSourceRow
+
+                // 追加的图纸只拿来拼进原图，不留原图就没有用处，不显示
+                if keepPatternSource {
+                    extraPagesRow
+                }
             } else {
                 // 莫兰迪上传占位区域：虚线圆角 + mauve 图标块 + 三个动作按钮
                 emptyUploadZone
@@ -1140,6 +1234,68 @@ struct ImageSelectionSection: View {
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// 追加图纸。零件分在好几张图上时，把另外几张也放进来；AI 仍只识别上面那张。
+    private var extraPagesRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("追加图纸")
+                    .font(.caption)
+                Text("不参与识别")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(extraPages) { page in
+                        Image(uiImage: page.preview)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 64, height: 64)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(alignment: .topTrailing) {
+                                Button {
+                                    onRemoveExtraPage(page.id)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 18))
+                                        .symbolRenderingMode(.palette)
+                                        .foregroundStyle(.white, .black.opacity(0.55))
+                                        .padding(3)
+                                }
+                                .accessibilityLabel("移除")
+                            }
+                    }
+
+                    // `.current`：跟上面那张一样要原始字节，不让系统把 HEIC 转成 JPEG
+                    PhotosPicker(
+                        selection: $extraPhotoItems,
+                        maxSelectionCount: nil,
+                        matching: .images,
+                        preferredItemEncoding: .current,
+                        photoLibrary: .shared()
+                    ) {
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(Theme.ColorToken.Border.default,
+                                          style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                            .frame(width: 64, height: 64)
+                            .overlay {
+                                if isLoadingExtraPages {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 20, weight: .medium))
+                                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                                }
+                            }
+                    }
+                    .disabled(isLoadingExtraPages)
+                    .accessibilityLabel("追加图纸")
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder

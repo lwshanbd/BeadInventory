@@ -48,6 +48,7 @@
 
 import Foundation
 import UIKit
+import ImageIO
 
 enum PatternSourceStore {
 
@@ -207,5 +208,119 @@ enum PatternSourceStore {
             ])
             return false
         }
+    }
+}
+
+// MARK: - 多张图纸拼成一张
+
+extension PatternSourceStore {
+
+    /// 拼出来的那张图最多多少像素。多零件模式解码零件区的预算是 6000 万像素
+    /// （`PartsSheetFlowView.workPixelBudget`），超过它也会被那边等比缩回来；
+    /// 这里再留点余量，因为拼的时候画布和正在画的那一页同时在内存里。
+    private static let stitchedPixelBudget = 48_000_000
+
+    /// 把几张图纸从上到下拼成一张，存成这个项目的原图。
+    ///
+    /// ## 为什么是拼成一张，而不是让拼图模式认多张图
+    ///
+    /// 有的立体图纸零件太多，作者分成两三张图发。色号统计表只有一张，AI 识别那一步
+    /// 只看那张就够；可多零件模式、投影模式要的是**所有零件**。这两个模式从头到尾
+    /// 按「一个项目一张原图」写（零件坐标是相对整张图归一化的），拼成一张长图，
+    /// 它们一行都不用改就能看到所有零件。
+    ///
+    /// 拼的时候**不缩放单页**：多零件模式整张图只量一个格距（每个零件的格线位置
+    /// 各自对，格距是共用的）。同一个作者导出的几张图，格子一样大，原样拼就对得上。
+    /// 真要是几张图格子大小不一样（比如一张截图一张拍照），在这里猜比例缩放只会
+    /// 把本来对的那张也弄错，不如原样交给用户在「量格子」那一步看。
+    ///
+    /// 页与页之间留一道底色的空白，免得上一页底边和下一页顶边的零件贴在一起，
+    /// 被当成一个零件。
+    ///
+    /// 总像素超过预算时所有页**一起**等比缩小，相对大小不变。
+    ///
+    /// - Returns: 无损 PNG。只有一页时原样返回那一页的字节。任何一页解不出来就返回 nil，
+    ///   调用方退回只存第一页（缺一页总比整个项目没有原图强）。
+    static func stitched(_ pages: [Data]) -> Data? {
+        guard pages.count > 1 else { return pages.first }
+
+        let sizes = pages.map(orientedPixelSize(of:))
+        guard sizes.allSatisfy({ $0 != nil }) else {
+            AppLogger.shared.error("PatternSource", "stitch_unreadable_page", metadata: ["pages": pages.count])
+            return nil
+        }
+        let nativeSizes = sizes.compactMap { $0 }
+        let totalPixels = nativeSizes.reduce(0.0) { $0 + Double($1.width * $1.height) }
+        let scale = min(1, (Double(stitchedPixelBudget) / max(totalPixels, 1)).squareRoot())
+
+        let pageSizes = nativeSizes.map {
+            CGSize(width: max(1, ($0.width * scale).rounded()), height: max(1, ($0.height * scale).rounded()))
+        }
+        let canvasWidth = pageSizes.map(\.width).max() ?? 1
+        let gap = max(16, (canvasWidth * 0.02).rounded())
+        let canvasHeight = pageSizes.reduce(0) { $0 + $1.height } + gap * CGFloat(pageSizes.count - 1)
+
+        // 第一页左上角那个像素当底色：图纸的底几乎都是纯色，用它填空白和窄页右边
+        // 空出来的那块，多零件模式找零件时就不会把空白当成一块东西。
+        let background = pages.first.flatMap(cornerColor(of:)) ?? .white
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        var failed = false
+        let image = UIGraphicsImageRenderer(
+            size: CGSize(width: canvasWidth, height: canvasHeight), format: format
+        ).image { context in
+            background.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: canvasWidth, height: canvasHeight))
+            var y: CGFloat = 0
+            for (data, size) in zip(pages, pageSizes) {
+                // 一页一页解码、画完就放掉，内存里同时只有画布和一页
+                autoreleasepool {
+                    let maxPixel = Int(max(size.width, size.height))
+                    if let page = ImageDownsampler.downsampleToUIImage(data, maxPixelSize: maxPixel) {
+                        page.draw(in: CGRect(x: 0, y: y, width: size.width, height: size.height))
+                    } else {
+                        failed = true
+                    }
+                }
+                y += size.height + gap
+            }
+        }
+        guard !failed, let png = image.pngData() else {
+            AppLogger.shared.error("PatternSource", "stitch_failed", metadata: ["pages": pages.count])
+            return nil
+        }
+        AppLogger.shared.info("PatternSource", "stitched", metadata: [
+            "pages": pages.count,
+            "width": Int(canvasWidth), "height": Int(canvasHeight),
+            "bytes": png.count
+        ])
+        return png
+    }
+
+    /// 摆正之后的像素尺寸。`ImageDownsampler.pixelSize` 不管 EXIF 方向，
+    /// 竖着拍的照片会读成横的，拼的时候那一页就被压扁了。
+    private static func orientedPixelSize(of data: Data) -> CGSize? {
+        guard let size = ImageDownsampler.pixelSize(of: data) else { return nil }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let orientation = properties[kCGImagePropertyOrientation] as? UInt32,
+              (5...8).contains(orientation) else { return size }
+        return CGSize(width: size.height, height: size.width)
+    }
+
+    private static func cornerColor(of data: Data) -> UIColor? {
+        guard let small = ImageDownsampler.downsampleToUIImage(data, maxPixelSize: 64)?.cgImage,
+              let corner = small.cropping(to: CGRect(x: 0, y: 0, width: 1, height: 1)) else { return nil }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        guard let ctx = CGContext(
+            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.draw(corner, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return UIColor(red: CGFloat(pixel[0]) / 255, green: CGFloat(pixel[1]) / 255,
+                       blue: CGFloat(pixel[2]) / 255, alpha: 1)
     }
 }
