@@ -1,6 +1,56 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "追加图纸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More pages"
+          }
+        }
+      }
+    },
+    "不参与识别" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not recognized"
+          }
+        }
+      }
+    },
+    "有 %lld 张图片无法读取，未添加。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld image(s) couldn't be read and weren't added."
+          }
+        }
+      }
+    },
+    "图纸合并失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't combine pages"
+          }
+        }
+      }
+    },
+    "追加的图纸中有无法读取的图片。请移除后重试。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One of the added pages couldn't be read. Remove it and try again."
+          }
+        }
+      }
+    },
     "转 180°" : {
       "localizations" : {
         "en" : {
