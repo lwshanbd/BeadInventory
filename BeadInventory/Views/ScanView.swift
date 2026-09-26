@@ -73,9 +73,17 @@ struct ScanView: View {
     /// 「重新选择」时加 1。追加图纸读得慢（iCloud 上的要先下载），读完时主图可能已经换了，
     /// 代号对不上就把这批结果扔掉，免得挂到新主图下面。
     @State private var extraPagesGeneration = 0
-    /// 刚选进来、还没裁切的追加图纸，一张一张弹裁切框
+    /// 刚选进来、还没裁切的追加图纸，一张一张弹裁切框。
+    /// 放的是 `UIImage(data:)`，显示时才解码；裁完一张转成 PNG，这张全图就放掉了。
     @State private var extraCropQueue: [UIImage] = []
     @State private var croppingExtraPage: ExtraCropItem?
+    /// 裁切框从弹出到完全收起（`onDismiss`）都算在屏幕上。只在它收起之后才弹下一张，
+    /// 免得撞上收起动画弹不出来，队列就卡住了。
+    @State private var isExtraCropOnScreen = false
+    /// 裁好的那张还在存 PNG。存完才弹下一张：一张一张来，顺序不会乱，
+    /// 保存按钮也会一直禁用到整批处理完。
+    @State private var isEncodingExtraPage = false
+    /// 读不出或存不成的张数。裁切框开着时弹不出提示，攒到这一批裁完一起报。
     @State private var extraLoadFailures = 0
     /// 拼好的原图，连同拼的是哪几张追加图纸。建项目前拼好，建项目时直接存。
     @State private var stitchedSource: (pageIds: [UUID], data: Data)?
@@ -106,7 +114,7 @@ struct ScanView: View {
         var preferredBrandId: UUID? = nil
     }
 
-    /// 一张追加的图纸：裁好之后的无损 PNG 和一张小预览。不留全图的 UIImage，
+    /// 一张追加的图纸：裁好之后的无损 PNG 和一张小预览。裁完就不再留全图的 UIImage，
     /// 用户可能一次追加好几张大图。
     struct ExtraPatternPage: Identifiable {
         let id = UUID()
@@ -114,10 +122,11 @@ struct ScanView: View {
         let preview: UIImage
     }
 
-    /// 排队等裁切的那一张
+    /// 排队等裁切的那一张，带着排队时的代号（见 `extraPagesGeneration`）
     struct ExtraCropItem: Identifiable {
         let id = UUID()
         let image: UIImage
+        let generation: Int
     }
 
     var totalBeads: Int {
@@ -256,9 +265,12 @@ struct ScanView: View {
                     Color.black.onAppear { showingCropView = false }
                 }
             }
-            .fullScreenCover(item: $croppingExtraPage, onDismiss: showNextExtraCrop) { item in
+            .fullScreenCover(item: $croppingExtraPage, onDismiss: {
+                isExtraCropOnScreen = false
+                showNextExtraCrop()
+            }) { item in
                 ImageCropView(image: item.image) { cropped in
-                    addCroppedExtraPage(cropped)
+                    addCroppedExtraPage(cropped, generation: item.generation)
                 }
             }
             .fullScreenCover(isPresented: $showingThumbnailCrop) {
@@ -468,7 +480,7 @@ struct ScanView: View {
                 guard generation == extraPagesGeneration else { return }
                 // 清空选择，下次再点「+」是一次全新的选择，不会把这几张又追加一遍
                 extraPhotoItems = []
-                isLoadingExtraPages = false
+                // isLoadingExtraPages 留着，等这一批全部裁完（showNextExtraCrop）再复位
                 if failures > 0 {
                     AppLogger.shared.warning("Scan", "extra_pages_partially_failed", metadata: ["failed": failures])
                     // 裁切框开着时弹不出提示，等这一批裁完再说
@@ -480,11 +492,12 @@ struct ScanView: View {
         }
     }
 
-    /// 弹出队列里下一张的裁切框。裁切框关掉（裁好或取消）时再调一次，直到队列空。
-    /// 取消 = 这张不要了，直接跳过。
+    /// 弹出队列里下一张的裁切框。裁切框收起、或者上一张存完时都会调一次，
+    /// 两件事都结束了才真的往下走，直到队列空。取消 = 这张不要了，直接跳过。
     private func showNextExtraCrop() {
-        guard croppingExtraPage == nil else { return }
+        guard !isExtraCropOnScreen, !isEncodingExtraPage else { return }
         if extraCropQueue.isEmpty {
+            isLoadingExtraPages = false
             if extraLoadFailures > 0 {
                 photoLoadErrorMessage = String(localized: "有 \(extraLoadFailures) 张图片无法读取，未添加。")
                 showingPhotoLoadError = true
@@ -492,13 +505,18 @@ struct ScanView: View {
             }
             return
         }
-        croppingExtraPage = ExtraCropItem(image: extraCropQueue.removeFirst())
+        isExtraCropOnScreen = true
+        croppingExtraPage = ExtraCropItem(image: extraCropQueue.removeFirst(), generation: extraPagesGeneration)
     }
 
-    /// 裁好的一张加进追加图纸。存成无损 PNG：拼原图时要逐格看颜色，不能再压一道。
-    private func addCroppedExtraPage(_ cropped: UIImage) {
-        let generation = extraPagesGeneration
-        isLoadingExtraPages = true
+    /// 裁好的一张加进追加图纸。存成无损 PNG：拼出来的原图要给多零件模式逐格看颜色，
+    /// 这里不能再有损压一道。
+    ///
+    /// `generation` 是这张排进队列时的代号。裁到一半主图被换掉（比如从别处分享进来一张），
+    /// 这张就不要了。
+    private func addCroppedExtraPage(_ cropped: UIImage, generation: Int) {
+        guard generation == extraPagesGeneration else { return }
+        isEncodingExtraPage = true
         Task {
             let page = await Task.detached(priority: .userInitiated) { () -> ExtraPatternPage? in
                 guard let data = PatternSourceStore.lossless(cropped),
@@ -507,14 +525,14 @@ struct ScanView: View {
             }.value
             await MainActor.run {
                 guard generation == extraPagesGeneration else { return }
-                isLoadingExtraPages = false
+                isEncodingExtraPage = false
                 if let page {
                     extraPages.append(page)
                 } else {
                     AppLogger.shared.error("Scan", "extra_page_encode_failed", metadata: [:])
                     extraLoadFailures += 1
-                    showNextExtraCrop()
                 }
+                showNextExtraCrop()
             }
         }
     }
@@ -1117,6 +1135,9 @@ struct ScanView: View {
         isLoadingExtraPages = false
         extraCropQueue = []
         extraLoadFailures = 0
+        // 裁切框开着也关掉（从别处分享进一张图时会走到这里）。收起后 onDismiss 看到队列已空就停。
+        croppingExtraPage = nil
+        isEncodingExtraPage = false
         stitchedSource = nil
         isImagePinned = false
         // 「留不留原图」是**这一张**的决定，不能带到下一张去 —— 上一张不留，
@@ -1224,7 +1245,7 @@ struct ImageSelectionSection: View {
     @Binding var isPinned: Bool
     /// 这一张要不要留原图（见 ScanView 里同名 State 的注释）
     @Binding var keepPatternSource: Bool
-    /// 要留的原图大概多大：上面那张的原始字节，加上追加几张的。见 `ScanView.sourceByteCount`。
+    /// 要留的原图大概多大：上面那张的原始字节，加上追加几张裁好的 PNG。见 `ScanView.sourceByteCount`。
     /// 相机拍的、Share Extension 传进来的没有原始字节，就是 nil，那时不写数字。
     var originalByteCount: Int?
     /// 追加的图纸（见 ScanView.extraPages）
@@ -1366,7 +1387,8 @@ struct ImageSelectionSection: View {
                             }
                     }
 
-                    // `.current`：跟上面那张一样要原始字节，不让系统把 HEIC 转成 JPEG
+                    // `.current`：拿相册里原本的格式。`.automatic` 会先把 HEIC 有损转成 JPEG，
+                    // 后面裁完存成无损 PNG 也补不回来
                     PhotosPicker(
                         selection: $extraPhotoItems,
                         maxSelectionCount: nil,
