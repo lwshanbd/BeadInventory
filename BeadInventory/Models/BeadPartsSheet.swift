@@ -197,6 +197,15 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
     /// **Optional 是为了老数据**（理由同 `gridConfirmed`）。
     var copies: Int?
 
+    /// 这个零件在第几张图纸上（从 0 数）。`bounds`、`gridRect` 都是相对**那一张**图归一化的。
+    ///
+    /// 一个作品的零件可能分在好几张图上（识别时「追加图纸」）。每张图单独存、单独显示，
+    /// 从来不拼成一张：拼成长图的话用户对零件时看到的就是手机上一长条，根本没法看。
+    ///
+    /// **Optional 是为了老数据**：没有这个字段的都只有一张图，就是第 0 张。
+    /// 别的地方一律读 `pageIndex`，不要自己判 nil。
+    var page: Int?
+
     init(
         id: UUID = UUID(),
         customName: String? = nil,
@@ -208,7 +217,8 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
         cells: [[PartCellFill]] = [],
         gridConfirmed: Bool? = nil,
         isConnector: Bool? = nil,
-        copies: Int? = nil
+        copies: Int? = nil,
+        page: Int? = nil
     ) {
         self.id = id
         self.customName = customName
@@ -221,6 +231,7 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
         self.gridConfirmed = gridConfirmed
         self.isConnector = isConnector
         self.copies = copies
+        self.page = page
     }
 
     var hasCells: Bool { !cells.isEmpty }
@@ -233,6 +244,9 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
 
     /// 要拼几份。「一份」有 nil 和 1 两种存法，别的地方一律问这里，不要自己判 `copies`。
     var copyCount: Int { max(1, copies ?? 1) }
+
+    /// 在第几张图纸上。见 `page`。
+    var pageIndex: Int { page ?? 0 }
 
     /// 这个零件落在全局网格上的那块区域。全图共用一张网格，所以这里不带任何
     /// 「这个零件自己的」参数 —— 换个零件看，格线还是那批格线。
@@ -321,8 +335,15 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
     var colorSystem: ColorSystem
     var parts: [BeadPart]
     var palette: [PartsPaletteEntry]
-    /// 第 2 步的产物，第 1 步为 nil
+    /// 第 2 步的产物，第 1 步为 nil。第 0 张图纸的那份，别的几张见 `pageCalibrations`。
     var calibration: PartsGridCalibration?
+    /// 有好几张图纸时，每张各自的零件区和格子标定（下标就是第几张）。
+    ///
+    /// 必须一张一份：标定是相对那一张图归一化的，两张图大小不一样，同一个「一格占宽度的 2%」
+    /// 放到另一张上就不是一格了。第 0 张同时也写进 `roi` / `calibration`，老代码和老数据照旧能读。
+    /// nil = 只有一张。
+    var pageROIs: [CGRect]?
+    var pageCalibrations: [PartsGridCalibration?]?
     /// 任意色的格子扣到哪个色号上（自定义色号的色号，或者 mardCode）。
     /// 目前没有哪个界面会写它，恒为 nil，这时扣到 `PartsSheetUsage.anyColorCode` 上。
     var anyColorCode: String?

@@ -102,6 +102,9 @@ struct PartsCellSizeStepView: View {
     /// 「这块重判了一遍」；单图纸那边没有补判，作废等于整张图纸的颜色凭空消失，
     /// 他还得自己回上一步重判一次 —— 那是另一件事，不该顺手在这里做掉。
     var clearsColorsWhenGridMoves = false
+    /// 零件分在好几张图纸上时，这一屏一次只对一张（`parts` 只有这一张上的）。
+    /// 前面几张一共多少个零件：名字和「按编号跳转」照旧用整个零件清单的编号。
+    var orderOffset = 0
 
     /// 当前正在看哪个零件，顺序与零件清单一致。
     @State private var sampleIndex = 0
@@ -326,7 +329,7 @@ struct PartsCellSizeStepView: View {
             .disabled(jumpPartIndex == nil)
             Button("取消", role: .cancel) { }
         } message: {
-            Text("请输入 1–\(samples.count) 之间的零件编号")
+            Text("请输入 \(orderOffset + 1)–\(orderOffset + samples.count) 之间的零件编号")
         }
         // 工作图也算进 id：进来时先拿到的是低清兜底版，高清版在后台裁好之后才换上来。
         // 认零件的 **id** 而不是下标：删掉一个非末尾的零件时下标不变，后面那个顶上来 ——
@@ -609,7 +612,7 @@ struct PartsCellSizeStepView: View {
         VStack(spacing: Theme.Spacing.md) {
             if let sample {
                 HStack(spacing: Theme.Spacing.sm) {
-                    Text(subjectLabel ?? LocalizedStringKey(sample.displayName(order: sampleIndex)))
+                    Text(subjectLabel ?? LocalizedStringKey(sample.displayName(order: orderOffset + sampleIndex)))
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(Theme.ColorToken.Text.primary)
                     // 对过的打个勾。用户翻回来时要能一眼看出「这个我确认过了」——
@@ -841,8 +844,9 @@ struct PartsCellSizeStepView: View {
 
     private var jumpPartIndex: Int? {
         guard let number = Int(partNumberInput.trimmingCharacters(in: .whitespacesAndNewlines)),
-              (1...max(1, samples.count)).contains(number), !samples.isEmpty else { return nil }
-        return number - 1
+              ((orderOffset + 1)...(orderOffset + max(1, samples.count))).contains(number),
+              !samples.isEmpty else { return nil }
+        return number - 1 - orderOffset
     }
 
     /// 主按钮上写什么。三种情形三句话，说的都是**按下去会去哪儿**。

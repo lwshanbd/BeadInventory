@@ -121,10 +121,34 @@ enum PartsCellClassifier {
         anyColorHex: String? = nil,
         progress: ((Int, Int) -> Void)? = nil
     ) -> Result {
+        classify(pages: PartsPages(single: work), parts: parts, roi: roi,
+                 calibrations: [calibration], colorSystem: colorSystem,
+                 legendCodes: legendCodes, availableColors: availableColors,
+                 emptyHex: emptyHex, anyColorHex: anyColorHex, progress: progress)
+    }
+
+    /// 零件分在好几张图纸上时。所有零件**一起**聚类 —— 同一种豆子在哪张图上都得是同一个色号。
+    /// 每个零件从它自己那张图上取像素、按那张的标定切格（`BeadPart.page`）。
+    ///
+    /// - Parameters:
+    ///   - roi: 第 0 张的零件区。底色没指认时从这里猜。
+    ///   - calibrations: 每张一份，下标是第几张
+    static func classify(
+        pages: PartsPages,
+        parts: [BeadPart],
+        roi: CGRect,
+        calibrations: [PartsGridCalibration?],
+        colorSystem: ColorSystem,
+        legendCodes: [String],
+        availableColors: [BeadColor],
+        emptyHex: String? = nil,
+        anyColorHex: String? = nil,
+        progress: ((Int, Int) -> Void)? = nil
+    ) -> Result {
         // 底色：用户指认的优先，没指认才自己猜（从整个零件区取 ——
         // 不能从单个零件的框里取，那里面大半是零件自己）。
         let backgroundLab = emptyHex.flatMap { GridCellSampler.lab(forHex: $0) }
-            ?? PartsBitmap.make(from: work, roi: roi, maxPixels: 400_000)
+            ?? pages[0].flatMap { PartsBitmap.make(from: $0, roi: roi, maxPixels: 400_000) }
                 .map { PartsDetector.backgroundLab(of: $0) }
         // 任意色：只有用户指认了才有。它不是色号，猜不出来 —— 图纸上它就是一种普通的
         // 淡色，跟别的豆子长得一样，唯一的区别写在色号表那一行字里。
@@ -146,7 +170,8 @@ enum PartsCellClassifier {
             // 没定过的（用户跳过了那一屏）才退回全局标定。
             if let rect = part.gridRect, part.rows > 0, part.cols > 0 {
                 updated.gridRect = rect
-            } else {
+            } else if let calibration = calibrations.indices.contains(part.pageIndex)
+                        ? calibrations[part.pageIndex] : nil {
                 let grid = part.grid(for: calibration)
                 updated.gridRect = grid.rect
                 updated.rows = grid.rows
@@ -155,7 +180,7 @@ enum PartsCellClassifier {
             let grid = PartsGrid(rect: updated.gridRect ?? part.bounds,
                                  rows: updated.rows, cols: updated.cols)
 
-            let sampled = sampleCells(work: work, part: updated)
+            let sampled = pages.work(for: updated).flatMap { sampleCells(work: $0, part: updated) }
             if sampled == nil { unreadableParts += 1 }
             let labs = sampled
                 ?? [[LabColor?]](repeating: [LabColor?](repeating: nil, count: max(grid.cols, 0)),
@@ -286,6 +311,15 @@ enum PartsCellClassifier {
         parts: [BeadPart],
         progress: ((Int, Int) -> Void)? = nil
     ) -> [[[Int32]]] {
+        sampleModes(pages: PartsPages(single: work), parts: parts, progress: progress)
+    }
+
+    /// 同上，每个零件从它自己那张图纸上取（`BeadPart.page`）。那张没图就按「没量到」。
+    static func sampleModes(
+        pages: PartsPages,
+        parts: [BeadPart],
+        progress: ((Int, Int) -> Void)? = nil
+    ) -> [[[Int32]]] {
         var result: [[[Int32]]] = []
         result.reserveCapacity(parts.count)
         for (index, part) in parts.enumerated() {
@@ -295,7 +329,8 @@ enum PartsCellClassifier {
                 result.append(contentsOf: parts[index...].map { unmeasured(like: $0) })
                 break
             }
-            result.append(sampleModes(work: work, part: part) ?? unmeasured(like: part))
+            let modes = pages.work(for: part).flatMap { sampleModes(work: $0, part: part) }
+            result.append(modes ?? unmeasured(like: part))
             progress?(index + 1, parts.count)
         }
         return result

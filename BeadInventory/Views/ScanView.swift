@@ -65,8 +65,8 @@ struct ScanView: View {
     @State private var keepPatternSource = PatternSourceStore.keepsSourceByDefault
 
     /// 追加的图纸：零件分在好几张图上、色号统计表只在上面那张的情况。
-    /// AI 只识别上面那张；这几张建项目时跟它拼成一张存成原图，给多零件模式和投影模式用
-    /// （见 `PatternSourceStore.stitched`）。
+    /// AI 只识别上面那张；这几张建项目时各存一份原图（第 1、2… 张），多零件模式里一张一张看。
+    /// **不跟上面那张拼成一张**，见 `BeadPart.page`。
     @State private var extraPages: [ExtraPatternPage] = []
     @State private var extraPhotoItems: [PhotosPickerItem] = []
     @State private var isLoadingExtraPages = false
@@ -85,10 +85,6 @@ struct ScanView: View {
     @State private var isEncodingExtraPage = false
     /// 读不出或存不成的张数。裁切框开着时弹不出提示，攒到这一批裁完一起报。
     @State private var extraLoadFailures = 0
-    /// 拼好的原图，连同拼的是哪几张追加图纸。建项目前拼好，建项目时直接存。
-    @State private var stitchedSource: (pageIds: [UUID], data: Data)?
-    @State private var isStitching = false
-    @State private var showingStitchFailed = false
 
     // 图片固定功能
     @State private var isImagePinned = false         // 是否固定图片在顶部
@@ -181,7 +177,7 @@ struct ScanView: View {
                                     originalByteCount: sourceByteCount,
                                     extraPages: extraPages,
                                     extraPhotoItems: $extraPhotoItems,
-                                    isLoadingExtraPages: isLoadingExtraPages || isStitching,
+                                    isLoadingExtraPages: isLoadingExtraPages,
                                     onRemoveExtraPage: { id in
                                         extraPages.removeAll { $0.id == id }
                                     },
@@ -320,11 +316,6 @@ struct ScanView: View {
                 }
             } message: {
                 Text("将创建包含 \(totalBeads) 颗豆子（\(recognizedItems.count) 种颜色）的计划项目。执行时需要选择品牌。")
-            }
-            .alert("图纸合并失败", isPresented: $showingStitchFailed) {
-                Button("好", role: .cancel) { }
-            } message: {
-                Text("追加的图纸中有无法读取的图片。请移除后重试。")
             }
             .alert("图片加载失败", isPresented: $showingPhotoLoadError) {
                 Button("知道了", role: .cancel) {}
@@ -509,7 +500,7 @@ struct ScanView: View {
         croppingExtraPage = ExtraCropItem(image: extraCropQueue.removeFirst(), generation: extraPagesGeneration)
     }
 
-    /// 裁好的一张加进追加图纸。存成无损 PNG：拼出来的原图要给多零件模式逐格看颜色，
+    /// 裁好的一张加进追加图纸。存成无损 PNG：多零件模式要在这张上逐格看颜色，
     /// 这里不能再有损压一道。
     ///
     /// `generation` 是这张排进队列时的代号。裁到一半主图被换掉（比如从别处分享进来一张），
@@ -538,7 +529,6 @@ struct ScanView: View {
     }
 
     /// 「保留原图」旁边显示的大小：上面那张 + 追加的几张。
-    /// 有追加图时实际存的是拼好后重新编码的 PNG，大小会不一样，这里只是个估计。
     /// 上面那张不是从相册选的（拍照、分享进来）就没有这份字节，只报追加那部分也不对，所以干脆不报。
     private var sourceByteCount: Int? {
         guard let main = pickedOriginalData?.count else { return nil }
@@ -579,7 +569,7 @@ struct ScanView: View {
     /// 两张图取景不同不要紧：拼图模式一次会话里只认一张（有原图用原图、没有才退回封面，
     /// 见 `SinglePatternFlowView.load`）。单张模式还会把对格子时那张的尺寸记进
     /// `BeadPatternGrid.sourceImageSize`，下次进来宽高比对不上就作废网格；零件模式没有这道检查。
-    /// 有追加图纸时原图是拼出来的长图，跟封面必然不同，见 `preparePatternSource`。
+    /// 追加的图纸另外各存一份，封面只对应这一张，见 `savePatternSource`。
     ///
     /// 用户在上传那一屏把「留原图」关掉时返回 nil，一个字节都不写。
     ///
@@ -592,44 +582,12 @@ struct ScanView: View {
         return PatternSourceStore.lossless(originalImage ?? thumbnailImage)
     }
 
-    /// 有追加图纸时，先把它们和上面那张拼成一张原图，再往下走（弹建计划确认 / 进扣减复核）。
-    ///
-    /// 必须在建项目**之前**拼好。以前是建完项目再在后台拼：那几秒里进多零件模式会先拿封面
-    /// 框零件，长图落盘后坐标全错位；拼失败还只能悄悄退回第一张，追加的零件就这么丢了。
-    /// 现在拼失败就停在这一页告诉用户，状态都还在，移掉读不了的那张再试。
-    private func preparePatternSource(then proceed: @escaping () -> Void) {
-        let pageIds = extraPages.map(\.id)
-        guard !pageIds.isEmpty, stitchedSource?.pageIds != pageIds,
-              let main = patternSourceData() else {
-            proceed()
-            return
-        }
-        let pages = [main] + extraPages.map(\.data)
-        isStitching = true
-        Task {
-            let data = await Task.detached(priority: .userInitiated) {
-                PatternSourceStore.stitched(pages)
-            }.value
-            await MainActor.run {
-                isStitching = false
-                guard let data else {
-                    showingStitchFailed = true
-                    return
-                }
-                stitchedSource = (pageIds, data)
-                proceed()
-            }
-        }
-    }
-
-    /// 建完项目后把原图存下来。有追加图纸时存的是 `preparePatternSource` 拼好的那张。
+    /// 建完项目后把原图存下来：上面那张是第 0 张，追加的几张依次是第 1、2… 张，各存各的。
+    /// 不留原图（开关关掉）时追加的也不存 —— 它们只给多零件模式用，没有第 0 张就对不上号。
     private func savePatternSource(for projectId: UUID) {
         guard let main = patternSourceData() else { return }
-        if let stitchedSource, stitchedSource.pageIds == extraPages.map(\.id) {
-            PatternSourceStore.save(stitchedSource.data, for: projectId)
-        } else {
-            PatternSourceStore.save(main, for: projectId)
-        }
+        PatternSourceStore.save(main, for: projectId)
+        PatternSourceStore.saveExtraPages(extraPages.map(\.data), for: projectId)
     }
 
     // MARK: - 主 body 的子片段（拆分以减轻类型检查复杂度）
@@ -864,9 +822,9 @@ struct ScanView: View {
             ScanBottomCTABar(
                 totalBeads: totalBeads,
                 canDeduct: brandMatchesScanSystem,
-                isBusy: isStitching || isLoadingExtraPages,
-                onPlan: { preparePatternSource { showingCreatePlan = true } },
-                onDeduct: { preparePatternSource { prepareDeduction() } }
+                isBusy: isLoadingExtraPages,
+                onPlan: { showingCreatePlan = true },
+                onDeduct: { prepareDeduction() }
             )
         }
     }
@@ -878,11 +836,11 @@ struct ScanView: View {
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 Button {
-                    preparePatternSource { showingCreatePlan = true }
+                    showingCreatePlan = true
                 } label: {
                     Label("仅创建计划，不扣减", systemImage: "calendar.badge.plus")
                 }
-                .disabled(recognizedItems.isEmpty || isStitching || isLoadingExtraPages)
+                .disabled(recognizedItems.isEmpty || isLoadingExtraPages)
 
                 Divider()
 
@@ -1138,7 +1096,6 @@ struct ScanView: View {
         // 裁切框开着也关掉（从别处分享进一张图时会走到这里）。收起后 onDismiss 看到队列已空就停。
         croppingExtraPage = nil
         isEncodingExtraPage = false
-        stitchedSource = nil
         isImagePinned = false
         // 「留不留原图」是**这一张**的决定，不能带到下一张去 —— 上一张不留，
         // 不代表下一张也不留。回到设置里那个默认值。

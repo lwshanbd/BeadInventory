@@ -24,8 +24,10 @@
 import SwiftUI
 
 struct PartsListStepView: View {
-    let work: PartsWorkImage
-    let roi: CGRect
+    /// 每张图纸一份工作图，下标是第几张（见 `BeadPart.page`）
+    let pages: PartsPages
+    /// 每张图纸的零件区
+    let rois: [CGRect]
     @Binding var parts: [BeadPart]
     let onContinue: () -> Void
     /// 这张图纸对应的项目。只用来找它的原图副本（「拼好了」要删的就是那个）。
@@ -34,6 +36,8 @@ struct PartsListStepView: View {
     let onSourceLoaded: () -> Void
 
     @State private var selection: Set<UUID> = []
+    /// 上面那块图现在摆的是第几张图纸。一次只摆一张，不拼成长条。
+    @State private var page = 0
     @State private var thumbnails: [UUID: UIImage] = [:]
     @State private var roiImage: UIImage?
     @State private var roiImageRegion: CGRect = .zero
@@ -83,6 +87,9 @@ struct PartsListStepView: View {
                 sourceBytes = PatternSourceStore.byteSize(for: projectId)
                 onSourceLoaded()
             }
+            if pages.count > 1 {
+                PartsPagePicker(count: pages.count, selection: $page)
+            }
             preview
             Divider()
             partGrid
@@ -119,6 +126,13 @@ struct PartsListStepView: View {
         }
         // 换了选中就丢掉上一个零件没提交的预览，免得套到新零件头上。
         .onChange(of: selection) { _, _ in boxPreview = nil }
+        // 换了一张图就从整张看起。正在补的零件也收掉：那个框是要画在上一张上的。
+        .onChange(of: page) { _, _ in
+            zoom = 1; lastZoom = 1
+            pan = .zero; lastPan = .zero
+            addingPart = false
+            draftRect = nil
+        }
         .task { sourceBytes = PatternSourceStore.byteSize(for: projectId) }
         .alert("确认已完成拼装？", isPresented: $showingFinishedConfirm) {
             Button("拼好了，删掉原图", role: .destructive) {
@@ -131,11 +145,12 @@ struct PartsListStepView: View {
         }
         .task(id: partsSignature) {
             let snapshot = parts
+            let allPages = pages
             let source = work
             let region = roi
             let built = await Task.detached(priority: .userInitiated) {
-                (thumbs: PartsThumbnailMaker.make(for: snapshot, from: source),
-                 crop: PartsThumbnailMaker.cropExact(source, normalized: region))
+                (thumbs: PartsThumbnailMaker.make(for: snapshot, from: allPages),
+                 crop: source.flatMap { PartsThumbnailMaker.cropExact($0, normalized: region) })
             }.value
             thumbnails = built.thumbs
             roiImage = built.crop?.image
@@ -147,7 +162,30 @@ struct PartsListStepView: View {
     /// 工作图本身也算：用户中途补了张原图，图换成高清的了，小图得跟着重裁，
     /// 否则他选完原图看到的还是原来那些糊图，只会以为没生效。
     private var partsSignature: String {
-        "\(work.image.size)" + parts.map { "\($0.id.uuidString)\($0.bounds)" }.joined()
+        "\(page)|" + pages.images.map { "\($0?.image.size ?? .zero)" }.joined()
+            + parts.map { "\($0.id.uuidString)\($0.bounds)" }.joined()
+    }
+
+    /// 现在摆着的这一张的零件区和工作图
+    private var roi: CGRect {
+        rois.indices.contains(page) ? rois[page] : (rois.first ?? CGRect(x: 0, y: 0, width: 1, height: 1))
+    }
+
+    private var work: PartsWorkImage? { pages[page] }
+
+    /// 这张图纸的零件区（改框时夹在里面）
+    private func roi(of part: BeadPart) -> CGRect {
+        rois.indices.contains(part.pageIndex) ? rois[part.pageIndex] : roi
+    }
+
+    /// 零件清单的顺序：先按第几张，同一张里按行、行里从左到右。
+    /// 几张图纸各自的行号是接着排的（见 `PartsSheetFlowView.runDetection`），
+    /// 但补出来的零件取的是邻居的行号，所以还是得先按张分开。
+    static func ordered(_ parts: [BeadPart]) -> [BeadPart] {
+        parts.sorted {
+            if $0.pageIndex != $1.pageIndex { return $0.pageIndex < $1.pageIndex }
+            return $0.rowBand != $1.rowBand ? $0.rowBand < $1.rowBand : $0.bounds.minX < $1.bounds.minX
+        }
     }
 
     // MARK: - 上半：图上的框
@@ -176,7 +214,7 @@ struct PartsListStepView: View {
                         .frame(width: box.width, height: box.height)
                         .position(x: box.midX, y: box.midY)
                 }
-                PartsBoxOverlay(parts: parts, selection: selection, transform: transform,
+                PartsBoxOverlay(parts: parts, page: page, selection: selection, transform: transform,
                                 override: shownOverride)
 
                 if let draftRect {
@@ -194,11 +232,12 @@ struct PartsListStepView: View {
                 // 压在手势层之上，所以拖把手不会连带平移画布。
                 // 补零件时不出现：那会儿单指拖是画框，把手会抢走这个手势。
                 if !addingPart, selection.count == 1,
-                   let selected = parts.first(where: { selection.contains($0.id) }) {
+                   let selected = parts.first(where: { selection.contains($0.id) }),
+                   selected.pageIndex == page {
                     PartEditHandles(
                         bounds: selected.bounds,
                         shownBounds: shownOverride?.bounds ?? selected.bounds,
-                        roi: roi,
+                        roi: roi(of: selected),
                         transform: transform,
                         isPinching: pinchContentAnchor != nil,
                         preview: $boxPreview,
@@ -333,7 +372,7 @@ struct PartsListStepView: View {
     /// - Parameter n: 点在整张图纸上的归一化坐标（零件的 bounds 也是这套坐标）
     private func toggleHit(atNormalized n: CGPoint) {
         // 命中多个（框互相重叠）时取面积最小的那个 —— 用户点的多半是压在上面的小零件。
-        let hits = parts.filter { $0.bounds.contains(n) }
+        let hits = parts.filter { $0.pageIndex == page && $0.bounds.contains(n) }
         guard let hit = hits.min(by: { $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height })
         else { return }
         toggle(hit.id)
@@ -375,7 +414,11 @@ struct PartsListStepView: View {
                             isSelected: selection.contains(part.id)
                         )
                         .id(part.id)
-                        .onTapGesture { toggle(part.id) }
+                        .onTapGesture {
+                            toggle(part.id)
+                            // 点的是另一张图纸上的零件：上面那块图翻过去，框才看得见
+                            if part.pageIndex != page { page = part.pageIndex }
+                        }
                     }
                 }
                 .padding(Theme.Spacing.lg)
@@ -421,7 +464,8 @@ struct PartsListStepView: View {
                         Label("合并", systemImage: "square.on.square").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(selection.count < 2)
+                    .disabled(selection.count < 2
+                              || Set(parts.filter { selection.contains($0.id) }.map(\.pageIndex)).count > 1)
 
                     Button { splitSelected() } label: {
                         Label("拆分", systemImage: "square.split.2x1").frame(maxWidth: .infinity)
@@ -495,7 +539,8 @@ struct PartsListStepView: View {
     /// 用于算法把一个零件切成了两半（描边断了、或者中间镂空太大）的情况。
     private func mergeSelected() {
         let chosen = parts.filter { selection.contains($0.id) }
-        guard chosen.count >= 2 else { return }
+        // 不同图纸上的两块合不成一块：坐标都不是同一张图的
+        guard chosen.count >= 2, Set(chosen.map(\.pageIndex)).count == 1 else { return }
         let union = chosen.dropFirst().reduce(chosen[0].bounds) { $0.union($1.bounds) }
         var merged = chosen[0]
         merged.bounds = union
@@ -515,9 +560,7 @@ struct PartsListStepView: View {
 
         var remaining = parts.filter { !selection.contains($0.id) }
         remaining.append(merged)
-        parts = remaining.sorted {
-            $0.rowBand != $1.rowBand ? $0.rowBand < $1.rowBand : $0.bounds.minX < $1.bounds.minX
-        }
+        parts = Self.ordered(remaining)
         selection = [merged.id]
     }
 
@@ -538,7 +581,9 @@ struct PartsListStepView: View {
         // 这里只挡退化矩形；「是不是误触」由调用方按屏幕位移判断。
         guard inImage.width > 0, inImage.height > 0 else { return }
 
-        let newPart = BeadPart(rowBand: rowBand(forMidY: inImage.midY), bounds: inImage)
+        guard let work else { return }
+        let newPart = BeadPart(rowBand: rowBand(forMidY: inImage.midY), bounds: inImage,
+                               page: page == 0 ? nil : page)
         insertSorted(newPart)
         // 画完**选中它**，边把手立刻出现。手指拖出来的框很少一次到位，
         // 下一步几乎总是微调这一个；早先画完不选中，是因为那时选中只能删除 / 合并，
@@ -610,7 +655,9 @@ struct PartsListStepView: View {
     /// 新零件归到哪一行：取竖直方向上离它最近的那个已有零件的行号。
     /// 补进来的零件多半就在某一行里漏掉的那个位置，跟着邻居走比重新聚类稳。
     private func rowBand(forMidY midY: CGFloat) -> Int {
-        guard let nearest = parts.min(by: {
+        // 只跟同一张图纸上的比：别的张的纵坐标跟这张不是一回事
+        let samePage = parts.filter { $0.pageIndex == page }
+        guard let nearest = samePage.min(by: {
             abs($0.bounds.midY - midY) < abs($1.bounds.midY - midY)
         }) else { return 0 }
         return nearest.rowBand
@@ -619,9 +666,7 @@ struct PartsListStepView: View {
     private func insertSorted(_ part: BeadPart) {
         var next = parts
         next.append(part)
-        parts = next.sorted {
-            $0.rowBand != $1.rowBand ? $0.rowBand < $1.rowBand : $0.bounds.minX < $1.bounds.minX
-        }
+        parts = Self.ordered(next)
     }
 
     /// 拆开 = 只在这一个框里重跑一次检测，并且**关掉闭运算** ——
@@ -631,7 +676,8 @@ struct PartsListStepView: View {
     /// 贴着零件边缘去取，取到的全是描边的黑色，整块就会被判成背景。
     private func splitSelected() {
         guard selection.count == 1, let id = selection.first,
-              let target = parts.first(where: { $0.id == id }) else { return }
+              let target = parts.first(where: { $0.id == id }),
+              let work = pages.work(for: target) else { return }
         let padded = target.bounds
             .insetBy(dx: -target.bounds.width * 0.12, dy: -target.bounds.height * 0.12)
             .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
@@ -664,14 +710,12 @@ struct PartsListStepView: View {
                 // 两块都还是插件。不带的话用户得回「量格子」逐块重标，而他记得自己标过。
                 let replacements = mine.map {
                     BeadPart(rowBand: target.rowBand, bounds: $0.bounds,
-                             isConnector: target.isConnector)
+                             isConnector: target.isConnector, page: target.page)
                 }
                 var next = parts
                 next.remove(at: index)
                 next.append(contentsOf: replacements)
-                parts = next.sorted {
-                    $0.rowBand != $1.rowBand ? $0.rowBand < $1.rowBand : $0.bounds.minX < $1.bounds.minX
-                }
+                parts = Self.ordered(next)
                 // 拆完不选中拆出来的那几个（跟 addPart 相反，那边选中是为了接着微调）：拆开是为了「这两块本来就是两个」，
                 // 不是为了接着对它们动手，而多选着好几个反而挡住了看拆得对不对。
                 selection.removeAll()
@@ -739,6 +783,8 @@ private struct PendingBoundsChange: Equatable {
 
 private struct PartsBoxOverlay: View {
     let parts: [BeadPart]
+    /// 只画这一张图纸上的零件。序号照旧按整个清单数，跟下面的缩略图对得上。
+    let page: Int
     let selection: Set<UUID>
     /// 归一化坐标 → 真实屏幕点。整层不再走 scaleEffect，所以线宽、字号都是
     /// **屏幕上的实际大小**，不用再除以缩放。
@@ -748,7 +794,7 @@ private struct PartsBoxOverlay: View {
 
     var body: some View {
         Canvas { context, _ in
-            for (index, part) in parts.enumerated() {
+            for (index, part) in parts.enumerated() where part.pageIndex == page {
                 let bounds = override?.partId == part.id ? override!.bounds : part.bounds
                 let r = transform.screenRect(bounds)
                 // 选中的框换个颜色，不是加粗。图纸底色是浅粉、豆子里又有大片白，
@@ -1086,9 +1132,11 @@ extension CGRect {
 
 enum PartsThumbnailMaker {
     /// 按零件 bbox 从整图上裁小图。四周留 6% 余量，免得描边紧贴缩略图边缘看不清。
-    static func make(for parts: [BeadPart], from work: PartsWorkImage) -> [UUID: UIImage] {
+    /// 每个零件从它自己那张图纸上裁（见 `BeadPart.page`）。
+    static func make(for parts: [BeadPart], from pages: PartsPages) -> [UUID: UIImage] {
         var result: [UUID: UIImage] = [:]
         for part in parts {
+            guard let work = pages.work(for: part) else { continue }
             let padded = part.bounds.insetBy(dx: -part.bounds.width * 0.06,
                                              dy: -part.bounds.height * 0.06)
             if let cropped = crop(work, normalized: padded) {

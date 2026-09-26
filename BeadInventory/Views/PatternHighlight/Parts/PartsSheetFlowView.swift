@@ -37,24 +37,48 @@ struct PartsSheetFlowView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
-    /// 整张图纸那一版，给第一屏「圈零件区」用。
-    @State private var overview: UIImage?
+    /// 整张图纸那一版，给第一屏「圈零件区」用。一张图纸一份，下标是第几张（见 `BeadPart.page`）。
+    ///
+    /// 零件分在好几张图纸上时（识别时「追加图纸」），每张各看各的，**从来不拼成一张** ——
+    /// 拼成长图的话，用户在手机上框零件、对零件时看到的就是一长条。
+    @State private var overviews: [UIImage?] = []
+    /// 第 0 张。只有一张图纸时就是它。
+    private var overview: UIImage? { overviews.first ?? nil }
+    /// 一共几张图纸
+    private var pageCount: Int { max(1, overviews.count) }
+    /// 圈零件区、量格子、底色这三屏各自停在第几张
+    @State private var regionPage = 0
+    @State private var cellSizePage = 0
+    @State private var baseColorPage = 0
     /// 有字节但解不出图。跟「这个项目本来就没有图」是两回事，说法也不一样。
     @State private var imageUnreadable = false
     /// 零件区的高清版。圈完区之后现裁，后面所有步骤（找零件 / 量格子 / 判色 / 抠格子）都用它。
     ///
     /// 单独裁一版而不是直接用整图那份：零件区往往只占整张图的一半，把预算全花在真正要看的
     /// 那块上，一格豆子的像素能翻好几倍 —— 而量格子、判色、核对色号看的全是这一块。
-    @State private var work: PartsWorkImage?
+    ///
+    /// 一张图纸一份，下标是第几张。
+    @State private var works: [PartsWorkImage?] = []
+    private var pages: PartsPages { PartsPages(works) }
+    /// 第 0 张的工作图
+    private var work: PartsWorkImage? { works.first ?? nil }
     @State private var didLoadOnce = false
 
     @State private var path: [Step] = []
 
-    /// 零件区（归一化）。首次进来给一个「中间大半张」的初值，比从 0.1~0.9 开始少拖几下。
-    @State private var roi = CGRect(x: 0.05, y: 0.18, width: 0.90, height: 0.52)
+    /// 零件区（归一化），一张图纸一个。第 0 张首次进来给一个「中间大半张」的初值，
+    /// 比从 0.1~0.9 开始少拖几下；追加的那几张在识别时已经裁到只剩零件了，默认整张。
+    @State private var rois: [CGRect] = [Self.defaultROI]
+    private static let defaultROI = CGRect(x: 0.05, y: 0.18, width: 0.90, height: 0.52)
+    private static let wholeROI = CGRect(x: 0, y: 0, width: 1, height: 1)
+    /// 第 0 张的零件区
+    private var roi: CGRect { rois.first ?? Self.defaultROI }
     @State private var parts: [BeadPart] = []
     @State private var palette: [PartsPaletteEntry] = []
-    @State private var calibration: PartsGridCalibration?
+    /// 格子标定，一张图纸一份（标定是相对那张图归一化的，见 `BeadPartsSheet.pageCalibrations`）
+    @State private var calibrations: [PartsGridCalibration?] = [nil]
+    /// 第 0 张的标定
+    private var calibration: PartsGridCalibration? { calibrations.first ?? nil }
     @State private var anyColorCode: String?
     /// 用户在图上指认的底色和任意色（`RRGGBB`）。判色前必须知道这两样，
     /// 否则它们会被硬套到最近的色号上（见 PartsBaseColorStepView 的头注释）。
@@ -94,8 +118,8 @@ struct PartsSheetFlowView: View {
     /// alert 的 `isPresented`，于是「重新做一遍」那个按钮体是空的 `{}` —— 解锁靠的是
     /// 关闭 alert 的副作用，一旦弹窗改成别的形式它就真成了空按钮。
     @State private var overwriteBlocked = false
-    /// 现在这批零件是按哪块零件区找出来的。用来判断「用户是不是只是退回来看看」。
-    @State private var detectedROI: CGRect?
+    /// 现在这批零件是按哪几块零件区找出来的。用来判断「用户是不是只是退回来看看」。
+    @State private var detectedROIs: [CGRect]?
     /// 工作图换过几次源。补完原图会 +1，让「零件区没变就不用重找」那条判断知道
     /// 底下的图其实换了 —— 否则用户刚补完原图想重新识别，会被直接送去零件清单。
     @State private var sourceGeneration = 0
@@ -165,11 +189,13 @@ struct PartsSheetFlowView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let overview {
                     PartsRegionStepView(
-                        image: overview,
-                        roi: tracked($roi),
+                        image: pageOverview(regionPage) ?? overview,
+                        roi: tracked(roiBinding(page: regionPage)),
                         onContinue: { startDetection() },
                         projectId: project.id,
-                        onSourceLoaded: { Task { await reloadFromSource() } }
+                        onSourceLoaded: { Task { await reloadFromSource() } },
+                        pageCount: pageCount,
+                        page: $regionPage
                     )
                 } else if imageUnreadable {
                     // 「读不出来」不等于「没有」—— 这跟 partsSheet 那边 `.unreadable` /
@@ -210,7 +236,7 @@ struct PartsSheetFlowView: View {
                             parts: tracked($parts),
                             // 给它图不等于要求它有图：拿到了就能点开零件跟图纸原图对一眼，
                             // 没拿到（裁失败）这一屏照常摆板子。
-                            work: work,
+                            pages: pages,
                             boards: tracked($boards),
                             boardSpacing: tracked($boardSpacing),
                             colorSystem: project.colorSystem,
@@ -219,12 +245,12 @@ struct PartsSheetFlowView: View {
                             onFinish: { save() }
                         )
                         .environmentObject(inventoryManager)
-                    } else if let work {
+                    } else if work != nil {
                         switch step {
                         case .list:
                             PartsListStepView(
-                                work: work,
-                                roi: roi,
+                                pages: pages,
+                                rois: rois,
                                 parts: tracked($parts),
                                 onContinue: {
                                     persist()
@@ -237,23 +263,12 @@ struct PartsSheetFlowView: View {
                             // 单拎出去，不是为了好看：这几个参数一多，整个
                             // `navigationDestination` 的闭包就超出类型检查器的耐心
                             //（"unable to type-check this expression in reasonable time"）。
-                            cellSizeStep(work: work)
+                            cellSizeStep()
                         case .baseColor:
-                            PartsBaseColorStepView(
-                                work: work,
-                                roi: roi,
-                                calibration: calibration,
-                                emptyHex: tracked($emptyHex),
-                                anyColorHex: tracked($anyColorHex),
-                                onContinue: { requestClassification() },
-                                // 非 nil 就是「判过色了」。原样回去，一格都不重算。
-                                onKeepExisting: hasClassified
-                                    ? { path = [.list, .cellSize, .baseColor, .review] }
-                                    : nil
-                            )
+                            baseColorStep()
                         case .review:
                             PartsColorReviewStepView(
-                                work: work,
+                                pages: pages,
                                 parts: tracked($parts),
                                 colorSystem: project.colorSystem,
                                 legendCounts: legendCounts,
@@ -265,6 +280,10 @@ struct PartsSheetFlowView: View {
                                 onRegridPart: { id in
                                     persist()
                                     regridTarget = id
+                                    // 量格子一次只对一张，得先翻到这一块所在的那张
+                                    if let part = parts.first(where: { $0.id == id }) {
+                                        cellSizePage = part.pageIndex
+                                    }
                                     path = [.list, .cellSize]
                                 },
                                 onGroupRecolored: { from, to in recolorPalette(from: from, to: to) }
@@ -382,20 +401,34 @@ struct PartsSheetFlowView: View {
         var data = await Task.detached(priority: .userInitiated) { PatternSourceStore.data(for: id) }.value
         if data == nil { data = await loader?.thumbnail(for: id) }
         let bytes = data
-        let low = await Task.detached(priority: .userInitiated) {
-            bytes.flatMap { ImageDownsampler.downsampleToUIImage($0, maxPixelSize: Self.decodeMaxPixel(for: $0, budget: Self.overviewPixelBudget)) }
+        // 追加的那几张（第 1 张起）。它们没有压缩图可退，没有原图就是没有。
+        let extras = await Task.detached(priority: .userInitiated) { () -> [Data?] in
+            let count = PatternSourceStore.pageCount(for: id)
+            return count > 1 ? (1..<count).map { PatternSourceStore.data(for: id, page: $0) } : []
         }.value
+        let budget = Self.overviewBudget(pageCount: 1 + extras.count)
+        let lows = await Task.detached(priority: .userInitiated) { () -> [UIImage?] in
+            ([bytes] + extras).map { page in
+                page.flatMap { ImageDownsampler.downsampleToUIImage($0, maxPixelSize: Self.decodeMaxPixel(for: $0, budget: budget)) }
+            }
+        }.value
+        let low = lows.first ?? nil
         // `?? .unreadable` 而不是 `.missing`：loader 为 nil 意味着连 modelContext 都没有，
         // 那是「我根本没法读你的数据」—— 最不该被当成「这个项目本来就没做过」的情况。
         let loaded = await loader?.partsSheet(for: id) ?? .unreadable
         guard !Task.isCancelled else { return }
 
-        self.overview = low
+        self.overviews = lows
         self.imageUnreadable = (bytes != nil && low == nil)
         // 先拿整张图那一版兜底，保证后面每一屏立刻有图可用。
         // 高清版是「更好」，不是「必需」—— 早先把它做成必需，一旦裁失败或者还没裁完，
         // 用户面对的就是一个永远转不完的 spinner，没有任何出路。
-        if let low { self.work = .whole(low) }
+        self.works = lows.map { $0.map(PartsWorkImage.whole) }
+        let count = lows.count
+        self.rois = [Self.defaultROI] + Array(repeating: Self.wholeROI, count: max(0, count - 1))
+        self.calibrations = Array(repeating: nil, count: count)
+        self.highResRegions = Array(repeating: nil, count: count)
+        self.highResGenerations = Array(repeating: -1, count: count)
 
         switch loaded {
         case .unreadable:
@@ -407,15 +440,16 @@ struct PartsSheetFlowView: View {
             // 第一次进来，计划里的用量还是 AI 读的那份，趁没被换掉先留下来。
             self.legendUsage = project.beadUsage
         case .loaded(let saved):
-            self.roi = saved.roi
+            // 按现在有几张补齐 / 截断：原图可能在上次之后被删过几张
+            self.rois = Self.fitted(saved.pageROIs ?? [saved.roi], count: count, filler: Self.wholeROI)
             self.parts = saved.parts
             self.palette = saved.palette
-            self.calibration = saved.calibration
+            self.calibrations = Self.fitted(saved.pageCalibrations ?? [saved.calibration], count: count, filler: nil)
             self.anyColorCode = saved.anyColorCode
             self.detectedGeneration = sourceGeneration
             self.emptyHex = saved.emptyHex
             self.anyColorHex = saved.anyColorHex
-            self.detectedROI = saved.roi
+            self.detectedROIs = self.rois
 
             // 剔掉指向已经不存在的零件的摆位。早先「重新找零件」只清标定不清板子，
             // 存量数据里可能留着一板子孤儿：板上画不出任何东西，又因为 boards 非空
@@ -519,6 +553,18 @@ struct PartsSheetFlowView: View {
     /// 看到的就是一张放大过的低清图 —— 而他刚刚才特地保留了原图。
     private static let overviewPixelBudget = 12_000_000
 
+    /// 好几张图纸时每张分一份：整张那一版是**常驻**的，三张各给 1200 万像素就是一百四十多 MB。
+    /// 圈零件区一次只摆一张，分到的也还是铺满画布的好几倍。
+    private static func overviewBudget(pageCount: Int) -> Int {
+        max(4_000_000, overviewPixelBudget / max(1, pageCount))
+    }
+
+    /// 存下来的「每张一份」按现在有几张补齐或截断
+    private static func fitted<T>(_ values: [T], count: Int, filler: T) -> [T] {
+        let head = Array(values.prefix(count))
+        return head + Array(repeating: filler, count: max(0, count - head.count))
+    }
+
     /// 零件区那一版的像素预算。**这一版决定用户能不能看清一颗豆子**：量格子、判色、
     /// 核对色号全靠它，放大之后一格有多少像素就是这里定的。
     ///
@@ -539,10 +585,10 @@ struct PartsSheetFlowView: View {
 
     /// 已经裁到高清版的那块区域。用来判断「要不要重裁」，
     /// 不能拿 `work.region` 判 —— 兜底那版的 region 是整张图，会被误认成没裁过。
-    @State private var highResRegion: CGRect?
+    @State private var highResRegions: [CGRect?] = []
     /// 现在这份高清版是拿第几代源裁的。跟 `highResRegion` 一起比，缺一不可 ——
     /// 用户补了原图之后区域没变但源变了，只比区域会以为「已经是最新的了」。
-    @State private var highResGeneration = -1
+    @State private var highResGenerations: [Int] = []
     /// 正在进行的那次高清升级。存着它是为了让别人**等得到**它，见 `prepareWorkImage`。
     @State private var upgradeTask: Task<Void, Never>?
 
@@ -554,10 +600,11 @@ struct PartsSheetFlowView: View {
         guard let data = await Task.detached(priority: .userInitiated, operation: {
             PatternSourceStore.data(for: id)
         }).value else { return }
+        let budget = Self.overviewBudget(pageCount: pageCount)
         if let low = await Task.detached(priority: .userInitiated, operation: {
-            ImageDownsampler.downsampleToUIImage(data, maxPixelSize: Self.decodeMaxPixel(for: data, budget: Self.overviewPixelBudget))
-        }).value {
-            overview = low
+            ImageDownsampler.downsampleToUIImage(data, maxPixelSize: Self.decodeMaxPixel(for: data, budget: budget))
+        }).value, !overviews.isEmpty {
+            overviews[0] = low
         }
         // 换源用「代」来记，**不能靠清空 highResRegion**：清空之后
         // `prepareWorkImage` 第一句会去等已经在跑的那次升级，而那次跑完又会把
@@ -576,10 +623,20 @@ struct PartsSheetFlowView: View {
     private func prepareWorkImage() async {
         // 判断必须放在等待**之后**：等待期间那次升级会改 highResRegion / Generation。
         if let running = upgradeTask { await running.value }
-        guard highResRegion != roi || highResGeneration != sourceGeneration else { return }
-        let region = roi
+        // 哪几张的高清版不是当前零件区、当前这一代的
+        let stale = rois.indices.filter { page in
+            highResRegions.indices.contains(page) && highResGenerations.indices.contains(page)
+                && (highResRegions[page] != rois[page] || highResGenerations[page] != sourceGeneration)
+        }
+        guard !stale.isEmpty else { return }
+        let regions = rois
         let generation = sourceGeneration
-        let task = Task { await upgradeWorkImage(region: region, generation: generation) }
+        let task = Task {
+            // 一张一张来：每张解码的峰值是好几百 MB，并发的话会叠在一起
+            for page in stale {
+                await upgradeWorkImage(page: page, region: regions[page], generation: generation)
+            }
+        }
         upgradeTask = task
         await task.value
         if upgradeTask == task { upgradeTask = nil }
@@ -587,12 +644,13 @@ struct PartsSheetFlowView: View {
 
     /// 从原图裁出零件区那一版（零件区只占整张图一小块，同样的像素预算全花在这儿），
     /// 换掉兜底的整图版。失败就什么都不做 —— 兜底那版还在，流程照样往下走。
-    private func upgradeWorkImage(region: CGRect, generation: Int) async {
+    private func upgradeWorkImage(page: Int, region: CGRect, generation: Int) async {
         let id = project.id
         let loader = inventoryManager.imageLoader
         // 读盘放后台：原图是几十 MB 的文件，`Data(contentsOf:)` 在主线程上会卡住界面。
-        var source = await Task.detached(priority: .userInitiated) { PatternSourceStore.data(for: id) }.value
-        if source == nil { source = await loader?.thumbnail(for: id) }
+        var source = await Task.detached(priority: .userInitiated) { PatternSourceStore.data(for: id, page: page) }.value
+        // 只有第 0 张有压缩图可退（封面就是它）
+        if source == nil, page == 0 { source = await loader?.thumbnail(for: id) }
         guard let data = source else { return }
         let built = await Task.detached(priority: .userInitiated) { () -> PartsWorkImage? in
             // 实测这一整段（取字节 + 解码 + 裁切）只要 0.10s，所以它从来不是「慢」的来源；
@@ -618,13 +676,14 @@ struct PartsSheetFlowView: View {
         }.value
         guard let built else {
             AppLogger.shared.warning("PartsSheet", "work_image_upgrade_failed", metadata: [
-                "projectId": id.uuidString
+                "projectId": id.uuidString, "page": page
             ])
             return
         }
-        self.work = built
-        self.highResRegion = region
-        self.highResGeneration = generation
+        guard works.indices.contains(page) else { return }
+        self.works[page] = built
+        self.highResRegions[page] = region
+        self.highResGenerations[page] = generation
     }
 
     // MARK: - 拆零件
@@ -640,7 +699,7 @@ struct PartsSheetFlowView: View {
         // 「图还是同一张」这条不能漏：用户在这一屏的提示条里补了张原图，正是想在清晰的图上
         // 重新识别一次，这时候把他直接推去零件清单，他手里还是低清图上找出来的零件，
         // 而唯一的出路是把框挪一个像素 —— 没人猜得到。
-        if !parts.isEmpty, detectedROI == roi, detectedGeneration == sourceGeneration {
+        if !parts.isEmpty, detectedROIs == rois, detectedGeneration == sourceGeneration {
             path = [.list]
             return
         }
@@ -659,12 +718,13 @@ struct PartsSheetFlowView: View {
     /// 结果不对，用户在清单页直接改图上的框（删 / 补 / 合并 / 拆开）；
     /// 要是连零件区都圈错了，返回上一屏挪一下框再点一次就是重来。
     private func runDetection() {
-        let currentROI = roi
+        let currentROIs = rois
         busy = "正在识别零件…"
 
         Task {
             await prepareWorkImage()
-            guard let source = work else {
+            let source = pages
+            guard work != nil else {
                 busy = nil
                 AppLogger.shared.error("PartsSheet", "detect_without_work_image", metadata: [
                     "projectId": project.id.uuidString
@@ -672,8 +732,20 @@ struct PartsSheetFlowView: View {
                 return
             }
             let generation = sourceGeneration
-            let detected = await Task.detached(priority: .userInitiated) {
-                PartsDetector.detect(in: source, roi: currentROI, options: PartsDetectionOptions())
+            // 一张一张找，各在各的零件区里。行号接着往下排，零件清单的顺序就是第 0 张、第 1 张……
+            let detected = await Task.detached(priority: .userInitiated) { () -> [BeadPart] in
+                var all: [BeadPart] = []
+                var bandOffset = 0
+                for page in 0..<source.count {
+                    guard let work = source[page], currentROIs.indices.contains(page) else { continue }
+                    let found = PartsDetector.detect(in: work, roi: currentROIs[page], options: PartsDetectionOptions())
+                    all += found.map {
+                        BeadPart(rowBand: $0.rowBand + bandOffset, bounds: $0.bounds,
+                                 page: page == 0 ? nil : page)
+                    }
+                    bandOffset += (found.map(\.rowBand).max() ?? -1) + 1
+                }
+                return all
             }.value
             // 一个零件都没找到就**别写回去**。框拖到空白边距上是很容易的事，
             // 而写回去等于把库里那份（可能是几天的活）换成一张空清单，用户面对的是
@@ -685,20 +757,21 @@ struct PartsSheetFlowView: View {
                 // 但检测器自己退化时也是这个现象，留个带范围的日志才分得清。
                 AppLogger.shared.info("PartsSheet", "detect_found_nothing", metadata: [
                     "projectId": project.id.uuidString,
-                    "roi": "\(currentROI)"
+                    "rois": "\(currentROIs)"
                 ])
                 return
             }
-            self.parts = detected.map { BeadPart(rowBand: $0.rowBand, bounds: $0.bounds) }
+            self.parts = detected
             lastGridPartId = nil
             // 换了零件区就等于换了一张图纸，之前量的格子、判的色、摆好的板子全部作废。
             // 板子必须一起清：placement 指的是旧零件的 id，留着就是一板子孤儿 ——
             // 板上画不出东西，又因为 boards 非空进不了自动排版，那一屏成了死胡同。
-            self.calibration = nil
+            self.calibrations = Array(repeating: nil, count: currentROIs.count)
+            self.cellSizePage = 0
             self.boards = []
             self.boardSpacing = nil
             self.palette = []
-            self.detectedROI = currentROI
+            self.detectedROIs = currentROIs
             self.detectedGeneration = generation
             self.busy = nil
             self.dirty = true
@@ -723,7 +796,9 @@ struct PartsSheetFlowView: View {
     /// 他只会认为东西已经没了、只是界面没刷新，比这次要修的死按钮还难受。
     /// 没有标定就直接送回量格子，那一屏的标题本身就是说法。
     private func requestClassification() {
-        guard calibration?.isUsable == true else {
+        // 每张有零件的图纸都得量过格子。哪张没量，就送回量格子并翻到那一张
+        if let missing = pagesMissingCalibration.first {
+            cellSizePage = missing
             path = [.list, .cellSize]
             return
         }
@@ -734,8 +809,18 @@ struct PartsSheetFlowView: View {
         runClassification()
     }
 
+    /// 有零件、却还没量过格子的那几张
+    private var pagesMissingCalibration: [Int] {
+        (0..<pageCount).filter { page in
+            parts.contains(where: { $0.pageIndex == page })
+                && !(calibrations.indices.contains(page) && calibrations[page]?.isUsable == true)
+        }
+    }
+
     private func runClassification() {
-        guard let work, let calibration else { return }
+        guard work != nil else { return }
+        let source = pages
+        let currentCalibrations = calibrations
         let snapshot = parts
         let currentROI = roi
         let colorSystem = project.colorSystem
@@ -747,10 +832,10 @@ struct PartsSheetFlowView: View {
 
         Task.detached(priority: .userInitiated) {
             let result = PartsCellClassifier.classify(
-                work: work,
+                pages: source,
                 parts: snapshot,
                 roi: currentROI,
-                calibration: calibration,
+                calibrations: currentCalibrations,
                 colorSystem: colorSystem,
                 legendCodes: legend,
                 availableColors: colors,
@@ -793,30 +878,134 @@ struct PartsSheetFlowView: View {
         }
     }
 
-    private func cellSizeStep(work: PartsWorkImage) -> some View {
-        PartsCellSizeStepView(
-            work: work,
-            parts: tracked($parts),
-            calibration: tracked($calibration),
-            onConfirmPart: { persist() },
-            onContinue: {
-                persist()
-                path = [.list, .cellSize, .baseColor]
-            },
-            focusPartId: regridTarget,
-            resumePartId: lastGridPartId,
-            onLeavePart: { lastGridPartId = $0 },
-            // 从核对页跳过来的才有回程按钮。**闭包在，就说明是那一趟** ——
-            // 用 `regridTarget != nil` 现算，别缓存成一个 Bool：
-            // 那样退出去再进来会剩一个通向空处的按钮。
-            onReturn: regridTarget == nil ? nil : {
-                persist()
-                path = [.list, .cellSize, .baseColor, .review]
-            },
-            // 多零件模式回核对页会自动补判空着的那一块，所以格线一挪就能放心
-            // 把旧颜色作废，见那个参数的注释。
-            clearsColorsWhenGridMoves: true
+    /// 量格子。**一次只对一张图纸**：标定是相对那张图的，两张图大小不一样就不是同一个数，
+    /// 而这一屏的「格距全图共用、一改全改」只在同一张图里成立。上面的翻页条换张；
+    /// 对完这一张的最后一个零件，主按钮接着翻到下一张有零件的图纸，最后一张对完才去底色。
+    @ViewBuilder
+    private func cellSizeStep() -> some View {
+        let page = min(cellSizePage, pageCount - 1)
+        VStack(spacing: 0) {
+            if pageCount > 1 {
+                PartsPagePicker(count: pageCount, selection: $cellSizePage)
+            }
+            if let pageWork = pages[page] {
+                PartsCellSizeStepView(
+                    work: pageWork,
+                    parts: tracked(partsBinding(page: page)),
+                    calibration: tracked(calibrationBinding(page: page)),
+                    onConfirmPart: { persist() },
+                    onContinue: {
+                        persist()
+                        if let next = nextPageWithParts(after: page) {
+                            cellSizePage = next
+                        } else {
+                            path = [.list, .cellSize, .baseColor]
+                        }
+                    },
+                    focusPartId: regridTarget,
+                    resumePartId: lastGridPartId,
+                    onLeavePart: { lastGridPartId = $0 },
+                    // 从核对页跳过来的才有回程按钮。**闭包在，就说明是那一趟** ——
+                    // 用 `regridTarget != nil` 现算，别缓存成一个 Bool：
+                    // 那样退出去再进来会剩一个通向空处的按钮。
+                    onReturn: regridTarget == nil ? nil : {
+                        persist()
+                        path = [.list, .cellSize, .baseColor, .review]
+                    },
+                    // 多零件模式回核对页会自动补判空着的那一块，所以格线一挪就能放心
+                    // 把旧颜色作废，见那个参数的注释。
+                    clearsColorsWhenGridMoves: true,
+                    orderOffset: parts.filter { $0.pageIndex < page }.count
+                )
+                // 换一张就是一套新的状态（看到第几个、放大多少）
+                .id(page)
+            } else {
+                unreadablePage
+            }
+        }
+    }
+
+    /// 底色和任意色。在哪一张上点都行（同一个作者的图纸底色一样），翻页条只是让他挑一张看得清的。
+    @ViewBuilder
+    private func baseColorStep() -> some View {
+        let page = min(baseColorPage, pageCount - 1)
+        VStack(spacing: 0) {
+            if pageCount > 1 {
+                PartsPagePicker(count: pageCount, selection: $baseColorPage)
+            }
+            if let pageWork = pages[page] {
+                PartsBaseColorStepView(
+                    work: pageWork,
+                    roi: rois.indices.contains(page) ? rois[page] : roi,
+                    calibration: calibrations.indices.contains(page) ? calibrations[page] : calibration,
+                    emptyHex: tracked($emptyHex),
+                    anyColorHex: tracked($anyColorHex),
+                    onContinue: { requestClassification() },
+                    // 非 nil 就是「判过色了」。原样回去，一格都不重算。
+                    onKeepExisting: hasClassified
+                        ? { path = [.list, .cellSize, .baseColor, .review] }
+                        : nil
+                )
+                .id(page)
+            } else {
+                unreadablePage
+            }
+        }
+    }
+
+    /// 某一张图纸读不出来（原图被删了、或者坏了）。别的张照常能用。
+    private var unreadablePage: some View {
+        ContentUnavailableView(
+            "无法读取这张图纸",
+            systemImage: "photo.badge.exclamationmark",
+            description: Text("这张图纸的原图已删除或无法打开。其他图纸不受影响。")
         )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - 每张图纸各自的那一份
+
+    private func pageOverview(_ page: Int) -> UIImage? {
+        overviews.indices.contains(page) ? overviews[page] : nil
+    }
+
+    private func roiBinding(page: Int) -> Binding<CGRect> {
+        Binding(
+            get: { rois.indices.contains(page) ? rois[page] : roi },
+            set: { if rois.indices.contains(page) { rois[page] = $0 } }
+        )
+    }
+
+    private func calibrationBinding(page: Int) -> Binding<PartsGridCalibration?> {
+        Binding(
+            get: { calibrations.indices.contains(page) ? calibrations[page] : nil },
+            set: { if calibrations.indices.contains(page) { calibrations[page] = $0 } }
+        )
+    }
+
+    /// 只有这一张图纸上的零件。写回时换掉这一张的那一段，别的张原样不动、顺序不变。
+    private func partsBinding(page: Int) -> Binding<[BeadPart]> {
+        Binding(
+            get: { parts.filter { $0.pageIndex == page } },
+            set: { onPage in
+                var merged: [BeadPart] = []
+                var placed = false
+                for part in parts {
+                    if part.pageIndex == page {
+                        if !placed { merged += onPage; placed = true }
+                    } else {
+                        merged.append(part)
+                    }
+                }
+                if !placed { merged += onPage }
+                parts = merged
+            }
+        )
+    }
+
+    private func nextPageWithParts(after page: Int) -> Int? {
+        guard page + 1 < pageCount else { return nil }
+        return ((page + 1)..<pageCount).first { next in parts.contains { $0.pageIndex == next } }
     }
 
     /// 用户在核对页把一整类改成了别的色号：调色板跟着改。
@@ -859,7 +1048,9 @@ struct PartsSheetFlowView: View {
     /// 颜色身份沿用上一次判色留下的调色板（见 `PartsCellClassifier.reclassify`），
     /// 补出来的这块跟旁边那些说的是同一套色号。
     private func classifyMissingParts() async {
-        guard let work, let calibration, calibration.isUsable else { return }
+        guard work != nil, pagesMissingCalibration.isEmpty else { return }
+        let source = pages
+        let currentCalibrations = calibrations
         let pending = parts.filter { $0.rows > 0 && $0.cols > 0 && !$0.hasCells }
         guard !pending.isEmpty else { return }
 
@@ -880,13 +1071,15 @@ struct PartsSheetFlowView: View {
             // 比让用户面对一块永远空着的零件强。
             guard !table.isEmpty else {
                 return PartsCellClassifier.classify(
-                    work: work, parts: pending, roi: currentROI, calibration: calibration,
+                    pages: source, parts: pending, roi: currentROI, calibrations: currentCalibrations,
                     colorSystem: colorSystem, legendCodes: legend, availableColors: colors,
                     emptyHex: base, anyColorHex: any
                 ).parts
             }
             return pending.map { part in
-                PartsCellClassifier.reclassify(work: work, part: part, palette: table) ?? part
+                source.work(for: part).flatMap {
+                    PartsCellClassifier.reclassify(work: $0, part: part, palette: table)
+                } ?? part
             }
         }.value
 
@@ -946,7 +1139,7 @@ struct PartsSheetFlowView: View {
             prompt = .loadFailed
             return false
         }
-        let sheet = BeadPartsSheet(
+        var sheet = BeadPartsSheet(
             roi: roi,
             workingImageSize: work?.image.size ?? .zero,
             colorSystem: project.colorSystem,
@@ -961,6 +1154,10 @@ struct PartsSheetFlowView: View {
             legendUsage: legendUsage,
             syncedCellCounts: syncedCellCounts
         )
+        if pageCount > 1 {
+            sheet.pageROIs = rois
+            sheet.pageCalibrations = calibrations
+        }
         guard inventoryManager.updateProjectPartsSheet(project.id, sheet: sheet) else {
             // 没写进去。这里绝不能算了 —— 用户手上这些东西全在内存里，
             // 而屏幕上跟存好了长得一模一样，他关掉就再也找不回来。
