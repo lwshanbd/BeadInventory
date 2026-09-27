@@ -55,7 +55,7 @@ struct PartOriginalSheet: View {
     var onRegrid: (() -> Void)?
     /// 翻到零件清单里的上一个 / 下一个。nil = 到头了，按钮变灰。
     ///
-    /// 两个都是 nil 时整条底栏不出现（统共就一个零件）。**翻的是零件清单的顺序**，
+    /// 两个都是 nil 时翻页那一行不出现（统共就一个零件）。**翻的是零件清单的顺序**，
     /// 也就是板上写的那个号 —— 翻到的那块可能摆在别的板上，「摆在」那一行会说清楚。
     var onPrevious: (() -> Void)?
     var onNext: (() -> Void)?
@@ -70,12 +70,17 @@ struct PartOriginalSheet: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     compare
                     facts
-                    regridButton
                     hint
                 }
                 .padding()
             }
             .background(Theme.ColorToken.Surface.background)
+            // 按钮**不放系统底栏**：原来翻页按钮就放在那儿，而 iOS 26 的底栏是浮在内容上面的，
+            // 半屏时正好压在滚动区里「回去重对」那颗大按钮上，两头各盖掉一截，点的时候分不清点中了哪个。
+            // 重对一行、翻页一行，一起钉在底部：滚动内容给它们让位，半屏也不用滑就看得见。
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                bottomActions
+            }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             // 半屏就够：这一屏统共两张图加三行字，铺满整个屏幕只是多出一大片空白，
@@ -85,8 +90,19 @@ struct PartOriginalSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成") { dismiss() }
                 }
+            }
+        }
+    }
+
+    // MARK: - 底部按钮
+
+    @ViewBuilder
+    private var bottomActions: some View {
+        if onRegrid != nil || canStep {
+            VStack(spacing: Theme.Spacing.sm) {
+                regridButton
                 if canStep {
-                    ToolbarItemGroup(placement: .bottomBar) {
+                    HStack {
                         stepButton("上一个", systemImage: "chevron.left",
                                    iconLeading: true, action: onPrevious)
                         Spacer()
@@ -95,13 +111,13 @@ struct PartOriginalSheet: View {
                     }
                 }
             }
+            .padding(.horizontal)
+            .padding(.vertical, Theme.Spacing.sm)
+            .background(Theme.ColorToken.Surface.background)
         }
     }
 
-    // MARK: - 翻到上一个 / 下一个
-
-    /// 图标和文字得自己拼进 HStack：工具栏里直接给 `Label`，
-    /// 系统只画图标，`labelStyle` 也压不住（这个坑踩过）。
+    /// 图标和文字自己拼进 HStack：「下一个」的箭头要在文字右边，`Label` 只会把图标放左边。
     private func stepButton(
         _ title: LocalizedStringKey,
         systemImage: String,
@@ -250,8 +266,8 @@ struct PartOriginalSheet: View {
         }
     }
 
-    /// 回去重对格子。**摆在两张图下面、说明文字上面** —— 用户是先看出不对，
-    /// 才需要这个按钮的，摆在他得出结论的那一眼之后。
+    /// 回去重对格子。钉在底部、翻页按钮上面：用户先看两张图得出「不对」，
+    /// 视线往下走就碰到它，半屏时也不会被挤到可见区域外面。
     @ViewBuilder
     private var regridButton: some View {
         if let onRegrid {
@@ -274,11 +290,11 @@ struct PartOriginalSheet: View {
     @ViewBuilder
     private var hint: some View {
         if case .ready = original {
-            // 出路在哪儿取决于这一屏是从哪开的：核对颜色那屏上面就摆着按钮，
+            // 出路在哪儿取决于这一屏是从哪开的：核对颜色那屏就摆着按钮，
             // 拼豆板那屏得先回核对颜色。说错一句，用户就在导航栈里白跑一趟。
             Text(onRegrid == nil
                  ? "两侧形状不一致，可能是该零件的格子或颜色识别有误，请返回「核对颜色」页面修改后再摆放"
-                 : "两边形状对不上，多半是格线没落在豆子的缝上。按上面那个按钮回去重对，对完这一块的颜色会自动重判一遍。")
+                 : "两边形状对不上，多半是格线没落在豆子的缝上。按下面那个按钮回去重对，对完这一块的颜色会自动重判一遍。")
                 .font(.caption)
                 .foregroundColor(Theme.ColorToken.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
