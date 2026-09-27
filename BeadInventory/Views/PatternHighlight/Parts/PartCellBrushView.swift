@@ -50,10 +50,18 @@ struct PartCellBrushView: View {
     /// 图纸本身。**可以是 nil** —— 拼豆板那屏的图有可能裁不出来，
     /// 而「这一格多认了一颗」照样改得了：识别结果那一层自己就是一张图。
     /// 只是那时候没有原图可比，用户只能照着手上的实物改。
-    let work: PartsWorkImage?
+    ///
+    /// 零件分在好几张图纸上时是一组，翻到哪一块就用它自己那一张（见 `BeadPart.page`）。
+    let pages: PartsPages?
     /// 进来时改的是哪一块。**之后可能被翻页换掉** —— 真正在改的那一块看 `currentId`。
     let partId: UUID
     @Binding var parts: [BeadPart]
+
+    /// 正在改的这一块所在那张图纸
+    private var work: PartsWorkImage? {
+        guard let part = parts.first(where: { $0.id == currentId }) else { return nil }
+        return pages?.work(for: part)
+    }
     let colorSystem: ColorSystem
     /// 底下写的是在改哪一块（「零件 3」/「整张图纸」）。
     /// 翻页会换零件，所以只能给一个按 id 现问的闭包，不能给一句写死的话。

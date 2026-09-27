@@ -268,7 +268,11 @@ struct PatternSourceRow: View {
     }
 
     private var removeMessage: String {
-        let base = "拼图模式仍可使用，但将改用封面显示，格子会较模糊。原图不会同步至 iCloud 或纳入备份，删除后需重新从相册选择"
+        var base = "拼图模式仍可使用，但将改用封面显示，格子会较模糊。原图不会同步至 iCloud 或纳入备份，删除后需重新从相册选择"
+        // 追加的几张一起删（见 `PatternSourceStore.remove`），它们没有封面可退
+        if PatternSourceStore.pageCount(for: projectId) > 1 {
+            base += "\n\n追加的图纸也会一并删除，删除后无法再查看。"
+        }
         guard hasPatternWork else { return base }
         return base + "\n\n而且这个项目已经对好了格子 —— 退回用封面之后多半对不上，得重新对一遍。"
     }

@@ -235,7 +235,7 @@ struct SinglePatternFlowView: View {
                             )
                         case .review:
                             PartsColorReviewStepView(
-                                work: work,
+                                pages: PartsPages(single: work),
                                 parts: sheetParts,
                                 colorSystem: project.colorSystem,
                                 legendCounts: legendCounts,

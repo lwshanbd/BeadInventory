@@ -102,6 +102,11 @@ struct PartsCellSizeStepView: View {
     /// 「这块重判了一遍」；单图纸那边没有补判，作废等于整张图纸的颜色凭空消失，
     /// 他还得自己回上一步重判一次 —— 那是另一件事，不该顺手在这里做掉。
     var clearsColorsWhenGridMoves = false
+    /// 零件分在好几张图纸上时，这一屏一次只对一张（`parts` 只有这一张上的）。
+    /// 前面几张一共多少个零件：名字和「按编号跳转」照旧用整个零件清单的编号。
+    var orderOffset = 0
+    /// 后面还有要对的图纸。这时对完这一张按下去是翻到下一张，不是去判色，按钮得照实说。
+    var hasNextPage = false
 
     /// 当前正在看哪个零件，顺序与零件清单一致。
     @State private var sampleIndex = 0
@@ -326,7 +331,7 @@ struct PartsCellSizeStepView: View {
             .disabled(jumpPartIndex == nil)
             Button("取消", role: .cancel) { }
         } message: {
-            Text("请输入 1–\(samples.count) 之间的零件编号")
+            Text("请输入 \(orderOffset + 1)–\(orderOffset + samples.count) 之间的零件编号")
         }
         // 工作图也算进 id：进来时先拿到的是低清兜底版，高清版在后台裁好之后才换上来。
         // 认零件的 **id** 而不是下标：删掉一个非末尾的零件时下标不变，后面那个顶上来 ——
@@ -609,7 +614,7 @@ struct PartsCellSizeStepView: View {
         VStack(spacing: Theme.Spacing.md) {
             if let sample {
                 HStack(spacing: Theme.Spacing.sm) {
-                    Text(subjectLabel ?? LocalizedStringKey(sample.displayName(order: sampleIndex)))
+                    Text(subjectLabel ?? LocalizedStringKey(sample.displayName(order: orderOffset + sampleIndex)))
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(Theme.ColorToken.Text.primary)
                     // 对过的打个勾。用户翻回来时要能一眼看出「这个我确认过了」——
@@ -821,7 +826,7 @@ struct PartsCellSizeStepView: View {
             // 剩下的不想一个个看了，随时能走。最后一个零件上不显示 —— 那时它和上面
             // 那个按钮是同一件事，摆两个只会让人以为有区别。
             if onReturn == nil, !isLastSample {
-                Button("跳过并完成") {
+                Button(hasNextPage ? "跳过此图纸" : "跳过并完成") {
                     Task {
                         await refitAllParts()
                         onContinue()
@@ -841,19 +846,22 @@ struct PartsCellSizeStepView: View {
 
     private var jumpPartIndex: Int? {
         guard let number = Int(partNumberInput.trimmingCharacters(in: .whitespacesAndNewlines)),
-              (1...max(1, samples.count)).contains(number), !samples.isEmpty else { return nil }
-        return number - 1
+              ((orderOffset + 1)...(orderOffset + max(1, samples.count))).contains(number),
+              !samples.isEmpty else { return nil }
+        return number - 1 - orderOffset
     }
 
     /// 主按钮上写什么。三种情形三句话，说的都是**按下去会去哪儿**。
     private var mainActionTitle: LocalizedStringKey {
         if onReturn != nil { return "返回核对颜色" }
-        return isLastSample ? "已对齐，查看每格颜色" : "已对齐，查看下一个"
+        if isLastSample { return hasNextPage ? "已对齐，下一张图纸" : "已对齐，查看每格颜色" }
+        return "已对齐，查看下一个"
     }
 
     private var mainActionIcon: String {
         if onReturn != nil { return "checkmark" }
-        return isLastSample ? "eyedropper" : "arrow.right"
+        if isLastSample, !hasNextPage { return "eyedropper" }
+        return "arrow.right"
     }
 
     /// 翻到核对页指定的那一块，并记下它现在的网格长什么样。
