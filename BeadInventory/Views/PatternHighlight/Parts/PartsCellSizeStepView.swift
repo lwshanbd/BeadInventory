@@ -20,7 +20,7 @@
 //
 //  **格线位置不是。** 图纸上的零件是各画各的 —— 零件 A 的格线和零件 B 的格线压根不属于
 //  同一批。早先整张图共用一个相位，于是「这个对齐了、换一个又对不上」，怎么推都推不好，
-//  因为它数学上就不成立。现在是：格距由用户定（加减号一次 0.1 像素），
+//  因为它数学上就不成立。现在是：格距由用户定（粗调一次 0.1、细调一次 0.01 像素），
 //  然后拿这个格距**一个零件一个零件地找它自己的格线**（`PartsPitchEstimator.fitOrigin`）。
 //
 //  所以主按钮是「对齐了，看下一个」，**所有零件都要过一遍**（大的排前面，格线多最容易
@@ -734,22 +734,29 @@ struct PartsCellSizeStepView: View {
                             }
                         }
 
-                        // 一格多少像素，加减号一次动 0.1 个像素。
+                        // 一格多少像素，粗调一次 0.1、细调一次 0.01 个像素。
                         //
                         // **必须摆在这一屏**（整张网格铺在零件上的这一屏），不能塞进
                         // 「重选格子大小」里 —— 那屏只显示一格。一格看着严丝合缝，
                         // 铺到第四十格照样偏出去半格；格距准不准只有看着整片格线才判断得了，
                         // 那就得能一边看着整片一边调。
-                        HStack(spacing: Theme.Spacing.sm) {
-                            Text("一格")
-                                .font(.footnote)
-                                .foregroundStyle(Theme.ColorToken.Text.secondary)
-                            nudgeButton("minus") { changeCellPixels(by: -Self.cellPixelStep) }
-                            Text(cellPixelsText)
-                                .font(.footnote.monospacedDigit())
-                                .foregroundStyle(Theme.ColorToken.Text.primary)
-                                .frame(minWidth: 78)
-                            nudgeButton("plus") { changeCellPixels(by: Self.cellPixelStep) }
+                        //
+                        // 数值单独一行、四个按钮一行：右边这一栏只有两百多点宽，
+                        // 数值夹在四个按钮中间会挤出屏幕。
+                        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                            HStack(spacing: Theme.Spacing.xs) {
+                                Text("一格")
+                                    .font(.footnote)
+                                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+                                Text(cellPixelsText)
+                                    .font(.footnote.monospacedDigit())
+                                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                            }
+                            HStack(spacing: Theme.Spacing.sm) {
+                                ForEach(Self.cellPixelSteps, id: \.self) { delta in
+                                    pitchStepButton(delta)
+                                }
+                            }
                         }
                         .disabled(estimating || calibration == nil || pitchLocked)
 
@@ -1062,20 +1069,35 @@ struct PartsCellSizeStepView: View {
         return c.cellWidth * sheetPixelWidth
     }
 
-    /// 写到小数点后两位：步长是 0.1，只显示一位的话用户看不出自己停在 20.03 还是 20.0，
-    /// 而他要找的那个值恰恰藏在这一位里。
+    /// 写到小数点后两位：细调步长是 0.01，少一位就看不出按下去有没有变。
     private var cellPixelsText: String {
         let px = cellPixels
         guard px > 0 else { return "—" }
         return String(format: String(localized: "%.2f 像素"), px)
     }
 
-    /// 加减号一次动多少源图像素。
+    /// 四个按钮各动多少源图像素，按屏幕上从左到右的顺序。
     ///
-    /// **0.1 而不是 1。** 一个像素太粗了：自动量出来的是 20.03 这种数，整数步只能在
-    /// 19.03 / 20.03 / 21.03 之间跳，而对的那个值就在它们中间。粗调有拖把手和自动对齐，
-    /// 这两个按钮是用来收尾的。
-    private static let cellPixelStep = 0.1
+    /// **最小到 0.01。** 一个像素太粗了：自动量出来的是 20.03 这种数，整数步只能在
+    /// 19.03 / 20.03 / 21.03 之间跳。0.1 也还不够：步长 0.1 时每格最多差 0.05 像素，
+    /// 零件有七八十格宽的话，铺到最后一格能差出三四个像素，线早就压到豆子上了。
+    /// 步长到 0.01，同样宽也只差零点几个像素。
+    /// 粗调有拖把手和自动对齐，这几个按钮是用来收尾的。
+    private static let cellPixelSteps: [Double] = [-0.1, -0.01, 0.01, 0.1]
+
+    private func pitchStepButton(_ delta: Double) -> some View {
+        Button {
+            changeCellPixels(by: delta)
+        } label: {
+            Text(verbatim: delta > 0 ? "+\(delta.formatted())" : "−\((-delta).formatted())")
+                .font(.footnote.monospacedDigit().weight(.semibold))
+                .frame(minWidth: 44, minHeight: 44)  // 36pt 连点按不准，见 nudgeButton
+                .background(Theme.ColorToken.Surface.elevated)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(Theme.ColorToken.Text.primary)
+    }
 
     /// 加减号：一格的边长加 / 减一步。豆子是方的，所以高跟着宽走。
     private func changeCellPixels(by delta: Double) {
