@@ -216,7 +216,7 @@ enum PatternSourceStore {
 
     /// 存下追加的几张（第 1 张起），先清掉这个项目以前追加的。
     /// - Returns: 是不是每一张都写进去了。写到一半失败时已经写进去的删掉，
-    ///   免得留下「第 1 张有、第 2 张没有」—— 那样第 3 张起会被当成不存在，零件却还指着它。
+    ///   免得中间断一张 —— `pageCount` 数到断的地方就停，后面那几张上的零件就指着一张「不存在」的图。
     @discardableResult
     static func saveExtraPages(_ pages: [Data], for projectId: UUID) -> Bool {
         removeExtraPages(for: projectId)
@@ -269,7 +269,8 @@ enum PatternSourceStore {
             ])
             return false
         }
-        // 追加的几张一起删：原图没了之后它们谁也不会再读
+        // 追加的几张一起删：「拼好了」和详情页「删掉」对用户来说都是删这个作品的原图，
+        // 只删第 0 张会留下一堆看不见的文件继续占地方
         removeExtraPages(for: projectId)
         do {
             try FileManager.default.removeItem(at: url)

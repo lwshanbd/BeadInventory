@@ -9,7 +9,7 @@
 //
 //      圈零件区     把中间那一大块框住（排除顶部色号表 / 底部成品图）。这是根视图。
 //      零件清单     找出来的零件，能删、能合并、能拆开、能补、能改名
-//      量格子       定下全图共用的那一张网格：格子多大、格线在哪
+//      量格子       每张图纸各定一张网格：格子多大、格线在哪。一次对一张
 //      底色和任意色 在图上指认这两样「不是色号」的颜色，判色前必须先摘出去
 //      核对颜色     每个色号有多少颗、分别是哪几格，用户逐条校对
 //      拼豆板       零件分别摆在第几块板的第几格
@@ -153,6 +153,9 @@ struct PartsSheetFlowView: View {
         /// 出路是去核对页看那几组，所以**不跟上面那条共用** —— 那条的默认按钮是「回零件清单」，
         /// 而这件事在零件清单上是解不了的。
         case legendNote(String)
+        /// 有零件所在的那张图纸在这台设备上没有原图，这次没判、原样保留。
+        /// 回零件清单改框解决不了，所以不跟 `classifyNote` 共用（那条的默认按钮是回清单）。
+        case skippedPagesNote(String)
         /// 这块范围里一个零件都没找到。出路是**留在这一屏**把框挪一挪，
         /// 所以刻意不跟上面那条共用 —— 标题和按钮都不一样，混用会出现
         /// 「标题说有零件没看成、正文说一个也没找到」，而且默认按钮会把人送进一个空清单。
@@ -166,6 +169,7 @@ struct PartsSheetFlowView: View {
             case .confirmReclassify: return "reclassify"
             case .classifyNote(let text): return "note:\(text)"
             case .legendNote(let text): return "legend:\(text)"
+            case .skippedPagesNote(let text): return "skipped:\(text)"
             case .detectFoundNothing: return "empty"
             }
         }
@@ -187,16 +191,25 @@ struct PartsSheetFlowView: View {
                 if !didLoadOnce {
                     ProgressView("加载图纸…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let overview {
-                    PartsRegionStepView(
-                        image: pageOverview(regionPage) ?? overview,
-                        roi: tracked(roiBinding(page: regionPage)),
-                        onContinue: { startDetection() },
-                        projectId: project.id,
-                        onSourceLoaded: { Task { await reloadFromSource() } },
-                        pageCount: pageCount,
-                        page: $regionPage
-                    )
+                } else if overview != nil {
+                    // 某一张读不出来就说读不出来，**不拿别的张顶上**：框改的是这一张的零件区，
+                    // 摆着别的张的图，他会在错的图上框，而且看不出来。
+                    if let pageImage = pageOverview(regionPage) {
+                        PartsRegionStepView(
+                            image: pageImage,
+                            roi: tracked(roiBinding(page: regionPage)),
+                            onContinue: { startDetection() },
+                            projectId: project.id,
+                            onSourceLoaded: { Task { await reloadFromSource() } },
+                            pageCount: pageCount,
+                            page: $regionPage
+                        )
+                    } else {
+                        VStack(spacing: 0) {
+                            PartsPagePicker(count: pageCount, selection: $regionPage)
+                            unreadablePage
+                        }
+                    }
                 } else if imageUnreadable {
                     // 「读不出来」不等于「没有」—— 这跟 partsSheet 那边 `.unreadable` /
                     // `.missing` 分开处理是同一件事，图片这条路当初漏了。报成「还没有图纸」
@@ -254,6 +267,7 @@ struct PartsSheetFlowView: View {
                                 parts: tracked($parts),
                                 onContinue: {
                                     persist()
+                                    cellSizePage = firstPageWithParts
                                     path = [.list, .cellSize]
                                 },
                                 projectId: project.id,
@@ -378,6 +392,12 @@ struct PartsSheetFlowView: View {
                     message: Text(text),
                     dismissButton: .default(Text("知道了"))
                 )
+            case .skippedPagesNote(let text):
+                return Alert(
+                    title: Text("部分零件未重新识别"),
+                    message: Text(text),
+                    dismissButton: .default(Text("知道了"))
+                )
             case .detectFoundNothing:
                 return Alert(
                     title: Text("该范围内未找到零件"),
@@ -440,7 +460,9 @@ struct PartsSheetFlowView: View {
             // 第一次进来，计划里的用量还是 AI 读的那份，趁没被换掉先留下来。
             self.legendUsage = project.beadUsage
         case .loaded(let saved):
-            // 按现在有几张补齐 / 截断：原图可能在上次之后被删过几张
+            // 只补齐，**不截断**。这台设备上的原图可能比存档里的张数少（原图不走 iCloud，
+            // 换一台设备打开、或者点过「拼好了」），但那几张的零件区和格子标定还是有用的数据：
+            // 截掉之后一存盘就永久没了，还会同步回原来那台设备。
             self.rois = Self.fitted(saved.pageROIs ?? [saved.roi], count: count, filler: Self.wholeROI)
             self.parts = saved.parts
             self.palette = saved.palette
@@ -559,10 +581,9 @@ struct PartsSheetFlowView: View {
         max(4_000_000, overviewPixelBudget / max(1, pageCount))
     }
 
-    /// 存下来的「每张一份」按现在有几张补齐或截断
+    /// 存下来的「每张一份」按现在有几张补齐。比现在的张数多也原样留着，理由见 `load`。
     private static func fitted<T>(_ values: [T], count: Int, filler: T) -> [T] {
-        let head = Array(values.prefix(count))
-        return head + Array(repeating: filler, count: max(0, count - head.count))
+        values + Array(repeating: filler, count: max(0, count - values.count))
     }
 
     /// 零件区那一版的像素预算。**这一版决定用户能不能看清一颗豆子**：量格子、判色、
@@ -586,7 +607,7 @@ struct PartsSheetFlowView: View {
     /// 已经裁到高清版的那块区域。用来判断「要不要重裁」，
     /// 不能拿 `work.region` 判 —— 兜底那版的 region 是整张图，会被误认成没裁过。
     @State private var highResRegions: [CGRect?] = []
-    /// 现在这份高清版是拿第几代源裁的。跟 `highResRegion` 一起比，缺一不可 ——
+    /// 现在这份高清版是拿第几代源裁的。跟 `highResRegions` 同一张的那一格一起比，缺一不可 ——
     /// 用户补了原图之后区域没变但源变了，只比区域会以为「已经是最新的了」。
     @State private var highResGenerations: [Int] = []
     /// 正在进行的那次高清升级。存着它是为了让别人**等得到**它，见 `prepareWorkImage`。
@@ -606,9 +627,9 @@ struct PartsSheetFlowView: View {
         }).value, !overviews.isEmpty {
             overviews[0] = low
         }
-        // 换源用「代」来记，**不能靠清空 highResRegion**：清空之后
+        // 换源用「代」来记，**不能靠清空 highResRegions**：清空之后
         // `prepareWorkImage` 第一句会去等已经在跑的那次升级，而那次跑完又会把
-        // highResRegion 设回来，紧接着的判断就以为「已经是最新的了」——
+        // highResRegions 设回来，紧接着的判断就以为「已经是最新的了」——
         // 用户刚补的原图于是永远不会被重新裁一次。
         sourceGeneration += 1
         await prepareWorkImage()
@@ -621,7 +642,7 @@ struct PartsSheetFlowView: View {
     /// 用户刚在提示条里补完原图就点「开始找零件」，检测跑的还是 1600px 的兜底版，
     /// 而提示条这时已经消失 —— 他连「是不是没生效」都没法验证。
     private func prepareWorkImage() async {
-        // 判断必须放在等待**之后**：等待期间那次升级会改 highResRegion / Generation。
+        // 判断必须放在等待**之后**：等待期间那次升级会改 highResRegions / Generations。
         if let running = upgradeTask { await running.value }
         // 哪几张的高清版不是当前零件区、当前这一代的
         let stale = rois.indices.filter { page in
@@ -652,11 +673,13 @@ struct PartsSheetFlowView: View {
         // 只有第 0 张有压缩图可退（封面就是它）
         if source == nil, page == 0 { source = await loader?.thumbnail(for: id) }
         guard let data = source else { return }
+        // 几张的高清版会同时留在内存里（翻页不用重新解码），预算按张数分
+        let budget = max(20_000_000, Self.workPixelBudget / max(1, pageCount))
         let built = await Task.detached(priority: .userInitiated) { () -> PartsWorkImage? in
             // 实测这一整段（取字节 + 解码 + 裁切）只要 0.10s，所以它从来不是「慢」的来源；
             // 早先那次界面卡死是因为把它做成了进入下一屏的必需条件，失败就没有退路。
             autoreleasepool {
-                let maxPixel = Self.decodeMaxPixel(for: data, budget: Self.workPixelBudget)
+                let maxPixel = Self.decodeMaxPixel(for: data, budget: budget)
                 guard let full = ImageDownsampler.downsampleToUIImage(data, maxPixelSize: maxPixel),
                       let crop = PartsThumbnailMaker.cropExact(.whole(full), normalized: region) else { return nil }
                 let cropped = crop.image
@@ -767,7 +790,7 @@ struct PartsSheetFlowView: View {
             // 板子必须一起清：placement 指的是旧零件的 id，留着就是一板子孤儿 ——
             // 板上画不出东西，又因为 boards 非空进不了自动排版，那一屏成了死胡同。
             self.calibrations = Array(repeating: nil, count: currentROIs.count)
-            self.cellSizePage = 0
+            self.cellSizePage = self.firstPageWithParts
             self.boards = []
             self.boardSpacing = nil
             self.palette = []
@@ -810,9 +833,13 @@ struct PartsSheetFlowView: View {
     }
 
     /// 有零件、却还没量过格子的那几张
+    ///
+    /// 读不出图的那张不算：那一张在这台设备上本来就量不了，送他过去只会看到「无法读取」。
+    /// 那张上的零件判色时原样保留（见 `PartsCellClassifier.classify`）。
     private var pagesMissingCalibration: [Int] {
         (0..<pageCount).filter { page in
-            parts.contains(where: { $0.pageIndex == page })
+            pages[page] != nil
+                && parts.contains(where: { $0.pageIndex == page })
                 && !(calibrations.indices.contains(page) && calibrations[page]?.isUsable == true)
         }
     }
@@ -850,7 +877,8 @@ struct PartsSheetFlowView: View {
                 // 一个零件都没看成 = 图根本没抠出来（框太小 / 图坏了），
                 // **不是**「这张图纸上没有豆子」。这时候写回去会把所有零件的格子清成空，
                 // 核对页只会显示「一共 0 颗」，用户完全不知道该改哪儿。
-                if result.unreadableParts == result.parts.count, !result.parts.isEmpty {
+                let judged = result.parts.count - result.skippedParts
+                if result.unreadableParts == judged, judged > 0 {
                     self.prompt = .classifyNote(String(
                         localized: "所有零件的框选区域均无法读取到图像，未能识别出任何颜色。可能是框选范围过小，请返回零件清单调整后重试。"
                     ))
@@ -866,6 +894,10 @@ struct PartsSheetFlowView: View {
                 if saved, result.unreadableParts > 0 {
                     self.prompt = .classifyNote(String(
                         localized: "有 \(result.unreadableParts) 个零件的选框内无法取得图像，格子为空。请返回零件清单，检查这些选框是否过小"
+                    ))
+                } else if saved, result.skippedParts > 0 {
+                    self.prompt = .skippedPagesNote(String(
+                        localized: "有 \(result.skippedParts) 个零件所在的图纸原图不在此设备上，这些零件未重新识别颜色，已有结果保持不变。"
                     ))
                 } else if saved, let note = result.unknownLegendNote {
                     // 出路不一样（这条是「去核对页看一眼」，上面那条是「回零件清单改框」），
@@ -915,7 +947,8 @@ struct PartsSheetFlowView: View {
                     // 多零件模式回核对页会自动补判空着的那一块，所以格线一挪就能放心
                     // 把旧颜色作废，见那个参数的注释。
                     clearsColorsWhenGridMoves: true,
-                    orderOffset: parts.filter { $0.pageIndex < page }.count
+                    orderOffset: parts.filter { $0.pageIndex < page }.count,
+                    hasNextPage: regridTarget == nil && nextPageWithParts(after: page) != nil
                 )
                 // 换一张就是一套新的状态（看到第几个、放大多少）
                 .id(page)
@@ -1005,7 +1038,17 @@ struct PartsSheetFlowView: View {
 
     private func nextPageWithParts(after page: Int) -> Int? {
         guard page + 1 < pageCount else { return nil }
-        return ((page + 1)..<pageCount).first { next in parts.contains { $0.pageIndex == next } }
+        return ((page + 1)..<pageCount).first { next in
+            pages[next] != nil && parts.contains { $0.pageIndex == next }
+        }
+    }
+
+    /// 量格子从哪一张开始。第 0 张常常只有色号表、零件全在追加的几张上，
+    /// 从第 0 张开始的话，他面对的是一张没有零件、两个按钮都点不了的空屏。
+    private var firstPageWithParts: Int {
+        (0..<pageCount).first { page in
+            pages[page] != nil && parts.contains { $0.pageIndex == page }
+        } ?? 0
     }
 
     /// 用户在核对页把一整类改成了别的色号：调色板跟着改。
@@ -1048,10 +1091,14 @@ struct PartsSheetFlowView: View {
     /// 颜色身份沿用上一次判色留下的调色板（见 `PartsCellClassifier.reclassify`），
     /// 补出来的这块跟旁边那些说的是同一套色号。
     private func classifyMissingParts() async {
-        guard work != nil, pagesMissingCalibration.isEmpty else { return }
+        // 不看别的张量没量过：要补判的这几块自己带着格子（rows / cols），用不到标定。
+        // 所在那张没图的也不补 —— 取不到像素，补出来是一片空格子。
+        guard work != nil else { return }
         let source = pages
         let currentCalibrations = calibrations
-        let pending = parts.filter { $0.rows > 0 && $0.cols > 0 && !$0.hasCells }
+        let pending = parts.filter {
+            $0.rows > 0 && $0.cols > 0 && !$0.hasCells && source.work(for: $0) != nil
+        }
         guard !pending.isEmpty else { return }
 
         busy = pending.count == 1
@@ -1154,7 +1201,8 @@ struct PartsSheetFlowView: View {
             legendUsage: legendUsage,
             syncedCellCounts: syncedCellCounts
         )
-        if pageCount > 1 {
+        // 按存档里有几张判断，不按这台设备上有几个原图文件（见 `load`）
+        if rois.count > 1 || calibrations.count > 1 {
             sheet.pageROIs = rois
             sheet.pageCalibrations = calibrations
         }

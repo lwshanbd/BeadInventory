@@ -92,6 +92,9 @@ enum PartsCellClassifier {
         /// 跟图纸色号表上印的不是同一个。不说的话用户只会问「图纸上明明有 HR，
         /// 怎么一个都没有」—— 而他在这一屏找不到任何线索。
         var unknownLegendCodes: [String]
+        /// 所在那张图纸在这台设备上没有图、这次没判的零件数。它们原样保留，一格都没动 ——
+        /// 原图不走 iCloud，换一台设备、或者点过「拼好了」都会这样，这不是框的问题。
+        var skippedParts = 0
 
         /// 上面那些对不上的色号该怎么跟用户说。nil = 没有这回事，别打扰他。
         /// 两条流程（多零件 / 单图纸）共用一份说法 —— 同一件事在两屏上写成两样只会更难懂。
@@ -162,12 +165,21 @@ enum PartsCellClassifier {
         var fittedParts: [BeadPart] = []
         var cellLabs: [[[LabColor?]]] = []      // [part][row][col]
         var unreadableParts = 0
+        // 所在那张图纸没图的零件：不参与聚类，最后原样放回。下标对着 `parts`。
+        var skipped: [Int: BeadPart] = [:]
         for (index, part) in parts.enumerated() {
+            // 那张图纸不在这台设备上：别动它的格子。判成一片空的话，手工核对过的颜色就没了，
+            // 还会经 iCloud 同步回原来那台设备。
+            guard pages.work(for: part) != nil else {
+                skipped[index] = part
+                progress?(index + 1, parts.count)
+                continue
+            }
             var updated = part
             // 「量格子」那屏已经给这个零件定好格线了（格距全图共用，相位一个零件一个 ——
             // 图纸上零件是各画各的）。这里必须**照用**，不能再拿全局标定重吸一遍：
             // 那样会把用户刚在那一屏对好的位置整片洗掉。
-            // 没定过的（用户跳过了那一屏）才退回全局标定。
+            // 没定过的（用户跳过了那一屏）才退回它那一张图纸的标定。
             if let rect = part.gridRect, part.rows > 0, part.cols > 0 {
                 updated.gridRect = rect
             } else if let calibration = calibrations.indices.contains(part.pageIndex)
@@ -227,8 +239,16 @@ enum PartsCellClassifier {
                 matchDeltaE: entry.deltaE
             )
         }
-        return Result(parts: fittedParts, palette: palette, unreadableParts: unreadableParts,
-                      unknownLegendCodes: legend.unknownCodes)
+        // 没判的那几块按原来的位置插回去，零件清单的顺序不变
+        var merged: [BeadPart] = []
+        merged.reserveCapacity(parts.count)
+        var judged = fittedParts.makeIterator()
+        for index in parts.indices {
+            if let kept = skipped[index] { merged.append(kept) }
+            else if let part = judged.next() { merged.append(part) }
+        }
+        return Result(parts: merged, palette: palette, unreadableParts: unreadableParts,
+                      unknownLegendCodes: legend.unknownCodes, skippedParts: skipped.count)
     }
 
     // MARK: - 采样

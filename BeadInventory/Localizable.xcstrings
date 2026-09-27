@@ -1,6 +1,136 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "已对齐，下一张图纸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aligned, next page"
+          }
+        }
+      }
+    },
+    "跳过此图纸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip this page"
+          }
+        }
+      }
+    },
+    "追加的图纸未能保存" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't save added pages"
+          }
+        }
+      }
+    },
+    "项目已创建，但多零件模式中只能查看第一张图纸。请检查存储空间。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The project was created, but only the first page will be available in multi-part mode. Check your storage."
+          }
+        }
+      }
+    },
+    "部分零件未重新识别" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some parts weren't re-recognized"
+          }
+        }
+      }
+    },
+    "有 %lld 个零件所在的图纸原图不在此设备上，这些零件未重新识别颜色，已有结果保持不变。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The original pages for %lld part(s) aren't on this device. Their colors weren't re-recognized and existing results are unchanged."
+          }
+        }
+      }
+    },
+    "会删掉全部 %lld 张图纸的原图副本，腾出 %@。\n零件、格子、色号这些都会留着，高亮照常能用；第一张之后的图纸将无法再查看原图。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This deletes the original copies of all %lld pages, freeing %@.\nParts, grids and color codes are kept and highlighting still works; pages after the first will no longer show the original image."
+          }
+        }
+      }
+    },
+    "无法读取这张图纸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't read this page"
+          }
+        }
+      }
+    },
+    "这张图纸的原图已删除或无法打开。其他图纸不受影响。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This page's original image was deleted or can't be opened. Other pages aren't affected."
+          }
+        }
+      }
+    },
+    "上一张" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous page"
+          }
+        }
+      }
+    },
+    "下一张" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next page"
+          }
+        }
+      }
+    },
+    "第 %lld 张" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page %lld"
+          }
+        }
+      }
+    },
+    "请输入 %lld–%lld 之间的零件编号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter a part number from %lld to %lld"
+          }
+        }
+      }
+    },
     "追加图纸" : {
       "localizations" : {
         "en" : {

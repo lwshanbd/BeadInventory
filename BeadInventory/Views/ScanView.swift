@@ -38,6 +38,8 @@ struct ScanView: View {
     @State private var showingDeductionFailure = false
     /// 图片编码失败。必须可见 —— 静默失败会让用户拿到一个永远没有图的项目。
     @State private var imageEncodeFailed = false
+    /// 追加的图纸没存进去（多半是存储空间不够）。项目已经建好了，不回滚，只让他知道。
+    @State private var extraPagesSaveFailed = false
     @State private var deductionFailureMessage = ""
     @State private var deductSuccessAt: Date = .distantPast
 
@@ -299,6 +301,11 @@ struct ScanView: View {
             .haptic(.success, trigger: deductSuccessAt)
             .haptic(.error, trigger: showingDeductionFailure)
             .haptic(.error, trigger: imageEncodeFailed)
+            .alert("追加的图纸未能保存", isPresented: $extraPagesSaveFailed) {
+                Button("好", role: .cancel) { }
+            } message: {
+                Text("项目已创建，但多零件模式中只能查看第一张图纸。请检查存储空间。")
+            }
             .alert("图片处理失败", isPresented: $imageEncodeFailed) {
                 Button("好", role: .cancel) { }
             } message: {
@@ -583,11 +590,20 @@ struct ScanView: View {
     }
 
     /// 建完项目后把原图存下来：上面那张是第 0 张，追加的几张依次是第 1、2… 张，各存各的。
-    /// 不留原图（开关关掉）时追加的也不存 —— 它们只给多零件模式用，没有第 0 张就对不上号。
+    /// 不留原图（开关关掉）时追加的也不存：留不留是对这个作品的整体决定，代价是多零件模式里只剩上面那一张。
+    ///
+    /// 追加的几张没存进去要说出来：`clearState()` 马上就把它们从内存里清掉，
+    /// 它们又没有封面可退，这一丢就是永久的。第 0 张存不进去不用说（有封面顶着，旧行为）。
     private func savePatternSource(for projectId: UUID) {
         guard let main = patternSourceData() else { return }
         PatternSourceStore.save(main, for: projectId)
-        PatternSourceStore.saveExtraPages(extraPages.map(\.data), for: projectId)
+        guard !extraPages.isEmpty else { return }
+        if !PatternSourceStore.saveExtraPages(extraPages.map(\.data), for: projectId) {
+            // 扣减那条路是从被推出来的复核页调过来的，等它收起再弹
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                extraPagesSaveFailed = true
+            }
+        }
     }
 
     // MARK: - 主 body 的子片段（拆分以减轻类型检查复杂度）
@@ -1268,7 +1284,7 @@ struct ImageSelectionSection: View {
 
                 keepSourceRow
 
-                // 追加的图纸只拿来拼进原图，不留原图就没有用处，不显示
+                // 追加的图纸跟上面那张一起存成原图，给多零件模式用。不留原图就不存，所以也不显示
                 if keepPatternSource {
                     extraPagesRow
                 }
@@ -3478,7 +3494,7 @@ enum RecognizedResultsFilter: Hashable {
 struct ScanBottomCTABar: View {
     let totalBeads: Int
     let canDeduct: Bool
-    /// 追加图纸还在读取或正在合并。这时两个按钮都不能点，免得项目少了几张图纸。
+    /// 追加图纸还在读取、裁切或保存。这时两个按钮都不能点，免得项目少了几张图纸。
     let isBusy: Bool
     let onPlan: () -> Void
     let onDeduct: () -> Void

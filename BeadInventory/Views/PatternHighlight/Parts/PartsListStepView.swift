@@ -141,7 +141,12 @@ struct PartsListStepView: View {
             }
             Button("还没有", role: .cancel) {}
         } message: {
-            Text("会删掉这张图纸的原图副本，腾出 \(byteText(sourceBytes))。\n零件、格子、色号这些都会留着，高亮照常能用；只是「核对颜色」里的小图会变糊一点。")
+            if pages.count > 1 {
+                // 追加的几张没有封面可退，删了就是看不到了，不只是变糊
+                Text("会删掉全部 \(pages.count) 张图纸的原图副本，腾出 \(byteText(sourceBytes))。\n零件、格子、色号这些都会留着，高亮照常能用；第一张之后的图纸将无法再查看原图。")
+            } else {
+                Text("会删掉这张图纸的原图副本，腾出 \(byteText(sourceBytes))。\n零件、格子、色号这些都会留着，高亮照常能用；只是「核对颜色」里的小图会变糊一点。")
+            }
         }
         .task(id: partsSignature) {
             let snapshot = parts
@@ -152,6 +157,8 @@ struct PartsListStepView: View {
                 (thumbs: PartsThumbnailMaker.make(for: snapshot, from: allPages),
                  crop: source.flatMap { PartsThumbnailMaker.cropExact($0, normalized: region) })
             }.value
+            // 裁的这一下用户可能已经翻到别的张了，别拿上一张的图盖掉这一张
+            guard !Task.isCancelled else { return }
             thumbnails = built.thumbs
             roiImage = built.crop?.image
             roiImageRegion = built.crop?.rect ?? .zero
