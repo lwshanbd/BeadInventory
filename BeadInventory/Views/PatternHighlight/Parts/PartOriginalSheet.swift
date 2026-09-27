@@ -55,7 +55,7 @@ struct PartOriginalSheet: View {
     var onRegrid: (() -> Void)?
     /// 翻到零件清单里的上一个 / 下一个。nil = 到头了，按钮变灰。
     ///
-    /// 两个都是 nil 时整条底栏不出现（统共就一个零件）。**翻的是零件清单的顺序**，
+    /// 两个都是 nil 时翻页那一行不出现（统共就一个零件）。**翻的是零件清单的顺序**，
     /// 也就是板上写的那个号 —— 翻到的那块可能摆在别的板上，「摆在」那一行会说清楚。
     var onPrevious: (() -> Void)?
     var onNext: (() -> Void)?
@@ -75,8 +75,8 @@ struct PartOriginalSheet: View {
                 .padding()
             }
             .background(Theme.ColorToken.Surface.background)
-            // 按钮**不放系统底栏**：iOS 26 的底栏是浮在内容上面的，半屏时正好压在
-            // 「回去重对」那颗大按钮上，两头各盖掉一截，点的时候分不清点中了哪个。
+            // 按钮**不放系统底栏**：原来翻页按钮就放在那儿，而 iOS 26 的底栏是浮在内容上面的，
+            // 半屏时正好压在滚动区里「回去重对」那颗大按钮上，两头各盖掉一截，点的时候分不清点中了哪个。
             // 重对一行、翻页一行，一起钉在底部：滚动内容给它们让位，半屏也不用滑就看得见。
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 bottomActions
@@ -94,7 +94,7 @@ struct PartOriginalSheet: View {
         }
     }
 
-    // MARK: - 翻到上一个 / 下一个
+    // MARK: - 底部按钮
 
     @ViewBuilder
     private var bottomActions: some View {
@@ -117,6 +117,7 @@ struct PartOriginalSheet: View {
         }
     }
 
+    /// 图标和文字自己拼进 HStack：「下一个」的箭头要在文字右边，`Label` 只会把图标放左边。
     private func stepButton(
         _ title: LocalizedStringKey,
         systemImage: String,
@@ -289,7 +290,7 @@ struct PartOriginalSheet: View {
     @ViewBuilder
     private var hint: some View {
         if case .ready = original {
-            // 出路在哪儿取决于这一屏是从哪开的：核对颜色那屏上面就摆着按钮，
+            // 出路在哪儿取决于这一屏是从哪开的：核对颜色那屏就摆着按钮，
             // 拼豆板那屏得先回核对颜色。说错一句，用户就在导航栈里白跑一趟。
             Text(onRegrid == nil
                  ? "两侧形状不一致，可能是该零件的格子或颜色识别有误，请返回「核对颜色」页面修改后再摆放"
