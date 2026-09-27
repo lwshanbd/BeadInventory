@@ -20,7 +20,8 @@
 import SwiftUI
 
 struct PartsColorReviewStepView: View {
-    let work: PartsWorkImage
+    /// 每张图纸一份工作图。零件的格子从它自己那张上抠（见 `BeadPart.page`）。
+    let pages: PartsPages
     @Binding var parts: [BeadPart]
     let colorSystem: ColorSystem
     /// 上一步 AI 识别色号表得出的「这张图纸每个色号要多少颗」。
@@ -350,7 +351,7 @@ struct PartsColorReviewStepView: View {
         }
         .sheet(item: $brushTarget) { target in
             PartCellBrushView(
-                work: work,
+                pages: pages,
                 partId: target.id,
                 parts: $parts,
                 colorSystem: colorSystem,
@@ -519,11 +520,13 @@ struct PartsColorReviewStepView: View {
 
         originals[partId] = .loading
         let bounds = part.bounds
-        let source = work
+        let source = pages.work(for: part)
         let cropped = await Task.detached(priority: .userInitiated) {
-            PartsThumbnailMaker.crop(source, normalized: bounds.insetBy(
-                dx: -bounds.width * 0.06, dy: -bounds.height * 0.06
-            ))
+            source.flatMap {
+                PartsThumbnailMaker.crop($0, normalized: bounds.insetBy(
+                    dx: -bounds.width * 0.06, dy: -bounds.height * 0.06
+                ))
+            }
         }.value
 
         // 取消 ≠ 失败：用户换看别的零件而已，退回「没试过」，下次打开重来。
@@ -536,8 +539,9 @@ struct PartsColorReviewStepView: View {
             AppLogger.shared.warning("PartsColorReview", "part_original_crop_failed", metadata: [
                 "partId": partId.uuidString,
                 "bounds": "\(bounds)",
-                "region": "\(source.region)",
-                "workSize": "\(source.image.size)"
+                "page": part.pageIndex,
+                "region": "\(source?.region ?? .zero)",
+                "workSize": "\(source?.image.size ?? .zero)"
             ])
             return
         }
@@ -1266,12 +1270,12 @@ struct PartsColorReviewStepView: View {
             turnSortOn(using: modes)
             return
         }
-        let source = work
+        let source = pages
         let snapshot = parts
         samplingColors = true
         samplingProgress = nil
         samplingTask = Task.detached(priority: .userInitiated) {
-            let modes = PartsCellClassifier.sampleModes(work: source, parts: snapshot) { done, total in
+            let modes = PartsCellClassifier.sampleModes(pages: source, parts: snapshot) { done, total in
                 // 多零件模式一屏几十个零件，量一遍是好几秒。光转圈的话用户不知道还要等多久。
                 guard total > 1 else { return }
                 Task { @MainActor in samplingProgress = (done, total) }
@@ -1472,10 +1476,11 @@ struct PartsColorReviewStepView: View {
     /// 注意这是**在 body 里同步跑的**（以前是 `Task.detached`）。哪天 crop 里加了缩放、调色
     /// 这类真活儿，七万格的滚动会当场死掉。
     private func swatch(for ref: CellRef) -> UIImage? {
-        swatchCache.image(for: ref, source: work.image) {
+        swatchCache.image(for: ref, sources: pages.images.map { $0?.image }) {
             guard ref.part < parts.count else { return nil }
-            let rect = parts[ref.part].cellRect(row: ref.row, col: ref.col)
-            return PartsThumbnailMaker.crop(work, normalized: rect)
+            let part = parts[ref.part]
+            guard let work = pages.work(for: part) else { return nil }
+            return PartsThumbnailMaker.crop(work, normalized: part.cellRect(row: ref.row, col: ref.col))
         }
     }
 
@@ -1689,7 +1694,9 @@ private final class CellSwatchCache {
     ///
     /// 存强引用而不是 `ObjectIdentifier`：已释放对象的地址会被新分配复用，
     /// 那会假命中，整屏给用户看错图。
-    private var source: UIImage?
+    ///
+    /// 零件分在好几张图纸上时是一组（一张一个），任何一张换了都整批重来。
+    private var sources: [UIImage?] = []
     private var images: [PartsColorReviewStepView.CellRef: UIImage] = [:]
 
     /// 攒到这个数就**整批**扔掉重来（不是 LRU —— 屏幕上那二三十格也一起扔，下一帧原样重裁）。
@@ -1699,11 +1706,13 @@ private final class CellSwatchCache {
 
     func image(
         for ref: PartsColorReviewStepView.CellRef,
-        source: UIImage,
+        sources: [UIImage?],
         make: () -> UIImage?
     ) -> UIImage? {
-        if self.source !== source {
-            self.source = source
+        let same = self.sources.count == sources.count
+            && zip(self.sources, sources).allSatisfy { $0 === $1 }
+        if !same {
+            self.sources = sources
             images.removeAll(keepingCapacity: true)
         }
         if let hit = images[ref] { return hit }

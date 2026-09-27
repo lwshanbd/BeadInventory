@@ -25,6 +25,10 @@ struct PartsRegionStepView: View {
     var hint: LocalizedStringKey = "拖动方框，将中间的零件区域框选进去；上方色号表和下方成品图无需框入。"
     var actionTitle: LocalizedStringKey = "开始识别零件"
     var actionIcon: String = "square.on.square.dashed"
+    /// 零件分在好几张图纸上时一共几张、现在看的是第几张。只有一张时不显示翻页条。
+    /// `image` 和 `roi` 由调用方换成当前这一张的。
+    var pageCount = 1
+    var page: Binding<Int> = .constant(0)
 
     // 放大查看细节用。角点和框体的单指拖优先级更高，
     // 只有在它们的热区之外、且已经放大时才平移画布。
@@ -36,8 +40,16 @@ struct PartsRegionStepView: View {
     var body: some View {
         VStack(spacing: 0) {
             PatternSourceBanner(projectId: projectId, onLoaded: onSourceLoaded)
+            if pageCount > 1 {
+                PartsPagePicker(count: pageCount, selection: page)
+            }
             canvas
             footer
+        }
+        // 换了一张图就从整张看起，别把上一张的放大带过来
+        .onChange(of: page.wrappedValue) { _, _ in
+            viewScale = 1; lastViewScale = 1
+            viewOffset = .zero; lastViewOffset = .zero
         }
     }
 
@@ -249,5 +261,71 @@ private struct RegionBodyDragHandle: View {
                     }
                     .onEnded { _ in dragStart = nil }
             )
+    }
+}
+
+// MARK: - 翻页
+
+/// 零件分在好几张图纸上时，要看整张图的那几屏（圈零件区、零件清单、量格子、底色）一次只摆一张，
+/// 用这一条换张：两头的箭头一张一张翻，中间的页签直接跳到某一张。
+///
+/// 不做左右滑动翻页：这几屏的单指拖已经是挪框 / 挪图，两种手势会打架。
+struct PartsPagePicker: View {
+    let count: Int
+    @Binding var selection: Int
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Button {
+                selection = max(0, selection - 1)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 36, height: 32)
+            }
+            .disabled(selection == 0)
+            .accessibilityLabel("上一张")
+
+            // 张数少时页签居中摆开；多到一行放不下再变成可以横着滑的一条
+            ViewThatFits(in: .horizontal) {
+                tabs.frame(maxWidth: .infinity)
+                ScrollView(.horizontal, showsIndicators: false) { tabs }
+            }
+
+            Button {
+                selection = min(count - 1, selection + 1)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 36, height: 32)
+            }
+            .disabled(selection >= count - 1)
+            .accessibilityLabel("下一张")
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.xs)
+        .background(.regularMaterial)
+    }
+
+    private var tabs: some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            ForEach(0..<count, id: \.self) { page in
+                Button {
+                    selection = page
+                } label: {
+                    Text("\(page + 1)")
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .frame(minWidth: 36, minHeight: 32)
+                        .foregroundStyle(page == selection
+                                         ? Theme.ColorToken.Text.onAccent
+                                         : Theme.ColorToken.Text.primary)
+                        .background(
+                            Capsule().fill(page == selection
+                                           ? Theme.ColorToken.Morandi.mauve
+                                           : Theme.ColorToken.Surface.elevated)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("第 \(page + 1) 张")
+            }
+        }
     }
 }

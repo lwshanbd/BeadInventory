@@ -47,7 +47,9 @@ struct PartsBoardStepView: View {
     /// 图纸本身。**可以是 nil** —— 这一屏只靠格子数据就能画板子，图裁失败不该把用户
     /// 挡在最后一步外面（见 PartsSheetFlowView 的 navigationDestination）。
     /// 有图的时候多一件事能做：点板上的零件，把图纸上原来那块抠出来对一眼。
-    var work: PartsWorkImage?
+    ///
+    /// 零件分在好几张图纸上时是一组，点哪块就去它自己那张上抠（见 `BeadPart.page`）。
+    var pages: PartsPages?
     @Binding var boards: [PartsBoard]
     /// 这套板子是按哪一档松紧排的。nil = 还没排过（或者是没这个字段的老图纸）。
     @Binding var boardSpacing: BoardSpacing?
@@ -414,7 +416,7 @@ struct PartsBoardStepView: View {
         }
         .sheet(item: $brushTarget) { target in
             PartCellBrushView(
-                work: work,
+                pages: pages,
                 partId: target.id,
                 parts: $parts,
                 colorSystem: colorSystem,
@@ -1584,7 +1586,7 @@ struct PartsBoardStepView: View {
         guard let partId, let part = parts.first(where: { $0.id == partId }) else { return }
         if case .some(.ready) = originals[partId] { return }
         // 这次根本没有图纸可抠：立刻定论，别让用户等一个不会来的东西。
-        guard let work else {
+        guard let work = pages?.work(for: part) else {
             originals[partId] = .unavailable
             return
         }
@@ -1639,7 +1641,8 @@ struct PartsBoardStepView: View {
     /// 但没有图纸时连开始都不会开始，那就直接说拿不到，别先闪一下转圈。
     private func originalState(of partId: UUID) -> PartOriginalSheet.Original {
         if let known = originals[partId] { return known }
-        return work == nil ? .unavailable : .loading
+        let part = parts.first(where: { $0.id == partId })
+        return part.flatMap { pages?.work(for: $0) } == nil ? .unavailable : .loading
     }
 
     private func name(of partId: UUID) -> String {

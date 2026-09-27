@@ -116,6 +116,37 @@ struct PartsWorkImage {
     }
 }
 
+/// 一个作品的几张图纸，一张一份工作图。下标就是 `BeadPart.page`。
+///
+/// 几张图各管各的，**从来不拼成一张**：零件的坐标是相对它自己那一张归一化的，
+/// 要看哪个零件就去它那一张上取。只有一张图纸（绝大多数作品）时这里就是一个元素。
+///
+/// 某一张可能是 nil：那张的原图被删了（「拼好了」），或者读不出来。
+/// 这时那张上的零件取不到图，调用方按「这块没图」处理，**不能退到别的张上去裁** ——
+/// 坐标是相对那一张的，拿到别的图上裁出来是另一块东西，还看着像模像样。
+struct PartsPages {
+    var images: [PartsWorkImage?]
+
+    init(_ images: [PartsWorkImage?]) {
+        self.images = images
+    }
+
+    /// 只有一张图纸（单图纸模式、老数据）
+    init(single work: PartsWorkImage) {
+        self.images = [work]
+    }
+
+    var count: Int { images.count }
+
+    subscript(page: Int) -> PartsWorkImage? {
+        images.indices.contains(page) ? images[page] : nil
+    }
+
+    func work(for part: BeadPart) -> PartsWorkImage? {
+        self[part.pageIndex]
+    }
+}
+
 /// 图纸某个区域的降采样位图，逐像素带一个量化颜色索引。
 struct PartsBitmap {
     /// 工作分辨率下的宽高
