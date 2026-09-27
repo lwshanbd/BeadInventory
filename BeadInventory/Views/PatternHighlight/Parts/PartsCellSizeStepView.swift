@@ -20,7 +20,7 @@
 //
 //  **格线位置不是。** 图纸上的零件是各画各的 —— 零件 A 的格线和零件 B 的格线压根不属于
 //  同一批。早先整张图共用一个相位，于是「这个对齐了、换一个又对不上」，怎么推都推不好，
-//  因为它数学上就不成立。现在是：格距由用户定（加减号一次 0.1 像素），
+//  因为它数学上就不成立。现在是：格距由用户定（粗调一次 0.1、细调一次 0.01 像素），
 //  然后拿这个格距**一个零件一个零件地找它自己的格线**（`PartsPitchEstimator.fitOrigin`）。
 //
 //  所以主按钮是「对齐了，看下一个」，**所有零件都要过一遍**（大的排前面，格线多最容易
@@ -1071,8 +1071,9 @@ struct PartsCellSizeStepView: View {
     /// 四个按钮各动多少源图像素，按屏幕上从左到右的顺序。
     ///
     /// **最小到 0.01。** 一个像素太粗了：自动量出来的是 20.03 这种数，整数步只能在
-    /// 19.03 / 20.03 / 21.03 之间跳。0.1 也还不够：零件有七八十格宽时，每格差 0.01
-    /// 像素，铺到最后一格就差出近一个像素，线已经压到豆子上了。
+    /// 19.03 / 20.03 / 21.03 之间跳。0.1 也还不够：步长 0.1 时每格最多差 0.05 像素，
+    /// 零件有七八十格宽的话，铺到最后一格能差出三四个像素，线早就压到豆子上了。
+    /// 步长到 0.01，同样宽也只差零点几个像素。
     /// 粗调有拖把手和自动对齐，这几个按钮是用来收尾的。
     private static let cellPixelSteps: [Double] = [-0.1, -0.01, 0.01, 0.1]
 
@@ -1082,7 +1083,7 @@ struct PartsCellSizeStepView: View {
         } label: {
             Text(verbatim: delta > 0 ? "+\(delta.formatted())" : "−\((-delta).formatted())")
                 .font(.footnote.monospacedDigit().weight(.semibold))
-                .frame(minWidth: 44, minHeight: 36)
+                .frame(minWidth: 44, minHeight: 44)  // 36pt 连点按不准，见 nudgeButton
                 .background(Theme.ColorToken.Surface.elevated)
                 .clipShape(Capsule())
         }
