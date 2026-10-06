@@ -107,11 +107,19 @@ struct PartsCellSizeStepView: View {
     var orderOffset = 0
     /// 后面还有要对的图纸。这时对完这一张按下去是翻到下一张，不是去判色，按钮得照实说。
     var hasNextPage = false
+    /// 所有图纸上一共几个零件。「跳转到零件」按整个零件清单的编号认，不只认这一张上的。
+    /// nil = 只有这一张（单图纸，或者零件全在一张上）。
+    var totalPartCount: Int?
+    /// 输入的编号在别的图纸上时交给容器：翻到那一张，停在那个零件上。参数是全局编号（从 1 起）。
+    var onJumpToOtherPage: ((Int) -> Void)?
 
     /// 当前正在看哪个零件，顺序与零件清单一致。
     @State private var sampleIndex = 0
     @State private var restoredPosition = false
     @State private var showingPartJump = false
+    /// 正要翻去别的图纸。这时这一屏马上会被换掉，`onDisappear` 不能再把「停在哪个零件」
+    /// 报给容器 —— 那会盖掉刚设好的跳转目标，新那张又落回上次停的地方。
+    @State private var jumpingAway = false
     @State private var partNumberInput = ""
     @State private var sampleImage: UIImage?
     /// 画布画的是整张图纸的哪一块（归一化）
@@ -309,9 +317,9 @@ struct PartsCellSizeStepView: View {
         // `initial: true` 让它照样赶在底下那两个 `.task` 之前 —— 晚一步的话
         // `loadSample` 会先给第一个零件白裁一张图，正确那一块的图也跟着晚出来。
         .onChange(of: focusPartId, initial: true) { _, _ in focusRequestedPart() }
-        .onDisappear { onLeavePart?(sample?.id) }
+        .onDisappear { if !jumpingAway { onLeavePart?(sample?.id) } }
         .toolbar {
-            if subjectLabel == nil, samples.count > 1 {
+            if subjectLabel == nil, (totalPartCount ?? samples.count) > 1 {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("跳转到零件") {
                         partNumberInput = ""
@@ -325,13 +333,19 @@ struct PartsCellSizeStepView: View {
             TextField("零件编号", text: $partNumberInput)
                 .keyboardType(.numberPad)
             Button("跳转") {
-                guard let index = jumpPartIndex else { return }
-                sampleIndex = index
+                guard let number = jumpPartNumber else { return }
+                let index = number - 1 - orderOffset
+                if samples.indices.contains(index) {
+                    sampleIndex = index
+                } else if let onJumpToOtherPage {
+                    jumpingAway = true
+                    onJumpToOtherPage(number)
+                }
             }
-            .disabled(jumpPartIndex == nil)
+            .disabled(jumpPartNumber == nil)
             Button("取消", role: .cancel) { }
         } message: {
-            Text("请输入 \(orderOffset + 1)–\(orderOffset + samples.count) 之间的零件编号")
+            Text("请输入 \(jumpRange.lowerBound)–\(jumpRange.upperBound) 之间的零件编号")
         }
         // 工作图也算进 id：进来时先拿到的是低清兜底版，高清版在后台裁好之后才换上来。
         // 认零件的 **id** 而不是下标：删掉一个非末尾的零件时下标不变，后面那个顶上来 ——
@@ -441,6 +455,10 @@ struct PartsCellSizeStepView: View {
                         .interpolation(.none)
                         .frame(width: box.width, height: box.height)
                         .position(x: box.midX, y: box.midY)
+                        // 放大后图比画布大得多。`.clipped()` 只裁画面、不裁点按：
+                        // 伸出画布的那一截看不见，却照样接点按，把上面的翻页条整条盖死。
+                        // 手势全在 `gestureCatcher` 上，图本身不用接点按。
+                        .allowsHitTesting(false)
                 }
 
                 // 覆盖层不跟着 scaleEffect 走，自己按 transform 算屏幕坐标 ——
@@ -475,6 +493,8 @@ struct PartsCellSizeStepView: View {
             .onChange(of: geo.size) { _, new in canvasSize = new }
         }
         .clipped()
+        // 点按也只认画布这一块，理由同上
+        .contentShape(Rectangle())
     }
 
     /// 手势层。单指：落指的位置决定这一拖是「挪格子」「改大小」「推格线」还是「移动图片」——
@@ -851,11 +871,21 @@ struct PartsCellSizeStepView: View {
     /// 是不是最后一个要看的零件
     private var isLastSample: Bool { sampleIndex >= samples.count - 1 }
 
-    private var jumpPartIndex: Int? {
+    /// 能跳到哪些编号。有别的图纸时是整个零件清单，否则只是这一张上的。
+    private var jumpRange: ClosedRange<Int> {
+        if let totalPartCount, onJumpToOtherPage != nil {
+            return 1...max(1, totalPartCount)
+        }
+        return (orderOffset + 1)...(orderOffset + max(1, samples.count))
+    }
+
+    /// 输入框里的编号（全局，从 1 起）。不在范围内就是 nil。
+    private var jumpPartNumber: Int? {
         guard let number = Int(partNumberInput.trimmingCharacters(in: .whitespacesAndNewlines)),
-              ((orderOffset + 1)...(orderOffset + max(1, samples.count))).contains(number),
-              !samples.isEmpty else { return nil }
-        return number - 1 - orderOffset
+              jumpRange.contains(number),
+              // 这一张没有零件时只能跳去别的张
+              !samples.isEmpty || onJumpToOtherPage != nil else { return nil }
+        return number
     }
 
     /// 主按钮上写什么。三种情形三句话，说的都是**按下去会去哪儿**。
@@ -873,23 +903,26 @@ struct PartsCellSizeStepView: View {
 
     /// 翻到核对页指定的那一块，并记下它现在的网格长什么样。
     private func focusRequestedPart() {
-        guard let focusPartId else {
-            // 这一趟结束了（容器把 `regridTarget` 收掉了）。这里也收干净 ——
-            // 不收的话，用户为**同一块**再回来一次时 id 没变，下面那道判断会以为已经翻过了。
-            focusedPartId = nil
-            if !restoredPosition {
-                restoredPosition = true
-                sampleIndex = samples.firstIndex(where: { $0.id == resumePartId })
-                    ?? samples.firstIndex(where: { !$0.isGridConfirmed && !$0.hasCells })
-                    ?? 0
-            }
+        // 要翻的那一块在这一张上才翻。不在（用户在重对途中换了张图纸）就跟平常一样，
+        // 回到上次停的地方 —— 不然跳转到别的张的零件时，落点永远是那张的第一个。
+        if let focusPartId, let index = samples.firstIndex(where: { $0.id == focusPartId }) {
+            guard focusedPartId != focusPartId else { return }
+            focusedPartId = focusPartId
+            restoredPosition = true
+            sampleIndex = index
             return
         }
-        guard focusedPartId != focusPartId,
-              let index = samples.firstIndex(where: { $0.id == focusPartId }) else { return }
-        focusedPartId = focusPartId
-        restoredPosition = true
-        sampleIndex = index
+        if focusPartId == nil {
+            // 这一趟结束了（容器把 `regridTarget` 收掉了）。这里也收干净 ——
+            // 不收的话，用户为**同一块**再回来一次时 id 没变，上面那道判断会以为已经翻过了。
+            focusedPartId = nil
+        }
+        if !restoredPosition {
+            restoredPosition = true
+            sampleIndex = samples.firstIndex(where: { $0.id == resumePartId })
+                ?? samples.firstIndex(where: { !$0.isGridConfirmed && !$0.hasCells })
+                ?? 0
+        }
     }
 
     /// 「对好了，回核对颜色」按下去时对当前这一块做的两件事，**合成一次写回**。

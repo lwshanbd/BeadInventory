@@ -283,6 +283,9 @@ struct PartsListStepView: View {
         // 必须裁：图是按放大后的**最终尺寸** `.frame` + `.position` 摆的，本来就会超出这
         // 340pt 的框 —— 少了这一行，放大后的图会盖到导航栏和下面的缩略图上。
         .clipped()
+        // `.clipped()` 只裁画面、不裁点按：伸出去的那一截看不见，却照样接点按，
+        // 把上面的翻页条盖死。点按也只认画布这一块。
+        .contentShape(Rectangle())
     }
 
     /// 手势层。触点永远是**真实屏幕点**，靠 `transform` 换成图纸上的归一化坐标。

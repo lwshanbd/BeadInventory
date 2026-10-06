@@ -948,7 +948,9 @@ struct PartsSheetFlowView: View {
                     // 把旧颜色作废，见那个参数的注释。
                     clearsColorsWhenGridMoves: true,
                     orderOffset: parts.filter { $0.pageIndex < page }.count,
-                    hasNextPage: regridTarget == nil && nextPageWithParts(after: page) != nil
+                    hasNextPage: regridTarget == nil && nextPageWithParts(after: page) != nil,
+                    totalPartCount: pageCount > 1 ? parts.count : nil,
+                    onJumpToOtherPage: pageCount > 1 ? { jumpToPart(number: $0) } : nil
                 )
                 // 换一张就是一套新的状态（看到第几个、放大多少）
                 .id(page)
@@ -1034,6 +1036,18 @@ struct PartsSheetFlowView: View {
                 parts = merged
             }
         )
+    }
+
+    /// 量格子时按编号跳到别的图纸上的零件：翻到那一张，停在那个零件上。
+    /// 编号跟零件清单一致：先按图纸排，同一张里按清单顺序（见 `orderOffset`）。
+    private func jumpToPart(number: Int) {
+        let ordered = Set(parts.map(\.pageIndex)).sorted().flatMap { page in
+            parts.filter { $0.pageIndex == page }
+        }
+        guard ordered.indices.contains(number - 1) else { return }
+        let target = ordered[number - 1]
+        lastGridPartId = target.id
+        cellSizePage = target.pageIndex
     }
 
     private func nextPageWithParts(after page: Int) -> Int? {
