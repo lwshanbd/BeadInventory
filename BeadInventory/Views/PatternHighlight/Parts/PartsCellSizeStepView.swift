@@ -108,17 +108,21 @@ struct PartsCellSizeStepView: View {
     /// 后面还有要对的图纸。这时对完这一张按下去是翻到下一张，不是去判色，按钮得照实说。
     var hasNextPage = false
     /// 所有图纸上一共几个零件。「跳转到零件」按整个零件清单的编号认，不只认这一张上的。
-    /// nil = 只有这一张（单图纸，或者零件全在一张上）。
+    /// nil = 只有一张图纸。
     var totalPartCount: Int?
     /// 输入的编号在别的图纸上时交给容器：翻到那一张，停在那个零件上。参数是全局编号（从 1 起）。
-    var onJumpToOtherPage: ((Int) -> Void)?
+    /// 返回 false = 没翻过去（那张图纸读不出来）。
+    var onJumpToOtherPage: ((Int) -> Bool)?
+    /// 从别的图纸按编号跳过来的那一块。比 `focusPartId` 优先：
+    /// 重对途中用户自己输了编号，就该停在他输的那一块上。
+    var jumpPartId: UUID?
 
     /// 当前正在看哪个零件，顺序与零件清单一致。
     @State private var sampleIndex = 0
     @State private var restoredPosition = false
     @State private var showingPartJump = false
     /// 正要翻去别的图纸。这时这一屏马上会被换掉，`onDisappear` 不能再把「停在哪个零件」
-    /// 报给容器 —— 那会盖掉刚设好的跳转目标，新那张又落回上次停的地方。
+    /// 报给容器 —— 那会把刚设好的跳转目标清掉，新那张就找不到要停的那一块了。
     @State private var jumpingAway = false
     @State private var partNumberInput = ""
     @State private var sampleImage: UIImage?
@@ -338,8 +342,7 @@ struct PartsCellSizeStepView: View {
                 if samples.indices.contains(index) {
                     sampleIndex = index
                 } else if let onJumpToOtherPage {
-                    jumpingAway = true
-                    onJumpToOtherPage(number)
+                    jumpingAway = onJumpToOtherPage(number)
                 }
             }
             .disabled(jumpPartNumber == nil)
@@ -493,7 +496,7 @@ struct PartsCellSizeStepView: View {
             .onChange(of: geo.size) { _, new in canvasSize = new }
         }
         .clipped()
-        // 点按也只认画布这一块，理由同上
+        // `.clipped()` 不裁点按：命中区也限在画布内，伸出去的东西才不会盖住上面的翻页条
         .contentShape(Rectangle())
     }
 
@@ -879,7 +882,7 @@ struct PartsCellSizeStepView: View {
         return (orderOffset + 1)...(orderOffset + max(1, samples.count))
     }
 
-    /// 输入框里的编号（全局，从 1 起）。不在范围内就是 nil。
+    /// 输入框里的编号（全局，从 1 起）。输入无效时是 nil。
     private var jumpPartNumber: Int? {
         guard let number = Int(partNumberInput.trimmingCharacters(in: .whitespacesAndNewlines)),
               jumpRange.contains(number),
@@ -903,6 +906,14 @@ struct PartsCellSizeStepView: View {
 
     /// 翻到核对页指定的那一块，并记下它现在的网格长什么样。
     private func focusRequestedPart() {
+        if !restoredPosition, let jumpPartId,
+           let index = samples.firstIndex(where: { $0.id == jumpPartId }) {
+            restoredPosition = true
+            // 当作重对目标已经翻过，免得它随后又把落点抢回去
+            focusedPartId = focusPartId
+            sampleIndex = index
+            return
+        }
         // 要翻的那一块在这一张上才翻。不在（用户在重对途中换了张图纸）就跟平常一样，
         // 回到上次停的地方 —— 不然跳转到别的张的零件时，落点永远是那张的第一个。
         if let focusPartId, let index = samples.firstIndex(where: { $0.id == focusPartId }) {

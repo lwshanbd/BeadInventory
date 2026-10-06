@@ -104,6 +104,8 @@ struct PartsSheetFlowView: View {
     @State private var regridTarget: UUID?
     /// 返回清单重新框选后，继续查看离开时的零件；用身份避免增删后串号。
     @State private var lastGridPartId: UUID?
+    /// 量格子时按编号跳去别的图纸的那一块。离开那一屏时清掉。
+    @State private var jumpPartId: UUID?
 
     /// 这次会话真的改过东西。
     ///
@@ -936,7 +938,10 @@ struct PartsSheetFlowView: View {
                     },
                     focusPartId: regridTarget,
                     resumePartId: lastGridPartId,
-                    onLeavePart: { lastGridPartId = $0 },
+                    onLeavePart: {
+                        lastGridPartId = $0
+                        jumpPartId = nil
+                    },
                     // 从核对页跳过来的才有回程按钮。**闭包在，就说明是那一趟** ——
                     // 用 `regridTarget != nil` 现算，别缓存成一个 Bool：
                     // 那样退出去再进来会剩一个通向空处的按钮。
@@ -949,8 +954,9 @@ struct PartsSheetFlowView: View {
                     clearsColorsWhenGridMoves: true,
                     orderOffset: parts.filter { $0.pageIndex < page }.count,
                     hasNextPage: regridTarget == nil && nextPageWithParts(after: page) != nil,
-                    totalPartCount: pageCount > 1 ? parts.count : nil,
-                    onJumpToOtherPage: pageCount > 1 ? { jumpToPart(number: $0) } : nil
+                    totalPartCount: pageCount > 1 ? jumpableParts.count : nil,
+                    onJumpToOtherPage: pageCount > 1 ? { jumpToPart(number: $0) } : nil,
+                    jumpPartId: jumpPartId
                 )
                 // 换一张就是一套新的状态（看到第几个、放大多少）
                 .id(page)
@@ -1038,16 +1044,22 @@ struct PartsSheetFlowView: View {
         )
     }
 
+    /// 能按编号跳过去的零件。`parts` 本来就按图纸排好，编号跟 `orderOffset` 一致。
+    /// 本机原图比存档少时，后面几张上的零件到不了，不算进去（它们排在最后，前面的编号不变）。
+    private var jumpableParts: [BeadPart] {
+        parts.filter { $0.pageIndex < pageCount }
+    }
+
     /// 量格子时按编号跳到别的图纸上的零件：翻到那一张，停在那个零件上。
-    /// 编号跟零件清单一致：先按图纸排，同一张里按清单顺序（见 `orderOffset`）。
-    private func jumpToPart(number: Int) {
-        let ordered = Set(parts.map(\.pageIndex)).sorted().flatMap { page in
-            parts.filter { $0.pageIndex == page }
-        }
-        guard ordered.indices.contains(number - 1) else { return }
+    /// 那张图纸读不出来就不翻，返回 false。
+    private func jumpToPart(number: Int) -> Bool {
+        let ordered = jumpableParts
+        guard ordered.indices.contains(number - 1) else { return false }
         let target = ordered[number - 1]
-        lastGridPartId = target.id
+        guard pages[target.pageIndex] != nil else { return false }
+        jumpPartId = target.id
         cellSizePage = target.pageIndex
+        return true
     }
 
     private func nextPageWithParts(after page: Int) -> Int? {
