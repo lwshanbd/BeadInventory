@@ -99,6 +99,9 @@ struct PartsRegionStepView: View {
             )
         }
         .clipped()
+        // `.clipped()` 只裁画面、不裁点按：放大后伸出画布的图看不见，却照样接点按，
+        // 会把上面的翻页条盖死。点按也只认画布这一块。
+        .contentShape(Rectangle())
     }
 
     /// 夹住平移，别让图被拖出画布（同零件清单那屏）
