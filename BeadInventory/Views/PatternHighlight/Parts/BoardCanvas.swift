@@ -180,7 +180,7 @@ struct BoardCanvasRenderer {
     /// 只有这几个摆放画本来的颜色，别的零件整块压成灰。空集 = 都正常画。
     ///
     /// 组装模式用：用户在图纸上点了一个零件，问的是「它在板上哪儿」。
-    /// 同一块板上的其它零件照样画出来当参照（左上那一堆、右边那一条），只是让路。
+    /// 同一块板上的其它零件照样画出来当参照，只是让路。目前只有组装模式用，不跟 `highlightKeys` 一起传。
     var focus: Set<UUID> = []
 
     func draw(in context: GraphicsContext, canvas size: CGSize, layout: BoardCanvasLayout) {
@@ -424,7 +424,8 @@ struct BoardCanvasRenderer {
 
     /// 攒填充用的 key → 真正画上去的颜色。`stage` 为 nil 就是没高亮的普通视图。
     ///
-    /// 压暗色只有高亮时才会攒出来，所以走到那一支时 `stage` 一定在。它**不能**退回
+    /// 压暗色有两个来处：高亮时让路的豆子，用 `stage.dimmed`；组装模式里 `focus` 外的零件，
+    /// 这时没有 `stage`，退回 `Border.divider`。高亮那一支**不能**退回
     /// `Border.default` —— 那正好是没高亮时每 5 格那条粗线的颜色，一大片压暗的豆子铺开，
     /// 粗线就化在里面了（用户报的「分割线很不明显」就是这么来的）。
     private func fillColor(for key: String, stage: BoardHighlightStage?) -> Color {

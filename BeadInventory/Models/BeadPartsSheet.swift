@@ -385,7 +385,7 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
     /// 组装模式里勾成「已组装」的零件。几十个零件分几个晚上粘，下次进来要知道还剩哪些。
     ///
     /// 记的是零件不是摆放：组装时用户点的是图纸上那一块，一个零件拼两份也只有一个框。
-    /// 里面可能留着已经删掉的零件的 id（重新找过零件），读的时候跟现有零件对一遍就行。
+    /// 写入时已按现有零件过滤，读的时候也跟现有零件再对一遍。
     /// Optional 是为了老数据（理由见 `boards`）。
     var assembledPartIds: [UUID]?
     var lastUpdatedAt: Date

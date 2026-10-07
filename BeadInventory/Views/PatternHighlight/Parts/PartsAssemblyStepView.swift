@@ -4,7 +4,7 @@
 //
 //  多零件模式 · 组装（最后一屏；整条流程的屏序见 PartsSheetFlowView 的头注释）
 //
-//  板子都拼完、烫完了，桌上摊着几块板，零件还嵌在板上。这时候用户是照着图纸粘：
+//  几块板拼好、烫好了，桌上摊着这几块板，零件还嵌在板上。这时候用户是照着图纸粘：
 //  图纸上看到「下一块该粘这个」，然后要去几块板上把它找出来。
 //
 //  零件一上板就跟图纸长得不一样了（可能转过、翻过，挨着一堆别的零件），
@@ -14,7 +14,7 @@
 //  点图纸上的零件 → 下面画出它所在的那块板，它自己亮着，同板别的零件压成灰当参照。
 //  一个零件拼了两份、分在两块板上，就画两块。
 //
-//  粘好的勾掉，图纸上那块跟着变灰打勾。几十个零件要粘好几个晚上，
+//  粘好的勾掉，图纸上那块跟着蒙白打勾。几十个零件要粘好几个晚上，
 //  下次进来得一眼看出还剩哪些（存在 `BeadPartsSheet.assembledPartIds`）。
 //
 
@@ -51,8 +51,14 @@ struct PartsAssemblyStepView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if pages.count > 1 {
-                PartsPagePicker(count: pages.count, selection: $page)
+            if pageCount > 1 {
+                PartsPagePicker(count: pageCount, selection: $page)
+            }
+            if pages[page] == nil {
+                Text("本机没有这张图纸的原图")
+                    .font(.footnote)
+                    .foregroundColor(Theme.ColorToken.Text.secondary)
+                    .padding(.vertical, Theme.Spacing.xs)
             }
             sheetCanvas
             Divider()
@@ -71,10 +77,17 @@ struct PartsAssemblyStepView: View {
             pan = .zero; lastPan = .zero
         }
         .task { colorCache = makeColorCache() }
-        .task(id: page) { await loadPageImage() }
+        // 带上图的尺寸：再次进来时先用的是低清图，高清的稍后才换上来，换了要重裁
+        .task(id: "\(page)|\(pages[page]?.image.size ?? .zero)") { await loadPageImage() }
     }
 
     // MARK: - 图纸
+
+    /// 按零件算有几张，不按本机有几张图算：原图不走 iCloud，换台设备打开时后面几张可能没有图，
+    /// 但那几张上的零件照样要能点、能找到在哪块板上
+    private var pageCount: Int {
+        max(pages.count, (parts.map(\.pageIndex).max() ?? 0) + 1)
+    }
 
     /// 零件 id → 清单里排第几（1-based），跟零件清单、拼豆板上写的号是同一个
     private var partOrder: [UUID: Int] {
@@ -219,10 +232,9 @@ struct PartsAssemblyStepView: View {
 
     /// 没选零件时：还剩多少没粘
     private var summary: some View {
-        let total = parts.filter { $0.beadCount > 0 }
-        let done = total.filter { assembled.contains($0.id) }.count
+        let done = parts.filter { assembled.contains($0.id) }.count
         return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            Text("已组装 \(done)/\(total.count)")
+            Text("已组装 \(done)/\(parts.count)")
                 .font(.headline.monospacedDigit())
             Text("点按图纸上的零件查看它在哪块板上")
                 .font(.subheadline)
