@@ -41,6 +41,9 @@ struct PartsAssemblyStepView: View {
     /// `pageImage` 实际对应整张图纸的哪一块（归一化）
     @State private var pageImageRegion: CGRect = .zero
     @State private var colorCache: [String: Color] = [:]
+    /// 板子缩略图左右翻过来画。默认翻：烫完揭下来，拿在手上粘的是贴着板子那一面，
+    /// 跟板上看到的正好左右相反。跟着人走不跟着图纸，同一个人的习惯不会换。
+    @AppStorage("assemblyBoardMirrored") private var mirrored = true
 
     @State private var zoom: CGFloat = 1
     @State private var lastZoom: CGFloat = 1
@@ -266,6 +269,7 @@ struct PartsAssemblyStepView: View {
                     .font(.headline)
                     .foregroundColor(Theme.ColorToken.Morandi.mauve)
                 Spacer()
+                if !spots.isEmpty { mirrorButton }
                 Button {
                     if isDone { assembled.remove(part.id) } else { assembled.insert(part.id) }
                     onPersist()
@@ -304,7 +308,16 @@ struct PartsAssemblyStepView: View {
 
     private func thumbnail(_ board: PartsBoard, focus: Set<UUID>) -> some View {
         AssemblyBoardThumbnail(board: board, focus: focus, parts: parts,
-                               partOrder: partOrder, colorCache: colorCache)
+                               partOrder: partOrder, colorCache: colorCache, mirrored: mirrored)
+    }
+
+    private var mirrorButton: some View {
+        Button { mirrored.toggle() } label: {
+            Label("镜像", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right")
+                .font(.footnote)
+        }
+        .buttonStyle(.bordered)
+        .tint(mirrored ? Theme.ColorToken.Morandi.mauve : nil)
     }
 
     private func makeColorCache() -> [String: Color] {
@@ -388,6 +401,8 @@ private struct AssemblyBoardThumbnail: View {
     let parts: [BeadPart]
     let partOrder: [UUID: Int]
     let colorCache: [String: Color]
+    /// 左右翻过来画，理由见 `PartsAssemblyStepView.mirrored`
+    let mirrored: Bool
 
     var body: some View {
         let byId = Dictionary(uniqueKeysWithValues: parts.map { ($0.id, $0) })
@@ -404,13 +419,39 @@ private struct AssemblyBoardThumbnail: View {
             board: board,
             footprints: footprints,
             colorCache: colorCache,
-            labels: labels,
+            // 翻过来画时号要另写：跟着一起翻的话「42」会变成反字
+            labels: mirrored ? [:] : labels,
             selected: focus,
             focus: focus
         )
         return Canvas { context, size in
             let layout = BoardCanvasLayout.fitting(board, in: size, padding: 4)
-            renderer.draw(in: context, canvas: size, layout: layout)
+            guard mirrored else {
+                renderer.draw(in: context, canvas: size, layout: layout)
+                return
+            }
+            var flipped = context
+            flipped.translateBy(x: size.width, y: 0)
+            flipped.scaleBy(x: -1, y: 1)
+            renderer.draw(in: flipped, canvas: size, layout: layout)
+
+            let fontSize = min(max(layout.cell * 1.7, 10), 20)
+            for placement in board.placements {
+                guard let text = labels[placement.id], let footprint = footprints[placement.id] else { continue }
+                let box = layout.boundingRect(of: footprint, col: placement.col, row: placement.row)
+                let center = CGPoint(x: size.width - box.midX, y: box.midY)
+                let resolved = context.resolve(
+                    Text(text).font(.system(size: fontSize, weight: .bold)).foregroundStyle(Color.black)
+                )
+                let measured = resolved.measure(in: CGSize(width: 400, height: 400))
+                let pill = CGRect(x: center.x - measured.width / 2 - fontSize * 0.28,
+                                  y: center.y - measured.height / 2 - fontSize * 0.1,
+                                  width: measured.width + fontSize * 0.56,
+                                  height: measured.height + fontSize * 0.2)
+                context.fill(Path(roundedRect: pill, cornerRadius: pill.height / 2),
+                             with: .color(Theme.ColorToken.Morandi.honey))
+                context.draw(resolved, at: center, anchor: .center)
+            }
         }
     }
 }
