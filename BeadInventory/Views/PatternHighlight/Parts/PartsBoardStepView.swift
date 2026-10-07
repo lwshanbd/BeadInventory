@@ -59,6 +59,8 @@ struct PartsBoardStepView: View {
     /// 擦 / 补完格子立刻落盘 —— 那是对图纸本身的修改，不能等到「完成」那一下。
     let onPersist: () -> Void
     let onFinish: () -> Void
+    /// 去组装模式。板子拼完了，接下来是照着图纸把零件粘起来。
+    let onAssemble: () -> Void
 
     @EnvironmentObject var inventoryManager: InventoryManager
 
@@ -867,10 +869,17 @@ struct PartsBoardStepView: View {
             //（见 `requestFinish`）。**不是禁用按钮** —— 灰着不说话，用户只会以为
             // App 坏了；而且「就这么拼」也可能真是他的决定（他也许打算拼完自己剪开）。
             // 所以说清楚代价，让他自己点。
-            Button(action: requestFinish) {
-                Label("完成", systemImage: "checkmark").frame(maxWidth: .infinity)
+            HStack(spacing: Theme.Spacing.md) {
+                // 不等板子全部标完才给进：几块板拼好了就可以先粘那几块上的零件
+                Button(action: onAssemble) {
+                    Label("组装", systemImage: "cube").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                Button(action: requestFinish) {
+                    Label("完成", systemImage: "checkmark").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
         }
         .padding()
         .background(.regularMaterial)

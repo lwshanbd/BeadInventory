@@ -4,7 +4,7 @@
 //
 //  多零件模式（立体图纸）- 整条流程的容器
 //
-//  六屏，一屏一件事。顺序就是下面这个表，也就是 `Step` 的顺序 ——
+//  七屏，一屏一件事。顺序就是下面这个表，也就是 `Step` 的顺序 ——
 //  屏号只写在这里，各屏自己的文件里不再写「第 ③ 屏」，免得插一屏就得挨个改注释：
 //
 //      圈零件区     把中间那一大块框住（排除顶部色号表 / 底部成品图）。这是根视图。
@@ -13,6 +13,7 @@
 //      底色和任意色 在图上指认这两样「不是色号」的颜色，判色前必须先摘出去
 //      核对颜色     每个色号有多少颗、分别是哪几格，用户逐条校对
 //      拼豆板       零件分别摆在第几块板的第几格
+//      组装         板子都拼完了，照着图纸粘零件：点图纸上哪块，告诉你它在哪块板上
 //
 //  ## 这里曾经有一屏「图纸调色板」（排在零件清单后面），已经删掉
 //
@@ -94,6 +95,8 @@ struct PartsSheetFlowView: View {
     @State private var legendUsage: [BeadUsage]?
     /// 上次把计划用量换成格子颗数时的颗数，见 `BeadPartsSheet.syncedCellCounts`。
     @State private var syncedCellCounts: [String: Int]?
+    /// 组装模式里勾掉的零件，见 `BeadPartsSheet.assembledPartIds`
+    @State private var assembled: Set<UUID> = []
 
     @State private var busy: String?
 
@@ -128,7 +131,7 @@ struct PartsSheetFlowView: View {
     /// 这批零件是在第几代工作图上找出来的。
     @State private var detectedGeneration = 0
 
-    enum Step: Hashable { case list, cellSize, baseColor, review, board }
+    enum Step: Hashable { case list, cellSize, baseColor, review, board, assembly }
 
     /// 现在要跟用户说的那一句话。
     ///
@@ -257,6 +260,22 @@ struct PartsSheetFlowView: View {
                             colorSystem: project.colorSystem,
                             projectId: project.id,
                             onPersist: { persist() },
+                            onFinish: { save() },
+                            onAssemble: {
+                                persist()
+                                path = [.list, .cellSize, .baseColor, .review, .board, .assembly]
+                            }
+                        )
+                        .environmentObject(inventoryManager)
+                    } else if step == .assembly {
+                        // 跟拼豆板那屏一样不拦着等图：没图时组装页自己说明，板子位置照样能看
+                        PartsAssemblyStepView(
+                            parts: parts,
+                            pages: pages,
+                            boards: boards,
+                            assembled: tracked($assembled),
+                            colorSystem: project.colorSystem,
+                            onPersist: { persist() },
                             onFinish: { save() }
                         )
                         .environmentObject(inventoryManager)
@@ -307,7 +326,7 @@ struct PartsSheetFlowView: View {
                             .environmentObject(inventoryManager)
                             // 重对过格子的那一块回来时是空的，进这一屏先把它补判上。
                             .task { await classifyMissingParts() }
-                        case .board:
+                        case .board, .assembly:
                             EmptyView()   // 上面已经拦掉了
                         }
                     } else {
@@ -498,6 +517,7 @@ struct PartsSheetFlowView: View {
             let legend = saved.legendUsage ?? project.beadUsage
             self.legendUsage = legend
             self.syncedCellCounts = saved.syncedCellCounts
+            self.assembled = Set(saved.assembledPartIds ?? []).intersection(liveIds)
 
             // 以前就判完色的图纸，这次不改任何东西退出去的话，计划里还是 AI 读的数。
             // 所以进来就同步一次。格子和份数都没变过的不会动计划（见 `syncPlannedUsageFromPartsSheet`）。
@@ -520,9 +540,11 @@ struct PartsSheetFlowView: View {
             // 他看到的就是「填好的颜色不见了」。判过色的（格子里有内容）直接回到核对页。
             //
             // 已经开始摆板子的，直接回到板子那屏 —— 那时候用户是真拿着豆子在拼，
-            // 每次进来还要从核对颜色再点一下过去，纯属白点。
+            // 每次进来还要从核对颜色再点一下过去，纯属白点。已经开始组装的，同理回到组装。
             if !saved.parts.isEmpty, low != nil {
-                if !live.isEmpty {
+                if !live.isEmpty, !self.assembled.isEmpty {
+                    self.path = [.list, .cellSize, .baseColor, .review, .board, .assembly]
+                } else if !live.isEmpty {
                     self.path = [.list, .cellSize, .baseColor, .review, .board]
                 } else {
                     self.path = saved.parts.contains(where: \.hasCells)
@@ -1227,6 +1249,9 @@ struct PartsSheetFlowView: View {
             legendUsage: legendUsage,
             syncedCellCounts: syncedCellCounts
         )
+        // 存的时候按现有零件过一遍，删掉的零件不带进去
+        let liveAssembled = parts.map(\.id).filter(assembled.contains)
+        sheet.assembledPartIds = liveAssembled.isEmpty ? nil : liveAssembled
         // 按存档里有几张判断，不按这台设备上有几个原图文件（见 `load`）
         if rois.count > 1 || calibrations.count > 1 {
             sheet.pageROIs = rois
