@@ -382,6 +382,12 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
     /// 这个数没变就不再动计划：用户在计划详情里手调过的数（比如某色多备几颗），
     /// 不能因为他又进来看了一眼就被盖掉。格子改了、或者复制 / 少拼了一份，才重新同步。
     var syncedCellCounts: [String: Int]?
+    /// 组装模式里勾成「已组装」的零件。几十个零件分几个晚上粘，下次进来要知道还剩哪些。
+    ///
+    /// 记的是零件不是摆放：组装时用户点的是图纸上那一块，一个零件拼两份也只有一个框。
+    /// 写入时已按现有零件过滤，读的时候也跟现有零件再对一遍。
+    /// Optional 是为了老数据（理由见 `boards`）。
+    var assembledPartIds: [UUID]?
     var lastUpdatedAt: Date
 
     init(

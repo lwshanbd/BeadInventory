@@ -177,6 +177,11 @@ struct BoardCanvasRenderer {
     ///
     /// 外屏也要画：人是抬头照着电视摆豆子的，粘连的那两块正是他会照着摆错的地方。
     var invalid: Set<UUID> = []
+    /// 只有这几个摆放画本来的颜色，别的零件整块压成灰。空集 = 都正常画。
+    ///
+    /// 组装模式用：用户在图纸上点了一个零件，问的是「它在板上哪儿」。
+    /// 同一块板上的其它零件照样画出来当参照，只是让路。目前只有组装模式用，不跟 `highlightKeys` 一起传。
+    var focus: Set<UUID> = []
 
     func draw(in context: GraphicsContext, canvas size: CGSize, layout: BoardCanvasLayout) {
         let cell = layout.cell
@@ -258,6 +263,7 @@ struct BoardCanvasRenderer {
             // 长期挨着的：豆子照常画自己的颜色，只把外沿描红（见 `invalid`）。
             let blocked = moving.map { !$0.valid } ?? false
             let touching = moving == nil && invalid.contains(placement.id)
+            let outOfFocus = !focus.isEmpty && !focus.contains(placement.id)
 
             // 沿着这个零件的外沿描一圈。
             //
@@ -273,6 +279,8 @@ struct BoardCanvasRenderer {
                 var isHighlighted = false
                 if blocked {
                     fillKey = BoardCanvasRenderer.blockedFillKey
+                } else if outOfFocus {
+                    fillKey = BoardCanvasRenderer.dimmedFillKey
                 } else if !highlightKeys.isEmpty {
                     isHighlighted = highlightKeys.contains(bead.key)
                     fillKey = isHighlighted ? bead.key : BoardCanvasRenderer.dimmedFillKey
@@ -416,13 +424,15 @@ struct BoardCanvasRenderer {
 
     /// 攒填充用的 key → 真正画上去的颜色。`stage` 为 nil 就是没高亮的普通视图。
     ///
-    /// 压暗色只有高亮时才会攒出来，所以走到那一支时 `stage` 一定在。它**不能**退回
+    /// 压暗色有两个来处：高亮时让路的豆子，用 `stage.dimmed`；组装模式里 `focus` 外的零件，
+    /// 这时没有 `stage`，退回 `Border.divider`。高亮那一支**不能**退回
     /// `Border.default` —— 那正好是没高亮时每 5 格那条粗线的颜色，一大片压暗的豆子铺开，
     /// 粗线就化在里面了（用户报的「分割线很不明显」就是这么来的）。
     private func fillColor(for key: String, stage: BoardHighlightStage?) -> Color {
         switch key {
         case BoardCanvasRenderer.blockedFillKey: return Theme.ColorToken.Status.error
-        case BoardCanvasRenderer.dimmedFillKey: return stage?.dimmed ?? beadColor(for: key)
+        // 没高亮却有压暗的豆子，只会是 `focus` 让路的那些
+        case BoardCanvasRenderer.dimmedFillKey: return stage?.dimmed ?? Theme.ColorToken.Border.divider
         default: return beadColor(for: key)
         }
     }

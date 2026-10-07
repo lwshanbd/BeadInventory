@@ -1,6 +1,76 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "组装" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Assemble"
+          }
+        }
+      }
+    },
+    "已组装 %lld/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Assembled %lld/%lld"
+          }
+        }
+      }
+    },
+    "点按图纸上的零件查看它在哪块板上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap a part on the pattern to see which board it's on"
+          }
+        }
+      }
+    },
+    "未排到拼豆板上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not placed on a board"
+          }
+        }
+      }
+    },
+    "标记已组装" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark as Assembled"
+          }
+        }
+      }
+    },
+    "标记未组装" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark as Not Assembled"
+          }
+        }
+      }
+    },
+    "本机没有这张图纸的原图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The original of this pattern isn't on this device"
+          }
+        }
+      }
+    },
     "已对齐，下一张图纸" : {
       "localizations" : {
         "en" : {
