@@ -1326,8 +1326,8 @@ struct PartsColorReviewStepView: View {
     /// 并成几类（`PartsCellClassifier.mergeDeltaE`），**整类整类地摆**，一类之内再按
     /// 离本类中心多远排。
     ///
-    /// 「什么颜色」比的是每格的**众数色**（`PartsCellClassifier.sampleModes`，取众数的
-    /// 理由写在那儿）。
+    /// 「什么颜色」比的是每格量出来的颜色（`PartsCellClassifier.sampleModes`，怎么量、
+    /// 为什么写在那儿）。
     ///
     /// 主色类取**格子最多的那一类**，不取平均：一组里混进来的几十格杂色会把平均值拽偏，
     /// 于是真正的主色反倒排到前面去了。
