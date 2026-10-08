@@ -19,7 +19,7 @@ import UIKit
 enum PartsCellClassifier {
 
     /// 同一种颜色的两格之间允许的抖动。超过这个距离才算两种颜色。
-    /// 取 8：每格用的是众数色（见 `sampleModes`），本身几乎没有噪声，
+    /// 取 8：每格用的是占地最大那簇的代表色（见 `sampleModes`），本身几乎没有噪声，
     /// 只剩 5 bit 量化那点误差；阈值放宽反而会把相邻色阶串成一类。
     ///
     /// **不是 `private`**：核对页的「排序」也拿它并类（`PartsColorReviewStepView.sorted`）。
@@ -50,8 +50,9 @@ enum PartsCellClassifier {
 
     /// 在图上某一点取色，返回 `RRGGBB`。
     ///
-    /// 取的是**一小片的众数色**而不是那一个像素：用户手指点不了那么准，
-    /// 而豆子之间还有深色的格线，正好点在线上就会取到一个根本不存在的颜色。
+    /// 取的是**一小片里占地最大的那种颜色**（`dominantColor`）而不是那一个像素：
+    /// 用户手指点不了那么准，而豆子之间还有深色的格线，格子上还可能印着色号字，
+    /// 正好点在线上或字上就会取到一个根本不存在的颜色。
     /// - Parameter patch: 取样方块的边长（归一化，相对整张图纸）。一般给半格。
     static func sampleHex(work: PartsWorkImage, at point: CGPoint, patch: Double) -> String? {
         let side = max(patch, 0.001)
@@ -65,7 +66,7 @@ enum PartsCellClassifier {
         for i in 0..<bitmap.pixelCount {
             histogram[bitmap.quantized[i], default: 0] += 1
         }
-        guard let winner = histogram.max(by: { $0.value < $1.value })?.key else { return nil }
+        guard let winner = dominantColor(histogram) else { return nil }
         return QuantizedRGB.hex(of: Int(winner))
     }
 
@@ -161,7 +162,7 @@ enum PartsCellClassifier {
                                    availableColors: availableColors,
                                    colorSystem: colorSystem)
 
-        // 第一趟：把每个零件切格、量出每格的众数色
+        // 第一趟：把每个零件切格、量出每格的颜色
         var fittedParts: [BeadPart] = []
         var cellLabs: [[[LabColor?]]] = []      // [part][row][col]
         var unreadableParts = 0
@@ -253,7 +254,7 @@ enum PartsCellClassifier {
 
     // MARK: - 采样
 
-    /// 把 `sampleModes` 量出来的量化色索引换成 Lab。取众数的理由见 `sampleModes`。
+    /// 把 `sampleModes` 量出来的量化色索引换成 Lab。怎么取的、为什么，见 `sampleModes`。
     /// - Returns: `nil` = 这个零件的图根本没抠出来（原样透传 `sampleModes`）。
     private static func sampleCells(work: PartsWorkImage, part: BeadPart) -> [[LabColor?]]? {
         guard let modes = sampleModes(work: work, part: part) else { return nil }
@@ -264,13 +265,18 @@ enum PartsCellClassifier {
 
     /// 量出一个零件每一格的颜色，值是 `QuantizedRGB` 索引，**`-1` = 这一格没量到**。
     ///
-    /// **取众数，不取平均。** 图纸给每颗豆子都描了一圈深色边，一格才十来个像素，
+    /// **不取平均。** 图纸给每颗豆子都描了一圈深色边，一格才十来个像素，
     /// 边线一平均进去，整格的颜色就被往深处拉；拉的多少又取决于网格差了几分之一格，
     /// 于是同一种豆子的颜色被抹成一条连续的谱，聚类顺着这条谱把淡紫、白、粉全串成一类
     /// —— 实测就是这个下场：一个色号底下混着三四种明显不同的颜色。
     ///
-    /// 众数只认「这一格里最多的那个颜色」。描边再深也只占一圈，占不到一半，直接被无视；
-    /// 网格差个几分之一格也不影响结论。
+    /// **也不取单个量化桶的众数。** 那是上一版，栽在格子里印的色号字上：底色在 JPEG 里
+    /// 抖得厉害，散进几百个桶，每桶只有 2%~3%；黑字却挤在几个深色桶里。字一粗
+    /// （「G5」这种两个字挤满中间的，黑字占三分之一），最大的桶就是黑字，整格判成
+    /// 近黑的色号 —— 用户看到一片黄豆子被分进了黑色（P49 / B251）。
+    ///
+    /// 现在是把一格的像素按颜色分成几簇，取占地最大的那簇（`dominantColor`）。
+    /// 底色那几百个桶会并成一簇，字和描边各成一簇，底色只要比字多就赢。
     ///
     /// 判色和核对页的「排序」共用这一趟取样。两边必须量出同一个颜色 —— 否则排序会把某一格
     /// 排在「跟这一类很像」的位置上，而它当初正是因为不像才被判错的，用户就永远找不到它。
@@ -293,11 +299,12 @@ enum PartsCellClassifier {
         counts.reserveCapacity(64)
         for r in 0..<part.rows {
             for c in 0..<part.cols {
-                // 取格子中间 60%：既躲开描边，又留够像素让众数有意义
-                let x0 = max(0, Int((Double(c) + 0.2) * cellW))
-                let x1 = min(bitmap.width - 1, Int((Double(c) + 0.8) * cellW))
-                let y0 = max(0, Int((Double(r) + 0.2) * cellH))
-                let y1 = min(bitmap.height - 1, Int((Double(r) + 0.8) * cellH))
+                // 去掉四周各 15%，大部分描边和蹭进来的邻格就不看了。剩下的描边、
+                // 色号字由分簇处理，用不着再往里缩 —— 缩得越多，字占的比例反而越大。
+                let x0 = max(0, Int((Double(c) + 0.15) * cellW))
+                let x1 = min(bitmap.width - 1, Int((Double(c) + 0.85) * cellW))
+                let y0 = max(0, Int((Double(r) + 0.15) * cellH))
+                let y1 = min(bitmap.height - 1, Int((Double(r) + 0.85) * cellH))
                 guard x1 >= x0, y1 >= y0 else { continue }
 
                 counts.removeAll(keepingCapacity: true)
@@ -307,7 +314,7 @@ enum PartsCellClassifier {
                         counts[bitmap.quantized[row + x], default: 0] += 1
                     }
                 }
-                if let winner = counts.max(by: { $0.value < $1.value })?.key {
+                if let winner = dominantColor(counts) {
                     result[r][c] = winner
                 }
             }
@@ -315,7 +322,116 @@ enum PartsCellClassifier {
         return result
     }
 
-    /// 把所有零件每一格的众数色量一遍，给核对页排序用。`[零件][行][列]`，`-1` = 没量到。
+    /// 一小片像素里**占地最大的那种颜色**，返回 `QuantizedRGB` 索引。
+    ///
+    /// 做法：把这些量化桶按 Lab 分成 3 簇（k-means，按像素数加权），离得近的簇合并，
+    /// 取像素最多的那簇，再从簇里挑离簇中心最近的那个桶当代表。分 3 簇是因为一格里通常就三样东西：
+    /// 豆子本身、深色的字和描边、两者之间糊出来的过渡色。
+    ///
+    /// 为什么不直接数哪个桶最多，见 `sampleModes` 的方法头。
+    ///
+    /// 代表取簇里的一个真实桶，不取簇的平均：平均出来的颜色可能不在任何一个像素上，
+    /// 跟 `sampleModes` 返回量化索引的约定也对不上。
+    ///
+    /// - Parameter histogram: 量化桶 → 像素数
+    static func dominantColor(_ histogram: [Int32: Int]) -> Int32? {
+        let buckets = histogram.filter { $0.value > 0 }
+        guard !buckets.isEmpty else { return nil }
+        let keys = Array(buckets.keys)
+        if keys.count == 1 { return keys[0] }
+        let weights = keys.map { Double(buckets[$0]!) }
+        let labs = keys.map { QuantizedRGB.labTable[Int($0)] }
+        func dist2(_ a: LabColor, _ b: LabColor) -> Double {
+            let dl = a.l - b.l, da = a.a - b.a, db = a.b - b.b
+            return dl * dl + da * da + db * db
+        }
+
+        // 初始中心：先取最重的桶，之后每次取「像素数 × 离现有中心距离²」最大的桶。
+        // 不用随机 —— 同一张图每次判出来必须一样，否则用户重进一次核对页结果就变了。
+        let k = min(3, keys.count)
+        var centers = [labs[weights.indices.max { weights[$0] < weights[$1] }!]]
+        while centers.count < k {
+            var best = -1
+            var bestScore = 0.0
+            for i in keys.indices {
+                let d = centers.map { dist2(labs[i], $0) }.min()!
+                let score = weights[i] * d
+                if score > bestScore { bestScore = score; best = i }
+            }
+            guard best >= 0 else { break }   // 剩下的桶全跟某个中心重合
+            centers.append(labs[best])
+        }
+
+        var assignment = [Int](repeating: 0, count: keys.count)
+        for _ in 0..<8 {
+            for i in keys.indices {
+                var nearest = 0
+                var nearestD = Double.infinity
+                for (j, center) in centers.enumerated() {
+                    let d = dist2(labs[i], center)
+                    if d < nearestD { nearestD = d; nearest = j }
+                }
+                assignment[i] = nearest
+            }
+            var sums = [(l: Double, a: Double, b: Double, w: Double)](
+                repeating: (0, 0, 0, 0), count: centers.count)
+            for i in keys.indices {
+                let j = assignment[i], w = weights[i]
+                sums[j].l += labs[i].l * w
+                sums[j].a += labs[i].a * w
+                sums[j].b += labs[i].b * w
+                sums[j].w += w
+            }
+            for j in centers.indices where sums[j].w > 0 {
+                centers[j] = LabColor(l: sums[j].l / sums[j].w,
+                                      a: sums[j].a / sums[j].w,
+                                      b: sums[j].b / sums[j].w)
+            }
+        }
+
+        // **离得近的簇合回去再比大小。** 底色在 JPEG 里抖得散时，3 簇会把底色劈成两半，
+        // 每半都比挤成一团的黑字小，黑字反倒赢了 —— 不合并就还是原来那个 bug。
+        // 合并距离 20：同一种颜色劈开的两半中心只差几个到十几个单位，
+        // 而字和底色差 50 往上，不会被合到一起。
+        var groups: [(center: LabColor, weight: Double, members: Set<Int>)] = centers.indices.map { j in
+            let members = Set(keys.indices.filter { assignment[$0] == j })
+            return (centers[j], members.reduce(0) { $0 + weights[$1] }, members)
+        }
+        while groups.count > 1 {
+            var pair = (0, 1)
+            var pairD = Double.infinity
+            for i in groups.indices {
+                for j in groups.indices where j > i {
+                    let d = dist2(groups[i].center, groups[j].center)
+                    if d < pairD { pairD = d; pair = (i, j) }
+                }
+            }
+            guard pairD < Self.sameColorClusterDeltaE * Self.sameColorClusterDeltaE else { break }
+            let a = groups[pair.0], b = groups[pair.1]
+            let total = a.weight + b.weight
+            let center = total > 0
+                ? LabColor(l: (a.center.l * a.weight + b.center.l * b.weight) / total,
+                           a: (a.center.a * a.weight + b.center.a * b.weight) / total,
+                           b: (a.center.b * a.weight + b.center.b * b.weight) / total)
+                : a.center
+            groups[pair.0] = (center, total, a.members.union(b.members))
+            groups.remove(at: pair.1)
+        }
+
+        let winner = groups.max { $0.weight < $1.weight }!
+        var representative = -1
+        var representativeD = Double.infinity
+        for i in winner.members.sorted() {
+            let d = dist2(labs[i], winner.center)
+            if d < representativeD { representativeD = d; representative = i }
+        }
+        return representative >= 0 ? keys[representative] : nil
+    }
+
+    /// `dominantColor` 分完簇以后，中心离这么近的两簇算同一种颜色被劈开了，合回去。
+    private static let sameColorClusterDeltaE: Double = 20
+
+    /// 把所有零件每一格的颜色量一遍，给核对页排序用。`[零件][行][列]`，`-1` = 没量到。
     ///
     /// 跟 `classify` 的第一趟是同一件事，但这里**只量颜色**（也不做那趟的回退标定）：
     /// 核对页要的就是「这一格的原色离这一类有多远」，跟聚类、跟色号都无关。
