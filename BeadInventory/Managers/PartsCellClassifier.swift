@@ -19,12 +19,15 @@ import UIKit
 enum PartsCellClassifier {
 
     /// 同一种颜色的两格之间允许的抖动。超过这个距离才算两种颜色。
-    /// 取 8：每格用的是占地最大那簇的代表色（见 `sampleModes`），本身几乎没有噪声，
-    /// 只剩 5 bit 量化那点误差；阈值放宽反而会把相邻色阶串成一类。
+    ///
+    /// 取 6。早先是 8，那时每格颜色是归到量化桶上的（每档 3~4 个单位），得留出这份余量；
+    /// 现在判色用的是一簇像素的中位色（`sampleCells`），抖动小得多。8 在实测图纸上把
+    /// 206 号米色和 131 号浅肉色（差 8.4）并成了一类，核对页上一组两种颜色，没法整组改。
+    /// 6 在同一张图纸上没有把同一种颜色拆成两组。
     ///
     /// **不是 `private`**：核对页的「排序」也拿它并类（`PartsColorReviewStepView.sorted`）。
-    /// 两边各写一个 8 的话，改了这边不会有任何报错，而用户会在核对页看到一种颜色被切成两片。
-    static let mergeDeltaE: Double = 8
+    /// 两边各写一个数的话，改了这边不会有任何报错，而用户会在核对页看到一种颜色被切成两片。
+    static let mergeDeltaE: Double = 6
 
     /// 判成「空」的条件：跟图纸背景色的距离在这个范围内。
     /// 零件中间的镂空和零件外面蹭进框里的背景是同一种像素，一起归到空。
@@ -226,7 +229,7 @@ enum PartsCellClassifier {
         let enclosedClusters = cluster(cellLabs: enclosedLabs)
 
         // 第三趟：每一类认领一个身份（空 / 某个色号）
-        let assignments = assignIdentities(
+        var assignments = assignIdentities(
             clusters: clusters,
             backgroundLab: backgroundLab,
             anyColorLab: anyColorLab,
@@ -234,7 +237,7 @@ enum PartsCellClassifier {
             legendColors: legend.colors,
             availableColors: availableColors
         )
-        let enclosedAssignments = assignIdentities(
+        var enclosedAssignments = assignIdentities(
             clusters: enclosedClusters,
             backgroundLab: nil,
             anyColorLab: anyColorLab,
@@ -242,6 +245,17 @@ enum PartsCellClassifier {
             legendColors: legend.colors,
             availableColors: availableColors
         )
+
+        // 颜色明显不同的两类不许认同一个色号（理由见 `separateDistinctClusters`）。
+        // 两份类一起看：白豆子可能一半在普通类、一半在「被线围死」那份里，它们同色，可以同号。
+        do {
+            var all = assignments + enclosedAssignments
+            separateDistinctClusters(identities: &all, clusters: clusters + enclosedClusters,
+                                     colorSystem: colorSystem, legendColors: legend.colors,
+                                     availableColors: availableColors)
+            assignments = Array(all[..<assignments.count])
+            enclosedAssignments = Array(all[assignments.count...])
+        }
 
         // 第四趟：把结论填回每一格
         for p in fittedParts.indices {
@@ -290,13 +304,18 @@ enum PartsCellClassifier {
 
     // MARK: - 采样
 
-    /// 把 `sampleModes` 量出来的量化色索引换成 Lab。怎么取的、为什么，见 `sampleModes`。
-    /// - Returns: `nil` = 这个零件的图根本没抠出来（原样透传 `sampleModes`）。
+    /// 判色用的每格颜色。取哪一簇跟 `sampleModes` 完全一样，只是**不再归到一个量化桶上**，
+    /// 而是取那一簇像素的中位色（`dominantLab`）。
+    ///
+    /// 为什么要这么细：量化桶每档 RGB 差 8，换成 Lab 是 3~4 个单位。实测一张图纸上 211 号肉色
+    /// 和 257 号粉色只差 8.5，JPEG 再一抖、归到桶上，两种颜色的格子就落进同一片，
+    /// 聚类把它们并成一类，核对页上一组里一半肉色一半粉色，怎么分色号都分不开。
+    /// 中位色是几十个像素一起投出来的，抖动基本抵消。
+    ///
+    /// 核对页排序仍然用 `sampleModes` 的量化索引：它只是排个先后，不需要这么细。
+    /// - Returns: `nil` = 这个零件的图根本没抠出来。
     private static func sampleCells(bitmap: PartsBitmap, part: BeadPart) -> [[LabColor?]]? {
-        guard let modes = sampleModes(bitmap: bitmap, part: part) else { return nil }
-        return modes.map { row in
-            row.map { $0 >= 0 ? QuantizedRGB.labTable[Int($0)] : nil }
-        }
+        measureCells(bitmap: bitmap, part: part, pick: dominantLab)
     }
 
     /// 一个零件格子区的位图。取色和「被线围死」两件事共用这一张，只解一次。
@@ -369,8 +388,15 @@ enum PartsCellClassifier {
     }
 
     private static func sampleModes(bitmap: PartsBitmap, part: BeadPart) -> [[Int32]]? {
+        measureCells(bitmap: bitmap, part: part, pick: dominantColor)
+            .map { $0.map { $0.map { $0 ?? -1 } } }
+    }
+
+    /// 逐格数一遍量化桶，交给 `pick` 从直方图里挑出这一格的颜色。`nil` = 这一格没量到。
+    private static func measureCells<T>(bitmap: PartsBitmap, part: BeadPart,
+                                        pick: ([Int32: Int]) -> T?) -> [[T?]]? {
         guard part.rows > 0, part.cols > 0 else { return nil }
-        var result = [[Int32]](repeating: [Int32](repeating: -1, count: part.cols), count: part.rows)
+        var result = [[T?]](repeating: [T?](repeating: nil, count: part.cols), count: part.rows)
         let cellW = Double(bitmap.width) / Double(part.cols)
         let cellH = Double(bitmap.height) / Double(part.rows)
 
@@ -393,9 +419,7 @@ enum PartsCellClassifier {
                         counts[bitmap.quantized[row + x], default: 0] += 1
                     }
                 }
-                if let winner = dominantColor(counts) {
-                    result[r][c] = winner
-                }
+                result[r][c] = pick(counts)
             }
         }
         return result
@@ -414,10 +438,45 @@ enum PartsCellClassifier {
     ///
     /// - Parameter histogram: 量化桶 → 像素数
     static func dominantColor(_ histogram: [Int32: Int]) -> Int32? {
+        guard let group = dominantGroup(histogram) else { return nil }
+        var representative = -1
+        var representativeD = Double.infinity
+        for i in group.members.sorted() {
+            let d = GridCellSampler.deltaE(group.labs[i], group.center)
+            if d < representativeD { representativeD = d; representative = i }
+        }
+        return representative >= 0 ? group.keys[representative] : nil
+    }
+
+    /// 跟 `dominantColor` 挑同一簇，返回这一簇的**加权中位色**（L、a、b 各取中位数）。
+    ///
+    /// 不取平均：簇里会夹着字边上糊出来的过渡色，平均会被它往深处拽；中位数不受这几个影响。
+    static func dominantLab(_ histogram: [Int32: Int]) -> LabColor? {
+        guard let group = dominantGroup(histogram) else { return nil }
+        let members = Array(group.members)
+        func median(_ value: (LabColor) -> Double) -> Double {
+            let sorted = members.sorted { value(group.labs[$0]) < value(group.labs[$1]) }
+            let half = sorted.reduce(0) { $0 + group.weights[$1] } / 2
+            var acc = 0.0
+            for i in sorted {
+                acc += group.weights[i]
+                if acc >= half { return value(group.labs[i]) }
+            }
+            return value(group.labs[sorted.last!])
+        }
+        return LabColor(l: median { $0.l }, a: median { $0.a }, b: median { $0.b })
+    }
+
+    /// `dominantColor` / `dominantLab` 共用的分簇：返回占地最大那一簇。
+    private static func dominantGroup(_ histogram: [Int32: Int])
+        -> (keys: [Int32], labs: [LabColor], weights: [Double], members: Set<Int>, center: LabColor)? {
         let buckets = histogram.filter { $0.value > 0 }
         guard !buckets.isEmpty else { return nil }
         let keys = Array(buckets.keys)
-        if keys.count == 1 { return keys[0] }
+        if keys.count == 1 {
+            let lab = QuantizedRGB.labTable[Int(keys[0])]
+            return (keys, [lab], [Double(buckets[keys[0]]!)], [0], lab)
+        }
         let weights = keys.map { Double(buckets[$0]!) }
         let labs = keys.map { QuantizedRGB.labTable[Int($0)] }
         func dist2(_ a: LabColor, _ b: LabColor) -> Double {
@@ -498,13 +557,7 @@ enum PartsCellClassifier {
         }
 
         let winner = groups.max { $0.weight < $1.weight }!
-        var representative = -1
-        var representativeD = Double.infinity
-        for i in winner.members.sorted() {
-            let d = dist2(labs[i], winner.center)
-            if d < representativeD { representativeD = d; representative = i }
-        }
-        return representative >= 0 ? keys[representative] : nil
+        return (keys, labs, weights, winner.members, winner.center)
     }
 
     /// `dominantColor` 分完簇以后，中心离这么近的两簇算同一种颜色被劈开了，合回去。
@@ -770,6 +823,128 @@ enum PartsCellClassifier {
             return Identity(fill: .empty, role: .empty, hex: hex(of: cluster.lab), deltaE: nil)
         }
     }
+
+    // MARK: - 不同颜色不同组
+
+    /// 两类颜色差超过这个数，就算「图上看得出是两种颜色」。
+    ///
+    /// 取 6：同一种豆子被 JPEG 抖出来的碎类，中心离主类一般在 6 以内；而实测串组的那几对
+    /// （211 和 257、142 和 209）差 6~9。再小就会把同一种颜色拆成好几组。
+    private static let distinctDeltaE: Double = 6
+
+    /// 一类至少占所有豆子格的这么多，才值得单独占一个色号。
+    /// 太小的碎类（描边蹭色、几颗杂色）跟着最像的色号走就行，拆出去只会多出一堆几颗的小组。
+    private static let distinctMinShare: Double = 0.0025
+
+    /// 按颜色认完色号以后，**颜色明显不同的两类不许落在同一个色号上**。
+    ///
+    /// ## 为什么
+    ///
+    /// 核对页是按色号分组的。两类认了同一个色号，在核对页就合成一组：一组里一半米色一半淡黄，
+    /// 用户「整组改掉」改不了，只能一格一格挑。实测一张图纸上，图例的卡卡色号跟图上印的颜色
+    /// 差 8~19，而图上几种浅色互相只差 4~9，按「离哪个色号最近」去认，好几种颜色会挤进同一个色号。
+    ///
+    /// 色号认对认错，这里不管 —— 颜色太接近的几种，只靠颜色本来就认不准。这里只保证
+    /// **认错了也是整组错**：每种看得出的颜色各自一组，用户整组改一下就对了。
+    ///
+    /// 图上真的分不开的（差不到 6，比如实测 209 和 62 只差 4）照样会合在一起，这个没办法。
+    ///
+    /// ## 做法
+    ///
+    /// 大类按格数从多到少排。每一类先看它认的色号有没有被一个「颜色明显不同」的类占了：
+    /// 没有就照用；有就往下找离它第二近、第三近……的色号（图例里的优先，跟 `assignIdentities`
+    /// 同一套规则），找到一个没被别的颜色占的为止。找不到就保持原样。
+    /// 小碎类最后处理，见函数里第二轮的注释。
+    private static func separateDistinctClusters(
+        identities: inout [Identity],
+        clusters: [Cluster],
+        colorSystem: ColorSystem,
+        legendColors: [BeadColor],
+        availableColors: [BeadColor]
+    ) {
+        func table(_ colors: [BeadColor]) -> [(code: String, lab: LabColor)] {
+            colors.compactMap { color in
+                guard color.hasCode(for: colorSystem),
+                      let lab = GridCellSampler.lab(forHex: color.colorHex) else { return nil }
+                return (color.displayCode(for: colorSystem), lab)
+            }
+        }
+        let legendTable = table(legendColors)
+        let fullTable = table(availableColors)
+
+        let beads = identities.indices.filter {
+            if case .code = identities[$0].role { return true } else { return false }
+        }
+        let beadCells = beads.reduce(0) { $0 + clusters[$1].count }
+        guard beadCells > 0 else { return }
+        let minCount = max(1, Int(Double(beadCells) * distinctMinShare))
+
+        // 色号 → 已经占了它的那些类的颜色
+        var taken: [String: [LabColor]] = [:]
+        func isFree(_ code: String, for lab: LabColor) -> Bool {
+            (taken[code] ?? []).allSatisfy { GridCellSampler.deltaE($0, lab) <= distinctDeltaE }
+        }
+
+        // 候选色号：图例里够近的（按远近），再全色库（按远近）。跟 assignIdentities 的取舍一致
+        func candidates(_ lab: LabColor) -> [(String, Double)] {
+            let inLegend = legendTable
+                .map { ($0.code, GridCellSampler.deltaE(lab, $0.lab)) }
+                .filter { $0.1 <= legendMissDeltaE }
+                .sorted { $0.1 < $1.1 }
+            let wide = fullTable
+                .map { ($0.code, GridCellSampler.deltaE(lab, $0.lab)) }
+                .sorted { $0.1 < $1.1 }
+            return inLegend + wide
+        }
+        func set(_ index: Int, _ code: String, _ deltaE: Double?) {
+            identities[index] = Identity(fill: .code(code), role: .code(code),
+                                         hex: identities[index].hex, deltaE: deltaE)
+        }
+
+        // 第一轮：大类按格数从多到少占色号
+        let big = beads.filter { clusters[$0].count >= minCount }
+            .sorted { clusters[$0].count > clusters[$1].count }
+        for index in big {
+            guard case .code(let current) = identities[index].role else { continue }
+            let lab = clusters[index].lab
+            if isFree(current, for: lab) {
+                taken[current, default: []].append(lab)
+                continue
+            }
+            if let pick = candidates(lab).first(where: { isFree($0.0, for: lab) }) {
+                set(index, pick.0, pick.1)
+                taken[pick.0, default: []].append(lab)
+            } else {
+                taken[current, default: []].append(lab)
+            }
+        }
+
+        // 第二轮：小碎类。**不能留在原来认的色号上不管**：那个色号可能刚被一个别的颜色的大类
+        // 挪过来占了，碎类留在那儿就又成了混色组。图上离它最近的大类够像，就跟那一类同号
+        // （它多半就是那种豆子被描边蹭出来的）；不够像，就找一个没被别的颜色占的色号。
+        guard !big.isEmpty else { return }
+        for index in beads where clusters[index].count < minCount {
+            let lab = clusters[index].lab
+            let nearest = big.min {
+                GridCellSampler.deltaE(lab, clusters[$0].lab) < GridCellSampler.deltaE(lab, clusters[$1].lab)
+            }!
+            if GridCellSampler.deltaE(lab, clusters[nearest].lab) <= fragmentFollowDeltaE,
+               case .code(let code) = identities[nearest].role {
+                set(index, code, identities[nearest].deltaE)
+                continue
+            }
+            guard case .code(let current) = identities[index].role else { continue }
+            let near = { (code: String) in
+                (taken[code] ?? []).allSatisfy { GridCellSampler.deltaE($0, lab) <= fragmentFollowDeltaE }
+            }
+            if !near(current), let pick = candidates(lab).first(where: { near($0.0) }) {
+                set(index, pick.0, pick.1)
+            }
+        }
+    }
+
+    /// 小碎类离图上最近的大类在这个范围内，就当是同一种豆子，跟它同号。
+    private static let fragmentFollowDeltaE: Double = 10
 
     /// 图例里的色号 → 色库里的豆子。**这一道翻译不能省。**
     ///
