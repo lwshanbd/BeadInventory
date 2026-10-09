@@ -19,6 +19,7 @@
 		B7A1E0C14F0A4E1D9C2A0005 /* BeadPartsBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0006 /* BeadPartsBoard.swift */; };
 		B7A1E0C14F0A4E1D9C2A0101 /* PartsSheetUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E0C14F0A4E1D9C2A0102 /* PartsSheetUsage.swift */; };
 		92A6D96EF23F40C8BA712E90 /* PartsBitmap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0163F38C7E6C447C8822049C /* PartsBitmap.swift */; };
+		7C3E1A2B4D5F60718293A4B5 /* PartsCellEnclosure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3E1A2B4D5F60718293A4B6 /* PartsCellEnclosure.swift */; };
 		B5910BC0E8754A1EBE531732 /* PartsDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40AD7A4DA3740AEA95FBFB0 /* PartsDetector.swift */; };
 		742CABBB67C84E879D0C8929 /* PatternSourceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C06B9CB4E6143D0B320D6BF /* PatternSourceStore.swift */; };
 		0192B273267745CD9E5F453E /* PartsCellClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FA79A55AFD4B0FBE87F286 /* PartsCellClassifier.swift */; };
@@ -179,6 +180,7 @@
 		B7A1E0C14F0A4E1D9C2A0006 /* BeadPartsBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BeadPartsBoard.swift; path = BeadInventory/Models/BeadPartsBoard.swift; sourceTree = SOURCE_ROOT; };
 		B7A1E0C14F0A4E1D9C2A0102 /* PartsSheetUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsSheetUsage.swift; path = BeadInventory/Models/PartsSheetUsage.swift; sourceTree = SOURCE_ROOT; };
 		0163F38C7E6C447C8822049C /* PartsBitmap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsBitmap.swift; path = BeadInventory/Managers/PartsBitmap.swift; sourceTree = SOURCE_ROOT; };
+		7C3E1A2B4D5F60718293A4B6 /* PartsCellEnclosure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsCellEnclosure.swift; path = BeadInventory/Managers/PartsCellEnclosure.swift; sourceTree = SOURCE_ROOT; };
 		F40AD7A4DA3740AEA95FBFB0 /* PartsDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsDetector.swift; path = BeadInventory/Managers/PartsDetector.swift; sourceTree = SOURCE_ROOT; };
 		9C06B9CB4E6143D0B320D6BF /* PatternSourceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternSourceStore.swift; path = BeadInventory/Managers/PatternSourceStore.swift; sourceTree = SOURCE_ROOT; };
 		52FA79A55AFD4B0FBE87F286 /* PartsCellClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PartsCellClassifier.swift; path = BeadInventory/Managers/PartsCellClassifier.swift; sourceTree = SOURCE_ROOT; };
@@ -373,6 +375,7 @@
 				B7A1E0C14F0A4E1D9C2A0006 /* BeadPartsBoard.swift */,
 				B7A1E0C14F0A4E1D9C2A0102 /* PartsSheetUsage.swift */,
 				0163F38C7E6C447C8822049C /* PartsBitmap.swift */,
+				7C3E1A2B4D5F60718293A4B6 /* PartsCellEnclosure.swift */,
 				F40AD7A4DA3740AEA95FBFB0 /* PartsDetector.swift */,
 				9C06B9CB4E6143D0B320D6BF /* PatternSourceStore.swift */,
 				52FA79A55AFD4B0FBE87F286 /* PartsCellClassifier.swift */,
@@ -825,6 +828,7 @@
 				B7A1E0C14F0A4E1D9C2A0005 /* BeadPartsBoard.swift in Sources */,
 				B7A1E0C14F0A4E1D9C2A0101 /* PartsSheetUsage.swift in Sources */,
 				92A6D96EF23F40C8BA712E90 /* PartsBitmap.swift in Sources */,
+				7C3E1A2B4D5F60718293A4B5 /* PartsCellEnclosure.swift in Sources */,
 				B5910BC0E8754A1EBE531732 /* PartsDetector.swift in Sources */,
 				742CABBB67C84E879D0C8929 /* PatternSourceStore.swift in Sources */,
 				0192B273267745CD9E5F453E /* PartsCellClassifier.swift in Sources */,

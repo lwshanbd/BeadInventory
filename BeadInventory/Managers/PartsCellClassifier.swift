@@ -165,6 +165,8 @@ enum PartsCellClassifier {
         // 第一趟：把每个零件切格、量出每格的颜色
         var fittedParts: [BeadPart] = []
         var cellLabs: [[[LabColor?]]] = []      // [part][row][col]
+        // 被线围死、只有一格大的格子（见 `PartsCellEnclosure`）。颜色再像底色也不能判空。
+        var enclosed: [[[Bool]]] = []           // [part][row][col]
         var unreadableParts = 0
         // 所在那张图纸没图的零件：不参与聚类，最后原样放回。下标对着 `parts`。
         var skipped: [Int: BeadPart] = [:]
@@ -193,24 +195,48 @@ enum PartsCellClassifier {
             let grid = PartsGrid(rect: updated.gridRect ?? part.bounds,
                                  rows: updated.rows, cols: updated.cols)
 
-            let sampled = pages.work(for: updated).flatMap { sampleCells(work: $0, part: updated) }
+            let bitmap = pages.work(for: updated).flatMap { cellBitmap(work: $0, part: updated) }
+            let sampled = bitmap.flatMap { sampleCells(bitmap: $0, part: updated) }
             if sampled == nil { unreadableParts += 1 }
             let labs = sampled
                 ?? [[LabColor?]](repeating: [LabColor?](repeating: nil, count: max(grid.cols, 0)),
                                  count: max(grid.rows, 0))
             cellLabs.append(labs)
+            enclosed.append(enclosedLightCells(bitmap: bitmap, part: updated, labs: labs,
+                                               backgroundLab: backgroundLab))
             updated.cells = Array(repeating: Array(repeating: .empty, count: grid.cols), count: grid.rows)
             fittedParts.append(updated)
             progress?(index + 1, parts.count)
         }
 
-        // 第二趟：把所有格子的颜色聚成十几类
-        let clusters = cluster(cellLabs: cellLabs)
+        // 第二趟：把所有格子的颜色聚成十几类。
+        // 被线围死的浅色格子**单独聚**：它们跟白纸同色，混在一起聚的话会跟背景并成一类，
+        // 整类被认成空。分开聚、认身份时不给「空」这个选项，它们就只能认色号（或任意色）。
+        let mainLabs = cellLabs.indices.map { p in
+            cellLabs[p].indices.map { r in
+                cellLabs[p][r].indices.map { c in enclosed[p][r][c] ? nil : cellLabs[p][r][c] }
+            }
+        }
+        let enclosedLabs = cellLabs.indices.map { p in
+            cellLabs[p].indices.map { r in
+                cellLabs[p][r].indices.map { c in enclosed[p][r][c] ? cellLabs[p][r][c] : nil }
+            }
+        }
+        let clusters = cluster(cellLabs: mainLabs)
+        let enclosedClusters = cluster(cellLabs: enclosedLabs)
 
         // 第三趟：每一类认领一个身份（空 / 某个色号）
         let assignments = assignIdentities(
             clusters: clusters,
             backgroundLab: backgroundLab,
+            anyColorLab: anyColorLab,
+            colorSystem: colorSystem,
+            legendColors: legend.colors,
+            availableColors: availableColors
+        )
+        let enclosedAssignments = assignIdentities(
+            clusters: enclosedClusters,
+            backgroundLab: nil,
             anyColorLab: anyColorLab,
             colorSystem: colorSystem,
             legendColors: legend.colors,
@@ -225,21 +251,31 @@ enum PartsCellClassifier {
                         fittedParts[p].cells[r][c] = .empty
                         continue
                     }
-                    let index = nearestCluster(lab, clusters)
-                    fittedParts[p].cells[r][c] = assignments[index].fill
+                    if enclosed[p][r][c] {
+                        let index = nearestCluster(lab, enclosedClusters)
+                        fittedParts[p].cells[r][c] = enclosedAssignments[index].fill
+                    } else {
+                        let index = nearestCluster(lab, clusters)
+                        fittedParts[p].cells[r][c] = assignments[index].fill
+                    }
                 }
             }
         }
 
         let totalCells = fittedParts.reduce(0) { $0 + $1.rows * $1.cols }
-        let palette = assignments.enumerated().map { index, entry in
-            PartsPaletteEntry(
-                hex: entry.hex,
-                pixelShare: totalCells > 0 ? Double(clusters[index].count) / Double(totalCells) : 0,
-                role: entry.role,
-                matchDeltaE: entry.deltaE
-            )
+        func entries(_ assignments: [Identity], _ clusters: [Cluster]) -> [PartsPaletteEntry] {
+            assignments.enumerated().map { index, entry in
+                PartsPaletteEntry(
+                    hex: entry.hex,
+                    pixelShare: totalCells > 0 ? Double(clusters[index].count) / Double(totalCells) : 0,
+                    role: entry.role,
+                    matchDeltaE: entry.deltaE
+                )
+            }
         }
+        // 两份可能出现同一个色号（白纸那类之外还有白豆子）。核对页按格子里的色号分组，
+        // 同号自然并成一组；这份调色板只给「只重判一块」查表用，重复不碍事。
+        let palette = entries(assignments, clusters) + entries(enclosedAssignments, enclosedClusters)
         // 没判的那几块按原来的位置插回去，零件清单的顺序不变
         var merged: [BeadPart] = []
         merged.reserveCapacity(parts.count)
@@ -256,11 +292,53 @@ enum PartsCellClassifier {
 
     /// 把 `sampleModes` 量出来的量化色索引换成 Lab。怎么取的、为什么，见 `sampleModes`。
     /// - Returns: `nil` = 这个零件的图根本没抠出来（原样透传 `sampleModes`）。
-    private static func sampleCells(work: PartsWorkImage, part: BeadPart) -> [[LabColor?]]? {
-        guard let modes = sampleModes(work: work, part: part) else { return nil }
+    private static func sampleCells(bitmap: PartsBitmap, part: BeadPart) -> [[LabColor?]]? {
+        guard let modes = sampleModes(bitmap: bitmap, part: part) else { return nil }
         return modes.map { row in
             row.map { $0 >= 0 ? QuantizedRGB.labTable[Int($0)] : nil }
         }
+    }
+
+    /// 一个零件格子区的位图。取色和「被线围死」两件事共用这一张，只解一次。
+    /// `nil` = 格线没定好，或者图根本没抠出来。
+    private static func cellBitmap(work: PartsWorkImage, part: BeadPart) -> PartsBitmap? {
+        guard part.rows > 0, part.cols > 0 else { return nil }
+        return PartsBitmap.make(from: work, roi: part.gridRect ?? part.bounds, maxPixels: 600_000)
+    }
+
+    /// 这个零件里哪些格子「被线围死、颜色又像底色」—— 这些是浅色豆子，不能判空。
+    ///
+    /// 只挑颜色像底色的格子：别的格子本来就不会被判空，没必要换一条路走。
+    /// 「像」放宽到 `emptyDeltaE + mergeDeltaE`：判空看的是聚类中心，单格比中心远几个单位
+    /// 照样会跟着整类被判空。
+    ///
+    /// **整张纸都印满格子的图纸**上，零件外面的白纸也被线围成一格一格，全会被当成豆子。
+    /// 认它的办法：零件框最外一圈的浅色格子大半都「被围死」—— 正常图纸上那一圈多半是
+    /// 零件外面的白纸，连通到框外。碰到这种就整块不用这条规则，退回只看颜色。
+    private static func enclosedLightCells(bitmap: PartsBitmap?, part: BeadPart,
+                                           labs: [[LabColor?]],
+                                           backgroundLab: LabColor?) -> [[Bool]] {
+        let none = labs.map { $0.map { _ in false } }
+        guard let bitmap, let backgroundLab, labs.count == part.rows,
+              labs.allSatisfy({ $0.count == part.cols }) else { return none }
+        let walled = PartsCellEnclosure.enclosedCells(bitmap: bitmap, rows: part.rows, cols: part.cols,
+                                                      backgroundLab: backgroundLab)
+        var result = none
+        var ringLight = 0
+        var ringWalled = 0
+        for r in 0..<part.rows {
+            for c in 0..<part.cols {
+                guard let lab = labs[r][c],
+                      GridCellSampler.deltaE(lab, backgroundLab) <= emptyDeltaE + mergeDeltaE else { continue }
+                result[r][c] = walled[r][c]
+                if r == 0 || c == 0 || r == part.rows - 1 || c == part.cols - 1 {
+                    ringLight += 1
+                    if walled[r][c] { ringWalled += 1 }
+                }
+            }
+        }
+        if ringLight >= 4 && ringWalled * 2 > ringLight { return none }
+        return result
     }
 
     /// 量出一个零件每一格的颜色，值是 `QuantizedRGB` 索引，**`-1` = 这一格没量到**。
@@ -286,11 +364,11 @@ enum PartsCellClassifier {
     /// - Returns: `nil` = 这个零件的图**根本没抠出来**（框太小 / 解码失败），一格都没看到。
     ///   早先这里跟「看过了，每格都是背景」一样返回全 nil 的矩阵，两件事在数据上再也分不开。
     static func sampleModes(work: PartsWorkImage, part: BeadPart) -> [[Int32]]? {
-        let area = part.gridRect ?? part.bounds
-        guard part.rows > 0, part.cols > 0,
-              let bitmap = PartsBitmap.make(from: work, roi: area, maxPixels: 600_000) else {
-            return nil
-        }
+        cellBitmap(work: work, part: part).flatMap { sampleModes(bitmap: $0, part: part) }
+    }
+
+    private static func sampleModes(bitmap: PartsBitmap, part: BeadPart) -> [[Int32]]? {
+        guard part.rows > 0, part.cols > 0 else { return nil }
         var result = [[Int32]](repeating: [Int32](repeating: -1, count: part.cols), count: part.rows)
         let cellW = Double(bitmap.width) / Double(part.cols)
         let cellH = Double(bitmap.height) / Double(part.rows)
@@ -506,25 +584,40 @@ enum PartsCellClassifier {
             case .empty: return (lab, .empty)
             }
         }
-        guard !table.isEmpty, let modes = sampleModes(work: work, part: part) else { return nil }
+        guard !table.isEmpty, let bitmap = cellBitmap(work: work, part: part),
+              let modes = sampleModes(bitmap: bitmap, part: part) else { return nil }
+
+        // 被线围死的浅色格子：跟 `classify` 一样不许判空（见 `PartsCellEnclosure`）。
+        // 底色取调色板里「空」那一类的颜色 —— 这块重判沿用的就是整张图纸那次的结论。
+        let labs = modes.map { row in row.map { $0 >= 0 ? QuantizedRGB.labTable[Int($0)] : nil } }
+        let emptyLab = palette.first { $0.role == .empty }.flatMap { GridCellSampler.lab(forHex: $0.hex) }
+        let walled = enclosedLightCells(bitmap: bitmap, part: part, labs: labs, backgroundLab: emptyLab)
+
+        func nearest(_ lab: LabColor, allowEmpty: Bool) -> PartCellFill? {
+            var best: PartCellFill?
+            var bestDE = Double.infinity
+            for entry in table where allowEmpty || entry.fill != .empty {
+                let de = GridCellSampler.deltaE(lab, entry.lab)
+                if de < bestDE { bestDE = de; best = entry.fill }
+            }
+            return best
+        }
 
         // 一张图纸的量化色就那么几十上百种（是像素画），同一个量化色的答案必然相同 ——
         // 记一份就不用为每一格都把调色板扫一遍。
         var memo: [Int32: PartCellFill] = [:]
         var updated = part
-        updated.cells = modes.map { row in
-            row.map { index -> PartCellFill in
+        updated.cells = modes.indices.map { r in
+            modes[r].indices.map { c -> PartCellFill in
+                let index = modes[r][c]
                 // 没量到的格子当空。这里跟 `classify` 第四趟对齐：它对 `nil` 的那一格
                 // 也是直接判空，两边不一致的话，同一张图纸上补判过的那块会长得不一样。
                 guard index >= 0 else { return .empty }
-                if let hit = memo[index] { return hit }
                 let lab = QuantizedRGB.labTable[Int(index)]
-                var best = table[0].fill
-                var bestDE = Double.infinity
-                for entry in table {
-                    let de = GridCellSampler.deltaE(lab, entry.lab)
-                    if de < bestDE { bestDE = de; best = entry.fill }
-                }
+                // 调色板里一条豆子都没有时只能判空，跟原来一样
+                if walled[r][c], let bead = nearest(lab, allowEmpty: false) { return bead }
+                if let hit = memo[index] { return hit }
+                let best = nearest(lab, allowEmpty: true) ?? .empty
                 memo[index] = best
                 return best
             }
