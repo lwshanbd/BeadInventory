@@ -303,7 +303,8 @@ enum PartsCellClassifier {
     /// `nil` = 格线没定好，或者图根本没抠出来。
     private static func cellBitmap(work: PartsWorkImage, part: BeadPart) -> PartsBitmap? {
         guard part.rows > 0, part.cols > 0 else { return nil }
-        return PartsBitmap.make(from: work, roi: part.gridRect ?? part.bounds, maxPixels: 600_000)
+        return PartsBitmap.make(from: work, roi: part.gridRect ?? part.bounds,
+                               maxPixels: cellSamplingPixels(rows: part.rows, cols: part.cols))
     }
 
     /// 这个零件里哪些格子「被线围死、颜色又像底色」—— 这些是浅色豆子，不能判空。
@@ -508,6 +509,22 @@ enum PartsCellClassifier {
 
     /// `dominantColor` 分完簇以后，中心离这么近的两簇算同一种颜色被劈开了，合回去。
     private static let sameColorClusterDeltaE: Double = 20
+
+    /// 量一个零件时位图最多用多少像素：保证每格至少 `minCellSide` × `minCellSide`。
+    ///
+    /// **不能用一个固定上限。** 早先是一律 60 万像素，大零件（几十乘几十格的整块板）被压到
+    /// 一格只剩 12 像素左右。格子里印的白字一糊开，占的面积比深色底还大，`dominantColor`
+    /// 取到的就是字的浅灰 —— 用户看到的是同一种深棕豆子（G8），小零件上判对了，
+    /// 大零件上整片被分进浅灰色号（B212）。实测一格 15 像素起就不再出错，取 24 留余量。
+    ///
+    /// 位图像素本来就不会超过工作图里这块区域的实际大小（`PartsBitmap.make` 只缩不放），
+    /// 所以小零件不受影响；上限 600 万像素是给内存兜底的，一次只量一个零件。
+    private static func cellSamplingPixels(rows: Int, cols: Int) -> Int {
+        let wanted = rows * cols * minCellSide * minCellSide
+        return min(max(600_000, wanted), 6_000_000)
+    }
+
+    private static let minCellSide = 24
 
     /// 把所有零件每一格的颜色量一遍，给核对页排序用。`[零件][行][列]`，`-1` = 没量到。
     ///
