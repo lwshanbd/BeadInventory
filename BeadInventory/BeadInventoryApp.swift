@@ -349,6 +349,8 @@ struct BeadInventoryApp: App {
                     }
                 }
                 cloudSyncStatusManager.refreshAccountStatus()
+                // 静默检查在线模型清单（冷启动也会走到这里）
+                ModelCatalogManager.shared.refresh()
                 // 历史记录若在启动时加载失败（isDataLoaded 仍 false），前台恢复时补一次重试 ——
                 // 否则失败后整 session 历史只在内存、saveDataImmediately 也被守卫跳过、退出即丢。
                 HistoryManager.shared.reloadIfNeeded()

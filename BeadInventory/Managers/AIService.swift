@@ -34,32 +34,13 @@ struct AIConfig: Codable, Equatable {
     static let defaultQwenURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     static let defaultGeminiURL = "https://generativelanguage.googleapis.com/v1beta"
 
-    // 2026-07 更新。均需支持图像输入（识别用）。
-    // Kimi：默认 K2.6（长期可用）；K3（2026-07-16 发布，原生视觉）可选。
-    // K2.5 平台已停服，从列表移除；存量用户存的还是 K2.5 时，normalizedConfig 会在加载时把它落到 K2.6。
-    static let kimiModels = ["kimi-k2.6", "kimi-k3"]
-    // OpenAI：GPT-5.6 家族（2026-07-09）：luna 入门 / terra 中档 / sol 旗舰
-    static let openAIModels = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"]
-    // Anthropic：Claude 5 家族（fable 5 = 最新旗舰）+ Opus 4.8 / Haiku 4.5
-    static let anthropicModels = ["claude-sonnet-5", "claude-fable-5", "claude-opus-4-8", "claude-haiku-4-5"]
-    // Qwen：3.6/3.7 主线原生多模态（3.6-flash/plus 为官方推荐默认）；VL 专线仍可用
-    static let qwenModels = ["qwen3.6-flash", "qwen3.6-plus", "qwen3.7-plus", "qwen3-vl-flash", "qwen3-vl-plus"]
-    // Gemini：3.6-flash 为最新稳定版；3.5-flash/-lite 稳定多模态；3.1-pro 仍是 preview ID
-    static let geminiModels = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview"]
+    /// 可选模型和默认模型都来自 ModelCatalogManager：远端 models.json → 上次缓存 → 内置清单
+    static func models(for provider: AIProvider) -> [String] {
+        ModelCatalogManager.shared.entry(for: provider).models
+    }
 
     static func defaultModel(for provider: AIProvider) -> String {
-        switch provider {
-        case .kimi:
-            return "kimi-k2.6"
-        case .openai:
-            return "gpt-5.6-luna"
-        case .anthropic:
-            return "claude-sonnet-5"
-        case .qwen:
-            return "qwen3.6-flash"
-        case .gemini:
-            return "gemini-3.6-flash"
-        }
+        ModelCatalogManager.shared.entry(for: provider).default
     }
 
     init(
@@ -196,6 +177,22 @@ class AIServiceManager: ObservableObject {
         config.model = AIConfig.defaultModel(for: provider)
     }
 
+    /// 在线模型清单换了之后调用。设置页的模型列表跟着刷新；
+    /// 用户当前选的模型要是不在新清单里了，换成新清单的默认模型。
+    func modelCatalogDidChange() {
+        objectWillChange.send()
+        let normalized = Self.normalizedConfig(from: config)
+        if normalized.model != config.model {
+            AppLogger.shared.info(
+                "ModelCatalog", "selected_model_replaced",
+                metadata: ["provider": config.provider.rawValue, "from": config.model, "to": normalized.model]
+            )
+        }
+        if normalized != config {
+            config = normalized
+        }
+    }
+
     var isConfigured: Bool {
         !config.apiKey.isEmpty
     }
@@ -220,20 +217,8 @@ class AIServiceManager: ObservableObject {
         // didSet 是所有写入的必经之路，在这里清最省事。
         normalized.apiKey = config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let validModels: [String]
-        switch normalized.provider {
-        case .kimi:
-            validModels = AIConfig.kimiModels
-        case .openai:
-            validModels = AIConfig.openAIModels
-        case .anthropic:
-            validModels = AIConfig.anthropicModels
-        case .qwen:
-            validModels = AIConfig.qwenModels
-        case .gemini:
-            validModels = AIConfig.geminiModels
-        }
-
+        // 用户选的模型还在清单里就不动；清单里没有了（下线、改名）才换成该 provider 的默认模型
+        let validModels = AIConfig.models(for: normalized.provider)
         if !validModels.contains(normalized.model) {
             normalized.model = AIConfig.defaultModel(for: normalized.provider)
         }
@@ -839,9 +824,9 @@ class AIServiceManager: ObservableObject {
         let systemPrompt = prompts.system
         let userPrompt = prompts.user
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": requestConfig.model,
-            "max_tokens": 8192,  // 设置足够大的输出限制，避免颜色多时被截断
+            "max_tokens": 16000,
             "system": systemPrompt,
             "messages": [
                 [
@@ -863,6 +848,13 @@ class AIServiceManager: ObservableObject {
                 ]
             ]
         ]
+
+        // Claude 5.5 / Fable 5.1 的思考常开，思考 token 也算在 max_tokens 里，所以上限给足；
+        // 强度压到 low：识别是看图读数，用不着长推理，否则 Fable 默认 high 会把额度想光、JSON 被截断。
+        // Haiku 4.5 不认 effort，发了会 400；它也不思考，不需要。
+        if requestConfig.model != "claude-haiku-4-5" {
+            body["output_config"] = ["effort": "low"]
+        }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 180  // AI 视觉识别可能需要较长时间，设置 3 分钟超时
