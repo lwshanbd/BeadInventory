@@ -459,13 +459,7 @@ struct RecognitionSettingsScreen: View {
     }
 
     private func models(for provider: AIProvider) -> [String] {
-        switch provider {
-        case .kimi:      return AIConfig.kimiModels
-        case .openai:    return AIConfig.openAIModels
-        case .anthropic: return AIConfig.anthropicModels
-        case .qwen:      return AIConfig.qwenModels
-        case .gemini:    return AIConfig.geminiModels
-        }
+        AIConfig.models(for: provider)
     }
 
     private func cloudProviderFooterText(for provider: AIProvider) -> String {

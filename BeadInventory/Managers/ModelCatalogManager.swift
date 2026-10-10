@@ -1,0 +1,188 @@
+//
+//  ModelCatalogManager.swift
+//  BeadInventory
+//
+//  AI 模型清单的在线更新。
+//
+//  每次进前台去 GitHub Pages 拉一份 models.json。拉到了、而且跟本地不同，就换上并缓存；
+//  拉不到就用上次缓存的那份，连缓存都没有就用下面写死的内置清单。
+//
+//  用户选的模型只在「新清单里已经没有它」时才会被换成该 provider 的默认模型，
+//  清单里的 default 不会去覆盖用户还能用的选择。这条规则落在
+//  `AIServiceManager.normalizedConfig` 里，这里只负责提供清单。
+//
+
+import Foundation
+
+/// 一个 provider 能选的模型，以及它的默认模型
+struct ProviderModels: Codable, Equatable {
+    let models: [String]
+    let `default`: String
+}
+
+/// models.json 的格式。providers 的 key 是 `AIProvider.rawValue`（"Kimi"、"OpenAI"……）。
+struct ModelCatalog: Codable, Equatable {
+    let v: Int
+    let providers: [String: ProviderModels]
+}
+
+final class ModelCatalogManager {
+    static let shared = ModelCatalogManager()
+
+    // MARK: - 配置
+
+    /// 托管于 GitHub Pages（源: main 分支 /docs 目录），跟公告同一个站点
+    private let catalogURL = "https://lwshanbd.github.io/BeadInventory/models.json"
+
+    /// 上一次拉到、且校验通过的 models.json 原文
+    private let cacheKey = "ModelCatalogManager.cachedCatalog"
+
+    /// 内置清单：远端从没拉到过时用它；远端某个 provider 缺失或写坏了，那个 provider 也退回这里。
+    /// 2026-07 更新。均需支持图像输入（识别用）。
+    static let builtIn: [AIProvider: ProviderModels] = [
+        // Kimi：默认 K2.6（长期可用）；K3（2026-07-16 发布，原生视觉）可选。
+        // K2.5 平台已停服，从列表移除；存量用户存的还是 K2.5 时，normalizedConfig 会在加载时把它落到 K2.6。
+        .kimi: ProviderModels(models: ["kimi-k2.6", "kimi-k3"], default: "kimi-k2.6"),
+        // OpenAI：GPT-5.6 家族（2026-07-09）：luna 入门 / terra 中档 / sol 旗舰
+        .openai: ProviderModels(models: ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"], default: "gpt-5.6-luna"),
+        // Anthropic：Claude 5 家族（fable 5 = 最新旗舰）+ Opus 4.8 / Haiku 4.5
+        .anthropic: ProviderModels(models: ["claude-sonnet-5", "claude-fable-5", "claude-opus-4-8", "claude-haiku-4-5"], default: "claude-sonnet-5"),
+        // Qwen：3.6/3.7 主线原生多模态（3.6-flash/plus 为官方推荐默认）；VL 专线仍可用
+        .qwen: ProviderModels(models: ["qwen3.6-flash", "qwen3.6-plus", "qwen3.7-plus", "qwen3-vl-flash", "qwen3-vl-plus"], default: "qwen3.6-flash"),
+        // Gemini：3.6-flash 为最新稳定版；3.5-flash/-lite 稳定多模态；3.1-pro 仍是 preview ID
+        .gemini: ProviderModels(models: ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview"], default: "gemini-3.6-flash"),
+    ]
+
+    // MARK: - 状态
+
+    // AIConfig.init 等非主线程路径也会读清单，用锁护着，不挂在 MainActor 上
+    private let lock = NSLock()
+    private var current: [AIProvider: ProviderModels]
+    private var isFetching = false
+
+    private init() {
+        // 同步读缓存：AIServiceManager 初始化时就要拿它校验用户存的模型。
+        // 要是这里先用内置清单，用户选了个只在远端清单里有的新模型，一启动就会被打回默认。
+        if let data = UserDefaults.standard.data(forKey: cacheKey),
+           let cached = Self.resolve(data: data) {
+            current = cached
+            AppLogger.shared.info("ModelCatalog", "loaded_from_cache")
+        } else {
+            current = Self.builtIn
+        }
+    }
+
+    // MARK: - 读
+
+    func entry(for provider: AIProvider) -> ProviderModels {
+        lock.lock()
+        defer { lock.unlock() }
+        return current[provider] ?? Self.builtIn[provider]!
+    }
+
+    // MARK: - 刷新
+
+    /// 静默拉一次远端清单。跟本地不同才替换、才通知 AIServiceManager。
+    func refresh() {
+        lock.lock()
+        if isFetching {
+            lock.unlock()
+            return
+        }
+        isFetching = true
+        lock.unlock()
+
+        guard let url = URL(string: catalogURL) else {
+            AppLogger.shared.error("ModelCatalog", "url_invalid", metadata: ["url": catalogURL])
+            finishFetching()
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self else { return }
+            defer { self.finishFetching() }
+
+            if let error {
+                AppLogger.shared.info("ModelCatalog", "fetch_failed", metadata: ["error": "\(error.localizedDescription)"])
+                return
+            }
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200, let data else {
+                let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+                AppLogger.shared.warning("ModelCatalog", "fetch_bad_response", metadata: ["status": "\(status)"])
+                return
+            }
+            guard let resolved = Self.resolve(data: data) else { return }
+
+            self.lock.lock()
+            let changed = resolved != self.current
+            if changed { self.current = resolved }
+            self.lock.unlock()
+
+            guard changed else {
+                AppLogger.shared.info("ModelCatalog", "unchanged")
+                return
+            }
+
+            UserDefaults.standard.set(data, forKey: self.cacheKey)
+            AppLogger.shared.info("ModelCatalog", "updated")
+            Task { @MainActor in
+                AIServiceManager.shared.modelCatalogDidChange()
+            }
+        }.resume()
+    }
+
+    private func finishFetching() {
+        lock.lock()
+        isFetching = false
+        lock.unlock()
+    }
+
+    // MARK: - 解析
+
+    /// 解析 models.json，并给每个 provider 补齐内置清单。整份不认识就返回 nil（不替换、不缓存）。
+    private static func resolve(data: Data) -> [AIProvider: ProviderModels]? {
+        guard let catalog = try? JSONDecoder().decode(ModelCatalog.self, from: data) else {
+            AppLogger.shared.warning("ModelCatalog", "json_decode_failed")
+            return nil
+        }
+        guard catalog.v == 1 else {
+            AppLogger.shared.warning("ModelCatalog", "version_unsupported", metadata: ["v": "\(catalog.v)"])
+            return nil
+        }
+
+        var result = builtIn
+        for provider in AIProvider.allCases {
+            guard let remote = catalog.providers[provider.rawValue] else { continue }
+
+            // 去空白、去重，保持原顺序（顺序就是设置页里的显示顺序）
+            var seen = Set<String>()
+            let models = remote.models
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty && seen.insert($0).inserted }
+            guard !models.isEmpty else {
+                AppLogger.shared.warning("ModelCatalog", "provider_empty", metadata: ["provider": provider.rawValue])
+                continue
+            }
+
+            // default 写错了（不在列表里）就退到列表第一个，免得把用户强制换到一个不存在的模型上
+            let declaredDefault = remote.default.trimmingCharacters(in: .whitespacesAndNewlines)
+            let defaultModel: String
+            if models.contains(declaredDefault) {
+                defaultModel = declaredDefault
+            } else {
+                AppLogger.shared.warning(
+                    "ModelCatalog", "default_not_in_models",
+                    metadata: ["provider": provider.rawValue, "default": declaredDefault]
+                )
+                defaultModel = models[0]
+            }
+
+            result[provider] = ProviderModels(models: models, default: defaultModel)
+        }
+        return result
+    }
+}
