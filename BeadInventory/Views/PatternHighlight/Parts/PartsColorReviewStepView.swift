@@ -76,6 +76,10 @@ struct PartsColorReviewStepView: View {
     @State private var swatchCache = CellSwatchCache()
     @State private var showingCodePicker = false
     @State private var pickedCodes: Set<String> = []
+    /// 用户在这一屏用选色盘选过的色号（当前体系的显示码），最近选的在前。
+    /// 选色盘最上面单列一组「最近使用」：色号表漏读的颜色，用户改过一组之后，
+    /// 下一组多半还要改成同一个，不用再翻一遍。
+    @State private var recentPickedCodes: [String] = []
     /// 已经核对过的色号（按 groupKey）。只是给用户记进度用，不影响数据。
     @State private var confirmed: Set<String> = []
     /// 底下那三个按钮改过的格子，倒着记。**这一屏最容易一下子改错一大片**——
@@ -307,6 +311,7 @@ struct PartsColorReviewStepView: View {
                 selectedColors: $pickedCodes,
                 colorSystem: colorSystem,
                 suggestedColors: patternColors,
+                recentColors: recentPickedCodes.compactMap { bead(for: $0) },
                 focusColor: currentGroupColor,
                 layout: .grid
             )
@@ -1584,7 +1589,10 @@ struct PartsColorReviewStepView: View {
         guard let picked = pickedCodes.sorted().first,
               let bead = inventoryManager.findColor(byMardCode: picked),
               bead.hasCode(for: colorSystem) else { return }
-        apply(.code(bead.displayCode(for: colorSystem)))
+        let code = bead.displayCode(for: colorSystem)
+        recentPickedCodes.removeAll { $0 == code }
+        recentPickedCodes.insert(code, at: 0)
+        apply(.code(code))
     }
 }
 
