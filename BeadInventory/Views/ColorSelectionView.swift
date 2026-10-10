@@ -16,19 +16,24 @@ struct ColorSelectionView: View {
     }
 
     @Binding var selectedColors: Set<String>
+    /// 打开时已经选了哪些。点「取消」就恢复成这样：调用方多半在弹窗关掉时读 selection，
+    /// 不恢复的话「取消」跟「完成」效果一样，点过的色号照样会被套用上去。
+    ///
+    /// **必须是 `@State`**：每点一个色号，外层就会重建这个视图、重跑 init。
+    /// 用普通 `let` 的话，这里记下的会变成刚点的那个，「取消」等于没恢复（亲测翻车）。
+    @State private var initialSelection: Set<String>
     var colorSystem: ColorSystem = .mard
-    /// 优先列在最上面的一组颜色。多零件模式核对颜色时传进来的是
+    /// 优先列在系列列表前面的一组颜色（有「最近使用」时排在它后面）。多零件模式核对颜色时传进来的是
     /// **上一步 AI 读图纸色号表得出的、这张图确实用到的那十几个色号**。
     ///
     /// 判色一定会判错，而用户要改成的那个正确色号，几乎一定就在图纸自己的色号表里 ——
     /// 让他从这十几个里挑，而不是在四百多个色号里翻着找。
     /// 空数组时列表跟平常完全一样。
     var suggestedColors: [BeadColor] = []
-    /// 再往上一组：用户在这一屏刚改成过的颜色，最近的在前。
+    /// 「最近使用」：排在最顶上，按传进来的顺序画。
     ///
-    /// 色号表漏读了一种颜色时，用户改完一组，下一组多半还要改成同一个。
-    /// 跟上面那组分开列，是因为那组的标题写的是「这张图纸用到的 N 色」，掺进来数就不对了。
-    /// 已经在上面那组里的不再列一遍：它本来就在最前面。
+    /// 不跟 `suggestedColors` 混在一起，因为那组的标题写的是「这张图纸用到的 N 色」，掺进来数就不对了。
+    /// 已经在 `suggestedColors` 里的不再列一遍，那组紧挨在下面。
     var recentColors: [BeadColor] = []
     /// 打开时定位到哪个色号所在的系列。上面那组里没有要找的色号时
     /// （AI 连色号表都读漏了），从当前色号的邻居开始翻最省事。
@@ -50,6 +55,7 @@ struct ColorSelectionView: View {
          focusColor: BeadColor? = nil,
          layout: Layout = .list) {
         self._selectedColors = selectedColors
+        self._initialSelection = State(initialValue: selectedColors.wrappedValue)
         self.colorSystem = colorSystem
         self.suggestedColors = suggestedColors
         self.recentColors = recentColors
@@ -255,6 +261,7 @@ struct ColorSelectionView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") {
+                        selectedColors = initialSelection
                         dismiss()
                     }
                 }

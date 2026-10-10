@@ -94,17 +94,19 @@ final class PartsLegendResolutionTests: XCTestCase {
         let p6 = BeadColor(colorHex: "FF0000", mardCode: "F1", kakaCode: "P6")
         let p23 = BeadColor(colorHex: "EEEE00", mardCode: "F2", kakaCode: "P23")
         let r = BeadColor(colorHex: "0000FF", mardCode: "C1", kakaCode: "R7")
-        let colors = [white, black, p6, p23, r]
+        // 用户自己起的色号，P 开头也不能被当成 P 系拿掉
+        let custom = BeadColor(colorHex: "FFC0CB", mardCode: "#Pink1", kakaCode: "Pink1")
+        let colors = [white, black, p6, p23, r, custom]
 
         let bOnly = PartsCellClassifier.matchableColors(colors, legendColors: [white], colorSystem: .kaka)
-        XCTAssertEqual(bOnly.map(\.kakaCode), ["B1", "B11"])
+        XCTAssertEqual(bOnly.map(\.kakaCode), ["B1", "B11", "Pink1"])
 
         // 图例写了 P6：只多放 P6，P23 照样不放
         let withP6 = PartsCellClassifier.matchableColors(colors, legendColors: [white, p6], colorSystem: .kaka)
-        XCTAssertEqual(withP6.map(\.kakaCode), ["B1", "B11", "P6"])
+        XCTAssertEqual(withP6.map(\.kakaCode), ["B1", "B11", "P6", "Pink1"])
 
         // 别的体系不收窄
-        XCTAssertEqual(PartsCellClassifier.matchableColors(colors, legendColors: [], colorSystem: .mard).count, 5)
+        XCTAssertEqual(PartsCellClassifier.matchableColors(colors, legendColors: [], colorSystem: .mard).count, 6)
     }
 }
 

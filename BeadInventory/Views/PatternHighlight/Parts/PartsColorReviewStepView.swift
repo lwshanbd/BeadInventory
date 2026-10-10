@@ -76,7 +76,7 @@ struct PartsColorReviewStepView: View {
     @State private var swatchCache = CellSwatchCache()
     @State private var showingCodePicker = false
     @State private var pickedCodes: Set<String> = []
-    /// 用户在这一屏用选色盘改过的色号（当前体系的显示码），最近改的在前。
+    /// 用户在这一屏用选色盘选过的色号（当前体系的显示码），最近选的在前。
     /// 选色盘最上面单列一组「最近使用」：色号表漏读的颜色，用户改过一组之后，
     /// 下一组多半还要改成同一个，不用再翻一遍。
     @State private var recentPickedCodes: [String] = []
