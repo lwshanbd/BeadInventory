@@ -1,6 +1,116 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "开始拼" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start"
+          }
+        }
+      }
+    },
+    "更换拼图模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Pattern Mode"
+          }
+        }
+      }
+    },
+    "从「继续拼」中移除" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Continue"
+          }
+        }
+      }
+    },
+    "要扣减库存吗？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deduct from Inventory?"
+          }
+        }
+      }
+    },
+    "以后再说" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not Now"
+          }
+        }
+      }
+    },
+    "「%@」已经拼完了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” is finished."
+          }
+        }
+      }
+    },
+    "单图纸 · 已完成 %lld/%lld 色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Single Pattern · %lld/%lld colors done"
+          }
+        }
+      }
+    },
+    "多零件 · 已组装 %lld/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Multi-Part · %lld/%lld assembled"
+          }
+        }
+      }
+    },
+    "单图纸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Single Pattern"
+          }
+        }
+      }
+    },
+    "多零件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Multi-Part"
+          }
+        }
+      }
+    },
+    "已拼完" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finished"
+          }
+        }
+      }
+    },
     "组装" : {
       "localizations" : {
         "en" : {

@@ -40,6 +40,9 @@ import SwiftUI
 
 struct SinglePatternFlowView: View {
     let project: ProjectRecord
+    /// 点了「完成」（不是「关闭」），存好之后、关掉之前调用。
+    /// 入口那边拿它判断要不要问一句「要扣减库存吗」，见 `PatternModeLauncher`。
+    var onFinished: (() -> Void)? = nil
 
     @EnvironmentObject var inventoryManager: InventoryManager
     @Environment(\.dismiss) private var dismiss
@@ -915,6 +918,8 @@ struct SinglePatternFlowView: View {
     }
 
     private func save() {
-        if persist() { dismiss() }
+        guard persist() else { return }
+        onFinished?()
+        dismiss()
     }
 }
