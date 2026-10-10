@@ -88,21 +88,23 @@ final class PartsLegendResolutionTests: XCTestCase {
 
     // MARK: - 卡卡兜底只在 B 系里找
 
-    /// 图例解释不了的颜色去全色库兜底时，卡卡默认只看 B 系。
+    /// 图例解释不了的颜色去全色库兜底时，卡卡只看 B 系，加上图例里写明的那几个色号。
     /// 错了不报错：图上会冒出用户手里没有的 P 几、R 几，看起来跟「判得不准」一样。
-    func testKakaFallback_onlyBSeriesUnlessLegendMentionsOthers() {
-        let p = BeadColor(colorHex: "FF0000", mardCode: "F1", kakaCode: "P3")
+    func testKakaFallback_onlyBSeriesPlusCodesNamedInLegend() {
+        let p6 = BeadColor(colorHex: "FF0000", mardCode: "F1", kakaCode: "P6")
+        let p23 = BeadColor(colorHex: "EEEE00", mardCode: "F2", kakaCode: "P23")
         let r = BeadColor(colorHex: "0000FF", mardCode: "C1", kakaCode: "R7")
-        let colors = [white, black, p, r]
+        let colors = [white, black, p6, p23, r]
 
         let bOnly = PartsCellClassifier.matchableColors(colors, legendColors: [white], colorSystem: .kaka)
         XCTAssertEqual(bOnly.map(\.kakaCode), ["B1", "B11"])
 
-        let withP = PartsCellClassifier.matchableColors(colors, legendColors: [white, p], colorSystem: .kaka)
-        XCTAssertEqual(withP.map(\.kakaCode), ["B1", "B11", "P3"])
+        // 图例写了 P6：只多放 P6，P23 照样不放
+        let withP6 = PartsCellClassifier.matchableColors(colors, legendColors: [white, p6], colorSystem: .kaka)
+        XCTAssertEqual(withP6.map(\.kakaCode), ["B1", "B11", "P6"])
 
         // 别的体系不收窄
-        XCTAssertEqual(PartsCellClassifier.matchableColors(colors, legendColors: [], colorSystem: .mard).count, 4)
+        XCTAssertEqual(PartsCellClassifier.matchableColors(colors, legendColors: [], colorSystem: .mard).count, 5)
     }
 }
 

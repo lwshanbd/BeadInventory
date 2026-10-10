@@ -165,7 +165,7 @@ enum PartsCellClassifier {
                                    availableColors: availableColors,
                                    colorSystem: colorSystem)
         // 图例解释不了的那几类要去全色库兜底。兜底的范围按体系收窄，理由见 `matchableColors`。
-        // 图例必须拿**没收窄的**色库去翻：图例里写了 P12，它就得认得出来。
+        // 图例必须拿**没收窄的**色库去翻：图例里写了 P6，它就得认得出来。
         let matchable = matchableColors(availableColors, legendColors: legend.colors,
                                         colorSystem: colorSystem)
 
@@ -953,10 +953,11 @@ enum PartsCellClassifier {
     /// 不收窄的话，图例里没有的那几类颜色会被认成「离得最近」的 P 几、R 几，
     /// 用户手里根本没有这些豆子，还得一组一组改回 B。
     ///
-    /// 所以卡卡默认只在 B 系里找。图例（上一步读到的色号表）里出现了哪一系，那一系也放开：
-    /// 图纸写了 P12，说明这张图真用 P 系，那 P 系的别的色号也可能出现。
+    /// 所以卡卡只在 B 系里找，再加上图例（上一步读到的色号表）里写明的那几个色号。
+    /// **只放写明的那一个，不放它整个系**：图纸写了 P6，说明用户要用的是 P6，
+    /// 不说明 P 系别的色号也会出现（用户明确要求过）。
     ///
-    /// 只拿掉 B/P/R 这三个标准系里没放开的；自定义色号这类不属于任何一系的照旧留着。
+    /// 只拿掉 P/R 里图例没写的；自定义色号这类不属于任何一系的照旧留着。
     /// 别的体系不收窄。
     static func matchableColors(
         _ availableColors: [BeadColor],
@@ -964,18 +965,14 @@ enum PartsCellClassifier {
         colorSystem: ColorSystem
     ) -> [BeadColor] {
         guard colorSystem == .kaka else { return availableColors }
-        func series(_ color: BeadColor) -> String? {
-            guard !color.mardCode.hasPrefix("#") else { return nil }
-            let code = color.displayCode(for: colorSystem).uppercased()
-            return colorSystem.standardPrefixes.first { code.hasPrefix($0) }
-        }
-        var allowed: Set<String> = [colorSystem.defaultSeries]
-        for color in legendColors where color.hasCode(for: colorSystem) {
-            if let prefix = series(color) { allowed.insert(prefix) }
-        }
+        let named = Set(legendColors.map(\.id))
         return availableColors.filter { color in
-            guard let prefix = series(color) else { return true }
-            return allowed.contains(prefix)
+            if named.contains(color.id) || color.mardCode.hasPrefix("#") { return true }
+            let code = color.displayCode(for: colorSystem).uppercased()
+            guard let series = colorSystem.standardPrefixes.first(where: { code.hasPrefix($0) }) else {
+                return true
+            }
+            return series == colorSystem.defaultSeries
         }
     }
 
