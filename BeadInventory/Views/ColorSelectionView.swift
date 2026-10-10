@@ -24,6 +24,12 @@ struct ColorSelectionView: View {
     /// 让他从这十几个里挑，而不是在四百多个色号里翻着找。
     /// 空数组时列表跟平常完全一样。
     var suggestedColors: [BeadColor] = []
+    /// 再往上一组：用户在这一屏刚改成过的颜色，最近的在前。
+    ///
+    /// 色号表漏读了一种颜色时，用户改完一组，下一组多半还要改成同一个。
+    /// 跟上面那组分开列，是因为那组的标题写的是「这张图纸用到的 N 色」，掺进来数就不对了。
+    /// 已经在上面那组里的不再列一遍：它本来就在最前面。
+    var recentColors: [BeadColor] = []
     /// 打开时定位到哪个色号所在的系列。上面那组里没有要找的色号时
     /// （AI 连色号表都读漏了），从当前色号的邻居开始翻最省事。
     var focusColor: BeadColor? = nil
@@ -40,11 +46,13 @@ struct ColorSelectionView: View {
     init(selectedColors: Binding<Set<String>>,
          colorSystem: ColorSystem = .mard,
          suggestedColors: [BeadColor] = [],
+         recentColors: [BeadColor] = [],
          focusColor: BeadColor? = nil,
          layout: Layout = .list) {
         self._selectedColors = selectedColors
         self.colorSystem = colorSystem
         self.suggestedColors = suggestedColors
+        self.recentColors = recentColors
         self.focusColor = focusColor
         self.layout = layout
         let initial = focusColor.map { Self.series(for: $0, in: colorSystem) } ?? colorSystem.defaultSeries
@@ -56,6 +64,15 @@ struct ColorSelectionView: View {
     private var suggestions: [BeadColor] {
         var seen = Set<String>()
         return suggestedColors.filter { color in
+            guard color.hasCode(for: colorSystem) else { return false }
+            return seen.insert(color.mardCode).inserted
+        }
+    }
+
+    /// 「最近使用」那组实际画出来的几行。规则同 `suggestions`，再去掉 `suggestions` 里已有的。
+    private var recents: [BeadColor] {
+        var seen = Set(suggestions.map(\.mardCode))
+        return recentColors.filter { color in
             guard color.hasCode(for: colorSystem) else { return false }
             return seen.insert(color.mardCode).inserted
         }
@@ -187,9 +204,25 @@ struct ColorSelectionView: View {
                 // 颜色列表
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                        // 这张图纸自己用到的那几个色号排在最前面。判色判错时要改成的
-                        // 那一个基本都在这里 —— 不管现在切到哪个系列都一直留着，
+                        // 用户刚改成过的、这张图纸自己用到的，这两组排在最前面。判色判错时
+                        // 要改成的那一个基本都在这里 —— 不管现在切到哪个系列都一直留着，
                         // 用户翻到别的系列时也不用滚回来找。
+                        if !recents.isEmpty {
+                            HStack(spacing: 6) {
+                                Image(systemName: "clock")
+                                    .font(.caption)
+                                Text("最近使用")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                Spacer()
+                            }
+                            .foregroundColor(Theme.ColorToken.Text.secondary)
+
+                            colorGroup(recents)
+
+                            Divider()
+                        }
+
                         if !suggestions.isEmpty {
                             HStack(spacing: 6) {
                                 Image(systemName: "sparkles")
@@ -209,7 +242,7 @@ struct ColorSelectionView: View {
                         }
 
                         // 上面列过的不再重复一遍
-                        let shown = Set(suggestions.map(\.mardCode))
+                        let shown = Set((recents + suggestions).map(\.mardCode))
                         colorGroup(colorsInSeries.filter { !shown.contains($0.mardCode) })
                     }
                     .padding(.horizontal)

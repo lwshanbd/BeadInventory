@@ -85,6 +85,25 @@ final class PartsLegendResolutionTests: XCTestCase {
         XCTAssertEqual(result.colors.map(\.mardCode), ["H7"])
         XCTAssertTrue(result.unknownCodes.isEmpty)
     }
+
+    // MARK: - 卡卡兜底只在 B 系里找
+
+    /// 图例解释不了的颜色去全色库兜底时，卡卡默认只看 B 系。
+    /// 错了不报错：图上会冒出用户手里没有的 P 几、R 几，看起来跟「判得不准」一样。
+    func testKakaFallback_onlyBSeriesUnlessLegendMentionsOthers() {
+        let p = BeadColor(colorHex: "FF0000", mardCode: "F1", kakaCode: "P3")
+        let r = BeadColor(colorHex: "0000FF", mardCode: "C1", kakaCode: "R7")
+        let colors = [white, black, p, r]
+
+        let bOnly = PartsCellClassifier.matchableColors(colors, legendColors: [white], colorSystem: .kaka)
+        XCTAssertEqual(bOnly.map(\.kakaCode), ["B1", "B11"])
+
+        let withP = PartsCellClassifier.matchableColors(colors, legendColors: [white, p], colorSystem: .kaka)
+        XCTAssertEqual(withP.map(\.kakaCode), ["B1", "B11", "P3"])
+
+        // 别的体系不收窄
+        XCTAssertEqual(PartsCellClassifier.matchableColors(colors, legendColors: [], colorSystem: .mard).count, 4)
+    }
 }
 
 /// 判色整条链路：图上有几种颜色，核对页就该有几组。
