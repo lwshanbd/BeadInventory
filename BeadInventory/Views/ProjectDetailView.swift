@@ -19,24 +19,9 @@ struct ProjectDetailView: View {
     @State private var showingFinishedImageEditor = false
     /// 拼图模式里动过图纸原图之后，靠它让「图纸原图」那一行重读（见 `PatternSourceRow.refreshToken`）。
     @State private var patternSourceRefreshToken = 0
-    @State private var showingPatternModePicker = false
-    /// 在模式选择页里选了哪种模式，等它收起后再进下一页（见 openPatternModeIfSelected）
-    @State private var pendingSinglePatternMode = false
-    @State private var pendingMultiPartMode = false
-    @State private var showingSinglePatternFlow = false
-    @State private var showingPartsSheetFlow = false
-
-    /// 两种模式都只有一个入口：进去之后由流程页自己决定从第一屏开始，
-    /// 还是接着上次的进度（对过网格的直接进「照着拼」）。
-    private func openPatternModeIfSelected() {
-        if pendingSinglePatternMode {
-            pendingSinglePatternMode = false
-            showingSinglePatternFlow = true
-        } else if pendingMultiPartMode {
-            pendingMultiPartMode = false
-            showingPartsSheetFlow = true
-        }
-    }
+    @State private var patternLaunch: PatternLaunchRequest?
+    /// 「⋯」里的「更换拼图模式」看它决定显不显示，得跟着刷新
+    @ObservedObject private var patternStore = PatternWorkStore.shared
 
     var isParentProject: Bool {
         inventoryManager.isParentProject(project.id)
@@ -104,14 +89,16 @@ struct ProjectDetailView: View {
                 // 这一份管拼图模式看不看得清每一格。以前它只存在于代码里，
                 // 用户能摸到的只有封面，于是改封面就被当成了改图纸。
                 //
-                // `allowsPicking` 跟着拼图模式入口走（下面那个 `if isPlanned`）：
-                // 已执行的项目进不去拼图模式，就别劝他补一张用不上的图 —— 但已经
-                // 留着的那几十 MB 得让他看得见、删得掉。
+                // 已扣减的项目也能进拼图模式（有人先扣再拼），所以也让他补图纸。
                 PatternSourceRow(
                     projectId: (currentProject ?? project).id,
-                    allowsPicking: (currentProject ?? project).isPlanned,
                     refreshToken: patternSourceRefreshToken
                 )
+                .padding(.horizontal)
+
+                PatternModeEntryButton(projectId: (currentProject ?? project).id) {
+                    patternLaunch = PatternLaunchRequest(projectId: (currentProject ?? project).id)
+                }
                 .padding(.horizontal)
 
                 // 成品图展示区域（仅已执行项目显示）
@@ -203,37 +190,24 @@ struct ProjectDetailView: View {
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if (currentProject ?? project).isPlanned {
-                let projectId = (currentProject ?? project).id
-                let hasThumbnail = inventoryManager.projectIDsWithThumbnail.contains(projectId)
+            // 选错了模式的出口。没进过拼图模式的不显示，那时「开始拼」本身就会问。
+            if patternStore.summary(for: project.id) != nil {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingPatternModePicker = true
+                    Menu {
+                        Button {
+                            patternLaunch = PatternLaunchRequest(projectId: project.id, choosesMode: true)
+                        } label: {
+                            Label("更换拼图模式", systemImage: "square.grid.3x3.square")
+                        }
                     } label: {
-                        Label("拼图模式", systemImage: "square.grid.3x3.square")
+                        Image(systemName: "ellipsis.circle")
                     }
-                    .disabled(!hasThumbnail)
                 }
             }
         }
-        .sheet(isPresented: $showingPatternModePicker, onDismiss: openPatternModeIfSelected) {
-            PatternModeSelectionSheet(
-                onSelectSinglePattern: { pendingSinglePatternMode = true },
-                onSelectMultiPart: { pendingMultiPartMode = true }
-            )
-        }
-        // 两个 onDismiss 都要：拼图模式里能删掉原图（零件清单页「拼好了」）也能补一张
-        // （缺图提示条），而 fullScreenCover 关掉之后这一页不会重建，那一行不会自己重读。
-        .fullScreenCover(isPresented: $showingPartsSheetFlow,
-                         onDismiss: { patternSourceRefreshToken += 1 }) {
-            PartsSheetFlowView(project: currentProject ?? project)
-                .environmentObject(inventoryManager)
-        }
-        .fullScreenCover(isPresented: $showingSinglePatternFlow,
-                         onDismiss: { patternSourceRefreshToken += 1 }) {
-            SinglePatternFlowView(project: currentProject ?? project)
-                .environmentObject(inventoryManager)
-        }
+        // 拼图模式里能删掉原图（零件清单页「拼好了」）也能补一张（缺图提示条），
+        // 这一页不会重建，「图纸原图」那一行要靠它重读。拼图进度由 launcher 自己重算。
+        .patternModeLauncher($patternLaunch, onFlowDismissed: { patternSourceRefreshToken += 1 })
         .sheet(isPresented: $showingThumbnailEditor) {
             let projectId = (currentProject ?? project).id
             let data = inventoryManager.fetchProjectThumbnailData(for: projectId)

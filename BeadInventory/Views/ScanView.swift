@@ -33,6 +33,7 @@ struct ScanView: View {
     @State private var recognizedItems: [RecognizedItem] = []
     @State private var errorMessage: String?
     @State private var showingCreatePlan = false
+    @State private var patternLaunch: PatternLaunchRequest?
 
     @State private var deductionResolver: DeductionResolver?
     @State private var showingDeductionFailure = false
@@ -280,6 +281,7 @@ struct ScanView: View {
                     Color.black.onAppear { showingThumbnailCrop = false }
                 }
             }
+            .patternModeLauncher($patternLaunch)
             .navigationDestination(item: $deductionResolver) { resolver in
                 DeductionReviewView(
                     resolver: resolver,
@@ -594,16 +596,21 @@ struct ScanView: View {
     ///
     /// 追加的几张没存进去要说出来：`clearState()` 马上就把它们从内存里清掉，
     /// 它们又没有封面可退，这一丢就是永久的。第 0 张存不进去不用说（有封面顶着，旧行为）。
-    private func savePatternSource(for projectId: UUID) {
-        guard let main = patternSourceData() else { return }
+    ///
+    /// - Returns: 追加的几张都存上了（没有追加的也算）。
+    @discardableResult
+    private func savePatternSource(for projectId: UUID) -> Bool {
+        guard let main = patternSourceData() else { return true }
         PatternSourceStore.save(main, for: projectId)
-        guard !extraPages.isEmpty else { return }
+        guard !extraPages.isEmpty else { return true }
         if !PatternSourceStore.saveExtraPages(extraPages.map(\.data), for: projectId) {
             // 扣减那条路是从被推出来的复核页调过来的，等它收起再弹
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 extraPagesSaveFailed = true
             }
+            return false
         }
+        return true
     }
 
     // MARK: - 主 body 的子片段（拆分以减轻类型检查复杂度）
@@ -839,6 +846,8 @@ struct ScanView: View {
                 totalBeads: totalBeads,
                 canDeduct: brandMatchesScanSystem,
                 isBusy: isLoadingExtraPages,
+                // 手动录入、没有图纸时没法拼，不给这个按钮
+                onStart: thumbnailImage == nil ? nil : { startAssembling() },
                 onPlan: { showingCreatePlan = true },
                 onDeduct: { prepareDeduction() }
             )
@@ -1037,13 +1046,15 @@ struct ScanView: View {
         return regex.stringByReplacingMatches(in: trimmed, options: [], range: range, withTemplate: "$1$2")
     }
 
-    func createPlannedProject() {
+    /// 返回新建的计划，以及追加的图纸存没存上。编码失败没建成时返回 nil。
+    @discardableResult
+    func createPlannedProject() -> (project: ProjectRecord, extraPagesSaved: Bool)? {
         // 同 applyToInventoryWithResolver：**编码失败**不建项目、不清状态，让用户能重试；
         // 「用户没有封面图」是合法状态，照常建计划。
         guard let thumbnailDataOrNil = generateThumbnailData() else {
             AppLogger.shared.error("Scan", "thumbnail_encode_failed_aborting_plan", metadata: [:])
             imageEncodeFailed = true
-            return
+            return nil
         }
         let thumbnailData = thumbnailDataOrNil
 
@@ -1060,10 +1071,23 @@ struct ScanView: View {
             colorSystem: scanColorSystem
         )
         inventoryManager.addPlannedProject(project)
-        savePatternSource(for: project.id)
+        let extraPagesSaved = savePatternSource(for: project.id)
 
         // 清除结果
         clearState()
+        return (project, extraPagesSaved)
+    }
+
+    /// 识别结果页「开始拼」：存成计划，直接进拼图模式。
+    ///
+    /// 不弹「创建计划」那个确认框 —— 用户点的是「开始拼」，存成计划只是拼图模式要一个
+    /// 项目挂进度，问他一句「要不要创建计划」反而让人愣一下。计划照常出现在「计划」里。
+    ///
+    /// 追加的图纸没存上时先不进拼图模式：「没存上」的提示是挂在这一页上的，
+    /// 上面盖着拼图模式就弹不出来，用户会带着缺页的图纸去拼。
+    private func startAssembling() {
+        guard let created = createPlannedProject(), created.extraPagesSaved else { return }
+        patternLaunch = PatternLaunchRequest(projectId: created.project.id)
     }
 
     /// 生成落盘用的图纸数据。
@@ -3491,65 +3515,119 @@ enum RecognizedResultsFilter: Hashable {
 }
 
 // MARK: - 莫兰迪风底部 CTA 条
+/// 有图纸时三个出口：「开始拼」在上一整行，「存为计划」「扣减」在下一行。
+/// 没有图纸（手动录入）时没法拼，只有下面两个，扣减是主按钮。
 struct ScanBottomCTABar: View {
     let totalBeads: Int
     let canDeduct: Bool
-    /// 追加图纸还在读取、裁切或保存。这时两个按钮都不能点，免得项目少了几张图纸。
+    /// 追加图纸还在读取、裁切或保存。这时按钮都不能点，免得项目少了几张图纸。
     let isBusy: Bool
+    /// nil = 没有图纸，不显示「开始拼」
+    let onStart: (() -> Void)?
     let onPlan: () -> Void
     let onDeduct: () -> Void
 
     @Environment(\.tabFlavor) private var flavor
 
     var body: some View {
-        HStack(spacing: 12) {
-            // 存为计划（outlined）
-            Button(action: onPlan) {
-                HStack(spacing: 6) {
-                    Image(systemName: "calendar.badge.plus")
-                    Text("存为计划")
+        VStack(spacing: 10) {
+            if let onStart {
+                Button(action: onStart) {
+                    HStack(spacing: 6) {
+                        if isBusy {
+                            ProgressView()
+                                .tint(Theme.ColorToken.Text.onAccent)
+                        } else {
+                            Image(systemName: "square.grid.3x3.square")
+                        }
+                        Text("开始拼")
+                    }
+                    .font(.headline)
+                    .foregroundStyle(Theme.ColorToken.Text.onAccent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(flavor.fill)
+                    )
+                    .shadow(color: Theme.ColorToken.Shadow.soft, radius: 4, x: 0, y: 2)
                 }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Theme.ColorToken.Text.primary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Theme.ColorToken.Surface.elevated)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-                )
             }
 
-            // 扣减 N 颗（filled mauve）
-            Button(action: onDeduct) {
-                HStack(spacing: 6) {
-                    if isBusy {
-                        ProgressView()
-                            .tint(Theme.ColorToken.Text.onAccent)
-                    } else {
-                        Image(systemName: "minus.circle.fill")
+            HStack(spacing: 12) {
+                Button(action: onPlan) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "calendar.badge.plus")
+                        Text("存为计划")
                     }
-                    Text("扣减 \(totalBeads) 颗")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                    .frame(maxWidth: onStart == nil ? nil : .infinity)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(outlinedBackground)
                 }
-                .font(.headline)
-                .foregroundStyle(Theme.ColorToken.Text.onAccent)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(canDeduct ? flavor.fill : Theme.ColorToken.Border.default)
-                )
-                .shadow(color: Theme.ColorToken.Shadow.soft, radius: 4, x: 0, y: 2)
+
+                if onStart == nil {
+                    filledDeductButton
+                } else {
+                    outlinedDeductButton
+                }
             }
-            .disabled(!canDeduct)
         }
         .disabled(isBusy)
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.sm)
         .background(.bar)
+    }
+
+    private var outlinedBackground: some View {
+        RoundedRectangle(cornerRadius: 14)
+            .fill(Theme.ColorToken.Surface.elevated)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+            )
+    }
+
+    /// 有「开始拼」时扣减退到第二行，跟「存为计划」一样是描边按钮。
+    private var outlinedDeductButton: some View {
+        Button(action: onDeduct) {
+            HStack(spacing: 6) {
+                Image(systemName: "minus.circle")
+                Text("扣减 \(totalBeads) 颗")
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(canDeduct ? Theme.ColorToken.Text.primary : Theme.ColorToken.Text.tertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(outlinedBackground)
+        }
+        .disabled(!canDeduct)
+    }
+
+    private var filledDeductButton: some View {
+        Button(action: onDeduct) {
+            HStack(spacing: 6) {
+                if isBusy {
+                    ProgressView()
+                        .tint(Theme.ColorToken.Text.onAccent)
+                } else {
+                    Image(systemName: "minus.circle.fill")
+                }
+                Text("扣减 \(totalBeads) 颗")
+            }
+            .font(.headline)
+            .foregroundStyle(Theme.ColorToken.Text.onAccent)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(canDeduct ? flavor.fill : Theme.ColorToken.Border.default)
+            )
+            .shadow(color: Theme.ColorToken.Shadow.soft, radius: 4, x: 0, y: 2)
+        }
+        .disabled(!canDeduct)
     }
 }
 

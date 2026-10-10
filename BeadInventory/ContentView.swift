@@ -16,6 +16,8 @@ struct ContentView: View {
     @ObservedObject private var localModelRemovalMigrator = LocalModelRemovalMigrator.shared
     @Binding var shouldOpenScan: Bool
     @State private var selectedTab = 0
+    /// 工作台停在「拼图」还是「识别」（见 `WorkshopView`）。外部唤起扫描时要切到识别。
+    @AppStorage("workshopPage") private var workshopPage: String = ""
     @State private var showingAddInventory = false
     @State private var showingLocalFallbackConfirmation = false
     @State private var showingDisableCloudSyncConfirmation = false
@@ -41,23 +43,31 @@ struct ContentView: View {
                     .tabItem {
                         Label("库存", systemImage: "square.grid.3x3.fill")
                     }
-                    .tag(0)
+                    .tag(TabFlavor.inventory.rawValue)
 
-                // 工作台（扫描 + 计划合并到同一个 Tab）
+                // 计划：还没扣减的项目
+                PlannedProjectsView()
+                    .environment(\.tabFlavor, .plan)
+                    .tabItem {
+                        Label("计划", systemImage: "list.bullet.clipboard.fill")
+                    }
+                    .tag(TabFlavor.plan.rawValue)
+
+                // 工作台：识别图纸、拼图模式
                 WorkshopView(externalImage: $externalImage)
                     .environment(\.tabFlavor, .workshop)
                     .tabItem {
                         Label("工作台", systemImage: "wand.and.stars")
                     }
-                    .tag(1)
+                    .tag(TabFlavor.workshop.rawValue)
 
-                // 统计
+                // 记录：扣减过的项目 + 用量统计
                 StatisticsView()
-                    .environment(\.tabFlavor, .statistics)
+                    .environment(\.tabFlavor, .records)
                     .tabItem {
-                        Label("统计", systemImage: "chart.bar.fill")
+                        Label("记录", systemImage: "book.closed.fill")
                     }
-                    .tag(2)
+                    .tag(TabFlavor.records.rawValue)
 
                 // 更多（包含色号转换和设置）
                 MoreView()
@@ -65,7 +75,7 @@ struct ContentView: View {
                     .tabItem {
                         Label("更多", systemImage: "ellipsis.circle.fill")
                     }
-                    .tag(3)
+                    .tag(TabFlavor.more.rawValue)
             }
             .tint(currentFlavor.color)
             .onPreferenceChange(SelectModeActivePreferenceKey.self) { active in
@@ -224,8 +234,9 @@ struct ContentView: View {
                 if let image = sharedImageManager.consumePendingImage() {
                     externalImage = image
                 }
-                // 切换到扫描 Tab
-                selectedTab = 1
+                // 切换到工作台（扫描）
+                selectedTab = TabFlavor.workshop.rawValue
+                workshopPage = WorkshopView.Page.scan.rawValue
                 // 重置标志
                 shouldOpenScan = false
             }
@@ -237,7 +248,8 @@ struct ContentView: View {
                 if let image = sharedImageManager.consumePendingImage() {
                     externalImage = image
                 }
-                selectedTab = 1
+                selectedTab = TabFlavor.workshop.rawValue
+                workshopPage = WorkshopView.Page.scan.rawValue
             }
         }
         // App 进入前台时检查是否有待处理的图片

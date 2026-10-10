@@ -29,12 +29,6 @@ import PhotosUI
 struct PatternSourceRow: View {
     let projectId: UUID
 
-    /// 这个项目还用得上图纸吗 —— 也就是它进不进得去拼图模式。
-    ///
-    /// 已执行的项目进不去（两个详情页的入口都是 `if isPlanned`），所以不劝他补一张：
-    /// 没有图纸时这一行整个不出现，已经留着的那份仍然看得见、能删掉腾空间。
-    var allowsPicking = true
-
     /// 外面动过这份文件之后，把这个值 +1 就能让这一行重读。
     ///
     /// 必须有：拼图模式是 `fullScreenCover`，关掉它详情页不会重建，`.task` 也就不会
@@ -82,20 +76,8 @@ struct PatternSourceRow: View {
         inventoryManager.hasStoredPatternWork(for: projectId)
     }
 
-    private var isVisible: Bool {
-        stored != nil || allowsPicking
-    }
-
     var body: some View {
-        Group {
-            if isVisible {
-                card
-            } else {
-                // 零高度的实体节点。`if` 不成立时 Group 里什么都没有，下面那个 `.task`
-                // 就永远不会跑 —— 也就永远判断不出这一行到底该不该出现。
-                Color.clear.frame(height: 0)
-            }
-        }
+        card
         .task(id: refreshToken) { await reload() }
         .onChange(of: pickedItem) { _, item in
             guard let item else { return }
@@ -141,15 +123,13 @@ struct PatternSourceRow: View {
                 if loading {
                     ProgressView()
                 } else {
-                    if allowsPicking {
-                        // `.current`：这一整条路要的就是没被动过的原始字节，默认的
-                        // `.automatic` 可能把 HEIC 转码成 JPEG，那就等于白换一次。
-                        PhotosPicker(selection: $pickedItem, matching: .images,
-                                     preferredItemEncoding: .current) {
-                            Label(stored == nil ? "选一张" : "换一张", systemImage: "photo.badge.plus")
-                                .font(.caption)
-                                .foregroundColor(Theme.ColorToken.Morandi.mauve)
-                        }
+                    // `.current`：这一整条路要的就是没被动过的原始字节，默认的
+                    // `.automatic` 可能把 HEIC 转码成 JPEG，那就等于白换一次。
+                    PhotosPicker(selection: $pickedItem, matching: .images,
+                                 preferredItemEncoding: .current) {
+                        Label(stored == nil ? "选一张" : "换一张", systemImage: "photo.badge.plus")
+                            .font(.caption)
+                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
                     }
 
                     if stored != nil {

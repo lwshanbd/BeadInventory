@@ -218,7 +218,9 @@ struct PlannedProjectsView: View {
                 }
             }
             .background(Theme.ColorToken.Surface.background)
-            .navigationTitle("")
+            // 卡片右下角的拼图进度读的是这份缓存，在后台填
+            .task { PatternWorkStore.shared.refreshAll(using: inventoryManager) }
+            .navigationTitle("计划")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
@@ -636,6 +638,8 @@ private struct PlanCard: View {
                     Text(project.date.formatted(date: .abbreviated, time: .omitted))
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                    Spacer(minLength: 4)
+                    PatternProgressLabel(projectId: project.id)
                 }
             }
 
@@ -1318,12 +1322,9 @@ struct PlannedProjectDetailView: View {
     @State private var showThumbnailEditor = false
     @State private var sortByQuantity = true
     @State private var showChildrenSection = true
-    @State private var showPatternModePicker = false
-    /// 在模式选择页里选了哪种模式，等它收起后再进下一页（见 openPatternModeIfSelected）
-    @State private var pendingSinglePatternMode = false
-    @State private var pendingMultiPartMode = false
-    @State private var showSinglePatternFlow = false
-    @State private var showPartsSheetFlow = false
+    @State private var patternLaunch: PatternLaunchRequest?
+    /// 「⋯」里的「更换拼图模式」看它决定显不显示，得跟着刷新
+    @ObservedObject private var patternStore = PatternWorkStore.shared
     /// 拼图模式里动过图纸原图之后，靠它让「图纸原图」那一行重读（见 `PatternSourceRow.refreshToken`）。
     @State private var patternSourceRefreshToken = 0
 
@@ -1389,24 +1390,9 @@ struct PlannedProjectDetailView: View {
         .sheet(isPresented: $showStockCheckSheet) { stockCheckSheet }
         .sheet(isPresented: $showEditSheet) { editSheet }
         .sheet(isPresented: $showThumbnailEditor) { thumbnailEditorSheet }
-        .sheet(isPresented: $showPatternModePicker, onDismiss: openPatternModeIfSelected) {
-            PatternModeSelectionSheet(
-                onSelectSinglePattern: { pendingSinglePatternMode = true },
-                onSelectMultiPart: { pendingMultiPartMode = true }
-            )
-        }
-        // 两个 onDismiss 都要，理由同 `ProjectDetailView`：拼图模式里能删也能补，
-        // 关掉之后这一页不重建，「图纸原图」那一行不会自己重读。
-        .fullScreenCover(isPresented: $showPartsSheetFlow,
-                         onDismiss: { patternSourceRefreshToken += 1 }) {
-            PartsSheetFlowView(project: currentProject ?? project)
-                .environmentObject(inventoryManager)
-        }
-        .fullScreenCover(isPresented: $showSinglePatternFlow,
-                         onDismiss: { patternSourceRefreshToken += 1 }) {
-            SinglePatternFlowView(project: currentProject ?? project)
-                .environmentObject(inventoryManager)
-        }
+        // 拼图模式里能删也能补原图，这一页不重建，「图纸原图」那一行要靠它重读。
+        // 拼图进度由 launcher 自己重算。
+        .patternModeLauncher($patternLaunch, onFlowDismissed: { patternSourceRefreshToken += 1 })
         .onChange(of: currentProject?.isPlanned) { _, isPlanned in
             if isPlanned == false { dismiss() }
         }
@@ -1453,47 +1439,18 @@ struct PlannedProjectDetailView: View {
         }
     }
 
+    /// 拼图放最上面：扣减和拼图是两件事，拼图是在手上干的活，扣减可以拼完再说。
     private var actionButtonsView: some View {
         VStack(spacing: 12) {
+            PatternModeEntryButton(projectId: (currentProject ?? project).id) {
+                patternLaunch = PatternLaunchRequest(projectId: (currentProject ?? project).id)
+            }
             HStack(spacing: 12) {
                 stockCheckButton
                 executeButton
             }
-            patternHighlightButton
         }
         .padding(.horizontal)
-    }
-
-    /// 两种模式都只有一个入口：进去之后由流程页自己决定从第一屏开始，
-    /// 还是接着上次的进度（对过网格的直接进「照着拼」）。
-    private func openPatternModeIfSelected() {
-        if pendingSinglePatternMode {
-            pendingSinglePatternMode = false
-            showSinglePatternFlow = true
-        } else if pendingMultiPartMode {
-            pendingMultiPartMode = false
-            showPartsSheetFlow = true
-        }
-    }
-
-    private var patternHighlightButton: some View {
-        let projectId = (currentProject ?? project).id
-        let hasThumbnail = inventoryManager.projectIDsWithThumbnail.contains(projectId)
-        return Button {
-            showPatternModePicker = true
-        } label: {
-            HStack {
-                Image(systemName: "square.grid.3x3.square")
-                Text("拼图模式")
-            }
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(hasThumbnail ? Theme.ColorToken.Fill.mauve : Theme.ColorToken.Border.default)
-            .cornerRadius(Theme.Radius.md)
-        }
-        .disabled(!hasThumbnail)
     }
 
     private var stockCheckButton: some View {
@@ -1625,6 +1582,15 @@ struct PlannedProjectDetailView: View {
                         showEditSheet = true
                     } label: {
                         Label("编辑", systemImage: "pencil")
+                    }
+                }
+
+                // 选错了模式的出口。没进过拼图模式的不显示，那时「开始拼」本身就会问。
+                if patternStore.summary(for: project.id) != nil {
+                    Button {
+                        patternLaunch = PatternLaunchRequest(projectId: project.id, choosesMode: true)
+                    } label: {
+                        Label("更换拼图模式", systemImage: "square.grid.3x3.square")
                     }
                 }
             } label: {

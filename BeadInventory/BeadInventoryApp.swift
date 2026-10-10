@@ -1304,7 +1304,7 @@ extension BeadInventoryApp {
 //   - `patternGridData`：真实形态的 BeadPatternGrid（默认 100×100 = 1 万格色号矩阵）
 //   - `displayThumbnail`：**一半留 nil** —— 这是「老数据」形态，会触发
 //     ThumbnailMigrationCoordinator 的 backfill，也会让列表走现场降级路径
-//   - 计划 / 已执行 混合，覆盖工作台和项目两条列表
+//   - 计划 / 已执行 混合，覆盖计划和记录两条列表
 //
 //  ## 用法
 //

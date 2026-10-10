@@ -155,6 +155,10 @@ class InventoryManager: ObservableObject {
         didSet { imageLoader = modelContext.map { ProjectImageLoader(container: $0.container) } }
     }
 
+    /// store 文件位置，给只读 SQLite 扫描用（见 `ProjectBlobExistenceScanner`）。
+    /// in-memory 库（单测）给的是个不存在的路径，扫描器会当成 `.unsupportedStore`。
+    var storeURL: URL? { modelContext?.container.configurations.first?.url }
+
     /// 视图取图的**后台**入口。视图层（列表 / 日历 / 详情）一律走它，不要再调
     /// 本类的 `fetchProject*Data` —— 那些是 `@MainActor` 同步 fetch，正是用户
     /// `.ips` 里主线程栈 `sqlite3_step → _platform_memmove` 的来源。
@@ -5076,9 +5080,8 @@ class InventoryManager: ObservableObject {
     /// 更新项目的多零件图纸数据（立体图纸）。语义完全对齐 `updateProjectPatternGrid`：
     /// 编码失败时**保留**旧值不覆盖，只有用户明确清空才写 nil。
     ///
-    /// 没有对应的 `projectIDsWithPartsSheet` 存在性集合 —— 那套集合是为「列表每个 row
-    /// 都要知道有没有图」准备的，多零件数据只在进入该模式时读一次，多维护一个集合
-    /// 反而多一处会跟库漂移的状态。
+    /// 没有对应的 `projectIDsWithPartsSheet` 存在性集合 —— 多维护一个集合就多一处会跟库
+    /// 漂移的状态。工作台拼图页要知道哪些项目做过多零件时，用 `scanPatternWork` 现扫。
     ///
     /// - Returns: `false` = 这次**没有**写进持久层。调用方（多零件流程每一步都在存进度）
     ///   必须据此决定是否还能往下走 —— 静默失败的话用户以为零件、逐格色号、摆位都存住了，
@@ -5406,6 +5409,30 @@ enum ProjectBlobExistenceScanner {
     /// - Returns: 失败时区分 `.unsupportedStore`（永久，可回退 SwiftData 查询）
     ///   和 `.transient`（SQLITE_BUSY / I-O，**不可**回退 —— 见 `StoreScanFailure` 注释）。
     static func scan(storeURL: URL) -> Result<ProjectBlobExistence, StoreScanFailure> {
+        scanIDs(nonNullColumns: blobColumns.map(\.column), storeURL: storeURL).map { sets in
+            var result = ProjectBlobExistence()
+            for (column, keyPath) in blobColumns {
+                result[keyPath: keyPath] = sets[column] ?? []
+            }
+            return result
+        }
+    }
+
+    /// 工作台「拼图」页用：哪些项目存过单图纸网格、哪些存过多零件数据。
+    ///
+    /// 多零件数据没有常驻的存在性集合（见 `updateProjectPartsSheet`），所以拼图概况
+    /// （`PatternWorkStore`）每次重扫时现扫一次。跟 `scan` 一样只读记录头，不把那一两 MB 的零件数据读出来。
+    static func scanPatternWork(storeURL: URL) -> Result<(grid: Set<UUID>, parts: Set<UUID>), StoreScanFailure> {
+        scanIDs(nonNullColumns: ["ZPATTERNGRIDDATA", "ZPARTSSHEETDATA"], storeURL: storeURL).map {
+            (grid: $0["ZPATTERNGRIDDATA"] ?? [], parts: $0["ZPARTSSHEETDATA"] ?? [])
+        }
+    }
+
+    /// 对每一列跑一次 `WHERE 列 IS NOT NULL`，返回 列名 → 命中的项目 ID。
+    private static func scanIDs(
+        nonNullColumns columns: [String],
+        storeURL: URL
+    ) -> Result<[String: Set<UUID>], StoreScanFailure> {
         guard FileManager.default.fileExists(atPath: storeURL.path) else {
             return .failure(.unsupportedStore)
         }
@@ -5440,13 +5467,13 @@ enum ProjectBlobExistenceScanner {
                 return .failure(StoreScanFailure.classify(db))
             }
         }
-        let required = [idColumn] + blobColumns.map(\.column)
+        let required = [idColumn] + columns
         guard required.allSatisfy({ existingColumns.contains($0) }) else {
             return .failure(.unsupportedStore)
         }
 
-        var result = ProjectBlobExistence()
-        for (column, keyPath) in blobColumns {
+        var result: [String: Set<UUID>] = [:]
+        for column in columns {
             var stmt: OpaquePointer?
             let sql = "SELECT \(idColumn) FROM \(table) WHERE \(column) IS NOT NULL"
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
@@ -5474,7 +5501,7 @@ enum ProjectBlobExistenceScanner {
                 rc = sqlite3_step(stmt)
             }
             guard rc == SQLITE_DONE else { return .failure(StoreScanFailure.classify(db)) }
-            result[keyPath: keyPath] = ids
+            result[column] = ids
         }
         return .success(result)
     }
