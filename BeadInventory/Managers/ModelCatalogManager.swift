@@ -38,19 +38,21 @@ final class ModelCatalogManager {
     private let cacheKey = "ModelCatalogManager.cachedCatalog"
 
     /// 内置清单：远端从没拉到过时用它；远端某个 provider 缺失或写坏了，那个 provider 也退回这里。
-    /// 2026-07 更新。均需支持图像输入（识别用）。
+    /// 2026-10 更新（照各家官方模型文档）。均需支持图像输入（识别用）。
+    /// 改这里要同步改 docs/models.json。
     static let builtIn: [AIProvider: ProviderModels] = [
-        // Kimi：默认 K2.6（长期可用）；K3（2026-07-16 发布，原生视觉）可选。
-        // K2.5 平台已停服，从列表移除；存量用户存的还是 K2.5 时，normalizedConfig 会在加载时把它落到 K2.6。
+        // Kimi：默认 K2.6（长期可用）；K3 为旗舰，原生视觉。
         .kimi: ProviderModels(models: ["kimi-k2.6", "kimi-k3"], default: "kimi-k2.6"),
-        // OpenAI：GPT-5.6 家族（2026-07-09）：luna 入门 / terra 中档 / sol 旗舰
-        .openai: ProviderModels(models: ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"], default: "gpt-5.6-luna"),
-        // Anthropic：Claude 5 家族（fable 5 = 最新旗舰）+ Opus 4.8 / Haiku 4.5
-        .anthropic: ProviderModels(models: ["claude-sonnet-5", "claude-fable-5", "claude-opus-4-8", "claude-haiku-4-5"], default: "claude-sonnet-5"),
-        // Qwen：3.6/3.7 主线原生多模态（3.6-flash/plus 为官方推荐默认）；VL 专线仍可用
-        .qwen: ProviderModels(models: ["qwen3.6-flash", "qwen3.6-plus", "qwen3.7-plus", "qwen3-vl-flash", "qwen3-vl-plus"], default: "qwen3.6-flash"),
-        // Gemini：3.6-flash 为最新稳定版；3.5-flash/-lite 稳定多模态；3.1-pro 仍是 preview ID
-        .gemini: ProviderModels(models: ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview"], default: "gemini-3.6-flash"),
+        // OpenAI：GPT-6 家族（luna 入门 / 6.1-sol 中档 / astra 旗舰）为主；GPT-5.6 尚未弃用，保留给已经在用的人。
+        // gpt-6-sol 官方定位是编程和 agent，不放进来。
+        .openai: ProviderModels(models: ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"], default: "gpt-6-luna"),
+        // Anthropic：只列当前这一代。Sonnet 5 / Opus 4.8 / Haiku 4.5 等已归入 legacy，
+        // 选着它们的用户会被换到 sonnet-5-5（同价位，更新）。
+        .anthropic: ProviderModels(models: ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5", "claude-fable-5-1"], default: "claude-sonnet-5-5"),
+        // Qwen：百炼当前模型页上能看图的主线模型。3.6 和 qwen3-vl 已不在模型页上，去掉。
+        .qwen: ProviderModels(models: ["qwen3.8-flash", "qwen3.7-plus", "qwen3.8-max"], default: "qwen3.8-flash"),
+        // Gemini：3.8-flash 为最新稳定版；3.5-flash 已被自动转到 3.6-flash，去掉；3.1-pro 仍是 preview ID
+        .gemini: ProviderModels(models: ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview"], default: "gemini-3.8-flash"),
     ]
 
     // MARK: - 状态

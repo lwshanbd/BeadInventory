@@ -826,7 +826,11 @@ class AIServiceManager: ObservableObject {
 
         let body: [String: Any] = [
             "model": requestConfig.model,
-            "max_tokens": 8192,  // 设置足够大的输出限制，避免颜色多时被截断
+            // Claude 5.5 / Fable 5.1 的思考常开，思考 token 也算在 max_tokens 里。
+            // 上限给足，强度压到 low：识别是看图读数，不需要长时间推理，
+            // 否则 Fable 默认 high 会把额度想光，JSON 写到一半被截断。
+            "max_tokens": 16000,
+            "output_config": ["effort": "low"],
             "system": systemPrompt,
             "messages": [
                 [
