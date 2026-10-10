@@ -2,7 +2,7 @@
 //  WorkshopView.swift
 //  BeadInventory
 //
-//  工作台 Tab：正在做的事 —— 识别图纸、拼图模式。
+//  工作台 Tab：正在做的事。顶上切换「拼图」和「识别」两页。
 //  「我的计划」已经搬出去成了独立的「计划」Tab（五栏：库存 / 计划 / 工作台 / 记录 / 更多）。
 //
 
@@ -12,89 +12,256 @@ import UIKit
 struct WorkshopView: View {
     @Binding var externalImage: UIImage?
 
+    @EnvironmentObject private var inventoryManager: InventoryManager
+    @ObservedObject private var store = PatternWorkStore.shared
+    /// 上次停在哪页。空 = 还没手动切过，这时有正在拼的项目就进拼图页，没有就进识别页。
+    @AppStorage("workshopPage") private var pageRaw: String = ""
+
+    enum Page: String, CaseIterable, Hashable {
+        case puzzle
+        case scan
+
+        var label: String {
+            switch self {
+            case .puzzle: return String(localized: "拼图")
+            case .scan: return String(localized: "识别")
+            }
+        }
+    }
+
+    private var page: Page {
+        if let chosen = Page(rawValue: pageRaw) { return chosen }
+        let anyInProgress = inventoryManager.projects.contains {
+            store.summary(for: $0.id)?.stage == .inProgress
+        }
+        return anyInProgress ? .puzzle : .scan
+    }
+
+    private var pageBinding: Binding<Page> {
+        Binding(get: { page }, set: { pageRaw = $0.rawValue })
+    }
+
     var body: some View {
-        ScanView(externalImage: $externalImage)
+        VStack(spacing: 0) {
+            BISegmented(
+                selection: pageBinding,
+                segments: Page.allCases.map { ($0, $0.label) },
+                fillWidth: true
+            )
+            .padding(.horizontal, 18)
+            .padding(.top, 8)
+            .padding(.bottom, 6)
+            .background(Theme.ColorToken.Surface.background)
+
+            // 两页都常驻，用 opacity 切：识别页切走再切回来，选好的图和识别结果不能丢。
+            ZStack {
+                PatternBoardView()
+                    .opacity(page == .puzzle ? 1 : 0)
+                    .allowsHitTesting(page == .puzzle)
+                    .accessibilityHidden(page != .puzzle)
+                ScanView(externalImage: $externalImage)
+                    .opacity(page == .scan ? 1 : 0)
+                    .allowsHitTesting(page == .scan)
+                    .accessibilityHidden(page != .scan)
+            }
+        }
+        .background(Theme.ColorToken.Surface.background)
+        .task {
+            store.refreshAll(using: inventoryManager)
+        }
     }
 }
 
-// MARK: - 继续拼
+// MARK: - 拼图页
 
-/// 工作台顶上那一排：最近进过拼图模式、还没拼完的项目，点一下回到上次的地方。
+/// 进过拼图模式的项目，按进度分三组：正在拼 / 待拼 / 已拼完。
 ///
-/// 只看拼图进度，不管扣没扣 —— 有人先扣再拼。拼完了（全部色号标记完成 / 全部零件
-/// 已组装）就不再列出来。长按可以手动移出。
-///
-/// 放在扫描页里而不是工作台另起一页：用户拿起手机要么是接着拼，要么是扫一张新的，
-/// 两件事在同一屏上，不用先选。
-struct ContinueAssemblingSection: View {
-    /// 拼图模式关掉之后加一，进度重读一次。
-    let refreshToken: Int
-    let onSelect: (UUID) -> Void
-
+/// 计划和记录里的都算 —— 扣减和拼图是两件事。只裁了框、还没量格子的不列。
+struct PatternBoardView: View {
     @EnvironmentObject private var inventoryManager: InventoryManager
+    @ObservedObject private var store = PatternWorkStore.shared
     @ObservedObject private var recents = PatternRecents.shared
 
-    /// 读完进度、筛掉拼完的之后，真正要显示的
-    @State private var items: [Item] = []
+    @State private var searchText = ""
+    @State private var showsFinished = false
+    @State private var patternLaunch: PatternLaunchRequest?
+    @AppStorage("patternBoardReadySort") private var readySortRaw: String = ReadySort.recent.rawValue
 
-    private struct Item: Identifiable, Equatable {
+    enum ReadySort: String, CaseIterable {
+        case recent
+        case name
+
+        var label: String {
+            switch self {
+            case .recent: return String(localized: "按最近处理")
+            case .name: return String(localized: "按名称")
+            }
+        }
+    }
+
+    private var readySort: ReadySort { ReadySort(rawValue: readySortRaw) ?? .recent }
+
+    struct Item: Identifiable {
         let project: ProjectRecord
-        let progress: PatternProgress?
-        var id: UUID { project.id }
+        let summary: PatternWorkSummary
+        /// 排序用：这台设备上最后打开的时间和数据里记的最后改动时间，取晚的那个
+        let touchedAt: Date
+        /// 带上分组。同一个项目从「待拼」挪到「正在拼」时，只用项目 id 的话 LazyVStack
+        /// 会把旧那一行原样搬过去，副标题停在「已排板」不刷新（模拟器里实际看到过）。
+        var id: String { "\(summary.stage.rawValue)-\(project.id)" }
     }
 
-    /// 最多列几个。再多就不是「继续」了，用户自己去计划 / 记录里找。
-    private static let limit = 10
-
-    private var candidates: [(ProjectRecord, PatternMode)] {
-        let byId = Dictionary(inventoryManager.projects.map { ($0.id, $0) },
-                              uniquingKeysWith: { first, _ in first })
-        return recents.visibleEntries
-            .compactMap { entry in byId[entry.projectId].map { ($0, entry.mode) } }
-            .prefix(Self.limit)
-            .map { $0 }
-    }
-
-    private struct LoadKey: Equatable {
-        let ids: [UUID]
-        let refreshToken: Int
+    private var items: [Item] {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        return inventoryManager.projects.compactMap { project in
+            guard let summary = store.summary(for: project.id), summary.stage != .preparing else {
+                return nil
+            }
+            if !query.isEmpty && !project.name.localizedCaseInsensitiveContains(query) { return nil }
+            let opened = recents.entry(for: project.id)?.openedAt ?? .distantPast
+            return Item(project: project, summary: summary, touchedAt: max(opened, summary.updatedAt))
+        }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 占位。列表还没读出来时这里什么都没有，没有它 SwiftUI 不认为这个视图
-            // 出现过，下面的 .task 永远不跑，列表也就永远是空的。
-            Color.clear.frame(height: 0)
-            if !items.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("继续拼")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.ColorToken.Text.secondary)
-                        .padding(.horizontal, Theme.Spacing.lg)
+        let all = items
+        let inProgress = all.filter { $0.summary.stage == .inProgress }
+            .sorted { $0.touchedAt > $1.touchedAt }
+        let ready = all.filter { $0.summary.stage == .ready }
+            .sorted(by: readySort == .name
+                    ? { $0.project.name.localizedStandardCompare($1.project.name) == .orderedAscending }
+                    : { $0.touchedAt > $1.touchedAt })
+        let finished = all.filter { $0.summary.stage == .finished }
+            .sorted { $0.touchedAt > $1.touchedAt }
 
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(items) { item in
-                                card(item)
+        Group {
+            if all.isEmpty && searchText.isEmpty {
+                if store.hasLoadedOnce {
+                    ContentUnavailableView("没有可以拼的项目", systemImage: "square.grid.3x3.square")
+                } else {
+                    ProgressView()
+                }
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        searchField
+
+                        if !inProgress.isEmpty {
+                            sectionHeader(String(localized: "正在拼 · \(inProgress.count)"))
+                            ForEach(inProgress) { row($0) }
+                        }
+
+                        if !ready.isEmpty {
+                            HStack {
+                                sectionHeader(String(localized: "待拼 · \(ready.count)"))
+                                Spacer()
+                                sortMenu
+                            }
+                            ForEach(ready) { row($0) }
+                        }
+
+                        if !finished.isEmpty {
+                            Button {
+                                withAnimation { showsFinished.toggle() }
+                            } label: {
+                                HStack {
+                                    sectionHeader(String(localized: "已拼完 · \(finished.count)"))
+                                    Spacer()
+                                    Image(systemName: showsFinished ? "chevron.down" : "chevron.right")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                                        .padding(.trailing, 18)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            if showsFinished {
+                                ForEach(finished) { row($0) }
                             }
                         }
-                        .padding(.horizontal, Theme.Spacing.lg)
+
+                        if all.isEmpty {
+                            Text("没有符合条件的项目")
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 40)
+                        }
                     }
+                    .padding(.bottom, 20)
                 }
-                .padding(.top, 4)
-                .padding(.bottom, 8)
+                .scrollDismissesKeyboard(.immediately)
             }
         }
-        .task(id: LoadKey(ids: candidates.map(\.0.id), refreshToken: refreshToken)) {
-            await load()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.ColorToken.Surface.background)
+        .patternModeLauncher($patternLaunch)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.ColorToken.Text.tertiary)
+            TextField("搜索项目名称", text: $searchText)
+                .font(.subheadline)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.ColorToken.Surface.subtle)
+        )
+        .padding(.horizontal, 18)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Theme.ColorToken.Text.secondary)
+            .padding(.horizontal, 18)
+            .padding(.top, 16)
+            .padding(.bottom, 6)
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            Picker("排序", selection: $readySortRaw) {
+                ForEach(ReadySort.allCases, id: \.self) { sort in
+                    Text(sort.label).tag(sort.rawValue)
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(readySort.label)
+                Image(systemName: "chevron.down")
+            }
+            .font(.caption)
+            .foregroundStyle(Theme.ColorToken.Text.secondary)
+            .padding(.top, 10)
+            .padding(.trailing, 18)
         }
     }
 
-    private func card(_ item: Item) -> some View {
+    private func row(_ item: Item) -> some View {
         Button {
-            onSelect(item.project.id)
+            patternLaunch = PatternLaunchRequest(projectId: item.project.id)
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 ProjectThumbnailImage(projectId: item.project.id) {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Theme.ColorToken.Surface.subtle)
@@ -111,50 +278,22 @@ struct ContinueAssemblingSection: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.ColorToken.Text.primary)
                         .lineLimit(1)
-                    if let progress = item.progress {
-                        Text(progress.summary)
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(Theme.ColorToken.Text.secondary)
-                            .lineLimit(1)
-                    }
+                    Text(item.summary.subtitle)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
+                        .lineLimit(1)
                 }
-                .frame(width: 150, alignment: .leading)
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
             }
-            .padding(10)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Theme.ColorToken.Surface.elevated)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-            )
+            .padding(.horizontal, 18)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            Button {
-                recents.hide(item.project.id)
-                items.removeAll { $0.id == item.id }
-            } label: {
-                Label("从「继续拼」中移除", systemImage: "eye.slash")
-            }
-        }
-    }
-
-    private func load() async {
-        let candidates = self.candidates
-        guard !candidates.isEmpty, let loader = inventoryManager.imageLoader else {
-            items = []
-            return
-        }
-        var loaded: [Item] = []
-        for (project, mode) in candidates {
-            let progress = await loader.patternProgress(for: project.id, mode: mode)
-            if Task.isCancelled { return }
-            // 读不出来的照样列着（不显示进度），只有确认拼完了才不列
-            if progress?.isComplete == true { continue }
-            loaded.append(Item(project: project, progress: progress))
-        }
-        items = loaded
     }
 }

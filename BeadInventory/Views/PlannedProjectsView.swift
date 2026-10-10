@@ -218,6 +218,8 @@ struct PlannedProjectsView: View {
                 }
             }
             .background(Theme.ColorToken.Surface.background)
+            // 卡片右下角的拼图进度读的是这份缓存，在后台填
+            .task { PatternWorkStore.shared.refreshAll(using: inventoryManager) }
             .navigationTitle("计划")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -1321,6 +1323,8 @@ struct PlannedProjectDetailView: View {
     @State private var sortByQuantity = true
     @State private var showChildrenSection = true
     @State private var patternLaunch: PatternLaunchRequest?
+    /// 「⋯」里的「更换拼图模式」看它决定显不显示，得跟着刷新
+    @ObservedObject private var patternStore = PatternWorkStore.shared
     /// 拼图模式里动过图纸原图之后，靠它让「图纸原图」那一行重读（见 `PatternSourceRow.refreshToken`）。
     @State private var patternSourceRefreshToken = 0
 
@@ -1438,10 +1442,7 @@ struct PlannedProjectDetailView: View {
     /// 拼图放最上面：扣减和拼图是两件事，拼图是在手上干的活，扣减可以拼完再说。
     private var actionButtonsView: some View {
         VStack(spacing: 12) {
-            PatternModeEntryButton(
-                projectId: (currentProject ?? project).id,
-                refreshToken: patternSourceRefreshToken
-            ) {
+            PatternModeEntryButton(projectId: (currentProject ?? project).id) {
                 patternLaunch = PatternLaunchRequest(projectId: (currentProject ?? project).id)
             }
             HStack(spacing: 12) {
@@ -1585,7 +1586,7 @@ struct PlannedProjectDetailView: View {
                 }
 
                 // 选错了模式的出口。没进过拼图模式的不显示，那时「开始拼」本身就会问。
-                if PatternRecents.shared.mode(for: project.id) != nil {
+                if patternStore.summary(for: project.id) != nil {
                     Button {
                         patternLaunch = PatternLaunchRequest(projectId: project.id, choosesMode: true)
                     } label: {

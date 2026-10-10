@@ -16,6 +16,8 @@ struct ContentView: View {
     @ObservedObject private var localModelRemovalMigrator = LocalModelRemovalMigrator.shared
     @Binding var shouldOpenScan: Bool
     @State private var selectedTab = 0
+    /// 工作台停在「拼图」还是「识别」（见 `WorkshopView`）。外部唤起扫描时要切到识别。
+    @AppStorage("workshopPage") private var workshopPage: String = ""
     @State private var showingAddInventory = false
     @State private var showingLocalFallbackConfirmation = false
     @State private var showingDisableCloudSyncConfirmation = false
@@ -234,6 +236,7 @@ struct ContentView: View {
                 }
                 // 切换到工作台（扫描）
                 selectedTab = TabFlavor.workshop.rawValue
+                workshopPage = WorkshopView.Page.scan.rawValue
                 // 重置标志
                 shouldOpenScan = false
             }
@@ -246,6 +249,7 @@ struct ContentView: View {
                     externalImage = image
                 }
                 selectedTab = TabFlavor.workshop.rawValue
+                workshopPage = WorkshopView.Page.scan.rawValue
             }
         }
         // App 进入前台时检查是否有待处理的图片

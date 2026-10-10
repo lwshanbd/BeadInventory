@@ -34,8 +34,6 @@ struct ScanView: View {
     @State private var errorMessage: String?
     @State private var showingCreatePlan = false
     @State private var patternLaunch: PatternLaunchRequest?
-    /// 拼图模式关掉之后加一，让「继续拼」重读进度
-    @State private var continueRefreshToken = 0
 
     @State private var deductionResolver: DeductionResolver?
     @State private var showingDeductionFailure = false
@@ -163,13 +161,6 @@ struct ScanView: View {
                     )
                 }
 
-                // 还没开始扫新图时，先给「接着拼」的入口
-                if selectedImage == nil && recognizedItems.isEmpty {
-                    ContinueAssemblingSection(refreshToken: continueRefreshToken) { projectId in
-                        patternLaunch = PatternLaunchRequest(projectId: projectId)
-                    }
-                }
-
                 // 三段进度指示器卡片：上传图纸 → 识别调整 → 扣减执行
                 ScanStepIndicatorCard(currentIndex: stepperIndex)
 
@@ -290,7 +281,7 @@ struct ScanView: View {
                     Color.black.onAppear { showingThumbnailCrop = false }
                 }
             }
-            .patternModeLauncher($patternLaunch, onFlowDismissed: { continueRefreshToken += 1 })
+            .patternModeLauncher($patternLaunch)
             .navigationDestination(item: $deductionResolver) { resolver in
                 DeductionReviewView(
                     resolver: resolver,

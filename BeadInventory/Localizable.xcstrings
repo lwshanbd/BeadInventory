@@ -1,6 +1,146 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "拼图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Assemble"
+          }
+        }
+      }
+    },
+    "识别" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan"
+          }
+        }
+      }
+    },
+    "正在拼 · %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Progress · %lld"
+          }
+        }
+      }
+    },
+    "待拼 · %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ready · %lld"
+          }
+        }
+      }
+    },
+    "已拼完 · %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finished · %lld"
+          }
+        }
+      }
+    },
+    "待拼" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ready"
+          }
+        }
+      }
+    },
+    "按最近处理" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recent"
+          }
+        }
+      }
+    },
+    "按名称" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name"
+          }
+        }
+      }
+    },
+    "搜索项目名称" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Projects"
+          }
+        }
+      }
+    },
+    "没有可以拼的项目" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Projects to Assemble"
+          }
+        }
+      }
+    },
+    "没有符合条件的项目" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Matching Projects"
+          }
+        }
+      }
+    },
+    "单图纸 · %lld×%lld 格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Single Pattern · %lld×%lld"
+          }
+        }
+      }
+    },
+    "多零件 · %lld 个零件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Multi-Part · %lld parts"
+          }
+        }
+      }
+    },
+    "多零件 · %lld 个零件 · 已排板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Multi-Part · %lld parts · Boards laid out"
+          }
+        }
+      }
+    },
     "开始拼" : {
       "localizations" : {
         "en" : {
@@ -17,16 +157,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Change Pattern Mode"
-          }
-        }
-      }
-    },
-    "从「继续拼」中移除" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove from Continue"
           }
         }
       }

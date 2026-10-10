@@ -4,16 +4,22 @@
 //
 //  拼图模式的统一入口。
 //
-//  拼图模式能从四个地方进：工作台「继续拼」、识别结果「开始拼」、计划详情、记录详情。
-//  每个地方要做的事完全一样 —— 选模式（或者用上次选的）、全屏打开流程、拼完问一句
+//  拼图模式能从四个地方进：工作台「拼图」页、识别结果「开始拼」、计划详情、记录详情。
+//  每个地方要做的事完全一样 —— 选模式（或者用已有的）、全屏打开流程、拼完问一句
 //  要不要扣减 —— 所以收成一个 `.patternModeLauncher(_:)`，各页只管给一个项目 id。
 //
 //  ## 扣减和拼图是两件事
 //
 //  有人先扣再拼，有人拼完才扣，有人从来不进拼图模式。所以：
 //  - 已扣减的项目（记录里的）一样能进拼图模式；
-//  - 「继续拼」只看拼图进度，不管扣没扣；
+//  - 「拼图」页只看拼图进度，不管扣没扣；
 //  - 拼完时只对**还没扣减**的项目问一句，而且只是问，点「以后再说」什么都不动。
+//
+//  ## 「处理过」不等于「在拼」
+//
+//  有人一口气把七八十张图纸都量好格子、判好颜色，但手上一次只拼一两个。所以拼图页
+//  按进度分三组：已经开始标记的是「正在拼」，量好了还没动的是「待拼」，标完的是「已拼完」。
+//  只裁了个框就退出的不算，那时候还没有任何能拼的东西。
 //
 
 import SwiftUI
@@ -25,16 +31,15 @@ enum PatternMode: String, Codable, Sendable {
     case parts
 }
 
-// MARK: - 最近拼过的项目（本机）
+// MARK: - 本机最近打开记录
 
-/// 进过拼图模式的项目、用的哪种模式、最后一次什么时候打开。
+/// 这台设备上最近一次打开某个项目拼图模式的时间和模式。
 ///
-/// 两个用处：工作台「继续拼」按它排序；再次进入时直接用上次的模式，不再弹选择页。
+/// 拼图数据本身（网格、零件）在项目里，跟着 iCloud 走；这里只补两件项目数据回答不了的事：
+/// 「正在拼」里谁排前面（最近打开的在前），以及一个项目两种模式都做过时默认进哪个。
 ///
-/// **记在 `UserDefaults`，不写进项目数据。** 理由同 `PatternFinishPrompt`：写进
-/// `ProjectRecord` 要多一次模型迁移，还会跟着 iCloud 同步 —— 「我最近在拼哪几个」
-/// 是这台设备上的事。代价是换台设备「继续拼」是空的，进去要重选一次模式，进度本身
-/// （网格、零件摆位）照样在项目数据里，不会丢。
+/// **记在 `UserDefaults`，不写进项目数据**：写进 `ProjectRecord` 要多一次模型迁移，
+/// 而「我最近在这台设备上开过哪个」本来就是这台设备的事。
 @MainActor
 final class PatternRecents: ObservableObject {
     static let shared = PatternRecents()
@@ -43,14 +48,11 @@ final class PatternRecents: ObservableObject {
         let projectId: UUID
         var mode: PatternMode
         var openedAt: Date
-        /// 用户在「继续拼」里左滑移出了。模式还记着，下次再点进去不用重选；
-        /// 再进一次拼图模式就回到列表里。
-        var hidden: Bool?
     }
 
     private static let storageKey = "patternRecents"
-    /// 记多少个。「继续拼」只看最近几个，记太多只是让 UserDefaults 越来越大。
-    private static let limit = 50
+    /// 记多少个。只拿来排序和挑默认模式，记太多只是让 UserDefaults 越来越大。
+    private static let limit = 200
 
     @Published private(set) var entries: [Entry]
     private let defaults: UserDefaults
@@ -65,13 +67,8 @@ final class PatternRecents: ObservableObject {
         }
     }
 
-    func mode(for projectId: UUID) -> PatternMode? {
-        entries.first { $0.projectId == projectId }?.mode
-    }
-
-    /// 「继续拼」要列的那些，最近打开的在前。
-    var visibleEntries: [Entry] {
-        entries.filter { $0.hidden != true }.sorted { $0.openedAt > $1.openedAt }
+    func entry(for projectId: UUID) -> Entry? {
+        entries.first { $0.projectId == projectId }
     }
 
     func recordOpen(_ projectId: UUID, mode: PatternMode) {
@@ -80,12 +77,6 @@ final class PatternRecents: ObservableObject {
         if entries.count > Self.limit {
             entries = Array(entries.sorted { $0.openedAt > $1.openedAt }.prefix(Self.limit))
         }
-        save()
-    }
-
-    func hide(_ projectId: UUID) {
-        guard let i = entries.firstIndex(where: { $0.projectId == projectId }) else { return }
-        entries[i].hidden = true
         save()
     }
 
@@ -109,7 +100,6 @@ struct PatternProgress: Equatable, Sendable {
 
     var isComplete: Bool { total > 0 && done >= total }
 
-    /// 卡片、详情页上那一行。还没量过格子 / 圈过零件时 total 是 0，只写模式名。
     var summary: String {
         switch mode {
         case .single:
@@ -118,9 +108,6 @@ struct PatternProgress: Equatable, Sendable {
             return total > 0 ? String(localized: "多零件 · 已组装 \(done)/\(total)") : String(localized: "多零件")
         }
     }
-
-    /// 计划卡片上的小标签，越短越好。
-    var badge: String { "\(done)/\(total)" }
 
     static func single(_ grid: BeadPatternGrid) -> PatternProgress {
         var counts: [String: Int] = [:]
@@ -141,25 +128,184 @@ struct PatternProgress: Equatable, Sendable {
     }
 }
 
+/// 拼图页的三组
+enum PatternStage: Int, Sendable, Comparable {
+    /// 选了模式，但格子都还没量（只裁了个框就退出）。拼图页不列。
+    case preparing
+    /// 量好了、还没开始标记
+    case ready
+    /// 已经开始标记
+    case inProgress
+    /// 标完了
+    case finished
+
+    static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
+}
+
+/// 一个项目在拼图模式里的一份概况。从网格 / 零件数据里算出来，算完就把大数据扔掉。
+struct PatternWorkSummary: Equatable, Sendable {
+    let mode: PatternMode
+    let stage: PatternStage
+    let progress: PatternProgress
+    /// 「待拼」那一组的副标题：处理到哪一步。
+    let preparedDetail: String
+    /// 数据里记的最后一次改动时间（网格最后一次标定 / 零件数据最后一次保存）
+    let updatedAt: Date
+
+    /// 列表行、详情页上那一行。在拼的写进度，没开始的写处理到哪一步。
+    var subtitle: String {
+        switch stage {
+        case .inProgress, .finished: return progress.summary
+        case .ready, .preparing: return preparedDetail
+        }
+    }
+
+    static func single(_ grid: BeadPatternGrid) -> PatternWorkSummary {
+        let progress = PatternProgress.single(grid)
+        let stage: PatternStage
+        if progress.isComplete { stage = .finished }
+        else if progress.done > 0 { stage = .inProgress }
+        else { stage = .ready }
+        return PatternWorkSummary(
+            mode: .single,
+            stage: stage,
+            progress: progress,
+            preparedDetail: String(localized: "单图纸 · \(grid.cols)×\(grid.rows) 格"),
+            updatedAt: grid.lastCalibratedAt
+        )
+    }
+
+    static func parts(_ sheet: BeadPartsSheet) -> PatternWorkSummary {
+        let progress = PatternProgress.parts(sheet)
+        let boards = sheet.boards ?? []
+        let measured = sheet.parts.contains { $0.hasCells }
+        let started = progress.done > 0 || boards.contains { !($0.doneColors ?? [:]).isEmpty }
+        let stage: PatternStage
+        if !measured { stage = .preparing }
+        else if progress.isComplete { stage = .finished }
+        else if started { stage = .inProgress }
+        else { stage = .ready }
+        let detail = boards.isEmpty
+            ? String(localized: "多零件 · \(sheet.parts.count) 个零件")
+            : String(localized: "多零件 · \(sheet.parts.count) 个零件 · 已排板")
+        return PatternWorkSummary(
+            mode: .parts,
+            stage: stage,
+            progress: progress,
+            preparedDetail: detail,
+            updatedAt: sheet.lastUpdatedAt
+        )
+    }
+
+    /// 选了这个模式但一点数据都还没有
+    static func empty(_ mode: PatternMode) -> PatternWorkSummary {
+        PatternWorkSummary(
+            mode: mode,
+            stage: .preparing,
+            progress: PatternProgress(mode: mode, done: 0, total: 0),
+            preparedDetail: mode == .single ? String(localized: "单图纸") : String(localized: "多零件"),
+            updatedAt: .distantPast
+        )
+    }
+}
+
 extension ProjectImageLoader {
-    /// 按记下的模式读一次进度。读不出来（库忙、字节解不开）返回 nil，
-    /// 调用方按「不知道」处理 —— 不显示进度，也不当成拼完了。
-    func patternProgress(for projectId: UUID, mode: PatternMode) -> PatternProgress? {
-        switch mode {
-        // 选了模式但还没量网格 / 圈零件就退出了：进过、没进度，total 是 0。
-        case .single:
-            switch patternGridLoad(for: projectId) {
-            case .loaded(let grid): return .single(grid)
-            case .missing: return PatternProgress(mode: .single, done: 0, total: 0)
-            case .unreadable: return nil
+    /// 一个项目两种模式各自的概况。读不出来的那一种是 nil，跟「没做过」分不开也无所谓：
+    /// 这里只拿来显示，不拿来决定能不能覆写。
+    ///
+    /// 零件数据一份能有一两 MB，在这个 actor 里解码、算完就扔，不带回主线程。
+    func patternWork(for projectId: UUID) -> (single: PatternWorkSummary?, parts: PatternWorkSummary?) {
+        var single: PatternWorkSummary?
+        if case .loaded(let grid) = patternGridLoad(for: projectId) {
+            single = .single(grid)
+        }
+        var parts: PatternWorkSummary?
+        if case .loaded(let sheet) = partsSheet(for: projectId) {
+            parts = .parts(sheet)
+        }
+        return (single, parts)
+    }
+}
+
+// MARK: - 拼图概况缓存
+
+/// 所有项目的拼图概况。拼图页、详情页、计划卡片都从这里读。
+///
+/// 算一份概况要把零件数据整个解码一遍，几十个项目就是几十 MB，所以：
+/// - 先用 SQLite 只看记录头，找出哪些项目存过网格或零件，没存过的一个都不碰；
+/// - 算好的留在内存里。拼图模式关掉时只重算那一个；拼图页每次出现时在后台挨个重算，
+///   界面上先用旧的，算完一个换一个（别的设备同步过来的改动靠这一步跟上）。
+@MainActor
+final class PatternWorkStore: ObservableObject {
+    static let shared = PatternWorkStore()
+
+    /// 每个项目两种模式各自的概况（没做过的那种是 nil）
+    @Published private(set) var raw: [UUID: (single: PatternWorkSummary?, parts: PatternWorkSummary?)] = [:]
+    /// 至少完整扫过一遍了。拼图页第一次打开时，在这之前显示「正在读取」。
+    @Published private(set) var hasLoadedOnce = false
+
+    private var refreshTask: Task<Void, Never>?
+
+    /// 这个项目现在该用哪种模式、拼到哪了。
+    ///
+    /// 两种都做过：这台设备上最后用的那种优先，没记录就取最近改过的那种。
+    /// 只做过一种：就是那种。都没做过但这台设备上选过模式：那种模式的空概况。
+    func summary(for projectId: UUID) -> PatternWorkSummary? {
+        let recent = PatternRecents.shared.entry(for: projectId)?.mode
+        let pair = raw[projectId]
+        switch (pair?.single, pair?.parts) {
+        case let (s?, p?):
+            if let recent { return recent == .single ? s : p }
+            return s.updatedAt >= p.updatedAt ? s : p
+        case let (s?, nil):
+            if recent == .parts { return .empty(.parts) }
+            return s
+        case let (nil, p?):
+            if recent == .single { return .empty(.single) }
+            return p
+        case (nil, nil):
+            return recent.map { .empty($0) }
+        }
+    }
+
+    /// 重扫一遍。已经在扫就不重复开。
+    func refreshAll(using inventoryManager: InventoryManager) {
+        guard refreshTask == nil,
+              let loader = inventoryManager.imageLoader,
+              let storeURL = inventoryManager.storeURL else { return }
+        refreshTask = Task { [weak self] in
+            let scanned = await Task.detached(priority: .utility) {
+                ProjectBlobExistenceScanner.scanPatternWork(storeURL: storeURL)
+            }.value
+            guard let self else { return }
+            defer {
+                self.refreshTask = nil
+                self.hasLoadedOnce = true
             }
-        case .parts:
-            switch partsSheet(for: projectId) {
-            case .loaded(let sheet): return .parts(sheet)
-            case .missing: return PatternProgress(mode: .parts, done: 0, total: 0)
-            case .unreadable: return nil
+            guard case .success(let ids) = scanned else { return }
+            let all = ids.grid.union(ids.parts)
+            // 数据被清掉的项目从缓存里拿掉
+            for id in self.raw.keys where !all.contains(id) {
+                self.raw[id] = nil
+            }
+            // 正在拼、最近打开过的先算，拼图页最上面那组先出来
+            let recentOrder = PatternRecents.shared.entries.map(\.projectId)
+            let ordered = recentOrder.filter(all.contains) + all.subtracting(recentOrder)
+            for id in ordered {
+                if Task.isCancelled { return }
+                let result = await loader.patternWork(for: id)
+                self.raw[id] = result
             }
         }
+    }
+
+    /// 只重算一个（拼图模式刚关掉时用）。返回算完之后的概况。
+    @discardableResult
+    func refresh(_ projectId: UUID, using inventoryManager: InventoryManager) async -> PatternWorkSummary? {
+        guard let loader = inventoryManager.imageLoader else { return summary(for: projectId) }
+        let result = await loader.patternWork(for: projectId)
+        raw[projectId] = (result.single == nil && result.parts == nil) ? nil : result
+        return summary(for: projectId)
     }
 }
 
@@ -168,7 +314,7 @@ extension ProjectImageLoader {
 /// 「我要进这个项目的拼图模式」。各页把它塞进 `.patternModeLauncher(_:)` 绑定的那个值。
 struct PatternLaunchRequest: Equatable {
     let projectId: UUID
-    /// 不管记没记过，先让用户选模式。「更换拼图模式」用。
+    /// 不管有没有做过，先让用户选模式。「更换拼图模式」用。
     var choosesMode = false
     /// 区分两次相同的请求（连点同一个项目两次）。
     let token = UUID()
@@ -192,7 +338,6 @@ private struct PatternModeLauncherModifier: ViewModifier {
     let onFlowDismissed: () -> Void
 
     @EnvironmentObject private var inventoryManager: InventoryManager
-    @ObservedObject private var recents = PatternRecents.shared
 
     private struct Running: Identifiable {
         let projectId: UUID
@@ -266,13 +411,30 @@ private struct PatternModeLauncherModifier: ViewModifier {
     }
 
     private func start(_ request: PatternLaunchRequest) {
-        if !request.choosesMode, let mode = recents.mode(for: request.projectId) {
-            open(request.projectId, mode: mode)
-        } else {
-            pendingMode = nil
-            pickerProjectId = request.projectId
-            showsPicker = true
+        let projectId = request.projectId
+        if request.choosesMode {
+            showPicker(for: projectId)
+            return
         }
+        if let mode = PatternWorkStore.shared.summary(for: projectId)?.mode {
+            open(projectId, mode: mode)
+            return
+        }
+        // 缓存里还没有（拼图页没打开过）：现查一次这个项目做过哪种
+        Task {
+            let summary = await PatternWorkStore.shared.refresh(projectId, using: inventoryManager)
+            if let mode = summary?.mode {
+                open(projectId, mode: mode)
+            } else {
+                showPicker(for: projectId)
+            }
+        }
+    }
+
+    private func showPicker(for projectId: UUID) {
+        pendingMode = nil
+        pickerProjectId = projectId
+        showsPicker = true
     }
 
     private func openPendingMode() {
@@ -285,25 +447,23 @@ private struct PatternModeLauncherModifier: ViewModifier {
     }
 
     private func open(_ projectId: UUID, mode: PatternMode) {
-        recents.recordOpen(projectId, mode: mode)
+        PatternRecents.shared.recordOpen(projectId, mode: mode)
         finishedTapped = false
         let run = Running(projectId: projectId, mode: mode)
         lastRun = run
         running = run
     }
 
-    /// 流程关掉了。点的是「完成」、真的拼完了、项目还没扣减，才问要不要扣。
+    /// 流程关掉了。重算这个项目的进度；点的是「完成」、真的拼完了、项目还没扣减，才问要不要扣。
     private func flowDismissed() {
         onFlowDismissed()
-        guard finishedTapped, let loader = inventoryManager.imageLoader,
-              let run = lastRun else { return }
+        guard let run = lastRun else { return }
+        let askIfFinished = finishedTapped
         finishedTapped = false
-        let projectId = run.projectId
-        let mode = run.mode
         Task {
-            let progress = await loader.patternProgress(for: projectId, mode: mode)
-            guard progress?.isComplete == true,
-                  let project = inventoryManager.projects.first(where: { $0.id == projectId }),
+            let summary = await PatternWorkStore.shared.refresh(run.projectId, using: inventoryManager)
+            guard askIfFinished, summary?.stage == .finished,
+                  let project = inventoryManager.projects.first(where: { $0.id == run.projectId }),
                   project.isPlanned else { return }
             askDeductFor = project
         }
@@ -315,22 +475,20 @@ private struct PatternModeLauncherModifier: ViewModifier {
 /// 计划详情、记录详情共用的那一块：一行进度 + 「开始拼 / 继续拼」。
 struct PatternModeEntryButton: View {
     let projectId: UUID
-    /// 拼图模式关掉之后加一，让进度重读一次。
-    var refreshToken: Int = 0
     let action: () -> Void
 
     @EnvironmentObject private var inventoryManager: InventoryManager
+    @ObservedObject private var store = PatternWorkStore.shared
     @ObservedObject private var recents = PatternRecents.shared
-    @State private var progress: PatternProgress?
 
-    private var mode: PatternMode? { recents.mode(for: projectId) }
+    private var summary: PatternWorkSummary? { store.summary(for: projectId) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            if let progress {
+            if let summary {
                 HStack(spacing: 6) {
                     Image(systemName: "square.grid.3x3.square")
-                    Text(progress.summary)
+                    Text(summary.stage == .finished ? String(localized: "已拼完") : summary.subtitle)
                         .monospacedDigit()
                 }
                 .font(.subheadline)
@@ -340,7 +498,7 @@ struct PatternModeEntryButton: View {
             Button(action: action) {
                 HStack {
                     Image(systemName: "square.grid.3x3.square")
-                    Text(mode == nil ? "开始拼" : "继续拼")
+                    Text(summary == nil ? "开始拼" : "继续拼")
                 }
                 .font(.headline)
                 .foregroundColor(.white)
@@ -350,53 +508,38 @@ struct PatternModeEntryButton: View {
                 .cornerRadius(Theme.Radius.md)
             }
         }
-        .task(id: TaskKey(mode: mode, refreshToken: refreshToken)) {
-            guard let mode, let loader = inventoryManager.imageLoader else {
-                progress = nil
-                return
-            }
-            progress = await loader.patternProgress(for: projectId, mode: mode)
+        .task(id: projectId) {
+            await store.refresh(projectId, using: inventoryManager)
         }
-    }
-
-    private struct TaskKey: Equatable {
-        let mode: PatternMode?
-        let refreshToken: Int
     }
 }
 
 // MARK: - 列表卡片上的进度
 
-/// 计划卡片右下角那一小行「多零件 · 已组装 3/8」。
+/// 计划卡片右下角那一小行。
 ///
-/// 只有这台设备上进过拼图模式的项目才去读（`PatternRecents` 里有它），其余的卡片
-/// 什么都不做 —— 计划列表可能有几百张卡，不能每张都去库里取一次网格。
+/// 只读缓存，不自己去库里取 —— 计划列表可能有几百张卡。缓存由拼图页的整体扫描、
+/// 详情页和拼图模式关掉时的单个重算填上。
 struct PatternProgressLabel: View {
     let projectId: UUID
 
-    @EnvironmentObject private var inventoryManager: InventoryManager
+    @ObservedObject private var store = PatternWorkStore.shared
     @ObservedObject private var recents = PatternRecents.shared
-    @State private var progress: PatternProgress?
 
     private var label: String {
-        guard let progress, progress.total > 0 else { return "" }
-        return progress.isComplete ? String(localized: "已拼完") : progress.summary
+        guard let summary = store.summary(for: projectId) else { return "" }
+        switch summary.stage {
+        case .preparing: return ""
+        case .ready: return String(localized: "待拼")
+        case .inProgress: return summary.progress.summary
+        case .finished: return String(localized: "已拼完")
+        }
     }
 
     var body: some View {
-        // 始终放一个 Text：里面什么都没有的话 SwiftUI 不认为这个视图出现过，
-        // 下面的 .task 永远不跑，进度也就永远读不出来。
         Text(label)
             .font(.system(size: 11).monospacedDigit())
             .foregroundStyle(Theme.ColorToken.Morandi.mauve)
             .lineLimit(1)
-            .task(id: recents.mode(for: projectId)) {
-                guard let mode = recents.mode(for: projectId),
-                      let loader = inventoryManager.imageLoader else {
-                    progress = nil
-                    return
-                }
-                progress = await loader.patternProgress(for: projectId, mode: mode)
-            }
     }
 }

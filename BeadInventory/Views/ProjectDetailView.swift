@@ -20,6 +20,8 @@ struct ProjectDetailView: View {
     /// 拼图模式里动过图纸原图之后，靠它让「图纸原图」那一行重读（见 `PatternSourceRow.refreshToken`）。
     @State private var patternSourceRefreshToken = 0
     @State private var patternLaunch: PatternLaunchRequest?
+    /// 「⋯」里的「更换拼图模式」看它决定显不显示，得跟着刷新
+    @ObservedObject private var patternStore = PatternWorkStore.shared
     /// 在模式选择页里选了哪种模式，等它收起后再进下一页（见 openPatternModeIfSelected）
 
     var isParentProject: Bool {
@@ -95,10 +97,7 @@ struct ProjectDetailView: View {
                 )
                 .padding(.horizontal)
 
-                PatternModeEntryButton(
-                    projectId: (currentProject ?? project).id,
-                    refreshToken: patternSourceRefreshToken
-                ) {
+                PatternModeEntryButton(projectId: (currentProject ?? project).id) {
                     patternLaunch = PatternLaunchRequest(projectId: (currentProject ?? project).id)
                 }
                 .padding(.horizontal)
@@ -193,7 +192,7 @@ struct ProjectDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             // 选错了模式的出口。没进过拼图模式的不显示，那时「开始拼」本身就会问。
-            if PatternRecents.shared.mode(for: project.id) != nil {
+            if patternStore.summary(for: project.id) != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button {
