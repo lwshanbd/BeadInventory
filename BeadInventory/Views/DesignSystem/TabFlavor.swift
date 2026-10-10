@@ -2,7 +2,7 @@
 //  TabFlavor.swift
 //  BeadInventory
 //
-//  每个 Tab 的"风味色"环境值 —— 5 个 Tab → 5 种 Morandi 风味色（latte/honey/mauve/sage/mist）。
+//  每个 Tab 的"风味色"环境值 —— 计划和工作台同用 mauve（计划页的总览卡片本来就是 mauve 渐变）。
 //
 
 import SwiftUI
@@ -19,7 +19,7 @@ enum TabFlavor: Int, CaseIterable {
     var color: Color {
         switch self {
         case .inventory:  return Color("Palette/Peach")    // latte
-        case .plan:       return Color("Palette/Lemon")    // honey
+        case .plan:       return Color("Palette/Lavender") // mauve，跟工作台同色
         case .workshop:   return Color("Palette/Lavender") // mauve（工作台主色）
         case .records:    return Color("Palette/Mint")     // sage
         case .more:       return Color("Palette/Sky")      // mist
@@ -31,7 +31,7 @@ enum TabFlavor: Int, CaseIterable {
     var fill: Color {
         switch self {
         case .inventory:  return Theme.ColorToken.Fill.latte
-        case .plan:       return Theme.ColorToken.Fill.honey
+        case .plan:       return Theme.ColorToken.Fill.mauve
         case .workshop:   return Theme.ColorToken.Fill.mauve
         case .records:    return Theme.ColorToken.Fill.sage
         case .more:       return Theme.ColorToken.Fill.mist

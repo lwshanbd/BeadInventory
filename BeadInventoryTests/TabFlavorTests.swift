@@ -30,7 +30,7 @@ final class TabFlavorTests: XCTestCase {
             let expectedAssetName: String
             switch flavor {
             case .inventory:  expectedAssetName = "Palette/Peach"     // latte
-            case .plan:       expectedAssetName = "Palette/Lemon"     // honey
+            case .plan:       expectedAssetName = "Palette/Lavender"  // mauve，跟工作台同色
             case .workshop:   expectedAssetName = "Palette/Lavender"  // mauve (工作台主色)
             case .records:    expectedAssetName = "Palette/Mint"      // sage
             case .more:       expectedAssetName = "Palette/Sky"       // mist
