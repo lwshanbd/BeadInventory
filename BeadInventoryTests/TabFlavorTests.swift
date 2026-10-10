@@ -3,7 +3,7 @@
 //  BeadInventoryTests
 //
 //  TabFlavor 环境值回归测试 —— rawValue 映射 + allCases 完整性 + Palette 资产存在性。
-//  设计稿 4 个 Tab：库存 / 工作台（扫描+计划合并）/ 统计 / 更多。
+//  5 个 Tab：库存 / 计划 / 工作台 / 记录 / 更多。
 //
 
 import XCTest
@@ -14,13 +14,14 @@ final class TabFlavorTests: XCTestCase {
 
     func test_rawValues_match_tab_indices() {
         XCTAssertEqual(TabFlavor.inventory.rawValue, 0)
-        XCTAssertEqual(TabFlavor.workshop.rawValue, 1)
-        XCTAssertEqual(TabFlavor.statistics.rawValue, 2)
-        XCTAssertEqual(TabFlavor.more.rawValue, 3)
+        XCTAssertEqual(TabFlavor.plan.rawValue, 1)
+        XCTAssertEqual(TabFlavor.workshop.rawValue, 2)
+        XCTAssertEqual(TabFlavor.records.rawValue, 3)
+        XCTAssertEqual(TabFlavor.more.rawValue, 4)
     }
 
     func test_all_cases_count() {
-        XCTAssertEqual(TabFlavor.allCases.count, 4)
+        XCTAssertEqual(TabFlavor.allCases.count, 5)
     }
 
     func test_each_flavor_references_existing_palette_asset() {
@@ -29,8 +30,9 @@ final class TabFlavorTests: XCTestCase {
             let expectedAssetName: String
             switch flavor {
             case .inventory:  expectedAssetName = "Palette/Peach"     // latte
+            case .plan:       expectedAssetName = "Palette/Lemon"     // honey
             case .workshop:   expectedAssetName = "Palette/Lavender"  // mauve (工作台主色)
-            case .statistics: expectedAssetName = "Palette/Mint"      // sage
+            case .records:    expectedAssetName = "Palette/Mint"      // sage
             case .more:       expectedAssetName = "Palette/Sky"       // mist
             }
             XCTAssertNotNil(

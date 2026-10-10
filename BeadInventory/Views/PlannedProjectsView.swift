@@ -218,7 +218,7 @@ struct PlannedProjectsView: View {
                 }
             }
             .background(Theme.ColorToken.Surface.background)
-            .navigationTitle("")
+            .navigationTitle("计划")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {

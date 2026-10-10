@@ -2,24 +2,26 @@
 //  TabFlavor.swift
 //  BeadInventory
 //
-//  每个 Tab 的"风味色"环境值 —— 4 个 Tab → 4 种 Morandi 风味色（latte/mauve/sage/mist）。
+//  每个 Tab 的"风味色"环境值 —— 5 个 Tab → 5 种 Morandi 风味色（latte/honey/mauve/sage/mist）。
 //
 
 import SwiftUI
 
-/// 4 个 Tab 的"风味色"（按设计稿）：库存 / 工作台（扫描+计划+运输 sub-tabs）/ 统计 / 更多。
+/// 5 个 Tab 的"风味色"：库存 / 计划 / 工作台 / 记录 / 更多。rawValue 就是 TabView 的 tag。
 /// 仅作用于：TabBar 选中色、FAB、空状态、页眉强调、Interactive.primary。
 enum TabFlavor: Int, CaseIterable {
     case inventory = 0
-    case workshop  = 1
-    case statistics = 2
-    case more      = 3
+    case plan      = 1
+    case workshop  = 2
+    case records   = 3
+    case more      = 4
 
     var color: Color {
         switch self {
         case .inventory:  return Color("Palette/Peach")    // latte
+        case .plan:       return Color("Palette/Lemon")    // honey
         case .workshop:   return Color("Palette/Lavender") // mauve（工作台主色）
-        case .statistics: return Color("Palette/Mint")     // sage
+        case .records:    return Color("Palette/Mint")     // sage
         case .more:       return Color("Palette/Sky")      // mist
         }
     }
@@ -29,8 +31,9 @@ enum TabFlavor: Int, CaseIterable {
     var fill: Color {
         switch self {
         case .inventory:  return Theme.ColorToken.Fill.latte
+        case .plan:       return Theme.ColorToken.Fill.honey
         case .workshop:   return Theme.ColorToken.Fill.mauve
-        case .statistics: return Theme.ColorToken.Fill.sage
+        case .records:    return Theme.ColorToken.Fill.sage
         case .more:       return Theme.ColorToken.Fill.mist
         }
     }

@@ -18,9 +18,8 @@ struct StatisticsView: View {
                 BISegmented(
                     selection: $selectedSegment,
                     segments: [
-                        (0, "总览"),
-                        (1, "使用排行"),
-                        (2, "项目记录")
+                        (0, "项目"),
+                        (1, "用量")
                     ],
                     fillWidth: true
                 )
@@ -31,42 +30,26 @@ struct StatisticsView: View {
                 Group {
                     switch selectedSegment {
                     case 0:
-                        StatisticsOverviewView()
-                    case 1:
-                        UsageStatisticsView()
-                    default:
                         ProjectHistoryView()
+                    default:
+                        StatisticsOverviewView()
                     }
                 }
             }
             .background(Theme.ColorToken.Surface.background)
-            .navigationTitle("统计")
+            .navigationTitle("记录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     BrandPicker()
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 10) {
-                        Button {
-                            // 占位：后续可接日期范围筛选
-                        } label: {
-                            Image(systemName: "calendar")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(Theme.ColorToken.Text.secondary)
-                                .frame(width: 32, height: 32)
-                                .background(Circle().fill(Theme.ColorToken.Surface.subtle))
-                        }
-                        Button {
-                            // 占位：后续可接更多操作
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(Theme.ColorToken.Text.secondary)
-                                .frame(width: 32, height: 32)
-                                .background(Circle().fill(Theme.ColorToken.Surface.subtle))
-                        }
+                    NavigationLink {
+                        CalendarView()
+                    } label: {
+                        Image(systemName: "calendar")
                     }
+                    .accessibilityLabel("成品日历")
                 }
             }
         }
@@ -289,9 +272,6 @@ struct StatisticsOverviewView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.ColorToken.Text.primary)
                 Spacer()
-                Text("查看更多")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.ColorToken.Text.secondary)
             }
 
             BarChart14Day(data: last14DayUsage)
@@ -338,9 +318,25 @@ struct StatisticsOverviewView: View {
 
     private func rankingSection(items: [(color: BeadColor, stock: BrandStock)]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("使用排行 · TOP 5")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Theme.ColorToken.Text.primary)
+            HStack {
+                Text("使用排行 · TOP 5")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                Spacer()
+                NavigationLink {
+                    UsageStatisticsView()
+                        .background(Theme.ColorToken.Surface.background)
+                        .navigationTitle("使用排行")
+                        .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    HStack(spacing: 2) {
+                        Text("全部")
+                        Image(systemName: "chevron.right")
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+                }
+            }
 
             VStack(spacing: 10) {
                 let maxUsed = items.first?.stock.used ?? 1

@@ -42,7 +42,7 @@ struct MoreView: View {
                         .padding(.top, 8)
                         .padding(.bottom, 16)
 
-                    // Group 1 — 工作台（无标题）
+                    // Group 1（无标题）。成品日历搬去了「记录」Tab 右上角。
                     groupCard(title: nil) {
                         NavigationLink {
                             ShippingView()
@@ -52,20 +52,7 @@ struct MoreView: View {
                                 iconColor: Theme.ColorToken.Morandi.latte,
                                 title: "运输中 · 待到货",
                                 subtitle: "查看待到货的购买记录",
-                                trailing: shippingCount > 0 ? .badge("\(shippingCount)") : .chevron
-                            )
-                        }
-                        .buttonStyle(.plain)
-
-                        NavigationLink {
-                            CalendarView()
-                        } label: {
-                            MoreCardRow(
-                                icon: "calendar",
-                                iconColor: Theme.ColorToken.Morandi.sage,
-                                title: "成品日历",
-                                subtitle: "按日期查看完成的作品",
-                                trailing: .chevron,
+                                trailing: shippingCount > 0 ? .badge("\(shippingCount)") : .chevron,
                                 isLast: true
                             )
                         }
