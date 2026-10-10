@@ -824,13 +824,9 @@ class AIServiceManager: ObservableObject {
         let systemPrompt = prompts.system
         let userPrompt = prompts.user
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": requestConfig.model,
-            // Claude 5.5 / Fable 5.1 的思考常开，思考 token 也算在 max_tokens 里。
-            // 上限给足，强度压到 low：识别是看图读数，不需要长时间推理，
-            // 否则 Fable 默认 high 会把额度想光，JSON 写到一半被截断。
             "max_tokens": 16000,
-            "output_config": ["effort": "low"],
             "system": systemPrompt,
             "messages": [
                 [
@@ -852,6 +848,13 @@ class AIServiceManager: ObservableObject {
                 ]
             ]
         ]
+
+        // Claude 5.5 / Fable 5.1 的思考常开，思考 token 也算在 max_tokens 里，所以上限给足；
+        // 强度压到 low：识别是看图读数，用不着长推理，否则 Fable 默认 high 会把额度想光、JSON 被截断。
+        // Haiku 4.5 不认 effort，发了会 400；它也不思考，不需要。
+        if requestConfig.model != "claude-haiku-4-5" {
+            body["output_config"] = ["effort": "low"]
+        }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 180  // AI 视觉识别可能需要较长时间，设置 3 分钟超时

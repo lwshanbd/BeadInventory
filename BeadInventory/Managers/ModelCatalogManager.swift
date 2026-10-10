@@ -4,7 +4,7 @@
 //
 //  AI 模型清单的在线更新。
 //
-//  每次进前台去 GitHub Pages 拉一份 models.json。拉到了、而且跟本地不同，就换上并缓存；
+//  每次 App 变成活跃状态（冷启动、回前台）去 GitHub Pages 拉一份 models.json。拉到了、而且跟本地不同，就换上并缓存；
 //  拉不到就用上次缓存的那份，连缓存都没有就用下面写死的内置清单。
 //
 //  用户选的模型只在「新清单里已经没有它」时才会被换成该 provider 的默认模型，
@@ -34,10 +34,10 @@ final class ModelCatalogManager {
     /// 托管于 GitHub Pages（源: main 分支 /docs 目录），跟公告同一个站点
     private let catalogURL = "https://lwshanbd.github.io/BeadInventory/models.json"
 
-    /// 上一次拉到、且校验通过的 models.json 原文
+    /// 上一次拉到并合并好的完整清单（ModelCatalog 格式）
     private let cacheKey = "ModelCatalogManager.cachedCatalog"
 
-    /// 内置清单：远端从没拉到过时用它；远端某个 provider 缺失或写坏了，那个 provider 也退回这里。
+    /// 内置清单：从没拉到过远端清单时用它。
     /// 2026-10 更新（照各家官方模型文档）。均需支持图像输入（识别用）。
     /// 改这里要同步改 docs/models.json。
     static let builtIn: [AIProvider: ProviderModels] = [
@@ -46,12 +46,14 @@ final class ModelCatalogManager {
         // OpenAI：GPT-6 家族（luna 入门 / 6.1-sol 中档 / astra 旗舰）为主；GPT-5.6 尚未弃用，保留给已经在用的人。
         // gpt-6-sol 官方定位是编程和 agent，不放进来。
         .openai: ProviderModels(models: ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"], default: "gpt-6-luna"),
-        // Anthropic：只列当前这一代。Sonnet 5 / Opus 4.8 / Haiku 4.5 等已归入 legacy，
-        // 选着它们的用户会被换到 sonnet-5-5（同价位，更新）。
-        .anthropic: ProviderModels(models: ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5", "claude-fable-5-1"], default: "claude-sonnet-5-5"),
+        // Anthropic：当前这一代，外加 Haiku 4.5。Haiku 4.5 虽归入 legacy 但没停服，
+        // 去掉的话选它的人会被换到贵一倍的默认 sonnet-5-5。
+        // Sonnet 5 / Opus 4.8 / Fable 5 等去掉，选着它们的用户会被换到默认的 sonnet-5-5。
+        .anthropic: ProviderModels(models: ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5", "claude-fable-5-1", "claude-haiku-4-5"], default: "claude-sonnet-5-5"),
         // Qwen：百炼当前模型页上能看图的主线模型。3.6 和 qwen3-vl 已不在模型页上，去掉。
         .qwen: ProviderModels(models: ["qwen3.8-flash", "qwen3.7-plus", "qwen3.8-max"], default: "qwen3.8-flash"),
-        // Gemini：3.8-flash 为最新稳定版；3.5-flash 已被自动转到 3.6-flash，去掉；3.1-pro 仍是 preview ID
+        // Gemini：3.8-flash 为最新稳定版；3.5-flash 已被 Google 服务端转到 3.6-flash，去掉
+        // （选着它的用户会被换到默认的 3.8-flash）；3.1-pro 仍是 preview ID
         .gemini: ProviderModels(models: ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview"], default: "gemini-3.8-flash"),
     ]
 
@@ -66,7 +68,7 @@ final class ModelCatalogManager {
         // 同步读缓存：AIServiceManager 初始化时就要拿它校验用户存的模型。
         // 要是这里先用内置清单，用户选了个只在远端清单里有的新模型，一启动就会被打回默认。
         if let data = UserDefaults.standard.data(forKey: cacheKey),
-           let cached = Self.resolve(data: data) {
+           let cached = Self.resolve(data: data, base: Self.builtIn) {
             current = cached
             AppLogger.shared.info("ModelCatalog", "loaded_from_cache")
         } else {
@@ -117,7 +119,10 @@ final class ModelCatalogManager {
                 AppLogger.shared.warning("ModelCatalog", "fetch_bad_response", metadata: ["status": "\(status)"])
                 return
             }
-            guard let resolved = Self.resolve(data: data) else { return }
+            self.lock.lock()
+            let base = self.current
+            self.lock.unlock()
+            guard let resolved = Self.resolve(data: data, base: base) else { return }
 
             self.lock.lock()
             let changed = resolved != self.current
@@ -129,7 +134,11 @@ final class ModelCatalogManager {
                 return
             }
 
-            UserDefaults.standard.set(data, forKey: self.cacheKey)
+            // 存合并后的结果，不存远端原文：远端这次漏写的 provider，下次冷启动也还是上一份清单里的
+            let merged = ModelCatalog(v: 1, providers: Dictionary(uniqueKeysWithValues: resolved.map { ($0.key.rawValue, $0.value) }))
+            if let encoded = try? JSONEncoder().encode(merged) {
+                UserDefaults.standard.set(encoded, forKey: self.cacheKey)
+            }
             AppLogger.shared.info("ModelCatalog", "updated")
             Task { @MainActor in
                 AIServiceManager.shared.modelCatalogDidChange()
@@ -145,8 +154,9 @@ final class ModelCatalogManager {
 
     // MARK: - 解析
 
-    /// 解析 models.json，并给每个 provider 补齐内置清单。整份不认识就返回 nil（不替换、不缓存）。
-    private static func resolve(data: Data) -> [AIProvider: ProviderModels]? {
+    /// 解析 models.json，在 base 上逐个 provider 覆盖。远端没写或写空的 provider 保留 base 里的。
+    /// 整份不认识就返回 nil（不替换、不缓存）。
+    private static func resolve(data: Data, base: [AIProvider: ProviderModels]) -> [AIProvider: ProviderModels]? {
         guard let catalog = try? JSONDecoder().decode(ModelCatalog.self, from: data) else {
             AppLogger.shared.warning("ModelCatalog", "json_decode_failed")
             return nil
@@ -156,7 +166,7 @@ final class ModelCatalogManager {
             return nil
         }
 
-        var result = builtIn
+        var result = base
         for provider in AIProvider.allCases {
             guard let remote = catalog.providers[provider.rawValue] else { continue }
 

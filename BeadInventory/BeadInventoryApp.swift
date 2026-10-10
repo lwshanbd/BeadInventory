@@ -249,8 +249,6 @@ struct BeadInventoryApp: App {
 
                     // 静默检查远程公告
                     AnnouncementManager.shared.checkForAnnouncement()
-                    // 静默检查在线模型清单
-                    ModelCatalogManager.shared.refresh()
 
                     // 一次性迁移：本地模型识别下线后的善后（告知 + 清理残留模型文件）
                     LocalModelRemovalMigrator.shared.runIfNeeded()
@@ -351,10 +349,8 @@ struct BeadInventoryApp: App {
                     }
                 }
                 cloudSyncStatusManager.refreshAccountStatus()
-                // 每次回到前台都看一眼在线模型清单（启动那次在 onAppear 里）
-                if hasSeenInitialActivePhase {
-                    ModelCatalogManager.shared.refresh()
-                }
+                // 静默检查在线模型清单（冷启动也会走到这里）
+                ModelCatalogManager.shared.refresh()
                 // 历史记录若在启动时加载失败（isDataLoaded 仍 false），前台恢复时补一次重试 ——
                 // 否则失败后整 session 历史只在内存、saveDataImmediately 也被守卫跳过、退出即丢。
                 HistoryManager.shared.reloadIfNeeded()
