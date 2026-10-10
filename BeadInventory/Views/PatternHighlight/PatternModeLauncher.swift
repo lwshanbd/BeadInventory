@@ -209,69 +209,88 @@ struct PatternWorkSummary: Equatable, Sendable {
     }
 }
 
+/// 一个项目两种模式各自的概况。没做过的那种是 nil。
+struct PatternWork: Sendable {
+    var single: PatternWorkSummary?
+    var parts: PatternWorkSummary?
+    /// 有一种存着数据但这次没读出来（库忙、字节解不开）。这时不能拿它当「没做过」。
+    var unreadable = false
+
+    var isEmpty: Bool { single == nil && parts == nil }
+}
+
 extension ProjectImageLoader {
-    /// 一个项目两种模式各自的概况。读不出来的那一种是 nil，跟「没做过」分不开也无所谓：
-    /// 这里只拿来显示，不拿来决定能不能覆写。
-    ///
     /// 零件数据一份能有一两 MB，在这个 actor 里解码、算完就扔，不带回主线程。
-    func patternWork(for projectId: UUID) -> (single: PatternWorkSummary?, parts: PatternWorkSummary?) {
-        var single: PatternWorkSummary?
-        if case .loaded(let grid) = patternGridLoad(for: projectId) {
-            single = .single(grid)
+    func patternWork(for projectId: UUID) -> PatternWork {
+        var work = PatternWork()
+        switch patternGridLoad(for: projectId) {
+        case .loaded(let grid): work.single = .single(grid)
+        case .missing: break
+        case .unreadable: work.unreadable = true
         }
-        var parts: PatternWorkSummary?
-        if case .loaded(let sheet) = partsSheet(for: projectId) {
-            parts = .parts(sheet)
+        switch partsSheet(for: projectId) {
+        case .loaded(let sheet): work.parts = .parts(sheet)
+        case .missing: break
+        case .unreadable: work.unreadable = true
         }
-        return (single, parts)
+        return work
     }
 }
 
 // MARK: - 拼图概况缓存
 
-/// 所有项目的拼图概况。拼图页、详情页、计划卡片都从这里读。
+/// 所有项目的拼图概况。拼图页、计划页、详情页都从这里读。
 ///
 /// 算一份概况要把零件数据整个解码一遍，几十个项目就是几十 MB，所以：
 /// - 先用 SQLite 只看记录头，找出哪些项目存过网格或零件，没存过的一个都不碰；
-/// - 算好的留在内存里。拼图模式关掉时只重算那一个；拼图页每次出现时在后台挨个重算，
-///   界面上先用旧的，算完一个换一个（别的设备同步过来的改动靠这一步跟上）。
+/// - 算好的留在内存里。拼图模式关掉时只重算那一个；整体重扫最多半分钟一次，
+///   算完一次性换上（别的设备同步过来的改动靠这一步跟上）。
 @MainActor
 final class PatternWorkStore: ObservableObject {
     static let shared = PatternWorkStore()
 
-    /// 每个项目两种模式各自的概况（没做过的那种是 nil）
-    @Published private(set) var raw: [UUID: (single: PatternWorkSummary?, parts: PatternWorkSummary?)] = [:]
-    /// 至少完整扫过一遍了。拼图页第一次打开时，在这之前显示「正在读取」。
+    @Published private(set) var works: [UUID: PatternWork] = [:]
+    /// 至少成功扫过一遍了。在这之前拼图页显示「正在读取」，不显示「没有项目」。
     @Published private(set) var hasLoadedOnce = false
 
     private var refreshTask: Task<Void, Never>?
+    private var lastFullRefresh: Date?
+    /// 扫的过程中又有人要扫（比如同步刚送来新数据）：这一遍完了再来一遍。
+    private var needsAnotherRefresh = false
+    private static let minRefreshInterval: TimeInterval = 30
 
     /// 这个项目现在该用哪种模式、拼到哪了。
     ///
     /// 两种都做过：这台设备上最后用的那种优先，没记录就取最近改过的那种。
-    /// 只做过一种：就是那种。都没做过但这台设备上选过模式：那种模式的空概况。
+    /// 只做过一种：就是那种。本机最近选了另一种但那边还什么都没做（比如点了
+    /// 「更换拼图模式」又退出来），仍然显示做过的这种 —— 不能让一次误点把进度藏起来。
+    /// 都没做过但这台设备上选过模式：那种模式的空概况。
     func summary(for projectId: UUID) -> PatternWorkSummary? {
         let recent = PatternRecents.shared.entry(for: projectId)?.mode
-        let pair = raw[projectId]
-        switch (pair?.single, pair?.parts) {
+        let work = works[projectId]
+        switch (work?.single, work?.parts) {
         case let (s?, p?):
             if let recent { return recent == .single ? s : p }
             return s.updatedAt >= p.updatedAt ? s : p
         case let (s?, nil):
-            if recent == .parts { return .empty(.parts) }
             return s
         case let (nil, p?):
-            if recent == .single { return .empty(.single) }
             return p
         case (nil, nil):
             return recent.map { .empty($0) }
         }
     }
 
-    /// 重扫一遍。已经在扫就不重复开。
+    /// 重扫一遍。半分钟内扫过就不扫；正在扫就等这一遍完了再补一遍。
     func refreshAll(using inventoryManager: InventoryManager) {
-        guard refreshTask == nil,
-              let loader = inventoryManager.imageLoader,
+        if refreshTask != nil {
+            needsAnotherRefresh = true
+            return
+        }
+        if let lastFullRefresh, Date().timeIntervalSince(lastFullRefresh) < Self.minRefreshInterval {
+            return
+        }
+        guard let loader = inventoryManager.imageLoader,
               let storeURL = inventoryManager.storeURL else { return }
         refreshTask = Task { [weak self] in
             let scanned = await Task.detached(priority: .utility) {
@@ -280,31 +299,38 @@ final class PatternWorkStore: ObservableObject {
             guard let self else { return }
             defer {
                 self.refreshTask = nil
-                self.hasLoadedOnce = true
+                if self.needsAnotherRefresh {
+                    self.needsAnotherRefresh = false
+                    self.lastFullRefresh = nil
+                    self.refreshAll(using: inventoryManager)
+                }
             }
-            guard case .success(let ids) = scanned else { return }
-            let all = ids.grid.union(ids.parts)
-            // 数据被清掉的项目从缓存里拿掉
-            for id in self.raw.keys where !all.contains(id) {
-                self.raw[id] = nil
+            guard case .success(let ids) = scanned else {
+                // 不标记「已加载」：显示「没有项目」会让人以为全没了，下次进来再扫
+                AppLogger.shared.error("PatternWork", "scan_failed", metadata: ["error": "\(scanned)"])
+                return
             }
-            // 正在拼、最近打开过的先算，拼图页最上面那组先出来
-            let recentOrder = PatternRecents.shared.entries.map(\.projectId)
-            let ordered = recentOrder.filter(all.contains) + all.subtracting(recentOrder)
-            for id in ordered {
-                if Task.isCancelled { return }
-                let result = await loader.patternWork(for: id)
-                self.raw[id] = result
+            var updated: [UUID: PatternWork] = [:]
+            for id in ids.grid.union(ids.parts) {
+                let work = await loader.patternWork(for: id)
+                // 这次没读出来：留着上次的，别让在拼的项目从列表里消失
+                updated[id] = (work.unreadable ? self.works[id] : nil) ?? work
             }
+            // 一次性换上：逐个写会让每张计划卡片跟着重绘几十遍
+            self.works = updated
+            self.hasLoadedOnce = true
+            self.lastFullRefresh = Date()
         }
     }
 
-    /// 只重算一个（拼图模式刚关掉时用）。返回算完之后的概况。
+    /// 只重算一个。拼图模式关掉、详情页出现、缓存里还没有这个项目时用。
     @discardableResult
     func refresh(_ projectId: UUID, using inventoryManager: InventoryManager) async -> PatternWorkSummary? {
         guard let loader = inventoryManager.imageLoader else { return summary(for: projectId) }
-        let result = await loader.patternWork(for: projectId)
-        raw[projectId] = (result.single == nil && result.parts == nil) ? nil : result
+        let work = await loader.patternWork(for: projectId)
+        if !work.unreadable {
+            works[projectId] = work.isEmpty ? nil : work
+        }
         return summary(for: projectId)
     }
 }
@@ -518,8 +544,8 @@ struct PatternModeEntryButton: View {
 
 /// 计划卡片右下角那一小行。
 ///
-/// 只读缓存，不自己去库里取 —— 计划列表可能有几百张卡。缓存由拼图页的整体扫描、
-/// 详情页和拼图模式关掉时的单个重算填上。
+/// 只读缓存，不自己去库里取 —— 计划列表可能有几百张卡。缓存由计划页、拼图页的整体扫描，
+/// 以及详情页和拼图模式关掉时的单个重算填上。
 struct PatternProgressLabel: View {
     let projectId: UUID
 

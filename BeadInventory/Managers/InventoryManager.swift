@@ -156,7 +156,7 @@ class InventoryManager: ObservableObject {
     }
 
     /// store 文件位置，给只读 SQLite 扫描用（见 `ProjectBlobExistenceScanner`）。
-    /// in-memory 库（单测）没有文件，是 nil。
+    /// in-memory 库（单测）给的是个不存在的路径，扫描器会当成 `.unsupportedStore`。
     var storeURL: URL? { modelContext?.container.configurations.first?.url }
 
     /// 视图取图的**后台**入口。视图层（列表 / 日历 / 详情）一律走它，不要再调
@@ -5080,9 +5080,8 @@ class InventoryManager: ObservableObject {
     /// 更新项目的多零件图纸数据（立体图纸）。语义完全对齐 `updateProjectPatternGrid`：
     /// 编码失败时**保留**旧值不覆盖，只有用户明确清空才写 nil。
     ///
-    /// 没有对应的 `projectIDsWithPartsSheet` 存在性集合 —— 那套集合是为「列表每个 row
-    /// 都要知道有没有图」准备的，多零件数据只在进入该模式时读一次，多维护一个集合
-    /// 反而多一处会跟库漂移的状态。
+    /// 没有对应的 `projectIDsWithPartsSheet` 存在性集合 —— 多维护一个集合就多一处会跟库
+    /// 漂移的状态。工作台拼图页要知道哪些项目做过多零件时，用 `scanPatternWork` 现扫。
     ///
     /// - Returns: `false` = 这次**没有**写进持久层。调用方（多零件流程每一步都在存进度）
     ///   必须据此决定是否还能往下走 —— 静默失败的话用户以为零件、逐格色号、摆位都存住了，
@@ -5421,8 +5420,8 @@ enum ProjectBlobExistenceScanner {
 
     /// 工作台「拼图」页用：哪些项目存过单图纸网格、哪些存过多零件数据。
     ///
-    /// 多零件数据没有常驻的存在性集合（理由见 `updateProjectPartsSheet`），所以拼图页
-    /// 每次要列表时现扫一次。跟 `scan` 一样只读记录头，不把那一两 MB 的零件数据读出来。
+    /// 多零件数据没有常驻的存在性集合（见 `updateProjectPartsSheet`），所以拼图概况
+    /// （`PatternWorkStore`）每次重扫时现扫一次。跟 `scan` 一样只读记录头，不把那一两 MB 的零件数据读出来。
     static func scanPatternWork(storeURL: URL) -> Result<(grid: Set<UUID>, parts: Set<UUID>), StoreScanFailure> {
         scanIDs(nonNullColumns: ["ZPATTERNGRIDDATA", "ZPARTSSHEETDATA"], storeURL: storeURL).map {
             (grid: $0["ZPATTERNGRIDDATA"] ?? [], parts: $0["ZPARTSSHEETDATA"] ?? [])

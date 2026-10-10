@@ -1390,8 +1390,8 @@ struct PlannedProjectDetailView: View {
         .sheet(isPresented: $showStockCheckSheet) { stockCheckSheet }
         .sheet(isPresented: $showEditSheet) { editSheet }
         .sheet(isPresented: $showThumbnailEditor) { thumbnailEditorSheet }
-        // 关掉之后要刷新：拼图模式里能删也能补原图，这一页不重建，「图纸原图」那一行
-        // 和拼图进度都不会自己重读。
+        // 拼图模式里能删也能补原图，这一页不重建，「图纸原图」那一行要靠它重读。
+        // 拼图进度由 launcher 自己重算。
         .patternModeLauncher($patternLaunch, onFlowDismissed: { patternSourceRefreshToken += 1 })
         .onChange(of: currentProject?.isPlanned) { _, isPlanned in
             if isPlanned == false { dismiss() }

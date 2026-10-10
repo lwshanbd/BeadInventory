@@ -3,7 +3,6 @@
 //  BeadInventory
 //
 //  工作台 Tab：正在做的事。顶上切换「拼图」和「识别」两页。
-//  「我的计划」已经搬出去成了独立的「计划」Tab（五栏：库存 / 计划 / 工作台 / 记录 / 更多）。
 //
 
 import SwiftUI
@@ -14,7 +13,8 @@ struct WorkshopView: View {
 
     @EnvironmentObject private var inventoryManager: InventoryManager
     @ObservedObject private var store = PatternWorkStore.shared
-    /// 上次停在哪页。空 = 还没手动切过，这时有正在拼的项目就进拼图页，没有就进识别页。
+    /// 上次停在哪页。空 = 第一次打开：先显示识别页，拼图概况第一次扫完后定一次 ——
+    /// 有正在拼的项目就切到拼图页 —— 之后就不再自己变。外部唤起扫描时 `ContentView` 也会写它。
     @AppStorage("workshopPage") private var pageRaw: String = ""
 
     enum Page: String, CaseIterable, Hashable {
@@ -29,13 +29,7 @@ struct WorkshopView: View {
         }
     }
 
-    private var page: Page {
-        if let chosen = Page(rawValue: pageRaw) { return chosen }
-        let anyInProgress = inventoryManager.projects.contains {
-            store.summary(for: $0.id)?.stage == .inProgress
-        }
-        return anyInProgress ? .puzzle : .scan
-    }
+    private var page: Page { Page(rawValue: pageRaw) ?? .scan }
 
     private var pageBinding: Binding<Page> {
         Binding(get: { page }, set: { pageRaw = $0.rawValue })
@@ -68,7 +62,28 @@ struct WorkshopView: View {
         .background(Theme.ColorToken.Surface.background)
         .task {
             store.refreshAll(using: inventoryManager)
+            chooseDefaultPageIfNeeded()
         }
+        // 两页都常驻，切页不会重跑 .task，所以切到拼图页时补一次（半分钟内扫过就跳过）
+        .onChange(of: page) { _, newPage in
+            if newPage == .puzzle { store.refreshAll(using: inventoryManager) }
+        }
+        // 别的设备同步过来新进度时
+        .onChange(of: inventoryManager.projectBlobsRevision) { _, _ in
+            store.refreshAll(using: inventoryManager)
+        }
+        .onChange(of: store.hasLoadedOnce) { _, _ in
+            chooseDefaultPageIfNeeded()
+        }
+    }
+
+    /// 第一次打开工作台、概况也扫完了：有正在拼的就切到拼图页。只定这一次。
+    private func chooseDefaultPageIfNeeded() {
+        guard pageRaw.isEmpty, store.hasLoadedOnce else { return }
+        let anyInProgress = inventoryManager.projects.contains {
+            store.summary(for: $0.id)?.stage == .inProgress
+        }
+        pageRaw = (anyInProgress ? Page.puzzle : Page.scan).rawValue
     }
 }
 

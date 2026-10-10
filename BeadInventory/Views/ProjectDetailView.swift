@@ -22,7 +22,6 @@ struct ProjectDetailView: View {
     @State private var patternLaunch: PatternLaunchRequest?
     /// 「⋯」里的「更换拼图模式」看它决定显不显示，得跟着刷新
     @ObservedObject private var patternStore = PatternWorkStore.shared
-    /// 在模式选择页里选了哪种模式，等它收起后再进下一页（见 openPatternModeIfSelected）
 
     var isParentProject: Bool {
         inventoryManager.isParentProject(project.id)
@@ -206,8 +205,8 @@ struct ProjectDetailView: View {
                 }
             }
         }
-        // 关掉之后要刷新：拼图模式里能删掉原图（零件清单页「拼好了」）也能补一张
-        // （缺图提示条），这一页不会重建，那一行和拼图进度不会自己重读。
+        // 拼图模式里能删掉原图（零件清单页「拼好了」）也能补一张（缺图提示条），
+        // 这一页不会重建，「图纸原图」那一行要靠它重读。拼图进度由 launcher 自己重算。
         .patternModeLauncher($patternLaunch, onFlowDismissed: { patternSourceRefreshToken += 1 })
         .sheet(isPresented: $showingThumbnailEditor) {
             let projectId = (currentProject ?? project).id

@@ -596,16 +596,21 @@ struct ScanView: View {
     ///
     /// 追加的几张没存进去要说出来：`clearState()` 马上就把它们从内存里清掉，
     /// 它们又没有封面可退，这一丢就是永久的。第 0 张存不进去不用说（有封面顶着，旧行为）。
-    private func savePatternSource(for projectId: UUID) {
-        guard let main = patternSourceData() else { return }
+    ///
+    /// - Returns: 追加的几张都存上了（没有追加的也算）。
+    @discardableResult
+    private func savePatternSource(for projectId: UUID) -> Bool {
+        guard let main = patternSourceData() else { return true }
         PatternSourceStore.save(main, for: projectId)
-        guard !extraPages.isEmpty else { return }
+        guard !extraPages.isEmpty else { return true }
         if !PatternSourceStore.saveExtraPages(extraPages.map(\.data), for: projectId) {
             // 扣减那条路是从被推出来的复核页调过来的，等它收起再弹
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 extraPagesSaveFailed = true
             }
+            return false
         }
+        return true
     }
 
     // MARK: - 主 body 的子片段（拆分以减轻类型检查复杂度）
@@ -1041,9 +1046,9 @@ struct ScanView: View {
         return regex.stringByReplacingMatches(in: trimmed, options: [], range: range, withTemplate: "$1$2")
     }
 
-    /// 返回新建的计划。编码失败没建成时返回 nil。
+    /// 返回新建的计划，以及追加的图纸存没存上。编码失败没建成时返回 nil。
     @discardableResult
-    func createPlannedProject() -> ProjectRecord? {
+    func createPlannedProject() -> (project: ProjectRecord, extraPagesSaved: Bool)? {
         // 同 applyToInventoryWithResolver：**编码失败**不建项目、不清状态，让用户能重试；
         // 「用户没有封面图」是合法状态，照常建计划。
         guard let thumbnailDataOrNil = generateThumbnailData() else {
@@ -1066,21 +1071,23 @@ struct ScanView: View {
             colorSystem: scanColorSystem
         )
         inventoryManager.addPlannedProject(project)
-        savePatternSource(for: project.id)
+        let extraPagesSaved = savePatternSource(for: project.id)
 
         // 清除结果
         clearState()
-        return project
+        return (project, extraPagesSaved)
     }
 
     /// 识别结果页「开始拼」：存成计划，直接进拼图模式。
     ///
     /// 不弹「创建计划」那个确认框 —— 用户点的是「开始拼」，存成计划只是拼图模式要一个
-    /// 项目挂进度，问他一句「要不要创建计划」反而让人愣一下。计划照常出现在「计划」里，
-    /// 拼完或者先扣都从那里走。
+    /// 项目挂进度，问他一句「要不要创建计划」反而让人愣一下。计划照常出现在「计划」里。
+    ///
+    /// 追加的图纸没存上时先不进拼图模式：「没存上」的提示是挂在这一页上的，
+    /// 上面盖着拼图模式就弹不出来，用户会带着缺页的图纸去拼。
     private func startAssembling() {
-        guard let project = createPlannedProject() else { return }
-        patternLaunch = PatternLaunchRequest(projectId: project.id)
+        guard let created = createPlannedProject(), created.extraPagesSaved else { return }
+        patternLaunch = PatternLaunchRequest(projectId: created.project.id)
     }
 
     /// 生成落盘用的图纸数据。
