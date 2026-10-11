@@ -222,7 +222,7 @@ struct PartsListStepView: View {
                         .position(x: box.midX, y: box.midY)
                 }
                 PartsBoxOverlay(parts: parts, page: page, selection: selection, transform: transform,
-                                override: shownOverride)
+                                override: shownOverride, duplicates: duplicatedPartIDs)
 
                 if let draftRect {
                     Rectangle()
@@ -421,7 +421,8 @@ struct PartsListStepView: View {
                             title: part.displayName(order: index),
                             order: index + 1,
                             image: thumbnails[part.id],
-                            isSelected: selection.contains(part.id)
+                            isSelected: selection.contains(part.id),
+                            isDuplicated: duplicatedPartIDs.contains(part.id)
                         )
                         .id(part.id)
                         .onTapGesture {
@@ -741,6 +742,24 @@ struct PartsListStepView: View {
         return PendingBoundsChange(partId: id, bounds: boxPreview)
     }
 
+    /// 同一个零件被圈了两次的那些框。按图上正在显示的框算（含拖动中的预览），
+    /// 用户把框挪开的过程中红色就跟着消失，不用等松手。
+    private var duplicatedPartIDs: Set<UUID> {
+        let shown = parts.map { part in
+            (part, shownOverride?.partId == part.id ? shownOverride!.bounds : part.bounds)
+        }
+        var result: Set<UUID> = []
+        for i in shown.indices {
+            for j in shown.indices where j > i {
+                let (a, ra) = shown[i], (b, rb) = shown[j]
+                guard a.pageIndex == b.pageIndex, PartsDuplicateBox.isSamePart(ra, rb) else { continue }
+                result.insert(a.id)
+                result.insert(b.id)
+            }
+        }
+        return result
+    }
+
     /// 拖完一次把手 / 框身，松手时到这里。
     ///
     /// 零件已经对好网格或核对过颜色时先问一句：框一改这些全得重来，
@@ -801,6 +820,8 @@ private struct PartsBoxOverlay: View {
     let transform: PartsCanvasTransform
     /// 这个零件先按这个框画（拖动中的预览 / 等确认的新框），零件本身还没改。
     let override: PendingBoundsChange?
+    /// 跟别的框几乎重合的零件（同一个零件圈了两次），描红框。
+    let duplicates: Set<UUID>
 
     var body: some View {
         Canvas { context, _ in
@@ -812,13 +833,16 @@ private struct PartsBoxOverlay: View {
                 // 用户补完一个零件，界面上没有任何地方告诉他「刚画的是这个、它选中了」。
                 // 橙色和这张图上的任何颜色都不撞，一眼就能找到。
                 let selected = selection.contains(part.id)
-                let stroke: Color = selected ? .orange : .cyan
+                // 重复的框描红：选中时也保持红色描边，只是照常铺橙色底，
+                // 这样用户点中其中一个准备删时，还看得出它是重复的那对之一。
+                let duplicated = duplicates.contains(part.id)
+                let stroke: Color = duplicated ? .red : (selected ? .orange : .cyan)
                 if selected {
                     context.fill(Path(roundedRect: r, cornerRadius: 2), with: .color(.orange.opacity(0.3)))
                 }
                 context.stroke(Path(roundedRect: r, cornerRadius: 2),
                                with: .color(stroke),
-                               lineWidth: selected ? 2.5 : 1)
+                               lineWidth: selected || duplicated ? 2.5 : 1)
 
                 // 序号贴在框的左上角外侧；框太靠上时贴内侧，免得跑出画面。
                 //
@@ -832,11 +856,27 @@ private struct PartsBoxOverlay: View {
                 let badgeY = r.minY > 8 ? r.minY - 5 : r.minY + 5
                 context.fill(
                     Path(ellipseIn: CGRect(x: r.minX - 6, y: badgeY - 6, width: 13, height: 13)),
-                    with: .color(selected ? .orange : .cyan)
+                    with: .color(stroke)
                 )
                 context.draw(badge, at: CGPoint(x: r.minX + 0.5, y: badgeY))
             }
         }
+    }
+}
+
+/// 判断两个框是不是把同一个零件圈了两次。
+///
+/// 不用 IoU 一个数卡：手画的框总比算法框大一圈，IoU 掉得很快；
+/// 而合并出来的大框里本来就套着别的小零件，那不算重复。
+/// 所以要两条都满足：小框绝大部分落在大框里，且两个框大小差不多。
+enum PartsDuplicateBox {
+    static func isSamePart(_ a: CGRect, _ b: CGRect) -> Bool {
+        let inter = a.intersection(b)
+        guard !inter.isNull else { return false }
+        let areaA = a.width * a.height, areaB = b.width * b.height
+        let small = min(areaA, areaB), large = max(areaA, areaB)
+        guard small > 0 else { return false }
+        return inter.width * inter.height / small >= 0.8 && small / large >= 0.5
     }
 }
 
@@ -1092,6 +1132,7 @@ private struct PartThumbnailCell: View {
     let order: Int
     let image: UIImage?
     let isSelected: Bool
+    let isDuplicated: Bool
 
     var body: some View {
         VStack(spacing: Theme.Spacing.xs) {
@@ -1115,10 +1156,12 @@ private struct PartThumbnailCell: View {
                     .padding(4)
             }
             .overlay(
-                // 跟图上的框用同一个橙色：上下两处同时亮起来，才看得出「图上那个 = 这个」
+                // 跟图上的框用同一个橙色：上下两处同时亮起来，才看得出「图上那个 = 这个」。
+                // 选中优先于重复的红色：缩略图没有图上那层橙色底，描边再被红色占掉就看不出选中了。
                 RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
-                    .stroke(isSelected ? Color.orange : Theme.ColorToken.Border.default,
-                            lineWidth: isSelected ? 2.5 : 1)
+                    .stroke(isSelected ? Color.orange
+                                : (isDuplicated ? Color.red : Theme.ColorToken.Border.default),
+                            lineWidth: isSelected || isDuplicated ? 2.5 : 1)
             )
 
             Text(title)
