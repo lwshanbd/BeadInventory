@@ -1308,15 +1308,21 @@ struct PartsSheetFlowView: View {
     private func markFinished() {
         finishedAt = Date()
         dirty = true
-        guard persist() else { return }
+        guard persist() else {
+            // 没存上：按钮别变，界面跟库保持一致。「这一步没存上」persist 自己会弹。
+            finishedAt = nil
+            return
+        }
         onFinished?()
         dismiss()
     }
 
     /// 「移回正在拼」：清掉拼完的时间，存好，留在拼图模式里接着拼。
     private func markUnfinished() {
+        let previous = finishedAt
         finishedAt = nil
         dirty = true
-        persist()
+        // 没存上就把按钮还原，理由同 markFinished
+        if !persist() { finishedAt = previous }
     }
 }

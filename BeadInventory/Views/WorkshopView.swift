@@ -101,6 +101,7 @@ struct PatternBoardView: View {
     @State private var searchText = ""
     @State private var showsFinished = false
     @State private var patternLaunch: PatternLaunchRequest?
+    @State private var moveBackFailed = false
 
     struct Item: Identifiable {
         let project: ProjectRecord
@@ -181,6 +182,11 @@ struct PatternBoardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.ColorToken.Surface.background)
         .patternModeLauncher($patternLaunch)
+        .alert("无法移回正在拼", isPresented: $moveBackFailed) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text("这个项目的数据暂时读写不了，请稍后再试。")
+        }
     }
 
     private var searchField: some View {
@@ -264,7 +270,9 @@ struct PatternBoardView: View {
         .contextMenu {
             if item.summary.stage == .finished {
                 Button {
-                    store.moveBackToInProgress(item.project.id, using: inventoryManager)
+                    if !store.moveBackToInProgress(item.project.id, using: inventoryManager) {
+                        moveBackFailed = true
+                    }
                 } label: {
                     Label("移回正在拼", systemImage: "arrow.uturn.backward")
                 }

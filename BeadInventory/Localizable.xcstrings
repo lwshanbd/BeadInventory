@@ -1,6 +1,26 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "无法移回正在拼" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t Move Back"
+          }
+        }
+      }
+    },
+    "这个项目的数据暂时读写不了，请稍后再试。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This project’s data can’t be read or saved right now. Try again later."
+          }
+        }
+      }
+    },
     "拼完了" : {
       "localizations" : {
         "en" : {

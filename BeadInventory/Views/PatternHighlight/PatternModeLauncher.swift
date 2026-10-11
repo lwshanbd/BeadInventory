@@ -180,7 +180,8 @@ final class PatternWorkStore: ObservableObject {
 
     /// 这个项目现在该用哪种模式、拼到哪了。
     ///
-    /// 两种都做过：这台设备上最后用的那种优先，没记录就取最近改过的那种。
+    /// 两种都做过：有一种点过「拼完了」就用那种 —— 进另一种模式看一眼不能把拼完藏起来。
+    /// 都没拼完时，这台设备上最后用的那种优先，没记录就取最近改过的那种。
     /// 只做过一种：就是那种。本机最近选了另一种但那边还什么都没做（比如点了
     /// 「更换拼图模式」又退出来），仍然显示做过的这种 —— 不能让一次误点把进度藏起来。
     /// 都没做过但这台设备上选过模式：那种模式的空概况。
@@ -189,6 +190,8 @@ final class PatternWorkStore: ObservableObject {
         let work = works[projectId]
         switch (work?.single, work?.parts) {
         case let (s?, p?):
+            if s.stage == .finished && p.stage != .finished { return s }
+            if p.stage == .finished && s.stage != .finished { return p }
             if let recent { return recent == .single ? s : p }
             return s.updatedAt >= p.updatedAt ? s : p
         case let (s?, nil):
@@ -250,16 +253,31 @@ final class PatternWorkStore: ObservableObject {
     }
 
     /// 「移回正在拼」：把两种模式数据上的 `finishedAt` 都清掉。
-    func moveBackToInProgress(_ projectId: UUID, using inventoryManager: InventoryManager) {
-        if var grid = inventoryManager.fetchProjectPatternGrid(for: projectId), grid.finishedAt != nil {
-            grid.finishedAt = nil
-            inventoryManager.updateProjectPatternGrid(projectId, grid: grid)
+    /// - Returns: false = 有一份没读出来或没写进去，调用方要告诉用户。
+    ///   读不出来时不能当成「没有数据」跳过 —— 那样点了没反应，也没有说法。
+    @discardableResult
+    func moveBackToInProgress(_ projectId: UUID, using inventoryManager: InventoryManager) -> Bool {
+        var ok = true
+        switch inventoryManager.fetchProjectPatternGridDataResult(for: projectId) {
+        case .failure:
+            ok = false
+        case .success(let data):
+            if var grid = SDProjectRecord.decodePatternGrid(data, projectId: projectId), grid.finishedAt != nil {
+                grid.finishedAt = nil
+                ok = inventoryManager.updateProjectPatternGrid(projectId, grid: grid) && ok
+            }
         }
-        if var sheet = inventoryManager.fetchProjectPartsSheet(for: projectId), sheet.finishedAt != nil {
-            sheet.finishedAt = nil
-            inventoryManager.updateProjectPartsSheet(projectId, sheet: sheet)
+        switch inventoryManager.fetchProjectPartsSheetDataResult(for: projectId) {
+        case .failure:
+            ok = false
+        case .success(let data):
+            if var sheet = SDProjectRecord.decodePartsSheet(data, projectId: projectId), sheet.finishedAt != nil {
+                sheet.finishedAt = nil
+                ok = inventoryManager.updateProjectPartsSheet(projectId, sheet: sheet) && ok
+            }
         }
         Task { await refresh(projectId, using: inventoryManager) }
+        return ok
     }
 
     /// 只重算一个。拼图模式关掉、详情页出现、缓存里还没有这个项目时用。
