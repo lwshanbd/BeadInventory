@@ -2386,6 +2386,9 @@ struct ManualEntrySheetNew: View {
         }.sorted { $0.displayCode(for: colorSystem).localizedStandardCompare($1.displayCode(for: colorSystem)) == .orderedAscending }
     }
 
+    // 三列：格子够宽，选中后放得下加减数量
+    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
+
     var totalToAdd: Int {
         var total = 0
         for colorId in sel.selected {
@@ -2407,9 +2410,9 @@ struct ManualEntrySheetNew: View {
 
                 // 颜色列表
                 ScrollView {
-                    VStack(spacing: 8) {
+                    LazyVGrid(columns: gridColumns, spacing: 10) {
                         ForEach(colorsInSeries) { color in
-                            ManualEntryColorRow(
+                            ManualEntryColorCell(
                                 color: color,
                                 isSelected: sel.contains(color.id),
                                 quantity: bindingForColor(color.id),
@@ -2555,72 +2558,69 @@ struct ManualEntrySeriesSelector: View {
     }
 }
 
-// MARK: - 手动添加颜色行
-struct ManualEntryColorRow: View {
+// MARK: - 手动添加颜色格
+struct ManualEntryColorCell: View {
     let color: BeadColor
     let isSelected: Bool
     @Binding var quantity: Int
     let onToggle: () -> Void
     var colorSystem: ColorSystem = .mard
-    @EnvironmentObject var inventoryManager: InventoryManager
 
     var body: some View {
-        HStack(spacing: 12) {
-            // 选择按钮
+        VStack(spacing: 6) {
             Button(action: onToggle) {
-                ZStack {
-                    Circle()
-                        .stroke(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Border.default, lineWidth: 2)
-                        .frame(width: 28, height: 28)
+                VStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
+                        .fill(color.color)
+                        .frame(height: 52)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+                        )
+                        .overlay(alignment: .topTrailing) {
+                            if isSelected {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.body)
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, Theme.ColorToken.Morandi.mauve)
+                                    .padding(4)
+                            }
+                        }
 
-                    if isSelected {
-                        Circle()
-                            .fill(Theme.ColorToken.Morandi.mauve)
-                            .frame(width: 20, height: 20)
-
-                        Image(systemName: "checkmark")
-                            .font(.caption2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                    }
+                    Text(color.displayCode(for: colorSystem))
+                        .font(.system(.title3, design: .monospaced))
+                        .fontWeight(.semibold)
+                        .foregroundColor(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Text.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
-            // 颜色预览
-            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .fill(color.color)
-                .frame(width: 40, height: 40)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-                )
-
-            // 色号
-            Text(color.displayCode(for: colorSystem))
-                .font(.system(.body, design: .monospaced))
-                .fontWeight(.medium)
-
-            Spacer()
-
-            // 数量控制（仅在选中时显示）
-            if isSelected {
-                ManualEntryQuantityControl(quantity: $quantity)
-            }
+            // 不选中也占住位置，点选时格子不跳
+            ManualEntryQuantityControl(quantity: $quantity)
+                .opacity(isSelected ? 1 : 0)
+                .disabled(!isSelected)
         }
-        .padding(12)
-        .background(Theme.ColorToken.Surface.elevated)
+        .padding(8)
+        .background(isSelected ? Theme.ColorToken.Morandi.mauve.opacity(0.08) : Theme.ColorToken.Surface.elevated)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(isSelected ? Theme.ColorToken.Morandi.mauve : .clear, lineWidth: 2)
+        )
         .cornerRadius(Theme.Radius.md)
     }
 }
 
-// MARK: - 手动添加数量控制器（以1为单位）
+// MARK: - 手动添加数量控制器（以1为单位，格子里用的紧凑版）
 struct ManualEntryQuantityControl: View {
     @Binding var quantity: Int
     @State private var editText: String = ""
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 4) {
             // 减少按钮
             Button {
                 if quantity > 1 {
@@ -2644,7 +2644,7 @@ struct ManualEntryQuantityControl: View {
                 .keyboardType(.asciiCapableNumberPad)
                 .multilineTextAlignment(.center)
                 .font(.system(size: 16, weight: .regular, design: .monospaced))
-                .frame(width: 60, height: 32)
+                .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28)
                 .background(Theme.ColorToken.Surface.subtle)
                 .cornerRadius(Theme.Radius.sm)
                 .focused($isFocused)
@@ -2672,11 +2672,6 @@ struct ManualEntryQuantityControl: View {
                     .cornerRadius(Theme.Radius.md)
             }
             .buttonStyle(PlainButtonStyle())
-
-            // 单位标签
-            Text("颗")
-                .font(.caption2)
-                .foregroundColor(.secondary)
         }
         .onAppear {
             editText = "\(quantity)"
