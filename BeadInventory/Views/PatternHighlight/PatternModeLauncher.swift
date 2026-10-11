@@ -12,14 +12,15 @@
 //
 //  有人先扣再拼，有人拼完才扣，有人从来不进拼图模式。所以：
 //  - 已扣减的项目（记录里的）一样能进拼图模式；
-//  - 「拼图」页只看拼图进度，不管扣没扣；
-//  - 拼完时只对**还没扣减**的项目问一句，而且只是问，点「以后再说」什么都不动。
+//  - 「拼图」页只看拼没拼完，不管扣没扣；
+//  - 点「拼完了」时只对**还没扣减**的项目问一句，而且只是问，点「以后再说」什么都不动。
 //
-//  ## 「处理过」不等于「在拼」
+//  ## 拼没拼完只认用户那一下
 //
-//  有人一口气把七八十张图纸都量好格子、判好颜色，但手上一次只拼一两个。所以拼图页
-//  按进度分三组：已经开始标记的是「正在拼」，量好了还没动的是「待拼」，标完的是「已拼完」。
-//  只裁了个框就退出的不算，那时候还没有任何能拼的东西。
+//  拼图页只有两组：「正在拼」「拼完」。进过拼图模式、存过东西的都在「正在拼」；
+//  用户在拼图模式里点了「拼完了」才进「拼完」（记在网格 / 零件数据的 `finishedAt` 上）。
+//  不从颜色勾了几个、零件组装了几块往外推 —— 推出来的规则用户看不见，
+//  推错了就是「我明明拼完了它还说没拼完」。
 //
 
 import SwiftUI
@@ -86,126 +87,44 @@ final class PatternRecents: ObservableObject {
     }
 }
 
-// MARK: - 进度
+// MARK: - 概况
 
-/// 一个项目在拼图模式里拼到哪了。
-///
-/// - 单图纸：图上一共几个色号、标记完成了几个。判法跟高亮页那条色号条一致：
-///   `doneColors[色号]` 等于这个色号当前的格数才算完成（格数变了就当没标过）。
-/// - 多零件：一共几个零件、标记已组装几个，跟组装页顶上那行「已组装 a/b」一致。
-struct PatternProgress: Equatable, Sendable {
-    let mode: PatternMode
-    let done: Int
-    let total: Int
-
-    var isComplete: Bool { total > 0 && done >= total }
-
-    var summary: String {
-        switch mode {
-        case .single:
-            return total > 0 ? String(localized: "单图纸 · 已完成 \(done)/\(total) 色") : String(localized: "单图纸")
-        case .parts:
-            return total > 0 ? String(localized: "多零件 · 已组装 \(done)/\(total)") : String(localized: "多零件")
-        }
-    }
-
-    static func single(_ grid: BeadPatternGrid) -> PatternProgress {
-        var counts: [String: Int] = [:]
-        for row in grid.cellColorCodes {
-            for case let code? in row {
-                counts[code, default: 0] += 1
-            }
-        }
-        let doneColors = grid.doneColors ?? [:]
-        let done = counts.filter { doneColors[$0.key] == $0.value }.count
-        return PatternProgress(mode: .single, done: done, total: counts.count)
-    }
-
-    static func parts(_ sheet: BeadPartsSheet) -> PatternProgress {
-        let assembled = Set(sheet.assembledPartIds ?? [])
-        let done = sheet.parts.filter { assembled.contains($0.id) }.count
-        return PatternProgress(mode: .parts, done: done, total: sheet.parts.count)
-    }
-}
-
-/// 拼图页的三组
-enum PatternStage: Int, Sendable, Comparable {
-    /// 选了模式，但格子都还没量（只裁了个框就退出）。拼图页不列。
-    case preparing
-    /// 量好了、还没开始标记
-    case ready
-    /// 已经开始标记
+/// 拼图页的两组
+enum PatternStage: Sendable {
     case inProgress
-    /// 标完了
     case finished
-
-    static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
 }
 
-/// 一个项目在拼图模式里的一份概况。从网格 / 零件数据里算出来，算完就把大数据扔掉。
+/// 一个项目在某一种模式里的概况。从网格 / 零件数据里读出来，读完就把大数据扔掉。
 struct PatternWorkSummary: Equatable, Sendable {
     let mode: PatternMode
     let stage: PatternStage
-    let progress: PatternProgress
-    /// 「待拼」那一组的副标题：处理到哪一步。
-    let preparedDetail: String
-    /// 数据里记的最后一次改动时间（网格最后一次标定 / 零件数据最后一次保存）
+    /// 数据里记的最后一次改动时间。排序用，也用来在两种模式都做过时挑一个。
     let updatedAt: Date
 
-    /// 列表行、详情页上那一行。在拼的写进度，没开始的写处理到哪一步。
-    var subtitle: String {
-        switch stage {
-        case .inProgress, .finished: return progress.summary
-        case .ready, .preparing: return preparedDetail
-        }
+    var modeName: String {
+        mode == .single ? String(localized: "单图纸") : String(localized: "多零件")
     }
 
     static func single(_ grid: BeadPatternGrid) -> PatternWorkSummary {
-        let progress = PatternProgress.single(grid)
-        let stage: PatternStage
-        if progress.isComplete { stage = .finished }
-        else if progress.done > 0 { stage = .inProgress }
-        else { stage = .ready }
-        return PatternWorkSummary(
+        PatternWorkSummary(
             mode: .single,
-            stage: stage,
-            progress: progress,
-            preparedDetail: String(localized: "单图纸 · \(grid.cols)×\(grid.rows) 格"),
-            updatedAt: grid.lastCalibratedAt
+            stage: grid.finishedAt == nil ? .inProgress : .finished,
+            updatedAt: max(grid.lastCalibratedAt, grid.finishedAt ?? .distantPast)
         )
     }
 
     static func parts(_ sheet: BeadPartsSheet) -> PatternWorkSummary {
-        let progress = PatternProgress.parts(sheet)
-        let boards = sheet.boards ?? []
-        let measured = sheet.parts.contains { $0.hasCells }
-        let started = progress.done > 0 || boards.contains { !($0.doneColors ?? [:]).isEmpty }
-        let stage: PatternStage
-        if !measured { stage = .preparing }
-        else if progress.isComplete { stage = .finished }
-        else if started { stage = .inProgress }
-        else { stage = .ready }
-        let detail = boards.isEmpty
-            ? String(localized: "多零件 · \(sheet.parts.count) 个零件")
-            : String(localized: "多零件 · \(sheet.parts.count) 个零件 · 已排板")
-        return PatternWorkSummary(
+        PatternWorkSummary(
             mode: .parts,
-            stage: stage,
-            progress: progress,
-            preparedDetail: detail,
-            updatedAt: sheet.lastUpdatedAt
+            stage: sheet.finishedAt == nil ? .inProgress : .finished,
+            updatedAt: max(sheet.lastUpdatedAt, sheet.finishedAt ?? .distantPast)
         )
     }
 
-    /// 选了这个模式但一点数据都还没有
+    /// 选了这个模式但一点数据都还没存（比如只裁了个框就退出）
     static func empty(_ mode: PatternMode) -> PatternWorkSummary {
-        PatternWorkSummary(
-            mode: mode,
-            stage: .preparing,
-            progress: PatternProgress(mode: mode, done: 0, total: 0),
-            preparedDetail: mode == .single ? String(localized: "单图纸") : String(localized: "多零件"),
-            updatedAt: .distantPast
-        )
+        PatternWorkSummary(mode: mode, stage: .inProgress, updatedAt: .distantPast)
     }
 }
 
@@ -323,6 +242,26 @@ final class PatternWorkStore: ObservableObject {
         }
     }
 
+    /// 拼图页、计划卡片用：只有存过东西的项目才算进「正在拼 / 拼完」。
+    /// 只选了模式、什么都没存（裁了个框就退出）的不列。
+    func listedSummary(for projectId: UUID) -> PatternWorkSummary? {
+        guard works[projectId] != nil else { return nil }
+        return summary(for: projectId)
+    }
+
+    /// 「移回正在拼」：把两种模式数据上的 `finishedAt` 都清掉。
+    func moveBackToInProgress(_ projectId: UUID, using inventoryManager: InventoryManager) {
+        if var grid = inventoryManager.fetchProjectPatternGrid(for: projectId), grid.finishedAt != nil {
+            grid.finishedAt = nil
+            inventoryManager.updateProjectPatternGrid(projectId, grid: grid)
+        }
+        if var sheet = inventoryManager.fetchProjectPartsSheet(for: projectId), sheet.finishedAt != nil {
+            sheet.finishedAt = nil
+            inventoryManager.updateProjectPartsSheet(projectId, sheet: sheet)
+        }
+        Task { await refresh(projectId, using: inventoryManager) }
+    }
+
     /// 只重算一个。拼图模式关掉、详情页出现、缓存里还没有这个项目时用。
     @discardableResult
     func refresh(_ projectId: UUID, using inventoryManager: InventoryManager) async -> PatternWorkSummary? {
@@ -379,7 +318,7 @@ private struct PatternModeLauncherModifier: ViewModifier {
     @State private var running: Running?
     /// 最近一次打开的流程。fullScreenCover 的 onDismiss 跑的时候 `running` 已经是 nil 了。
     @State private var lastRun: Running?
-    /// 用户在流程里点的是「完成」而不是「关闭」
+    /// 用户在流程里点的是「拼完了」而不是「退出」
     @State private var finishedTapped = false
     @State private var askDeductFor: ProjectRecord?
     @State private var executing: ProjectRecord?
@@ -480,7 +419,7 @@ private struct PatternModeLauncherModifier: ViewModifier {
         running = run
     }
 
-    /// 流程关掉了。重算这个项目的进度；点的是「完成」、真的拼完了、项目还没扣减，才问要不要扣。
+    /// 流程关掉了。重算这个项目的概况；点的是「拼完了」、项目还没扣减，才问要不要扣。
     private func flowDismissed() {
         onFlowDismissed()
         guard let run = lastRun else { return }
@@ -498,7 +437,7 @@ private struct PatternModeLauncherModifier: ViewModifier {
 
 // MARK: - 详情页上的按钮
 
-/// 计划详情、记录详情共用的那一块：一行进度 + 「开始拼 / 继续拼」。
+/// 计划详情、记录详情共用的那一块：一行「单图纸 · 正在拼」+「开始拼 / 继续拼」。
 struct PatternModeEntryButton: View {
     let projectId: UUID
     let action: () -> Void
@@ -511,11 +450,12 @@ struct PatternModeEntryButton: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            if let summary {
+            if let summary = store.listedSummary(for: projectId) {
                 HStack(spacing: 6) {
                     Image(systemName: "square.grid.3x3.square")
-                    Text(summary.stage == .finished ? String(localized: "已拼完") : summary.subtitle)
-                        .monospacedDigit()
+                    Text(summary.stage == .finished
+                         ? String(localized: "\(summary.modeName) · 拼完")
+                         : String(localized: "\(summary.modeName) · 正在拼"))
                 }
                 .font(.subheadline)
                 .foregroundStyle(Theme.ColorToken.Text.secondary)
@@ -542,7 +482,7 @@ struct PatternModeEntryButton: View {
 
 // MARK: - 列表卡片上的进度
 
-/// 计划卡片右下角那一小行。
+/// 计划卡片右下角那一小行：「正在拼」或「拼完」。
 ///
 /// 只读缓存，不自己去库里取 —— 计划列表可能有几百张卡。缓存由计划页、拼图页的整体扫描，
 /// 以及详情页和拼图模式关掉时的单个重算填上。
@@ -553,18 +493,16 @@ struct PatternProgressLabel: View {
     @ObservedObject private var recents = PatternRecents.shared
 
     private var label: String {
-        guard let summary = store.summary(for: projectId) else { return "" }
-        switch summary.stage {
-        case .preparing: return ""
-        case .ready: return String(localized: "待拼")
-        case .inProgress: return summary.progress.summary
-        case .finished: return String(localized: "已拼完")
+        switch store.listedSummary(for: projectId)?.stage {
+        case .inProgress: return String(localized: "正在拼")
+        case .finished: return String(localized: "拼完")
+        case nil: return ""
         }
     }
 
     var body: some View {
         Text(label)
-            .font(.system(size: 11).monospacedDigit())
+            .font(.system(size: 11))
             .foregroundStyle(Theme.ColorToken.Morandi.mauve)
             .lineLimit(1)
     }

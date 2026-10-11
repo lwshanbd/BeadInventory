@@ -30,6 +30,11 @@ struct PartsAssemblyStepView: View {
     /// 勾一下就存。粘了一晚上，切出去回个消息被系统杀掉，勾过的不能丢。
     let onPersist: () -> Void
     let onFinish: () -> Void
+    /// 这个项目已经点过「拼完了」。这时主按钮换成「移回正在拼」：在哪儿标的就在哪儿撤回。
+    var isFinished = false
+    var onUnfinish: () -> Void = {}
+    /// 按了「拼完了」，等用户确认
+    @State private var confirmFinish = false
 
     @EnvironmentObject var inventoryManager: InventoryManager
 
@@ -71,8 +76,22 @@ struct PartsAssemblyStepView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("完成") { DispatchQueue.main.async { onFinish() } }
+                if isFinished {
+                    Button("移回正在拼", action: onUnfinish)
+                } else {
+                    Button("拼完了") { confirmFinish = true }
+                }
             }
+        }
+        // 「拼完了」：把这个项目放进工作台的「拼完」。只看用户这一下，不看颜色勾了几个、
+        // 零件组装了几块 —— 拼没拼完只有他自己知道。
+        //
+        // `onFinish` 推到下一轮再走：它背后的 `persist()` 存不上时会在父视图里置起
+        // 「存盘失败」那句话，而从一个正在收尾的 alert 的按钮闭包里置起另一个 alert，
+        // `.alert(item:)` 收尾那一下写回 nil 会把它吞掉（见 SinglePatternFlowView.requestClassification）。
+        .alert("标记为拼完？", isPresented: $confirmFinish) {
+            Button("取消", role: .cancel) {}
+            Button("确定") { DispatchQueue.main.async { onFinish() } }
         }
         .onChange(of: page) { _, _ in
             selection = nil

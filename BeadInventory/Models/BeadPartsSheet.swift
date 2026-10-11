@@ -388,6 +388,12 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
     /// 写入时已按现有零件过滤，读的时候也跟现有零件再对一遍。
     /// Optional 是为了老数据（理由见 `boards`）。
     var assembledPartIds: [UUID]?
+    /// 用户在拼图模式里点「拼完了」的时间。nil = 还在拼。
+    ///
+    /// 只认用户这一下，不从颜色勾了几个、零件组装了几块推出来：拼没拼完只有他自己知道，
+    /// 自动推的规则他看不见，推错了就是「我明明拼完了它还说没拼完」。
+    /// 存在图纸数据里而不是项目字段上：跟着 iCloud 走，也不用改数据库结构。
+    var finishedAt: Date?
     var lastUpdatedAt: Date
 
     init(
