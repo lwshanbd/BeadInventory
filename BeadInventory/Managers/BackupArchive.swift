@@ -103,6 +103,11 @@ struct ArchivedProject: Codable {
     /// 用户换新手机恢复后，每个零件的框、逐格色号、拼豆板摆位全没了，只剩一张图。
     /// 旧 JSON 备份是带它的（`partsSheet` + `partsSheetProvided`），新格式不能倒退。
     var partsSheet: ArchivedBlobRef?
+    /// 拼图模式里点「拼完了」的时间（`SDProjectRecord.patternFinishedAt`）。
+    /// 早先的归档没有这一项，解出来是 nil；`hasPatternFinishedAt` 用来区分「没拼完」和「旧归档」。
+    var patternFinishedAt: Date? = nil
+    /// 这份归档写的时候已经有拼完时间这一列。旧归档没有这个键，解出来是 nil。
+    var hasPatternFinishedAt: Bool? = nil
 }
 
 struct ArchivedBeadUsage: Codable {
@@ -337,6 +342,8 @@ enum BackupArchiveWriter {
                 archived.partsSheet = try writeBlob(partsData, name: "\(project.id.uuidString).parts",
                                                     in: blobsURL, root: partialURL)
             }
+            archived.patternFinishedAt = blobs.patternFinishedAt
+            archived.hasPatternFinishedAt = true
 
             archivedProjects.append(archived)
         }
@@ -1114,7 +1121,12 @@ extension BackupArchiveReader {
                 // 与 patternGrid 同理：本格式总是如实表达有无，所以恒为 true。
                 partsSheetProvided: true,
                 displayThumbnail: display,
-                displayThumbnailProvided: true
+                displayThumbnailProvided: true,
+                // 旧归档没写这一项，拼完时间在它的网格 / 零件数据里（上面已经整份写回）。
+                // 这时把项目那一列清掉，概况才会去读恢复回来的老值（见 ProjectImageLoader.patternWork(for:)）；
+                // 不清的话，库里现有的拼完状态会压过备份里的。
+                patternFinishedAt: p.hasPatternFinishedAt == true ? p.patternFinishedAt : nil,
+                patternFinishedAtProvided: true
             )], refreshMetadata: false)
 
             // **返回值必须检查。** 原来这里是 `_ =` —— 写失败被静默吞掉，

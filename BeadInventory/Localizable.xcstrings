@@ -1,6 +1,16 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "无法标记为拼完" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t Mark as Finished"
+          }
+        }
+      }
+    },
     "无法移回正在拼" : {
       "localizations" : {
         "en" : {

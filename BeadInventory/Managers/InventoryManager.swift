@@ -3095,7 +3095,8 @@ class InventoryManager: ObservableObject {
                 type: .projectDelete,
                 project: snapshotProject,
                 capturesImages: true,
-                partsSheetData: partsSheetDataForSnapshot(of: id)
+                partsSheetData: partsSheetDataForSnapshot(of: id),
+                patternFinishedAt: patternFinishedAtForSnapshot(of: id)
             )
 
             // 删除项目只从记录中移除，不回退库存
@@ -3425,9 +3426,13 @@ class InventoryManager: ObservableObject {
             // 多零件图纸不在 ProjectRecord 上，只能单独取出来交给 history（同 deleteProject）。
             // 只取会被删行的父项目 —— 子项目和独立项目的行不删，图纸留在原行里。
             var parentPartsSheets: [UUID: Data] = [:]
+            var parentFinishedAts: [UUID: Date] = [:]
             for parent in parentProjects {
                 if let data = partsSheetDataForSnapshot(of: parent.id) {
                     parentPartsSheets[parent.id] = data
+                }
+                if let date = patternFinishedAtForSnapshot(of: parent.id) {
+                    parentFinishedAts[parent.id] = date
                 }
             }
             let originalProjects = allChildrenProjects + parentSnapshots
@@ -3468,7 +3473,8 @@ class InventoryManager: ObservableObject {
                 isSimpleMerge: false,
                 existingParentId: nil,
                 mergedName: newName,
-                partsSheetDataByProjectId: parentPartsSheets
+                partsSheetDataByProjectId: parentPartsSheets,
+                patternFinishedAtByProjectId: parentFinishedAts
             )
 
             return newParentProject.id
@@ -3538,6 +3544,7 @@ class InventoryManager: ObservableObject {
 
             // 恢复所有原始项目的状态
             var recreatedPartsSheets: [(id: UUID, data: Data)] = []
+            var recreatedFinishedAts: [(id: UUID, date: Date)] = []
             for projectSnapshot in mergeSnapshot.originalProjects {
                 if let index = projects.firstIndex(where: { $0.id == projectSnapshot.id }) {
                     // 恢复 parentId
@@ -3573,6 +3580,9 @@ class InventoryManager: ObservableObject {
                     if let partsData = projectSnapshot.partsSheetData {
                         recreatedPartsSheets.append((id: projectSnapshot.id, data: partsData))
                     }
+                    if let finishedAt = projectSnapshot.patternFinishedAt {
+                        recreatedFinishedAts.append((id: projectSnapshot.id, date: finishedAt))
+                    }
                     // 同步 blob ID 集合（saveData 不更新这四个 Set）
                     if restoredProject.thumbnail != nil { projectIDsWithThumbnail.insert(restoredProject.id) }
                     if restoredProject.finishedImage != nil { projectIDsWithFinishedImage.insert(restoredProject.id) }
@@ -3590,6 +3600,11 @@ class InventoryManager: ObservableObject {
             var partsRestoreFailures = 0
             for entry in recreatedPartsSheets {
                 if !_setProjectBlobsDirectly(projectId: entry.id, partsSheetData: .some(entry.data)) {
+                    partsRestoreFailures += 1
+                }
+            }
+            for entry in recreatedFinishedAts {
+                if !updateProjectPatternFinishedAt(entry.id, finishedAt: entry.date) {
                     partsRestoreFailures += 1
                 }
             }
@@ -3959,19 +3974,21 @@ class InventoryManager: ObservableObject {
         )
         // 多零件图纸不在 ProjectRecord 上，父项目和每个子项目都单独取（同 deleteProject）
         var partsSheets: [UUID: Data] = [:]
-        if let data = partsSheetDataForSnapshot(of: projectId) {
-            partsSheets[projectId] = data
-        }
-        for child in children {
-            if let data = partsSheetDataForSnapshot(of: child.id) {
-                partsSheets[child.id] = data
+        var finishedAts: [UUID: Date] = [:]
+        for id in [projectId] + children.map(\.id) {
+            if let data = partsSheetDataForSnapshot(of: id) {
+                partsSheets[id] = data
+            }
+            if let date = patternFinishedAtForSnapshot(of: id) {
+                finishedAts[id] = date
             }
         }
         // 记录历史（在删除前），包含父项目和子项目
         historyManager.recordPlanDelete(
             project: snapshotParent,
             children: snapshotChildren,
-            partsSheetDataByProjectId: partsSheets
+            partsSheetDataByProjectId: partsSheets,
+            patternFinishedAtByProjectId: finishedAts
         )
 
         // 原图副本跟着项目走（同 deleteProject）。漏掉这一句，删掉的每个计划都会在
@@ -4600,6 +4617,25 @@ class InventoryManager: ObservableObject {
         }
     }
 
+    /// 删除类操作记快照前取拼完时间。读失败只记日志不拦删除，理由同 `partsSheetDataForSnapshot`。
+    private func patternFinishedAtForSnapshot(of projectId: UUID) -> Date? {
+        guard let context = modelContext else { return nil }
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        descriptor.fetchLimit = 1
+        descriptor.propertiesToFetch = [\.patternFinishedAt]
+        do {
+            return try context.fetch(descriptor).first?.patternFinishedAt
+        } catch {
+            logError("snapshot_pattern_finished_unreadable", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return nil
+        }
+    }
+
     /// 把一份 partsSheet 的**原始字节**直接写回某个项目。
     ///
     /// 撤销删除时用：字节是从快照里原样搬过来的，解码再编码会把本版本不认识的字段
@@ -4804,7 +4840,8 @@ class InventoryManager: ObservableObject {
         finishedImage: Data?? = nil,
         patternGridData: Data?? = nil,
         partsSheetData: Data?? = nil,
-        displayThumbnail: Data?? = nil
+        displayThumbnail: Data?? = nil,
+        patternFinishedAt: Date?? = nil
     ) -> Bool {
         guard !isUsingLocalFallbackMode else {
             logWarning("set_blobs_skipped_local_fallback", metadata: ["projectId": projectId.uuidString])
@@ -4832,6 +4869,10 @@ class InventoryManager: ObservableObject {
         }
         if case .some(let newDisplay) = displayThumbnail {
             sd.displayThumbnail = newDisplay
+        }
+        // 不是 blob，但备份恢复要跟网格 / 零件数据同一次 save 写进去
+        if case .some(let newFinished) = patternFinishedAt {
+            sd.patternFinishedAt = newFinished
         }
         do {
             try context.save()
@@ -4947,7 +4988,7 @@ class InventoryManager: ObservableObject {
     @MainActor
     @discardableResult
     func restoreProjectBlobsFromBackup(
-        _ entries: [(id: UUID, thumbnail: Data?, finishedImage: Data?, patternGridData: Data?, patternGridProvided: Bool, partsSheetData: Data?, partsSheetProvided: Bool, displayThumbnail: Data?, displayThumbnailProvided: Bool)],
+        _ entries: [(id: UUID, thumbnail: Data?, finishedImage: Data?, patternGridData: Data?, patternGridProvided: Bool, partsSheetData: Data?, partsSheetProvided: Bool, displayThumbnail: Data?, displayThumbnailProvided: Bool, patternFinishedAt: Date?, patternFinishedAtProvided: Bool)],
         refreshMetadata: Bool = true
     ) -> RestoreBlobsResult {
         var failedIDs: [UUID] = []
@@ -4958,13 +4999,16 @@ class InventoryManager: ObservableObject {
             // displayThumbnail：备份带就写（即使是 nil，也是显式声明"这条没有列表小图，
             // 让迁移协调器后续 backfill"）；备份没这个字段（老备份）→ 不动 store 旧值。
             let displayArg: Data?? = entry.displayThumbnailProvided ? .some(entry.displayThumbnail) : .none
+            // 拼完时间：新格式备份才有这一项；旧备份不动 store 上的值
+            let finishedArg: Date?? = entry.patternFinishedAtProvided ? .some(entry.patternFinishedAt) : .none
             let ok = _setProjectBlobsDirectly(
                 projectId: entry.id,
                 thumbnail: .some(entry.thumbnail),
                 finishedImage: .some(entry.finishedImage),
                 patternGridData: gridArg,
                 partsSheetData: partsArg,
-                displayThumbnail: displayArg
+                displayThumbnail: displayArg,
+                patternFinishedAt: finishedArg
             )
             if !ok { failedIDs.append(entry.id) }
         }
@@ -5112,6 +5156,66 @@ class InventoryManager: ObservableObject {
             "projectId": projectId.uuidString,
             "parts": sheet?.parts.count ?? 0,
             "paletteEntries": sheet?.palette.count ?? 0
+        ])
+        return true
+    }
+
+    /// 「拼完了 / 移回正在拼」—— 只写 `SDProjectRecord.patternFinishedAt` 这一列。
+    ///
+    /// 不经过 saveData 的 diff，也不碰网格 / 零件数据：两边都是整份写回，
+    /// 别的设备刚改的拼完状态会被这台设备手里的旧值盖掉（见字段注释）。
+    ///
+    /// History 处理：**不**记录。拼图进度不在撤销范围里，「移回正在拼」本身就是撤回。
+    /// 删除类操作的快照会带上它（见 `patternFinishedAtForSnapshot`），撤销删除时一并还原。
+    ///
+    /// - Returns: false = 没写进去，调用方要让按钮保持原样并告诉用户。
+    @discardableResult
+    func updateProjectPatternFinishedAt(_ projectId: UUID, finishedAt: Date?) -> Bool {
+        guard !isUsingLocalFallbackMode else {
+            logWarning("set_pattern_finished_skipped_local_fallback", metadata: ["projectId": projectId.uuidString])
+            return false
+        }
+        guard let context = modelContext else {
+            logError("set_pattern_finished_no_context", metadata: ["projectId": projectId.uuidString])
+            return false
+        }
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        descriptor.fetchLimit = 1
+        // 只取这一列，少物化同一行的原图
+        descriptor.propertiesToFetch = [\.patternFinishedAt]
+        let sd: SDProjectRecord
+        do {
+            guard let found = try context.fetch(descriptor).first else {
+                logWarning("set_pattern_finished_no_sd_record", metadata: ["projectId": projectId.uuidString])
+                return false
+            }
+            sd = found
+        } catch {
+            logError("set_pattern_finished_fetch_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return false
+        }
+        let previous = sd.patternFinishedAt
+        sd.patternFinishedAt = finishedAt
+        do {
+            try context.save()
+        } catch {
+            // 改回去：留在 context 里的话，下一次随便哪个 save 都会把它顺手提交，
+            // 用户这边刚看到「没保存」，过一会儿项目自己换了组。
+            sd.patternFinishedAt = previous
+            logError("set_pattern_finished_save_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return false
+        }
+        logInfo("project_pattern_finished_updated", metadata: [
+            "projectId": projectId.uuidString,
+            "finished": finishedAt != nil
         ])
         return true
     }

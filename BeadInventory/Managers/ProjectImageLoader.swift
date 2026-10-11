@@ -116,6 +116,12 @@ actor ProjectImageLoader {
         }
     }
 
+    /// 拼图模式里点「拼完了」的时间（`SDProjectRecord.patternFinishedAt`）。
+    /// 读失败单独返回，跟「没拼完」分开：概况遇到它就不更新，打开流程时遇到它就先不搬老数据。
+    func patternFinishedAt(for projectId: UUID) -> Result<Date?, Error> {
+        fetchColumnResult(projectId: projectId, keyPath: \.patternFinishedAt, event: "pattern_finished_at")
+    }
+
     /// 老数据没有 `displayThumbnail` 时的兜底：读原图 → 现场降级成小图。
     ///
     /// **只走 `ImageDownsampler`，永远不 `UIImage(data: raw)`** —— 后者会全分辨率解码
@@ -173,6 +179,8 @@ actor ProjectImageLoader {
         /// 多零件图纸。**必须跟其它 blob 同批取** —— 它不在这份快照里的话，
         /// 归档就会声称"这个项目没有零件数据"，恢复端照办把用户的多零件进度清掉。
         let partsSheetData: Data?
+        /// 拼完时间。不是 blob，但要跟网格 / 零件数据同一次取，理由同上。
+        let patternFinishedAt: Date?
     }
 
     enum LoadError: Error, CustomStringConvertible {
@@ -216,7 +224,8 @@ actor ProjectImageLoader {
         )
         descriptor.fetchLimit = 1
         descriptor.propertiesToFetch = [
-            \.thumbnail, \.finishedImage, \.displayThumbnail, \.patternGridData, \.partsSheetData
+            \.thumbnail, \.finishedImage, \.displayThumbnail, \.patternGridData, \.partsSheetData,
+            \.patternFinishedAt
         ]
         do {
             let context = ModelContext(container)
@@ -241,7 +250,8 @@ actor ProjectImageLoader {
                 finishedImage: row.finishedImage,
                 displayThumbnail: row.displayThumbnail,
                 patternGridData: row.patternGridData,
-                partsSheetData: row.partsSheetData
+                partsSheetData: row.partsSheetData,
+                patternFinishedAt: row.patternFinishedAt
             )
         } catch let error as LoadError {
             // **必须先透传自己的错误。** 上面 `projectRowMissing` 的 throw 就在这个
@@ -304,11 +314,11 @@ actor ProjectImageLoader {
 
     /// 同上，但把「fetch 抛错」留给调用方。取图那几条把抛错和无图一起压成 nil 是对的
     /// （晚一点出图而已），要写回原地的那几条不行 —— 见 `partsSheet(for:)`。
-    private func fetchColumnResult(
+    private func fetchColumnResult<Value>(
         projectId: UUID,
-        keyPath: KeyPath<SDProjectRecord, Data?>,
+        keyPath: KeyPath<SDProjectRecord, Value?>,
         event: String
-    ) -> Result<Data?, Error> {
+    ) -> Result<Value?, Error> {
         var descriptor = FetchDescriptor<SDProjectRecord>(
             predicate: #Predicate { $0.id == projectId }
         )

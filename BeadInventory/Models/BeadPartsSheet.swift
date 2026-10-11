@@ -388,11 +388,12 @@ struct BeadPartsSheet: Codable, Equatable, Sendable {
     /// 写入时已按现有零件过滤，读的时候也跟现有零件再对一遍。
     /// Optional 是为了老数据（理由见 `boards`）。
     var assembledPartIds: [UUID]?
-    /// 用户在拼图模式里点「拼完了」的时间。nil = 还在拼。
+    /// **老字段，不再写入新值。** 拼完时间现在记在 `SDProjectRecord.patternFinishedAt`。
     ///
-    /// 只认用户这一下，不从颜色勾了几个、零件组装了几块推出来：拼没拼完只有他自己知道，
-    /// 自动推的规则他看不见，推错了就是「我明明拼完了它还说没拼完」。
-    /// 存在图纸数据里而不是项目字段上：跟着 iCloud 走，也不用改数据库结构。
+    /// 早先的版本把「拼完了」记在这里。这份数据每走一步就整份写回，
+    /// 另一台设备刚点的拼完会被这台设备手里的旧值盖掉，所以挪走了。
+    /// 留着它只为读出老数据：概况拿它兜底，打开流程时搬到项目上（见 `PatternFinishLoader`）。
+    /// 还没搬成功时流程存进度会原样带回去，「移回正在拼」时清掉。
     var finishedAt: Date?
     var lastUpdatedAt: Date
 

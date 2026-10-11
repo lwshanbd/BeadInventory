@@ -18,7 +18,8 @@
 //  ## 拼没拼完只认用户那一下
 //
 //  拼图页只有两组：「正在拼」「拼完」。进过拼图模式、存过东西的都在「正在拼」；
-//  用户在拼图模式里点了「拼完了」才进「拼完」（记在网格 / 零件数据的 `finishedAt` 上）。
+//  用户在拼图模式里点了「拼完了」才进「拼完」（记在项目的 `patternFinishedAt` 上，
+//  一个项目一份，不分模式）。
 //  不从颜色勾了几个、零件组装了几块往外推 —— 推出来的规则用户看不见，
 //  推错了就是「我明明拼完了它还说没拼完」。
 //
@@ -106,19 +107,20 @@ struct PatternWorkSummary: Equatable, Sendable {
         mode == .single ? String(localized: "单图纸") : String(localized: "多零件")
     }
 
-    static func single(_ grid: BeadPatternGrid) -> PatternWorkSummary {
+    /// - Parameter finishedAt: 项目的拼完时间（见 `ProjectImageLoader.patternWork(for:)`）。两种模式共用这一个。
+    static func single(_ grid: BeadPatternGrid, finishedAt: Date?) -> PatternWorkSummary {
         PatternWorkSummary(
             mode: .single,
-            stage: grid.finishedAt == nil ? .inProgress : .finished,
-            updatedAt: max(grid.lastCalibratedAt, grid.finishedAt ?? .distantPast)
+            stage: finishedAt == nil ? .inProgress : .finished,
+            updatedAt: max(grid.lastCalibratedAt, finishedAt ?? .distantPast)
         )
     }
 
-    static func parts(_ sheet: BeadPartsSheet) -> PatternWorkSummary {
+    static func parts(_ sheet: BeadPartsSheet, finishedAt: Date?) -> PatternWorkSummary {
         PatternWorkSummary(
             mode: .parts,
-            stage: sheet.finishedAt == nil ? .inProgress : .finished,
-            updatedAt: max(sheet.lastUpdatedAt, sheet.finishedAt ?? .distantPast)
+            stage: finishedAt == nil ? .inProgress : .finished,
+            updatedAt: max(sheet.lastUpdatedAt, finishedAt ?? .distantPast)
         )
     }
 
@@ -140,18 +142,36 @@ struct PatternWork: Sendable {
 
 extension ProjectImageLoader {
     /// 零件数据一份能有一两 MB，在这个 actor 里解码、算完就扔，不带回主线程。
+    ///
+    /// 拼完时间以项目那一列为准。那一列是空的、网格 / 零件数据里却记着（老版本的存法），
+    /// 就用数据里的。打开拼图模式时会搬到项目上（见 `PatternFinishLoader`），
+    /// 搬之前、或者搬失败时，都靠这里兜底。
     func patternWork(for projectId: UUID) -> PatternWork {
         var work = PatternWork()
+        var grid: BeadPatternGrid?
+        var sheet: BeadPartsSheet?
         switch patternGridLoad(for: projectId) {
-        case .loaded(let grid): work.single = .single(grid)
+        case .loaded(let loaded): grid = loaded
         case .missing: break
         case .unreadable: work.unreadable = true
         }
         switch partsSheet(for: projectId) {
-        case .loaded(let sheet): work.parts = .parts(sheet)
+        case .loaded(let loaded): sheet = loaded
         case .missing: break
         case .unreadable: work.unreadable = true
         }
+        let finishedAt: Date?
+        switch patternFinishedAt(for: projectId) {
+        case .success(let date):
+            finishedAt = date ?? grid?.finishedAt ?? sheet?.finishedAt
+        case .failure:
+            // 读不出来就别猜：猜成「没拼完」会把拼完的项目挪进「正在拼」。
+            // 两份概况都不给，调用方留着上次的；第一次扫描没有上次的，这个项目这一轮先不列
+            work.unreadable = true
+            return work
+        }
+        work.single = grid.map { .single($0, finishedAt: finishedAt) }
+        work.parts = sheet.map { .parts($0, finishedAt: finishedAt) }
         return work
     }
 }
@@ -180,8 +200,8 @@ final class PatternWorkStore: ObservableObject {
 
     /// 这个项目现在该用哪种模式、拼到哪了。
     ///
-    /// 两种都做过：有一种点过「拼完了」就用那种 —— 进另一种模式看一眼不能把拼完藏起来。
-    /// 都没拼完时，这台设备上最后用的那种优先，没记录就取最近改过的那种。
+    /// 拼没拼完是项目的事，两种模式的拼完状态一样，这里只挑模式：
+    /// 两种都做过时，这台设备上最后用的那种优先，没记录就取最近改过的那种。
     /// 只做过一种：就是那种。本机最近选了另一种但那边还什么都没做（比如点了
     /// 「更换拼图模式」又退出来），仍然显示做过的这种 —— 不能让一次误点把进度藏起来。
     /// 都没做过但这台设备上选过模式：那种模式的空概况。
@@ -190,8 +210,6 @@ final class PatternWorkStore: ObservableObject {
         let work = works[projectId]
         switch (work?.single, work?.parts) {
         case let (s?, p?):
-            if s.stage == .finished && p.stage != .finished { return s }
-            if p.stage == .finished && s.stage != .finished { return p }
             if let recent { return recent == .single ? s : p }
             return s.updatedAt >= p.updatedAt ? s : p
         case let (s?, nil):
@@ -252,31 +270,30 @@ final class PatternWorkStore: ObservableObject {
         return summary(for: projectId)
     }
 
-    /// 「移回正在拼」：把两种模式数据上的 `finishedAt` 都清掉。
-    /// - Returns: false = 有一份没读出来或没写进去，调用方要告诉用户。
-    ///   读不出来时不能当成「没有数据」跳过 —— 那样点了没反应，也没有说法。
+    /// 「移回正在拼」：清掉项目上的拼完时间。
+    ///
+    /// 顺带清掉老版本记在网格 / 零件数据里的 `finishedAt`，不然概况会拿它兜底，
+    /// 看起来还是拼完。没有老数据的项目只读不写。
+    /// - Returns: false = 没写进去，或者有一份数据没读出来（没法确认里面有没有老的拼完时间），
+    ///   调用方要告诉用户。读不出来时不能当成「没有数据」跳过 —— 那样点了没反应，也没有说法。
     @discardableResult
     func moveBackToInProgress(_ projectId: UUID, using inventoryManager: InventoryManager) -> Bool {
+        defer { Task { await refresh(projectId, using: inventoryManager) } }
+        // 先读完再写：读到一半失败就什么都不动，按钮和库里保持一致
+        guard case .success(let gridData) = inventoryManager.fetchProjectPatternGridDataResult(for: projectId),
+              case .success(let sheetData) = inventoryManager.fetchProjectPartsSheetDataResult(for: projectId) else {
+            return false
+        }
+        guard inventoryManager.updateProjectPatternFinishedAt(projectId, finishedAt: nil) else { return false }
         var ok = true
-        switch inventoryManager.fetchProjectPatternGridDataResult(for: projectId) {
-        case .failure:
-            ok = false
-        case .success(let data):
-            if var grid = SDProjectRecord.decodePatternGrid(data, projectId: projectId), grid.finishedAt != nil {
-                grid.finishedAt = nil
-                ok = inventoryManager.updateProjectPatternGrid(projectId, grid: grid) && ok
-            }
+        if var grid = SDProjectRecord.decodePatternGrid(gridData, projectId: projectId), grid.finishedAt != nil {
+            grid.finishedAt = nil
+            ok = inventoryManager.updateProjectPatternGrid(projectId, grid: grid) && ok
         }
-        switch inventoryManager.fetchProjectPartsSheetDataResult(for: projectId) {
-        case .failure:
-            ok = false
-        case .success(let data):
-            if var sheet = SDProjectRecord.decodePartsSheet(data, projectId: projectId), sheet.finishedAt != nil {
-                sheet.finishedAt = nil
-                ok = inventoryManager.updateProjectPartsSheet(projectId, sheet: sheet) && ok
-            }
+        if var sheet = SDProjectRecord.decodePartsSheet(sheetData, projectId: projectId), sheet.finishedAt != nil {
+            sheet.finishedAt = nil
+            ok = inventoryManager.updateProjectPartsSheet(projectId, sheet: sheet) && ok
         }
-        Task { await refresh(projectId, using: inventoryManager) }
         return ok
     }
 
@@ -289,6 +306,63 @@ final class PatternWorkStore: ObservableObject {
             works[projectId] = work.isEmpty ? nil : work
         }
         return summary(for: projectId)
+    }
+}
+
+// MARK: - 流程里的「拼完了」
+
+/// 打开拼图流程时读拼完状态，顺手把老数据搬到项目上。
+/// 点「拼完了 / 移回正在拼」的写入在两个流程的 `markFinished` / `markUnfinished` 里。
+@MainActor
+enum PatternFinishLoader {
+    struct Result {
+        /// 给按钮用：拼完了没有。
+        let finishedAt: Date?
+        /// 流程存进度时要原样写回自己那份数据的老拼完时间。
+        ///
+        /// 流程存进度是整份新建网格 / 零件数据，不带老字段。老值还没搬到项目上时
+        /// （读项目那一列失败、或者搬的时候没写进去），不带回去它就在第一次存进度时没了，
+        /// 拼完的项目悄悄回到「正在拼」。搬成功了是 nil。
+        let legacyToKeep: Date?
+    }
+
+    /// - Parameter ownLegacy: 流程自己读到的那份数据里的老 `finishedAt`。
+    ///   另一种模式的那份由这里自己去读：老值可能只记在另一边，
+    ///   只看自己这边的话，按钮说没拼完，工作台却说拼完了。
+    static func load(
+        _ projectId: UUID,
+        mode: PatternMode,
+        ownLegacy: Date?,
+        using inventoryManager: InventoryManager
+    ) async -> Result {
+        guard let loader = inventoryManager.imageLoader else {
+            AppLogger.shared.error("PatternFinish", "no_loader", metadata: ["projectId": projectId.uuidString])
+            return Result(finishedAt: ownLegacy, legacyToKeep: ownLegacy)
+        }
+        switch await loader.patternFinishedAt(for: projectId) {
+        case .success(let date?):
+            return Result(finishedAt: date, legacyToKeep: nil)
+        case .success(nil):
+            var legacy = ownLegacy
+            if legacy == nil {
+                switch mode {
+                case .single:
+                    if case .loaded(let sheet) = await loader.partsSheet(for: projectId) { legacy = sheet.finishedAt }
+                case .parts:
+                    if case .loaded(let grid) = await loader.patternGridLoad(for: projectId) { legacy = grid.finishedAt }
+                }
+            }
+            guard let legacy else { return Result(finishedAt: nil, legacyToKeep: nil) }
+            guard inventoryManager.updateProjectPatternFinishedAt(projectId, finishedAt: legacy) else {
+                AppLogger.shared.error("PatternFinish", "legacy_migration_failed", metadata: ["projectId": projectId.uuidString])
+                return Result(finishedAt: legacy, legacyToKeep: ownLegacy)
+            }
+            return Result(finishedAt: legacy, legacyToKeep: nil)
+        case .failure:
+            // 读不出项目那一列：按钮先照老数据显示，老值留在数据里下次再搬
+            AppLogger.shared.error("PatternFinish", "column_unreadable", metadata: ["projectId": projectId.uuidString])
+            return Result(finishedAt: ownLegacy, legacyToKeep: ownLegacy)
+        }
     }
 }
 

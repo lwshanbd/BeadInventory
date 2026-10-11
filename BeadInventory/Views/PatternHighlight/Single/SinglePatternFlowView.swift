@@ -89,8 +89,10 @@ struct SinglePatternFlowView: View {
     @State private var revision = 0
     /// 这张图纸上哪些色号已经拼完了。语义（为什么记的是格数）见 `BeadPatternGrid.doneColors`。
     @State private var doneColors: [String: Int] = [:]
-    /// 用户点「拼完了」的时间。见 `BeadPatternGrid.finishedAt`。
+    /// 用户点「拼完了」的时间，打开时从项目上读（见 `PatternFinishLoader`）。只管按钮显示哪个，不存进网格。
     @State private var finishedAt: Date?
+    /// 还没搬到项目上的老拼完时间，存进度时原样写回网格（见 `PatternFinishLoader.Result.legacyToKeep`）。
+    @State private var legacyFinishedAtToKeep: Date?
 
     enum Step: Hashable { case grid, baseColor, review, highlight }
 
@@ -103,6 +105,10 @@ struct SinglePatternFlowView: View {
         /// 那句话再也不出现，而「关闭」会因为 `persist()` 一直返回 false
         /// 变成一个既不响应也不解释的按钮。
         case saveFailed(Int)
+        /// 「拼完了 / 移回正在拼」没写进去。跟 `saveFailed` 分开：这时进度已经存好了，
+        /// 没存上的只是拼完状态，而且之后的自动保存也不会替他补上 —— 那句「继续往下每一步都会自动保存」在这里是错的。
+        /// 带着「第几次」，理由同 `saveFailed`。
+        case finishFailed(markingFinished: Bool, attempt: Int)
         case loadFailed
         /// 改了裁切范围，已经判好的颜色要重来。
         case confirmRecrop
@@ -120,6 +126,7 @@ struct SinglePatternFlowView: View {
         var id: String {
             switch self {
             case .saveFailed(let attempt): return "save\(attempt)"
+            case .finishFailed(_, let attempt): return "finish\(attempt)"
             case .loadFailed: return "load"
             case .confirmRecrop: return "recrop"
             case .classifyFailed: return "classify"
@@ -295,6 +302,12 @@ struct SinglePatternFlowView: View {
                     primaryButton: .cancel(Text("知道了")),
                     secondaryButton: .destructive(Text("仍然关闭")) { dismiss() }
                 )
+            case .finishFailed(let markingFinished, _):
+                return Alert(
+                    title: markingFinished ? Text("无法标记为拼完") : Text("无法移回正在拼"),
+                    message: Text("这个项目的数据暂时读写不了，请稍后再试。"),
+                    dismissButton: .cancel(Text("好"))
+                )
             case .loadFailed:
                 return Alert(
                     title: Text("之前的进度本次无法打开"),
@@ -434,7 +447,7 @@ struct SinglePatternFlowView: View {
             emptyHex: emptyHex,
             gridConfirmed: sheet.gridConfirmed,
             doneColors: persistedDoneColors(matching: matrix),
-            finishedAt: finishedAt
+            finishedAt: legacyFinishedAtToKeep
         )
     }
 
@@ -559,7 +572,12 @@ struct SinglePatternFlowView: View {
         // `?? .unreadable` 而不是 `.missing`：loader 为 nil 意味着连 modelContext 都没有，
         // 那是「我根本没法读你的数据」。
         let loaded = await loader?.patternGridLoad(for: id) ?? .unreadable
+        var legacyFinishedAt: Date?
+        if case .loaded(let grid) = loaded { legacyFinishedAt = grid.finishedAt }
+        let finish = await PatternFinishLoader.load(id, mode: .single, ownLegacy: legacyFinishedAt, using: inventoryManager)
         guard !Task.isCancelled else { return }
+        self.finishedAt = finish.finishedAt
+        self.legacyFinishedAtToKeep = finish.legacyToKeep
 
         self.overview = low
         self.sourcePixelSize = native
@@ -597,7 +615,6 @@ struct SinglePatternFlowView: View {
             self.calibration = grid.calibration
             self.emptyHex = grid.emptyHex
             self.doneColors = grid.doneColors ?? [:]
-            self.finishedAt = grid.finishedAt
             // 老数据（还没用新流程重对过）才保留原来的四角，理由见 `legacyCorners`
             self.legacyCorners = grid.calibration == nil ? grid.corners : nil
             // 判断落点要用这个局部值，**不要写完 `sheet` 再读回来** ——
@@ -931,26 +948,35 @@ struct SinglePatternFlowView: View {
         }
     }
 
-    /// 用户点了「拼完了」并确认：记下拼完的时间，存好，离开。
+    /// 用户点了「拼完了」并确认：存好进度，记下拼完的时间，离开。
     /// 工作台把它挪进「拼完」；没扣减的项目，入口那边接着问要不要扣（见 `PatternModeLauncher`）。
+    ///
+    /// 拼完时间只写项目上那一列，不跟着进度数据走（理由见 `SDProjectRecord.patternFinishedAt`）。
     private func markFinished() {
-        finishedAt = Date()
-        dirty = true
-        guard persist() else {
-            // 没存上：按钮别变，界面跟库保持一致。「这一步没存上」persist 自己会弹。
-            finishedAt = nil
+        // 进度没存上：「此步骤未保存」persist 自己会弹，按钮别变
+        guard persist() else { return }
+        let now = Date()
+        guard inventoryManager.updateProjectPatternFinishedAt(project.id, finishedAt: now) else {
+            saveAttempt += 1
+            prompt = .finishFailed(markingFinished: true, attempt: saveAttempt)
             return
         }
+        finishedAt = now
+        legacyFinishedAtToKeep = nil
         onFinished?()
         dismiss()
     }
 
-    /// 「移回正在拼」：清掉拼完的时间，存好，留在拼图模式里接着拼。
+    /// 「移回正在拼」：清掉拼完的时间，留在拼图模式里接着拼。
+    /// 走工作台那个同名操作，老版本记在进度数据里的拼完时间也一起清掉。
     private func markUnfinished() {
-        let previous = finishedAt
+        guard PatternWorkStore.shared.moveBackToInProgress(project.id, using: inventoryManager) else {
+            // 没写进去就把按钮留在「拼完」，界面跟库保持一致
+            saveAttempt += 1
+            prompt = .finishFailed(markingFinished: false, attempt: saveAttempt)
+            return
+        }
         finishedAt = nil
-        dirty = true
-        // 没存上就把按钮还原，理由同 markFinished
-        if !persist() { finishedAt = previous }
+        legacyFinishedAtToKeep = nil
     }
 }

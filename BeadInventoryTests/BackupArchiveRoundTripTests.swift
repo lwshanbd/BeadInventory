@@ -54,7 +54,9 @@ final class BackupArchiveRoundTripTests: XCTestCase {
             finishedImage: ArchivedBlobRef(file: "blobs/\(projectID).finished", bytes: 2048, sha256: String(repeating: "b", count: 64)),
             displayThumbnail: ArchivedBlobRef(file: "blobs/\(projectID).display", bytes: 512, sha256: String(repeating: "c", count: 64)),
             patternGrid: ArchivedBlobRef(file: "blobs/\(projectID).grid", bytes: 256, sha256: String(repeating: "d", count: 64)),
-            partsSheet: ArchivedBlobRef(file: "blobs/\(projectID).parts", bytes: 128, sha256: String(repeating: "e", count: 64))
+            partsSheet: ArchivedBlobRef(file: "blobs/\(projectID).parts", bytes: 128, sha256: String(repeating: "e", count: 64)),
+            patternFinishedAt: Date(timeIntervalSince1970: 1_700_004_000),
+            hasPatternFinishedAt: true
         )
 
         return BackupArchiveManifest(
@@ -135,6 +137,10 @@ final class BackupArchiveRoundTripTests: XCTestCase {
         XCTAssertEqual(p1.patternGrid?.file, p0.patternGrid?.file)
         XCTAssertEqual(p1.partsSheet?.bytes, 128, "partsSheet 不能再丢")
         XCTAssertEqual(p1.partsSheet?.file, p0.partsSheet?.file)
+        // 拼完时间：从网格 / 零件数据里挪出来单独存之后，漏写它就是「恢复后拼完的项目全回到正在拼」
+        XCTAssertEqual(p1.patternFinishedAt?.timeIntervalSince1970 ?? -1,
+                       p0.patternFinishedAt?.timeIntervalSince1970 ?? -1, accuracy: 1)
+        XCTAssertEqual(p1.hasPatternFinishedAt, true)
 
         // 品牌 / 库存 / 自定义色 / 进货记录
         XCTAssertEqual(decoded.brands[0].name, "咪小窝")
@@ -171,6 +177,10 @@ final class BackupArchiveRoundTripTests: XCTestCase {
         XCTAssertNil(decoded.projects[0].thumbnail)
         XCTAssertNil(decoded.projects[0].patternGrid)
         XCTAssertNil(decoded.projects[0].partsSheet)
+        // nil 不会写进 JSON，所以这也就是旧归档的样子：两个键都没有。
+        // 恢复端靠 hasPatternFinishedAt == nil 认出旧归档，改成非可选会让旧归档整份解不开
+        XCTAssertNil(decoded.projects[0].patternFinishedAt)
+        XCTAssertNil(decoded.projects[0].hasPatternFinishedAt)
         XCTAssertNil(decoded.currentBrandId)
         XCTAssertTrue(decoded.purchaseRecords.isEmpty)
     }
