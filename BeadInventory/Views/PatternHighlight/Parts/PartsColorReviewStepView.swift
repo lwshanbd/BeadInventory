@@ -279,14 +279,7 @@ struct PartsColorReviewStepView: View {
                     if parts.count == 1 {
                         brushTarget = BrushTarget(id: parts[0].id)
                     } else {
-                        pickerRows = parts.enumerated().map { index, part in
-                            PartBrushPickerSheet.Row(
-                                id: part.id,
-                                name: part.displayName(order: index),
-                                beadCount: part.beadCount,
-                                footprint: part.footprint(turns: 0)
-                            )
-                        }
+                        pickerRows = makePickerRows()
                         showingPartPicker = true
                     }
                 } label: {
@@ -347,6 +340,7 @@ struct PartsColorReviewStepView: View {
         }) {
             PartBrushPickerSheet(
                 rows: pickerRows,
+                filter: pickerFilter,
                 colors: swatchColors,
                 onPick: { id in
                     pendingBrushId = id
@@ -393,6 +387,7 @@ struct PartsColorReviewStepView: View {
             PartBrushPickerSheet(
                 title: "看哪一块",
                 rows: pickerRows,
+                filter: pickerFilter,
                 colors: swatchColors,
                 onPick: { id in
                     pendingInspectId = id
@@ -493,15 +488,31 @@ struct PartsColorReviewStepView: View {
         }
         // 开之前算一次就够 —— 放进 sheet 的内容闭包里的话，每次求值都要给所有零件
         // 重建一遍 `PartFootprint`（同 `pickerRows`）。
-        pickerRows = parts.enumerated().map { index, part in
+        pickerRows = makePickerRows()
+        showingInspectPicker = true
+    }
+
+    /// 挑零件那一屏的行，顺带数好每一块里有几格是当前这个色号（给「只看含这个色号的」用）。
+    private func makePickerRows() -> [PartBrushPickerSheet.Row] {
+        var matches: [Int: Int] = [:]
+        for ref in groupCells ?? cells(of: selectedGroup) {
+            matches[ref.part, default: 0] += 1
+        }
+        return parts.enumerated().map { index, part in
             PartBrushPickerSheet.Row(
                 id: part.id,
                 name: part.displayName(order: index),
                 beadCount: part.beadCount,
+                matchCount: matches[index] ?? 0,
                 footprint: part.footprint(turns: 0)
             )
         }
-        showingInspectPicker = true
+    }
+
+    /// 挑零件时能按哪个色号筛。空白那一组不给筛：几乎每一块都有空格，筛了等于没筛。
+    private var pickerFilter: PartBrushPickerSheet.ColorFilter? {
+        guard selectedGroup != .empty else { return nil }
+        return .init(label: label(for: selectedGroup))
     }
 
     /// 现在选中的格子指的是哪一块。只有一块零件时永远是它；
@@ -1750,21 +1761,39 @@ private struct PartBrushPickerSheet: View {
         let id: UUID
         let name: String
         let beadCount: Int
+        /// 这一块里有几格是核对页上正在看的那个色号
+        let matchCount: Int
         let footprint: PartFootprint
+    }
+
+    /// 核对页上正在看的那个色号
+    struct ColorFilter {
+        let label: String
     }
 
     /// 挑完要拿去干什么。同一张列表两处在用（改格子 / 看原图），
     /// 标题不跟着变的话，用户点开「看零件」看到的是「改哪一块的格子」。
     var title: LocalizedStringKey = "选择要编辑的区域"
     let rows: [Row]
+    /// nil = 没有可筛的色号（正在看的是空白那一组），只有全部零件
+    let filter: ColorFilter?
     let colors: [String: Color]
     let onPick: (UUID) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
+    /// 默认只列含这个色号的零件：用户是在核对某个色号时点进来的，
+    /// 要找的多半就是这个色号判错了的那一块，几十块零件里不用再一块块翻。
+    @State private var onlyMatching = true
+
+    private var shownRows: [Row] {
+        guard filter != nil, onlyMatching else { return rows }
+        return rows.filter { $0.matchCount > 0 }
+    }
+
     var body: some View {
         NavigationStack {
-            List(rows) { row in
+            List(shownRows) { row in
                 Button { onPick(row.id) } label: {
                     HStack(spacing: Theme.Spacing.md) {
                         PartShapeThumbnail(footprint: row.footprint, colors: colors)
@@ -1778,9 +1807,15 @@ private struct PartBrushPickerSheet: View {
                             Text(row.name)
                                 .font(.subheadline.weight(.medium))
                                 .foregroundColor(Theme.ColorToken.Text.primary)
-                            Text("\(row.beadCount) 颗")
-                                .font(.caption.monospacedDigit())
-                                .foregroundColor(Theme.ColorToken.Text.secondary)
+                            if let filter, onlyMatching {
+                                Text("\(filter.label) \(row.matchCount) 颗 · 共 \(row.beadCount) 颗")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundColor(Theme.ColorToken.Text.secondary)
+                            } else {
+                                Text("\(row.beadCount) 颗")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundColor(Theme.ColorToken.Text.secondary)
+                            }
                         }
 
                         Spacer()
@@ -1793,6 +1828,18 @@ private struct PartBrushPickerSheet: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let filter {
+                    Picker("显示范围", selection: $onlyMatching) {
+                        Text("含 \(filter.label)").tag(true)
+                        Text("全部").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(.bar)
+                }
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
