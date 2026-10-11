@@ -81,4 +81,7 @@ struct BeadPatternGrid: Codable, Equatable, Sendable {
     /// `PartsBoard.doneColors` —— 多零件模式一块板一份，单图纸模式整张图纸就是
     /// 一块板，所以这份挂在网格上。
     var doneColors: [String: Int]? = nil
+
+    /// 用户在拼图模式里点「拼完了」的时间。nil = 还在拼。理由同 `BeadPartsSheet.finishedAt`。
+    var finishedAt: Date? = nil
 }

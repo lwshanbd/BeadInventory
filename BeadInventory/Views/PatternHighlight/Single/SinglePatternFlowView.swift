@@ -40,8 +40,8 @@ import SwiftUI
 
 struct SinglePatternFlowView: View {
     let project: ProjectRecord
-    /// 点了「完成」（不是「关闭」），存好之后、关掉之前调用。
-    /// 入口那边拿它判断要不要问一句「要扣减库存吗」，见 `PatternModeLauncher`。
+    /// 点了「拼完了」，存好之后、关掉之前调用。
+    /// 入口那边拿它问一句「要扣减库存吗」，见 `PatternModeLauncher`。
     var onFinished: (() -> Void)? = nil
 
     @EnvironmentObject var inventoryManager: InventoryManager
@@ -89,6 +89,8 @@ struct SinglePatternFlowView: View {
     @State private var revision = 0
     /// 这张图纸上哪些色号已经拼完了。语义（为什么记的是格数）见 `BeadPatternGrid.doneColors`。
     @State private var doneColors: [String: Int] = [:]
+    /// 用户点「拼完了」的时间。见 `BeadPatternGrid.finishedAt`。
+    @State private var finishedAt: Date?
 
     enum Step: Hashable { case grid, baseColor, review, highlight }
 
@@ -179,12 +181,7 @@ struct SinglePatternFlowView: View {
             .navigationTitle("单图纸模式")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    // 关掉就是关掉，不是丢掉 —— 每一步的结果都已经存过了（见 persist）。
-                    Button("关闭") {
-                        if persist() { dismiss() }
-                    }
-                }
+                ToolbarItem(placement: .topBarLeading) { exitButton }
             }
             .navigationDestination(for: Step.self) { step in
                 // 高清工作图还没裁好时给一句明确的「正在准备」——
@@ -264,6 +261,8 @@ struct SinglePatternFlowView: View {
                             .background(Theme.ColorToken.Surface.background)
                     }
                 }
+                // 每一屏左上角都能直接退出，不用一屏一屏退回第一页。
+                .toolbar { ToolbarItem(placement: .topBarLeading) { exitButton } }
             }
         }
         // **盖在整个 NavigationStack 上，不是盖在根视图上。** 判色是从「底色」那一屏
@@ -367,7 +366,9 @@ struct SinglePatternFlowView: View {
                 // 打一个勾就存一次。一张图纸能拼好几个晚上，中途退出去不该把勾丢了。
                 onPersist: { persist() },
                 onRecalibrate: { path = [] },
-                onFinish: { save() }
+                onFinish: { markFinished() },
+                isFinished: finishedAt != nil,
+                onUnfinish: { markUnfinished() }
             )
             .environmentObject(inventoryManager)
         } else {
@@ -432,7 +433,8 @@ struct SinglePatternFlowView: View {
             calibration: calibration,
             emptyHex: emptyHex,
             gridConfirmed: sheet.gridConfirmed,
-            doneColors: persistedDoneColors(matching: matrix)
+            doneColors: persistedDoneColors(matching: matrix),
+            finishedAt: finishedAt
         )
     }
 
@@ -595,6 +597,7 @@ struct SinglePatternFlowView: View {
             self.calibration = grid.calibration
             self.emptyHex = grid.emptyHex
             self.doneColors = grid.doneColors ?? [:]
+            self.finishedAt = grid.finishedAt
             // 老数据（还没用新流程重对过）才保留原来的四角，理由见 `legacyCorners`
             self.legacyCorners = grid.calibration == nil ? grid.corners : nil
             // 判断落点要用这个局部值，**不要写完 `sheet` 再读回来** ——
@@ -917,9 +920,37 @@ struct SinglePatternFlowView: View {
         return true
     }
 
-    private func save() {
-        guard persist() else { return }
+    // MARK: - 退出 / 拼完了
+
+    /// 存好，离开拼图模式。下次接着拼。
+    private var exitButton: some View {
+        // 退出就是退出，不是丢掉 —— 每一步的结果都已经存过了（见 persist）。
+        // 唯一的例外是这次真的没存进去：那就先别关，alert 会告诉他为什么。
+        Button("退出") {
+            if persist() { dismiss() }
+        }
+    }
+
+    /// 用户点了「拼完了」并确认：记下拼完的时间，存好，离开。
+    /// 工作台把它挪进「拼完」；没扣减的项目，入口那边接着问要不要扣（见 `PatternModeLauncher`）。
+    private func markFinished() {
+        finishedAt = Date()
+        dirty = true
+        guard persist() else {
+            // 没存上：按钮别变，界面跟库保持一致。「这一步没存上」persist 自己会弹。
+            finishedAt = nil
+            return
+        }
         onFinished?()
         dismiss()
+    }
+
+    /// 「移回正在拼」：清掉拼完的时间，存好，留在拼图模式里接着拼。
+    private func markUnfinished() {
+        let previous = finishedAt
+        finishedAt = nil
+        dirty = true
+        // 没存上就把按钮还原，理由同 markFinished
+        if !persist() { finishedAt = previous }
     }
 }

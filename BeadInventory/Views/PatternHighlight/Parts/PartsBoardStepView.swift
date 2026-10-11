@@ -54,11 +54,13 @@ struct PartsBoardStepView: View {
     /// 这套板子是按哪一档松紧排的。nil = 还没排过（或者是没这个字段的老图纸）。
     @Binding var boardSpacing: BoardSpacing?
     let colorSystem: ColorSystem
-    /// 「完成」那个二次确认按项目记「不再询问」，认的就是它（见 `PatternFinishPrompt`）。
     let projectId: UUID
-    /// 擦 / 补完格子立刻落盘 —— 那是对图纸本身的修改，不能等到「完成」那一下。
+    /// 擦 / 补完格子立刻落盘 —— 那是对图纸本身的修改，不能等到「退出」那一下。
     let onPersist: () -> Void
     let onFinish: () -> Void
+    /// 这个项目已经点过「拼完了」。这时主按钮换成「移回正在拼」：在哪儿标的就在哪儿撤回。
+    var isFinished = false
+    var onUnfinish: () -> Void = {}
     /// 去组装模式。板子拼完了，接下来是照着图纸把零件粘起来。
     let onAssemble: () -> Void
 
@@ -148,23 +150,15 @@ struct PartsBoardStepView: View {
     ///
     /// **必须一直看得见**，不能只闪一句就算：挨着的两个零件烫完连成一片，那一刀下去
     /// 边缘就毁了 —— 提示消失之后，板上就是一份看起来完全正常、拼出来会报废的布局。
-    /// 所以它们在板上描红边，「完成」也会先拦一下。
+    /// 所以它们在板上描红边，下面还有一条常驻提示。点「拼完了」时不再拦：那时零件早就
+    /// 熨好了，再说「会粘连」已经晚了。
     ///
     /// **跟着板子重算，不是修完存一次。** 早先它是 `repair` 的返回值缓存下来的，
-    /// 于是用户照着提示把零件拖开、或者重排一遍之后，红边还红着、「完成」还拦着 ——
-    /// 而板子明明已经好了。一个跟着现实走的警告才有人看，一个赖着不走的警告只会被
-    /// 学会无视，而旁边就摆着「仍然完成」。
+    /// 于是用户照着提示把零件拖开、或者重排一遍之后，红边还红着 —— 而板子明明已经好了。
+    /// 一个跟着现实走的警告才有人看，一个赖着不走的警告只会被学会无视。
     @State private var invalidPlacements: Set<UUID> = []
-    /// 板上还有挨着的零件时按了「完成」
-    @State private var confirmFinishInvalid = false
-    /// 「完成」之前要不要问一句，按项目记（见 `PatternFinishPrompt`）。菜单里那个勾要跟着它变，
-    /// 所以是 `@AppStorage` 而不是直接读 `UserDefaults`。
-    @AppStorage(PatternFinishPrompt.storageKey) private var finishPrompt = PatternFinishPrompt(rawValue: "")
-    /// 还有颜色没标记完成时按了「完成」（见 `PatternFinishPrompt`）
+    /// 按了「拼完了」，等用户确认
     @State private var confirmFinish = false
-    /// 弹确认那一刻几块板加起来还剩几个颜色没标记。**存下来，不在 message 里现算** ——
-    /// 数它要把每块板上每一颗豆子过一遍，而弹窗开着的这段时间这个数不会变。
-    @State private var unfinishedCount = 0
     /// 按了几次「标记已完成」或「确认完成」。只拿来给触觉当触发器。
     @State private var doneToggles = 0
     /// 颜色全勾完了、但还没按「确认完成」的板。两种来路：一块板从「没拼完」变成「拼完」
@@ -461,31 +455,15 @@ struct PartsBoardStepView: View {
                 )
             }
         }
-        .alert("板上有零件间距过近", isPresented: $confirmFinishInvalid) {
-            Button("返回调整位置", role: .cancel) { confirmFinishInvalid = false }
-            // 写「完成并退出」不写「继续完成」：这条路绕开了「还有颜色没标记完成」那道确认
-            //（理由见下面那个 alert 上的注释），是这一屏唯一一条不会告诉用户「按下去流程就关了」
-            // 的出口。那句话塞进正文会把「烫完会粘连」冲淡，写在按钮上正好。
-            // 推到下一轮的理由同下面那个 alert。
-            Button("完成并退出") { DispatchQueue.main.async { onFinish() } }
-        } message: {
-            Text("有 \(invalidPlacements.count) 个零件（红边标出）与相邻零件间距不足，熨烫后会粘连，需用剪刀分开，可能损坏边缘")
-        }
-        // 还有颜色没拼完就先问一句 —— 理由和「本项目不再询问」的去处见 PatternFinishPrompt。
-        // 间距那一条已经拦过的就不再拦第二道：连着弹两个弹窗，第二个必然是被闭眼点掉的。
-        .alert("还有颜色没有标记完成", isPresented: $confirmFinish) {
-            // `onFinish` 一律推到下一轮再走。它背后的 `persist()` 存不上时会在父视图里
-            // 置起「存盘失败」那句话，而从一个正在收尾的 alert 的按钮闭包里置起另一个 alert，
-            // `.alert(item:)` 收尾那一下写回 nil 会把它吞掉 —— 用户点完「完成」屏幕上
-            // 什么都不会发生，也没有任何说法（见 SinglePatternFlowView.requestClassification）。
-            Button("完成") { DispatchQueue.main.async { onFinish() } }
-            Button("完成，本项目不再询问") {
-                finishPrompt.setAsksBeforeFinishing(false, for: projectId)
-                DispatchQueue.main.async { onFinish() }
-            }
-            Button("继续拼", role: .cancel) {}
-        } message: {
-            Text("还有 \(unfinishedCount) 个颜色没有标记完成。现在完成会退出这个项目，进度已保存，下次可以接着拼。")
+        // 「拼完了」：把这个项目放进工作台的「拼完」。只看用户这一下，不看颜色勾了几个、
+        // 零件组装了几块 —— 拼没拼完只有他自己知道。
+        //
+        // `onFinish` 推到下一轮再走：它背后的 `persist()` 存不上时会在父视图里置起
+        // 「存盘失败」那句话，而从一个正在收尾的 alert 的按钮闭包里置起另一个 alert，
+        // `.alert(item:)` 收尾那一下写回 nil 会把它吞掉（见 SinglePatternFlowView.requestClassification）。
+        .alert("标记为拼完？", isPresented: $confirmFinish) {
+            Button("取消", role: .cancel) {}
+            Button("确定") { DispatchQueue.main.async { onFinish() } }
         }
         .alert("重新排列？", isPresented: Binding(
             get: { repackTarget != nil },
@@ -701,15 +679,6 @@ struct PartsBoardStepView: View {
                     onCustom: { pendingCustomSize = nil; customSizeTarget = .repack }
                 )
             }
-            // 弹窗里点过「本项目不再询问」就回不去了，得在这儿留个开关打回来。
-            // 跟弹窗一样，只管当前这个项目。
-            Button { finishPrompt.setAsksBeforeFinishing(!asksBeforeFinish, for: projectId) } label: {
-                if asksBeforeFinish {
-                    Label("完成前询问", systemImage: "checkmark")
-                } else {
-                    Text("完成前询问")
-                }
-            }
             if let board = currentBoard, !board.placements.isEmpty {
                 Button("清空这块板", role: .destructive) { clearCurrentBoard() }
             }
@@ -865,20 +834,23 @@ struct PartsBoardStepView: View {
                 trayTabs
             }
 
-            // 按下去不一定就走：还有零件挨着、或者还有颜色没标记完成，都先问一句
-            //（见 `requestFinish`）。**不是禁用按钮** —— 灰着不说话，用户只会以为
-            // App 坏了；而且「就这么拼」也可能真是他的决定（他也许打算拼完自己剪开）。
-            // 所以说清楚代价，让他自己点。
             HStack(spacing: Theme.Spacing.md) {
                 // 不等板子全部标完才给进：几块板拼好了就可以先粘那几块上的零件
                 Button(action: onAssemble) {
                     Label("组装", systemImage: "cube").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-                Button(action: requestFinish) {
-                    Label("完成", systemImage: "checkmark").frame(maxWidth: .infinity)
+                if isFinished {
+                    Button(action: onUnfinish) {
+                        Label("移回正在拼", systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                } else {
+                    Button { confirmFinish = true } label: {
+                        Label("拼完了", systemImage: "checkmark").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
             }
         }
         .padding()
@@ -1745,60 +1717,6 @@ struct PartsBoardStepView: View {
             for bead in footprints[placement.id]?.beads ?? [] { keys.insert(bead.key) }
         }
         return keys
-    }
-
-    // MARK: - 完成
-
-    /// 按下「完成」。**间距有问题就只弹间距那一个**，颜色这道不再问（理由见
-    /// `confirmFinishInvalid` 那条 alert 上的注释）；间距没问题才看颜色。
-    ///
-    /// 全部标记完了不问、按过「不再询问」不问 —— 一个二次确认要是每次都弹，
-    /// 用户学会的是闭着眼睛点掉它，那它就等于不存在了。
-    private func requestFinish() {
-        if !invalidPlacements.isEmpty {
-            confirmFinishInvalid = true
-            return
-        }
-        // **形状当场算，不读 `footprints`。** 那份缓存是 `.task(id: shapeSignature)` 填的，
-        // 它落后一步的时候数不到豆子，而数不到会被当成「这块板拼完了」直接放行 ——
-        // 正好是这一屏要拦的那件事。一次点击遍历一遍所有摆放，代价可以忽略。
-        let remaining = unfinishedColorCount(using: makeFootprints())
-        guard remaining > 0, asksBeforeFinish else {
-            onFinish()
-            return
-        }
-        unfinishedCount = remaining
-        confirmFinish = true
-    }
-
-    private var asksBeforeFinish: Bool {
-        finishPrompt.asksBeforeFinishing(projectId)
-    }
-
-    /// 还有几个颜色没标记完成。
-    ///
-    /// **数所有板，不是只数当前这块。** 用户可能正停在第二块板上，而第一块还剩三个色号 ——
-    /// 只看眼前这块的话，那三个色号在他按「完成」时一声不吭地过去了。
-    ///
-    /// **按色号去重，不是把每块板的数目加起来。** 标记是按板记的（`PartsBoard.isColorDone`），
-    /// 同一个 H7 在三块板上都没打勾，累加出来是 3 —— 而用户知道这套图纸只剩一个色号没拼。
-    /// 弹窗那句话说的是「几个颜色」，就得是颜色的个数。
-    ///
-    /// 写成 func 不写成计算属性：它要把每块板上每一颗豆子过一遍，带括号的调用才提示
-    /// 「这个要花钱」，别顺手写进 `body` 或者 alert 的 `message`。
-    private func unfinishedColorCount(using shapes: [UUID: PartFootprint]) -> Int {
-        var pending: Set<String> = []
-        for board in boards {
-            var counts: [String: Int] = [:]
-            for placement in board.placements {
-                guard let footprint = shapes[placement.id] else { continue }
-                for bead in footprint.beads { counts[bead.key, default: 0] += 1 }
-            }
-            for (key, count) in counts where !board.isColorDone(key, count: count) {
-                pending.insert(key)
-            }
-        }
-        return pending.count
     }
 
     private func label(for key: String) -> String {

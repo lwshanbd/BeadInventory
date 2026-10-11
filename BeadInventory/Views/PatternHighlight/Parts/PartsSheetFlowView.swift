@@ -33,8 +33,8 @@ import SwiftUI
 
 struct PartsSheetFlowView: View {
     let project: ProjectRecord
-    /// 点了「完成」（不是「关闭」），存好之后、关掉之前调用。
-    /// 入口那边拿它判断要不要问一句「要扣减库存吗」，见 `PatternModeLauncher`。
+    /// 点了「拼完了」，存好之后、关掉之前调用。
+    /// 入口那边拿它问一句「要扣减库存吗」，见 `PatternModeLauncher`。
     var onFinished: (() -> Void)? = nil
 
     @EnvironmentObject var inventoryManager: InventoryManager
@@ -100,6 +100,8 @@ struct PartsSheetFlowView: View {
     @State private var syncedCellCounts: [String: Int]?
     /// 组装模式里勾掉的零件，见 `BeadPartsSheet.assembledPartIds`
     @State private var assembled: Set<UUID> = []
+    /// 用户点「拼完了」的时间。见 `BeadPartsSheet.finishedAt`。
+    @State private var finishedAt: Date?
 
     @State private var busy: String?
 
@@ -238,13 +240,7 @@ struct PartsSheetFlowView: View {
             .navigationTitle("多零件模式")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    // 关掉就是关掉，不是丢掉 —— 每一步的结果都已经存过了（见 persist）。
-                    // 唯一的例外是这次真的没存进去：那就先别关，alert 会告诉他为什么。
-                    Button("关闭") {
-                        if persist() { dismiss() }
-                    }
-                }
+                ToolbarItem(placement: .topBarLeading) { exitButton }
             }
             .navigationDestination(for: Step.self) { step in
                 // 高清工作图还没裁好时给一个明确的「正在准备」——
@@ -263,7 +259,9 @@ struct PartsSheetFlowView: View {
                             colorSystem: project.colorSystem,
                             projectId: project.id,
                             onPersist: { persist() },
-                            onFinish: { save() },
+                            onFinish: { markFinished() },
+                            isFinished: finishedAt != nil,
+                            onUnfinish: { markUnfinished() },
                             onAssemble: {
                                 persist()
                                 path = [.list, .cellSize, .baseColor, .review, .board, .assembly]
@@ -279,7 +277,9 @@ struct PartsSheetFlowView: View {
                             assembled: tracked($assembled),
                             colorSystem: project.colorSystem,
                             onPersist: { persist() },
-                            onFinish: { save() }
+                            onFinish: { markFinished() },
+                            isFinished: finishedAt != nil,
+                            onUnfinish: { markUnfinished() }
                         )
                         .environmentObject(inventoryManager)
                     } else if work != nil {
@@ -338,6 +338,8 @@ struct PartsSheetFlowView: View {
                             .background(Theme.ColorToken.Surface.background)
                     }
                 }
+                // 每一屏左上角都能直接退出，不用一屏一屏退回第一页。
+                .toolbar { ToolbarItem(placement: .topBarLeading) { exitButton } }
             }
         }
         // **盖在整个 NavigationStack 上，不是盖在根视图上。** 判色是从「底色和任意色」
@@ -521,6 +523,7 @@ struct PartsSheetFlowView: View {
             self.legendUsage = legend
             self.syncedCellCounts = saved.syncedCellCounts
             self.assembled = Set(saved.assembledPartIds ?? []).intersection(liveIds)
+            self.finishedAt = saved.finishedAt
 
             // 以前就判完色的图纸，这次不改任何东西退出去的话，计划里还是 AI 读的数。
             // 所以进来就同步一次。格子和份数都没变过的不会动计划（见 `syncPlannedUsageFromPartsSheet`）。
@@ -1255,6 +1258,7 @@ struct PartsSheetFlowView: View {
         // 存的时候按现有零件过一遍，删掉的零件不带进去
         let liveAssembled = parts.map(\.id).filter(assembled.contains)
         sheet.assembledPartIds = liveAssembled.isEmpty ? nil : liveAssembled
+        sheet.finishedAt = finishedAt
         // 按存档里有几张判断，不按这台设备上有几个原图文件（见 `load`）
         if rois.count > 1 || calibrations.count > 1 {
             sheet.pageROIs = rois
@@ -1288,9 +1292,37 @@ struct PartsSheetFlowView: View {
         return true
     }
 
-    private func save() {
-        guard persist() else { return }
+    // MARK: - 退出 / 拼完了
+
+    /// 存好，离开拼图模式。下次接着拼。
+    private var exitButton: some View {
+        // 退出就是退出，不是丢掉 —— 每一步的结果都已经存过了（见 persist）。
+        // 唯一的例外是这次真的没存进去：那就先别关，alert 会告诉他为什么。
+        Button("退出") {
+            if persist() { dismiss() }
+        }
+    }
+
+    /// 用户点了「拼完了」并确认：记下拼完的时间，存好，离开。
+    /// 工作台把它挪进「拼完」；没扣减的项目，入口那边接着问要不要扣（见 `PatternModeLauncher`）。
+    private func markFinished() {
+        finishedAt = Date()
+        dirty = true
+        guard persist() else {
+            // 没存上：按钮别变，界面跟库保持一致。「这一步没存上」persist 自己会弹。
+            finishedAt = nil
+            return
+        }
         onFinished?()
         dismiss()
+    }
+
+    /// 「移回正在拼」：清掉拼完的时间，存好，留在拼图模式里接着拼。
+    private func markUnfinished() {
+        let previous = finishedAt
+        finishedAt = nil
+        dirty = true
+        // 没存上就把按钮还原，理由同 markFinished
+        if !persist() { finishedAt = previous }
     }
 }

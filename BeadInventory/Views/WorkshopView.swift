@@ -81,7 +81,7 @@ struct WorkshopView: View {
     private func chooseDefaultPageIfNeeded() {
         guard pageRaw.isEmpty, store.hasLoadedOnce else { return }
         let anyInProgress = inventoryManager.projects.contains {
-            store.summary(for: $0.id)?.stage == .inProgress
+            store.listedSummary(for: $0.id)?.stage == .inProgress
         }
         pageRaw = (anyInProgress ? Page.puzzle : Page.scan).rawValue
     }
@@ -89,9 +89,10 @@ struct WorkshopView: View {
 
 // MARK: - 拼图页
 
-/// 进过拼图模式的项目，按进度分三组：正在拼 / 待拼 / 已拼完。
+/// 进过拼图模式的项目，分两组：正在拼 / 拼完。
 ///
-/// 计划和记录里的都算 —— 扣减和拼图是两件事。只裁了框、还没量格子的不列。
+/// 计划和记录里的都算 —— 扣减和拼图是两件事。点了「拼完了」的进「拼完」，
+/// 其余存过东西的都在「正在拼」。
 struct PatternBoardView: View {
     @EnvironmentObject private var inventoryManager: InventoryManager
     @ObservedObject private var store = PatternWorkStore.shared
@@ -100,54 +101,33 @@ struct PatternBoardView: View {
     @State private var searchText = ""
     @State private var showsFinished = false
     @State private var patternLaunch: PatternLaunchRequest?
-    @AppStorage("patternBoardReadySort") private var readySortRaw: String = ReadySort.recent.rawValue
-
-    enum ReadySort: String, CaseIterable {
-        case recent
-        case name
-
-        var label: String {
-            switch self {
-            case .recent: return String(localized: "按最近处理")
-            case .name: return String(localized: "按名称")
-            }
-        }
-    }
-
-    private var readySort: ReadySort { ReadySort(rawValue: readySortRaw) ?? .recent }
+    @State private var moveBackFailed = false
 
     struct Item: Identifiable {
         let project: ProjectRecord
         let summary: PatternWorkSummary
         /// 排序用：这台设备上最后打开的时间和数据里记的最后改动时间，取晚的那个
         let touchedAt: Date
-        /// 带上分组。同一个项目从「待拼」挪到「正在拼」时，只用项目 id 的话 LazyVStack
-        /// 会把旧那一行原样搬过去，副标题停在「已排板」不刷新（模拟器里实际看到过）。
-        var id: String { "\(summary.stage.rawValue)-\(project.id)" }
+        /// 带上分组。同一个项目换组时，只用项目 id 的话 LazyVStack 会把旧那一行原样搬过去，
+        /// 内容不刷新（模拟器里实际看到过）。
+        var id: String { "\(summary.stage)-\(project.id)" }
     }
 
     private var items: [Item] {
         let query = searchText.trimmingCharacters(in: .whitespaces)
         return inventoryManager.projects.compactMap { project in
-            guard let summary = store.summary(for: project.id), summary.stage != .preparing else {
-                return nil
-            }
+            guard let summary = store.listedSummary(for: project.id) else { return nil }
             if !query.isEmpty && !project.name.localizedCaseInsensitiveContains(query) { return nil }
             let opened = recents.entry(for: project.id)?.openedAt ?? .distantPast
             return Item(project: project, summary: summary, touchedAt: max(opened, summary.updatedAt))
         }
+        .sorted { $0.touchedAt > $1.touchedAt }
     }
 
     var body: some View {
         let all = items
         let inProgress = all.filter { $0.summary.stage == .inProgress }
-            .sorted { $0.touchedAt > $1.touchedAt }
-        let ready = all.filter { $0.summary.stage == .ready }
-            .sorted(by: readySort == .name
-                    ? { $0.project.name.localizedStandardCompare($1.project.name) == .orderedAscending }
-                    : { $0.touchedAt > $1.touchedAt })
         let finished = all.filter { $0.summary.stage == .finished }
-            .sorted { $0.touchedAt > $1.touchedAt }
 
         Group {
             if all.isEmpty && searchText.isEmpty {
@@ -166,21 +146,12 @@ struct PatternBoardView: View {
                             ForEach(inProgress) { row($0) }
                         }
 
-                        if !ready.isEmpty {
-                            HStack {
-                                sectionHeader(String(localized: "待拼 · \(ready.count)"))
-                                Spacer()
-                                sortMenu
-                            }
-                            ForEach(ready) { row($0) }
-                        }
-
                         if !finished.isEmpty {
                             Button {
                                 withAnimation { showsFinished.toggle() }
                             } label: {
                                 HStack {
-                                    sectionHeader(String(localized: "已拼完 · \(finished.count)"))
+                                    sectionHeader(String(localized: "拼完 · \(finished.count)"))
                                     Spacer()
                                     Image(systemName: showsFinished ? "chevron.down" : "chevron.right")
                                         .font(.caption.weight(.semibold))
@@ -211,6 +182,11 @@ struct PatternBoardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.ColorToken.Surface.background)
         .patternModeLauncher($patternLaunch)
+        .alert("无法移回正在拼", isPresented: $moveBackFailed) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text("这个项目的数据暂时读写不了，请稍后再试。")
+        }
     }
 
     private var searchField: some View {
@@ -253,25 +229,6 @@ struct PatternBoardView: View {
             .padding(.bottom, 6)
     }
 
-    private var sortMenu: some View {
-        Menu {
-            Picker("排序", selection: $readySortRaw) {
-                ForEach(ReadySort.allCases, id: \.self) { sort in
-                    Text(sort.label).tag(sort.rawValue)
-                }
-            }
-        } label: {
-            HStack(spacing: 3) {
-                Text(readySort.label)
-                Image(systemName: "chevron.down")
-            }
-            .font(.caption)
-            .foregroundStyle(Theme.ColorToken.Text.secondary)
-            .padding(.top, 10)
-            .padding(.trailing, 18)
-        }
-    }
-
     private func row(_ item: Item) -> some View {
         Button {
             patternLaunch = PatternLaunchRequest(projectId: item.project.id)
@@ -293,8 +250,8 @@ struct PatternBoardView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.ColorToken.Text.primary)
                         .lineLimit(1)
-                    Text(item.summary.subtitle)
-                        .font(.caption.monospacedDigit())
+                    Text(item.summary.modeName)
+                        .font(.caption)
                         .foregroundStyle(Theme.ColorToken.Text.secondary)
                         .lineLimit(1)
                 }
@@ -310,5 +267,16 @@ struct PatternBoardView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            if item.summary.stage == .finished {
+                Button {
+                    if !store.moveBackToInProgress(item.project.id, using: inventoryManager) {
+                        moveBackFailed = true
+                    }
+                } label: {
+                    Label("移回正在拼", systemImage: "arrow.uturn.backward")
+                }
+            }
+        }
     }
 }
