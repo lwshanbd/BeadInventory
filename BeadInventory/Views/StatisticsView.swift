@@ -56,9 +56,10 @@ struct StatisticsView: View {
     }
 }
 
-// MARK: - 总览视图（环图 + 趋势 + 色相 + Top5）
+// MARK: - 总览视图（按月/年用量 + 排行 + 库存总览 + 色相）
 struct StatisticsOverviewView: View {
     @EnvironmentObject var inventoryManager: InventoryManager
+    @State private var period: UsagePeriod = .containing(Date(), kind: .month)
 
     private var brandId: UUID? { inventoryManager.currentBrandId }
 
@@ -75,34 +76,6 @@ struct StatisticsOverviewView: View {
     private var totalAvailable: Int {
         guard let brandId else { return 0 }
         return inventoryManager.totalAvailable(for: brandId)
-    }
-
-
-    /// 最近 14 天每日用量（基于已执行项目的 executedDate/completedDate/date）
-    private var last14DayUsage: [(date: Date, value: Int)] {
-        guard let brandId else { return [] }
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        // 构造 14 天空槽
-        var bins: [(date: Date, value: Int)] = (0..<14).reversed().map { offset in
-            let d = cal.date(byAdding: .day, value: -offset, to: today) ?? today
-            return (d, 0)
-        }
-        // 遍历项目，累计当日用量
-        for project in inventoryManager.projects where !project.isPlanned {
-            let useDate = project.completedDate ?? project.executedDate ?? project.date
-            let day = cal.startOfDay(for: useDate)
-            guard let idx = bins.firstIndex(where: { $0.date == day }) else { continue }
-            // 累计当前品牌相关用量
-            let qty = project.beadUsage.reduce(0) { sum, usage in
-                if usage.brandId == brandId || (usage.brandId == nil && project.brandId == brandId) {
-                    return sum + usage.quantity
-                }
-                return sum
-            }
-            bins[idx].value += qty
-        }
-        return bins
     }
 
     /// 色相分布（按当前品牌库存的 used 加权；若 used 全 0 则按 stock 加权）
@@ -137,26 +110,39 @@ struct StatisticsOverviewView: View {
         }.sorted { $0.pct > $1.pct }
     }
 
-    /// Top 5 使用排行（按 used 倒序）
-    private var top5: [(color: BeadColor, stock: BrandStock)] {
-        guard let brandId else { return [] }
-        let usedStocks = inventoryManager.brandStocks
-            .filter { $0.brandId == brandId && $0.used > 0 }
-            .sorted { $0.used > $1.used }
-            .prefix(5)
-        return usedStocks.compactMap { stock in
-            guard let color = inventoryManager.findColor(byCode: stock.mardCode) else { return nil }
-            return (color, stock)
-        }
-    }
-
     private var lowStockThreshold: Int {
         guard let brandId else { return 100 }
         return inventoryManager.getLowStockThreshold(for: brandId)
     }
 
     var body: some View {
-        if brandId == nil {
+        if let brandId {
+            // body 级快照：totalStock/totalUsed/totalAvailable 每次访问都是一次 brandStocks
+            // 全量 filter+reduce；usageSummary 扫一遍项目。各算一次再传下去。
+            let stock = totalStock
+            let used = totalUsed
+            let available = totalAvailable
+            let pct = stock > 0 ? Double(used) / Double(stock) * 100 : 0
+            let summary = inventoryManager.usageSummary(for: period, brandId: brandId)
+            let earliest = inventoryManager.earliestUsageDate(brandId: brandId)
+            ScrollView {
+                VStack(spacing: 18) {
+                    UsagePeriodPicker(period: $period, earliest: earliest)
+
+                    periodSummaryCard(summary)
+
+                    trendSection(summary)
+
+                    rankingSection(summary: summary, brandId: brandId)
+
+                    inventoryOverviewCard(totalStock: stock, totalUsed: used, totalAvailable: available, usagePct: pct)
+
+                    hueDistributionSection
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+            }
+        } else {
             VStack(spacing: 16) {
                 Image(systemName: "building.2")
                     .font(.system(size: 50))
@@ -166,64 +152,188 @@ struct StatisticsOverviewView: View {
                     .foregroundColor(.secondary)
             }
             .frame(maxHeight: .infinity)
-        } else {
-            // body 级快照：totalStock/totalUsed/totalAvailable 每次访问都是一次 brandStocks
-            // 全量 filter+reduce，top5 是 filter+sort。原来 monthlyUsageCard 一次求值扫 7 遍、
-            // top5 被 isEmpty / rankingSection 内部访问 3 遍，这里各算一次再传下去。
-            let stock = totalStock
-            let used = totalUsed
-            let available = totalAvailable
-            let pct = stock > 0 ? Double(used) / Double(stock) * 100 : 0
-            let topItems = top5
-            ScrollView {
-                VStack(spacing: 18) {
-                    // 1) 本月使用情况卡片（环图 + 数据）
-                    monthlyUsageCard(totalStock: stock, totalUsed: used, totalAvailable: available, usagePct: pct)
+        }
+    }
 
-                    // 2) 14 日用量趋势
-                    last14DaySection
+    private var isCurrentPeriod: Bool {
+        period == .containing(Date(), kind: period.kind)
+    }
 
-                    // 3) 色相分布
-                    hueDistributionSection
+    private var periodHeading: String {
+        switch (period.kind, isCurrentPeriod) {
+        case (.month, true): return String(localized: "本月用量")
+        case (.year, true): return String(localized: "今年用量")
+        default: return String(localized: "\(period.title)用量")
+        }
+    }
 
-                    // 4) Top5 排行
-                    if !topItems.isEmpty {
-                        rankingSection(items: topItems)
+    // MARK: - 时间段用量卡片
+
+    private func periodSummaryCard(_ summary: UsagePeriodSummary) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(periodHeading)
+                .font(.caption)
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
+
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
+                Text(summary.total.formatted(.number.grouping(.automatic)))
+                    .font(.system(size: 30, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                Text("颗")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.ColorToken.Text.secondary)
+                Spacer(minLength: 8)
+                comparisonChip(summary)
+            }
+
+            Text("\(summary.projectCount) 个项目 · \(summary.ranking.count) 种颜色")
+                .font(.caption)
+                .foregroundStyle(Theme.ColorToken.Text.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Theme.ColorToken.Surface.elevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func comparisonChip(_ summary: UsagePeriodSummary) -> some View {
+        // 本月 / 今年还没过完，跟上一整段比只会显得「少了很多」，只在看过完的月份 / 年份时显示
+        if !isCurrentPeriod, summary.total > 0 || summary.previousTotal > 0 {
+            let delta = summary.total - summary.previousTotal
+            let unit = period.kind == .month ? String(localized: "比上月") : String(localized: "比去年")
+            let text: String = {
+                if delta == 0 { return period.kind == .month ? String(localized: "与上月持平") : String(localized: "与去年持平") }
+                let sign = delta > 0 ? "+" : "−"
+                return "\(unit) \(sign)\(abs(delta).formatted(.number.grouping(.automatic)))"
+            }()
+            BIChip(text, color: delta > 0 ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Morandi.sage, size: .sm)
+        }
+    }
+
+    // MARK: - 趋势
+
+    private func trendSection(_ summary: UsagePeriodSummary) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(period.kind == .month ? "每日用量" : "每月用量")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.ColorToken.Text.primary)
+
+            UsageBarChart(data: summary.bins, kind: period.kind)
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Theme.ColorToken.Surface.elevated)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+                )
+        }
+    }
+
+    // MARK: - 时间段排行 TOP 5
+
+    private func rankingSection(summary: UsagePeriodSummary, brandId: UUID) -> some View {
+        let items = Array(summary.ranking.prefix(5))
+        let maxQty = max(items.first?.quantity ?? 1, 1)
+        let threshold = lowStockThreshold
+        let stockByCode = Dictionary(
+            inventoryManager.brandStocks.filter { $0.brandId == brandId }.map { ($0.mardCode, $0) },
+            uniquingKeysWith: { a, _ in a }
+        )
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("用量排行 · TOP 5")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                Spacer()
+                if summary.ranking.count > items.count {
+                    NavigationLink {
+                        PeriodUsageRankingView(period: period)
+                    } label: {
+                        HStack(spacing: 2) {
+                            Text("全部")
+                            Image(systemName: "chevron.right")
+                        }
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 16)
+            }
+
+            if items.isEmpty {
+                Text("暂无用量")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Theme.ColorToken.Surface.elevated)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
+                    )
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
+                        TopRankRow(
+                            rank: idx + 1,
+                            color: item.color,
+                            value: item.quantity,
+                            maxValue: maxQty,
+                            valueCaption: "颗",
+                            isLowStock: (stockByCode[item.color.mardCode]?.available ?? .max) < threshold,
+                            colorSystem: inventoryManager.currentColorSystem
+                        )
+                    }
+                }
             }
         }
     }
 
-    // MARK: - 本月使用情况卡片
+    // MARK: - 库存总览卡片（累计，不随时间段变）
 
-    private func monthlyUsageCard(totalStock: Int, totalUsed: Int, totalAvailable: Int, usagePct: Double) -> some View {
+    private func inventoryOverviewCard(totalStock: Int, totalUsed: Int, totalAvailable: Int, usagePct: Double) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 18) {
                 RingChart(percent: usagePct, color: Theme.ColorToken.Morandi.sage)
                     .frame(width: 92, height: 92)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("本月使用情况")
+                    Text("库存总览")
                         .font(.caption2)
                         .foregroundStyle(Theme.ColorToken.Text.secondary)
 
                     HStack(alignment: .lastTextBaseline, spacing: 4) {
-                        Text(String(format: "%.1f", usagePct))
+                        Text(String(format: "%.1f%%", usagePct))
                             .font(.system(size: 22, weight: .semibold).monospacedDigit())
                             .foregroundStyle(Theme.ColorToken.Text.primary)
-                        Text("% · 用量")
+                        Text("已使用")
                             .font(.caption)
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
                     }
 
-                    HStack(spacing: 6) {
-                        BIChip("↑ 12 颗 / 周", color: Theme.ColorToken.Morandi.sage, size: .sm)
-                        Text("vs 上周")
-                            .font(.caption2)
-                            .foregroundStyle(Theme.ColorToken.Text.tertiary)
+                    NavigationLink {
+                        UsageStatisticsView()
+                            .background(Theme.ColorToken.Surface.background)
+                            .navigationTitle("累计使用排行")
+                            .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        HStack(spacing: 2) {
+                            Text("累计使用排行")
+                            Image(systemName: "chevron.right")
+                        }
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Theme.ColorToken.Text.secondary)
                     }
                 }
                 Spacer(minLength: 0)
@@ -236,7 +346,7 @@ struct StatisticsOverviewView: View {
 
             HStack(spacing: 0) {
                 metricCell(label: "总库存", value: totalStock.formatted(.number.grouping(.automatic)))
-                metricCell(label: "已使用", value: totalUsed.formatted(.number.grouping(.automatic)))
+                metricCell(label: "累计已使用", value: totalUsed.formatted(.number.grouping(.automatic)))
                 metricCell(label: "剩余", value: totalAvailable.formatted(.number.grouping(.automatic)))
             }
         }
@@ -261,30 +371,6 @@ struct StatisticsOverviewView: View {
                 .foregroundStyle(Theme.ColorToken.Text.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    // MARK: - 14 日用量趋势
-
-    private var last14DaySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("14 日用量趋势")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.ColorToken.Text.primary)
-                Spacer()
-            }
-
-            BarChart14Day(data: last14DayUsage)
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Theme.ColorToken.Surface.elevated)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .strokeBorder(Theme.ColorToken.Border.default, lineWidth: 1)
-                )
-        }
     }
 
     // MARK: - 色相分布
@@ -313,44 +399,343 @@ struct StatisticsOverviewView: View {
                 )
         }
     }
+}
 
-    // MARK: - Top 5 排行
+// MARK: - ===== 按月 / 按年用量 =====
+// MARK: - 时间段
 
-    private func rankingSection(items: [(color: BeadColor, stock: BrandStock)]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+enum UsagePeriodKind: Hashable {
+    case month
+    case year
+
+    var component: Calendar.Component { self == .month ? .month : .year }
+}
+
+/// 一个自然月或一个自然年。`start` 永远是该段第一天 0 点。
+struct UsagePeriod: Equatable {
+    let kind: UsagePeriodKind
+    let start: Date
+
+    static func containing(_ date: Date, kind: UsagePeriodKind, calendar: Calendar = .current) -> UsagePeriod {
+        let comps: Set<Calendar.Component> = kind == .month ? [.year, .month] : [.year]
+        let start = calendar.date(from: calendar.dateComponents(comps, from: date)) ?? calendar.startOfDay(for: date)
+        return UsagePeriod(kind: kind, start: start)
+    }
+
+    func shifted(by value: Int, calendar: Calendar = .current) -> UsagePeriod {
+        let s = calendar.date(byAdding: kind.component, value: value, to: start) ?? start
+        return UsagePeriod(kind: kind, start: s)
+    }
+
+    func end(calendar: Calendar = .current) -> Date {
+        calendar.date(byAdding: kind.component, value: 1, to: start) ?? start
+    }
+
+    func contains(_ date: Date, calendar: Calendar = .current) -> Bool {
+        date >= start && date < end(calendar: calendar)
+    }
+
+    /// 柱状图每根柱子的起点：月 → 每天，年 → 每月。
+    func binStarts(calendar: Calendar = .current) -> [Date] {
+        let unit: Calendar.Component = kind == .month ? .day : .month
+        let count = calendar.range(of: unit, in: kind.component, for: start)?.count ?? 0
+        return (0..<count).compactMap { calendar.date(byAdding: unit, value: $0, to: start) }
+    }
+
+    func binIndex(of date: Date, calendar: Calendar = .current) -> Int? {
+        guard contains(date, calendar: calendar) else { return nil }
+        let unit: Calendar.Component = kind == .month ? .day : .month
+        return calendar.component(unit, from: date) - 1
+    }
+
+    /// 「2026年10月」/「2026年」
+    var title: String {
+        kind == .month
+            ? start.formatted(.dateTime.year().month())
+            : start.formatted(.dateTime.year())
+    }
+}
+
+// MARK: - 汇总
+
+struct UsagePeriodSummary {
+    struct RankItem: Identifiable {
+        let color: BeadColor
+        let quantity: Int
+        var id: String { color.mardCode }
+    }
+
+    let total: Int
+    let previousTotal: Int
+    let projectCount: Int
+    let bins: [(date: Date, value: Int)]
+    let ranking: [RankItem]
+}
+
+extension InventoryManager {
+    /// 某品牌在某个时间段里扣掉了多少豆子。
+    ///
+    /// 只算已执行项目里真的扣成了的那几行（`isDeducted`），日期取扣库存那天
+    /// （`executedDate`，直接录入的已执行项目没有它，用创建日期）。
+    /// 在库存页手动改「已使用」的那部分没有可靠日期（历史只留最近 100 条），算不进来。
+    /// 父项目自己的 beadUsage 是空的，用量都在子项目上，不会重复计。
+    func usageSummary(for period: UsagePeriod, brandId: UUID) -> UsagePeriodSummary {
+        let cal = Calendar.current
+        let previous = period.shifted(by: -1)
+        let binStarts = period.binStarts()
+        var bins = binStarts.map { (date: $0, value: 0) }
+        var total = 0
+        var previousTotal = 0
+        var projectIds: Set<UUID> = []
+        var byCode: [String: (color: BeadColor, quantity: Int)] = [:]
+
+        for project in projects where !project.isPlanned {
+            let useDate = project.executedDate ?? project.date
+            let inPeriod = period.contains(useDate, calendar: cal)
+            let inPrevious = !inPeriod && previous.contains(useDate, calendar: cal)
+            guard inPeriod || inPrevious else { continue }
+
+            var qty = 0
+            for usage in project.beadUsage where usage.isDeducted && usage.quantity > 0 {
+                guard usage.brandId == brandId || (usage.brandId == nil && project.brandId == brandId) else { continue }
+                qty += usage.quantity
+                // 跟扣库存走同一个查找（deductFromStock 用的就是它），排行里的色号才对得上库存那一行。
+                // 查不到（自定义色后来被删 / 改了色号）也留一行，用原始色号 + 灰色占位，
+                // 不然总数里有、排行里没有，加起来对不上。
+                if inPeriod {
+                    let color = findColor(byCode: usage.colorCode)
+                        ?? BeadColor(colorHex: "#BDBDBD", mardCode: usage.colorCode)
+                    byCode[color.mardCode, default: (color, 0)].quantity += usage.quantity
+                }
+            }
+            guard qty > 0 else { continue }
+
+            if inPeriod {
+                total += qty
+                projectIds.insert(project.id)
+                if let idx = period.binIndex(of: useDate, calendar: cal), bins.indices.contains(idx) {
+                    bins[idx].value += qty
+                }
+            } else {
+                previousTotal += qty
+            }
+        }
+
+        let ranking = byCode.values
+            .sorted { $0.quantity != $1.quantity ? $0.quantity > $1.quantity : $0.color.mardCode < $1.color.mardCode }
+            .map { UsagePeriodSummary.RankItem(color: $0.color, quantity: $0.quantity) }
+
+        return UsagePeriodSummary(
+            total: total,
+            previousTotal: previousTotal,
+            projectCount: projectIds.count,
+            bins: bins,
+            ranking: ranking
+        )
+    }
+
+    /// 最早一次扣库存的日期，用来限制往前翻到哪里。
+    func earliestUsageDate(brandId: UUID) -> Date? {
+        projects
+            .filter { project in
+                !project.isPlanned && project.beadUsage.contains { usage in
+                    usage.isDeducted && (usage.brandId == brandId || (usage.brandId == nil && project.brandId == brandId))
+                }
+            }
+            .map { $0.executedDate ?? $0.date }
+            .min()
+    }
+}
+
+// MARK: - 时间段切换条
+
+struct UsagePeriodPicker: View {
+    @Binding var period: UsagePeriod
+    /// 最早能翻到的那一段；nil = 没有任何用量，不能往前翻
+    let earliest: Date?
+
+    private var current: UsagePeriod { .containing(Date(), kind: period.kind) }
+
+    private var canGoBack: Bool {
+        guard let earliest else { return false }
+        return period.start > UsagePeriod.containing(earliest, kind: period.kind).start
+    }
+
+    private var canGoForward: Bool { period.start < current.start }
+
+    private var kindBinding: Binding<UsagePeriodKind> {
+        Binding(
+            get: { period.kind },
+            set: { newKind in
+                guard newKind != period.kind else { return }
+                // 切换月/年时停在原来那段所在的年份（或该年的当月 / 一月）
+                if newKind == .year {
+                    period = .containing(period.start, kind: .year)
+                } else {
+                    let now = Date()
+                    let sameYear = Calendar.current.isDate(now, equalTo: period.start, toGranularity: .year)
+                    period = .containing(sameYear ? now : period.start, kind: .month)
+                }
+            }
+        )
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            BISegmented(
+                selection: kindBinding,
+                segments: [(.month, String(localized: "月")), (.year, String(localized: "年"))]
+            )
+            .fixedSize()
+
+            Spacer(minLength: 0)
+
+            Button {
+                period = period.shifted(by: -1)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+                    // 外层 foregroundStyle 会盖掉系统的禁用变灰，这里自己压暗
+                    .opacity(canGoBack ? 1 : 0.3)
+            }
+            .disabled(!canGoBack)
+            .accessibilityLabel(period.kind == .month ? "上个月" : "上一年")
+
+            Text(period.title)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(Theme.ColorToken.Text.primary)
+                .frame(minWidth: 96)
+
+            Button {
+                period = period.shifted(by: 1)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+                    // 外层 foregroundStyle 会盖掉系统的禁用变灰，这里自己压暗
+                    .opacity(canGoForward ? 1 : 0.3)
+            }
+            .disabled(!canGoForward)
+            .accessibilityLabel(period.kind == .month ? "下个月" : "下一年")
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(Theme.ColorToken.Text.secondary)
+    }
+}
+
+// MARK: - 趋势柱状图
+
+struct UsageBarChart: View {
+    let data: [(date: Date, value: Int)]
+    let kind: UsagePeriodKind
+
+    private var maxValue: Int {
+        max(data.map(\.value).max() ?? 1, 1)
+    }
+
+    private var peakIndex: Int? {
+        guard let m = data.map(\.value).max(), m > 0 else { return nil }
+        return data.firstIndex { $0.value == m }
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(alignment: .bottom, spacing: kind == .month ? 3 : 6) {
+                ForEach(Array(data.enumerated()), id: \.offset) { idx, item in
+                    bar(idx: idx, value: item.value)
+                }
+            }
+            .frame(height: 110)
+
+            Rectangle()
+                .fill(Theme.ColorToken.Border.divider)
+                .frame(height: 1)
+
             HStack {
-                Text("使用排行 · TOP 5")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                Text(label(at: 0))
                 Spacer()
-                NavigationLink {
-                    UsageStatisticsView()
-                        .background(Theme.ColorToken.Surface.background)
-                        .navigationTitle("使用排行")
-                        .navigationBarTitleDisplayMode(.inline)
-                } label: {
-                    HStack(spacing: 2) {
-                        Text("全部")
-                        Image(systemName: "chevron.right")
-                    }
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Theme.ColorToken.Text.secondary)
-                }
+                Text(label(at: data.count / 2))
+                Spacer()
+                Text(label(at: data.count - 1))
             }
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundStyle(Theme.ColorToken.Text.tertiary)
+        }
+    }
 
-            VStack(spacing: 10) {
-                let maxUsed = items.first?.stock.used ?? 1
-                ForEach(Array(items.enumerated()), id: \.element.color.id) { idx, item in
-                    TopRankRow(
-                        rank: idx + 1,
-                        color: item.color,
-                        stock: item.stock,
-                        maxUsed: maxUsed,
-                        isLowStock: item.stock.available < lowStockThreshold,
-                        colorSystem: inventoryManager.currentColorSystem
-                    )
+    @ViewBuilder
+    private func bar(idx: Int, value: Int) -> some View {
+        let ratio = Double(value) / Double(maxValue)
+        let isPeak = (idx == peakIndex)
+        let opacity = isPeak ? 1.0 : (0.4 + ratio * 0.5)
+        let h: CGFloat = max(2, CGFloat(ratio) * 100)
+
+        VStack(spacing: 2) {
+            // 峰值数字可能比柱子宽，放在 overlay 里不撑开这一列
+            Text(" ")
+                .font(.system(size: 9, design: .monospaced))
+                .frame(maxWidth: .infinity)
+                .overlay {
+                    if isPeak && value > 0 {
+                        Text("\(value)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(Theme.ColorToken.Morandi.latte)
+                            .fixedSize()
+                    }
                 }
+            Spacer(minLength: 0)
+            RoundedRectangle(cornerRadius: kind == .month ? 2 : 4)
+                .fill(Theme.ColorToken.Morandi.latte.opacity(opacity))
+                .frame(height: h)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func label(at index: Int) -> String {
+        guard data.indices.contains(index) else { return "" }
+        let date = data[index].date
+        return kind == .month
+            ? date.formatted(.dateTime.month(.defaultDigits).day())
+            : date.formatted(.dateTime.month(.abbreviated))
+    }
+}
+
+// MARK: - 时间段排行（完整列表）
+
+struct PeriodUsageRankingView: View {
+    @EnvironmentObject var inventoryManager: InventoryManager
+    let period: UsagePeriod
+
+    var body: some View {
+        if let brandId = inventoryManager.currentBrandId {
+            let items = inventoryManager.usageSummary(for: period, brandId: brandId).ranking
+            let maxQty = max(items.first?.quantity ?? 1, 1)
+            let threshold = inventoryManager.getLowStockThreshold(for: brandId)
+            let stockByCode = Dictionary(
+                inventoryManager.brandStocks.filter { $0.brandId == brandId }.map { ($0.mardCode, $0) },
+                uniquingKeysWith: { a, _ in a }
+            )
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
+                        TopRankRow(
+                            rank: idx + 1,
+                            color: item.color,
+                            value: item.quantity,
+                            maxValue: maxQty,
+                            valueCaption: "颗",
+                            isLowStock: (stockByCode[item.color.mardCode]?.available ?? .max) < threshold,
+                            colorSystem: inventoryManager.currentColorSystem
+                        )
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
             }
+            .background(Theme.ColorToken.Surface.background)
+            .navigationTitle(Text("\(period.title) 用量排行"))
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
@@ -379,81 +764,6 @@ private struct RingChart: View {
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
             }
         }
-    }
-}
-
-// MARK: - 14 日柱状图（私有）
-private struct BarChart14Day: View {
-    let data: [(date: Date, value: Int)]
-
-    private var maxValue: Int {
-        max(data.map(\.value).max() ?? 1, 1)
-    }
-
-    private var peakIndex: Int? {
-        guard let m = data.map(\.value).max(), m > 0 else { return nil }
-        return data.firstIndex { $0.value == m }
-    }
-
-    var body: some View {
-        VStack(spacing: 8) {
-            // 柱体
-            HStack(alignment: .bottom, spacing: 4) {
-                ForEach(Array(data.enumerated()), id: \.offset) { idx, item in
-                    bar(idx: idx, value: item.value)
-                }
-            }
-            .frame(height: 110)
-
-            // 底部分隔线
-            Rectangle()
-                .fill(Theme.ColorToken.Border.divider)
-                .frame(height: 1)
-
-            // 日期标签：起、中、末
-            HStack {
-                Text(dateLabel(at: 0))
-                Spacer()
-                Text(dateLabel(at: data.count / 2))
-                Spacer()
-                Text(dateLabel(at: data.count - 1))
-            }
-            .font(.system(size: 10, design: .monospaced))
-            .foregroundStyle(Theme.ColorToken.Text.tertiary)
-        }
-    }
-
-    @ViewBuilder
-    private func bar(idx: Int, value: Int) -> some View {
-        let ratio = Double(value) / Double(maxValue)
-        let isPeak = (idx == peakIndex)
-        let opacity = isPeak ? 1.0 : (0.4 + ratio * 0.5)
-        let fillColor = Theme.ColorToken.Morandi.latte.opacity(opacity)
-        // 至少占 2pt 高，便于看见
-        let h: CGFloat = max(2, CGFloat(ratio) * 100)
-
-        VStack(spacing: 2) {
-            if isPeak && value > 0 {
-                Text("\(value)")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(Theme.ColorToken.Morandi.latte)
-            } else {
-                Text(" ")
-                    .font(.system(size: 9, design: .monospaced))
-            }
-            Spacer(minLength: 0)
-            RoundedRectangle(cornerRadius: 4)
-                .fill(fillColor)
-                .frame(height: h)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func dateLabel(at index: Int) -> String {
-        guard data.indices.contains(index) else { return "" }
-        let df = DateFormatter()
-        df.dateFormat = "M/d"
-        return df.string(from: data[index].date)
     }
 }
 
@@ -594,18 +904,20 @@ private struct HueDistributionView: View {
     }
 }
 
-// MARK: - Top 5 排行卡片行（私有）
-private struct TopRankRow: View {
+// MARK: - 排行卡片行
+struct TopRankRow: View {
     let rank: Int
     let color: BeadColor
-    let stock: BrandStock
-    let maxUsed: Int
+    /// 右侧显示的数：时间段排行是该段用量，累计排行是 stock.used
+    let value: Int
+    let maxValue: Int
+    let valueCaption: LocalizedStringKey
     let isLowStock: Bool
     let colorSystem: ColorSystem
 
     private var progress: Double {
-        guard maxUsed > 0 else { return 0 }
-        return min(max(Double(stock.used) / Double(maxUsed), 0), 1)
+        guard maxValue > 0 else { return 0 }
+        return min(max(Double(value) / Double(maxValue), 0), 1)
     }
 
     private var isTopThree: Bool { rank <= 3 }
@@ -638,10 +950,10 @@ private struct TopRankRow: View {
                 Spacer(minLength: 4)
 
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(stock.used)")
+                    Text("\(value)")
                         .font(.system(size: 15, weight: .semibold).monospacedDigit())
                         .foregroundStyle(Theme.ColorToken.Text.primary)
-                    Text("已用")
+                    Text(valueCaption)
                         .font(.caption2)
                         .foregroundStyle(Theme.ColorToken.Text.tertiary)
                 }
@@ -754,8 +1066,9 @@ struct UsageStatisticsView: View {
                                 TopRankRow(
                                     rank: index + 1,
                                     color: item.color,
-                                    stock: item.stock,
-                                    maxUsed: maxUsedSnapshot,
+                                    value: item.stock.used,
+                                    maxValue: maxUsedSnapshot,
+                                    valueCaption: "已用",
                                     isLowStock: item.stock.available < threshold,
                                     colorSystem: inventoryManager.currentColorSystem
                                 )
