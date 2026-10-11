@@ -508,7 +508,10 @@ struct PartsSheetFlowView: View {
             // 换一台设备打开、或者点过「拼好了」），但那几张的零件区和格子标定还是有用的数据：
             // 截掉之后一存盘就永久没了，还会同步回原来那台设备。
             self.rois = Self.fitted(saved.pageROIs ?? [saved.roi], count: count, filler: Self.wholeROI)
-            self.parts = saved.parts
+            // 还没判过色的，按新规则重排一次：早先拆开 / 补框会让编号在两行之间来回跳。
+            // 判过色的不动：后面几屏、板子上的「零件 N」都是按这个次序叫的，拼到一半改号认不出来。
+            self.parts = saved.parts.contains(where: \.hasCells)
+                ? saved.parts : PartsListStepView.ordered(saved.parts)
             self.palette = saved.palette
             self.calibrations = Self.fitted(saved.pageCalibrations ?? [saved.calibration], count: count, filler: nil)
             self.anyColorCode = saved.anyColorCode

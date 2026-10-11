@@ -188,14 +188,17 @@ struct PartsListStepView: View {
         rois.indices.contains(part.pageIndex) ? rois[part.pageIndex] : roi
     }
 
-    /// 零件清单的顺序：先按第几张，同一张里按行、行里从左到右。
-    /// 几张图纸各自的行号是接着排的（见 `PartsSheetFlowView.runDetection`），
-    /// 但补出来的零件取的是邻居的行号，所以还是得先按张分开。
+    /// 零件清单的顺序：先按第几张，同一张里按框**现在的位置**重新分行，规则见 `PartsDetector.readingRows`。
+    ///
+    /// 不信存下来的 `rowBand`：拆开、补框、合并都是借别人的行号，
+    /// 一个横跨两行的大框拆开后，拆出来的十几块行号全一样，只剩按横坐标排，
+    /// 编号就在两行之间上下来回跳。
     static func ordered(_ parts: [BeadPart]) -> [BeadPart] {
-        parts.sorted {
-            if $0.pageIndex != $1.pageIndex { return $0.pageIndex < $1.pageIndex }
-            return $0.rowBand != $1.rowBand ? $0.rowBand < $1.rowBand : $0.bounds.minX < $1.bounds.minX
-        }
+        Dictionary(grouping: parts, by: \.pageIndex)
+            .sorted { $0.key < $1.key }
+            .flatMap { _, onPage in
+                PartsDetector.readingRows(onPage.map(\.bounds)).flatMap { $0.map { onPage[$0] } }
+            }
     }
 
     // MARK: - 上半：图上的框
