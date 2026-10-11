@@ -117,7 +117,7 @@ actor ProjectImageLoader {
     }
 
     /// 拼图模式里点「拼完了」的时间（`SDProjectRecord.patternFinishedAt`）。
-    /// 读失败单独返回：调用方不能把它当成「没拼完」显示出去。
+    /// 读失败单独返回，跟「没拼完」分开：概况遇到它就不更新，打开流程时遇到它就先不搬老数据。
     func patternFinishedAt(for projectId: UUID) -> Result<Date?, Error> {
         fetchColumnResult(projectId: projectId, keyPath: \.patternFinishedAt, event: "pattern_finished_at")
     }

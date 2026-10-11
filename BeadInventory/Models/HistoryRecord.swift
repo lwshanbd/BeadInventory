@@ -215,6 +215,11 @@ struct ProjectSnapshot: Codable {
     /// 用户误删一个排好版的项目，撤销回来的是一张白图。
     /// 旧 record 没这个字段；`decodeIfPresent → nil` = 没有多零件进度可还原。
     let partsSheetData: Data?
+    /// `SDProjectRecord.patternFinishedAt` —— 拼图模式里点「拼完了」的时间。语义同 `partsSheetData`：
+    /// 只有 destructive 路径会捕获。它以前藏在网格 / 零件数据里跟着快照走，挪成单独一列之后
+    /// 不在这里记的话，删掉一个拼完的项目再撤销，回来的是「正在拼」。
+    /// 旧 record 没这个字段；`decodeIfPresent → nil` = 不还原（老的拼完时间还在快照的网格 / 零件数据里）。
+    let patternFinishedAt: Date?
 
     // 自定义解码器，兼容旧数据
     init(from decoder: Decoder) throws {
@@ -243,9 +248,10 @@ struct ProjectSnapshot: Codable {
         completedDate = try container.decodeIfPresent(Date.self, forKey: .completedDate)
         displayThumbnail = try container.decodeIfPresent(Data.self, forKey: .displayThumbnail)
         partsSheetData = try container.decodeIfPresent(Data.self, forKey: .partsSheetData)
+        patternFinishedAt = try container.decodeIfPresent(Date.self, forKey: .patternFinishedAt)
     }
 
-    init(id: UUID, name: String, date: Date, totalBeads: Int, brandId: UUID?, isArchived: Bool, parentId: UUID?, isPlanned: Bool, executedDate: Date?, beadUsages: [BeadUsageSnapshot], thumbnail: Data? = nil, finishedImage: Data? = nil, colorSystem: ColorSystem = .mard, capturesImages: Bool? = nil, patternGridData: Data? = nil, completedDate: Date? = nil, displayThumbnail: Data? = nil, partsSheetData: Data? = nil) {
+    init(id: UUID, name: String, date: Date, totalBeads: Int, brandId: UUID?, isArchived: Bool, parentId: UUID?, isPlanned: Bool, executedDate: Date?, beadUsages: [BeadUsageSnapshot], thumbnail: Data? = nil, finishedImage: Data? = nil, colorSystem: ColorSystem = .mard, capturesImages: Bool? = nil, patternGridData: Data? = nil, completedDate: Date? = nil, displayThumbnail: Data? = nil, partsSheetData: Data? = nil, patternFinishedAt: Date? = nil) {
         self.id = id
         self.name = name
         self.date = date
@@ -264,6 +270,7 @@ struct ProjectSnapshot: Codable {
         self.completedDate = completedDate
         self.displayThumbnail = displayThumbnail
         self.partsSheetData = partsSheetData
+        self.patternFinishedAt = patternFinishedAt
     }
 }
 

@@ -82,6 +82,6 @@ struct BeadPatternGrid: Codable, Equatable, Sendable {
     /// 一块板，所以这份挂在网格上。
     var doneColors: [String: Int]? = nil
 
-    /// **只读的老字段，不再写入。** 理由同 `BeadPartsSheet.finishedAt`。
+    /// **老字段，不再写入新值。** 理由同 `BeadPartsSheet.finishedAt`。
     var finishedAt: Date? = nil
 }

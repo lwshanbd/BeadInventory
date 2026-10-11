@@ -100,8 +100,10 @@ struct PartsSheetFlowView: View {
     @State private var syncedCellCounts: [String: Int]?
     /// 组装模式里勾掉的零件，见 `BeadPartsSheet.assembledPartIds`
     @State private var assembled: Set<UUID> = []
-    /// 用户点「拼完了」的时间，打开时从项目上读（见 `PatternFinishState`）。只管按钮显示哪个，不存进零件数据。
+    /// 用户点「拼完了」的时间，打开时从项目上读（见 `PatternFinishLoader`）。只管按钮显示哪个，不存进零件数据。
     @State private var finishedAt: Date?
+    /// 还没搬到项目上的老拼完时间，存进度时原样写回零件数据（见 `PatternFinishLoader.Result.legacyToKeep`）。
+    @State private var legacyFinishedAtToKeep: Date?
 
     @State private var busy: String?
 
@@ -151,6 +153,10 @@ struct PartsSheetFlowView: View {
         /// 之后每次失败都赋成同一个 —— `.alert(item:)` 认不出变化，那句话再也不出现，
         /// 而「关闭」「完成」会因为 `persist()` 一直返回 false 变成两个既不响应也不解释的按钮。
         case saveFailed(Int)
+        /// 「拼完了 / 移回正在拼」没写进去。跟 `saveFailed` 分开：这时进度已经存好了，
+        /// 没存上的只是拼完状态，而且之后的自动保存也不会替他补上 —— 那句「继续往下每一步都会自动保存」在这里是错的。
+        /// 带着「第几次」，理由同 `saveFailed`。
+        case finishFailed(markingFinished: Bool, attempt: Int)
         /// 库里有东西但打不开。接着做等于拿新的盖掉旧的，要他自己点头。
         case loadFailed
         /// 重新找零件会洗掉已有的成果。
@@ -174,6 +180,7 @@ struct PartsSheetFlowView: View {
         var id: String {
             switch self {
             case .saveFailed(let attempt): return "save\(attempt)"
+            case .finishFailed(_, let attempt): return "finish\(attempt)"
             case .loadFailed: return "load"
             case .confirmRedetect: return "redetect"
             case .confirmReclassify: return "reclassify"
@@ -381,6 +388,12 @@ struct PartsSheetFlowView: View {
                     primaryButton: .cancel(Text("知道了")),
                     secondaryButton: .destructive(Text("仍然关闭")) { dismiss() }
                 )
+            case .finishFailed(let markingFinished, _):
+                return Alert(
+                    title: markingFinished ? Text("无法标记为拼完") : Text("无法移回正在拼"),
+                    message: Text("这个项目的数据暂时读写不了，请稍后再试。"),
+                    dismissButton: .cancel(Text("好"))
+                )
             // 有进度但打不开：接着做等于拿新结果盖掉旧的那份，得他自己点头。
             case .loadFailed:
                 return Alert(
@@ -464,9 +477,10 @@ struct PartsSheetFlowView: View {
         let loaded = await loader?.partsSheet(for: id) ?? .unreadable
         var legacyFinishedAt: Date?
         if case .loaded(let sheet) = loaded { legacyFinishedAt = sheet.finishedAt }
-        let finished = await PatternFinishState.load(id, legacy: legacyFinishedAt, using: inventoryManager)
+        let finish = await PatternFinishLoader.load(id, mode: .parts, ownLegacy: legacyFinishedAt, using: inventoryManager)
         guard !Task.isCancelled else { return }
-        self.finishedAt = finished
+        self.finishedAt = finish.finishedAt
+        self.legacyFinishedAtToKeep = finish.legacyToKeep
 
         self.overviews = lows
         self.imageUnreadable = (bytes != nil && low == nil)
@@ -1261,6 +1275,7 @@ struct PartsSheetFlowView: View {
         // 存的时候按现有零件过一遍，删掉的零件不带进去
         let liveAssembled = parts.map(\.id).filter(assembled.contains)
         sheet.assembledPartIds = liveAssembled.isEmpty ? nil : liveAssembled
+        sheet.finishedAt = legacyFinishedAtToKeep
         // 按存档里有几张判断，不按这台设备上有几个原图文件（见 `load`）
         if rois.count > 1 || calibrations.count > 1 {
             sheet.pageROIs = rois
@@ -1315,10 +1330,11 @@ struct PartsSheetFlowView: View {
         let now = Date()
         guard inventoryManager.updateProjectPatternFinishedAt(project.id, finishedAt: now) else {
             saveAttempt += 1
-            prompt = .saveFailed(saveAttempt)
+            prompt = .finishFailed(markingFinished: true, attempt: saveAttempt)
             return
         }
         finishedAt = now
+        legacyFinishedAtToKeep = nil
         onFinished?()
         dismiss()
     }
@@ -1329,9 +1345,10 @@ struct PartsSheetFlowView: View {
         guard PatternWorkStore.shared.moveBackToInProgress(project.id, using: inventoryManager) else {
             // 没写进去就把按钮留在「拼完」，界面跟库保持一致
             saveAttempt += 1
-            prompt = .saveFailed(saveAttempt)
+            prompt = .finishFailed(markingFinished: false, attempt: saveAttempt)
             return
         }
         finishedAt = nil
+        legacyFinishedAtToKeep = nil
     }
 }

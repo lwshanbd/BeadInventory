@@ -873,9 +873,11 @@ class BackupManager {
                     partsSheetProvided: parts.provided,
                     displayThumbnail: effectiveDisplay,
                     displayThumbnailProvided: effectiveProvided,
-                    // 旧 JSON 备份没有拼完时间这一项（老版本记在网格 / 零件数据里，跟着它们恢复）
+                    // 旧 JSON 备份没有拼完时间这一项，老版本记在网格 / 零件数据里。
+                    // 备份写回了其中一份，就清掉项目那一列，让恢复回来的老值说了算；
+                    // 一份都没带（很老的备份），就不动库里现有的拼完状态。
                     patternFinishedAt: Date?.none,
-                    patternFinishedAtProvided: false)
+                    patternFinishedAtProvided: grid.provided || parts.provided)
         }
         let restoreResult = manager.restoreProjectBlobsFromBackup(entries)
 
