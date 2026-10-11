@@ -116,12 +116,22 @@ SwiftData  HistoryManager  AIServiceManager
 - Struct models (`BeadColor`, `Brand`, `BrandStock`, `ProjectRecord`): In-memory, Codable
 - SwiftData models (`SDBrand`, `SDBrandStock`, `SDProjectRecord`): Persistent, with bi-directional conversion methods
 
-**Views/** - 5 main tabs
-- `InventoryView`: Stock display with per-brand filtering, sorting, low-stock highlighting
-- `ScanView`: Image → crop → AI recognition → confirmation → deduct/plan
-- `PlannedProjectsView`: Project planning with merge/archive
-- `StatisticsView`: Usage analytics and project history
-- `MoreView`: Settings, History, About navigation hub
+**Views/** - 5 个 Tab（`ContentView`，tag 就是 `TabFlavor.rawValue`）
+- 库存 `InventoryView`：按品牌看库存，筛选、排序、低库存高亮
+- 计划 `PlannedProjectsView`：还没扣减的项目。缺豆总览、补豆建议、合并、执行扣减
+- 工作台 `WorkshopView`：顶上切「拼图 | 识别」两页，记住上次停在哪页
+  - 拼图 `PatternBoardView`（同文件）：进过拼图模式的项目，按「正在拼 / 待拼 / 已拼完」分组
+  - 识别 `ScanView`：选图 → 裁剪 → AI 识别 → 改结果 → 开始拼 / 存为计划 / 扣减
+- 记录 `StatisticsView`：扣减过的项目（「项目」）和用量统计（「用量」），右上角是成品日历
+- 更多 `MoreView`：设置、历史、色号工具等入口
+
+**拼图模式**（`Views/PatternHighlight/`）：单图纸、多零件两种流程。
+- 入口有四个：工作台拼图页、识别结果「开始拼」、计划详情、记录详情。
+  全部走 `PatternModeLauncher.swift` 里的 `.patternModeLauncher(_:)`，不要在页面里另挂一套 `fullScreenCover`。
+- **扣减和拼图是两件独立的事**：计划 / 记录只按扣没扣来分；拼图进度单独算，两边的项目都能进拼图模式。
+  没扣减的项目拼完点「完成」，会问一句要不要扣。
+- 进度从项目里的 `patternGridData` / `partsSheetData` 算（`PatternWorkStore`），跟着 iCloud 走。
+  本机 `PatternRecents` 只记最近打开时间和默认模式。
 
 ### Data Files
 - **`allcolors.json`：运行时唯一的色表**（600 条、599 个不重复色值，跨品牌色号，
