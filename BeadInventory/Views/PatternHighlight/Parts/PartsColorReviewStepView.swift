@@ -510,8 +510,10 @@ struct PartsColorReviewStepView: View {
     }
 
     /// 挑零件时能按哪个色号筛。空白那一组不给筛：几乎每一块都有空格，筛了等于没筛。
+    /// 这个色号刚被整类改掉、一格都不剩时也不给筛，不然列表默认是空的。
     private var pickerFilter: PartBrushPickerSheet.ColorFilter? {
-        guard selectedGroup != .empty else { return nil }
+        guard selectedGroup != .empty,
+              pickerRows.contains(where: { $0.matchCount > 0 }) else { return nil }
         return .init(label: label(for: selectedGroup))
     }
 

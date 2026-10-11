@@ -14642,6 +14642,36 @@
           }
         }
       }
+    },
+    "显示范围" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show"
+          }
+        }
+      }
+    },
+    "含 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With %@"
+          }
+        }
+      }
+    },
+    "%@ %lld 颗 · 共 %lld 颗" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$lld · %3$lld total"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
