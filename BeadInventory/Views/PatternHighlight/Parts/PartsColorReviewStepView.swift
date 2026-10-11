@@ -1043,6 +1043,9 @@ struct PartsColorReviewStepView: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Button("取消选择") { selection.removeAll() }
                         .font(.footnote)
+                    // 一组一千格里只有一百格判对的时候，点那一百格再反选，比点九百格省事。
+                    Button("反选", action: invertSelection)
+                        .font(.footnote)
                 }
                 Spacer()
                 Button(action: toggleSort) {
@@ -1509,6 +1512,10 @@ struct PartsColorReviewStepView: View {
 
     private func selectWholeGroup() {
         selection = Set(groupCells ?? [])
+    }
+
+    private func invertSelection() {
+        selection = Set(groupCells ?? []).subtracting(selection)
     }
 
     /// 改格子。**先在本地改完再一次性写回 binding。**
