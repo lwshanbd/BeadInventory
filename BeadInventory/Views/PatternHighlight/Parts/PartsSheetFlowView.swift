@@ -100,7 +100,7 @@ struct PartsSheetFlowView: View {
     @State private var syncedCellCounts: [String: Int]?
     /// 组装模式里勾掉的零件，见 `BeadPartsSheet.assembledPartIds`
     @State private var assembled: Set<UUID> = []
-    /// 用户点「拼完了」的时间。见 `BeadPartsSheet.finishedAt`。
+    /// 用户点「拼完了」的时间，打开时从项目上读（见 `PatternFinishState`）。只管按钮显示哪个，不存进零件数据。
     @State private var finishedAt: Date?
 
     @State private var busy: String?
@@ -462,7 +462,11 @@ struct PartsSheetFlowView: View {
         // `?? .unreadable` 而不是 `.missing`：loader 为 nil 意味着连 modelContext 都没有，
         // 那是「我根本没法读你的数据」—— 最不该被当成「这个项目本来就没做过」的情况。
         let loaded = await loader?.partsSheet(for: id) ?? .unreadable
+        var legacyFinishedAt: Date?
+        if case .loaded(let sheet) = loaded { legacyFinishedAt = sheet.finishedAt }
+        let finished = await PatternFinishState.load(id, legacy: legacyFinishedAt, using: inventoryManager)
         guard !Task.isCancelled else { return }
+        self.finishedAt = finished
 
         self.overviews = lows
         self.imageUnreadable = (bytes != nil && low == nil)
@@ -523,7 +527,6 @@ struct PartsSheetFlowView: View {
             self.legendUsage = legend
             self.syncedCellCounts = saved.syncedCellCounts
             self.assembled = Set(saved.assembledPartIds ?? []).intersection(liveIds)
-            self.finishedAt = saved.finishedAt
 
             // 以前就判完色的图纸，这次不改任何东西退出去的话，计划里还是 AI 读的数。
             // 所以进来就同步一次。格子和份数都没变过的不会动计划（见 `syncPlannedUsageFromPartsSheet`）。
@@ -1258,7 +1261,6 @@ struct PartsSheetFlowView: View {
         // 存的时候按现有零件过一遍，删掉的零件不带进去
         let liveAssembled = parts.map(\.id).filter(assembled.contains)
         sheet.assembledPartIds = liveAssembled.isEmpty ? nil : liveAssembled
-        sheet.finishedAt = finishedAt
         // 按存档里有几张判断，不按这台设备上有几个原图文件（见 `load`）
         if rois.count > 1 || calibrations.count > 1 {
             sheet.pageROIs = rois
@@ -1303,26 +1305,33 @@ struct PartsSheetFlowView: View {
         }
     }
 
-    /// 用户点了「拼完了」并确认：记下拼完的时间，存好，离开。
+    /// 用户点了「拼完了」并确认：存好进度，记下拼完的时间，离开。
     /// 工作台把它挪进「拼完」；没扣减的项目，入口那边接着问要不要扣（见 `PatternModeLauncher`）。
+    ///
+    /// 拼完时间只写项目上那一列，不跟着进度数据走（理由见 `SDProjectRecord.patternFinishedAt`）。
     private func markFinished() {
-        finishedAt = Date()
-        dirty = true
-        guard persist() else {
-            // 没存上：按钮别变，界面跟库保持一致。「这一步没存上」persist 自己会弹。
-            finishedAt = nil
+        // 进度没存上：「此步骤未保存」persist 自己会弹，按钮别变
+        guard persist() else { return }
+        let now = Date()
+        guard inventoryManager.updateProjectPatternFinishedAt(project.id, finishedAt: now) else {
+            saveAttempt += 1
+            prompt = .saveFailed(saveAttempt)
             return
         }
+        finishedAt = now
         onFinished?()
         dismiss()
     }
 
-    /// 「移回正在拼」：清掉拼完的时间，存好，留在拼图模式里接着拼。
+    /// 「移回正在拼」：清掉拼完的时间，留在拼图模式里接着拼。
+    /// 走工作台那个同名操作，老版本记在进度数据里的拼完时间也一起清掉。
     private func markUnfinished() {
-        let previous = finishedAt
+        guard PatternWorkStore.shared.moveBackToInProgress(project.id, using: inventoryManager) else {
+            // 没写进去就把按钮留在「拼完」，界面跟库保持一致
+            saveAttempt += 1
+            prompt = .saveFailed(saveAttempt)
+            return
+        }
         finishedAt = nil
-        dirty = true
-        // 没存上就把按钮还原，理由同 markFinished
-        if !persist() { finishedAt = previous }
     }
 }

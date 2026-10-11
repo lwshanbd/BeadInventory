@@ -109,6 +109,15 @@ final class SDProjectRecord {
     var displayThumbnail: Data?   // 列表用小图（CGImageSourceCreateThumbnailAtIndex 出 512px JPEG 0.85）。
                                   // 老数据 nil，由 ThumbnailMigrationCoordinator 后台 backfill；视图层在
                                   // 它还是 nil 时降级用 ImageDownsampler.downsampleToUIImage(thumbnail) 现场降级。
+    /// 用户在拼图模式里点「拼完了」的时间。nil = 还在拼（或者没进过拼图模式）。
+    ///
+    /// 单独一列，不放进网格 / 零件数据：拼图流程每走一步都把那两份整份写回，
+    /// 拼完状态跟着它们走的话，这台设备上开着的流程会把另一台设备刚点的「拼完了」盖掉。
+    /// 也不放进 `ProjectRecord`：那份缓存会经 saveData 的 diff 整行写回，是同一类覆盖。
+    /// 只经 `InventoryManager.updateProjectPatternFinishedAt` 写，读走 `ProjectImageLoader`。
+    /// 跟 `partsSheetData` 当初一样是可选的新列：轻量迁移自动加上，老数据读出来是 nil。
+    /// 老版本在网格 / 零件数据里记过的拼完时间，见 `ProjectImageLoader.patternWork(for:)` 的兜底。
+    var patternFinishedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \SDBeadUsage.project)
     var beadUsages: [SDBeadUsage]? = []

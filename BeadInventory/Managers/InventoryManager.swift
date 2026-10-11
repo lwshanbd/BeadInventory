@@ -4804,7 +4804,8 @@ class InventoryManager: ObservableObject {
         finishedImage: Data?? = nil,
         patternGridData: Data?? = nil,
         partsSheetData: Data?? = nil,
-        displayThumbnail: Data?? = nil
+        displayThumbnail: Data?? = nil,
+        patternFinishedAt: Date?? = nil
     ) -> Bool {
         guard !isUsingLocalFallbackMode else {
             logWarning("set_blobs_skipped_local_fallback", metadata: ["projectId": projectId.uuidString])
@@ -4832,6 +4833,10 @@ class InventoryManager: ObservableObject {
         }
         if case .some(let newDisplay) = displayThumbnail {
             sd.displayThumbnail = newDisplay
+        }
+        // 不是 blob，但备份恢复要跟网格 / 零件数据同一次 save 写进去
+        if case .some(let newFinished) = patternFinishedAt {
+            sd.patternFinishedAt = newFinished
         }
         do {
             try context.save()
@@ -4947,7 +4952,7 @@ class InventoryManager: ObservableObject {
     @MainActor
     @discardableResult
     func restoreProjectBlobsFromBackup(
-        _ entries: [(id: UUID, thumbnail: Data?, finishedImage: Data?, patternGridData: Data?, patternGridProvided: Bool, partsSheetData: Data?, partsSheetProvided: Bool, displayThumbnail: Data?, displayThumbnailProvided: Bool)],
+        _ entries: [(id: UUID, thumbnail: Data?, finishedImage: Data?, patternGridData: Data?, patternGridProvided: Bool, partsSheetData: Data?, partsSheetProvided: Bool, displayThumbnail: Data?, displayThumbnailProvided: Bool, patternFinishedAt: Date?, patternFinishedAtProvided: Bool)],
         refreshMetadata: Bool = true
     ) -> RestoreBlobsResult {
         var failedIDs: [UUID] = []
@@ -4958,13 +4963,16 @@ class InventoryManager: ObservableObject {
             // displayThumbnail：备份带就写（即使是 nil，也是显式声明"这条没有列表小图，
             // 让迁移协调器后续 backfill"）；备份没这个字段（老备份）→ 不动 store 旧值。
             let displayArg: Data?? = entry.displayThumbnailProvided ? .some(entry.displayThumbnail) : .none
+            // 拼完时间：新格式备份才有这一项；旧备份不动 store 上的值
+            let finishedArg: Date?? = entry.patternFinishedAtProvided ? .some(entry.patternFinishedAt) : .none
             let ok = _setProjectBlobsDirectly(
                 projectId: entry.id,
                 thumbnail: .some(entry.thumbnail),
                 finishedImage: .some(entry.finishedImage),
                 patternGridData: gridArg,
                 partsSheetData: partsArg,
-                displayThumbnail: displayArg
+                displayThumbnail: displayArg,
+                patternFinishedAt: finishedArg
             )
             if !ok { failedIDs.append(entry.id) }
         }
@@ -5112,6 +5120,52 @@ class InventoryManager: ObservableObject {
             "projectId": projectId.uuidString,
             "parts": sheet?.parts.count ?? 0,
             "paletteEntries": sheet?.palette.count ?? 0
+        ])
+        return true
+    }
+
+    /// 「拼完了 / 移回正在拼」—— 只写 `SDProjectRecord.patternFinishedAt` 这一列。
+    ///
+    /// 不经过 saveData 的 diff，也不碰网格 / 零件数据：两边都是整份写回，
+    /// 别的设备刚改的拼完状态会被这台设备手里的旧值盖掉（见字段注释）。
+    ///
+    /// History 处理：**不**记录，理由同 `updateProjectPatternGrid` —— 拼图进度不在撤销范围里，
+    /// 「移回正在拼」本身就是撤回。
+    ///
+    /// - Returns: false = 没写进去，调用方要让按钮保持原样并告诉用户。
+    @discardableResult
+    func updateProjectPatternFinishedAt(_ projectId: UUID, finishedAt: Date?) -> Bool {
+        guard !isUsingLocalFallbackMode else {
+            logWarning("set_pattern_finished_skipped_local_fallback", metadata: ["projectId": projectId.uuidString])
+            return false
+        }
+        guard let context = modelContext else {
+            logError("set_pattern_finished_no_context", metadata: ["projectId": projectId.uuidString])
+            return false
+        }
+        var descriptor = FetchDescriptor<SDProjectRecord>(
+            predicate: #Predicate { $0.id == projectId }
+        )
+        descriptor.fetchLimit = 1
+        // 只取这一列：不限定的话同一行的原图会跟着物化
+        descriptor.propertiesToFetch = [\.patternFinishedAt]
+        do {
+            guard let sd = try context.fetch(descriptor).first else {
+                logWarning("set_pattern_finished_no_sd_record", metadata: ["projectId": projectId.uuidString])
+                return false
+            }
+            sd.patternFinishedAt = finishedAt
+            try context.save()
+        } catch {
+            logError("set_pattern_finished_failed", metadata: [
+                "projectId": projectId.uuidString,
+                "error": "\(error)"
+            ])
+            return false
+        }
+        logInfo("project_pattern_finished_updated", metadata: [
+            "projectId": projectId.uuidString,
+            "finished": finishedAt != nil
         ])
         return true
     }

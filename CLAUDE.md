@@ -130,11 +130,12 @@ SwiftData  HistoryManager  AIServiceManager
   全部走 `PatternModeLauncher.swift` 里的 `.patternModeLauncher(_:)`，不要在页面里另挂一套 `fullScreenCover`。
 - **扣减和拼图是两件独立的事**：计划 / 记录只按扣没扣来分；拼图进度单独算，两边的项目都能进拼图模式。
   没扣减的项目点「拼完了」后，会问一句要不要扣。
-- **拼没拼完只认用户点的「拼完了」**（记在 `BeadPatternGrid.finishedAt` / `BeadPartsSheet.finishedAt`），
+- **拼没拼完只认用户点的「拼完了」**（记在项目的 `patternFinishedAt` 上，一个项目一份），
   不从颜色勾了几个、零件组装了几块往外推。拼图模式每一屏左上角是「退出」（存好、离开），
   主按钮是「拼完了」；已经拼完的项目，这个位置换成「移回正在拼」。
 - 进度从项目里的 `patternGridData` / `partsSheetData` 算（`PatternWorkStore`），跟着 iCloud 走。
   本机 `PatternRecents` 只记最近打开时间和默认模式。
+  拼完时间**不要**再写进网格 / 零件数据：流程每一步都整份写回它们，会盖掉别的设备刚点的「拼完了」。
 
 ### Data Files
 - **`allcolors.json`：运行时唯一的色表**（600 条、599 个不重复色值，跨品牌色号，
