@@ -231,6 +231,52 @@ struct PartsColorReviewStepView: View {
 
     private let columns = [GridItem(.adaptive(minimum: 34), spacing: 6)]
 
+    /// 「这一格判成这个色号，对吗」在这一屏是答不了的：铺出来的是一格一格的碎片，
+    /// 而用户判断对不对靠的是「这块零件原来长什么样」。所以给一条看原图的路，
+    /// 顺着它还能一步回去重对格线 —— 格线没对准正是判错的头号原因。
+    ///
+    /// 先选中一格再按，看的就是那一格所在的那一块；没选中（或者选中的格子横跨
+    /// 好几块）才要挑一下。
+    private var inspectButton: some View {
+        Button(action: startInspect) {
+            // 图标和字自己拼，理由见 `brushButton`。
+            // 字号比导航栏默认的小一档，两个按钮才挤得进一行（见 body 里 toolbar 的注释）。
+            HStack(spacing: 3) {
+                Image(systemName: "photo").font(.footnote)
+                Text("看零件").font(.subheadline)
+            }
+        }
+        .disabled(parts.isEmpty || samplingColors)
+    }
+
+    /// 这一屏改的是「这一格是什么颜色」。另一半 —— 「这一格到底有没有豆子」——
+    /// 在这儿是解不了的：一个本该有豆子的空格躺在几万个空格中间，
+    /// 用户在铺出来的格子里根本找不到它。所以给一条去图纸上直接改的路。
+    private var brushButton: some View {
+        Button {
+            if parts.count == 1 {
+                brushTarget = BrushTarget(id: parts[0].id)
+            } else {
+                pickerRows = makePickerRows()
+                showingPartPicker = true
+            }
+        } label: {
+            // 图标和字自己拼，**不用 `Label`**：导航栏里的 `Label` 一律只画图标，
+            // `.labelStyle(.titleAndIcon)` 也压不住它（试过）。光一个橡皮图标，
+            // 用户得先猜它是干什么的 —— 而这一屏最需要的那件事
+            //（「这一格根本没有豆子」）就藏在它后面。
+            // 名字跟拼豆板那屏的按钮一致，两处是同一件事。
+            HStack(spacing: 3) {
+                Image(systemName: "eraser").font(.footnote)
+                Text("编辑网格").font(.subheadline)
+            }
+        }
+        // 量颜色的那几秒也关掉。挡屏的那层盖不住导航栏（overlay 加在 VStack 上，
+        // 而工具栏项是画到导航栏里去的），不关的话用户能在转圈的时候把画笔叫出来。
+        // `inspectButton` 同理。
+        .disabled(parts.isEmpty || samplingColors)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             groupBar
@@ -253,49 +299,19 @@ struct PartsColorReviewStepView: View {
         .navigationTitle("核对颜色")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // 「这一格判成这个色号，对吗」在这一屏是答不了的：铺出来的是一格一格的碎片，
-            // 而用户判断对不对靠的是「这块零件原来长什么样」。所以给一条看原图的路，
-            // 顺着它还能一步回去重对格线 —— 格线没对准正是判错的头号原因。
-            //
-            // 先选中一格再按，看的就是那一格所在的那一块；没选中（或者选中的格子横跨
-            // 好几块）才要挑一下。
+            // 多零件模式导航栏上不画标题。左边返回、「退出」，右边「看零件」「编辑网格」，
+            // 一行放不下第五样东西：标题会被系统压成「…」（用户截图问过这是啥）。
+            // 按钮字号调小一档也只能露出「核对…」。下面那排色号已经说明这是核对颜色的页面，
+            // 用户选了不显示。单图纸模式没有「看零件」，标题放得下，照常显示。
+            // `navigationTitle` 照留，长按返回键弹出的页面列表里要用。
             if onRegridPart != nil {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: startInspect) {
-                        // 图标和字自己拼，理由同旁边那个「改格子」（导航栏里 `Label` 只画图标）
-                        HStack(spacing: 4) {
-                            Image(systemName: "photo")
-                            Text("看零件")
-                        }
-                    }
-                    .disabled(parts.isEmpty || samplingColors)
-                }
+                ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                // 这一屏改的是「这一格是什么颜色」。另一半 —— 「这一格到底有没有豆子」——
-                // 在这儿是解不了的：一个本该有豆子的空格躺在几万个空格中间，
-                // 用户在铺出来的格子里根本找不到它。所以给一条去图纸上直接改的路。
-                Button {
-                    if parts.count == 1 {
-                        brushTarget = BrushTarget(id: parts[0].id)
-                    } else {
-                        pickerRows = makePickerRows()
-                        showingPartPicker = true
-                    }
-                } label: {
-                    // 图标和字自己拼，**不用 `Label`**：导航栏里的 `Label` 一律只画图标，
-                    // `.labelStyle(.titleAndIcon)` 也压不住它（试过）。光一个橡皮图标，
-                    // 用户得先猜它是干什么的 —— 而这一屏最需要的那件事
-                    //（「这一格根本没有豆子」）就藏在它后面。
-                    // 名字跟拼豆板那屏的按钮一致，两处是同一件事。
-                    HStack(spacing: 4) {
-                        Image(systemName: "eraser")
-                        Text("编辑网格")
-                    }
+                HStack(spacing: 14) {
+                    if onRegridPart != nil { inspectButton }
+                    brushButton
                 }
-                // 量颜色的那几秒也关掉。挡屏的那层盖不住导航栏（overlay 加在 VStack 上，
-                // 而工具栏项是画到导航栏里去的），不关的话用户能在转圈的时候把画笔叫出来。
-                .disabled(parts.isEmpty || samplingColors)
             }
         }
         .task { selectDefaultGroup() }
@@ -735,7 +751,7 @@ struct PartsColorReviewStepView: View {
     }
 
     /// 量颜色的那几秒。把这一屏挡住，免得用户以为没反应又点一遍。
-    /// 导航栏在这层外面，「改格子」那个按钮是另外用 `.disabled` 关掉的。
+    /// 导航栏在这层外面，「看零件」「编辑网格」是另外用 `.disabled` 关掉的。
     private var samplingOverlay: some View {
         ZStack {
             Color.black.opacity(0.12).ignoresSafeArea()
