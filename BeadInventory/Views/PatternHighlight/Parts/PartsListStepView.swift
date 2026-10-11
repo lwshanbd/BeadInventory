@@ -82,6 +82,9 @@ struct PartsListStepView: View {
     private let columns = [GridItem(.adaptive(minimum: 86), spacing: Theme.Spacing.md)]
 
     var body: some View {
+        // 两两比较一遍所有框，每次刷新只算这一次，图上和缩略图共用。
+        // 拖框、缩放时 body 每帧都重跑，放进 ForEach 里每格各算一遍会拖慢手感。
+        let duplicates = duplicatedPartIDs
         VStack(spacing: 0) {
             PatternSourceBanner(projectId: projectId) {
                 sourceBytes = PatternSourceStore.byteSize(for: projectId)
@@ -90,9 +93,9 @@ struct PartsListStepView: View {
             if pages.count > 1 {
                 PartsPagePicker(count: pages.count, selection: $page)
             }
-            preview
+            preview(duplicates: duplicates)
             Divider()
-            partGrid
+            partGrid(duplicates: duplicates)
             footer
         }
         .navigationTitle("零件清单")
@@ -197,7 +200,7 @@ struct PartsListStepView: View {
 
     // MARK: - 上半：图上的框
 
-    private var preview: some View {
+    private func preview(duplicates: Set<UUID>) -> some View {
         GeometryReader { geo in
             let imageRegion = roiImageRegion.width > 0 && roiImageRegion.height > 0
                 ? roiImageRegion : roi
@@ -222,7 +225,7 @@ struct PartsListStepView: View {
                         .position(x: box.midX, y: box.midY)
                 }
                 PartsBoxOverlay(parts: parts, page: page, selection: selection, transform: transform,
-                                override: shownOverride, duplicates: duplicatedPartIDs)
+                                override: shownOverride, duplicates: duplicates)
 
                 if let draftRect {
                     Rectangle()
@@ -391,9 +394,9 @@ struct PartsListStepView: View {
 
     // MARK: - 下半：缩略图清单
 
-    private var partGrid: some View {
+    private func partGrid(duplicates: Set<UUID>) -> some View {
         ScrollViewReader { proxy in
-            partGridContent
+            partGridContent(duplicates: duplicates)
                 // 在图上点了一个框，下面的缩略图要自己滚过来 —— 否则「我点的是哪个」
                 // 还是得用户自己在五十几个格子里找。
                 .onChange(of: lastTappedOnImage) { _, id in
@@ -405,7 +408,7 @@ struct PartsListStepView: View {
         }
     }
 
-    private var partGridContent: some View {
+    private func partGridContent(duplicates: Set<UUID>) -> some View {
         ScrollView {
             if parts.isEmpty {
                 ContentUnavailableView(
@@ -422,7 +425,7 @@ struct PartsListStepView: View {
                             order: index + 1,
                             image: thumbnails[part.id],
                             isSelected: selection.contains(part.id),
-                            isDuplicated: duplicatedPartIDs.contains(part.id)
+                            isDuplicated: duplicates.contains(part.id)
                         )
                         .id(part.id)
                         .onTapGesture {
@@ -742,19 +745,22 @@ struct PartsListStepView: View {
         return PendingBoundsChange(partId: id, bounds: boxPreview)
     }
 
-    /// 同一个零件被圈了两次的那些框。按图上正在显示的框算（含拖动中的预览），
-    /// 用户把框挪开的过程中红色就跟着消失，不用等松手。
+    /// 同一个零件被圈了两次的那些框（判定见 `PartsDuplicateBox`）。
+    /// 按图上正在显示的框算（含拖动中的预览、等确认的新框），
+    /// 用户把框挪开的过程中红色就跟着消失，不用等松手。只在同一张图纸内比较。
     private var duplicatedPartIDs: Set<UUID> {
+        let override = shownOverride
         let shown = parts.map { part in
-            (part, shownOverride?.partId == part.id ? shownOverride!.bounds : part.bounds)
+            (id: part.id, page: part.pageIndex, rect: override?.bounds(for: part) ?? part.bounds)
         }
         var result: Set<UUID> = []
-        for i in shown.indices {
-            for j in shown.indices where j > i {
-                let (a, ra) = shown[i], (b, rb) = shown[j]
-                guard a.pageIndex == b.pageIndex, PartsDuplicateBox.isSamePart(ra, rb) else { continue }
-                result.insert(a.id)
-                result.insert(b.id)
+        for samePage in Dictionary(grouping: shown, by: \.page).values {
+            for i in samePage.indices {
+                for j in (i + 1)..<samePage.endIndex
+                where PartsDuplicateBox.isSamePart(samePage[i].rect, samePage[j].rect) {
+                    result.insert(samePage[i].id)
+                    result.insert(samePage[j].id)
+                }
             }
         }
         return result
@@ -808,6 +814,11 @@ struct PartsListStepView: View {
 private struct PendingBoundsChange: Equatable {
     let partId: UUID
     let bounds: CGRect
+
+    /// 这个零件该按哪个框画：是它就用新框，不是就用零件自己的。
+    func bounds(for part: BeadPart) -> CGRect {
+        partId == part.id ? bounds : part.bounds
+    }
 }
 
 private struct PartsBoxOverlay: View {
@@ -820,29 +831,37 @@ private struct PartsBoxOverlay: View {
     let transform: PartsCanvasTransform
     /// 这个零件先按这个框画（拖动中的预览 / 等确认的新框），零件本身还没改。
     let override: PendingBoundsChange?
-    /// 跟别的框几乎重合的零件（同一个零件圈了两次），描红框。
+    /// 被判成同一个零件圈了两次的那些框（判定见 `PartsDuplicateBox`），描红框。
     let duplicates: Set<UUID>
 
     var body: some View {
         Canvas { context, _ in
             for (index, part) in parts.enumerated() where part.pageIndex == page {
-                let bounds = override?.partId == part.id ? override!.bounds : part.bounds
+                let bounds = override?.bounds(for: part) ?? part.bounds
                 let r = transform.screenRect(bounds)
                 // 选中的框换个颜色，不是加粗。图纸底色是浅粉、豆子里又有大片白，
                 // 原先「选中 = 白框 + 白色蒙版」在上面几乎看不出来 ——
                 // 用户补完一个零件，界面上没有任何地方告诉他「刚画的是这个、它选中了」。
                 // 橙色和这张图上的任何颜色都不撞，一眼就能找到。
                 let selected = selection.contains(part.id)
-                // 重复的框描红：选中时也保持红色描边，只是照常铺橙色底，
+                // 重复的框描红：选中时也保持红色描边和红角标，只是照常铺橙色底，
                 // 这样用户点中其中一个准备删时，还看得出它是重复的那对之一。
+                // 缩略图那边的优先级是反过来的（选中优先），见 `PartThumbnailCell`。
                 let duplicated = duplicates.contains(part.id)
-                let stroke: Color = duplicated ? .red : (selected ? .orange : .cyan)
+                let stroke: Color
+                if duplicated {
+                    stroke = .red
+                } else if selected {
+                    stroke = .orange
+                } else {
+                    stroke = .cyan
+                }
                 if selected {
                     context.fill(Path(roundedRect: r, cornerRadius: 2), with: .color(.orange.opacity(0.3)))
                 }
                 context.stroke(Path(roundedRect: r, cornerRadius: 2),
                                with: .color(stroke),
-                               lineWidth: selected || duplicated ? 2.5 : 1)
+                               lineWidth: (selected || duplicated) ? 2.5 : 1)
 
                 // 序号贴在框的左上角外侧；框太靠上时贴内侧，免得跑出画面。
                 //
@@ -868,8 +887,11 @@ private struct PartsBoxOverlay: View {
 ///
 /// 不用 IoU 一个数卡：手画的框总比算法框大一圈，IoU 掉得很快；
 /// 而合并出来的大框里本来就套着别的小零件，那不算重复。
-/// 所以要两条都满足：小框绝大部分落在大框里，且两个框大小差不多。
-enum PartsDuplicateBox {
+/// 所以要两条都满足：小框至少八成面积落在大框里，且小框面积不小于大框的一半。
+///
+/// 第二条挡住的是「大框套着一个小很多的零件」。但大框只比小框大一倍以内、
+/// 又把它整个套住时，仍然会判成重复 —— 这种框多半本来就圈歪了，标红让用户看一眼也不亏。
+private enum PartsDuplicateBox {
     static func isSamePart(_ a: CGRect, _ b: CGRect) -> Bool {
         let inter = a.intersection(b)
         guard !inter.isNull else { return false }
@@ -1134,6 +1156,15 @@ private struct PartThumbnailCell: View {
     let isSelected: Bool
     let isDuplicated: Bool
 
+    /// 选中时用橙色，跟图上选中框的橙色对应，上下两处同时亮起来才看得出「图上那个 = 这个」。
+    /// 选中优先于重复的红色，跟图上反过来：缩略图没有图上那层橙色底，
+    /// 描边再被红色占掉就看不出选中了。
+    private var borderColor: Color {
+        if isSelected { return .orange }
+        if isDuplicated { return .red }
+        return Theme.ColorToken.Border.default
+    }
+
     var body: some View {
         VStack(spacing: Theme.Spacing.xs) {
             ZStack(alignment: .topLeading) {
@@ -1156,12 +1187,8 @@ private struct PartThumbnailCell: View {
                     .padding(4)
             }
             .overlay(
-                // 跟图上的框用同一个橙色：上下两处同时亮起来，才看得出「图上那个 = 这个」。
-                // 选中优先于重复的红色：缩略图没有图上那层橙色底，描边再被红色占掉就看不出选中了。
                 RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
-                    .stroke(isSelected ? Color.orange
-                                : (isDuplicated ? Color.red : Theme.ColorToken.Border.default),
-                            lineWidth: isSelected || isDuplicated ? 2.5 : 1)
+                    .stroke(borderColor, lineWidth: (isSelected || isDuplicated) ? 2.5 : 1)
             )
 
             Text(title)
