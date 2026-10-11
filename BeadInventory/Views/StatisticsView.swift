@@ -204,7 +204,8 @@ struct StatisticsOverviewView: View {
 
     @ViewBuilder
     private func comparisonChip(_ summary: UsagePeriodSummary) -> some View {
-        if summary.total > 0 || summary.previousTotal > 0 {
+        // 本月 / 今年还没过完，跟上一整段比只会显得「少了很多」，只在看过完的月份 / 年份时显示
+        if !isCurrentPeriod, summary.total > 0 || summary.previousTotal > 0 {
             let delta = summary.total - summary.previousTotal
             let unit = period.kind == .month ? String(localized: "比上月") : String(localized: "比去年")
             let text: String = {
@@ -313,10 +314,10 @@ struct StatisticsOverviewView: View {
                         .foregroundStyle(Theme.ColorToken.Text.secondary)
 
                     HStack(alignment: .lastTextBaseline, spacing: 4) {
-                        Text(String(format: "%.1f", usagePct))
+                        Text(String(format: "%.1f%%", usagePct))
                             .font(.system(size: 22, weight: .semibold).monospacedDigit())
                             .foregroundStyle(Theme.ColorToken.Text.primary)
-                        Text("% 已使用")
+                        Text("已使用")
                             .font(.caption)
                             .foregroundStyle(Theme.ColorToken.Text.secondary)
                     }
@@ -498,8 +499,12 @@ extension InventoryManager {
             for usage in project.beadUsage where usage.isDeducted && usage.quantity > 0 {
                 guard usage.brandId == brandId || (usage.brandId == nil && project.brandId == brandId) else { continue }
                 qty += usage.quantity
-                // 跟扣库存走同一个查找（deductFromStock 用的就是它），排行里的色号才对得上库存那一行
-                if inPeriod, let color = findColor(byCode: usage.colorCode) {
+                // 跟扣库存走同一个查找（deductFromStock 用的就是它），排行里的色号才对得上库存那一行。
+                // 查不到（自定义色后来被删 / 改了色号）也留一行，用原始色号 + 灰色占位，
+                // 不然总数里有、排行里没有，加起来对不上。
+                if inPeriod {
+                    let color = findColor(byCode: usage.colorCode)
+                        ?? BeadColor(colorHex: "#BDBDBD", mardCode: usage.colorCode)
                     byCode[color.mardCode, default: (color, 0)].quantity += usage.quantity
                 }
             }
@@ -581,7 +586,7 @@ struct UsagePeriodPicker: View {
                 selection: kindBinding,
                 segments: [(.month, String(localized: "月")), (.year, String(localized: "年"))]
             )
-            .frame(width: 110)
+            .fixedSize()
 
             Spacer(minLength: 0)
 
