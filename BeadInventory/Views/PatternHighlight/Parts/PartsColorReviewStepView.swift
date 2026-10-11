@@ -239,7 +239,8 @@ struct PartsColorReviewStepView: View {
     /// 好几块）才要挑一下。
     private var inspectButton: some View {
         Button(action: startInspect) {
-            // 图标和字自己拼，理由同旁边「编辑网格」
+            // 图标和字自己拼，理由见 `brushButton`。
+            // 字号比导航栏默认的小一档，两个按钮才挤得进一行（见 body 里 toolbar 的注释）。
             HStack(spacing: 3) {
                 Image(systemName: "photo").font(.footnote)
                 Text("看零件").font(.subheadline)
@@ -272,6 +273,7 @@ struct PartsColorReviewStepView: View {
         }
         // 量颜色的那几秒也关掉。挡屏的那层盖不住导航栏（overlay 加在 VStack 上，
         // 而工具栏项是画到导航栏里去的），不关的话用户能在转圈的时候把画笔叫出来。
+        // `inspectButton` 同理。
         .disabled(parts.isEmpty || samplingColors)
     }
 
@@ -297,11 +299,14 @@ struct PartsColorReviewStepView: View {
         .navigationTitle("核对颜色")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // 导航栏上不画标题。左边返回、「退出」，右边「看零件」「编辑网格」，一行放不下
-            // 第五样东西：标题会被系统压成「…」（用户截图问过这是啥），按钮字号调小一档
-            // 也只能露出「核对…」。下面那排色号已经说明这是核对颜色的页面，用户选了不显示。
+            // 多零件模式导航栏上不画标题。左边返回、「退出」，右边「看零件」「编辑网格」，
+            // 一行放不下第五样东西：标题会被系统压成「…」（用户截图问过这是啥）。
+            // 按钮字号调小一档也只能露出「核对…」。下面那排色号已经说明这是核对颜色的页面，
+            // 用户选了不显示。单图纸模式没有「看零件」，标题放得下，照常显示。
             // `navigationTitle` 照留，长按返回键弹出的页面列表里要用。
-            ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+            if onRegridPart != nil {
+                ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 14) {
                     if onRegridPart != nil { inspectButton }
@@ -746,7 +751,7 @@ struct PartsColorReviewStepView: View {
     }
 
     /// 量颜色的那几秒。把这一屏挡住，免得用户以为没反应又点一遍。
-    /// 导航栏在这层外面，「改格子」那个按钮是另外用 `.disabled` 关掉的。
+    /// 导航栏在这层外面，「看零件」「编辑网格」是另外用 `.disabled` 关掉的。
     private var samplingOverlay: some View {
         ZStack {
             Color.black.opacity(0.12).ignoresSafeArea()
