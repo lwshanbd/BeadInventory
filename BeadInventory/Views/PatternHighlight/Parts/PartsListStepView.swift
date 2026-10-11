@@ -84,7 +84,7 @@ struct PartsListStepView: View {
     var body: some View {
         // 两两比较一遍所有框，每次刷新只算这一次，图上和缩略图共用。
         // 拖框、缩放时 body 每帧都重跑，放进 ForEach 里每格各算一遍会拖慢手感。
-        let duplicates = duplicatedPartIDs
+        let overlapping = overlappingPartIDs
         VStack(spacing: 0) {
             PatternSourceBanner(projectId: projectId) {
                 sourceBytes = PatternSourceStore.byteSize(for: projectId)
@@ -93,9 +93,9 @@ struct PartsListStepView: View {
             if pages.count > 1 {
                 PartsPagePicker(count: pages.count, selection: $page)
             }
-            preview(duplicates: duplicates)
+            preview(overlapping: overlapping)
             Divider()
-            partGrid(duplicates: duplicates)
+            partGrid(overlapping: overlapping)
             footer
         }
         .navigationTitle("零件清单")
@@ -200,7 +200,7 @@ struct PartsListStepView: View {
 
     // MARK: - 上半：图上的框
 
-    private func preview(duplicates: Set<UUID>) -> some View {
+    private func preview(overlapping: Set<UUID>) -> some View {
         GeometryReader { geo in
             let imageRegion = roiImageRegion.width > 0 && roiImageRegion.height > 0
                 ? roiImageRegion : roi
@@ -225,7 +225,7 @@ struct PartsListStepView: View {
                         .position(x: box.midX, y: box.midY)
                 }
                 PartsBoxOverlay(parts: parts, page: page, selection: selection, transform: transform,
-                                override: shownOverride, duplicates: duplicates)
+                                override: shownOverride, overlapping: overlapping)
 
                 if let draftRect {
                     Rectangle()
@@ -394,9 +394,9 @@ struct PartsListStepView: View {
 
     // MARK: - 下半：缩略图清单
 
-    private func partGrid(duplicates: Set<UUID>) -> some View {
+    private func partGrid(overlapping: Set<UUID>) -> some View {
         ScrollViewReader { proxy in
-            partGridContent(duplicates: duplicates)
+            partGridContent(overlapping: overlapping)
                 // 在图上点了一个框，下面的缩略图要自己滚过来 —— 否则「我点的是哪个」
                 // 还是得用户自己在五十几个格子里找。
                 .onChange(of: lastTappedOnImage) { _, id in
@@ -408,7 +408,7 @@ struct PartsListStepView: View {
         }
     }
 
-    private func partGridContent(duplicates: Set<UUID>) -> some View {
+    private func partGridContent(overlapping: Set<UUID>) -> some View {
         ScrollView {
             if parts.isEmpty {
                 ContentUnavailableView(
@@ -425,7 +425,7 @@ struct PartsListStepView: View {
                             order: index + 1,
                             image: thumbnails[part.id],
                             isSelected: selection.contains(part.id),
-                            isDuplicated: duplicates.contains(part.id)
+                            isOverlapping: overlapping.contains(part.id)
                         )
                         .id(part.id)
                         .onTapGesture {
@@ -745,10 +745,10 @@ struct PartsListStepView: View {
         return PendingBoundsChange(partId: id, bounds: boxPreview)
     }
 
-    /// 同一个零件被圈了两次的那些框（判定见 `PartsDuplicateBox`）。
+    /// 跟别的框重叠太多的那些框（判定见 `PartsBoxOverlap`）。
     /// 按图上正在显示的框算（含拖动中的预览、等确认的新框），
     /// 用户把框挪开的过程中红色就跟着消失，不用等松手。只在同一张图纸内比较。
-    private var duplicatedPartIDs: Set<UUID> {
+    private var overlappingPartIDs: Set<UUID> {
         let override = shownOverride
         let shown = parts.map { part in
             (id: part.id, page: part.pageIndex, rect: override?.bounds(for: part) ?? part.bounds)
@@ -757,7 +757,7 @@ struct PartsListStepView: View {
         for samePage in Dictionary(grouping: shown, by: \.page).values {
             for i in samePage.indices {
                 for j in (i + 1)..<samePage.endIndex
-                where PartsDuplicateBox.isSamePart(samePage[i].rect, samePage[j].rect) {
+                where PartsBoxOverlap.overlapsTooMuch(samePage[i].rect, samePage[j].rect) {
                     result.insert(samePage[i].id)
                     result.insert(samePage[j].id)
                 }
@@ -831,8 +831,8 @@ private struct PartsBoxOverlay: View {
     let transform: PartsCanvasTransform
     /// 这个零件先按这个框画（拖动中的预览 / 等确认的新框），零件本身还没改。
     let override: PendingBoundsChange?
-    /// 被判成同一个零件圈了两次的那些框（判定见 `PartsDuplicateBox`），描红框。
-    let duplicates: Set<UUID>
+    /// 跟别的框重叠太多的那些框（判定见 `PartsBoxOverlap`），描红框。
+    let overlapping: Set<UUID>
 
     var body: some View {
         Canvas { context, _ in
@@ -844,12 +844,12 @@ private struct PartsBoxOverlay: View {
                 // 用户补完一个零件，界面上没有任何地方告诉他「刚画的是这个、它选中了」。
                 // 橙色和这张图上的任何颜色都不撞，一眼就能找到。
                 let selected = selection.contains(part.id)
-                // 重复的框描红：选中时也保持红色描边和红角标，只是照常铺橙色底，
-                // 这样用户点中其中一个准备删时，还看得出它是重复的那对之一。
+                // 重叠太多的框描红：选中时也保持红色描边和红角标，只是照常铺橙色底，
+                // 这样用户点中其中一个准备删或改时，还看得出它是标红的那对之一。
                 // 缩略图那边的优先级是反过来的（选中优先），见 `PartThumbnailCell`。
-                let duplicated = duplicates.contains(part.id)
+                let isOverlapping = overlapping.contains(part.id)
                 let stroke: Color
-                if duplicated {
+                if isOverlapping {
                     stroke = .red
                 } else if selected {
                     stroke = .orange
@@ -861,7 +861,7 @@ private struct PartsBoxOverlay: View {
                 }
                 context.stroke(Path(roundedRect: r, cornerRadius: 2),
                                with: .color(stroke),
-                               lineWidth: (selected || duplicated) ? 2.5 : 1)
+                               lineWidth: (selected || isOverlapping) ? 2.5 : 1)
 
                 // 序号贴在框的左上角外侧；框太靠上时贴内侧，免得跑出画面。
                 //
@@ -883,22 +883,23 @@ private struct PartsBoxOverlay: View {
     }
 }
 
-/// 判断两个框是不是把同一个零件圈了两次。
+/// 判断两个框是不是重叠得太多。
 ///
-/// 不用 IoU 一个数卡：手画的框总比算法框大一圈，IoU 掉得很快；
-/// 而合并出来的大框里本来就套着别的小零件，那不算重复。
-/// 所以要两条都满足：小框至少八成面积落在大框里，且小框面积不小于大框的一半。
+/// 图纸上的零件之间不会重叠，所以两个框叠得多，基本就是出了问题：
+/// 同一个零件圈了两次，或者一个框圈大了、把邻居罩了进去。
 ///
-/// 第二条挡住的是「大框套着一个小很多的零件」。但大框只比小框大一倍以内、
-/// 又把它整个套住时，仍然会判成重复 —— 这种框多半本来就圈歪了，标红让用户看一眼也不亏。
-private enum PartsDuplicateBox {
-    static func isSamePart(_ a: CGRect, _ b: CGRect) -> Bool {
+/// 重叠部分占**较小那个框**的 25% 以上才算。按较小的框算，是因为大框罩住小零件时，
+/// 重叠部分只占大框一点点，按大框算就漏掉了。门槛不设成「碰到就算」：
+/// 框的边常比零件多出半格，相邻零件的框边上蹭到一点很常见，那不是问题。
+/// 25% 是对着一张 126 个零件的真实图纸定的：边上蹭到的都在 12% 以下，
+/// 真有问题的那几对在 58%、92%。
+private enum PartsBoxOverlap {
+    static func overlapsTooMuch(_ a: CGRect, _ b: CGRect) -> Bool {
         let inter = a.intersection(b)
         guard !inter.isNull else { return false }
-        let areaA = a.width * a.height, areaB = b.width * b.height
-        let small = min(areaA, areaB), large = max(areaA, areaB)
+        let small = min(a.width * a.height, b.width * b.height)
         guard small > 0 else { return false }
-        return inter.width * inter.height / small >= 0.8 && small / large >= 0.5
+        return inter.width * inter.height / small >= 0.25
     }
 }
 
@@ -1154,14 +1155,14 @@ private struct PartThumbnailCell: View {
     let order: Int
     let image: UIImage?
     let isSelected: Bool
-    let isDuplicated: Bool
+    let isOverlapping: Bool
 
     /// 选中时用橙色，跟图上选中框的橙色对应，上下两处同时亮起来才看得出「图上那个 = 这个」。
-    /// 选中优先于重复的红色，跟图上反过来：缩略图没有图上那层橙色底，
+    /// 选中优先于重叠的红色，跟图上反过来：缩略图没有图上那层橙色底，
     /// 描边再被红色占掉就看不出选中了。
     private var borderColor: Color {
         if isSelected { return .orange }
-        if isDuplicated { return .red }
+        if isOverlapping { return .red }
         return Theme.ColorToken.Border.default
     }
 
@@ -1188,7 +1189,7 @@ private struct PartThumbnailCell: View {
             }
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
-                    .stroke(borderColor, lineWidth: (isSelected || isDuplicated) ? 2.5 : 1)
+                    .stroke(borderColor, lineWidth: (isSelected || isOverlapping) ? 2.5 : 1)
             )
 
             Text(title)
