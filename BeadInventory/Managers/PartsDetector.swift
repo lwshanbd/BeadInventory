@@ -338,14 +338,23 @@ enum PartsDetector {
         }
     }
 
-    /// 按从上到下没有任何零件压着的竖缝切栏。缝要够宽才算：
-    /// 一行里零件之间的间隙很窄，偶尔几行的间隙恰好对齐，不能因此把一张单栏图纸切开。
+    /// 按从上到下没有任何零件压着的竖缝切栏。缝要**明显比同一行里零件之间的间隙宽**才算：
+    /// 只有几个大零件、排得横平竖直的图纸，列与列之间也是一条贯穿上下的空白，
+    /// 但那只是普通的行内间隙，切开就成了一列一列竖着编。
+    /// 量不出行内间隙（每行只有一个框）时不切。
     private static func panels(of indices: [Int], rects: [CGRect]) -> [[Int]] {
         guard indices.count > 1 else { return [indices] }
-        let widths = indices.map { rects[$0].width }.sorted()
+        var gaps: [CGFloat] = []
+        for row in bands(of: indices, rects: rects, along: \.minY, \.maxY) {
+            let inRow = row.map { rects[$0] }.sorted { $0.minX < $1.minX }
+            for (a, b) in zip(inRow, inRow.dropFirst()) where b.minX > a.maxX {
+                gaps.append(b.minX - a.maxX)
+            }
+        }
+        guard !gaps.isEmpty else { return [indices] }
         let byX = indices.sorted { rects[$0].minX < rects[$1].minX }
         let total = (byX.map { rects[$0].maxX }.max() ?? 0) - rects[byX[0]].minX
-        let minGutter = max(widths[widths.count / 2] * 0.5, total * 0.03)
+        let minGutter = max(gaps.sorted()[gaps.count / 2] * 3, total * 0.03)
         var panels: [[Int]] = [[]]
         var reach = rects[byX[0]].maxX
         for index in byX {
@@ -359,26 +368,34 @@ enum PartsDetector {
     /// 沿一个方向把框分成一段一段：按起点排，跟当前这段重叠到「两者里较短那个的一半」就并进去。
     /// 用较短的那个当基准：一个矮零件挨着高零件时，重叠的部分占矮零件的大半，
     /// 但只占高零件的一小截；按高的算就会被错切开。
+    ///
+    /// 「这一段」的范围取成员起点、终点各自的中位数，**不取并集**。框画大了、竖着跨两行的
+    /// 情况很常见，取并集的话一个这样的框就把这一行撑到下一行去，下一行整行被并进来，
+    /// 编号又变成两行交替（棕底章鱼丸子那张图纸上实测过）。
     private static func bands(
         of indices: [Int], rects: [CGRect],
         along lower: KeyPath<CGRect, CGFloat>, _ upper: KeyPath<CGRect, CGFloat>
     ) -> [[Int]] {
+        func median(_ values: [CGFloat]) -> CGFloat { values.sorted()[values.count / 2] }
         let sorted = indices.sorted { rects[$0][keyPath: lower] < rects[$1][keyPath: lower] }
         var bands: [[Int]] = []
-        var spanLow: CGFloat = 0, spanHigh: CGFloat = 0
+        var lows: [CGFloat] = [], highs: [CGFloat] = []
         for index in sorted {
             let low = rects[index][keyPath: lower], high = rects[index][keyPath: upper]
-            let overlap = min(spanHigh, high) - max(spanLow, low)
-            let shorter = min(spanHigh - spanLow, high - low)
-            if !bands.isEmpty, overlap > 0, overlap >= shorter * 0.5 {
-                bands[bands.count - 1].append(index)
-                spanLow = min(spanLow, low)
-                spanHigh = max(spanHigh, high)
-            } else {
-                bands.append([index])
-                spanLow = low
-                spanHigh = high
+            if !bands.isEmpty {
+                let spanLow = median(lows), spanHigh = max(median(highs), spanLow)
+                let overlap = min(spanHigh, high) - max(spanLow, low)
+                let shorter = min(spanHigh - spanLow, high - low)
+                if overlap > 0, overlap >= shorter * 0.5 {
+                    bands[bands.count - 1].append(index)
+                    lows.append(low)
+                    highs.append(high)
+                    continue
+                }
             }
+            bands.append([index])
+            lows = [low]
+            highs = [high]
         }
         return bands
     }
