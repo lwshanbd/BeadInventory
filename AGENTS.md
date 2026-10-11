@@ -16,9 +16,10 @@ BeadInventory 是真人每天使用的 iOS GUI App。所有改动与验证的判
 - `BeadInventory/`: main iOS app (SwiftUI + SwiftData)
   - `Managers/`: business logic (inventory, AI providers, history/undo)
   - `Models/`: domain models + SwiftData conversion/persistence types
-  - `Views/`: SwiftUI screens (tabs and detail views)
+  - `Views/`: SwiftUI screens. Five tabs: 库存 / 计划 / 工作台（拼图 | 识别）/ 记录 / 更多. See CLAUDE.md「Architecture」
   - `Assets.xcassets/`: images, colors, app icons
-  - `zh-Hans.lproj/`, `en.lproj/`: localized resources (keep both updated)
+  - `Localizable.xcstrings`: all user-facing strings (zh-Hans source, en translation)
+  - `zh-Hans.lproj/`, `en.lproj/`: only `InfoPlist.strings`
 - `ShareExtension/`: share extension target (sharing images into the Scan flow). Setup notes: `SHARE_EXTENSION_SETUP.md`.
 - `BeadInventory.xcodeproj/`: Xcode project/workspace configuration.
 - `ci_scripts/`: CI helpers (Xcode Cloud) that update build/version metadata.
@@ -37,7 +38,7 @@ Requirements: iOS 17.0+, Xcode 15.0+.
 
 - Swift: 4-space indentation; prefer SwiftUI composition over deep view hierarchies.
 - Naming: `PascalCase` for types/files (e.g., `InventoryManager.swift`), `lowerCamelCase` for vars/functions.
-- Localization: avoid hard-coded user-facing strings; update both `BeadInventory/zh-Hans.lproj/` and `BeadInventory/en.lproj/` when adding UI text.
+- Localization: avoid hard-coded user-facing strings; add new UI text to `BeadInventory/Localizable.xcstrings` with an `en` translation. Insert entries by text instead of re-serializing the whole JSON; a round-trip reorders thousands of lines.
 - State/history: inventory-changing actions should be recorded via `HistoryManager` before mutating persisted state.
 
 ## Testing Guidelines
