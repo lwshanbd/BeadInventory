@@ -249,6 +249,12 @@ struct PartsSheetFlowView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { exitButton }
             }
+            // 拼图模式每一屏都不给键盘让位。页面上没有直接摆着的输入框，打字都在弹窗（改名、
+            // 跳转零件）和 sheet 里，sheet 自成一层不受影响。不关的话弹窗一打字，背后整页被压扁、
+            // 底部按钮顶到键盘上沿；窗口要是还按键盘在让出位置（见 PatternModeLauncher.open），
+            // 底下也会空一截。挂在 NavigationStack 外面管不到推进去的页面，所以根页面和
+            // navigationDestination 各挂一次。
+            .ignoresSafeArea(.keyboard)
             .navigationDestination(for: Step.self) { step in
                 // 高清工作图还没裁好时给一个明确的「正在准备」——
                 // 早先这里是 `if let work { ... }`，work 为 nil 就整页空白，
@@ -347,6 +353,8 @@ struct PartsSheetFlowView: View {
                 }
                 // 每一屏左上角都能直接退出，不用一屏一屏退回第一页。
                 .toolbar { ToolbarItem(placement: .topBarLeading) { exitButton } }
+                // 同根页面：不给键盘让位
+                .ignoresSafeArea(.keyboard)
             }
         }
         // **盖在整个 NavigationStack 上，不是盖在根视图上。** 判色是从「底色和任意色」
