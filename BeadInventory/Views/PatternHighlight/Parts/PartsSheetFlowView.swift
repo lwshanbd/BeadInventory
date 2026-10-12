@@ -508,7 +508,11 @@ struct PartsSheetFlowView: View {
             // 换一台设备打开、或者点过「拼好了」），但那几张的零件区和格子标定还是有用的数据：
             // 截掉之后一存盘就永久没了，还会同步回原来那台设备。
             self.rois = Self.fitted(saved.pageROIs ?? [saved.roi], count: count, filler: Self.wholeROI)
-            self.parts = saved.parts
+            // 编号还没被用上（一个零件都没对齐过、没判过色）的，每次打开都按位置重排：
+            // 早先拆开 / 补框会让编号在两行之间来回跳，这样老图纸也能顺过来。
+            // 用上了就不动：后面几屏、板子上的「零件 N」都是按这个次序叫的，做到一半改号认不出来。
+            self.parts = PartsListStepView.numberingInUse(saved.parts)
+                ? saved.parts : PartsListStepView.ordered(saved.parts)
             self.palette = saved.palette
             self.calibrations = Self.fitted(saved.pageCalibrations ?? [saved.calibration], count: count, filler: nil)
             self.anyColorCode = saved.anyColorCode
@@ -802,7 +806,8 @@ struct PartsSheetFlowView: View {
                 return
             }
             let generation = sourceGeneration
-            // 一张一张找，各在各的零件区里。行号接着往下排，零件清单的顺序就是第 0 张、第 1 张……
+            // 一张一张找，各在各的零件区里，按张拼进清单。行号接着往下排只是让存档里不重号，
+            // 清单顺序不看它（见 `PartsListStepView.ordered`）。
             let detected = await Task.detached(priority: .userInitiated) { () -> [BeadPart] in
                 var all: [BeadPart] = []
                 var bandOffset = 0
