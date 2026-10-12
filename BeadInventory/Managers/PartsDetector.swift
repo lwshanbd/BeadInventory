@@ -30,7 +30,7 @@ struct DetectedPart: Equatable, Sendable {
     var bounds: CGRect
     /// 工作分辨率下的前景像素数，用来排序 / 判断主次
     var pixelArea: Int
-    /// 第几行（0-based）
+    /// 按阅读顺序数的第几行（0-based）。分栏的图纸，右栏的行号接在左栏后面，见 `readingRows`
     var rowBand: Int
 }
 
@@ -298,7 +298,7 @@ enum PartsDetector {
 
     // MARK: - 分行
 
-    /// 图纸是一行行排版的，用户说「第三行第二个」时得对得上。
+    /// 图纸是一行行排版的，用户说「第三行第二个」时得对得上。顺序规则见 `readingRows`。
     static func assignRowBands(_ boxes: [Box], bitmap: PartsBitmap) -> [DetectedPart] {
         let rects = boxes.map { CGRect(x: $0.x, y: $0.y, width: $0.w, height: $0.h) }
         var result: [DetectedPart] = []
@@ -339,9 +339,10 @@ enum PartsDetector {
     }
 
     /// 按从上到下没有任何零件压着的竖缝切栏。缝要**明显比同一行里零件之间的间隙宽**才算：
+    /// 至少是行内间隙中位数的 3 倍，并且不窄于零件总宽的 3%。
     /// 只有几个大零件、排得横平竖直的图纸，列与列之间也是一条贯穿上下的空白，
     /// 但那只是普通的行内间隙，切开就成了一列一列竖着编。
-    /// 量不出行内间隙（每行只有一个框）时不切。
+    /// 量不出任何行内间隙（每行只有一个框，或者行里的框横向都挨着）时不切。
     private static func panels(of indices: [Int], rects: [CGRect]) -> [[Int]] {
         guard indices.count > 1 else { return [indices] }
         var gaps: [CGFloat] = []
@@ -371,7 +372,7 @@ enum PartsDetector {
     ///
     /// 「这一段」的范围取成员起点、终点各自的中位数，**不取并集**。框画大了、竖着跨两行的
     /// 情况很常见，取并集的话一个这样的框就把这一行撑到下一行去，下一行整行被并进来，
-    /// 编号又变成两行交替（棕底章鱼丸子那张图纸上实测过）。
+    /// 编号又变成两行交替（在一张大件一行、小插件一行交替排的真实图纸上实测过）。
     private static func bands(
         of indices: [Int], rects: [CGRect],
         along lower: KeyPath<CGRect, CGFloat>, _ upper: KeyPath<CGRect, CGFloat>

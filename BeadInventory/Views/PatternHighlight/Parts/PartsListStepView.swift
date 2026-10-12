@@ -201,6 +201,30 @@ struct PartsListStepView: View {
             }
     }
 
+    /// 编号已经被后面几步用上了：有零件在「量格子」那屏点过「对齐了」，或者判过色。
+    /// 从这以后「量格子」、核对、板子、组装几屏都按清单位置叫「零件 N」，用户是记着号在干活的。
+    static func numberingInUse(_ parts: [BeadPart]) -> Bool {
+        parts.contains { $0.hasCells || $0.isGridConfirmed }
+    }
+
+    /// 补框、合并、拆开之后的顺序。`newIds` 是这次新进清单（或者框变了）的那几块。
+    ///
+    /// 编号还没被用上时整页重排。用上了就**只给新的这几块找位置**，其余零件的先后一个不动：
+    /// 整页重排的结果跟页上所有框有关，补一个框就可能让一大片零件改号，
+    /// 用户在板子上看到的「零件 7」回来补了个框就成了「零件 12」。
+    /// 老图纸当初是按旧规则排的，跟新规则排出来的不一样，这种情况尤其容易碰上。
+    static func ordered(_ parts: [BeadPart], inserting newIds: Set<UUID>) -> [BeadPart] {
+        let fresh = ordered(parts)
+        guard numberingInUse(parts) else { return fresh }
+        var result = parts.filter { !newIds.contains($0.id) }
+        // 新的一块跟在整页重排时排在它前面的那一块后面
+        for (i, part) in fresh.enumerated() where newIds.contains(part.id) {
+            let before = i == 0 ? nil : result.firstIndex { $0.id == fresh[i - 1].id }
+            result.insert(part, at: before.map { $0 + 1 } ?? 0)
+        }
+        return result
+    }
+
     // MARK: - 上半：图上的框
 
     private func preview(overlapping: Set<UUID>) -> some View {
@@ -561,7 +585,6 @@ struct PartsListStepView: View {
         let union = chosen.dropFirst().reduce(chosen[0].bounds) { $0.union($1.bounds) }
         var merged = chosen[0]
         merged.bounds = union
-        merged.rowBand = chosen.map(\.rowBand).min() ?? merged.rowBand
         // 合并后网格信息全部作废（框变了，行列数和格子内容都得重算）。
         // **「已对齐」这个标记必须跟着一起清**：它是沿用 chosen[0] 来的，而合并出来的是
         // 一个全新的框，从来没人对过。留着的话「量格子」那屏会把它当成用户确认过的锁住，
@@ -577,7 +600,7 @@ struct PartsListStepView: View {
 
         var remaining = parts.filter { !selection.contains($0.id) }
         remaining.append(merged)
-        parts = Self.ordered(remaining)
+        parts = Self.ordered(remaining, inserting: [merged.id])
         selection = [merged.id]
     }
 
@@ -599,8 +622,8 @@ struct PartsListStepView: View {
         guard inImage.width > 0, inImage.height > 0 else { return }
 
         guard let work else { return }
-        let newPart = BeadPart(rowBand: rowBand(forMidY: inImage.midY), bounds: inImage,
-                               page: page == 0 ? nil : page)
+        // `rowBand` 只是存档里的字段，清单顺序不读它（见 `ordered`），随便给一个
+        let newPart = BeadPart(rowBand: 0, bounds: inImage, page: page == 0 ? nil : page)
         insertSorted(newPart)
         // 画完**选中它**，边把手立刻出现。手指拖出来的框很少一次到位，
         // 下一步几乎总是微调这一个；早先画完不选中，是因为那时选中只能删除 / 合并，
@@ -669,21 +692,10 @@ struct PartsListStepView: View {
         }
     }
 
-    /// 新零件归到哪一行：取竖直方向上离它最近的那个已有零件的行号。
-    /// 补进来的零件多半就在某一行里漏掉的那个位置，跟着邻居走比重新聚类稳。
-    private func rowBand(forMidY midY: CGFloat) -> Int {
-        // 只跟同一张图纸上的比：别的张的纵坐标跟这张不是一回事
-        let samePage = parts.filter { $0.pageIndex == page }
-        guard let nearest = samePage.min(by: {
-            abs($0.bounds.midY - midY) < abs($1.bounds.midY - midY)
-        }) else { return 0 }
-        return nearest.rowBand
-    }
-
     private func insertSorted(_ part: BeadPart) {
         var next = parts
         next.append(part)
-        parts = Self.ordered(next)
+        parts = Self.ordered(next, inserting: [part.id])
     }
 
     /// 拆开 = 只在这一个框里重跑一次检测，并且**关掉闭运算** ——
@@ -732,7 +744,7 @@ struct PartsListStepView: View {
                 var next = parts
                 next.remove(at: index)
                 next.append(contentsOf: replacements)
-                parts = Self.ordered(next)
+                parts = Self.ordered(next, inserting: Set(replacements.map(\.id)))
                 // 拆完不选中拆出来的那几个（跟 addPart 相反，那边选中是为了接着微调）：拆开是为了「这两块本来就是两个」，
                 // 不是为了接着对它们动手，而多选着好几个反而挡住了看拆得对不对。
                 selection.removeAll()
@@ -786,8 +798,9 @@ struct PartsListStepView: View {
     /// 框一变，之前算出来的网格信息就作废（下一步「量格子」会按新框重算）——
     /// 同 mergeSelected：框都换了，行列数和格子内容不可能还对得上，「已对齐」也得跟着清。
     ///
-    /// 不重排，`rowBand` 也不动：这还是同一个零件，编号跟着跳来跳去反而认不出改的是哪个。
-    /// 挪到别的行去的零件，要等下次合并 / 补零件 / 拆开触发排序时才按老行号归位，可以接受。
+    /// 不重排：这还是同一个零件，编号跟着跳来跳去反而认不出改的是哪个。
+    /// 挪到别的行去的零件，编号还没被用上时，下次合并 / 补零件 / 拆开或者重新打开，会按新位置排进去；
+    /// 用上了就一直留在原来的号上。
     private func applyBounds(_ newBounds: CGRect, to id: UUID) {
         guard let index = parts.firstIndex(where: { $0.id == id }) else { return }
         parts[index].bounds = newBounds

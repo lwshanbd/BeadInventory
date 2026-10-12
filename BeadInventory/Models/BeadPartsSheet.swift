@@ -145,8 +145,8 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
     /// 清单上的序号对不上，用户得挨个改名。名字留空、序号由列表位置现算，
     /// 怎么增删都不会错位。
     var customName: String?
-    /// 第几行零件（0-based）。图纸是按行排版的，保留行号后清单能按图纸上的先后顺序排，
-    /// 用户对得上号（清单本身是自适应网格，不是一行一行铺的）。
+    /// 检测时记下的第几行（0-based）。**清单顺序不读它**，按框的位置现算（见 `PartsListStepView.ordered`）：
+    /// 补框、拆开、合并出来的零件没有可靠的行号。留着这个字段是为了老存档能解码。
     var rowBand: Int
     /// 归一化 bbox（相对它所在那一张图纸，见 `page`）。第 1 步的产物，第 2 步标定后会 snap 到格边。
     var bounds: CGRect
