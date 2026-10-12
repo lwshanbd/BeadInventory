@@ -504,10 +504,12 @@ private struct PatternModeLauncherModifier: ViewModifier {
     }
 
     private func open(_ projectId: UUID, mode: PatternMode) {
-        // **先把输入状态收掉再盖上去。** 工作台拼图页的搜索框打过字、键盘还开着就点项目的话，
-        // 搜索框被盖在拼图模式底下仍然占着输入状态。切去别的 App 打字再回来，系统会把键盘
-        // 还给这个看不见的搜索框：键盘不显示，整个窗口却按「键盘在」让出一截，
-        // 拼图每一屏和退出后的工作台底下都空着一条键盘高的白条。
+        // **先把输入状态收掉再盖上去。** 比如工作台拼图页的搜索框还开着键盘就点了项目：
+        // 搜索框被盖在拼图模式底下，仍然占着输入状态。实测退出拼图模式后，键盘会为它重新弹出来。
+        // 识别页「开始拼」那条路上的输入框也一样。
+        //
+        // 有用户反馈：切去别的 App 打字再回来，拼图每一屏和退出后的工作台底下都空出一条
+        // 键盘高的白条。推测是同一个原因：窗口按「键盘在」让出了位置，键盘却没显示出来。
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         PatternRecents.shared.recordOpen(projectId, mode: mode)
         finishedTapped = false

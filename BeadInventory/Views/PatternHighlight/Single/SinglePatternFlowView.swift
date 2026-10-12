@@ -190,6 +190,8 @@ struct SinglePatternFlowView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { exitButton }
             }
+            // 不给键盘让位，理由见 PartsSheetFlowView 同一处。根页面和 navigationDestination 各挂一次。
+            .ignoresSafeArea(.keyboard)
             .navigationDestination(for: Step.self) { step in
                 // 高清工作图还没裁好时给一句明确的「正在准备」——
                 // 空白一片的话用户不知道是在转还是坏了。
@@ -270,6 +272,8 @@ struct SinglePatternFlowView: View {
                 }
                 // 每一屏左上角都能直接退出，不用一屏一屏退回第一页。
                 .toolbar { ToolbarItem(placement: .topBarLeading) { exitButton } }
+                // 同根页面：不给键盘让位
+                .ignoresSafeArea(.keyboard)
             }
         }
         // **盖在整个 NavigationStack 上，不是盖在根视图上。** 判色是从「底色」那一屏

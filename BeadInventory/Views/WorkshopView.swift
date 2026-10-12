@@ -64,11 +64,11 @@ struct WorkshopView: View {
             store.refreshAll(using: inventoryManager)
             chooseDefaultPageIfNeeded()
         }
-        // 两页都常驻，切页不会重跑 .task，所以切到拼图页时补一次（半分钟内扫过就跳过）
         .onChange(of: page) { _, newPage in
             // 两页叠在一起只是透明度切换，切走的那页输入框还占着输入状态。
             // 留着它会跟进拼图模式时一样，变成一个看不见的输入框占着键盘（见 PatternModeLauncher.open）。
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            // 两页都常驻，切页不会重跑 .task，所以切到拼图页时补一次（半分钟内扫过就跳过）
             if newPage == .puzzle { store.refreshAll(using: inventoryManager) }
         }
         // 别的设备同步过来新进度时
