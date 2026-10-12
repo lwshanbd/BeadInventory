@@ -347,6 +347,10 @@ struct PartsSheetFlowView: View {
                 }
                 // 每一屏左上角都能直接退出，不用一屏一屏退回第一页。
                 .toolbar { ToolbarItem(placement: .topBarLeading) { exitButton } }
+                // 这几屏上没有输入框，打字只在弹窗（改名、跳转零件）和 sheet 里，用不着给键盘让位。
+                // 兜底用：窗口要是误以为键盘还开着（见 PatternModeLauncher.open），
+                // 至少这几屏的底部按钮不会被顶上去、底下空一截。
+                .ignoresSafeArea(.keyboard)
             }
         }
         // **盖在整个 NavigationStack 上，不是盖在根视图上。** 判色是从「底色和任意色」
