@@ -379,7 +379,11 @@ struct MoreView: View {
                     .font(.caption2)
                     .foregroundColor(Theme.ColorToken.Text.tertiary)
 
-                if let checkedAt = cloudSyncStatusManager.lastCheckedAt {
+                if let syncedAt = cloudSyncStatusManager.lastSyncSucceededAt {
+                    Text("上次同步：\(syncedAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption2)
+                        .foregroundColor(Theme.ColorToken.Text.tertiary)
+                } else if let checkedAt = cloudSyncStatusManager.lastCheckedAt {
                     Text("上次检查：\(checkedAt.formatted(date: .abbreviated, time: .shortened))")
                         .font(.caption2)
                         .foregroundColor(Theme.ColorToken.Text.tertiary)
