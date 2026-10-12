@@ -9,23 +9,31 @@
 //  立体拼图图纸上的零件之间是「大片背景色」隔开的，所以拆分不需要先知道格子多大，
 //  只要回答一个问题：**哪些像素不是背景**。
 //
-//      估背景色（零件区切成小格，每格各估一个，再抹平插值 —— 底色常常是渐变）
-//        → 逐像素跟所在位置的背景比 Lab 距离，超阈值的算前景
+//      估背景色（取零件区四边的众数）
+//        → 逐像素跟背景比 Lab 距离，超阈值的算前景
 //        → 闭运算把描边上的抗锯齿缺口补上
-//        → 开运算削掉细笔画，剩下的是一块块零件「核心」
-//        → 核心在闭运算结果里往外长几步，把削掉的边缘长回来；彼此抢地盘，互不越界
+//        → 8 邻域连通域，一块就是一个零件
 //        → 按面积滤掉水印 / 噪点
 //        → 小框被大框整个包住的合并进大框（零件内部的孤岛）
-//        → 按 bbox 竖直位置聚成「行」，还原图纸本来的排版顺序
+//        → 按阅读顺序分栏、分行（见 `readingRows`），还原图纸本来的排版顺序
 //
-//  ## 为什么要「核心再长回去」
+//  ## 深色底的图纸多走两步
 //
-//  深色底的图纸几乎都铺着一层半透明的水印数字（还有大面积的半透明插画），
-//  它们跟底色差得不少，前景阈值挡不住；零件之间的缝又只有一格宽，水印笔画常常横穿过去，
-//  把两三个零件连成一块。笔画只有两三像素粗，开运算一削就断。
-//  但开运算也会削掉零件自己的细结构 —— 浅底图纸上白格子跟底色几乎一样，零件只靠一层细格线连着，
-//  直接拿开运算的结果当零件，框会缩成里面一小块。所以开运算只用来**找出有几个零件**，
-//  范围还是从闭运算的结果里长回来。整个被削没的小零件（没有核心）原样保留。
+//  深色底（目前见到的都是深棕）的图纸有两个浅底图纸没有的麻烦：
+//
+//  - **底色是渐变的**，还叠着大面积半透明插画。只拿四边的众数比，渐变深的那头整片底色都会被当成零件。
+//    所以底色改成按位置估：零件区切成小块，每块各估一个，再抹平插值（`backgroundField`）。
+//  - **水印数字跟底色差得多**，前景阈值挡不住；零件之间的缝又只有一格宽，水印笔画横穿过去，
+//    把两三个零件连成一块。所以连通域之前先拆开：
+//      开运算削掉细笔画，剩下的一块块是零件「核心」
+//        → 核心在闭运算结果里往外长几步，把削掉的边缘长回来；彼此抢地盘，长到缝中间就停
+//        → 还没认领的前景按连通块归位：只挨着一个零件的并进去，谁都不挨的自成一块，
+//          挨着好几个的（缝里的水印残渣）也自成一块，多半被面积过滤清掉
+//
+//  这两步**只在深色底上做**（`isDarkBackground`）。浅底图纸上它们反而添乱：
+//  白格子跟底色几乎一样，零件常常只靠细格线连着，开运算会把一个零件拆出好几个核心，
+//  一个零件被框成三个；跟底色接近的大块浅色零件，也可能被按位置估成底色。
+//  浅底图纸上水印本来就淡，前景阈值挡得住，用不着这两步。
 //
 //  刻意**不用** OpenCV：这套逻辑全是整型数组操作，纯 Swift 写出来行为完全可控，
 //  也不用去猜 opencv2 ObjC 包装层的方法签名。
@@ -41,7 +49,7 @@ struct DetectedPart: Equatable, Sendable {
     var bounds: CGRect
     /// 工作分辨率下的前景像素数，用来排序 / 判断主次
     var pixelArea: Int
-    /// 第几行（0-based）
+    /// 按阅读顺序数的第几行（0-based）。分栏的图纸，右栏的行号接在左栏后面，见 `readingRows`
     var rowBand: Int
 }
 
@@ -64,9 +72,11 @@ struct PartsDetectionOptions: Equatable, Sendable {
 
     /// 找零件核心的开运算半径，按 `referencePixels` 那么大的图算，实际按工作图大小等比换算。
     /// 比 2r+1 细的笔画不算核心。0 = 不找核心，闭运算后的每一块就是一个零件。
+    /// 只在深色底上起作用，见文件头。
     ///
-    /// 实测深棕底图纸（工作图上一格 10 像素左右，水印笔画三四像素）：
-    /// 2 削不断横穿零件缝的水印数字，3 刚好。再大就会把一格宽的零件也削没。
+    /// 实测两张深棕底图纸（工作图上一格 10 像素左右）：r=2 削不断横穿零件缝的水印数字，r=3 刚好。
+    /// 原图上笔画看着只有三四像素，r=2（5 像素宽）照理削得断；没细查，多半是闭运算把笔画补粗了一圈。
+    /// 上限是一格宽：r=5 就是 11 像素，一格宽的零件会整个被削没，没有核心。
     var coreRadius: Int = 3
 
     /// 核心最多往外长几步（同样按 `referencePixels` 换算）。
@@ -74,6 +84,7 @@ struct PartsDetectionOptions: Equatable, Sendable {
     var regrowSteps: Int = 6
 
     /// 底色按位置分别估。渐变底、带大面积半透明插画的图纸，四周一圈的众数只对得上一部分。
+    /// 只在深色底上起作用，见文件头。
     /// 在单个零件的小框里重跑时关掉：那里面大半是零件自己，没有足够的底色可估。
     var localBackground: Bool = true
 
@@ -84,8 +95,14 @@ struct PartsDetectionOptions: Equatable, Sendable {
     /// 400 万下一格 10 像素，缝和笔画在像素上才拉得开。
     var maxWorkingPixels: Int = 4_000_000
 
-    /// `coreRadius` / `regrowSteps` 是按这么大的工作图定的
+    /// `coreRadius` / `regrowSteps` 是按这么大的工作图定的。
+    /// 跟 `maxWorkingPixels` 的默认值碰巧相等，但不是一回事：改工作分辨率时别跟着改这个，
+    /// 除非重新实测过那两个半径。
     static let referencePixels = 4_000_000
+
+    /// 四边众数的亮度（L）低于这个就算深色底。实测深棕底在 34~47，粉色浅底在 95 上下，
+    /// 中间空得很大，取 60。
+    static let darkBackgroundL: Double = 60
 }
 
 enum PartsDetector {
@@ -108,7 +125,9 @@ enum PartsDetector {
     /// 已经有位图时的入口（调色板那步会复用同一张位图）
     static func detect(in bitmap: PartsBitmap, options: PartsDetectionOptions) -> [DetectedPart] {
         let w = bitmap.width, h = bitmap.height
-        let mask = foregroundMask(of: bitmap, deltaE: options.foregroundDeltaE, local: options.localBackground)
+        let dark = isDarkBackground(bitmap)
+        let mask = foregroundMask(of: bitmap, deltaE: options.foregroundDeltaE,
+                                  local: dark && options.localBackground)
         let closed = close(mask, width: w, height: h, radius: options.closingRadius)
 
         let minArea = max(12, Int(Double(bitmap.pixelCount) * options.minAreaRatio))
@@ -118,7 +137,7 @@ enum PartsDetector {
 
         let labels = partLabels(
             closed: closed, width: w, height: h,
-            coreRadius: scaled(options.coreRadius),
+            coreRadius: dark ? scaled(options.coreRadius) : 0,
             regrowSteps: scaled(options.regrowSteps),
             minCoreArea: minArea
         )
@@ -158,41 +177,30 @@ enum PartsDetector {
         return QuantizedRGB.labTable[Int(winner)]
     }
 
-    /// 按位置估的底色：零件区切成一格格小块，每块一个底色，像素取所在位置双线性插值。
-    struct BackgroundField {
+    /// 深色底的图纸才按位置估底色、找零件核心，理由见文件头
+    static func isDarkBackground(_ bitmap: PartsBitmap) -> Bool {
+        backgroundLab(of: bitmap).l < PartsDetectionOptions.darkBackgroundL
+    }
+
+    /// 按位置估的底色：零件区切成一格格小块，每块一个底色，像素取所在位置双线性插值
+    /// （插值写在 `foregroundMask` 里）。
+    fileprivate struct BackgroundField {
         let tile: Int
         let columns: Int
         let rows: Int
         /// rows × columns，行优先
         let grid: [LabColor]
-
-        func lab(x: Int, y: Int) -> LabColor {
-            // 小块中心之间插值；最外一圈中心以外按最近的取
-            let fx = min(max((Double(x) + 0.5) / Double(tile) - 0.5, 0), Double(columns - 1))
-            let fy = min(max((Double(y) + 0.5) / Double(tile) - 0.5, 0), Double(rows - 1))
-            let x0 = Int(fx), y0 = Int(fy)
-            let x1 = min(x0 + 1, columns - 1), y1 = min(y0 + 1, rows - 1)
-            let tx = fx - Double(x0), ty = fy - Double(y0)
-            let c00 = grid[y0 * columns + x0], c10 = grid[y0 * columns + x1]
-            let c01 = grid[y1 * columns + x0], c11 = grid[y1 * columns + x1]
-            func mix(_ a: Double, _ b: Double, _ c: Double, _ d: Double) -> Double {
-                (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty
-            }
-            return LabColor(l: mix(c00.l, c10.l, c01.l, c11.l),
-                            a: mix(c00.a, c10.a, c01.a, c11.a),
-                            b: mix(c00.b, c10.b, c01.b, c11.b))
-        }
     }
 
     /// 深色底的图纸常常是上下渐变的（实测一张深棕底从上到下 L 差了 13），
     /// 再叠一层大面积半透明插画。只拿四周一圈的众数去比，渐变深的那头整片底色都会被判成前景。
     ///
-    /// 做法：先用四周一圈的众数当「大致底色」，零件区切成约 24 × N 个小块，
+    /// 做法：先用四周一圈的众数当「大致底色」，零件区按短边约 24 块（每块至少 8 像素）切成方块，
     /// 每块只看跟大致底色差不太远的像素（≤25，渐变的跨度在这以内，零件颜色多半在外），
     /// 这种像素够多的块取它们的众数当这块的底色。
-    /// 跟周围小块的中位数差太多的块不信 —— 那多半是零件里恰好有一片颜色接近底色。
-    /// 没有底色的块（被零件占满）用邻居补，最后 3×3 抹平。
-    static func backgroundField(of bitmap: PartsBitmap) -> BackgroundField {
+    /// 跟周围 5×5 小块的中位数差超过 10 的块不信 —— 那多半是零件里恰好有一片颜色接近底色。
+    /// 没有底色的块（被零件占满，或者刚被判成不可信）用邻居补，最后 3×3 抹平。
+    fileprivate static func backgroundField(of bitmap: PartsBitmap) -> BackgroundField {
         let w = bitmap.width, h = bitmap.height
         let rough = backgroundLab(of: bitmap)
         let tile = max(8, min(w, h) / 24)
@@ -305,8 +313,8 @@ enum PartsDetector {
         let field = backgroundField(of: bitmap)
         let w = bitmap.width
         let limit = deltaE * deltaE
-        // 插值是按小块中心的双线性：每行先把上下两排小块混好，行内再左右混。
-        // 逐像素调 `field.lab(x:y:)` 在 Debug 下要好几秒（400 万像素，每个都是一次带结构体的函数调用）。
+        // 小块中心之间双线性插值，最外一圈中心以外按最近的取。
+        // 每行先把上下两排小块混好，行内只剩左右混：逐像素做完整的双线性在 Debug 下要好几秒。
         var rowL = [Double](repeating: 0, count: field.columns)
         var rowA = rowL, rowB = rowL
         QuantizedRGB.labTable.withUnsafeBufferPointer { table in
@@ -370,10 +378,16 @@ enum PartsDetector {
                                            height: vImagePixelCount(h), width: vImagePixelCount(w), rowBytes: w)
                 var destination = vImage_Buffer(data: dst.baseAddress!,
                                                 height: vImagePixelCount(h), width: vImagePixelCount(w), rowBytes: w)
-                if erode {
-                    vImageMin_Planar8(&source, &destination, nil, 0, 0, side, side, vImage_Flags(kvImageNoFlags))
-                } else {
-                    vImageMax_Planar8(&source, &destination, nil, 0, 0, side, side, vImage_Flags(kvImageNoFlags))
+                let error = erode
+                    ? vImageMin_Planar8(&source, &destination, nil, 0, 0, side, side, vImage_Flags(kvImageNoFlags))
+                    : vImageMax_Planar8(&source, &destination, nil, 0, 0, side, side, vImage_Flags(kvImageNoFlags))
+                // 失败时 out 还是输入的原样：开运算等于没做，深色底又会粘成一块，却不报任何错。
+                // 参数都是合法的，真碰上多半是内存不够；留个日志，别让它悄悄退化。
+                if error != kvImageNoError {
+                    assertionFailure("vImage morphology failed: \(error)")
+                    AppLogger.shared.warning("PartsDetector", "morphology_failed", metadata: [
+                        "error": error, "width": w, "height": h, "radius": r, "erode": erode
+                    ])
                 }
             }
         }
@@ -481,20 +495,18 @@ enum PartsDetector {
             labels[i] = 0
         }
 
-        // 往外长：每步只从上一步新长出来的那圈出发，所以是同步的一圈圈扩
+        // 往外长：每步只从上一步新长出来的那圈出发，所以是同步的一圈圈扩。
+        // 第一圈 = 8 邻域里贴着还没认领的前景的核心像素。跟往外长、连通域一样用 8 邻域，
+        // 不然只在斜角上挨着核心的细结构进不来，会被单独拆成一块。
+        // 「贴着」用 3×3 膨胀一次求出来：逐像素查 8 个邻居在 Debug 下要好几秒。
+        var unclaimed = [Bool](repeating: false, count: closed.count)
+        for i in closed.indices where closed[i] && labels[i] == 0 { unclaimed[i] = true }
+        let nearUnclaimed = squareFilter(unclaimed, width: w, height: h, radius: 1, erode: false)
+        var frontier: [Int] = []
+        for i in labels.indices where labels[i] != 0 && nearUnclaimed[i] { frontier.append(i) }
+
         closed.withUnsafeBufferPointer { closed in
             labels.withUnsafeMutableBufferPointer { lab in
-                // 第一圈：贴着还没认领的前景的核心像素（只看上下左右就够找到边）
-                var frontier: [Int] = []
-                for i in 0..<lab.count where lab[i] != 0 {
-                    let x = i % w
-                    if (x > 0 && closed[i - 1] && lab[i - 1] == 0)
-                        || (x + 1 < w && closed[i + 1] && lab[i + 1] == 0)
-                        || (i >= w && closed[i - w] && lab[i - w] == 0)
-                        || (i + w < lab.count && closed[i + w] && lab[i + w] == 0) {
-                        frontier.append(i)
-                    }
-                }
                 var step = 0
                 while step < regrowSteps, !frontier.isEmpty {
                     var grown: [Int] = []
@@ -517,23 +529,31 @@ enum PartsDetector {
             }
         }
 
-        // 没被认领的，各自成块，编号接在核心后面
+        // 没被认领的按连通块分，再看每块挨着谁
         var rest = [Bool](repeating: false, count: closed.count)
         var anyRest = false
         for i in closed.indices where closed[i] && labels[i] == 0 { rest[i] = true; anyRest = true }
         if anyRest {
             let (others, otherCount) = labelComponents(rest, width: w, height: h)
-            // 只挨着一个零件的那块归它：浅底图纸上零件外圈一大片浅色格子只靠细格线连着，
-            // 核心长 `regrowSteps` 步够不到，不归回去就成了套在零件框外的另一个框。
+            // 只挨着一个零件的那块归它：零件里只靠细格线连着的一片（开运算削掉了，
+            // 核心长 `regrowSteps` 步又够不到），不归回去就成了套在零件框外的另一个框。
             // 同时挨着两个零件的（缝里的水印残渣）不归任何一边，自己成块，多半被面积过滤掉。
+            // 谁都不挨的也自己成块，编号接在核心后面。
             var touching = [Int32](repeating: 0, count: otherCount + 1)   // 0 没挨着，-1 挨着不止一个
-            for i in others.indices where others[i] != 0 {
+            // 8 邻域，跟连通域一致。只有挨着已认领像素的那些要查邻居，同样先膨胀一次圈出来
+            var claimed = [Bool](repeating: false, count: labels.count)
+            for i in labels.indices where labels[i] != 0 { claimed[i] = true }
+            let nearClaimed = squareFilter(claimed, width: w, height: h, radius: 1, erode: false)
+            for i in others.indices where others[i] != 0 && nearClaimed[i] {
                 let o = Int(others[i])
                 guard touching[o] != -1 else { continue }
-                let x = i % w
-                for j in [x > 0 ? i - 1 : -1, x + 1 < w ? i + 1 : -1, i - w, i + w]
-                where j >= 0 && j < labels.count && others[j] == 0 && labels[j] != 0 {
-                    if touching[o] == 0 { touching[o] = labels[j] } else if touching[o] != labels[j] { touching[o] = -1 }
+                let x = i % w, y = i / w
+                for ny in max(0, y - 1)...min(h - 1, y + 1) {
+                    for nx in max(0, x - 1)...min(w - 1, x + 1) {
+                        let j = ny * w + nx
+                        guard others[j] == 0, labels[j] != 0 else { continue }
+                        if touching[o] == 0 { touching[o] = labels[j] } else if touching[o] != labels[j] { touching[o] = -1 }
+                    }
                 }
             }
             let offset = Int32(count)

@@ -717,6 +717,9 @@ struct PartsListStepView: View {
         options.closingRadius = 0
         options.minAreaRatio = 0.015          // 相对这个小框，不是整张图
         options.maxWorkingPixels = 250_000
+        // 不按位置估底色：上面说的「四周一圈的众数」靠的就是这一条。
+        // 不找核心：25 万像素的小框里核心半径换算下来只剩 1，削不断水印笔画，开了也白开。
+        // 深色底上被水印粘住的零件，整页「开始识别零件」时已经拆开了；这里只管闭运算桥接的那种。
         options.localBackground = false
         options.coreRadius = 0
         splitting = true
