@@ -36,6 +36,10 @@ struct BeadInventoryApp: App {
     init() {
         AppLogger.shared.info("App", "bootstrap_started")
 
+        #if DEBUG
+        CloudKitSchemaInitializer.runIfRequested()
+        #endif
+
         // 设置 SwiftData ModelContainer（使用版本化 Schema 支持数据迁移）
         let schema = Schema(versionedSchema: CurrentSchema.self)
         // 主动触发 bootValue 求值，确保设置页能用它判断"是否需要重启"。
@@ -464,9 +468,148 @@ class CloudSyncStatusManager: ObservableObject {
         CKRecordZone.default().zoneID
     ]
 
+    /// 最近一次同步成功（导入或导出）的时间。
+    @Published private(set) var lastSyncSucceededAt: Date?
+    /// 最近一次导入 / 导出 / 启动同步失败时，给用户看的原因。同类事件下次成功就清掉。
+    @Published private(set) var syncFailureMessage: String?
+
+    /// 每类同步事件（setup / import / export）最近一次的结果。
+    /// 只要有一类最近一次是失败，界面就显示「同步出错」—— 导入成功不代表本机的改动传上去了。
+    private var latestFailureByEventType: [Int: String] = [:]
+    private var syncEventObserver: AnyCancellable?
+    private var loggedSuccessEventTypes = Set<Int>()
+
     init(mode: Mode) {
         self.mode = mode
         AppLogger.shared.info("CloudSync", "status_manager_initialized", metadata: ["mode": "\(mode)"])
+        if mode == .iCloudEnabled {
+            observeCloudKitSyncEvents()
+        }
+    }
+
+    // MARK: - 同步事件
+    //
+    // 账号状态「可用」不代表数据真的在同步。以前这里只查账号，CloudKit 导出被云端拒掉
+    // （比如正式环境的 schema 缺字段、iCloud 空间满）时，设置页照样显示「iCloud 同步已启用」，
+    // 用户和诊断日志里都看不出来。SwiftData 底下是 NSPersistentCloudKitContainer，
+    // 它每次 setup / import / export 结束都会发这个通知，这里把结果记下来。
+
+    private func observeCloudKitSyncEvents() {
+        syncEventObserver = NotificationCenter.default
+            .publisher(for: NSPersistentCloudKitContainer.eventChangedNotification)
+            .compactMap { $0.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey] as? NSPersistentCloudKitContainer.Event }
+            .filter { $0.endDate != nil }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] event in
+                self?.handleSyncEvent(event)
+            }
+    }
+
+    private func handleSyncEvent(_ event: NSPersistentCloudKitContainer.Event) {
+        let typeKey = event.type.rawValue
+        let typeName = Self.eventTypeName(event.type)
+
+        if event.succeeded {
+            latestFailureByEventType[typeKey] = nil
+            if event.type != .setup {
+                lastSyncSucceededAt = event.endDate ?? Date()
+            }
+            // 成功事件很密（每批记录一次），每类只记第一次，免得把诊断日志刷爆。
+            if !loggedSuccessEventTypes.contains(typeKey) {
+                loggedSuccessEventTypes.insert(typeKey)
+                AppLogger.shared.info("CloudSync", "sync_event_succeeded", metadata: ["type": typeName])
+            }
+        } else {
+            let error = event.error
+            latestFailureByEventType[typeKey] = Self.makeSyncFailureMessage(type: event.type, error: error)
+            // 失败后再成功要重新记一次，诊断日志里才看得出「恢复了」。
+            loggedSuccessEventTypes.remove(typeKey)
+            var metadata = Self.syncErrorMetadata(error)
+            metadata["type"] = typeName
+            AppLogger.shared.warning("CloudSync", "sync_event_failed", metadata: metadata)
+        }
+
+        // export 的失败最要紧（本机改动传不上去），优先显示。
+        syncFailureMessage = latestFailureByEventType[NSPersistentCloudKitContainer.EventType.export.rawValue]
+            ?? latestFailureByEventType[NSPersistentCloudKitContainer.EventType.setup.rawValue]
+            ?? latestFailureByEventType[NSPersistentCloudKitContainer.EventType.import.rawValue]
+    }
+
+    nonisolated private static func eventTypeName(_ type: NSPersistentCloudKitContainer.EventType) -> String {
+        switch type {
+        case .setup: return "setup"
+        case .import: return "import"
+        case .export: return "export"
+        @unknown default: return "unknown(\(type.rawValue))"
+        }
+    }
+
+    /// event.error 往往是 CoreData 包了一层的 NSError，真正的 CKError 在 underlying 里；
+    /// partialFailure 时每条记录各自的原因又在 partialErrorsByItemID 里。
+    nonisolated private static func firstCKError(in error: Error?) -> CKError? {
+        var current: NSError? = error as NSError?
+        var depth = 0
+        while let nsError = current, depth < 5 {
+            if nsError.domain == CKError.errorDomain {
+                return CKError(_nsError: nsError)
+            }
+            current = nsError.userInfo[NSUnderlyingErrorKey] as? NSError
+            depth += 1
+        }
+        return nil
+    }
+
+    nonisolated private static func makeSyncFailureMessage(
+        type: NSPersistentCloudKitContainer.EventType,
+        error: Error?
+    ) -> String {
+        if let ckError = firstCKError(in: error) {
+            switch ckError.code {
+            case .quotaExceeded:
+                return String(localized: "iCloud 储存空间已满，本机的改动无法上传。")
+            case .notAuthenticated:
+                return String(localized: "未登录 iCloud，无法同步。")
+            case .networkUnavailable, .networkFailure:
+                return String(localized: "网络不可用，联网后会自动继续同步。")
+            default:
+                break
+            }
+        }
+        let code = firstCKError(in: error)?.code.rawValue ?? (error as NSError?)?.code ?? 0
+        switch type {
+        case .export:
+            return String(localized: "本机的改动未能上传到 iCloud（错误 \(code)）。")
+        case .import:
+            return String(localized: "未能从 iCloud 获取其他设备的改动（错误 \(code)）。")
+        default:
+            return String(localized: "iCloud 同步未能启动（错误 \(code)）。")
+        }
+    }
+
+    /// 诊断日志要能直接看出是哪条记录、哪个字段被云端拒了，
+    /// 所以 partialFailure 时把前几条记录级错误也带上。
+    nonisolated private static func syncErrorMetadata(_ error: Error?) -> [String: Any] {
+        guard let error else { return ["error": "nil"] }
+        let nsError = error as NSError
+        var metadata: [String: Any] = [
+            "domain": nsError.domain,
+            "code": nsError.code,
+            "error": nsError.localizedDescription
+        ]
+        if let ckError = firstCKError(in: error) {
+            metadata["ckCode"] = ckError.code.rawValue
+            metadata["ckError"] = ckError.localizedDescription
+            if let partials = ckError.partialErrorsByItemID, !partials.isEmpty {
+                metadata["partialCount"] = partials.count
+                let samples = Set(partials.values.map { partial -> String in
+                    let partialNS = partial as NSError
+                    let serverMessage = partialNS.userInfo["ServerErrorDescription"] as? String
+                    return "\(partialNS.code): \(serverMessage ?? partialNS.localizedDescription)"
+                })
+                metadata["partialSamples"] = Array(samples.prefix(3))
+            }
+        }
+        return metadata
     }
 
     var statusIconName: String {
@@ -474,6 +617,9 @@ class CloudSyncStatusManager: ObservableObject {
         case .localFallback:
             return "internaldrive.fill"
         case .iCloudEnabled:
+            if syncFailureMessage != nil, accountStatus == .available {
+                return "exclamationmark.icloud.fill"
+            }
             if isCheckingAccount {
                 return "icloud"
             }
@@ -497,7 +643,7 @@ class CloudSyncStatusManager: ObservableObject {
         case .iCloudEnabled:
             switch accountStatus {
             case .available:
-                return .green
+                return syncFailureMessage == nil ? .green : .orange
             case .noAccount, .restricted, .temporarilyUnavailable:
                 return .orange
             case .couldNotDetermine, .none:
@@ -518,6 +664,9 @@ class CloudSyncStatusManager: ObservableObject {
             }
             switch accountStatus {
             case .available:
+                if syncFailureMessage != nil {
+                    return String(localized: "iCloud 同步出错")
+                }
                 return String(localized: "iCloud 同步已启用")
             case .noAccount:
                 return String(localized: "未登录 iCloud 账号")
@@ -543,6 +692,9 @@ class CloudSyncStatusManager: ObservableObject {
             }
             switch accountStatus {
             case .available:
+                if let syncFailureMessage {
+                    return syncFailureMessage
+                }
                 return String(localized: "已连接 iCloud，可在多设备间同步数据。")
             case .noAccount:
                 return String(localized: "当前设备未登录 iCloud，无法进行云同步。")
@@ -1506,6 +1658,65 @@ enum WhiteScreenReproSeeder {
     private static func intArgument(_ args: [String], key: String) -> Int? {
         guard let idx = args.firstIndex(of: key), idx + 1 < args.count else { return nil }
         return Int(args[idx + 1])
+    }
+}
+#endif
+
+#if DEBUG
+// MARK: - CloudKit 开发环境 schema 初始化
+//
+// 用法：Debug 构建加启动参数 `-InitializeCloudKitSchema` 跑一次，然后去 CloudKit Console
+// 把 Development 的 schema「Deploy Schema Changes…」到 Production。
+//
+// 为什么要它：模拟器 / Xcode 直接装的 Debug 包连的是 CloudKit **开发**环境，开发环境遇到
+// 没见过的字段会自动建；TestFlight / App Store 连的是**正式**环境，正式环境不会自动建，
+// 只认从开发环境部署过去的 schema。少一个字段，带这个字段的记录整批上传失败，
+// 用户那边表现为「改了不同步」，而开发者在模拟器上永远复现不了。
+//
+// 光靠「在模拟器里随手用一用」把字段带进开发环境不可靠：大 Data 超过阈值才会走
+// `CD_xxx_ckAsset` 字段，平时数据小就永远不会建出来。`initializeCloudKitSchema()`
+// 会按模型把每个字段（含 asset 字段）都建出来，所以每次改模型后都跑一遍再部署。
+//
+// 只碰开发环境（Debug 签名），用一个临时 store，不动真实数据库。
+enum CloudKitSchemaInitializer {
+    static func runIfRequested() {
+        guard ProcessInfo.processInfo.arguments.contains("-InitializeCloudKitSchema") else { return }
+        AppLogger.shared.info("CloudSync", "schema_init_started")
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CloudKitSchemaInit-\(UUID().uuidString).store")
+        defer {
+            for suffix in ["", "-wal", "-shm"] {
+                try? FileManager.default.removeItem(atPath: storeURL.path + suffix)
+            }
+        }
+        do {
+            try autoreleasepool {
+                guard let model = NSManagedObjectModel.makeManagedObjectModel(for: CurrentSchema.models) else {
+                    throw NSError(domain: "CloudKitSchemaInitializer", code: 1, userInfo: [
+                        NSLocalizedDescriptionKey: "makeManagedObjectModel 返回 nil"
+                    ])
+                }
+                let description = NSPersistentStoreDescription(url: storeURL)
+                description.cloudKitContainerOptions = NSPersistentCloudKitContainerOptions(
+                    containerIdentifier: "iCloud.com.beadinventory.app"
+                )
+                description.shouldAddStoreAsynchronously = false
+                let container = NSPersistentCloudKitContainer(name: "CloudKitSchemaInit", managedObjectModel: model)
+                container.persistentStoreDescriptions = [description]
+                var loadError: Error?
+                container.loadPersistentStores { _, error in loadError = error }
+                if let loadError { throw loadError }
+                try container.initializeCloudKitSchema()
+                for store in container.persistentStoreCoordinator.persistentStores {
+                    try container.persistentStoreCoordinator.remove(store)
+                }
+            }
+            print("[CloudKitSchema] ✅ 开发环境 schema 已初始化，去 CloudKit Console 部署到 Production")
+            AppLogger.shared.info("CloudSync", "schema_init_succeeded")
+        } catch {
+            print("[CloudKitSchema] ❌ 初始化失败: \(error)")
+            AppLogger.shared.error("CloudSync", "schema_init_failed", metadata: ["error": "\(error)"])
+        }
     }
 }
 #endif
