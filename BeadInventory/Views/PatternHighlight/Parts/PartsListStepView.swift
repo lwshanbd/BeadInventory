@@ -645,6 +645,9 @@ struct PartsListStepView: View {
             var options = PartsDetectionOptions()
             options.minAreaRatio = 0.01        // 相对这个小框
             options.maxWorkingPixels = 250_000
+            // 小框里大半是零件自己：底色估不出位置差别，也不用找核心拆水印
+            options.localBackground = false
+            options.coreRadius = 0
             // 检测范围就是用户画的那个框，取里面**面积最大**的那块连通域。
             // 下面这两句跟 6560da1（#65 引入时）一字不差；再往下的两道守卫是 #118 加了
             // 把手之后才需要的，那时候还没有「用户抢先改过框」这回事。
@@ -714,6 +717,8 @@ struct PartsListStepView: View {
         options.closingRadius = 0
         options.minAreaRatio = 0.015          // 相对这个小框，不是整张图
         options.maxWorkingPixels = 250_000
+        options.localBackground = false
+        options.coreRadius = 0
         splitting = true
 
         Task.detached(priority: .userInitiated) {
