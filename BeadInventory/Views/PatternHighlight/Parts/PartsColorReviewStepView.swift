@@ -198,8 +198,16 @@ struct PartsColorReviewStepView: View {
     /// 挑零件那一屏的行。开之前算一次就够 —— 放在 sheet 的内容闭包里的话，
     /// 每次求值都要给所有零件重建一遍 `PartFootprint`（板子那屏专门缓存它就是因为这个贵）。
     @State private var pickerRows: [PartBrushPickerSheet.Row] = []
+    /// 挑零件时列表上列出来的那几块，按列表的顺序。对照屏、画笔的「上一个 / 下一个」就在这几块里翻。
+    ///
+    /// 用户是从「含 B90」那张列表里点进来的，翻下一个要的是下一块含 B90 的零件；
+    /// 按零件清单的号往下翻，中间那几块跟这个色号没关系，得连点好几下才翻到想看的。
+    /// nil = 没经过列表（选中格子直接打开、只有一块零件），按零件清单的顺序翻。
+    @State private var pickedFrom: [UUID]?
     private struct BrushTarget: Identifiable {
         let id: UUID
+        /// 画笔里「上一个 / 下一个」在哪几块里翻
+        let siblings: [UUID]
     }
 
     /// 一格的坐标：第几个零件、第几行、第几列
@@ -255,7 +263,7 @@ struct PartsColorReviewStepView: View {
     private var brushButton: some View {
         Button {
             if parts.count == 1 {
-                brushTarget = BrushTarget(id: parts[0].id)
+                brushTarget = BrushTarget(id: parts[0].id, siblings: parts.map(\.id))
             } else {
                 pickerRows = makePickerRows()
                 showingPartPicker = true
@@ -351,15 +359,16 @@ struct PartsColorReviewStepView: View {
             // 等这一屏真的关掉了再开画笔，理由见 `pendingBrushId`
             if let id = pendingBrushId {
                 pendingBrushId = nil
-                brushTarget = BrushTarget(id: id)
+                brushTarget = BrushTarget(id: id, siblings: pickedFrom ?? parts.map(\.id))
             }
         }) {
             PartBrushPickerSheet(
                 rows: pickerRows,
                 filter: pickerFilter,
                 colors: swatchColors,
-                onPick: { id in
+                onPick: { id, shown in
                     pendingBrushId = id
+                    pickedFrom = shown
                     showingPartPicker = false
                 }
             )
@@ -371,8 +380,9 @@ struct PartsColorReviewStepView: View {
                 parts: $parts,
                 colorSystem: colorSystem,
                 subject: { brushSubject(for: $0) },
-                // 翻页按零件清单的顺序走。单图纸模式只有一块，按钮不会出现。
-                siblings: parts.map(\.id),
+                // 从挑零件的列表进来，就在那张列表上的几块里翻（见 `pickedFrom`）。
+                // 单图纸模式只有一块，按钮不会出现。
+                siblings: target.siblings,
                 allowsAnyColor: allowsAnyColor,
                 onCommit: {
                     onPersist()
@@ -405,8 +415,9 @@ struct PartsColorReviewStepView: View {
                 rows: pickerRows,
                 filter: pickerFilter,
                 colors: swatchColors,
-                onPick: { id in
+                onPick: { id, shown in
                     pendingInspectId = id
+                    pickedFrom = shown
                     showingInspectPicker = false
                 }
             )
@@ -486,19 +497,22 @@ struct PartsColorReviewStepView: View {
 
     /// 「上一个 / 下一个」按下去做什么。到头了就返回 nil —— 那一头的按钮变灰。
     ///
-    /// 翻的是零件清单的顺序，也就是弹窗标题上那个号。
+    /// 从挑零件的列表进来，就在那张列表上的几块里翻（见 `pickedFrom`）；
+    /// 否则翻的是零件清单的顺序，也就是弹窗标题上那个号。
     private func stepAction(from partId: UUID, by delta: Int) -> (() -> Void)? {
-        guard parts.count > 1,
-              let index = parts.firstIndex(where: { $0.id == partId }) else { return nil }
+        let order = pickedFrom ?? parts.map(\.id)
+        guard order.count > 1,
+              let index = order.firstIndex(of: partId) else { return nil }
         let target = index + delta
-        guard parts.indices.contains(target) else { return nil }
-        let next = parts[target]
+        guard order.indices.contains(target),
+              let next = parts.first(where: { $0.id == order[target] }) else { return nil }
         return { inspecting = next }
     }
 
     /// 按「看零件」之后的事：先看选中的格子指不指得出唯一一块，指不出来才让他挑。
     private func startInspect() {
         if let only = inspectTarget {
+            pickedFrom = nil
             inspecting = parts.first(where: { $0.id == only })
             return
         }
@@ -1796,7 +1810,8 @@ private struct PartBrushPickerSheet: View {
     /// nil = 没有可筛的色号（正在看的是空白那一组），只有全部零件
     let filter: ColorFilter?
     let colors: [String: Color]
-    let onPick: (UUID) -> Void
+    /// 挑中的那一块，连同列表上当时列出来的全部（按显示顺序），弹窗里翻页要用
+    let onPick: (UUID, [UUID]) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -1812,7 +1827,7 @@ private struct PartBrushPickerSheet: View {
     var body: some View {
         NavigationStack {
             List(shownRows) { row in
-                Button { onPick(row.id) } label: {
+                Button { onPick(row.id, shownRows.map(\.id)) } label: {
                     HStack(spacing: Theme.Spacing.md) {
                         PartShapeThumbnail(footprint: row.footprint, colors: colors)
                             .frame(width: 44, height: 44)
