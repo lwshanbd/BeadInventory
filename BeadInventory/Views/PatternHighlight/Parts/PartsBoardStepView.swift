@@ -310,9 +310,22 @@ struct PartsBoardStepView: View {
         VStack(spacing: 0) {
             boardBar
             Divider()
-            canvas
-            bottomPanel
+            // 板子和下面的面板怎么摆交给 ArrangementView（HIG「Designing for iPhone Duo」）：
+            // 宽比高大就左右分、反过来就上下分。早先固定上下叠放，Duo 横放时板子只剩
+            // 中间一小块正方形、两边空着。
+            if #available(iOS 27.1, *) {
+                ArrangementView {
+                    canvas
+                } secondary: {
+                    bottomPanel
+                }
+                .arrangementViewStyle(.split)
+            } else {
+                canvas
+                bottomPanel
+            }
         }
+        .background(Theme.ColorToken.Surface.background)
         .navigationTitle("排布到拼豆板")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

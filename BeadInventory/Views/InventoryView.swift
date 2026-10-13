@@ -535,6 +535,7 @@ struct InventoryView: View {
                                                     )
                                                 }
                                                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                                                .listRowBackground(Color.clear)
                                             }
                                         }
                                     } header: {
@@ -556,6 +557,7 @@ struct InventoryView: View {
                                 }
                             }
                             .listStyle(.plain)
+                            .scrollContentBackground(.hidden)
                         } else {
                             List {
                                 ForEach(filtered) { color in
@@ -575,9 +577,11 @@ struct InventoryView: View {
                                         )
                                     }
                                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                                    .listRowBackground(Color.clear)
                                 }
                             }
                             .listStyle(.plain)
+                            .scrollContentBackground(.hidden)
                         }
                     }
                 } else {

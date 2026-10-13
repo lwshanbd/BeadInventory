@@ -93,11 +93,30 @@ struct PartsListStepView: View {
             if pages.count > 1 {
                 PartsPagePicker(count: pages.count, selection: $page)
             }
-            preview(overlapping: overlapping)
-            Divider()
-            partGrid(overlapping: overlapping)
-            footer
+            // 图和缩略图怎么摆交给 ArrangementView（HIG「Designing for iPhone Duo」）：
+            // 宽比高大就左右分、反过来就上下分，Duo 半折时还会自己避开中间那条折缝。
+            // 早先是上下叠放、图写死 340pt 高，Duo 外屏横放时总高不到 470pt，缩略图被挤没了。
+            if #available(iOS 27.1, *) {
+                ArrangementView {
+                    preview(overlapping: overlapping)
+                } secondary: {
+                    VStack(spacing: 0) {
+                        partGrid(overlapping: overlapping)
+                        footer
+                    }
+                }
+                .arrangementViewStyle(.split)
+            } else {
+                // 图纸是竖长的，240pt 高只剩不到 180pt 宽，五十几个框挤成一团看不清谁是谁，
+                // 所以高屏上给到 340pt；屏不够高时跟缩略图平分剩下的空间。
+                preview(overlapping: overlapping)
+                    .frame(maxHeight: 340)
+                Divider()
+                partGrid(overlapping: overlapping)
+                footer
+            }
         }
+        .background(Theme.ColorToken.Surface.background)
         .navigationTitle("零件清单")
         .navigationBarTitleDisplayMode(.inline)
         .alert("重命名零件", isPresented: Binding(
@@ -300,9 +319,6 @@ struct PartsListStepView: View {
             // ZStack 铺满画布，所以 `startLocation` 是画布坐标。
             .simultaneousGesture(pinchGesture(in: geo.size))
         }
-        // 图纸是竖长的，240pt 高只剩不到 180pt 宽，五十几个框挤成一团看不清谁是谁。
-        // 340pt 是「图上看得清 + 下面还能露出两行缩略图」的折中。
-        .frame(height: 340)
         .background(Theme.ColorToken.Surface.subtle)
         // 处于补零件状态时给画布描一圈 —— 让「现在单指拖会画框」这件事看得见
         .overlay(
@@ -310,8 +326,8 @@ struct PartsListStepView: View {
                 .stroke(Theme.ColorToken.Morandi.honey, lineWidth: addingPart ? 3 : 0)
                 .allowsHitTesting(false)
         )
-        // 必须裁：图是按放大后的**最终尺寸** `.frame` + `.position` 摆的，本来就会超出这
-        // 340pt 的框 —— 少了这一行，放大后的图会盖到导航栏和下面的缩略图上。
+        // 必须裁：图是按放大后的**最终尺寸** `.frame` + `.position` 摆的，本来就会超出画布的框 ——
+        // 少了这一行，放大后的图会盖到导航栏和下面的缩略图上。
         .clipped()
         // `.clipped()` 只裁画面、不裁点按：伸出去的那一截看不见，却照样接点按，
         // 把上面的翻页条盖死。点按也只认画布这一块。
