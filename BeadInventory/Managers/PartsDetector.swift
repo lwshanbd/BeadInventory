@@ -33,7 +33,7 @@
 //  这两步**只在深色底上做**（`isDarkBackground`）。浅底图纸上它们反而添乱：
 //  白格子跟底色几乎一样，零件常常只靠细格线连着，开运算会把一个零件拆出好几个核心，
 //  一个零件被框成三个；跟底色接近的大块浅色零件，也可能被按位置估成底色。
-//  浅底图纸上水印本来就淡，前景阈值挡得住，用不着这两步。
+//  浅底图纸上水印大多淡，前景阈值挡得住，用不着这两步；挡不住的那种靠下面按描边拆。
 //
 //  ## 浅色底、零件带黑描边的图纸先按描边拆
 //
@@ -390,7 +390,8 @@ enum PartsDetector {
 
         var found = boxes(of: labelComponents(dark, width: w, height: h).labels, width: w)
         // 描边是空心的，像素数远小于零件面积，按外接框的面积滤。
-        // 插画和水印不够黑，到不了这一步，剩下的小块多半是真零件（两三格的小插件），门槛放低
+        // 插画和水印不够黑，到不了这一步，门槛放低留住两三格的小插件。
+        // 代价是零件区里的黑字也可能被框出来，用户删掉就行
         found = found.filter {
             $0.w * $0.h >= minArea / 4 && $0.w >= 4 && $0.h >= 4
                 && !isFrameLine($0, width: w, height: h)
@@ -412,8 +413,12 @@ enum PartsDetector {
         guard total > 0, boxArea > 0 else { return nil }
         let coverage = Double(covered) / Double(total)
         let density = Double(covered) / Double(boxArea)
-        guard coverage >= 0.5, density >= 0.5 else { return nil }
-        return found
+        let accepted = coverage >= 0.5 && density >= 0.5
+        // 用户报「这张框错了」时，靠这行分清走的是哪条路
+        AppLogger.shared.info("PartsDetector", "outline_gate", metadata: [
+            "coverage": coverage, "density": density, "boxes": found.count, "accepted": accepted
+        ])
+        return accepted ? found : nil
     }
 
     // MARK: - 形态学
@@ -681,8 +686,11 @@ enum PartsDetector {
     /// 零件内部常有跟描边不相连的孤岛（腮红点、镂空里的小装饰），它们是独立连通域，
     /// 但用户心里那是同一个零件。只在**完全包含**时合并 —— 只是重叠不合并，
     /// 不然两个挨着的零件会被越并越大。
+    ///
+    /// 按外接框大小排，不按像素数：按描边拆时，外框只有一圈细描边，
+    /// 像素数可能比里面一块实心黑色还少，先处理了里面那块，外框就并不掉它。
     static func mergeContained(_ boxes: [Box]) -> [Box] {
-        let sorted = boxes.sorted { $0.area > $1.area }
+        let sorted = boxes.sorted { $0.w * $0.h > $1.w * $1.h }
         var kept: [Box] = []
         for box in sorted {
             if let hostIndex = kept.firstIndex(where: { $0.contains(box) }) {
