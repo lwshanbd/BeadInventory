@@ -1,6 +1,186 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "跳过" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip"
+          }
+        }
+      }
+    },
+    "继续" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        }
+      }
+    },
+    "开始使用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get Started"
+          }
+        }
+      }
+    },
+    "新手指引" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Getting Started Guide"
+          }
+        }
+      }
+    },
+    "先添加品牌" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a Brand First"
+          }
+        }
+      }
+    },
+    "每个品牌的库存分开记。选好色号体系，再给每种颜色填一个初始数量。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Each brand keeps its own stock. Pick a color system, then set a starting quantity for every color."
+          }
+        }
+      }
+    },
+    "识别图纸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan a Pattern"
+          }
+        }
+      }
+    },
+    "在「工作台 → 识别」里选一张图纸，裁切时只保留色号和数量那一块，AI 会读出每种颜色要用多少颗。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Workspace → Scan, choose a pattern and crop it to the color code and quantity table. AI reads how many beads of each color you need."
+          }
+        }
+      }
+    },
+    "核对识别结果" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review the Results"
+          }
+        }
+      }
+    },
+    "识别不一定全对。左滑任意一行可以修改、更换品牌或删除，核对好再存为计划或扣减库存。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recognition can make mistakes. Swipe left on any row to edit, change brand, or delete it, then save as a plan or deduct from stock."
+          }
+        }
+      }
+    },
+    "进入拼图模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter Pattern Mode"
+          }
+        }
+      }
+    },
+    "识别完点「开始拼」。立体图纸选「多零件模式」，每个零件会被单独找出来。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap Start after scanning. For 3D patterns choose Multi-Piece, and each part is found separately."
+          }
+        }
+      }
+    },
+    "按颜色一种一种拼" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Build One Color at a Time"
+          }
+        }
+      }
+    },
+    "点一个色号，板上只亮这种颜色的位置。全部拼好后点「拼完了」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap a color code and only its spots light up on the board. Tap Finished when you're done."
+          }
+        }
+      }
+    },
+    "投影到拼豆板上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Project onto Your Pegboard"
+          }
+        }
+      }
+    },
+    "有投影仪的话，在拼豆板页连接投影仪。四个角对准豆板后，当前色号的格子会直接亮在板子上。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With a projector, connect it from the board page. Once the four corners line up with your pegboard, the current color's spots light up right on the board."
+          }
+        }
+      }
+    },
+    "补充库存" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restock"
+          }
+        }
+      }
+    },
+    "买了新豆子，在「库存」页点右下角的加号，选色号、填数量。缺哪些豆子可以在「计划」页查看补豆建议。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bought new beads? Tap + at the bottom right of Inventory, pick colors and enter quantities. See what you're short on in Plans → Restock Suggestions."
+          }
+        }
+      }
+    },
     "无法标记为拼完" : {
       "localizations" : {
         "en" : {

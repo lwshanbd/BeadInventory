@@ -25,6 +25,8 @@ struct ContentView: View {
     /// 库存页是否处于多选态，由 InventoryView 通过 PreferenceKey 上报。
     /// 多选态下需要隐藏 FAB，避免与底部 MultiSelectActionBar（含"隐藏"按钮）重叠。
     @State private var inventoryInSelectMode = false
+    /// 开屏指导看过没有。只在新用户（一个品牌都没有）第一次进来时弹。
+    @AppStorage("onboardingShown") private var onboardingShown = false
 
     /// 从 Share Extension 传入的图片
     @State private var externalImage: UIImage?
@@ -199,6 +201,18 @@ struct ContentView: View {
         .sheet(isPresented: $showingAddInventory) {
             AddInventoryView()
         }
+        .fullScreenCover(isPresented: Binding(
+            get: { shouldShowOnboarding },
+            set: { if !$0 { onboardingShown = true } }
+        )) {
+            OnboardingView { onboardingShown = true }
+        }
+        // 老用户升级上来已经有品牌，直接记成看过，以后也不再弹
+        .onChange(of: inventoryManager.hasCompletedInitialLoad, initial: true) { _, loaded in
+            if loaded && !inventoryManager.brands.isEmpty {
+                onboardingShown = true
+            }
+        }
         // 远程公告弹窗
         .alert(
             announcementManager.currentAnnouncement?.title ?? "",
@@ -267,6 +281,13 @@ struct ContentView: View {
                 sharedImageManager.checkForPendingImage()
             }
         }
+    }
+
+    private var shouldShowOnboarding: Bool {
+        !onboardingShown
+            && inventoryManager.hasCompletedInitialLoad
+            && inventoryManager.initialLoadErrorMessage == nil
+            && inventoryManager.brands.isEmpty
     }
 
     /// 在持久层加载失败时，根据 iCloud 账号状态给出更具体的提示。

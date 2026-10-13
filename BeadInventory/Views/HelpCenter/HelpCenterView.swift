@@ -12,6 +12,7 @@ struct HelpCenterView: View {
 
     @State private var searchText = ""
     @State private var didNavigateInitial = false
+    @State private var showingOnboarding = false
 
     private var searchResults: [TutorialStep] {
         TutorialContent.search(query: searchText)
@@ -49,6 +50,23 @@ struct HelpCenterView: View {
 
     @ViewBuilder
     private var sectionList: some View {
+        Section {
+            Button {
+                showingOnboarding = true
+            } label: {
+                Label {
+                    Text("新手指引")
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                } icon: {
+                    Image(systemName: "sparkles.rectangle.stack.fill")
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
+                }
+            }
+            .fullScreenCover(isPresented: $showingOnboarding) {
+                OnboardingView { showingOnboarding = false }
+            }
+        }
+
         ForEach(TutorialContent.sections) { section in
             NavigationLink {
                 TutorialDetailView(section: section)
