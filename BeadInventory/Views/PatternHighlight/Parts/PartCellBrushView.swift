@@ -32,7 +32,7 @@
 //
 //    挪图  拖动看图、两指捏合放大。默认就是它 —— 进来第一件事是看，不是画，
 //          落指就擦掉的话，用户想挪一下图就毁了一片格子。
-//    擦掉  划过的格子变成「没有豆子」
+//    擦掉  划过的格子变成「没有豆子」。原来有豆子的记成用户删掉的，核对颜色的「空」里不再列出
 //    补上  划过的格子变成选中的那个色号
 //
 //  ## 改完就是改完了
@@ -90,6 +90,9 @@ struct PartCellBrushView: View {
     @State private var cells: [[PartCellFill]] = []
     /// 进来时的样子，「取消」用它整块还原
     @State private var original: [[PartCellFill]] = []
+    /// 进来时哪几格是用户删掉的（`BeadPart.deletedCells`）。写回时拿它跟 `original` 一起
+    /// 重算一遍删除标记，见 `deletedCells(cols:)`。
+    @State private var originalDeleted: Set<Int>?
     /// 一笔一条，撤销按笔走 —— 划过去一串二十格，一格一格地撤是没人受得了的
     @State private var strokes: [[Change]] = []
     @State private var loaded = false
@@ -1125,9 +1128,29 @@ struct PartCellBrushView: View {
         }
         var updated = parts[index]
         updated.cells = cells
+        updated.deletedCells = deletedCells(cols: updated.cols)
         parts[index] = updated
         writeFailed = false
         changed = true
+    }
+
+    /// 擦掉的格子记成「用户删掉的」（`BeadPart.deletedCells`）：核对颜色那屏的「空」里
+    /// 不再列出它们。框叠在一起时用户擦的是被算了两遍的那一份，图纸上它明明有颜色，
+    /// 留在「空」里的话用户会以为判错了，又把它改回去。
+    ///
+    /// **每次都从进来时的样子重算，不跟着每一笔增减。** 这样撤销、「取消」、补回去
+    /// 都不用另外记一份删除标记：进来时就删掉的、这次从豆子擦成空的，算删掉；
+    /// 现在不是空的（补上了）一律不算。进来时本来就空、这次也没动的，照旧留在「空」里。
+    private func deletedCells(cols: Int) -> Set<Int>? {
+        var result = Set<Int>()
+        for r in cells.indices {
+            for c in cells[r].indices where cells[r][c] == .empty {
+                let i = r * cols + c
+                let wasBead = r < original.count && c < original[r].count && original[r][c].needsBead
+                if wasBead || originalDeleted?.contains(i) == true { result.insert(i) }
+            }
+        }
+        return result.isEmpty ? nil : result
     }
 
     /// 格子变了之后，屏幕上跟着变的那几样
@@ -1251,6 +1274,7 @@ struct PartCellBrushView: View {
         loaded = false
         cells = []
         original = []
+        originalDeleted = nil
         strokes = []
         changed = false
         beadCount = 0
@@ -1304,6 +1328,7 @@ struct PartCellBrushView: View {
         }
         cells = part.cells
         original = part.cells
+        originalDeleted = part.deletedCells
 
         buildPalette()
         refresh()

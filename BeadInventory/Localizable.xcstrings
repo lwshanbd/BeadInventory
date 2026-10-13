@@ -12793,6 +12793,16 @@
         }
       }
     },
+    "已删除 %lld 格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleted %lld cells"
+          }
+        }
+      }
+    },
     "已选 %lld 格" : {
       "localizations" : {
         "en" : {

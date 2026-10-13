@@ -84,4 +84,9 @@ struct BeadPatternGrid: Codable, Equatable, Sendable {
 
     /// **老字段，不再写入新值。** 理由同 `BeadPartsSheet.finishedAt`。
     var finishedAt: Date? = nil
+
+    /// 用户删掉的格子（`row * cols + col`）。语义同 `BeadPart.deletedCells`：
+    /// 单图纸模式的核对颜色那屏跟多零件共用，删掉的格子不该在重开项目之后又回到「空」里。
+    /// 存成排好序的数组，免得每存一次 JSON 都换个顺序。
+    var deletedCells: [Int]? = nil
 }
