@@ -35,6 +35,12 @@
 //  一个零件被框成三个；跟底色接近的大块浅色零件，也可能被按位置估成底色。
 //  浅底图纸上水印本来就淡，前景阈值挡得住，用不着这两步。
 //
+//  ## 浅色底、零件带黑描边的图纸先按描边拆
+//
+//  有的浅底图纸铺着大幅插画、满屏灰色水印，按底色拆会把整个零件区连成一块。
+//  这类图纸的零件都有纯黑描边，插画和水印没这么黑，所以只看黑像素就能拆干净。
+//  按描边拆出来的框能解释大部分前景时才用它，不然照旧按底色拆，见 `outlinedBoxes`。
+//
 //  刻意**不用** OpenCV：这套逻辑全是整型数组操作，纯 Swift 写出来行为完全可控，
 //  也不用去猜 opencv2 ObjC 包装层的方法签名。
 //
@@ -88,6 +94,10 @@ struct PartsDetectionOptions: Equatable, Sendable {
     /// 在单个零件的小框里重跑时关掉：那里面大半是零件自己，没有足够的底色可估。
     var localBackground: Bool = true
 
+    /// 浅色底上先试着按黑色描边拆零件，见 `PartsDetector.outlinedBoxes`。
+    /// 拆开时关掉：要拆的正是描边连在一起的两个零件，按描边拆还是一块。
+    var outlines: Bool = true
+
     /// 工作分辨率上限。
     ///
     /// 早先是 160 万。深棕底那张长条零件的图纸，零件区压到 160 万像素后一格只剩 6 像素，
@@ -128,9 +138,14 @@ enum PartsDetector {
         let dark = isDarkBackground(bitmap)
         let mask = foregroundMask(of: bitmap, deltaE: options.foregroundDeltaE,
                                   local: dark && options.localBackground)
-        let closed = close(mask, width: w, height: h, radius: options.closingRadius)
-
         let minArea = max(12, Int(Double(bitmap.pixelCount) * options.minAreaRatio))
+
+        if !dark, options.outlines,
+           let outlined = outlinedBoxes(of: bitmap, foreground: mask, minArea: minArea) {
+            return assignRowBands(outlined, bitmap: bitmap)
+        }
+
+        let closed = close(mask, width: w, height: h, radius: options.closingRadius)
         // 工作图比参考尺寸小（原图本身就小）时，笔画和格子在像素上也跟着小，半径按边长比例缩
         let scale = (Double(bitmap.pixelCount) / Double(PartsDetectionOptions.referencePixels)).squareRoot()
         func scaled(_ v: Int) -> Int { v > 0 ? max(1, Int((Double(v) * scale).rounded())) : 0 }
@@ -344,6 +359,61 @@ enum PartsDetector {
             }
         }
         return mask
+    }
+
+    // MARK: - 按描边拆
+
+    /// 描边算「黑」的亮度上限
+    static let outlineMaxL: Double = 40
+
+    /// 按黑色描边拆零件。不是有描边的图纸就返回 nil，走原来的按底色拆。
+    ///
+    /// 有的图纸背景花得很：底下铺满大幅浅色插画，再盖一层灰色水印数字。
+    /// 按底色拆时，插画线条和水印都跟底色差得多，被当成前景，把整个零件区连成一大块，
+    /// 最后被 `isFrameLine` 当边框扔掉，几乎一个零件都框不出来。
+    ///
+    /// 但这类图纸的零件都有一圈纯黑描边，格子之间也是深色格线；插画、水印再花也没这么黑。
+    /// 所以只看黑像素：一个零件的描边和格线连成一整块，零件之间被底色隔开，
+    /// 这一块的外接框就是零件的框。
+    ///
+    /// 怎么判断这张图是不是这种图纸：按底色拆出来的前景，大部分要落在这些框里（`coverage`），
+    /// 这些框里大部分也得是前景（`density`）。没有描边、只有格子里印着黑色数字的图纸，
+    /// 数字拆出来的小框只占前景的一小部分，过不了第一条。
+    static func outlinedBoxes(of bitmap: PartsBitmap, foreground: [Bool], minArea: Int) -> [Box]? {
+        let w = bitmap.width, h = bitmap.height
+        var isDark = [Bool](repeating: false, count: QuantizedRGB.count)
+        for i in 0..<QuantizedRGB.count { isDark[i] = QuantizedRGB.labTable[i].l < outlineMaxL }
+        var dark = [Bool](repeating: false, count: bitmap.pixelCount)
+        for i in 0..<bitmap.pixelCount { dark[i] = isDark[Int(bitmap.quantized[i])] }
+        // 描边缩小后偶尔断开一两个像素，补上
+        dark = close(dark, width: w, height: h, radius: 1)
+
+        var found = boxes(of: labelComponents(dark, width: w, height: h).labels, width: w)
+        // 描边是空心的，像素数远小于零件面积，按外接框的面积滤。
+        // 插画和水印不够黑，到不了这一步，剩下的小块多半是真零件（两三格的小插件），门槛放低
+        found = found.filter {
+            $0.w * $0.h >= minArea / 4 && $0.w >= 4 && $0.h >= 4
+                && !isFrameLine($0, width: w, height: h)
+        }
+        found = mergeContained(found)
+        guard !found.isEmpty else { return nil }
+
+        var inBox = [Bool](repeating: false, count: bitmap.pixelCount)
+        for box in found {
+            for y in box.y..<box.maxY {
+                for x in box.x..<box.maxX { inBox[y * w + x] = true }
+            }
+        }
+        var total = 0, covered = 0, boxArea = 0
+        for i in 0..<bitmap.pixelCount {
+            if foreground[i] { total += 1; if inBox[i] { covered += 1 } }
+            if inBox[i] { boxArea += 1 }
+        }
+        guard total > 0, boxArea > 0 else { return nil }
+        let coverage = Double(covered) / Double(total)
+        let density = Double(covered) / Double(boxArea)
+        guard coverage >= 0.5, density >= 0.5 else { return nil }
+        return found
     }
 
     // MARK: - 形态学
