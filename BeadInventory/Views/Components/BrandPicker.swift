@@ -35,9 +35,8 @@ struct BrandPicker: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(Theme.ColorToken.Fill.latte)
+                .concentricBackground(Theme.ColorToken.Fill.latte)
                 .foregroundColor(.white)
-                .cornerRadius(Theme.Radius.lg)
             }
             .sheet(isPresented: $showingBrandManager) {
                 BrandManagerView()
@@ -74,9 +73,8 @@ struct BrandPicker: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(Theme.ColorToken.Morandi.latte.opacity(0.1))
+                .concentricBackground(Theme.ColorToken.Morandi.latte.opacity(0.1))
                 .foregroundColor(Theme.ColorToken.Morandi.latte)
-                .cornerRadius(Theme.Radius.lg)
             }
             .sheet(isPresented: $showingBrandManager) {
                 BrandManagerView()
@@ -88,4 +86,21 @@ struct BrandPicker: View {
 #Preview {
     BrandPicker()
         .environmentObject(InventoryManager())
+}
+
+private extension View {
+    /// 品牌胶囊常常摆在页面左上角，紧挨着屏幕的大圆角（iPhone Duo 上尤其明显）。
+    /// 写死的 16pt 圆角跟屏幕那条弧对不上，看着像被硬塞进角里。iOS 26 起改成跟所在
+    /// 容器同心：靠近屏幕角时跟着它弯，离得远就退回 16pt。
+    @ViewBuilder
+    func concentricBackground(_ style: some ShapeStyle) -> some View {
+        if #available(iOS 26.0, *) {
+            background(style, in: ConcentricRectangle(
+                corners: .concentric(minimum: .fixed(Theme.Radius.lg)),
+                isUniform: true
+            ))
+        } else {
+            background(style, in: RoundedRectangle(cornerRadius: Theme.Radius.lg))
+        }
+    }
 }

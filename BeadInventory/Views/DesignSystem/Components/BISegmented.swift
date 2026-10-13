@@ -31,6 +31,9 @@ struct BISegmented<T: Hashable>: View {
         .padding(3)
         .background(Theme.ColorToken.Surface.subtle)
         .clipShape(Capsule())
+        // 铺满宽度也有个头：iPhone Duo 内屏、iPad 上横向有一千多点，两个字的段被拉成
+        // 半屏宽的长条，眼睛得左右扫一大截才看到另一段。普通 iPhone 比这窄，不受影响。
+        .frame(maxWidth: fillWidth ? CGFloat(segments.count) * 200 : nil)
     }
 
     @ViewBuilder

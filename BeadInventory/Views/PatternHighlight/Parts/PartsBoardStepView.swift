@@ -317,12 +317,14 @@ struct PartsBoardStepView: View {
                 ArrangementView {
                     canvas
                 } secondary: {
-                    bottomPanel
+                    // 分栏是对半分的（Duo 半折时折缝正在中间），面板内容填不满那一半。
+                    // 让面板铺满、按钮沉底，免得下面露出一截空的页面底色。
+                    bottomPanel(fillsHeight: true)
                 }
                 .arrangementViewStyle(.split)
             } else {
                 canvas
-                bottomPanel
+                bottomPanel(fillsHeight: false)
             }
         }
         .background(Theme.ColorToken.Surface.background)
@@ -836,7 +838,9 @@ struct PartsBoardStepView: View {
     /// 早先是在原来那排按钮左边塞了个 42pt 的小图 —— 一个 20×18 格的零件缩到 42 点，
     /// 一格两个点，什么都看不清，等于没给。而选中一个零件时用户就一件事要做：
     /// 确认「板上这块 = 图纸上那块」。零件条和色号条那会儿一个都用不上，让位给图。
-    private var bottomPanel: some View {
+    /// - Parameter fillsHeight: 铺满给它的高度，按钮沉到底。上下叠放时不能铺：
+    ///   那会儿面板跟板子抢高度，得按内容定高，剩下的全给板子。
+    private func bottomPanel(fillsHeight: Bool) -> some View {
         VStack(spacing: Theme.Spacing.md) {
             if boardPicking {
                 boardPickPanel
@@ -844,8 +848,11 @@ struct PartsBoardStepView: View {
                       let placement = currentBoard?.placements.first(where: { $0.id == id }) {
                 selectedPanel(placement)
             } else {
-                trayTabs
+                trayTabs(expanded: fillsHeight)
             }
+
+            // 零件条 / 色号条自己会铺满（见 `trayStrip`），别的两种面板内容短，靠这个把按钮压到底
+            if fillsHeight && (boardPicking || selection != nil) { Spacer(minLength: 0) }
 
             HStack(spacing: Theme.Spacing.md) {
                 // 不等板子全部标完才给进：几块板拼好了就可以先粘那几块上的零件
@@ -883,8 +890,10 @@ struct PartsBoardStepView: View {
     ///
     /// **`boardColors` 只算一次**：它要把板上每一颗豆子数一遍（一块 50×50 的板两千多格），
     /// 页签和色号条两边都要用。它只能待在「没选中零件」这一侧 —— 选中时下半屏整个换成
-    /// 那块零件的大图，一颗豆子都不用数，所以别把它提到 `bottomPanel` 顶上去。
-    private var trayTabs: some View {
+    /// 那块零件的大图，一颗豆子都不用数，所以别把它提到 `bottomPanel(fillsHeight:)` 顶上去。
+    /// - Parameter expanded: 面板分到了一整块（分栏时），零件和色号排成网格铺满，
+    ///   不再挤成一条横着滚的长条 —— 一眼看到全部色号，不用左右翻。
+    private func trayTabs(expanded: Bool) -> some View {
         let colors = boardColors
         let board = currentBoard
         let done = colors.filter { board?.isColorDone($0.key, count: $0.count) ?? false }.count
@@ -902,8 +911,8 @@ struct PartsBoardStepView: View {
             .pickerStyle(.segmented)
 
             switch tab {
-            case .parts: partsTray
-            case .colors: colorTray(colors: colors, doneCount: done)
+            case .parts: partsTray(expanded: expanded)
+            case .colors: colorTray(colors: colors, doneCount: done, expanded: expanded)
             }
         }
     }
@@ -1108,7 +1117,7 @@ struct PartsBoardStepView: View {
     /// 的 —— 用户取下它，往往就是因为不想让它待在这块板上；点一下它又落回去了，
     /// 想把它们凑成另起的一块板，之前一个办法都没有。取下只完成了一半，另一半在这里：
     /// 勾几个，一次摆到别处去。
-    private var partsTray: some View {
+    private func partsTray(expanded: Bool) -> some View {
         // 全摆完了就不该还停在多选态（那时条里一个零件都没有，「已选 0 个」没有意义）。
         // 状态本身留着不清，是为了让这一句成为唯一的判断口径。
         let picking = self.picking && !unplaced.isEmpty
@@ -1143,22 +1152,20 @@ struct PartsBoardStepView: View {
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Text.tertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 76)
+                    // 铺满时占住条子的位置，按钮才会留在底下
+                    .frame(height: expanded ? nil : 76)
+                    .frame(maxHeight: expanded ? .infinity : nil, alignment: .top)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: Theme.Spacing.sm) {
-                        ForEach(unplaced) { part in
-                            Button {
-                                if picking { togglePick(part.id) } else { place(part) }
-                            } label: {
-                                trayCell(part, picking: picking, picked: picks.contains(part.id))
-                            }
-                            .buttonStyle(.plain)
+                trayStrip(expanded: expanded, cellWidth: 48) {
+                    ForEach(unplaced) { part in
+                        Button {
+                            if picking { togglePick(part.id) } else { place(part) }
+                        } label: {
+                            trayCell(part, picking: picking, picked: picks.contains(part.id))
                         }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 2)
                 }
-                .frame(height: 76)
 
                 if picking {
                     HStack(spacing: Theme.Spacing.sm) {
@@ -1180,6 +1187,31 @@ struct PartsBoardStepView: View {
                     .disabled(pickedParts.isEmpty)
                 }
             }
+        }
+    }
+
+    /// 零件条、色号条的容器。平时是一条 76pt 高、横着滚的长条（上下叠放时面板得让高度给板子）；
+    /// `expanded` 时排成网格、竖着滚，把面板分到的那一块铺满。
+    @ViewBuilder
+    private func trayStrip<Cells: View>(expanded: Bool, cellWidth: CGFloat,
+                                        @ViewBuilder cells: () -> Cells) -> some View {
+        if expanded {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: cellWidth), spacing: Theme.Spacing.sm)],
+                          spacing: Theme.Spacing.md) {
+                    cells()
+                }
+                .padding(.horizontal, 2)
+            }
+            .frame(maxHeight: .infinity)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    cells()
+                }
+                .padding(.horizontal, 2)
+            }
+            .frame(height: 76)
         }
     }
 
@@ -1279,7 +1311,7 @@ struct PartsBoardStepView: View {
     ///
     /// 色号和「拼完了几个」由 `trayTabs` 算好传进来 —— 页签上那个数跟这里必须是
     /// 同一份，各算各的就是把板上两千多格数两遍。
-    private func colorTray(colors: [(key: String, count: Int)], doneCount done: Int) -> some View {
+    private func colorTray(colors: [(key: String, count: Int)], doneCount done: Int, expanded: Bool) -> some View {
         let board = currentBoard
         return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
@@ -1305,23 +1337,21 @@ struct PartsBoardStepView: View {
                     .font(.caption)
                     .foregroundColor(Theme.ColorToken.Text.tertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 76)
+                    // 铺满时占住条子的位置，按钮才会留在底下
+                    .frame(height: expanded ? nil : 76)
+                    .frame(maxHeight: expanded ? .infinity : nil, alignment: .top)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: Theme.Spacing.sm) {
-                        ForEach(colors, id: \.key) { entry in
-                            Button {
-                                highlightKey = highlightKey == entry.key ? nil : entry.key
-                            } label: {
-                                colorChip(key: entry.key, count: entry.count,
-                                          isDone: board?.isColorDone(entry.key, count: entry.count) ?? false)
-                            }
-                            .buttonStyle(.plain)
+                trayStrip(expanded: expanded, cellWidth: 56) {
+                    ForEach(colors, id: \.key) { entry in
+                        Button {
+                            highlightKey = highlightKey == entry.key ? nil : entry.key
+                        } label: {
+                            colorChip(key: entry.key, count: entry.count,
+                                      isDone: board?.isColorDone(entry.key, count: entry.count) ?? false)
                         }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 2)
                 }
-                .frame(height: 76)
             }
         }
         .haptic(.success, trigger: doneToggles)
@@ -2091,7 +2121,7 @@ struct PartsBoardStepView: View {
 
     /// 点了零件条里的一个零件：落到当前这块板上；这块满了就新开一块并切过去。
     ///
-    /// **落位之后不选中它。** 选中会把整条零件条换成那个零件的大图（见 `bottomPanel`），
+    /// **落位之后不选中它。** 选中会把整条零件条换成那个零件的大图（见 `bottomPanel(fillsHeight:)`），
     /// 于是「接着点下一个」变成「先点收起，再点下一个」—— 一次点击换来的是每放一个零件
     /// 多一次点击，而「还有 N 个没摆」那句恰好在它最该确认放成功的时候消失。
     /// 放成功的证据在板上：那儿多了一块带号的零件，条里少了一个。
