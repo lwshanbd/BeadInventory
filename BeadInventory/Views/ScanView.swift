@@ -96,9 +96,6 @@ struct ScanView: View {
     @AppStorage("defaultColorSystem") private var defaultColorSystemRaw: String = "MARD"
     @State private var scanColorSystem: ColorSystem = .mard
 
-    // 引导弹窗
-    @AppStorage("scanViewHelpShown") private var helpHasBeenDismissed = false
-    @State private var showingHelpSheet = false
     init(externalImage: Binding<UIImage?> = .constant(nil)) {
         self._externalImage = externalImage
     }
@@ -241,7 +238,7 @@ struct ScanView: View {
             .pipe { applySheets($0) }
             .pipe { applyAlerts($0) }
             .pipe { applyChangeHandlers($0) }
-            .pipe { applyHelpAndOnAppear($0) }
+            .pipe { applyOnAppear($0) }
         }
     }
 
@@ -389,24 +386,10 @@ struct ScanView: View {
         }
     }
 
-    private func applyHelpAndOnAppear<V: View>(_ view: V) -> some View {
+    private func applyOnAppear<V: View>(_ view: V) -> some View {
         view
-            .sheet(isPresented: $showingHelpSheet) {
-                ScanHelpSheet(
-                    onDismiss: {
-                        showingHelpSheet = false
-                    },
-                    onNeverShowAgain: {
-                        helpHasBeenDismissed = true
-                        showingHelpSheet = false
-                    }
-                )
-            }
             .onAppear {
                 scanColorSystem = ColorSystem(rawValue: defaultColorSystemRaw) ?? .mard
-                if !helpHasBeenDismissed {
-                    showingHelpSheet = true
-                }
             }
     }
 
@@ -3320,111 +3303,6 @@ struct CropGridShape: Shape {
         path.addLine(to: CGPoint(x: rect.width, y: thirdH * 2))
 
         return path
-    }
-}
-
-// MARK: - 扫描引导弹窗
-struct ScanHelpSheet: View {
-    let onDismiss: () -> Void
-    var onNeverShowAgain: (() -> Void)? = nil  // 可选，从"更多"页面打开时不需要
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // 翻页内容区域
-            TabView {
-                // 第一页
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("啃豆小仓AI扫描使用教程（1）")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, 24)
-
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("1. 在设置中配置云端 API（填写 API Key）")
-                            Text("2. 裁切图纸，请只保留图纸下方豆量汇总")
-                            Text("3. 扫描")
-                        }
-                        .font(.body)
-                        .padding(.horizontal, 20)
-
-                        Image("HelpNew1")
-                            .resizable()
-                            .scaledToFit()
-                            .cornerRadius(Theme.Radius.md)
-                            .padding(.horizontal, 20)
-
-                        Spacer(minLength: 100)
-                    }
-                }
-
-                // 第二页
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("啃豆小仓AI扫描使用教程（2）")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, 24)
-
-                        VStack(spacing: 4) {
-                            Text("上方为「表格」，下方为「色号统计」")
-                            Text("目前啃豆小仓无法直接识别你的「图纸」")
-                        }
-                            .font(.body)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 20)
-
-                        Image("HelpNew2")
-                            .resizable()
-                            .scaledToFit()
-                            .cornerRadius(Theme.Radius.md)
-                            .padding(.horizontal, 20)
-
-                        Image("HelpNew3")
-                            .resizable()
-                            .scaledToFit()
-                            .cornerRadius(Theme.Radius.md)
-                            .padding(.horizontal, 20)
-
-                        Spacer(minLength: 100)
-                    }
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .always))
-            .indexViewStyle(.page(backgroundDisplayMode: .always))
-
-            // 按钮区域
-            VStack(spacing: 12) {
-                Button {
-                    onDismiss()
-                } label: {
-                    Text("好的")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Theme.ColorToken.Fill.mauve)
-                        .foregroundColor(.white)
-                        .cornerRadius(Theme.Radius.md)
-                }
-
-                if let onNeverShowAgain = onNeverShowAgain {
-                    Button {
-                        onNeverShowAgain()
-                    } label: {
-                        Text("不再显示")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
-            .background(Theme.ColorToken.Surface.elevated)
-        }
-        .presentationDetents([.large])
     }
 }
 

@@ -317,6 +317,7 @@
 		DE516C7000000000000DESYS /* Views/DesignSystem */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Views/DesignSystem; sourceTree = "<group>"; };
 		DE516C7100000000000PROJ /* Managers/Projector */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Managers/Projector; sourceTree = "<group>"; };
 		DE516C7200000000000VPRJ /* Views/Projector */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Views/Projector; sourceTree = "<group>"; };
+		DE516C7300000000000ONBD /* Views/Onboarding */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Views/Onboarding; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -461,6 +462,7 @@
 				DE516C7000000000000DESYS /* Views/DesignSystem */,
 				DE516C7100000000000PROJ /* Managers/Projector */,
 				DE516C7200000000000VPRJ /* Views/Projector */,
+				DE516C7300000000000ONBD /* Views/Onboarding */,
 				A01234560013 /* Assets.xcassets */,
 				38B1A0012F01000100000052 /* colorwithkaka.csv */,
 				38B1A0012F01000100000054 /* allcolors.json */,
@@ -648,6 +650,7 @@
 				DE516C7000000000000DESYS /* Views/DesignSystem */,
 				DE516C7100000000000PROJ /* Managers/Projector */,
 				DE516C7200000000000VPRJ /* Views/Projector */,
+				DE516C7300000000000ONBD /* Views/Onboarding */,
 			);
 			name = BeadInventory;
 			packageProductDependencies = (
