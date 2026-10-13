@@ -55,7 +55,9 @@ struct PartsColorReviewStepView: View {
     /// 容器要拿它去改调色板：补判沿用的就是那份调色板，不跟着改的话，用户在这一屏
     /// 好不容易把一整类从 H8 纠正成 H7，回头重对一块格子，那一块又变回 H8 ——
     /// 核对页上同一种颜色出现两个色号，而且没有任何提示。
-    var onGroupRecolored: ((PartCellFill, PartCellFill) -> Void)?
+    ///
+    /// 交回来的闭包是「把调色板改回去」，撤销这一步时调用。
+    var onGroupRecolored: ((PartCellFill, PartCellFill) -> (() -> Void)?)?
 
     @EnvironmentObject var inventoryManager: InventoryManager
 
@@ -231,12 +233,13 @@ struct PartsColorReviewStepView: View {
         let cells: [(ref: CellRef, old: PartCellFill)]
         let newFill: PartCellFill
         /// 这一步是「删除」（格子写成空，并记成用户删掉的，见 `BeadPart.deletedCells`）。
-        /// 撤销时要把删除标记一并摘掉，不然这几格放回原样之后还挂着「已删除」。
+        /// 撤销时要把删除标记一并摘掉：在「空」那一组里删的格子放回去还是空的，
+        /// 不摘的话它们就一直藏着。
         var deletes = false
-        /// 这一步整类改掉了哪个色号。nil = 只改了其中几格。
-        /// 撤销要靠它把调色板也改回去 —— 只把格子放回原样、调色板还停在新色号上的话，
-        /// 「撤销」等于没撤干净，下次补判又会按新色号来。
-        let groupFill: PartCellFill?
+        /// 整类改色号时，把调色板改回去的那一下（见 `onGroupRecolored`）。nil = 只改了其中几格。
+        /// 只把格子放回原样、调色板还停在新色号上的话，「撤销」等于没撤干净，
+        /// 下次补判又会按新色号来。
+        let undoPalette: (() -> Void)?
     }
 
     private let columns = [GridItem(.adaptive(minimum: 34), spacing: 6)]
@@ -1142,21 +1145,29 @@ struct PartsColorReviewStepView: View {
                     .buttonStyle(.bordered)
                 }
 
-                // 以前这里是「设为空」：格子改成空之后会落进「空」那一组。两个零件的框叠在一起时，
-                // 用户删掉的是被算了两遍的那一份，它在图纸上明明有颜色 —— 落进「空」之后
-                // 用户以为是判错了，又把它改回色号，重复的那颗豆子就又回来了。
-                // 所以改成删除：不算豆子，也不再出现在「空」里（见 `BeadPart.deletedCells`）。
+                // 选中了格子是「删除」：不算豆子，也不再出现在「空」里（见 `BeadPart.deletedCells`）。
+                // 两个零件的框叠在一起时，用户删的是被算了两遍的那一份，它在图纸上明明有颜色。
+                // 落进「空」的话，用户以为判错了又改回色号，重复的那颗就又回来了。
+                //
+                // 没选格子时是整类，仍旧只写成空、落进「空」那一组。整类是在纠正判色，
+                // 判错了还得能去「空」里找回来；整类都标成删除的话，过了撤销条就再也看不见了。
                 Button {
-                    if selection.isEmpty { selectWholeGroup() }
-                    apply(.empty, deleting: true)
+                    if selection.isEmpty {
+                        selectWholeGroup()
+                        apply(.empty)
+                    } else {
+                        apply(.empty, deleting: true)
+                    }
                 } label: {
-                    Label(selection.isEmpty ? "这类都删除" : "删除", systemImage: "trash")
+                    Label(selection.isEmpty ? "这类没有豆子" : "删除",
+                          systemImage: selection.isEmpty ? "square.dashed" : "trash")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-                // 在「空」那一组里整类删除，等于把核对空格这件事整个跳过 ——
-                // 底色判错的那一片豆子就再也找不回来了。要删就一格一格选。
-                .disabled(selection.isEmpty && selectedGroup == .empty)
+                // 「空」那一组整片删掉，等于跳过核对空格这件事，底色判错的豆子就找不回来了。
+                // 反选、框选凑出来的整组也算。
+                .disabled(selectedGroup == .empty
+                          && (selection.isEmpty || selection.count == groupCells?.count))
             }
             .font(.footnote)
             .lineLimit(1)
@@ -1586,7 +1597,7 @@ struct PartsColorReviewStepView: View {
     ///
     /// 逐格写 `parts[...]…= fill` 的话，每一格都是一次完整的 binding get→modify→set，
     /// 而 getter 交出来的临时数组会多持一份 `cells`，于是每次赋值都触发一次 COW。
-    /// 整类操作（「这类都删除」作用于整组）一组能有上万格 —— 五万次状态写。
+    /// 整类操作作用于整组，单图纸一组能有几万格，逐格写就是几万次状态写。
     ///
     /// `deleting` = 删除：格子写成空，同时记成用户删掉的（见 `BeadPart.deletedCells`）。
     /// 本来就是空的格子（在「空」那一组里选的）也要记 —— 删的就是它们。
@@ -1617,10 +1628,10 @@ struct PartsColorReviewStepView: View {
         let groupFill = groupCells.map { selection == Set($0) } == true ? selectedGroup : nil
         parts = updated
         selection.removeAll()
-        if let groupFill { onGroupRecolored?(groupFill, fill) }
+        let undoPalette = groupFill.flatMap { onGroupRecolored?($0, fill) ?? nil }
         // 改过的格子已经不属于当前这一组了，铺出来的那片要跟着少掉
         setGroupCells(orderedCells(of: selectedGroup))
-        pushUndo(CellEdit(cells: edits, newFill: fill, deletes: deleting, groupFill: groupFill))
+        pushUndo(CellEdit(cells: edits, newFill: fill, deletes: deleting, undoPalette: undoPalette))
     }
 
     /// 撤销栈只留最近 5 步。一步最大是整组几万格的旧值（五万格约 2MB），
@@ -1646,8 +1657,8 @@ struct PartsColorReviewStepView: View {
             if last.deletes { updated[ref.part].setDeleted(false, row: ref.row, col: ref.col) }
         }
         parts = updated
-        // 整类改的那一步还动过调色板，撤销要把它一并改回去（见 `CellEdit.groupFill`）
-        if let groupFill = last.groupFill { onGroupRecolored?(last.newFill, groupFill) }
+        // 整类改的那一步还动过调色板，撤销要把它一并改回去（见 `CellEdit.undoPalette`）
+        last.undoPalette?()
         // 数据刚被改回去，用户在这之后新点 / 新框的那批格子可能已经不在当前这一组里了
         selection.removeAll()
         setGroupCells(orderedCells(of: selectedGroup))

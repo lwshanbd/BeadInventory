@@ -217,7 +217,8 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
     ///
     /// **只认 `cells` 里确实是 `.empty` 的格子**（见 `isDeleted`）。往一格里写色号的地方
     /// 不用记得把它从这里摘掉：写了色号，这一格自然就不算删掉的。
-    /// 重新判色会整片重算 `cells`，这份必须跟着清掉（`PartsCellClassifier` 里两处）。
+    /// 凡是整片重写 `cells` 的地方，这份都得跟着清掉（重新判色、判不出颜色时写空格子）。
+    /// 只把 `cells` 清空、等着重判的地方可以不管：格子空了，`isDeleted` 一律返回 false。
     ///
     /// **Optional 是为了老数据**（理由同 `gridConfirmed`）。
     var deletedCells: Set<Int>?

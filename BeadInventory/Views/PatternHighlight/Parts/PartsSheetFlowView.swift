@@ -1141,18 +1141,29 @@ struct PartsSheetFlowView: View {
     /// 一个字节都不会回到 `palette`；而 `classifyMissingParts` 沿用的正是 `palette`。
     /// 于是「把一整类从 H8 纠正成 H7」之后再回去重对一块格子，那一块又变回 H8 ——
     /// 核对页上同一种颜色出现两个色号，用户得自己发现、自己再改一次。
-    private func recolorPalette(from: PartCellFill, to: PartCellFill) {
+    ///
+    /// 交回去的是「怎么改回来」：只把这一次动过的那几条放回原样。撤销不能反着再调一遍
+    /// （新 → 旧）—— 调色板里本来就可能有别的条目是「新」那个角色（比如底色本来就是空），
+    /// 反着调会把它们一起改掉，下次补判那一块的底色就整片成了豆子。
+    private func recolorPalette(from: PartCellFill, to: PartCellFill) -> (() -> Void)? {
         let fromRole = Self.paletteRole(of: from)
         let toRole = Self.paletteRole(of: to)
-        guard fromRole != toRole else { return }
-        var changed = false
+        guard fromRole != toRole else { return nil }
+        var before: [(index: Int, entry: PartsPaletteEntry)] = []
         for index in palette.indices where palette[index].role == fromRole {
+            before.append((index, palette[index]))
             palette[index].role = toRole
             // 这一条不再是自动匹配的结果了，那个距离没有意义
             palette[index].matchDeltaE = nil
-            changed = true
         }
-        if changed { dirty = true }
+        guard !before.isEmpty else { return nil }
+        dirty = true
+        return {
+            for (index, entry) in before where palette.indices.contains(index) {
+                palette[index] = entry
+            }
+            dirty = true
+        }
     }
 
     private static func paletteRole(of fill: PartCellFill) -> PartsPaletteEntry.Role {

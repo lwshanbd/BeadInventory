@@ -32,7 +32,7 @@
 //
 //    挪图  拖动看图、两指捏合放大。默认就是它 —— 进来第一件事是看，不是画，
 //          落指就擦掉的话，用户想挪一下图就毁了一片格子。
-//    擦掉  划过的格子变成「没有豆子」，并记成用户删掉的（核对颜色的「空」里不再列出）
+//    擦掉  划过的格子变成「没有豆子」。原来有豆子的记成用户删掉的，核对颜色的「空」里不再列出
 //    补上  划过的格子变成选中的那个色号
 //
 //  ## 改完就是改完了
@@ -91,7 +91,7 @@ struct PartCellBrushView: View {
     /// 进来时的样子，「取消」用它整块还原
     @State private var original: [[PartCellFill]] = []
     /// 进来时哪几格是用户删掉的（`BeadPart.deletedCells`）。写回时拿它跟 `original` 一起
-    /// 重算一遍删除标记，见 `deletedCells(for:)`。
+    /// 重算一遍删除标记，见 `deletedCells(cols:)`。
     @State private var originalDeleted: Set<Int>?
     /// 一笔一条，撤销按笔走 —— 划过去一串二十格，一格一格地撤是没人受得了的
     @State private var strokes: [[Change]] = []
