@@ -2,13 +2,14 @@
 //  OnboardingView.swift
 //  BeadInventory
 //
-//  开屏指导：第一次打开时翻几页截图，讲清楚建品牌 → 识别 → 拼图 → 补库存这条主线。
+//  开屏指导：没看过的用户打开 App 时翻几页截图，讲清楚建品牌 → 识别 → 拼图 → 补库存这条主线。
 //
-//  截图都是在模拟器里真实走一遍流程拍的，图纸是自己画的「立体小屋」，没有版权问题
-//  （`tools/draw_onboarding_pattern.py` 能重新生成）。界面改版后截图会过时，
+//  截图都是在模拟器里真实走一遍流程拍的。用的图纸是自己画的「立体小屋」，没有版权问题，
+//  这张图纸可以用 `tools/draw_onboarding_pattern.py` 重新生成。界面改版后截图会过时，
 //  换图时整条流程重新走一遍再拍，别只换其中一张。截图裁掉了顶部状态栏。
 //
-//  新老用户都弹一次：初始加载完、没出错、且没看过。想再看可以去「帮助中心」。
+//  新老用户都弹一次，弹出条件见 `ContentView.shouldShowOnboarding`。
+//  想再看可以去「帮助中心」。
 //
 
 import SwiftUI
@@ -94,6 +95,7 @@ struct OnboardingView: View {
                 }
                 .opacity(isLastPage ? 0 : 1)
                 .disabled(isLastPage)
+                .accessibilityHidden(isLastPage)
             }
             .padding(.top, Theme.Spacing.sm)
 

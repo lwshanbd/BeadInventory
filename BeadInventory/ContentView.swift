@@ -25,7 +25,7 @@ struct ContentView: View {
     /// 库存页是否处于多选态，由 InventoryView 通过 PreferenceKey 上报。
     /// 多选态下需要隐藏 FAB，避免与底部 MultiSelectActionBar（含"隐藏"按钮）重叠。
     @State private var inventoryInSelectMode = false
-    /// 开屏指导看过没有。新老用户都弹一次，加载完成之后才弹，免得盖住「正在加载」。
+    /// 开屏指导看过没有。新老用户都弹一次，弹出条件见 `shouldShowOnboarding`。
     @AppStorage("onboardingShown") private var onboardingShown = false
 
     /// 从 Share Extension 传入的图片
@@ -277,10 +277,19 @@ struct ContentView: View {
         }
     }
 
+    /// 什么时候弹开屏指导：
+    /// - 加载完且没出错，免得盖住「正在加载」和加载失败的提示；
+    /// - 不在「以本地模式继续」里。那时改了也不保存，指导却让人去建品牌、填库存；
+    ///   等真正加载成功、退出回退模式后再弹；
+    /// - 公告和「本地模型下线」这类一次性提示先弹完。它们跟开屏指导挂在同一个视图上，
+    ///   同时弹会被挤掉，而下线提示的迁移标记已经写了，挤掉就再也看不到。
     private var shouldShowOnboarding: Bool {
         !onboardingShown
             && inventoryManager.hasCompletedInitialLoad
             && inventoryManager.initialLoadErrorMessage == nil
+            && !inventoryManager.isUsingLocalFallbackMode
+            && announcementManager.currentAnnouncement == nil
+            && localModelRemovalMigrator.pendingNotice == nil
     }
 
     /// 在持久层加载失败时，根据 iCloud 账号状态给出更具体的提示。

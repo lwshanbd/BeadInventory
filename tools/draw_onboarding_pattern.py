@@ -2,6 +2,7 @@
 
 用法：python3 tools/draw_onboarding_pattern.py BeadInventory/allcolors.json out.png
 格子颜色取自 allcolors.json 的 MARD 色值，识别和多零件判色才对得上。
+需要先装 Pillow（pip install pillow）。字体写死了 macOS 系统字体路径，只能在 Mac 上跑。
 """
 import json, sys
 from collections import Counter
