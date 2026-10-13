@@ -1,6 +1,26 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "两种识别方式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Two Ways to Scan"
+          }
+        }
+      }
+    },
+    "用量清单是每列一种颜色、分品牌列出色号的表格，选「表格识别」，只读当前色号体系那一行。是一块块写着色号和数量的色卡，选「色号统计识别」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If the bead list is a table with one color per column and a row of codes for each brand, use Table Recognition. It reads only the row for your current color system. If it's a set of swatches labeled with code and quantity, use Color Stats Recognition."
+          }
+        }
+      }
+    },
     "欢迎来到啃豆小仓 2.0" : {
       "localizations" : {
         "en" : {

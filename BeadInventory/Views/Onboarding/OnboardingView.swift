@@ -20,6 +20,13 @@ struct OnboardingPage {
         case cover
         /// 截图 + 一句标题 + 一段说明
         case screenshot(imageName: String, message: LocalizedStringKey)
+        /// 几张带名字的示例图上下排，用来对比（比如两种识别方式各自认什么样的清单）
+        case examples([Example], message: LocalizedStringKey)
+    }
+
+    struct Example {
+        let label: LocalizedStringKey
+        let imageName: String
     }
 
     let kind: Kind
@@ -42,6 +49,16 @@ enum OnboardingContent {
             "OnboardingCrop",
             title: "识别图纸",
             message: "在「工作台 → 识别」里选一张图纸，裁切时只保留色号和数量那一块，AI 会读出每种颜色要用多少颗。"
+        ),
+        OnboardingPage(
+            kind: .examples(
+                [
+                    .init(label: "表格识别", imageName: "OnboardingTableMode"),
+                    .init(label: "色号统计识别", imageName: "OnboardingStatsMode")
+                ],
+                message: "用量清单是每列一种颜色、分品牌列出色号的表格，选「表格识别」，只读当前色号体系那一行。是一块块写着色号和数量的色卡，选「色号统计识别」。"
+            ),
+            title: "两种识别方式"
         ),
         .screenshot(
             "OnboardingResult",
@@ -153,6 +170,8 @@ private struct OnboardingPageView: View {
             cover
         case .screenshot(let imageName, let message):
             screenshot(imageName: imageName, message: message)
+        case .examples(let items, let message):
+            examplesPage(items, message: message)
         }
     }
 
@@ -188,20 +207,50 @@ private struct OnboardingPageView: View {
                 .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
                 .frame(maxHeight: .infinity)
 
-            VStack(spacing: Theme.Spacing.sm) {
-                Text(page.title)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(Theme.ColorToken.Text.primary)
-                Text(message)
-                    .font(.body)
-                    .foregroundStyle(Theme.ColorToken.Text.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, Theme.Spacing.xxl)
+            caption(message)
         }
         .padding(.top, Theme.Spacing.sm)
         .padding(.bottom, Theme.Spacing.xxl)
+    }
+
+    private func examplesPage(_ examples: [OnboardingPage.Example], message: LocalizedStringKey) -> some View {
+        VStack(spacing: Theme.Spacing.xl) {
+            Spacer(minLength: 0)
+            ForEach(examples.indices, id: \.self) { index in
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    Text(examples[index].label)
+                        .font(.headline)
+                        .foregroundStyle(Theme.ColorToken.Text.primary)
+                    Image(examples[index].imageName)
+                        .resizable()
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+                        )
+                }
+                .padding(.horizontal, Theme.Spacing.xl)
+            }
+            Spacer(minLength: 0)
+            caption(message)
+        }
+        .padding(.top, Theme.Spacing.sm)
+        .padding(.bottom, Theme.Spacing.xxl)
+    }
+
+    private func caption(_ message: LocalizedStringKey) -> some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            Text(page.title)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(Theme.ColorToken.Text.primary)
+            Text(message)
+                .font(.body)
+                .foregroundStyle(Theme.ColorToken.Text.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, Theme.Spacing.xxl)
     }
 }
 
