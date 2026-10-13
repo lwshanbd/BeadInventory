@@ -93,27 +93,32 @@ struct PartsListStepView: View {
             if pages.count > 1 {
                 PartsPagePicker(count: pages.count, selection: $page)
             }
-            // 图和缩略图怎么摆交给 ArrangementView（HIG「Designing for iPhone Duo」）：
-            // 宽比高大就左右分、反过来就上下分，Duo 半折时还会自己避开中间那条折缝。
-            // 早先是上下叠放、图写死 340pt 高，Duo 外屏横放时总高不到 470pt，缩略图被挤没了。
-            if #available(iOS 27.1, *) {
-                ArrangementView {
-                    preview(overlapping: overlapping)
-                } secondary: {
+            // 横着的屏（Duo 横放、iPad 横屏、iPhone 横屏）上下叠放时，图一摆缩略图就被挤没了，
+            // 所以左右各一半：左边图，右边缩略图和按钮。
+            // 不用 ArrangementView：Duo 合上横放时它会把副栏整个收掉，缩略图和按钮都没了（排布页实测）。
+            GeometryReader { geo in
+                if geo.size.width > geo.size.height {
+                    HStack(spacing: 0) {
+                        preview(overlapping: overlapping)
+                            .frame(maxWidth: .infinity)
+                        Divider()
+                        VStack(spacing: 0) {
+                            partGrid(overlapping: overlapping)
+                            footer
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                } else {
                     VStack(spacing: 0) {
+                        // 图纸是竖长的，240pt 高只剩不到 180pt 宽，五十几个框挤成一团看不清谁是谁，
+                        // 所以高屏上给到 340pt；屏不够高时（Duo 竖着拿）跟缩略图平分剩下的空间。
+                        preview(overlapping: overlapping)
+                            .frame(maxHeight: 340)
+                        Divider()
                         partGrid(overlapping: overlapping)
                         footer
                     }
                 }
-                .arrangementViewStyle(.split)
-            } else {
-                // 图纸是竖长的，240pt 高只剩不到 180pt 宽，五十几个框挤成一团看不清谁是谁，
-                // 所以高屏上给到 340pt；屏不够高时跟缩略图平分剩下的空间。
-                preview(overlapping: overlapping)
-                    .frame(maxHeight: 340)
-                Divider()
-                partGrid(overlapping: overlapping)
-                footer
             }
         }
         .background(Theme.ColorToken.Surface.background)
@@ -327,7 +332,7 @@ struct PartsListStepView: View {
                 .allowsHitTesting(false)
         )
         // 必须裁：图是按放大后的**最终尺寸** `.frame` + `.position` 摆的，本来就会超出画布的框 ——
-        // 少了这一行，放大后的图会盖到导航栏和下面的缩略图上。
+        // 少了这一行，放大后的图会盖到导航栏和缩略图上。
         .clipped()
         // `.clipped()` 只裁画面、不裁点按：伸出去的那一截看不见，却照样接点按，
         // 把上面的翻页条盖死。点按也只认画布这一块。
@@ -435,12 +440,12 @@ struct PartsListStepView: View {
         lastTappedOnImage = selection.contains(hit.id) ? hit.id : nil
     }
 
-    // MARK: - 下半：缩略图清单
+    // MARK: - 缩略图清单
 
     private func partGrid(overlapping: Set<UUID>) -> some View {
         ScrollViewReader { proxy in
             partGridContent(overlapping: overlapping)
-                // 在图上点了一个框，下面的缩略图要自己滚过来 —— 否则「我点的是哪个」
+                // 在图上点了一个框，缩略图要自己滚过来 —— 否则「我点的是哪个」
                 // 还是得用户自己在五十几个格子里找。
                 .onChange(of: lastTappedOnImage) { _, id in
                     guard let id else { return }
