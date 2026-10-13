@@ -722,6 +722,7 @@ struct PartsListStepView: View {
         // 深色底上被水印粘住的零件，整页「开始识别零件」时已经拆开了；这里只管闭运算桥接的那种。
         options.localBackground = false
         options.coreRadius = 0
+        options.outlines = false
         splitting = true
 
         Task.detached(priority: .userInitiated) {
