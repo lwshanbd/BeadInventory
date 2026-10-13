@@ -8,60 +8,62 @@
 //  （`tools/draw_onboarding_pattern.py` 能重新生成）。界面改版后截图会过时，
 //  换图时整条流程重新走一遍再拍，别只换其中一张。截图裁掉了顶部状态栏。
 //
-//  只给新用户弹：初始加载完、一个品牌都没有、且没看过。老用户升级上来不打扰，
-//  想再看可以去「帮助中心」。
+//  新老用户都弹一次：初始加载完、没出错、且没看过。想再看可以去「帮助中心」。
 //
 
 import SwiftUI
 
-struct OnboardingPage: Identifiable {
-    let id: Int
-    let imageName: String
+struct OnboardingPage {
+    enum Kind {
+        /// 第一页：App 图标 + 欢迎语
+        case cover
+        /// 截图 + 一句标题 + 一段说明
+        case screenshot(imageName: String, message: LocalizedStringKey)
+    }
+
+    let kind: Kind
     let title: LocalizedStringKey
-    let message: LocalizedStringKey
+
+    static func screenshot(_ imageName: String, title: LocalizedStringKey, message: LocalizedStringKey) -> OnboardingPage {
+        OnboardingPage(kind: .screenshot(imageName: imageName, message: message), title: title)
+    }
 }
 
 enum OnboardingContent {
     static let pages: [OnboardingPage] = [
-        OnboardingPage(
-            id: 0,
-            imageName: "OnboardingBrand",
+        OnboardingPage(kind: .cover, title: "欢迎来到啃豆小仓 2.0"),
+        .screenshot(
+            "OnboardingBrand",
             title: "先添加品牌",
             message: "每个品牌的库存分开记。选好色号体系，再给每种颜色填一个初始数量。"
         ),
-        OnboardingPage(
-            id: 1,
-            imageName: "OnboardingCrop",
+        .screenshot(
+            "OnboardingCrop",
             title: "识别图纸",
             message: "在「工作台 → 识别」里选一张图纸，裁切时只保留色号和数量那一块，AI 会读出每种颜色要用多少颗。"
         ),
-        OnboardingPage(
-            id: 2,
-            imageName: "OnboardingResult",
+        .screenshot(
+            "OnboardingResult",
             title: "核对识别结果",
             message: "识别不一定全对。左滑任意一行可以修改、更换品牌或删除，核对好再存为计划或扣减库存。"
         ),
-        OnboardingPage(
-            id: 3,
-            imageName: "OnboardingParts",
+        .screenshot(
+            "OnboardingParts",
             title: "进入拼图模式",
             message: "识别完点「开始拼」。立体图纸选「多零件模式」，每个零件会被单独找出来。"
         ),
-        OnboardingPage(
-            id: 4,
-            imageName: "OnboardingBoard",
+        .screenshot(
+            "OnboardingBoard",
             title: "按颜色一种一种拼",
             message: "点一个色号，板上只亮这种颜色的位置。全部拼好后点「拼完了」。"
         ),
-        OnboardingPage(
-            id: 5,
-            imageName: "OnboardingProjector",
+        .screenshot(
+            "OnboardingProjector",
             title: "投影到拼豆板上",
             message: "有投影仪的话，在拼豆板页连接投影仪。四个角对准豆板后，当前色号的格子会直接亮在板子上。"
         ),
-        OnboardingPage(
-            id: 6,
-            imageName: "OnboardingRestock",
+        .screenshot(
+            "OnboardingRestock",
             title: "补充库存",
             message: "买了新豆子，在「库存」页点右下角的加号，选色号、填数量。缺哪些豆子可以在「计划」页查看补豆建议。"
         )
@@ -96,9 +98,9 @@ struct OnboardingView: View {
             .padding(.top, Theme.Spacing.sm)
 
             TabView(selection: $currentPage) {
-                ForEach(pages) { page in
-                    OnboardingPageView(page: page)
-                        .tag(page.id)
+                ForEach(pages.indices, id: \.self) { index in
+                    OnboardingPageView(page: pages[index])
+                        .tag(index)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -128,12 +130,12 @@ struct OnboardingView: View {
 
     private var pageDots: some View {
         HStack(spacing: Theme.Spacing.sm) {
-            ForEach(pages) { page in
+            ForEach(pages.indices, id: \.self) { index in
                 Capsule()
-                    .fill(page.id == currentPage
+                    .fill(index == currentPage
                           ? Theme.ColorToken.Fill.latte
                           : Theme.ColorToken.Border.default)
-                    .frame(width: page.id == currentPage ? 18 : 7, height: 7)
+                    .frame(width: index == currentPage ? 18 : 7, height: 7)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: currentPage)
@@ -144,8 +146,36 @@ private struct OnboardingPageView: View {
     let page: OnboardingPage
 
     var body: some View {
+        switch page.kind {
+        case .cover:
+            cover
+        case .screenshot(let imageName, let message):
+            screenshot(imageName: imageName, message: message)
+        }
+    }
+
+    private var cover: some View {
+        VStack(spacing: Theme.Spacing.xxl) {
+            Spacer()
+            Image("AppIconImage")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 140, height: 140)
+                .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+                .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
+            Text(page.title)
+                .font(.largeTitle.weight(.bold))
+                .foregroundStyle(Theme.ColorToken.Text.primary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Theme.Spacing.xxl)
+            Spacer()
+            Spacer()
+        }
+    }
+
+    private func screenshot(imageName: String, message: LocalizedStringKey) -> some View {
         VStack(spacing: Theme.Spacing.xl) {
-            Image(page.imageName)
+            Image(imageName)
                 .resizable()
                 .scaledToFit()
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -160,7 +190,7 @@ private struct OnboardingPageView: View {
                 Text(page.title)
                     .font(.title2.weight(.bold))
                     .foregroundStyle(Theme.ColorToken.Text.primary)
-                Text(page.message)
+                Text(message)
                     .font(.body)
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
                     .multilineTextAlignment(.center)
