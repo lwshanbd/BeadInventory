@@ -1525,8 +1525,12 @@ struct ProjectHistoryView: View {
                             }
                         }
                     }
+                    // 行用页面底色，不用系统默认的白底：那条白底会一直铺进右侧的系统栏底下
+                    // （iPhone Duo 横放时标签栏、状态栏竖排在右边），上下颜色接不上。
+                    .listRowBackground(Color.clear)
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
                 .background(Theme.ColorToken.Surface.background)
             }
             }

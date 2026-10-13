@@ -31,6 +31,10 @@ struct BISegmented<T: Hashable>: View {
         .padding(3)
         .background(Theme.ColorToken.Surface.subtle)
         .clipShape(Capsule())
+        // 铺满宽度也有个头，每段最多 200pt：iPhone Duo 内屏、iPad、iPhone 横屏都有八九百甚至
+        // 一千多点宽，两个字的段被拉成半屏宽的长条，眼睛得左右扫一大截才看到另一段。
+        // iPhone 竖屏基本不受影响（Pro Max 收窄几个点）。
+        .frame(maxWidth: fillWidth ? CGFloat(segments.count) * 200 : nil)
     }
 
     @ViewBuilder
