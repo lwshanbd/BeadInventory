@@ -72,6 +72,13 @@ struct PartsColorReviewStepView: View {
     /// `onCommit`，重排走 `toggleSort`。漏一条不会崩也不会报错 —— `cellRect` 是纯几何算的，
     /// 只会安静地给用户看一张对不上的小图。
     @State private var groupCells: [CellRef]?
+    /// `groupCells` 的集合版，判「这一格现在铺在不在屏幕上」用。跟它一起在 `setGroupCells` 里换。
+    ///
+    /// **选中的格子只能从这里面来。** 框选读的格子位置是从 preference 收上来的，
+    /// 换一片格子之后可能晚到一拍、带着上一片的格子（已经改成别的色号、不在这一组了）。
+    /// 点中这种格子，底下写「已选 1 格」，屏幕上却找不到哪一格画着圈 ——
+    /// 用户全取消了还剩一格，就是这么来的。
+    @State private var groupCellSet: Set<CellRef> = []
     /// 露头才裁的小图缓存（见 `CellSwatchCache`）
     @State private var swatchCache = CellSwatchCache()
     @State private var showingCodePicker = false
@@ -835,10 +842,11 @@ struct PartsColorReviewStepView: View {
                 }
             }
             .onPreferenceChange(CellFramesKey.self) { frames in
-                cellFrames = frames
+                // 晚到的上一片格子的位置不收（见 `groupCellSet`）
+                cellFrames = frames.filter { groupCellSet.contains($0.key) }
                 guard marquee else { return }
                 // 见过的格子存下来：自动往下滚的时候，先框中的那些已经滚出屏幕了
-                marqueeFrames.merge(frames) { _, new in new }
+                marqueeFrames.merge(cellFrames) { _, new in new }
                 if marqueeAnchor != nil { updateMarqueeSelection() }
             }
             .onPreferenceChange(GridOriginKey.self) { origin in
@@ -895,7 +903,10 @@ struct PartsColorReviewStepView: View {
             }
             .clipped()
             .gesture(
-                DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                // 起拖距离给到 10 点：手指点一下本来就会抖几个点。以前是 4 点，
+                // 想点掉一格时手一抖就成了「拖框」—— 拖框只往里加不往外减，
+                // 那一格怎么点都取消不掉。10 点以内交给下面的单点去加减。
+                DragGesture(minimumDistance: 10, coordinateSpace: .global)
                     .onChanged { value in
                         if marqueeAnchor == nil {
                             marqueeBase = selection
@@ -914,7 +925,8 @@ struct PartsColorReviewStepView: View {
                 // 框选模式下单点也要能加减一格，不然想补一格还得先退出去
                 SpatialTapGesture(coordinateSpace: .global).onEnded { value in
                     let point = toGrid(value.location)
-                    guard let hit = cellFrames.first(where: { $0.value.contains(point) })?.key
+                    guard let hit = cellFrames.first(where: { $0.value.contains(point) })?.key,
+                          groupCellSet.contains(hit)
                     else { return }
                     if selection.contains(hit) { selection.remove(hit) } else { selection.insert(hit) }
                 }
@@ -934,7 +946,7 @@ struct PartsColorReviewStepView: View {
         let rect = CGRect(corner: anchor, to: toGrid(finger))
         marqueeRect = rect
         selection = marqueeBase.union(
-            marqueeFrames.filter { $0.value.intersects(rect) }.keys
+            marqueeFrames.filter { $0.value.intersects(rect) && groupCellSet.contains($0.key) }.keys
         )
     }
 
@@ -1549,6 +1561,10 @@ struct PartsColorReviewStepView: View {
     /// 而用户在屏幕上根本看不见自己选中了什么。
     private func setGroupCells(_ new: [CellRef]?) {
         defer { groupCells = new }
+        let newSet = Set(new ?? [])
+        groupCellSet = newSet
+        // 已经不在这一组里的格子从选中里摘掉 —— 屏幕上没有它的圈，数字里也不该再有它
+        if !selection.isSubset(of: newSet) { selection.formIntersection(newSet) }
         // 铺出来的还是原来那一片（排序前后顺序一样是常事）就别动缓存：
         // `cellFrames` 只有 preference 变了才会重填，而格子一格没挪、preference 就不会再来 ——
         // 清了就一直空着，框选当场变成「框得出来、一格也选不中」。
