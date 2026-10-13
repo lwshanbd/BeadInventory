@@ -1230,6 +1230,7 @@ struct PartsSheetFlowView: View {
                     repeating: Array(repeating: PartCellFill.empty, count: max(part.cols, 0)),
                     count: max(part.rows, 0)
                 )
+                updated[index].deletedCells = nil
                 continue
             }
             updated[index] = part

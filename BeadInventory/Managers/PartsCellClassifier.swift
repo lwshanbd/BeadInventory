@@ -212,6 +212,8 @@ enum PartsCellClassifier {
             enclosed.append(enclosedLightCells(bitmap: bitmap, part: updated, labs: labs,
                                                backgroundLab: backgroundLab))
             updated.cells = Array(repeating: Array(repeating: .empty, count: grid.cols), count: grid.rows)
+            // 每一格从头重算，用户删过哪几格也一并作废（见 `BeadPart.deletedCells`）
+            updated.deletedCells = nil
             fittedParts.append(updated)
             progress?(index + 1, parts.count)
         }
@@ -681,6 +683,8 @@ enum PartsCellClassifier {
         // 记一份就不用为每一格都把调色板扫一遍。
         var memo: [Int32: PartCellFill] = [:]
         var updated = part
+        // 同 `classify`：格子整片重算，删过的标记跟着作废
+        updated.deletedCells = nil
         updated.cells = modes.indices.map { r in
             modes[r].indices.map { c -> PartCellFill in
                 let index = modes[r][c]

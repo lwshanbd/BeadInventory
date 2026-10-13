@@ -451,7 +451,8 @@ struct SinglePatternFlowView: View {
             emptyHex: emptyHex,
             gridConfirmed: sheet.gridConfirmed,
             doneColors: persistedDoneColors(matching: matrix),
-            finishedAt: legacyFinishedAtToKeep
+            finishedAt: legacyFinishedAtToKeep,
+            deletedCells: sheet.hasCells ? sheet.deletedCells.map { $0.sorted() } : nil
         )
     }
 
@@ -633,6 +634,7 @@ struct SinglePatternFlowView: View {
                 cells: fills,
                 gridConfirmed: grid.gridConfirmed
             )
+            self.sheet.deletedCells = grid.deletedCells.map(Set.init)
 
             // 上次做到哪儿，这次就从哪儿接着来。判过色的直接进「照着拼」——
             // 用户此刻是真拿着豆子在拼，每次进来还要把四屏重点一遍纯属白点。

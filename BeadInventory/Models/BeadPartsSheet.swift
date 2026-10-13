@@ -207,6 +207,21 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
     /// 别的地方一律读 `pageIndex`，不要自己判 nil。
     var page: Int?
 
+    /// 用户亲手删掉的格子，存 `row * cols + col`。删掉的格子在 `cells` 里就是 `.empty`，
+    /// 别的地方（扣减、摆板、高亮）照常当空格处理，不用认这个字段。
+    ///
+    /// 只有核对颜色那屏认它：「空」那一组**不再列出这些格子**。
+    /// 两个零件的框叠在一起时，同一颗豆子会被两边各算一遍。用户把多出来的那份擦掉，
+    /// 以前它会落进「空」那一组 —— 那一格在图纸上明明有颜色，用户以为是判错了，
+    /// 又把它改回色号，重复的那一颗就又回来了。用户删掉的东西，不该再拿回来让他核对一遍。
+    ///
+    /// **只认 `cells` 里确实是 `.empty` 的格子**（见 `isDeleted`）。往一格里写色号的地方
+    /// 不用记得把它从这里摘掉：写了色号，这一格自然就不算删掉的。
+    /// 重新判色会整片重算 `cells`，这份必须跟着清掉（`PartsCellClassifier` 里两处）。
+    ///
+    /// **Optional 是为了老数据**（理由同 `gridConfirmed`）。
+    var deletedCells: Set<Int>?
+
     init(
         id: UUID = UUID(),
         customName: String? = nil,
@@ -278,6 +293,23 @@ struct BeadPart: Identifiable, Codable, Equatable, Sendable {
     /// 需要放豆子的格数（识别过才有意义）
     var beadCount: Int {
         cells.reduce(0) { $0 + $1.filter(\.needsBead).count }
+    }
+
+    /// 这一格是用户删掉的。见 `deletedCells`。
+    func isDeleted(row: Int, col: Int) -> Bool {
+        guard let deletedCells, !deletedCells.isEmpty,
+              row >= 0, row < cells.count, col >= 0, col < cells[row].count,
+              cells[row][col] == .empty else { return false }
+        return deletedCells.contains(row * cols + col)
+    }
+
+    /// 记下 / 撤掉「这一格是用户删掉的」。只动标记，格子里装什么由调用方自己写。
+    mutating func setDeleted(_ deleted: Bool, row: Int, col: Int) {
+        guard row >= 0, col >= 0, col < cols else { return }
+        let index = row * cols + col
+        var set = deletedCells ?? []
+        if deleted { set.insert(index) } else { set.remove(index) }
+        deletedCells = set.isEmpty ? nil : set
     }
 }
 

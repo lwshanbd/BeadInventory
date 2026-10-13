@@ -12,7 +12,7 @@
 //    上面一排色号，写的是「H7 · 412 颗」；
 //    点 H7，下面把这 412 格从图纸上原样抠出来铺成一片 ——
 //    颜色不一致的那几个会自己跳出来；
-//    点中它们（可以多选），底下改成别的色号、设为空、或者标成任意色。
+//    点中它们（可以多选），底下改成别的色号、删除、或者标成任意色。
 //
 //  刻意不显示百分比：占 10.6% 对一个一颗一颗放豆子的人没有任何意义。
 //
@@ -223,6 +223,9 @@ struct PartsColorReviewStepView: View {
     private struct CellEdit {
         let cells: [(ref: CellRef, old: PartCellFill)]
         let newFill: PartCellFill
+        /// 这一步是「删除」（格子写成空，并记成用户删掉的，见 `BeadPart.deletedCells`）。
+        /// 撤销时要把删除标记一并摘掉，不然这几格放回原样之后还挂着「已删除」。
+        var deletes = false
         /// 这一步整类改掉了哪个色号。nil = 只改了其中几格。
         /// 撤销要靠它把调色板也改回去 —— 只把格子放回原样、调色板还停在新色号上的话，
         /// 「撤销」等于没撤干净，下次补判又会按新色号来。
@@ -734,7 +737,9 @@ struct PartsColorReviewStepView: View {
             // 而这一条存在的全部意义就是那个按钮。
             Image(systemName: "clock.arrow.circlepath")
                 .foregroundStyle(Theme.ColorToken.Text.secondary)
-            Text("已将 \(edit.cells.count) 格改为「\(label(for: edit.newFill))」")
+            Text(edit.deletes
+                 ? "已删除 \(edit.cells.count) 格"
+                 : "已将 \(edit.cells.count) 格改为「\(label(for: edit.newFill))」")
                 .monospacedDigit()
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(Theme.ColorToken.Text.secondary)
@@ -1125,14 +1130,21 @@ struct PartsColorReviewStepView: View {
                     .buttonStyle(.bordered)
                 }
 
+                // 以前这里是「设为空」：格子改成空之后会落进「空」那一组。两个零件的框叠在一起时，
+                // 用户删掉的是被算了两遍的那一份，它在图纸上明明有颜色 —— 落进「空」之后
+                // 用户以为是判错了，又把它改回色号，重复的那颗豆子就又回来了。
+                // 所以改成删除：不算豆子，也不再出现在「空」里（见 `BeadPart.deletedCells`）。
                 Button {
                     if selection.isEmpty { selectWholeGroup() }
-                    apply(.empty)
+                    apply(.empty, deleting: true)
                 } label: {
-                    Label(selection.isEmpty ? "这类没有豆子" : "设为空", systemImage: "square.dashed")
+                    Label(selection.isEmpty ? "这类都删除" : "删除", systemImage: "trash")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                // 在「空」那一组里整类删除，等于把核对空格这件事整个跳过 ——
+                // 底色判错的那一片豆子就再也找不回来了。要删就一格一格选。
+                .disabled(selection.isEmpty && selectedGroup == .empty)
             }
             .font(.footnote)
             .lineLimit(1)
@@ -1188,8 +1200,12 @@ struct PartsColorReviewStepView: View {
     private var groups: [Group] {
         var counts: [String: (fill: PartCellFill, count: Int)] = [:]
         for part in parts {
-            for row in part.cells {
-                for cell in row {
+            // 删掉的格子不进任何一组（见 `BeadPart.deletedCells`）。绝大多数零件一格都没删过，
+            // 走快路 —— 这里每次 body 求值都要把几万格数一遍。
+            let hasDeleted = part.deletedCells?.isEmpty == false
+            for (r, row) in part.cells.enumerated() {
+                for (c, cell) in row.enumerated() {
+                    if hasDeleted, part.isDeleted(row: r, col: c) { continue }
                     let key = groupKey(cell)
                     counts[key, default: (cell, 0)].count += 1
                 }
@@ -1477,8 +1493,11 @@ struct PartsColorReviewStepView: View {
         let key = groupKey(fill)
         var result: [CellRef] = []
         for (p, part) in parts.enumerated() {
+            // 只有「空」那一组里会有删掉的格子（删掉的格子一定是空的）
+            let skipDeleted = fill == .empty && part.deletedCells?.isEmpty == false
             for r in 0..<part.rows where r < part.cells.count {
                 for c in 0..<part.cols where c < part.cells[r].count {
+                    if skipDeleted, part.isDeleted(row: r, col: c) { continue }
                     if groupKey(part.cells[r][c]) == key {
                         result.append(CellRef(part: p, row: r, col: c))
                     }
@@ -1551,8 +1570,11 @@ struct PartsColorReviewStepView: View {
     ///
     /// 逐格写 `parts[...]…= fill` 的话，每一格都是一次完整的 binding get→modify→set，
     /// 而 getter 交出来的临时数组会多持一份 `cells`，于是每次赋值都触发一次 COW。
-    /// 整类操作（「这类没有豆子」作用于整组）在单图纸的空组上是五万格 —— 五万次状态写。
-    private func apply(_ fill: PartCellFill) {
+    /// 整类操作（「这类都删除」作用于整组）一组能有上万格 —— 五万次状态写。
+    ///
+    /// `deleting` = 删除：格子写成空，同时记成用户删掉的（见 `BeadPart.deletedCells`）。
+    /// 本来就是空的格子（在「空」那一组里选的）也要记 —— 删的就是它们。
+    private func apply(_ fill: PartCellFill, deleting: Bool = false) {
         var updated = parts
         var edits: [(ref: CellRef, old: PartCellFill)] = []
         edits.reserveCapacity(selection.count)
@@ -1562,9 +1584,10 @@ struct PartsColorReviewStepView: View {
                   ref.col < updated[ref.part].cells[ref.row].count else { continue }
             let old = updated[ref.part].cells[ref.row][ref.col]
             // 本来就是这个色号的那些格子不记 —— 记了会让撤销条报一个比实际大的数
-            guard old != fill else { continue }
+            guard old != fill || deleting else { continue }
             edits.append((ref, old))
             updated[ref.part].cells[ref.row][ref.col] = fill
+            if deleting { updated[ref.part].setDeleted(true, row: ref.row, col: ref.col) }
         }
         // 一格都没变（在选色盘里挑回了这一组本来的色号）。**必须说一句** ——
         // 屏幕上什么都不动的话，用户不知道是自己挑错了还是这个按钮坏了。
@@ -1581,7 +1604,7 @@ struct PartsColorReviewStepView: View {
         if let groupFill { onGroupRecolored?(groupFill, fill) }
         // 改过的格子已经不属于当前这一组了，铺出来的那片要跟着少掉
         setGroupCells(orderedCells(of: selectedGroup))
-        pushUndo(CellEdit(cells: edits, newFill: fill, groupFill: groupFill))
+        pushUndo(CellEdit(cells: edits, newFill: fill, deletes: deleting, groupFill: groupFill))
     }
 
     /// 撤销栈只留最近 5 步。一步最大是整组几万格的旧值（五万格约 2MB），
@@ -1604,6 +1627,7 @@ struct PartsColorReviewStepView: View {
                   ref.row < updated[ref.part].cells.count,
                   ref.col < updated[ref.part].cells[ref.row].count else { continue }
             updated[ref.part].cells[ref.row][ref.col] = old
+            if last.deletes { updated[ref.part].setDeleted(false, row: ref.row, col: ref.col) }
         }
         parts = updated
         // 整类改的那一步还动过调色板，撤销要把它一并改回去（见 `CellEdit.groupFill`）
