@@ -363,8 +363,16 @@ enum PartsDetector {
 
     // MARK: - 按描边拆
 
-    /// 描边算「黑」的亮度上限
-    static let outlineMaxL: Double = 40
+    /// 描边算「黑」的亮度上限。
+    ///
+    /// 早先是 40，只认纯黑。小图上（库洛米冰淇淋那张，零件区一格只有七八像素）零件外圈的黑描边
+    /// 只有 1 像素粗，JPEG 一糊、缩小一混，很多地方浅过 40，描边断成几截；
+    /// 格子里的灰格线更浅，一点都不算。剩下的只有深紫、深棕这种深色格子自己连成的一块块，
+    /// 一个零件就被框成好几个叠在一起的小框。
+    /// 放到 60，灰格线也算进来，整个零件的格线连成一块。三张实图上水印和插画线条都还在 60 以上，
+    /// 没被算进来；但它们离 60 不远，**闭运算半径别跟着加大**：试过半径 2，
+    /// 水印和插画的残笔被补连起来，库洛米那张整个零件区并成了十几块。
+    static let outlineMaxL: Double = 60
 
     /// 按黑色描边拆零件。不是有描边的图纸就返回 nil，走原来的按底色拆。
     ///
@@ -396,7 +404,7 @@ enum PartsDetector {
             $0.w * $0.h >= minArea / 4 && $0.w >= 4 && $0.h >= 4
                 && !isFrameLine($0, width: w, height: h)
         }
-        found = mergeContained(found)
+        found = mergeFragments(found)
         guard !found.isEmpty else { return nil }
 
         var inBox = [Bool](repeating: false, count: bitmap.pixelCount)
@@ -480,6 +488,19 @@ enum PartsDetector {
 
         func contains(_ other: Box) -> Bool {
             other.x >= x && other.y >= y && other.maxX <= maxX && other.maxY <= maxY
+        }
+
+        /// 交叠面积占两者里较小那个的比例
+        func overlapFraction(_ other: Box) -> Double {
+            let iw = min(maxX, other.maxX) - max(x, other.x), ih = min(maxY, other.maxY) - max(y, other.y)
+            guard iw > 0, ih > 0 else { return 0 }
+            return Double(iw * ih) / Double(min(w * h, other.w * other.h))
+        }
+
+        func union(_ other: Box) -> Box {
+            let nx = min(x, other.x), ny = min(y, other.y)
+            return Box(x: nx, y: ny, w: max(maxX, other.maxX) - nx, h: max(maxY, other.maxY) - ny,
+                       area: area + other.area)
         }
     }
 
@@ -687,8 +708,8 @@ enum PartsDetector {
     /// 但用户心里那是同一个零件。只在**完全包含**时合并 —— 只是重叠不合并，
     /// 不然两个挨着的零件会被越并越大。
     ///
-    /// 按外接框大小排，不按像素数：按描边拆时，外框只有一圈细描边，
-    /// 像素数可能比里面一块实心黑色还少，先处理了里面那块，外框就并不掉它。
+    /// 按外接框大小排，不按像素数：空心的零件像素数可能比里面一块实心孤岛还少，
+    /// 先处理了里面那块，外框就并不掉它。按描边拆的那条路不走这里，见 `mergeFragments`。
     static func mergeContained(_ boxes: [Box]) -> [Box] {
         let sorted = boxes.sorted { $0.w * $0.h > $1.w * $1.h }
         var kept: [Box] = []
@@ -700,6 +721,34 @@ enum PartsDetector {
             }
         }
         return kept
+    }
+
+    /// 按描边拆时，交叠超过较小那个框这么多的两个框算同一个零件
+    static let fragmentOverlap = 0.3
+
+    /// 按描边拆出来的框，叠得多的并成一个，并到没有再叠得多的为止。整个包住的是叠满的特例，也在里面。
+    ///
+    /// 描边没连上的零件会被拆成几块，碎块的框大半压在主体的框里。真零件之间不会重叠，
+    /// 但形状互相咬着的两个零件，外接框会擦着叠一个角：三丽鸥红色那张第三行，
+    /// 「AAA」形零件跟右上方的锯齿条只叠了一小角；库洛米那张的蝙蝠翅膀、锥形，
+    /// 几个独立的小零件也是这样挨着。所以只叠一点不并，叠过较小那个框的三成才并。
+    static func mergeFragments(_ boxes: [Box]) -> [Box] {
+        var merged = boxes
+        var changed = true
+        while changed {
+            changed = false
+            var kept: [Box] = []
+            for box in merged {
+                if let i = kept.firstIndex(where: { $0.overlapFraction(box) > fragmentOverlap }) {
+                    kept[i] = kept[i].union(box)
+                    changed = true
+                } else {
+                    kept.append(box)
+                }
+            }
+            merged = kept
+        }
+        return merged
     }
 
     // MARK: - 分行
