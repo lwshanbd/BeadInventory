@@ -35,11 +35,13 @@
 //  一个零件被框成三个；跟底色接近的大块浅色零件，也可能被按位置估成底色。
 //  浅底图纸上水印大多淡，前景阈值挡得住，用不着这两步；挡不住的那种靠下面按描边拆。
 //
-//  ## 浅色底、零件带黑描边的图纸先按描边拆
+//  ## 浅色底、零件带深色描边和格线的图纸先按描边拆
 //
 //  有的浅底图纸铺着大幅插画、满屏灰色水印，按底色拆会把整个零件区连成一块。
-//  这类图纸的零件都有纯黑描边，插画和水印没这么黑，所以只看黑像素就能拆干净。
-//  按描边拆出来的框能解释大部分前景时才用它，不然照旧按底色拆，见 `outlinedBoxes`。
+//  这类图纸的零件有黑描边、深色格线，插画和水印浅一些，所以只看够深的像素（`outlineMaxL`），
+//  每个零件的描边和格线连成一块。描边断开拆成几块的，按交叠程度并回去（`mergeFragments`），
+//  跟按底色拆那条路「整个包住才并」的规则不一样。
+//  按描边拆出来的框能装下前景的四分之三以上才用它，不然照旧按底色拆，见 `outlinedBoxes`。
 //
 //  刻意**不用** OpenCV：这套逻辑全是整型数组操作，纯 Swift 写出来行为完全可控，
 //  也不用去猜 opencv2 ObjC 包装层的方法签名。
@@ -369,24 +371,30 @@ enum PartsDetector {
     /// 只有 1 像素粗，JPEG 一糊、缩小一混，很多地方浅过 40，描边断成几截；
     /// 格子里的灰格线更浅，一点都不算。剩下的只有深紫、深棕这种深色格子自己连成的一块块，
     /// 一个零件就被框成好几个叠在一起的小框。
-    /// 放到 60，灰格线也算进来，整个零件的格线连成一块。三张实图上水印和插画线条都还在 60 以上，
-    /// 没被算进来；但它们离 60 不远，**闭运算半径别跟着加大**：试过半径 2，
+    /// 放到 60，灰格线也算进来，整个零件的格线连成一块。三张实图（库洛米、三丽鸥红色、白兔）上
+    /// 水印和插画线条都还在 60 以上，没被算进来；但它们离 60 不远，
+    /// **`outlinedBoxes` 里那次闭运算的半径（写死的 1）别跟着加大**：试过半径 2，
     /// 水印和插画的残笔被补连起来，库洛米那张整个零件区并成了十几块。
+    ///
+    /// 代价是红、蓝、深绿这些中间色的豆子也算「深」了。没有深色描边的图纸，
+    /// 深色格子会自己连成块、浅色格子漏在框外，靠 `outlinedBoxes` 的 `coverage` 门槛挡回按底色拆。
     static let outlineMaxL: Double = 60
 
-    /// 按黑色描边拆零件。不是有描边的图纸就返回 nil，走原来的按底色拆。
+    /// 按深色描边和格线拆零件。不是这种图纸就返回 nil，走原来的按底色拆。
     ///
     /// 有的图纸背景花得很：底下铺满大幅浅色插画，再盖一层灰色水印数字。
     /// 按底色拆时，插画线条和水印都跟底色差得多，被当成前景，把整个零件区连成一大块，
     /// 最后被 `isFrameLine` 当边框扔掉，几乎一个零件都框不出来。
     ///
-    /// 但这类图纸的零件都有一圈纯黑描边，格子之间也是深色格线；插画、水印再花也没这么黑。
-    /// 所以只看黑像素：一个零件的描边和格线连成一整块，零件之间被底色隔开，
-    /// 这一块的外接框就是零件的框。
+    /// 但这类图纸的零件有一圈黑描边，格子之间是深色格线；插画、水印没这么深。
+    /// 所以只看亮度低于 `outlineMaxL` 的像素：一个零件的描边和格线连成一块，零件之间被底色隔开。
+    /// 描边断开、一个零件拆成几块的，用 `mergeFragments` 并成一个框。
     ///
-    /// 怎么判断这张图是不是这种图纸：按底色拆出来的前景，大部分要落在这些框里（`coverage`），
-    /// 这些框里大部分也得是前景（`density`）。没有描边、只有格子里印着黑色数字的图纸，
-    /// 数字拆出来的小框只占前景的一小部分，过不了第一条。
+    /// 怎么判断这张图是不是这种图纸：按底色拆出来的前景，至少四分之三要落在这些框里（`coverage`），
+    /// 这些框里至少一半是前景（`density`）。
+    /// `coverage` 原来只要一半。门槛放到 60 以后，没有深色描边的图纸上，红、蓝、紫这些格子
+    /// 也会自己连成块，同一个零件里的浅色格子漏在框外，零件被拆碎，`coverage` 却还能过一半。
+    /// 实测：拆对了的图纸在 0.77 以上（三张实图 0.82–0.94），拆碎了的在 0.69 以下，取 0.75。
     static func outlinedBoxes(of bitmap: PartsBitmap, foreground: [Bool], minArea: Int) -> [Box]? {
         let w = bitmap.width, h = bitmap.height
         var isDark = [Bool](repeating: false, count: QuantizedRGB.count)
@@ -398,7 +406,7 @@ enum PartsDetector {
 
         var found = boxes(of: labelComponents(dark, width: w, height: h).labels, width: w)
         // 描边是空心的，像素数远小于零件面积，按外接框的面积滤。
-        // 插画和水印不够黑，到不了这一步，门槛放低留住两三格的小插件。
+        // 三张实图上插画和水印都在 `outlineMaxL` 以上，到不了这一步，门槛放低留住两三格的小插件。
         // 代价是零件区里的黑字也可能被框出来，用户删掉就行
         found = found.filter {
             $0.w * $0.h >= minArea / 4 && $0.w >= 4 && $0.h >= 4
@@ -421,7 +429,7 @@ enum PartsDetector {
         guard total > 0, boxArea > 0 else { return nil }
         let coverage = Double(covered) / Double(total)
         let density = Double(covered) / Double(boxArea)
-        let accepted = coverage >= 0.5 && density >= 0.5
+        let accepted = coverage >= 0.75 && density >= 0.5
         // 用户报「这张框错了」时，靠这行分清走的是哪条路
         AppLogger.shared.info("PartsDetector", "outline_gate", metadata: [
             "coverage": coverage, "density": density, "boxes": found.count, "accepted": accepted
@@ -481,6 +489,7 @@ enum PartsDetector {
 
     struct Box: Equatable {
         var x: Int, y: Int, w: Int, h: Int
+        /// 前景像素数，不是外接框面积 `w * h`。并框时直接相加：参与合并的连通域互不相交
         var area: Int
         var midY: Double { Double(y) + Double(h) / 2 }
         var maxX: Int { x + w }
@@ -490,7 +499,7 @@ enum PartsDetector {
             other.x >= x && other.y >= y && other.maxX <= maxX && other.maxY <= maxY
         }
 
-        /// 交叠面积占两者里较小那个的比例
+        /// 交叠面积占两个外接框里较小那个的比例。按 `w * h` 算，不是 `area`
         func overlapFraction(_ other: Box) -> Double {
             let iw = min(maxX, other.maxX) - max(x, other.x), ih = min(maxY, other.maxY) - max(y, other.y)
             guard iw > 0, ih > 0 else { return 0 }
@@ -726,29 +735,41 @@ enum PartsDetector {
     /// 按描边拆时，交叠超过较小那个框这么多的两个框算同一个零件
     static let fragmentOverlap = 0.3
 
-    /// 按描边拆出来的框，叠得多的并成一个，并到没有再叠得多的为止。整个包住的是叠满的特例，也在里面。
+    /// 按描边拆出来的框，叠得多的算同一个零件，并成一个框。整个包住的是叠满的特例，也在里面。
     ///
     /// 描边没连上的零件会被拆成几块，碎块的框大半压在主体的框里。真零件之间不会重叠，
     /// 但形状互相咬着的两个零件，外接框会擦着叠一个角：三丽鸥红色那张第三行，
     /// 「AAA」形零件跟右上方的锯齿条只叠了一小角；库洛米那张的蝙蝠翅膀、锥形，
     /// 几个独立的小零件也是这样挨着。所以只叠一点不并，叠过较小那个框的三成才并。
+    ///
+    /// **只拿原始框两两比，分好组再取外接框。** 不能拿并大后的框接着比：
+    /// L 形零件的两块碎片一并，外接框把拐角的空白也框进来，
+    /// 原本谁都不挨的旁边小零件会被罩住，然后被连锁吞进去。
     static func mergeFragments(_ boxes: [Box]) -> [Box] {
-        var merged = boxes
-        var changed = true
-        while changed {
-            changed = false
-            var kept: [Box] = []
-            for box in merged {
-                if let i = kept.firstIndex(where: { $0.overlapFraction(box) > fragmentOverlap }) {
-                    kept[i] = kept[i].union(box)
-                    changed = true
-                } else {
-                    kept.append(box)
-                }
-            }
-            merged = kept
+        var parent = Array(boxes.indices)
+        func root(_ i: Int) -> Int {
+            var r = i
+            while parent[r] != r { r = parent[r] }
+            return r
         }
-        return merged
+        for i in boxes.indices {
+            for j in boxes.indices where j > i && boxes[i].overlapFraction(boxes[j]) > fragmentOverlap {
+                let a = root(i), b = root(j)
+                if a != b { parent[max(a, b)] = min(a, b) }
+            }
+        }
+        var groups: [Int: Box] = [:]
+        var order: [Int] = []
+        for i in boxes.indices {
+            let r = root(i)
+            if let group = groups[r] {
+                groups[r] = group.union(boxes[i])
+            } else {
+                groups[r] = boxes[i]
+                order.append(r)
+            }
+        }
+        return order.map { groups[$0]! }
     }
 
     // MARK: - 分行
