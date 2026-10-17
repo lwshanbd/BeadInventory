@@ -1343,6 +1343,8 @@ struct PartsSheetFlowView: View {
         Button("退出") {
             if persist() { dismiss() }
         }
+        // 字号封顶：跟着放大会把右上角的按钮挤掉（见 PartsColorReviewStepView.toolbarLabel）
+        .dynamicTypeSize(...DynamicTypeSize.large)
     }
 
     /// 用户点了「拼完了」并确认：存好进度，记下拼完的时间，离开。
