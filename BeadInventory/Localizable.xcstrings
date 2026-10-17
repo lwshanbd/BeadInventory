@@ -13183,6 +13183,36 @@
         }
       }
     },
+    "镜像这块板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mirror this board"
+          }
+        }
+      }
+    },
+    "镜像这块板？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mirror this board?"
+          }
+        }
+      }
+    },
+    "这块板上的已完成标记会清空。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Completed marks on this board will be cleared."
+          }
+        }
+      }
+    },
     "清空这块板" : {
       "localizations" : {
         "en" : {
