@@ -204,6 +204,8 @@ struct PartsBoardStepView: View {
     /// 待确认的「全部重排」。板子尺寸和松紧是同一件事的两半 —— 改哪一个都得整块重摆，
     /// 所以走同一个确认弹窗，别让用户学两套。
     @State private var repackTarget: RepackTarget?
+    /// 待确认的「镜像这块板」。只有这块板上有已完成标记时才问，见 `requestMirrorCurrentBoard`。
+    @State private var confirmMirror = false
     @State private var didAutoPack = false
     /// 外屏投影状态。这一屏只用得着「连上没有」（画什么是 publishToExternalDisplay 送出去的），
     /// 但 `@ObservedObject` 订阅的是整个对象，所以每次送板子也会让这一屏重画一遍。
@@ -485,6 +487,12 @@ struct PartsBoardStepView: View {
             Button("取消", role: .cancel) {}
             Button("确定") { DispatchQueue.main.async { onFinish() } }
         }
+        .alert("镜像这块板？", isPresented: $confirmMirror) {
+            Button("取消", role: .cancel) {}
+            Button("镜像", role: .destructive) { mirrorCurrentBoard() }
+        } message: {
+            Text("这块板上的已完成标记会清空。")
+        }
         .alert("重新排列？", isPresented: Binding(
             get: { repackTarget != nil },
             set: { if !$0 { repackTarget = nil } }
@@ -627,7 +635,7 @@ struct PartsBoardStepView: View {
             // 放最上面：下面几组选项一展开要滚两屏，放底下根本找不到
             if let board = currentBoard, !board.placements.isEmpty {
                 Section {
-                    Button { mirrorCurrentBoard() } label: {
+                    Button { requestMirrorCurrentBoard() } label: {
                         Label("镜像这块板", systemImage: "flip.horizontal")
                     }
                 }
@@ -2242,9 +2250,14 @@ struct PartsBoardStepView: View {
     /// 手机和投影要是一正一反，低头抬头左右对不上，肯定按错。
     ///
     /// 留边和间距左右对称，原来放得下，翻过来照样放得下，不用重排。
-    /// 每个色号的颗数也不变，「已完成」的勾留着。
+    ///
+    /// 「已完成」的勾一律清掉，理由同 `clearDoneColors`：板上已经按好的豆子是照原来的
+    /// 位置按的，翻过来每个零件都换了地方，勾还挂着的话用户续拼会直接跳过那个色。
+    /// 颗数一颗没变，`pruneDoneColors` 认不出来，得在这里清。
     private func mirrorCurrentBoard() {
         guard boards.indices.contains(boardIndex) else { return }
+        let hadDoneColors = boards[boardIndex].doneColors != nil
+        boards[boardIndex].doneColors = nil
         let cols = boards[boardIndex].cols
         boards[boardIndex].placements = boards[boardIndex].placements.map { old in
             guard let part = parts.first(where: { $0.id == old.partId }) else { return old }
@@ -2259,6 +2272,18 @@ struct PartsBoardStepView: View {
             let row = old.row + oldFootprint.minRow - newFootprint.minRow
             return PartPlacement(id: old.id, partId: old.partId, col: col, row: row,
                                  turns: newTurns, mirrored: newMirrored)
+        }
+        // 勾作废了就立刻落盘，同 `clearDoneColors`
+        if hadDoneColors { onPersist() }
+    }
+
+    /// 有勾就先问一句再翻：几个晚上的进度标记一下子没了，用户得先知道。
+    /// 没勾就直接翻，翻错了再点一次就回来，不用多一步。
+    private func requestMirrorCurrentBoard() {
+        if currentBoard?.doneColors != nil {
+            confirmMirror = true
+        } else {
+            mirrorCurrentBoard()
         }
     }
 
