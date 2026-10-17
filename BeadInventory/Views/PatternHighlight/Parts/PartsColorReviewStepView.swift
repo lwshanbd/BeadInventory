@@ -262,8 +262,7 @@ struct PartsColorReviewStepView: View {
     /// 好几块）才要挑一下。
     private var inspectButton: some View {
         Button(action: startInspect) {
-            // 图标和字自己拼，理由见 `brushButton`。
-            // 字号比导航栏默认的小一档，两个按钮才挤得进一行（见 body 里 toolbar 的注释）。
+            // 样子和窄屏处理见 `toolbarLabel`
             toolbarLabel("看零件", systemImage: "photo")
         }
         .disabled(parts.isEmpty || samplingColors)
@@ -281,8 +280,7 @@ struct PartsColorReviewStepView: View {
                 showingPartPicker = true
             }
         } label: {
-            // 图标和字自己拼，**不用 `Label`**：导航栏里的 `Label` 一律只画图标，
-            // `.labelStyle(.titleAndIcon)` 也压不住它（试过）。光一个橡皮图标，
+            // 平常要带字（见 `toolbarLabel`）：光一个橡皮图标，
             // 用户得先猜它是干什么的 —— 而这一屏最需要的那件事
             //（「这一格根本没有豆子」）就藏在它后面。
             // 名字跟拼豆板那屏的按钮一致，两处是同一件事。
@@ -295,6 +293,10 @@ struct PartsColorReviewStepView: View {
     }
 
     /// 导航栏右上角按钮的样子：平常是图标 + 字，屏幕太窄时只剩图标。
+    ///
+    /// 平常那档是自己拼的，**不用 `Label`**：导航栏里的 `Label` 一律只画图标，
+    /// `.labelStyle(.titleAndIcon)` 也压不住它（试过）。字号比导航栏默认的小一档，
+    /// 两个按钮才挤得进一行。窄屏那档反过来，正是靠 `Label` 只画图标，旁白照样读得出名字。
     ///
     /// **按钮绝不能被挤掉。** 放不下的时候系统会把右上角收成一个「…」，
     /// 可自己拼的图标 + 字它画不进菜单：「…」点开是两行空白，按钮等于没了（用户反馈过）。
