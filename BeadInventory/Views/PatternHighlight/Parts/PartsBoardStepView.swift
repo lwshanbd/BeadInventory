@@ -624,6 +624,14 @@ struct PartsBoardStepView: View {
 
     private var boardMenu: some View {
         Menu {
+            // 放最上面：下面几组选项一展开要滚两屏，放底下根本找不到
+            if let board = currentBoard, !board.placements.isEmpty {
+                Section {
+                    Button { mirrorCurrentBoard() } label: {
+                        Label("镜像这块板", systemImage: "flip.horizontal")
+                    }
+                }
+            }
             Section("零件间距") {
                 ForEach(BoardSpacing.allCases) { option in
                     Button {
@@ -2225,6 +2233,33 @@ struct PartsBoardStepView: View {
         guard boards.indices.contains(boardIndex), boards.count > 1 else { return }
         boards.remove(at: boardIndex)
         switchTo(min(boardIndex, boards.count - 1))
+    }
+
+    /// 整块板左右翻过来：每个零件按板上看到的样子翻（规则同 `reorientSelected`），
+    /// 位置也左右对调。
+    ///
+    /// 有的用户就是照图纸的镜像拼。翻的是板子本身，不是只翻投影：
+    /// 手机和投影要是一正一反，低头抬头左右对不上，肯定按错。
+    ///
+    /// 留边和间距左右对称，原来放得下，翻过来照样放得下，不用重排。
+    /// 每个色号的颗数也不变，「已完成」的勾留着。
+    private func mirrorCurrentBoard() {
+        guard boards.indices.contains(boardIndex) else { return }
+        let cols = boards[boardIndex].cols
+        boards[boardIndex].placements = boards[boardIndex].placements.map { old in
+            guard let part = parts.first(where: { $0.id == old.partId }) else { return old }
+            let oldFootprint = part.footprint(for: old)
+            let newMirrored = !old.isMirrored
+            let newTurns = 4 - old.turns
+            let newFootprint = part.footprint(turns: newTurns, mirrored: newMirrored)
+            guard !oldFootprint.isEmpty, !newFootprint.isEmpty else { return old }
+            // 有豆子那一块原来占 [left, left + width)，翻过来占 [cols - left - width, cols - left)
+            let left = old.col + oldFootprint.minCol
+            let col = cols - left - oldFootprint.width - newFootprint.minCol
+            let row = old.row + oldFootprint.minRow - newFootprint.minRow
+            return PartPlacement(id: old.id, partId: old.partId, col: col, row: row,
+                                 turns: newTurns, mirrored: newMirrored)
+        }
     }
 
     // MARK: - 选中之后能干的事

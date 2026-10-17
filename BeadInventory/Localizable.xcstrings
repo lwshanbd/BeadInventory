@@ -13183,6 +13183,16 @@
         }
       }
     },
+    "镜像这块板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mirror this board"
+          }
+        }
+      }
+    },
     "清空这块板" : {
       "localizations" : {
         "en" : {
