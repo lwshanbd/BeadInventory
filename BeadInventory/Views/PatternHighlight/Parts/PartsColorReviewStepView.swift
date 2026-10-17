@@ -83,6 +83,8 @@ struct PartsColorReviewStepView: View {
     @State private var groupCellSet: Set<CellRef> = []
     /// 露头才裁的小图缓存（见 `CellSwatchCache`）
     @State private var swatchCache = CellSwatchCache()
+    /// 屏幕太窄，右上角按钮只画图标（见 `toolbarLabel`）
+    @State private var narrowToolbar = false
     @State private var showingCodePicker = false
     @State private var pickedCodes: Set<String> = []
     /// 用户在这一屏用选色盘选过的色号（当前体系的显示码），最近选的在前。
@@ -260,12 +262,8 @@ struct PartsColorReviewStepView: View {
     /// 好几块）才要挑一下。
     private var inspectButton: some View {
         Button(action: startInspect) {
-            // 图标和字自己拼，理由见 `brushButton`。
-            // 字号比导航栏默认的小一档，两个按钮才挤得进一行（见 body 里 toolbar 的注释）。
-            HStack(spacing: 3) {
-                Image(systemName: "photo").font(.footnote)
-                Text("看零件").font(.subheadline)
-            }
+            // 样子和窄屏处理见 `toolbarLabel`
+            toolbarLabel("看零件", systemImage: "photo")
         }
         .disabled(parts.isEmpty || samplingColors)
     }
@@ -282,20 +280,43 @@ struct PartsColorReviewStepView: View {
                 showingPartPicker = true
             }
         } label: {
-            // 图标和字自己拼，**不用 `Label`**：导航栏里的 `Label` 一律只画图标，
-            // `.labelStyle(.titleAndIcon)` 也压不住它（试过）。光一个橡皮图标，
+            // 平常要带字（见 `toolbarLabel`）：光一个橡皮图标，
             // 用户得先猜它是干什么的 —— 而这一屏最需要的那件事
             //（「这一格根本没有豆子」）就藏在它后面。
             // 名字跟拼豆板那屏的按钮一致，两处是同一件事。
-            HStack(spacing: 3) {
-                Image(systemName: "eraser").font(.footnote)
-                Text("编辑网格").font(.subheadline)
-            }
+            toolbarLabel("编辑网格", systemImage: "eraser")
         }
         // 量颜色的那几秒也关掉。挡屏的那层盖不住导航栏（overlay 加在 VStack 上，
         // 而工具栏项是画到导航栏里去的），不关的话用户能在转圈的时候把画笔叫出来。
         // `inspectButton` 同理。
         .disabled(parts.isEmpty || samplingColors)
+    }
+
+    /// 导航栏右上角按钮的样子：平常是图标 + 字，屏幕太窄时只剩图标。
+    ///
+    /// 平常那档是自己拼的，**不用 `Label`**：导航栏里的 `Label` 一律只画图标，
+    /// `.labelStyle(.titleAndIcon)` 也压不住它（试过）。字号比导航栏默认的小一档，
+    /// 两个按钮才挤得进一行。窄屏那档反过来，正是靠 `Label` 只画图标，旁白照样读得出名字。
+    ///
+    /// **按钮绝不能被挤掉。** 放不下的时候系统会把右上角收成一个「…」，
+    /// 可自己拼的图标 + 字它画不进菜单：「…」点开是两行空白，按钮等于没了（用户反馈过）。
+    /// 所以不让它放不下：
+    /// - 字号封顶在默认档。系统自己的导航栏按钮也不跟着字号变大。左上角「退出」同样封顶，
+    ///   这样 375 宽的手机不管字号调多大，两个按钮都带字放得下；
+    /// - 比这还窄（320 宽的小屏、开了「放大显示」）就只画图标。宽度是量出来的：
+    ///   `ViewThatFits` 在导航栏里不管用，导航栏按理想尺寸量它，它永远挑第一个（试过）。
+    private func toolbarLabel(_ title: LocalizedStringKey, systemImage: String) -> some View {
+        SwiftUI.Group {
+            if narrowToolbar {
+                Label(title, systemImage: systemImage)
+            } else {
+                HStack(spacing: 3) {
+                    Image(systemName: systemImage).font(.footnote)
+                    Text(title).font(.subheadline)
+                }
+            }
+        }
+        .dynamicTypeSize(...DynamicTypeSize.large)
     }
 
     var body: some View {
@@ -309,6 +330,8 @@ struct PartsColorReviewStepView: View {
             footer
         }
         .overlay { if samplingColors { samplingOverlay } }
+        // 370 以下是 320 宽那一档：带字的两个按钮在那儿怎么都放不下
+        .onGeometryChange(for: Bool.self) { $0.size.width < 370 } action: { narrowToolbar = $0 }
         .onDisappear {
             samplingTask?.cancel()
             samplingTask = nil
@@ -328,6 +351,7 @@ struct PartsColorReviewStepView: View {
             if onRegridPart != nil {
                 ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
             }
+            // 两个按钮放在同一项里：拆成两项，系统会在中间多垫一截，375 宽就又放不下了（试过）
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 14) {
                     if onRegridPart != nil { inspectButton }
