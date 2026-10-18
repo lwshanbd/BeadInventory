@@ -155,6 +155,9 @@ struct BrandSettingsView: View {
                         title: "请先选择品牌",
                         subtitle: "切换或添加一个品牌后再进入设置"
                     )
+                    // 空状态撑满标题栏以下的地方。不撑的话这一页只有它那么高，
+                    // iPad 上上下各露出一大块白，标题栏也被挤到屏幕中间。
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
         }
         .background(Theme.ColorToken.Surface.background)

@@ -36,6 +36,9 @@ struct StatisticsView: View {
                     }
                 }
             }
+            // 撑满再铺底色。不撑的话这一层只有内容那么宽：iPad 上内容比屏幕窄（比如没有记录时的空状态），
+            // 底色只铺中间一条，两边露出大片白边。
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.ColorToken.Surface.background)
             .navigationTitle("记录")
             .navigationBarTitleDisplayMode(.inline)
