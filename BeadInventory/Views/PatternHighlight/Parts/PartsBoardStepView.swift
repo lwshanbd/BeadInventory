@@ -487,9 +487,12 @@ struct PartsBoardStepView: View {
             Button("取消", role: .cancel) {}
             Button("确定") { DispatchQueue.main.async { onFinish() } }
         }
+        // 推到下一轮再翻，理由同上面「标记为拼完？」：走到这个弹窗说明板上有勾，
+        // 翻完一定会 `onPersist()`，存不上时父视图要弹「存盘失败」，从正在收起的
+        // alert 按钮里弹会被吞掉。
         .alert("镜像这块板？", isPresented: $confirmMirror) {
             Button("取消", role: .cancel) {}
-            Button("镜像", role: .destructive) { mirrorCurrentBoard() }
+            Button("镜像", role: .destructive) { DispatchQueue.main.async { mirrorCurrentBoard() } }
         } message: {
             Text("这块板上的已完成标记会清空。")
         }
@@ -567,25 +570,48 @@ struct PartsBoardStepView: View {
             }
 
             if let board = currentBoard {
-                // 投屏那一行单独占一行：它那句话本身就够长，跟板子摘要挤在同一行的话
-                // 两边都会被截断，而这两句都是用来「扫一眼确认」的。
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(boardSummary(board))
-                        .font(.caption.monospacedDigit())
-                        .foregroundColor(Theme.ColorToken.Text.secondary)
-                    // 状态标记 + 投影仪模式的入口，写法见 `ProjectorStatusChip`
-                    if cast.externalConnected {
-                        ProjectorStatusChip { showingProjectorSheet = true }
-                    } else {
-                        ProjectorConnectChip { showingConnectSheet = true }
+                HStack(spacing: Theme.Spacing.sm) {
+                    // 投屏那一行单独占一行：它那句话本身就够长，跟板子摘要挤在同一行的话
+                    // 两边都会被截断，而这两句都是用来「扫一眼确认」的。
+                    // 镜像按钮定宽挂在这两行右边，不跟它们抢同一行。
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(boardSummary(board))
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(Theme.ColorToken.Text.secondary)
+                        // 状态标记 + 投影仪模式的入口，写法见 `ProjectorStatusChip`
+                        if cast.externalConnected {
+                            ProjectorStatusChip { showingProjectorSheet = true }
+                        } else {
+                            ProjectorConnectChip { showingConnectSheet = true }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // 直接摆在板头，不收进右上角菜单：照镜像拼的人每块板都要点一次，
+                    // 藏进二级菜单就是每次多翻一层。
+                    if !board.placements.isEmpty {
+                        mirrorButton
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Theme.Spacing.lg)
             }
         }
         .padding(.vertical, Theme.Spacing.sm)
         .background(Theme.ColorToken.Surface.background)
+    }
+
+    private var mirrorButton: some View {
+        Button { requestMirrorCurrentBoard() } label: {
+            // 字用主色、底用板号选中时那一档：淡紫字配淡紫底看着像灰掉的按钮
+            Label("镜像", systemImage: "flip.horizontal")
+                .font(.footnote.weight(.medium))
+                .foregroundColor(Theme.ColorToken.Text.primary)
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.sm)
+                .background(Capsule().fill(Theme.ColorToken.Morandi.mauve.opacity(0.22)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
     }
 
     /// 板头那一行摘要。插件板要在最前面点出来 —— 拼这块板时手上抓的是另一批豆子，
@@ -632,14 +658,6 @@ struct PartsBoardStepView: View {
 
     private var boardMenu: some View {
         Menu {
-            // 放最上面：下面几组选项一展开要滚两屏，放底下根本找不到
-            if let board = currentBoard, !board.placements.isEmpty {
-                Section {
-                    Button { requestMirrorCurrentBoard() } label: {
-                        Label("镜像这块板", systemImage: "flip.horizontal")
-                    }
-                }
-            }
             Section("零件间距") {
                 ForEach(BoardSpacing.allCases) { option in
                     Button {
@@ -2244,16 +2262,18 @@ struct PartsBoardStepView: View {
     }
 
     /// 整块板左右翻过来：每个零件按板上看到的样子翻（规则同 `reorientSelected`），
-    /// 位置也左右对调。
+    /// 位置也左右对调。找不到零件、或者格子已经擦空的摆放原样不动：它们不画也不占格，
+    /// 会被 `PartsBoardRepair` 摘掉。
     ///
     /// 有的用户就是照图纸的镜像拼。翻的是板子本身，不是只翻投影：
     /// 手机和投影要是一正一反，低头抬头左右对不上，肯定按错。
     ///
     /// 留边和间距左右对称，原来放得下，翻过来照样放得下，不用重排。
     ///
-    /// 「已完成」的勾一律清掉，理由同 `clearDoneColors`：板上已经按好的豆子是照原来的
-    /// 位置按的，翻过来每个零件都换了地方，勾还挂着的话用户续拼会直接跳过那个色。
-    /// 颗数一颗没变，`pruneDoneColors` 认不出来，得在这里清。
+    /// 「已完成」的勾整块清掉。道理跟 `clearDoneColors` 一样：板上已经按好的豆子是照
+    /// 原来的位置按的，零件一动，勾还挂着的话用户续拼会直接跳过那个色。区别在于
+    /// `clearDoneColors` 只动了一个零件，所以只清它用到的色号；这里每个零件都动了，
+    /// 只能整块清。颗数一颗没变，`pruneDoneColors` 认不出来，得在这里清。
     private func mirrorCurrentBoard() {
         guard boards.indices.contains(boardIndex) else { return }
         let hadDoneColors = boards[boardIndex].doneColors != nil
