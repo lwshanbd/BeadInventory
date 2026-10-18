@@ -569,23 +569,45 @@ struct PartsBoardStepView: View {
             if let board = currentBoard {
                 // 投屏那一行单独占一行：它那句话本身就够长，跟板子摘要挤在同一行的话
                 // 两边都会被截断，而这两句都是用来「扫一眼确认」的。
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(boardSummary(board))
-                        .font(.caption.monospacedDigit())
-                        .foregroundColor(Theme.ColorToken.Text.secondary)
-                    // 状态标记 + 投影仪模式的入口，写法见 `ProjectorStatusChip`
-                    if cast.externalConnected {
-                        ProjectorStatusChip { showingProjectorSheet = true }
-                    } else {
-                        ProjectorConnectChip { showingConnectSheet = true }
+                HStack(spacing: Theme.Spacing.sm) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(boardSummary(board))
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(Theme.ColorToken.Text.secondary)
+                        // 状态标记 + 投影仪模式的入口，写法见 `ProjectorStatusChip`
+                        if cast.externalConnected {
+                            ProjectorStatusChip { showingProjectorSheet = true }
+                        } else {
+                            ProjectorConnectChip { showingConnectSheet = true }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // 直接摆在板头，不收进右上角菜单：照镜像拼的人每块板都要点一次，
+                    // 藏进二级菜单就是每次多翻一层。
+                    if !board.placements.isEmpty {
+                        mirrorButton
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Theme.Spacing.lg)
             }
         }
         .padding(.vertical, Theme.Spacing.sm)
         .background(Theme.ColorToken.Surface.background)
+    }
+
+    private var mirrorButton: some View {
+        Button { requestMirrorCurrentBoard() } label: {
+            // 字用主色、底用板号选中时那一档：淡紫字配淡紫底看着像灰掉的按钮
+            Label("镜像", systemImage: "flip.horizontal")
+                .font(.footnote.weight(.medium))
+                .foregroundColor(Theme.ColorToken.Text.primary)
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.sm)
+                .background(Capsule().fill(Theme.ColorToken.Morandi.mauve.opacity(0.22)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
     }
 
     /// 板头那一行摘要。插件板要在最前面点出来 —— 拼这块板时手上抓的是另一批豆子，
@@ -632,14 +654,6 @@ struct PartsBoardStepView: View {
 
     private var boardMenu: some View {
         Menu {
-            // 放最上面：下面几组选项一展开要滚两屏，放底下根本找不到
-            if let board = currentBoard, !board.placements.isEmpty {
-                Section {
-                    Button { requestMirrorCurrentBoard() } label: {
-                        Label("镜像这块板", systemImage: "flip.horizontal")
-                    }
-                }
-            }
             Section("零件间距") {
                 ForEach(BoardSpacing.allCases) { option in
                     Button {
