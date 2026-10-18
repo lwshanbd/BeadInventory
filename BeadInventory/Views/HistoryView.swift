@@ -151,6 +151,9 @@ struct HistoryView: View {
                     contentScroll
                 }
             }
+            // 撑满标题栏以下的地方再铺底色。没有记录时只有一个空状态，不撑的话这一页就只有那么高：
+            // iPad 上上下各露出一大块白，标题栏也跟着被挤到屏幕中间。
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Theme.ColorToken.Surface.background)
         .navigationBarHidden(true)

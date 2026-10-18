@@ -39,7 +39,10 @@ struct BrandManagerView: View {
                     }
 
                     if inventoryManager.brands.isEmpty {
+                        // 撑满标题栏以下的地方。不撑的话这一列只有空状态那么高，
+                        // 在 iPad 上被居中，标题栏跟着跑到屏幕中间。
                         emptyState
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         content
                     }
