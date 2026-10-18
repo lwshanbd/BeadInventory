@@ -335,4 +335,3 @@ struct ContentView: View {
         .environmentObject(SharedImageManager.shared)
         .environmentObject(CloudSyncStatusManager(mode: .iCloudEnabled))
 }
-
