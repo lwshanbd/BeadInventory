@@ -16,6 +16,9 @@ struct ContentView: View {
     @ObservedObject private var localModelRemovalMigrator = LocalModelRemovalMigrator.shared
     @Binding var shouldOpenScan: Bool
     @State private var selectedTab = 0
+    /// 系统给的横向尺寸档。标签栏那层被改成了窄屏（见 body 里 TabView 的注释），
+    /// 各页要拿回原来的档，iPad 上该怎么排还怎么排。
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// 工作台停在「拼图」还是「识别」（见 `WorkshopView`）。外部唤起扫描时要切到识别。
     @AppStorage("workshopPage") private var workshopPage: String = ""
     @State private var showingAddInventory = false
@@ -42,6 +45,7 @@ struct ContentView: View {
                 // 库存管理
                 InventoryView()
                     .environment(\.tabFlavor, .inventory)
+                    .environment(\.horizontalSizeClass, horizontalSizeClass)
                     .tabItem {
                         Label("库存", systemImage: "square.grid.3x3.fill")
                     }
@@ -50,6 +54,7 @@ struct ContentView: View {
                 // 计划：还没扣减的项目
                 PlannedProjectsView()
                     .environment(\.tabFlavor, .plan)
+                    .environment(\.horizontalSizeClass, horizontalSizeClass)
                     .tabItem {
                         Label("计划", systemImage: "list.bullet.clipboard.fill")
                     }
@@ -58,6 +63,7 @@ struct ContentView: View {
                 // 工作台：识别图纸、拼图模式
                 WorkshopView(externalImage: $externalImage)
                     .environment(\.tabFlavor, .workshop)
+                    .environment(\.horizontalSizeClass, horizontalSizeClass)
                     .tabItem {
                         Label("工作台", systemImage: "wand.and.stars")
                     }
@@ -66,6 +72,7 @@ struct ContentView: View {
                 // 记录：扣减过的项目 + 用量统计
                 StatisticsView()
                     .environment(\.tabFlavor, .records)
+                    .environment(\.horizontalSizeClass, horizontalSizeClass)
                     .tabItem {
                         Label("记录", systemImage: "book.closed.fill")
                     }
@@ -74,12 +81,17 @@ struct ContentView: View {
                 // 更多（包含色号转换和设置）
                 MoreView()
                     .environment(\.tabFlavor, .more)
+                    .environment(\.horizontalSizeClass, horizontalSizeClass)
                     .tabItem {
                         Label("更多", systemImage: "ellipsis.circle.fill")
                     }
                     .tag(TabFlavor.more.rawValue)
             }
             .tint(currentFlavor.color)
+            // iPad 上标签栏跟手机一样放在底部。iPadOS 18 起系统默认把它挪到顶上，做成一个悬浮的胶囊，
+            // 正好盖住工作台顶上的「拼图 | 识别」，用户点不到（用户反馈过）。
+            // 标签栏按窄屏排就回到底部；各页在上面重新拿回系统给的档，不受影响。
+            .environment(\.horizontalSizeClass, .compact)
             .onPreferenceChange(SelectModeActivePreferenceKey.self) { active in
                 withAnimation(.easeInOut(duration: 0.2)) {
                     inventoryInSelectMode = active
