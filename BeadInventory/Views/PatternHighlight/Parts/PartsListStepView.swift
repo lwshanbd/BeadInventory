@@ -110,12 +110,16 @@ struct PartsListStepView: View {
                     }
                 } else {
                     VStack(spacing: 0) {
-                        // 图纸是竖长的，240pt 高只剩不到 180pt 宽，五十几个框挤成一团看不清谁是谁，
-                        // 所以高屏上给到 340pt；屏不够高时（Duo 竖着拿）占一半。
-                        // 高度只按整块可用空间定，不跟底部按钮区一起分：选中零件后底部多出一排按钮，
-                        // 分着算的话图会被压矮一截，图跟着缩小、挪位，用户刚点的框就跑了。
+                        // 图纸是竖长的，早先只给 240pt 高时宽度不到 180pt，五十几个框挤成一团看不清，
+                        // 所以高屏上给到 340pt。
+                        //
+                        // 高度只按这块 GeometryReader 的高度定，**不量底部按钮区**：选中零件后底部
+                        // 换成一排按钮、高了二十来 pt，跟着它算的话图会被压矮一截，图缩小、挪位，
+                        // 用户刚点的框就跑了。底部的空间按它最高的样子先留出来，再给缩略图留一行，
+                        // 剩下的才是图的。矮屏（SE、Duo 竖着拿）上图小一些，但缩略图还看得见一行，
+                        // 「下一步」也不会被挤出屏幕。
                         preview(overlapping: overlapping)
-                            .frame(height: min(340, geo.size.height / 2))
+                            .frame(height: Self.previewHeight(available: geo.size.height))
                         Divider()
                         partGrid(overlapping: overlapping)
                         footer
@@ -225,6 +229,18 @@ struct PartsListStepView: View {
             .flatMap { _, onPage in
                 PartsDetector.readingRows(onPage.map(\.bounds)).flatMap { $0.map { onPage[$0] } }
             }
+    }
+
+    /// 竖屏时上面图纸的高度，只看可用高度，跟选没选中零件无关。
+    ///
+    /// - 底部按钮区按最高的样子留 230pt：选中零件、还留着原图那一行时，默认字号下约 220。
+    ///   常规字号再大一档也只是吃掉缩略图区，不会把「下一步」挤出去。
+    /// - 缩略图至少露一行：格子 78 + 标题 + 上下边距，约 130。
+    /// - 剩下的给图，最多 340。
+    static func previewHeight(available: CGFloat) -> CGFloat {
+        let footerReserve: CGFloat = 230
+        let gridMinimum: CGFloat = 130
+        return min(340, max(0, available - footerReserve - gridMinimum))
     }
 
     /// 编号已经被后面几步用上了：有零件在「量格子」那屏点过「对齐了」，或者判过色。
@@ -648,11 +664,11 @@ struct PartsListStepView: View {
         // `rowBand` 只是存档里的字段，清单顺序不读它（见 `ordered`），随便给一个
         let newPart = BeadPart(rowBand: 0, bounds: inImage, page: page == 0 ? nil : page)
         insertSorted(newPart)
-        // 画完**选中它**，边把手立刻出现。手指拖出来的框很少一次到位，
-        // 下一步几乎总是微调这一个；早先画完不选中，是因为那时选中只能删除 / 合并，
-        // 用不上还挡着看。现在要取消，点一下框内或底部的「取消选择」。
-        selection = [newPart.id]
-        lastTappedOnImage = newPart.id
+        // 画完**不选中、不把下面的缩略图滚过去**。有一版画完就选中它好让把手立刻出来，
+        // 用户反馈：只是想补个框，底部却换成一排按钮、缩略图也跟着跳，像弹出了什么。
+        // 选中和滚动只跟着用户自己点零件走；要微调这个框，点它一下把手就出来。
+        // 之前的选中也清掉：补零件是另一件事，留着旧选中，底部还是那排按钮。
+        selection.removeAll()
         // **画完一个就退出补零件状态。**
         //
         // 上一版是「画完不退出，接着画下一个」——那是在电脑上想出来的。真在手机上补零件，
