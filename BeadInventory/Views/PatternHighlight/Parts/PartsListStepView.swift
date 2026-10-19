@@ -233,7 +233,8 @@ struct PartsListStepView: View {
 
     /// 竖屏时上面图纸的高度，只看可用高度，跟选没选中零件无关。
     ///
-    /// - 底部按钮区按最高的样子留 230pt：选中零件、还留着原图那一行时，默认字号下约 220。
+    /// - 底部按钮区按最高的样子留 230pt：选中零件、还留着原图那一行时，默认字号下按代码估约 220，
+    ///   多留 10 作余量。改了 footer 要重新估。
     ///   常规字号再大一档也只是吃掉缩略图区，不会把「下一步」挤出去。
     /// - 缩略图至少露一行：格子 78 + 标题 + 上下边距，约 130。
     /// - 剩下的给图，最多 340。
@@ -530,7 +531,7 @@ struct PartsListStepView: View {
                         .font(.footnote)
                         .foregroundStyle(Theme.ColorToken.Text.secondary)
                     Spacer()
-                    Button("取消选择") { selection.removeAll() }
+                    Button("取消选择") { clearSelection() }
                         .font(.footnote)
                 }
 
@@ -564,11 +565,11 @@ struct PartsListStepView: View {
             }
 
             // **这个按钮任何时候都在。** 以前它藏在「没选中任何零件」那一支里：
-            // 补完一个零件之后它是选中状态，按钮就消失了，用户必须先点「取消选择」
-            // 才能再补下一个 —— 而他压根不知道自己进了选中态，只看到按钮没了。
+            // 一选中零件底部就换成那排操作按钮，它跟着消失，用户得先点「取消选择」
+            // 才能补零件，而他未必意识到自己处在选中状态，只看到按钮没了。
             Button {
                 addingPart.toggle()
-                if addingPart { selection.removeAll() }
+                if addingPart { clearSelection() }
             } label: {
                 Label(addingPart ? "暂不添加" : "有零件没框住？补一个",
                       systemImage: addingPart ? "xmark" : "plus.viewfinder")
@@ -610,9 +611,16 @@ struct PartsListStepView: View {
         if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
     }
 
+    /// 清选中时连「上次在图上点的是谁」一起清。缩略图靠这个值**变了**才滚：
+    /// 留着旧的 A，下次在图上再点 A 时值没变，缩略图就不滚过去了。
+    private func clearSelection() {
+        selection.removeAll()
+        lastTappedOnImage = nil
+    }
+
     private func deleteSelected() {
         parts.removeAll { selection.contains($0.id) }
-        selection.removeAll()
+        clearSelection()
     }
 
     /// 合并 = 取所有选中框的外接矩形，其余属性沿用最靠前的那个。
@@ -667,8 +675,10 @@ struct PartsListStepView: View {
         // 画完**不选中、不把下面的缩略图滚过去**。有一版画完就选中它好让把手立刻出来，
         // 用户反馈：只是想补个框，底部却换成一排按钮、缩略图也跟着跳，像弹出了什么。
         // 选中和滚动只跟着用户自己点零件走；要微调这个框，点它一下把手就出来。
-        // 之前的选中也清掉：补零件是另一件事，留着旧选中，底部还是那排按钮。
-        selection.removeAll()
+        //
+        // 这里还要再清一次选中，不是多余的：进补零件时已经清过，图上的点按这期间也挡住了，
+        // 但点**缩略图**照样能选上。不清的话，退出补零件后底部直接变成那排按钮。
+        clearSelection()
         // **画完一个就退出补零件状态。**
         //
         // 上一版是「画完不退出，接着画下一个」——那是在电脑上想出来的。真在手机上补零件，
@@ -793,7 +803,7 @@ struct PartsListStepView: View {
                 next.remove(at: index)
                 next.append(contentsOf: replacements)
                 parts = Self.ordered(next, inserting: Set(replacements.map(\.id)))
-                // 拆完不选中拆出来的那几个（跟 addPart 相反，那边选中是为了接着微调）：拆开是为了「这两块本来就是两个」，
+                // 拆完不选中拆出来的那几个（跟 addPart 一样）：拆开是为了「这两块本来就是两个」，
                 // 不是为了接着对它们动手，而多选着好几个反而挡住了看拆得对不对。
                 selection.removeAll()
                 lastTappedOnImage = replacements.first?.id
@@ -905,7 +915,7 @@ private struct PartsBoxOverlay: View {
                 let r = transform.screenRect(bounds)
                 // 选中的框换个颜色，不是加粗。图纸底色是浅粉、豆子里又有大片白，
                 // 原先「选中 = 白框 + 白色蒙版」在上面几乎看不出来 ——
-                // 用户补完一个零件，界面上没有任何地方告诉他「刚画的是这个、它选中了」。
+                // 用户点中一个框，得一眼看出点的是哪个。
                 // 橙色和这张图上的任何颜色都不撞，一眼就能找到。
                 let selected = selection.contains(part.id)
                 // 重叠太多的框描红：选中时也保持红色描边和红角标，只是照常铺橙色底，
