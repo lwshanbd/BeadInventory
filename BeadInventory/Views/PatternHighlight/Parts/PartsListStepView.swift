@@ -111,9 +111,11 @@ struct PartsListStepView: View {
                 } else {
                     VStack(spacing: 0) {
                         // 图纸是竖长的，240pt 高只剩不到 180pt 宽，五十几个框挤成一团看不清谁是谁，
-                        // 所以高屏上给到 340pt；屏不够高时（Duo 竖着拿）跟缩略图平分剩下的空间。
+                        // 所以高屏上给到 340pt；屏不够高时（Duo 竖着拿）占一半。
+                        // 高度只按整块可用空间定，不跟底部按钮区一起分：选中零件后底部多出一排按钮，
+                        // 分着算的话图会被压矮一截，图跟着缩小、挪位，用户刚点的框就跑了。
                         preview(overlapping: overlapping)
-                            .frame(maxHeight: 340)
+                            .frame(height: min(340, geo.size.height / 2))
                         Divider()
                         partGrid(overlapping: overlapping)
                         footer
