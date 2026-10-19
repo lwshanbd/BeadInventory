@@ -78,7 +78,8 @@ final class ProjectorLink: NSObject, ObservableObject {
     private enum StopReason {
         /// 还没开始过，或者用户点了「断开连接」。
         case idle
-        /// 上一次一次性尝试没连上（冷启动那次，或者之后某次回前台补的那次）。
+        /// 上一次一次性尝试没连上（冷启动那次，或者之后某次回前台补的那次），
+        /// 或者 App 是在后台被拉起来的，根本没去试（见 `attemptAutoConnect`）。
         case autoAttemptFailed
         /// 配对码不对、或者加密通道校验不过。只能等用户重新扫码 / 重输。
         case needsPairing
@@ -98,6 +99,14 @@ final class ProjectorLink: NSObject, ObservableObject {
     /// 而投影仪早就回到配对屏了 —— 用户两边看着自相矛盾，还不知道该点什么。
     private var lastInboundAt = Date()
     private var lifecycleObservers: [NSObjectProtocol] = []
+    /// 正在处理「回前台」。那一刻 `applicationState` 还是 `.background`，
+    /// 不放行的话回前台的那次重连也会被 `isRunningInBackground` 拦掉。
+    private var isEnteringForeground = false
+
+    /// App 在后台。不管是用户切走的，还是被推送拉起来的，这时候都不碰投影仪。
+    private var isRunningInBackground: Bool {
+        UIApplication.shared.applicationState == .background && !isEnteringForeground
+    }
 
     private lazy var urlSession: URLSession = {
         let config = URLSessionConfiguration.default
@@ -161,8 +170,22 @@ final class ProjectorLink: NSObject, ObservableObject {
     ///
     /// **每次只试一次**：投影仪没开机时无限重连纯粹是耗电，而用户此刻大概率根本没打算
     /// 投屏。他真要用的时候会去点「连接」，那之后才进入「断了就一直往回接」的模式。
+    ///
+    /// App 是在后台被拉起来的，这一次不连，等回前台再试。
     func attemptAutoConnect() {
         guard pairing != nil, stopReason != nil else { return }
+        // 后台启动不连，记成「等他打开 App 时再试一次」。
+        //
+        // 开了 iCloud 推送之后，另一台设备一存进度，这台就可能被系统在后台拉起来，
+        // 根视图的 onAppear 照跑。以前这台一连上就发 blank，把另一台正在投的画面清掉
+        // （`ProjectorSession.syncNow` 那边已经改成只撤自己留下的画面）。
+        // 实测日志：用户在 A 手机上投着，B 手机一次没打开过，24 分钟里清了 6 次。
+        // 现在照样不连：后台连上去没人看，只会多占投影仪一个连接。
+        if isRunningInBackground {
+            AppLogger.shared.info("Projector", "auto_connect_deferred_background")
+            stopReason = .autoAttemptFailed
+            return
+        }
         stopReason = nil
         isAutoAttempt = true
         retryCount = 0
@@ -247,6 +270,18 @@ final class ProjectorLink: NSObject, ObservableObject {
             stopReason = .needsPairing
             isAutoAttempt = false
             state = .waiting(reason: String(localized: "投影仪地址格式不正确，请核对屏幕上显示的地址"))
+            return
+        }
+        // 第二道防线：排着的重连在后台醒来时也不连。
+        // 后台启动的第一次连接已经在 `attemptAutoConnect` 挡住了。但后台启动的 App
+        // 收不到 didEnterBackground，万一后台里有连接断了，排着的那次重连会在下一次
+        // 被推送叫醒时触发。修之前那份日志里，后五次清屏都是这么来的。
+        // 留在「断了就接」的模式里，回前台由 `observeLifecycle` 接上。
+        if isRunningInBackground {
+            AppLogger.shared.info("Projector", "reconnect_deferred_background",
+                                  metadata: ["retry": "\(retryCount)"])
+            teardown(keepState: true)
+            state = .waiting(reason: String(localized: "回到 App 后会自动重新连接"))
             return
         }
         teardown(keepState: true)
@@ -536,6 +571,9 @@ final class ProjectorLink: NSObject, ObservableObject {
     ///
     /// 不做「后台保活」：那要么被系统掐掉，要么要申请一个我们并不需要的后台模式，
     /// 审核也过不去。反正安卓端那边画面停在最后一帧，用户拼当前色号不需要新帧。
+    ///
+    /// 后台启动的 App 不走 didEnterBackground，只靠回前台这一路接上。
+    /// 回前台时要先放行 `isRunningInBackground`，见 `isEnteringForeground`。
     private func observeLifecycle() {
         let center = NotificationCenter.default
         lifecycleObservers.append(center.addObserver(
@@ -552,6 +590,10 @@ final class ProjectorLink: NSObject, ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                self.isEnteringForeground = true
+                defer { self.isEnteringForeground = false }
+                AppLogger.shared.info("Projector", "foreground_resume",
+                                      metadata: ["stopReason": "\(String(describing: self.stopReason))"])
                 switch self.stopReason {
                 case nil:
                     // 复位 `isAutoAttempt`：切后台时已经跟用户承诺过「回到 App 后会自动
@@ -562,7 +604,8 @@ final class ProjectorLink: NSObject, ObservableObject {
                     self.retryCount = 0
                     self.startConnecting()
                 case .autoAttemptFailed:
-                    // 冷启动那次没连上（投影仪多半没开机），当时安静收手了。用户现在
+                    // 冷启动那次没连上（投影仪多半没开机），当时安静收手了；或者 App
+                    // 是在后台被拉起来的，根本没去试。用户现在
                     // 正把 App 拿到手上，投影仪大概也开着了 —— 再试一次，比让他自己
                     // 想起来去设置里点「重新连接」强。仍然只试一次，不进重连循环。
                     self.attemptAutoConnect()
