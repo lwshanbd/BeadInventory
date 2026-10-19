@@ -98,6 +98,14 @@ final class ProjectorLink: NSObject, ObservableObject {
     /// 而投影仪早就回到配对屏了 —— 用户两边看着自相矛盾，还不知道该点什么。
     private var lastInboundAt = Date()
     private var lifecycleObservers: [NSObjectProtocol] = []
+    /// 正在处理「回前台」。那一刻 `applicationState` 还是 `.background`，
+    /// 不放行的话回前台的那次重连也会被 `isRunningInBackground` 拦掉。
+    private var isEnteringForeground = false
+
+    /// App 在后台（多半是被 iCloud 推送拉起来的），这时候不碰投影仪。
+    private var isRunningInBackground: Bool {
+        UIApplication.shared.applicationState == .background && !isEnteringForeground
+    }
 
     private lazy var urlSession: URLSession = {
         let config = URLSessionConfiguration.default
@@ -163,6 +171,15 @@ final class ProjectorLink: NSObject, ObservableObject {
     /// 投屏。他真要用的时候会去点「连接」，那之后才进入「断了就一直往回接」的模式。
     func attemptAutoConnect() {
         guard pairing != nil, stopReason != nil else { return }
+        // 后台启动不连，记成「等他打开 App 时再试一次」。
+        //
+        // 开了 iCloud 推送之后，另一台设备一存进度，这台就可能被系统在后台拉起来，
+        // 根视图的 onAppear 照跑。这台没开着板子，连上去那一下会让投影仪清屏。
+        // 实测日志：用户在 A 手机上投着，B 手机一次没打开过，24 分钟里清了 6 次。
+        if isRunningInBackground {
+            stopReason = .autoAttemptFailed
+            return
+        }
         stopReason = nil
         isAutoAttempt = true
         retryCount = 0
@@ -247,6 +264,15 @@ final class ProjectorLink: NSObject, ObservableObject {
             stopReason = .needsPairing
             isAutoAttempt = false
             state = .waiting(reason: String(localized: "投影仪地址格式不正确，请核对屏幕上显示的地址"))
+            return
+        }
+        // 排着的重连在后台醒来时也不连。后台启动的 App 收不到 didEnterBackground，
+        // 断了之后排的那次重连会在下一次被推送叫醒时触发。`attemptAutoConnect` 注释里
+        // 那份日志，后五次清屏都是这么来的。
+        // 留在「断了就接」的模式里，回前台由 `observeLifecycle` 接上。
+        if isRunningInBackground {
+            teardown(keepState: true)
+            state = .waiting(reason: String(localized: "回到 App 后会自动重新连接"))
             return
         }
         teardown(keepState: true)
@@ -552,6 +578,8 @@ final class ProjectorLink: NSObject, ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                self.isEnteringForeground = true
+                defer { self.isEnteringForeground = false }
                 switch self.stopReason {
                 case nil:
                     // 复位 `isAutoAttempt`：切后台时已经跟用户承诺过「回到 App 后会自动

@@ -231,7 +231,13 @@ final class ProjectorSession: ObservableObject {
             return
         }
         guard let content else {
-            send(mode: .blank)
+            // 这条连接上自己从没投过东西，就别去清屏。
+            //
+            // 投影仪那头同时连着几台设备，谁发的模式都算数。另一台手机正投着板子时，
+            // 这台只是打开了 App（停在库存页），一连上就发 blank，那台的画面就没了，
+            // 而那台不知道，不会补发。投过（`lastSentMode` 不是 nil）再撤，才是
+            // 「离开板子那一屏就撤掉」。
+            if lastSentMode != nil { send(mode: .blank) }
             return
         }
         send(mode: .image)
