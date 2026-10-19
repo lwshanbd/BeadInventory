@@ -58,6 +58,13 @@ final class ProjectorSession: ObservableObject {
     /// 上一次真正发出去的模式。模式没变就不重发 —— 安卓端每收到一条 `mode` 都会
     /// 切一次显示状态，重复发会让画面闪。
     private var lastSentMode: ProjectorDisplayMode?
+    /// 投影仪上还留着这台发过去的画面（板子或校准），还没撤。**跨重连保留**，
+    /// 重连时不跟 `lastSentMode` 一起清。
+    ///
+    /// 离开板子那一屏要不要发 blank，看的就是它。用 `lastSentMode` 判断不行：它每次
+    /// 连上都清成 nil。断线期间用户退出了板子，撤画面的那条发不出去；重连后
+    /// `lastSentMode` 已经是 nil，又不发了，墙上就一直亮着那块旧板。
+    private var leftContentOnProjector = false
 
     private init() {}
 
@@ -231,13 +238,16 @@ final class ProjectorSession: ObservableObject {
             return
         }
         guard let content else {
-            // 这条连接上自己从没投过东西，就别去清屏。
+            // 只撤自己留下的画面。投影仪上没有这台发过去的东西，就别去清屏。
             //
             // 投影仪那头同时连着几台设备，谁发的模式都算数。另一台手机正投着板子时，
             // 这台只是打开了 App（停在库存页），一连上就发 blank，那台的画面就没了，
-            // 而那台不知道，不会补发。投过（`lastSentMode` 不是 nil）再撤，才是
-            // 「离开板子那一屏就撤掉」。
-            if lastSentMode != nil { send(mode: .blank) }
+            // 而那台不知道，不会补发。
+            if leftContentOnProjector {
+                send(mode: .blank)
+            } else {
+                AppLogger.shared.info("Projector", "blank_skipped_nothing_left")
+            }
             return
         }
         send(mode: .image)
@@ -250,6 +260,7 @@ final class ProjectorSession: ObservableObject {
     private func send(mode: ProjectorDisplayMode) {
         guard lastSentMode != mode else { return }
         lastSentMode = mode
+        leftContentOnProjector = mode != .blank
         link.send(.mode(mode))
     }
 
