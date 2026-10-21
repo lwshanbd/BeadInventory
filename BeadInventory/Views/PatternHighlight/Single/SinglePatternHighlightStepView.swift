@@ -205,9 +205,13 @@ struct SinglePatternHighlightStepView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if isFinished {
-                    Button("移回正在拼", action: onUnfinish)
+                    Button(action: onUnfinish) {
+                        PatternToolbarLabel("移回正在拼", systemImage: "arrow.uturn.backward")
+                    }
                 } else {
-                    Button("拼完了") { confirmFinish = true }
+                    Button { confirmFinish = true } label: {
+                        PatternToolbarLabel("拼完了", systemImage: "checkmark")
+                    }
                 }
             }
         }
@@ -399,6 +403,9 @@ struct SinglePatternHighlightStepView: View {
             .onChange(of: geo.size) { _, new in canvasSize = new }
         }
         .clipped()
+        // 底色伸到侧边安全区里：iPhone Duo 把导航栏按钮竖着排在侧边时，
+        // 画布只占安全区，按钮底下那一列会露出一条白的。
+        .background { Color.black.ignoresSafeArea(.container, edges: .horizontal) }
     }
 
     private var gestureCatcher: some View {
