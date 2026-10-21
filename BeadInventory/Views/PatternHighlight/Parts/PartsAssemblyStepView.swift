@@ -77,9 +77,13 @@ struct PartsAssemblyStepView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if isFinished {
-                    Button("移回正在拼", action: onUnfinish)
+                    Button(action: onUnfinish) {
+                        PatternToolbarLabel("移回正在拼", systemImage: "arrow.uturn.backward")
+                    }
                 } else {
-                    Button("拼完了") { confirmFinish = true }
+                    Button { confirmFinish = true } label: {
+                        PatternToolbarLabel("拼完了", systemImage: "checkmark")
+                    }
                 }
             }
         }
@@ -164,11 +168,12 @@ struct PartsAssemblyStepView: View {
             }
             .simultaneousGesture(pinchGesture(in: geo.size))
         }
-        .background(Theme.ColorToken.Surface.subtle)
         // 图按放大后的尺寸摆，会伸出画布；`.clipped()` 只裁画面不裁点按，
         // 不加 contentShape 的话伸出去那截会盖住上面的翻页条
         .clipped()
         .contentShape(Rectangle())
+        // 底色放在裁剪之后，才能伸进侧边安全区（理由同单图纸拼图那屏的画布）
+        .background { Theme.ColorToken.Surface.subtle.ignoresSafeArea(.container, edges: .horizontal) }
     }
 
     private func gestureCatcher(in size: CGSize, transform: PartsCanvasTransform) -> some View {
