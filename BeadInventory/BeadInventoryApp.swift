@@ -47,15 +47,21 @@ struct BeadInventoryApp: App {
         if userOptedOutOfCloudKit {
             AppLogger.shared.info("App", "cloud_sync_user_opted_out")
         }
+        // 库不放 App Group：放那里切后台会被系统以 0xdead10cc 杀掉，见 StoreLocationMigrator。
+        // 没搬成的这次启动继续用 App Group 里的旧库，保证数据还在。
+        let storeGroupContainer: ModelConfiguration.GroupContainer =
+            StoreLocationMigrator.moveStoreOutOfAppGroupIfNeeded() ? .none : .automatic
         let cloudConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
+            groupContainer: storeGroupContainer,
             cloudKitDatabase: userOptedOutOfCloudKit ? .none : .automatic
         )
 
         let localFallbackConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
+            groupContainer: storeGroupContainer,
             cloudKitDatabase: .none
         )
 
@@ -123,21 +129,19 @@ struct BeadInventoryApp: App {
                 AppLogger.shared.error("App", "model_container_creation_failed_trying_reset", metadata: ["error": "\(localFallbackError)"])
                 print("[App] ❌ 本地容器也失败，尝试重建数据库: \(localFallbackError)")
                 do {
-                    // 删除可能损坏的 SwiftData 存储文件
-                    if let storeURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-                        let defaultStoreURL = storeURL.appendingPathComponent("default.store")
-                        for suffix in ["", "-wal", "-shm"] {
-                            let fileURL = URL(fileURLWithPath: defaultStoreURL.path + suffix)
-                            do {
-                                try FileManager.default.removeItem(at: fileURL)
-                            } catch let removeError as NSError where removeError.domain == NSCocoaErrorDomain && removeError.code == NSFileNoSuchFileError {
-                                // 文件不存在，无需处理
-                            } catch {
-                                AppLogger.shared.warning("App", "db_file_removal_failed", metadata: [
-                                    "file": fileURL.lastPathComponent,
-                                    "error": "\(error)"
-                                ])
-                            }
+                    // 删除可能损坏的 SwiftData 存储文件（跟着配置取路径：库在 App Group 还是 App 容器都删对地方）
+                    let defaultStoreURL = localFallbackConfiguration.url
+                    for suffix in ["", "-wal", "-shm"] {
+                        let fileURL = URL(fileURLWithPath: defaultStoreURL.path + suffix)
+                        do {
+                            try FileManager.default.removeItem(at: fileURL)
+                        } catch let removeError as NSError where removeError.domain == NSCocoaErrorDomain && removeError.code == NSFileNoSuchFileError {
+                            // 文件不存在，无需处理
+                        } catch {
+                            AppLogger.shared.warning("App", "db_file_removal_failed", metadata: [
+                                "file": fileURL.lastPathComponent,
+                                "error": "\(error)"
+                            ])
                         }
                     }
                     container = try ModelContainer(
@@ -404,6 +408,126 @@ enum CloudSyncPreferences {
     static var userOptedOut: Bool {
         get { UserDefaults.standard.bool(forKey: userOptedOutKey) }
         set { UserDefaults.standard.set(newValue, forKey: userOptedOutKey) }
+    }
+}
+
+/// 把数据库从 App Group 容器搬回 App 自己的容器。
+///
+/// **为什么要搬**：`ModelConfiguration` 默认 `groupContainer: .automatic`，会挑 entitlements 里第一个
+/// App Group 存库，于是库一直放在 `group.com.beadinventory.shared` 里。iOS 对共享容器有一条规矩：
+/// App 被挂起时，进程手里不能攥着共享容器里文件的锁，否则 RunningBoard 直接以 `0xdead10cc` 杀进程。
+/// CloudKit 同步的导入/导出、WAL checkpoint 会在切后台之后继续写库，正好撞上 —— build 293 的
+/// 头号崩溃（Organizer 里那条 `UnsafeMutablePointer.withMemoryRebound`，主线程只是在跑 runloop，
+/// 真正攥锁的是 CoreData 的 CloudKit 线程）。
+///
+/// App Group 里只有 Share Extension 传图要用，扩展从不碰数据库，库没有理由放在那里。
+///
+/// **怎么搬**：开库之前，把 App Group 的 Application Support 下所有 `default*` / `.default*`
+/// （库本体、-wal、-shm、外部存储的图 `.default_SUPPORT`、CloudKit 资源 `default_ckAssets`）
+/// 逐个 rename 到 App 容器的 Application Support。同一块盘上 rename 不拷数据，几 GB 的库也是瞬间完成。
+/// - 库本体最后搬：中途被杀的话，App Group 里还剩 `default.store`，下次启动接着搬剩下的。
+/// - App 容器里原本就有 `default.store`（实测是个 0 字节空壳）时，先整组挪进 Caches，不删。
+/// - 任何一步失败就把已经搬过去的挪回来，返回 false，这次启动继续用 App Group 里的库。
+///   崩溃照旧，但数据一点不丢，下次启动再试。
+enum StoreLocationMigrator {
+    private static let storeName = "default.store"
+
+    /// - Returns: true 表示库在（或已经搬到）App 自己的容器里；false 表示这次没搬成，应继续用 App Group。
+    @MainActor
+    static func moveStoreOutOfAppGroupIfNeeded() -> Bool {
+        let fileManager = FileManager.default
+        guard let groupDirectory = fileManager
+            .containerURL(forSecurityApplicationGroupIdentifier: SharedImageManager.appGroupIdentifier)?
+            .appendingPathComponent("Library/Application Support", isDirectory: true),
+              let appDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        else {
+            return true
+        }
+
+        // App Group 里没有库：新装的，或者早就搬完了。
+        guard fileManager.fileExists(atPath: groupDirectory.appendingPathComponent(storeName).path) else {
+            return true
+        }
+
+        let groupItems: [String]
+        do {
+            groupItems = try fileManager.contentsOfDirectory(atPath: groupDirectory.path)
+                .filter(isStoreItem)
+        } catch {
+            AppLogger.shared.error("StoreMove", "list_group_failed", metadata: ["error": "\(error)"])
+            return false
+        }
+        let orderedItems = groupItems.filter { $0 != storeName } + [storeName]
+
+        do {
+            try fileManager.createDirectory(at: appDirectory, withIntermediateDirectories: true)
+            try quarantineExistingAppStoreIfNeeded(in: appDirectory)
+        } catch {
+            AppLogger.shared.error("StoreMove", "prepare_app_dir_failed", metadata: ["error": "\(error)"])
+            return false
+        }
+
+        var movedItems: [String] = []
+        for name in orderedItems {
+            do {
+                try fileManager.moveItem(
+                    at: groupDirectory.appendingPathComponent(name),
+                    to: appDirectory.appendingPathComponent(name)
+                )
+                movedItems.append(name)
+            } catch {
+                AppLogger.shared.error("StoreMove", "move_failed", metadata: [
+                    "item": name,
+                    "error": "\(error)"
+                ])
+                for movedName in movedItems.reversed() {
+                    do {
+                        try fileManager.moveItem(
+                            at: appDirectory.appendingPathComponent(movedName),
+                            to: groupDirectory.appendingPathComponent(movedName)
+                        )
+                    } catch {
+                        AppLogger.shared.error("StoreMove", "rollback_failed", metadata: [
+                            "item": movedName,
+                            "error": "\(error)"
+                        ])
+                    }
+                }
+                return false
+            }
+        }
+
+        AppLogger.shared.info("StoreMove", "moved_out_of_app_group", metadata: ["items": movedItems.joined(separator: ",")])
+        return true
+    }
+
+    private static func isStoreItem(_ name: String) -> Bool {
+        name.hasPrefix("default") || name.hasPrefix(".default")
+    }
+
+    /// App 容器里已有 `default.store` 时，把这一组文件挪到 Caches 下的单独目录。
+    ///
+    /// 只看 `default.store` 在不在：库本体是最后搬的，中途被杀时 App 容器里只会有上次搬过来的
+    /// -wal / 外部存储目录，没有 `default.store`，这些不能当旧文件挪走。
+    private static func quarantineExistingAppStoreIfNeeded(in appDirectory: URL) throws {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: appDirectory.appendingPathComponent(storeName).path) else { return }
+
+        let caches = try fileManager.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let quarantine = caches.appendingPathComponent(
+            "StoreBeforeAppGroupMove-\(Int(Date().timeIntervalSince1970))",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(at: quarantine, withIntermediateDirectories: true)
+
+        let existing = try fileManager.contentsOfDirectory(atPath: appDirectory.path).filter(isStoreItem)
+        for name in existing {
+            try fileManager.moveItem(
+                at: appDirectory.appendingPathComponent(name),
+                to: quarantine.appendingPathComponent(name)
+            )
+        }
+        AppLogger.shared.info("StoreMove", "quarantined_app_store", metadata: ["items": existing.joined(separator: ",")])
     }
 }
 
