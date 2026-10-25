@@ -133,33 +133,48 @@ struct ContentView: View {
                             Text(String(localized: "数据加载失败"))
                                 .font(.headline)
 
-                            Text(errorMessage)
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
+                            // 内存库：磁盘上的库这次没打开，只有重启能解决。
+                            // 重试读的还是这个空的内存库；问题也跟 iCloud 无关，关同步会永久关掉，所以都不给。
+                            let isTemporaryStore = cloudSyncStatusManager.isUsingTemporaryStore
 
-                            Text(iCloudHintForLoadingError())
-                                .font(.footnote)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 8)
+                            if isTemporaryStore {
+                                Text(String(localized: "数据库暂时无法打开，当前为临时模式，改动不会保存。请重启应用再试。"))
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            } else {
+                                Text(errorMessage)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+
+                                Text(iCloudHintForLoadingError())
+                                    .font(.footnote)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 8)
+                            }
 
                             VStack(spacing: 10) {
-                                Button(String(localized: "重试")) {
-                                    inventoryManager.retryInitialLoad(reason: "contentView.retryButton")
+                                if !isTemporaryStore {
+                                    Button(String(localized: "重试")) {
+                                        inventoryManager.retryInitialLoad(reason: "contentView.retryButton")
+                                    }
+                                    .buttonStyle(.borderedProminent)
                                 }
-                                .buttonStyle(.borderedProminent)
 
                                 Button(String(localized: "以本地模式继续")) {
                                     showingLocalFallbackConfirmation = true
                                 }
                                 .buttonStyle(.bordered)
 
-                                Button(String(localized: "关闭 iCloud 同步（需重启）")) {
-                                    showingDisableCloudSyncConfirmation = true
+                                if !isTemporaryStore {
+                                    Button(String(localized: "关闭 iCloud 同步（需重启）")) {
+                                        showingDisableCloudSyncConfirmation = true
+                                    }
+                                    .font(.footnote)
+                                    .foregroundColor(.secondary)
                                 }
-                                .font(.footnote)
-                                .foregroundColor(.secondary)
                             }
                         } else {
                             ProgressView()

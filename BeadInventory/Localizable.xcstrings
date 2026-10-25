@@ -9020,22 +9020,12 @@
         }
       }
     },
-    "数据库初始化失败，当前为临时模式，数据不会被保存。请尝试重启应用或重新安装。" : {
+    "数据库暂时无法打开，当前为临时模式，改动不会保存。请重启应用再试。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Database failed to initialize; the app is running in temporary mode and data will not be saved. Try restarting or reinstalling the app."
-          }
-        }
-      }
-    },
-    "数据库已损坏并被重置，历史数据可能丢失。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The database was corrupted and has been reset; historical data may be lost."
+            "value" : "The database can't be opened right now, so the app is running in temporary mode and changes won't be saved. Restart the app to try again."
           }
         }
       }

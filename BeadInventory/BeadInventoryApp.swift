@@ -47,124 +47,120 @@ struct BeadInventoryApp: App {
         if userOptedOutOfCloudKit {
             AppLogger.shared.info("App", "cloud_sync_user_opted_out")
         }
+        // 库不放 App Group：放那里切后台会被系统以 0xdead10cc 杀掉，见 StoreLocationMigrator。
+        // 没搬成的这次启动继续用 App Group 里的旧库；库文件拆散了就不开磁盘库，进临时模式。
+        let storeLocation = StoreLocationMigrator.moveStoreOutOfAppGroupIfNeeded()
+        let storeGroupContainer: ModelConfiguration.GroupContainer =
+            storeLocation == .appGroup ? .automatic : .none
         let cloudConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
+            groupContainer: storeGroupContainer,
             cloudKitDatabase: userOptedOutOfCloudKit ? .none : .automatic
         )
 
         let localFallbackConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
+            groupContainer: storeGroupContainer,
             cloudKitDatabase: .none
         )
 
         let container: ModelContainer
         let isCloudSyncEnabled: Bool
         var fatalErrorMessage: String?
-        do {
-            container = try ModelContainer(
-                for: schema,
-                migrationPlan: BeadInventoryMigrationPlan.self,
-                configurations: [cloudConfiguration]
-            )
-            isCloudSyncEnabled = !userOptedOutOfCloudKit
-            if userOptedOutOfCloudKit {
-                print("[App] ✅ 用户已选择关闭 iCloud 同步，使用本地存储")
-                AppLogger.shared.info(
-                    "App",
-                    "model_container_initialized",
-                    metadata: [
-                        "cloudKit": "user_opted_out",
-                        "userOptedOut": true
-                    ]
+        // 用的是内存库：错误页要据此改成只提示重启（重试读不到东西，关 iCloud 同步也不对症）。
+        var isUsingTemporaryStore = false
+        func makeMemoryContainer() -> ModelContainer {
+            do {
+                let memoryConfig = ModelConfiguration(
+                    schema: schema,
+                    isStoredInMemoryOnly: true,
+                    cloudKitDatabase: .none
                 )
-            } else {
-                print("[App] ✅ iCloud 同步容器初始化成功")
-                AppLogger.shared.info(
-                    "App",
-                    "model_container_initialized",
-                    metadata: [
-                        "cloudKit": "automatic",
-                        "userOptedOut": false
-                    ]
-                )
+                return try ModelContainer(for: schema, configurations: [memoryConfig])
+            } catch {
+                AppLogger.shared.error("App", "fatal_memory_container_also_failed", metadata: ["error": "\(error)"])
+                fatalError("无法创建任何 ModelContainer（含内存模式）: \(error)")
             }
-        } catch {
-            let nsError = error as NSError
-            print("[App] ⚠️ iCloud 同步容器初始化失败，回退本地存储: \(error)")
-            print("[App]   - domain: \(nsError.domain), code: \(nsError.code)")
-            // userOptedOut=false 时这里才是"被动 fallback"；userOptedOut=true 路径
-            // 上面已成功，不会进到这里。带上 metadata 让监控能区分两种本地模式来源。
-            AppLogger.shared.warning(
-                "App",
-                "model_container_fallback_to_local",
-                metadata: [
-                    "domain": nsError.domain,
-                    "code": nsError.code,
-                    "userOptedOut": userOptedOutOfCloudKit
-                ]
-            )
-            if !nsError.userInfo.isEmpty {
-                print("[App]   - userInfo: \(nsError.userInfo)")
-            }
+        }
+
+        // 不提「重新安装」：重装会清掉 App 容器，本地的库也跟着没了。
+        let temporaryModeMessage = String(localized: "数据库暂时无法打开，当前为临时模式，改动不会保存。请重启应用再试。")
+
+        if storeLocation == .unavailable {
+            // 库文件拆在两个容器里，开哪边都会缺数据。不开磁盘库，原文件留着等下次启动。
+            AppLogger.shared.error("App", "store_files_split_using_memory")
+            container = makeMemoryContainer()
+            isCloudSyncEnabled = false
+            isUsingTemporaryStore = true
+            fatalErrorMessage = temporaryModeMessage
+        } else {
             do {
                 container = try ModelContainer(
                     for: schema,
                     migrationPlan: BeadInventoryMigrationPlan.self,
-                    configurations: [localFallbackConfiguration]
+                    configurations: [cloudConfiguration]
                 )
-                isCloudSyncEnabled = false
-                print("[App] ✅ 已回退为本地存储模式，确保旧数据可用")
-                AppLogger.shared.info("App", "model_container_local_mode_enabled")
+                isCloudSyncEnabled = !userOptedOutOfCloudKit
+                if userOptedOutOfCloudKit {
+                    print("[App] ✅ 用户已选择关闭 iCloud 同步，使用本地存储")
+                    AppLogger.shared.info(
+                        "App",
+                        "model_container_initialized",
+                        metadata: [
+                            "cloudKit": "user_opted_out",
+                            "userOptedOut": true
+                        ]
+                    )
+                } else {
+                    print("[App] ✅ iCloud 同步容器初始化成功")
+                    AppLogger.shared.info(
+                        "App",
+                        "model_container_initialized",
+                        metadata: [
+                            "cloudKit": "automatic",
+                            "userOptedOut": false
+                        ]
+                    )
+                }
             } catch {
-                // 最后兜底：尝试删除损坏的数据库文件并重新创建空容器
-                let localFallbackError = error
-                AppLogger.shared.error("App", "model_container_creation_failed_trying_reset", metadata: ["error": "\(localFallbackError)"])
-                print("[App] ❌ 本地容器也失败，尝试重建数据库: \(localFallbackError)")
+                let nsError = error as NSError
+                print("[App] ⚠️ iCloud 同步容器初始化失败，回退本地存储: \(error)")
+                print("[App]   - domain: \(nsError.domain), code: \(nsError.code)")
+                // userOptedOut=false 时这里才是"被动 fallback"；userOptedOut=true 路径
+                // 上面已成功，不会进到这里。带上 metadata 让监控能区分两种本地模式来源。
+                AppLogger.shared.warning(
+                    "App",
+                    "model_container_fallback_to_local",
+                    metadata: [
+                        "domain": nsError.domain,
+                        "code": nsError.code,
+                        "userOptedOut": userOptedOutOfCloudKit
+                    ]
+                )
+                if !nsError.userInfo.isEmpty {
+                    print("[App]   - userInfo: \(nsError.userInfo)")
+                }
                 do {
-                    // 删除可能损坏的 SwiftData 存储文件
-                    if let storeURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-                        let defaultStoreURL = storeURL.appendingPathComponent("default.store")
-                        for suffix in ["", "-wal", "-shm"] {
-                            let fileURL = URL(fileURLWithPath: defaultStoreURL.path + suffix)
-                            do {
-                                try FileManager.default.removeItem(at: fileURL)
-                            } catch let removeError as NSError where removeError.domain == NSCocoaErrorDomain && removeError.code == NSFileNoSuchFileError {
-                                // 文件不存在，无需处理
-                            } catch {
-                                AppLogger.shared.warning("App", "db_file_removal_failed", metadata: [
-                                    "file": fileURL.lastPathComponent,
-                                    "error": "\(error)"
-                                ])
-                            }
-                        }
-                    }
                     container = try ModelContainer(
                         for: schema,
                         migrationPlan: BeadInventoryMigrationPlan.self,
                         configurations: [localFallbackConfiguration]
                     )
                     isCloudSyncEnabled = false
-                    fatalErrorMessage = String(localized: "数据库已损坏并被重置，历史数据可能丢失。")
-                    AppLogger.shared.warning("App", "model_container_reset_succeeded")
+                    print("[App] ✅ 已回退为本地存储模式，确保旧数据可用")
+                    AppLogger.shared.info("App", "model_container_local_mode_enabled")
                 } catch {
-                    // 最终兜底：使用内存存储，确保 app 至少能打开
+                    // 两次都打不开：进临时模式，库文件一个都不动，下次启动再试。
+                    // 不删也不挪去建新库：从错误里分不出是库真坏了，还是版本迁移出错、磁盘满、
+                    // 设备没解锁时被预热启动这类暂时问题。动了文件，暂时问题过去以后也回不来了。
                     AppLogger.shared.error("App", "fatal_model_container_using_memory", metadata: ["error": "\(error)"])
-                    print("[App] ❌ 重建数据库也失败，使用内存模式: \(error)")
-                    do {
-                        let memoryConfig = ModelConfiguration(
-                            schema: schema,
-                            isStoredInMemoryOnly: true,
-                            cloudKitDatabase: .none
-                        )
-                        container = try ModelContainer(for: schema, configurations: [memoryConfig])
-                    } catch {
-                        AppLogger.shared.error("App", "fatal_memory_container_also_failed", metadata: ["error": "\(error)"])
-                        fatalError("无法创建任何 ModelContainer（含内存模式）: \(error)")
-                    }
+                    print("[App] ❌ 本地容器也失败，使用内存模式: \(error)")
+                    container = makeMemoryContainer()
                     isCloudSyncEnabled = false
-                    fatalErrorMessage = String(localized: "数据库初始化失败，当前为临时模式，数据不会被保存。请尝试重启应用或重新安装。")
+                    isUsingTemporaryStore = true
+                    fatalErrorMessage = temporaryModeMessage
                 }
             }
         }
@@ -182,7 +178,8 @@ struct BeadInventoryApp: App {
         self._inventoryManager = StateObject(wrappedValue: manager)
         self._cloudSyncStatusManager = StateObject(
             wrappedValue: CloudSyncStatusManager(
-                mode: isCloudSyncEnabled ? .iCloudEnabled : .localFallback
+                mode: isCloudSyncEnabled ? .iCloudEnabled : .localFallback,
+                isUsingTemporaryStore: isUsingTemporaryStore
             )
         )
 
@@ -407,6 +404,200 @@ enum CloudSyncPreferences {
     }
 }
 
+/// 把数据库从 App Group 容器搬回 App 自己的容器。
+///
+/// **为什么要搬**：`ModelConfiguration` 默认 `groupContainer: .automatic`，会挑 entitlements 里第一个
+/// App Group 存库，于是库一直放在 `group.com.beadinventory.shared` 里。iOS 对共享容器有一条规矩：
+/// App 被挂起时，进程手里不能攥着共享容器里文件的锁，否则 RunningBoard 直接以 `0xdead10cc` 杀进程。
+/// CloudKit 同步的导入/导出、WAL checkpoint 会在切后台之后继续写库，正好撞上。崩溃日志里主线程
+/// 只是在跑 runloop，真正攥锁的是 CoreData 的 CloudKit 线程。
+///
+/// App Group 里只有 Share Extension 传图要用，扩展从不碰数据库，库没有理由放在那里。
+///
+/// **怎么搬**：开库之前，把 App Group 的 Application Support 下所有 `default*` / `.default*`
+/// （库本体、-wal、-shm、外部存储的图 `.default_SUPPORT`、CloudKit 资源 `default_ckAssets`）
+/// 逐个 rename 到 App 容器的 Application Support。同一块盘上 rename 不拷数据，几 GB 的库也是瞬间完成。
+///
+/// 一套库文件只有和库本体放在一起才完整。下面每条规则都是为了不让它们拆散：
+/// - 库本体最后搬。App Group 里还有 `default.store`，又不是下面「两边都有数据」的情况，就是上次没搬完，
+///   这次接着搬。这时 App 容器里没有 `default.store`，已有的 -wal 等文件属于 App Group 那份库。
+/// - 失败了按目录回滚：App 容器里所有库文件（不只这次搬的，也包括上次搬过去的）都挪回 App Group，
+///   App Group 那套重新凑齐，这次启动继续用它。
+/// - 回滚也没挪全，两边都不完整：返回 `.unavailable`，这次不开磁盘上的库，进临时模式。
+///   不能去开一个缺了 -wal 的库，那样最近的改动会看不见。
+/// - 两边都有 `default.store`：App 容器那份是空壳（库本体 0 字节、没有 -wal 内容，模拟器上见过），
+///   就把它挪开再搬。两边都有数据就什么都不动，继续用 App Group 那份（`.appGroup`）。
+///   分不清哪份是真库：2026-01 加 App Group 之前，库就放在 App 容器里，老用户那边可能留着一份
+///   过期的旧库；反过来，搬完以后又装回旧版本，旧版本会在 App Group 新建库。比大小、比时间都靠不住，
+///   而这两种情况下最近一直在用的都是 App Group 那份。代价是这些用户的崩溃没修好，数据一点没动。
+/// - 挪开的空壳放进 Application Support/StoreQuarantine，只挪不删。
+enum StoreLocationMigrator {
+    enum Outcome {
+        /// 用 App 自己容器里的库（`groupContainer: .none`）。
+        case appContainer
+        /// 这次没搬成，App Group 里那套文件是完整的，继续用它（`groupContainer: .automatic`）。
+        case appGroup
+        /// 库文件拆在两个容器里，哪边都不完整：这次不能开磁盘上的库。
+        case unavailable
+    }
+
+    private static let storeName = "default.store"
+
+    @MainActor
+    static func moveStoreOutOfAppGroupIfNeeded() -> Outcome {
+        let fileManager = FileManager.default
+        // 拿不到 App Group 容器：没有要搬的东西，`.automatic` 本来也会落到 App 容器。
+        guard let groupDirectory = fileManager
+            .containerURL(forSecurityApplicationGroupIdentifier: SharedImageManager.appGroupIdentifier)?
+            .appendingPathComponent("Library/Application Support", isDirectory: true),
+              let appDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        else {
+            return .appContainer
+        }
+
+        // App Group 里没有库：新装的，或者早就搬完了。
+        guard fileManager.fileExists(atPath: groupDirectory.appendingPathComponent(storeName).path) else {
+            return .appContainer
+        }
+
+        do {
+            try fileManager.createDirectory(at: appDirectory, withIntermediateDirectories: true)
+        } catch {
+            AppLogger.shared.error("StoreMove", "create_app_dir_failed", metadata: ["error": "\(error)"])
+            return .appGroup
+        }
+
+        if fileManager.fileExists(atPath: appDirectory.appendingPathComponent(storeName).path) {
+            guard isEmptyShell(in: appDirectory) else {
+                // 两边都有数据，分不清哪份是真库：都不动，继续用 App Group 那份。
+                AppLogger.shared.warning("StoreMove", "both_containers_have_data_keeping_group")
+                return .appGroup
+            }
+            do {
+                // 空壳里没有数据，挪到一半被打断也不会丢东西；库本体最后挪，下次启动还会再挪一次。
+                try quarantineStoreFiles(in: appDirectory, reason: "empty-shell")
+            } catch {
+                AppLogger.shared.error("StoreMove", "quarantine_shell_failed", metadata: ["error": "\(error)"])
+                return .appGroup
+            }
+        }
+
+        // 走到这里 App 容器里没有 default.store。如果有别的库文件，那是上次搬到一半留下的。
+        let groupItems: [String]
+        do {
+            groupItems = try fileManager.contentsOfDirectory(atPath: groupDirectory.path).filter(isStoreItem)
+        } catch {
+            AppLogger.shared.error("StoreMove", "list_group_failed", metadata: ["error": "\(error)"])
+            return rollBack(from: appDirectory, to: groupDirectory)
+        }
+
+        var movedItems: [String] = []
+        for name in storeLast(groupItems) {
+            do {
+                try fileManager.moveItem(
+                    at: groupDirectory.appendingPathComponent(name),
+                    to: appDirectory.appendingPathComponent(name)
+                )
+                movedItems.append(name)
+            } catch {
+                AppLogger.shared.error("StoreMove", "move_failed", metadata: [
+                    "item": name,
+                    "error": "\(error)"
+                ])
+                return rollBack(from: appDirectory, to: groupDirectory)
+            }
+        }
+
+        AppLogger.shared.info("StoreMove", "moved_out_of_app_group", metadata: ["items": movedItems.joined(separator: ",")])
+        return .appContainer
+    }
+
+    /// 把一个目录里的 `default*` / `.default*` 挪进 App 容器 `Application Support/StoreQuarantine/` 下的新目录，不删。
+    /// 只用来挪开空壳：中途失败不回滚，所以不能拿它挪有数据的库。
+    private static func quarantineStoreFiles(in directory: URL, reason: String) throws {
+        let fileManager = FileManager.default
+        let names = try fileManager.contentsOfDirectory(atPath: directory.path).filter(isStoreItem)
+        guard !names.isEmpty else { return }
+
+        let root = try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appendingPathComponent("StoreQuarantine", isDirectory: true)
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        let stamp = Int(Date().timeIntervalSince1970)
+        let destination = root.appendingPathComponent(
+            "\(reason)-\(stamp)-\(UUID().uuidString.prefix(8))",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        for name in storeLast(names) {
+            try fileManager.moveItem(
+                at: directory.appendingPathComponent(name),
+                to: destination.appendingPathComponent(name)
+            )
+        }
+        AppLogger.shared.info("StoreMove", "quarantined", metadata: [
+            "reason": reason,
+            "items": names.joined(separator: ","),
+            "to": destination.lastPathComponent
+        ])
+    }
+
+    /// 把 App 容器里所有库文件挪回 App Group。只在 App 容器没有 default.store 时调用：
+    /// 这时那边的库文件全是从 App Group 搬过去的，这次的和上次的都算。
+    private static func rollBack(from appDirectory: URL, to groupDirectory: URL) -> Outcome {
+        let fileManager = FileManager.default
+        let names: [String]
+        do {
+            names = try fileManager.contentsOfDirectory(atPath: appDirectory.path).filter(isStoreItem)
+        } catch {
+            AppLogger.shared.error("StoreMove", "rollback_list_failed", metadata: ["error": "\(error)"])
+            return .unavailable
+        }
+
+        var failed: [String] = []
+        for name in names {
+            do {
+                try fileManager.moveItem(
+                    at: appDirectory.appendingPathComponent(name),
+                    to: groupDirectory.appendingPathComponent(name)
+                )
+            } catch {
+                failed.append(name)
+                AppLogger.shared.error("StoreMove", "rollback_failed", metadata: [
+                    "item": name,
+                    "error": "\(error)"
+                ])
+            }
+        }
+        AppLogger.shared.warning("StoreMove", "rolled_back", metadata: [
+            "items": names.joined(separator: ","),
+            "failed": failed.joined(separator: ",")
+        ])
+        return failed.isEmpty ? .appGroup : .unavailable
+    }
+
+    private static func isStoreItem(_ name: String) -> Bool {
+        name.hasPrefix("default") || name.hasPrefix(".default")
+    }
+
+    private static func storeLast(_ names: [String]) -> [String] {
+        names.filter { $0 != storeName } + names.filter { $0 == storeName }
+    }
+
+    /// 库本体 0 字节，-wal 不存在或也是 0 字节。读不到大小一律当作有数据，宁可不动。
+    private static func isEmptyShell(in directory: URL) -> Bool {
+        let fileManager = FileManager.default
+        func size(_ name: String) -> Int64? {
+            (try? fileManager.attributesOfItem(atPath: directory.appendingPathComponent(name).path)[.size] as? NSNumber)?
+                .int64Value
+        }
+        guard size(storeName) == 0 else { return false }
+        let walName = storeName + "-wal"
+        guard fileManager.fileExists(atPath: directory.appendingPathComponent(walName).path) else { return true }
+        return size(walName) == 0
+    }
+}
+
 /// iCloud 同步状态管理（仅用于 UI 状态展示）
 @MainActor
 class CloudSyncStatusManager: ObservableObject {
@@ -442,6 +633,8 @@ class CloudSyncStatusManager: ObservableObject {
     }
 
     @Published private(set) var mode: Mode
+    /// 磁盘上的库这次没打开，用的是内存库：改动不会保存，重启前怎么操作都读不到原来的数据。
+    let isUsingTemporaryStore: Bool
     @Published private(set) var accountStatus: CKAccountStatus?
     @Published private(set) var isCheckingAccount = false
     @Published private(set) var lastCheckedAt: Date?
@@ -479,8 +672,9 @@ class CloudSyncStatusManager: ObservableObject {
     private var syncEventObserver: AnyCancellable?
     private var loggedSuccessEventTypes = Set<Int>()
 
-    init(mode: Mode) {
+    init(mode: Mode, isUsingTemporaryStore: Bool = false) {
         self.mode = mode
+        self.isUsingTemporaryStore = isUsingTemporaryStore
         AppLogger.shared.info("CloudSync", "status_manager_initialized", metadata: ["mode": "\(mode)"])
         if mode == .iCloudEnabled {
             observeCloudKitSyncEvents()
