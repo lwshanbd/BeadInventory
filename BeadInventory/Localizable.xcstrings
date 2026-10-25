@@ -9020,32 +9020,12 @@
         }
       }
     },
-    "数据库文件不完整，当前为临时模式，改动不会保存。请重启应用再试。" : {
+    "数据库暂时无法打开，当前为临时模式，改动不会保存。请重启应用再试。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Some database files are missing, so the app is running in temporary mode and changes won't be saved. Restart the app to try again."
-          }
-        }
-      }
-    },
-    "数据库无法打开，原来的数据已另存。当前是新的空库。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The database couldn't be opened. Your existing data has been set aside, and a new empty database is in use."
-          }
-        }
-      }
-    },
-    "数据库初始化失败，当前为临时模式，数据不会被保存。请尝试重启应用或重新安装。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Database failed to initialize; the app is running in temporary mode and data will not be saved. Try restarting or reinstalling the app."
+            "value" : "The database can't be opened right now, so the app is running in temporary mode and changes won't be saved. Restart the app to try again."
           }
         }
       }

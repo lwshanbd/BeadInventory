@@ -83,12 +83,15 @@ struct BeadInventoryApp: App {
             }
         }
 
+        // 不提「重新安装」：重装会清掉 App 容器，本地的库也跟着没了。
+        let temporaryModeMessage = String(localized: "数据库暂时无法打开，当前为临时模式，改动不会保存。请重启应用再试。")
+
         if storeLocation == .unavailable {
             // 库文件拆在两个容器里，开哪边都会缺数据。不开磁盘库，原文件留着等下次启动。
             AppLogger.shared.error("App", "store_files_split_using_memory")
             container = makeMemoryContainer()
             isCloudSyncEnabled = false
-            fatalErrorMessage = String(localized: "数据库文件不完整，当前为临时模式，改动不会保存。请重启应用再试。")
+            fatalErrorMessage = temporaryModeMessage
         } else {
             do {
                 container = try ModelContainer(
@@ -146,34 +149,14 @@ struct BeadInventoryApp: App {
                     print("[App] ✅ 已回退为本地存储模式，确保旧数据可用")
                     AppLogger.shared.info("App", "model_container_local_mode_enabled")
                 } catch {
-                    // 最后兜底：把打不开的库整组挪进隔离目录，再建一个空库。
-                    // 不删：走到这里的多半不是库坏了，而是版本迁移出错、磁盘满、设备没解锁时被预热启动。
-                    // 原文件留着，修好之后还能找回来；关了 iCloud 同步的用户没有别的地方能恢复。
-                    let localFallbackError = error
-                    AppLogger.shared.error("App", "model_container_creation_failed_trying_reset", metadata: ["error": "\(localFallbackError)"])
-                    print("[App] ❌ 本地容器也失败，隔离原库后重建: \(localFallbackError)")
-                    do {
-                        // 挪不完整就抛错，落到下面的临时模式，不在半挪的目录上建新库。
-                        try StoreLocationMigrator.quarantineStoreFiles(
-                            in: localFallbackConfiguration.url.deletingLastPathComponent(),
-                            reason: "unopenable"
-                        )
-                        container = try ModelContainer(
-                            for: schema,
-                            migrationPlan: BeadInventoryMigrationPlan.self,
-                            configurations: [localFallbackConfiguration]
-                        )
-                        isCloudSyncEnabled = false
-                        fatalErrorMessage = String(localized: "数据库无法打开，原来的数据已另存。当前是新的空库。")
-                        AppLogger.shared.warning("App", "model_container_reset_succeeded")
-                    } catch {
-                        // 最终兜底：使用内存存储，确保 app 至少能打开
-                        AppLogger.shared.error("App", "fatal_model_container_using_memory", metadata: ["error": "\(error)"])
-                        print("[App] ❌ 重建数据库也失败，使用内存模式: \(error)")
-                        container = makeMemoryContainer()
-                        isCloudSyncEnabled = false
-                        fatalErrorMessage = String(localized: "数据库初始化失败，当前为临时模式，数据不会被保存。请尝试重启应用或重新安装。")
-                    }
+                    // 两次都打不开：进临时模式，库文件一个都不动，下次启动再试。
+                    // 不删也不挪去建新库：从错误里分不出是库真坏了，还是版本迁移出错、磁盘满、
+                    // 设备没解锁时被预热启动这类暂时问题。动了文件，暂时问题过去以后也回不来了。
+                    AppLogger.shared.error("App", "fatal_model_container_using_memory", metadata: ["error": "\(error)"])
+                    print("[App] ❌ 本地容器也失败，使用内存模式: \(error)")
+                    container = makeMemoryContainer()
+                    isCloudSyncEnabled = false
+                    fatalErrorMessage = temporaryModeMessage
                 }
             }
         }
@@ -431,16 +414,18 @@ enum CloudSyncPreferences {
 /// 逐个 rename 到 App 容器的 Application Support。同一块盘上 rename 不拷数据，几 GB 的库也是瞬间完成。
 ///
 /// 一套库文件只有和库本体放在一起才完整。下面每条规则都是为了不让它们拆散：
-/// - 库本体最后搬。所以「App Group 里还有 `default.store`」就等于「还没搬完」，下次启动接着搬。
-///   接着搬时，App 容器里已经有上次搬过去的 -wal 等文件，它们属于 App Group 那份库。
+/// - 库本体最后搬。App Group 里还有 `default.store`，又不是下面「两边都有数据」的情况，就是上次没搬完，
+///   这次接着搬。这时 App 容器里没有 `default.store`，已有的 -wal 等文件属于 App Group 那份库。
 /// - 失败了按目录回滚：App 容器里所有库文件（不只这次搬的，也包括上次搬过去的）都挪回 App Group，
 ///   App Group 那套重新凑齐，这次启动继续用它。
 /// - 回滚也没挪全，两边都不完整：返回 `.unavailable`，这次不开磁盘上的库，进临时模式。
 ///   不能去开一个缺了 -wal 的库，那样最近的改动会看不见。
-/// - 两边都有 `default.store`：比大小，大的那份留下，小的那份整组挪进隔离目录。
-///   第一次搬时 App 容器里那份是个空壳（模拟器上实测 0 字节）；如果搬完以后又跑过旧版本，
-///   旧版本会在 App Group 里新建一个库，这时 App 容器里的才是真库。
-/// - 隔离只挪不删，放在 Application Support 下（Caches 会被系统清掉），同样库本体最后挪。
+/// - 两边都有 `default.store`：App 容器那份是空壳（库本体 0 字节、没有 -wal 内容，模拟器上见过），
+///   就把它挪开再搬。两边都有数据就什么都不动，继续用 App Group 那份（`.appGroup`）。
+///   分不清哪份是真库：2026-01 加 App Group 之前，库就放在 App 容器里，老用户那边可能留着一份
+///   过期的旧库；反过来，搬完以后又装回旧版本，旧版本会在 App Group 新建库。比大小、比时间都靠不住，
+///   而这两种情况下最近一直在用的都是 App Group 那份。代价是这些用户的崩溃没修好，数据一点没动。
+/// - 挪开的空壳放进 Application Support/StoreQuarantine，只挪不删。
 enum StoreLocationMigrator {
     enum Outcome {
         /// 用 App 自己容器里的库（`groupContainer: .none`）。
@@ -478,27 +463,16 @@ enum StoreLocationMigrator {
         }
 
         if fileManager.fileExists(atPath: appDirectory.appendingPathComponent(storeName).path) {
-            let appSize = storeSize(in: appDirectory)
-            let groupSize = storeSize(in: groupDirectory)
-            AppLogger.shared.info("StoreMove", "both_containers_have_store", metadata: [
-                "appBytes": appSize,
-                "groupBytes": groupSize
-            ])
-            if appSize > groupSize {
-                // App 容器那份是真库，App Group 那份是旧版本后来新建的。
-                // 隔离失败也不要紧：App Group 那份还会留着，下次启动再比一次。
-                do {
-                    try quarantineStoreFiles(in: groupDirectory, reason: "group-smaller")
-                } catch {
-                    AppLogger.shared.error("StoreMove", "quarantine_group_failed", metadata: ["error": "\(error)"])
-                }
-                return .appContainer
+            guard isEmptyShell(in: appDirectory) else {
+                // 两边都有数据，分不清哪份是真库：都不动，继续用 App Group 那份。
+                AppLogger.shared.warning("StoreMove", "both_containers_have_data_keeping_group")
+                return .appGroup
             }
             do {
-                try quarantineStoreFiles(in: appDirectory, reason: "app-smaller")
+                // 空壳里没有数据，挪到一半被打断也不会丢东西；库本体最后挪，下次启动还会再挪一次。
+                try quarantineStoreFiles(in: appDirectory, reason: "empty-shell")
             } catch {
-                // 库本体最后挪，失败时 App 容器的 default.store 还在原处，下次启动会再隔离一次。
-                AppLogger.shared.error("StoreMove", "quarantine_app_failed", metadata: ["error": "\(error)"])
+                AppLogger.shared.error("StoreMove", "quarantine_shell_failed", metadata: ["error": "\(error)"])
                 return .appGroup
             }
         }
@@ -533,21 +507,16 @@ enum StoreLocationMigrator {
         return .appContainer
     }
 
-    /// 把一个目录里的整套库文件挪进 App 容器 `Application Support/StoreQuarantine/` 下的新目录，不删。
-    /// 库本体最后挪：中途失败时它还在原处，调用方知道这套文件还没挪完。
-    static func quarantineStoreFiles(in directory: URL, reason: String) throws {
+    /// 把一个目录里的 `default*` / `.default*` 挪进 App 容器 `Application Support/StoreQuarantine/` 下的新目录，不删。
+    /// 只用来挪开空壳：中途失败不回滚，所以不能拿它挪有数据的库。
+    private static func quarantineStoreFiles(in directory: URL, reason: String) throws {
         let fileManager = FileManager.default
         let names = try fileManager.contentsOfDirectory(atPath: directory.path).filter(isStoreItem)
         guard !names.isEmpty else { return }
 
-        var root = try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let root = try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             .appendingPathComponent("StoreQuarantine", isDirectory: true)
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
-        // 隔离的库可能有几 GB，不进 iCloud 备份。
-        var values = URLResourceValues()
-        values.isExcludedFromBackup = true
-        try? root.setResourceValues(values)
-
         let stamp = Int(Date().timeIntervalSince1970)
         let destination = root.appendingPathComponent(
             "\(reason)-\(stamp)-\(UUID().uuidString.prefix(8))",
@@ -610,13 +579,17 @@ enum StoreLocationMigrator {
         names.filter { $0 != storeName } + names.filter { $0 == storeName }
     }
 
-    /// 库本体加 -wal 的字节数。-wal 里可能有大量还没 checkpoint 的数据，只看库本体会看错。
-    private static func storeSize(in directory: URL) -> Int64 {
-        ["", "-wal"].reduce(Int64(0)) { total, suffix in
-            let path = directory.appendingPathComponent(storeName + suffix).path
-            let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.int64Value ?? 0
-            return total + size
+    /// 库本体 0 字节，-wal 不存在或也是 0 字节。读不到大小一律当作有数据，宁可不动。
+    private static func isEmptyShell(in directory: URL) -> Bool {
+        let fileManager = FileManager.default
+        func size(_ name: String) -> Int64? {
+            (try? fileManager.attributesOfItem(atPath: directory.appendingPathComponent(name).path)[.size] as? NSNumber)?
+                .int64Value
         }
+        guard size(storeName) == 0 else { return false }
+        let walName = storeName + "-wal"
+        guard fileManager.fileExists(atPath: directory.appendingPathComponent(walName).path) else { return true }
+        return size(walName) == 0
     }
 }
 
