@@ -69,6 +69,8 @@ struct BeadInventoryApp: App {
         let container: ModelContainer
         let isCloudSyncEnabled: Bool
         var fatalErrorMessage: String?
+        // 用的是内存库：错误页要据此改成只提示重启（重试读不到东西，关 iCloud 同步也不对症）。
+        var isUsingTemporaryStore = false
         func makeMemoryContainer() -> ModelContainer {
             do {
                 let memoryConfig = ModelConfiguration(
@@ -91,6 +93,7 @@ struct BeadInventoryApp: App {
             AppLogger.shared.error("App", "store_files_split_using_memory")
             container = makeMemoryContainer()
             isCloudSyncEnabled = false
+            isUsingTemporaryStore = true
             fatalErrorMessage = temporaryModeMessage
         } else {
             do {
@@ -156,6 +159,7 @@ struct BeadInventoryApp: App {
                     print("[App] ❌ 本地容器也失败，使用内存模式: \(error)")
                     container = makeMemoryContainer()
                     isCloudSyncEnabled = false
+                    isUsingTemporaryStore = true
                     fatalErrorMessage = temporaryModeMessage
                 }
             }
@@ -174,7 +178,8 @@ struct BeadInventoryApp: App {
         self._inventoryManager = StateObject(wrappedValue: manager)
         self._cloudSyncStatusManager = StateObject(
             wrappedValue: CloudSyncStatusManager(
-                mode: isCloudSyncEnabled ? .iCloudEnabled : .localFallback
+                mode: isCloudSyncEnabled ? .iCloudEnabled : .localFallback,
+                isUsingTemporaryStore: isUsingTemporaryStore
             )
         )
 
@@ -628,6 +633,8 @@ class CloudSyncStatusManager: ObservableObject {
     }
 
     @Published private(set) var mode: Mode
+    /// 磁盘上的库这次没打开，用的是内存库：改动不会保存，重启前怎么操作都读不到原来的数据。
+    let isUsingTemporaryStore: Bool
     @Published private(set) var accountStatus: CKAccountStatus?
     @Published private(set) var isCheckingAccount = false
     @Published private(set) var lastCheckedAt: Date?
@@ -665,8 +672,9 @@ class CloudSyncStatusManager: ObservableObject {
     private var syncEventObserver: AnyCancellable?
     private var loggedSuccessEventTypes = Set<Int>()
 
-    init(mode: Mode) {
+    init(mode: Mode, isUsingTemporaryStore: Bool = false) {
         self.mode = mode
+        self.isUsingTemporaryStore = isUsingTemporaryStore
         AppLogger.shared.info("CloudSync", "status_manager_initialized", metadata: ["mode": "\(mode)"])
         if mode == .iCloudEnabled {
             observeCloudKitSyncEvents()
