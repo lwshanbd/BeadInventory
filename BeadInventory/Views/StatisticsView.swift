@@ -1802,6 +1802,11 @@ struct ProjectRowWithHierarchy: View {
 
     @EnvironmentObject var inventoryManager: InventoryManager
 
+    // 异步加载图片：优先用成品图，否则回退到图纸。
+    @State private var loadedImage: UIImage?
+
+    private typealias HierarchyStats = (childCount: Int, colorCount: Int, totalBeads: Int)
+
     var brandName: String? {
         guard let brandId = project.brandId else { return nil }
         return inventoryManager.brands.first { $0.id == brandId }?.name
@@ -1810,7 +1815,7 @@ struct ProjectRowWithHierarchy: View {
     /// childCount / colorCount / totalBeads 三个数字一次遍历算齐。
     /// 原来是三个独立 computed property，body 里各访问一次 → 每行 3 次
     /// `executedChildProjects`（全表 O(项目数) filter）；列表 N 行就是 3N 次全表扫描。
-    private var hierarchyStats: (childCount: Int, colorCount: Int, totalBeads: Int) {
+    private var hierarchyStats: HierarchyStats {
         if isParent {
             let children = filteredExecutedChildProjects
             var colorCodes = Set<String>()
@@ -1853,23 +1858,14 @@ struct ProjectRowWithHierarchy: View {
         usage.brandId == brandId || (usage.brandId == nil && projectBrandId == brandId)
     }
 
-    // 异步加载图片：优先用成品图，否则回退到缩略图。
-    @State private var loadedImage: UIImage?
+    private var selecting: Bool { isSelectMode && !isChild }
 
-    var body: some View {
-        // body 级快照：三个统计数字一次算齐，避免每个数字各触发一次全表子项目扫描
-        let stats = hierarchyStats
+    private func rowContent(_ stats: HierarchyStats) -> some View {
         HStack(spacing: 8) {
-            // 选择模式复选框
-            if isSelectMode && !isChild {
-                Button {
-                    onToggleSelect()
-                } label: {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(isSelected ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.secondary)
-                        .font(.title2)
-                }
-                .buttonStyle(.plain)
+            if selecting {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(isSelected ? Theme.ColorToken.Morandi.latte : Theme.ColorToken.Text.secondary)
+                    .font(.title2)
             }
 
             // 子项目缩进
@@ -1906,90 +1902,116 @@ struct ProjectRowWithHierarchy: View {
             }
 
             // 项目内容
-            NavigationLink(destination: ProjectDetailView(project: project)) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        if isParent {
-                            Image(systemName: "folder.fill")
-                                .font(.caption)
-                                .foregroundColor(Theme.ColorToken.Morandi.latte)
-                        }
+            if selecting {
+                projectContent(stats)
+            } else {
+                NavigationLink(destination: ProjectDetailView(project: project)) {
+                    projectContent(stats)
+                }
+            }
+        }
+    }
 
-                        Text(project.name)
-                            .font(.headline)
+    private func projectContent(_ stats: HierarchyStats) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                if isParent {
+                    Image(systemName: "folder.fill")
+                        .font(.caption)
+                        .foregroundColor(Theme.ColorToken.Morandi.latte)
+                }
 
-                        if project.isArchived {
-                            Image(systemName: "archivebox.fill")
-                                .font(.caption)
-                                .foregroundColor(Theme.ColorToken.Status.warning)
-                        }
+                Text(project.name)
+                    .font(.headline)
 
-                        Spacer()
+                if project.isArchived {
+                    Image(systemName: "archivebox.fill")
+                        .font(.caption)
+                        .foregroundColor(Theme.ColorToken.Status.warning)
+                }
 
-                        Text(project.date.formatted(date: .abbreviated, time: .omitted))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                Spacer()
 
-                    HStack {
-                        if let brandName = brandName {
-                            Text(brandName)
-                                .font(.caption)
+                Text(project.date.formatted(date: .abbreviated, time: .omitted))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack {
+                if let brandName = brandName {
+                    Text(brandName)
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        // 装饰：品牌徽章使用 Morandi mauve 作为视觉标识，不是语义状态
+                        .background(Theme.ColorToken.Morandi.mauve.opacity(0.1))
+                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                        .cornerRadius(Theme.Radius.sm)
+                }
+
+                if isParent {
+                    Text("\(stats.childCount) 个子项目")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Theme.ColorToken.Status.info.opacity(0.1))
+                        .foregroundColor(Theme.ColorToken.Status.info)
+                        .cornerRadius(Theme.Radius.sm)
+                }
+
+                Label("\(stats.colorCount) 色", systemImage: "paintpalette")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                Label("\(stats.totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
+                    .font(.caption)
+                    .foregroundColor(Theme.ColorToken.Morandi.latte)
+            }
+
+            // 颜色预览（仅子项目和独立项目显示）
+            if !isParent {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        let visibleUsage = filteredBeadUsage(for: project)
+                        ForEach(visibleUsage.prefix(10)) { usage in
+                            let displayCode = inventoryManager.findColor(byCode: usage.colorCode)?
+                                .displayCode(for: project.colorSystem) ?? usage.colorCode
+                            Text(displayCode)
+                                .font(.caption2)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                // 装饰：品牌徽章使用 Morandi mauve 作为视觉标识，不是语义状态
-                                .background(Theme.ColorToken.Morandi.mauve.opacity(0.1))
-                                .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                                .background(Theme.ColorToken.Morandi.latte.opacity(0.1))
                                 .cornerRadius(Theme.Radius.sm)
                         }
 
-                        if isParent {
-                            Text("\(stats.childCount) 个子项目")
-                                .font(.caption)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Theme.ColorToken.Status.info.opacity(0.1))
-                                .foregroundColor(Theme.ColorToken.Status.info)
-                                .cornerRadius(Theme.Radius.sm)
-                        }
-
-                        Label("\(stats.colorCount) 色", systemImage: "paintpalette")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        Spacer()
-
-                        Label("\(stats.totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
-                            .font(.caption)
-                            .foregroundColor(Theme.ColorToken.Morandi.latte)
-                    }
-
-                    // 颜色预览（仅子项目和独立项目显示）
-                    if !isParent {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 4) {
-                                let visibleUsage = filteredBeadUsage(for: project)
-                                ForEach(visibleUsage.prefix(10)) { usage in
-                                    let displayCode = inventoryManager.findColor(byCode: usage.colorCode)?
-                                        .displayCode(for: project.colorSystem) ?? usage.colorCode
-                                    Text(displayCode)
-                                        .font(.caption2)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Theme.ColorToken.Morandi.latte.opacity(0.1))
-                                        .cornerRadius(Theme.Radius.sm)
-                                }
-
-                                if visibleUsage.count > 10 {
-                                    Text("+\(visibleUsage.count - 10)")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
+                        if visibleUsage.count > 10 {
+                            Text("+\(visibleUsage.count - 10)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
                         }
                     }
                 }
-                .padding(.vertical, 4)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    var body: some View {
+        // body 级快照：三个统计数字一次算齐，避免每个数字各触发一次全表子项目扫描
+        let stats = hierarchyStats
+        Group {
+            if selecting {
+                // 选择模式：整行点按切换选中，不挂 NavigationLink。
+                // 不要只把复选框做成 Button、旁边再挂 NavigationLink：点到复选框以外的地方会进详情。
+                rowContent(stats)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onToggleSelect() }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+            } else {
+                rowContent(stats)
             }
         }
         .task(id: "\(project.id.uuidString)-\(inventoryManager.projectBlobsRevision)") {
