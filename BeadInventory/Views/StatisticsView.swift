@@ -1802,6 +1802,11 @@ struct ProjectRowWithHierarchy: View {
 
     @EnvironmentObject var inventoryManager: InventoryManager
 
+    // 异步加载图片：优先用成品图，否则回退到图纸。
+    @State private var loadedImage: UIImage?
+
+    private typealias HierarchyStats = (childCount: Int, colorCount: Int, totalBeads: Int)
+
     var brandName: String? {
         guard let brandId = project.brandId else { return nil }
         return inventoryManager.brands.first { $0.id == brandId }?.name
@@ -1810,7 +1815,7 @@ struct ProjectRowWithHierarchy: View {
     /// childCount / colorCount / totalBeads 三个数字一次遍历算齐。
     /// 原来是三个独立 computed property，body 里各访问一次 → 每行 3 次
     /// `executedChildProjects`（全表 O(项目数) filter）；列表 N 行就是 3N 次全表扫描。
-    private var hierarchyStats: (childCount: Int, colorCount: Int, totalBeads: Int) {
+    private var hierarchyStats: HierarchyStats {
         if isParent {
             let children = filteredExecutedChildProjects
             var colorCodes = Set<String>()
@@ -1855,7 +1860,7 @@ struct ProjectRowWithHierarchy: View {
 
     private var selecting: Bool { isSelectMode && !isChild }
 
-    private func rowContent(_ stats: (childCount: Int, colorCount: Int, totalBeads: Int)) -> some View {
+    private func rowContent(_ stats: HierarchyStats) -> some View {
         HStack(spacing: 8) {
             if selecting {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
@@ -1907,8 +1912,7 @@ struct ProjectRowWithHierarchy: View {
         }
     }
 
-    @ViewBuilder
-    private func projectContent(_ stats: (childCount: Int, colorCount: Int, totalBeads: Int)) -> some View {
+    private func projectContent(_ stats: HierarchyStats) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 if isParent {
@@ -1994,19 +1998,18 @@ struct ProjectRowWithHierarchy: View {
         .padding(.vertical, 4)
     }
 
-    // 异步加载图片：优先用成品图，否则回退到缩略图。
-    @State private var loadedImage: UIImage?
-
     var body: some View {
         // body 级快照：三个统计数字一次算齐，避免每个数字各触发一次全表子项目扫描
         let stats = hierarchyStats
         Group {
             if selecting {
                 // 选择模式：整行点按切换选中，不挂 NavigationLink。
-                // 原来复选框是个小 Button、旁边照旧是 NavigationLink，点到行里别处就进了详情。
+                // 不要只把复选框做成 Button、旁边再挂 NavigationLink：点到复选框以外的地方会进详情。
                 rowContent(stats)
                     .contentShape(Rectangle())
                     .onTapGesture { onToggleSelect() }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
             } else {
                 rowContent(stats)
             }
