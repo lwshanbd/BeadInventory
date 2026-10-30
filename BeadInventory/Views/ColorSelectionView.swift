@@ -251,6 +251,7 @@ struct ColorSelectionView: View {
                         let shown = Set((recents + suggestions).map(\.mardCode))
                         colorGroup(colorsInSeries.filter { !shown.contains($0.mardCode) })
                     }
+                    .pageBreadcrumb("colorSelection", count: colorsInSeries.count)
                     .padding(.horizontal)
                     .padding(.bottom, 20)
                 }

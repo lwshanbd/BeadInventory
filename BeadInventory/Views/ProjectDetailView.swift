@@ -182,6 +182,7 @@ struct ProjectDetailView: View {
                         BeadUsageRow(usage: usage, colorSystem: project.colorSystem)
                     }
                 }
+                .pageBreadcrumb("record.detail.usage", count: sortedUsage.count)
                 .padding(.horizontal)
             }
             .padding(.vertical)
