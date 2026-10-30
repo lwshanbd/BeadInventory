@@ -130,6 +130,7 @@ struct LowStockDetailView: View {
                                 }
                             }
                         }
+                        .pageBreadcrumb("lowStock", count: lowStockItems.count)
                         .padding(.top, 8)
                         .padding(.bottom, 24)
                     }

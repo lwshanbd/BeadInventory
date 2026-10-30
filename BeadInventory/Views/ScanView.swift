@@ -1777,6 +1777,7 @@ struct RecognizedResultsSectionNew: View {
                     )
                 }
             }
+            .pageBreadcrumb("scan.results", count: visibleItems.count)
 
             // 提示 pill
             HStack {

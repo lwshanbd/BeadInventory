@@ -276,6 +276,7 @@ struct HistoryView: View {
                     .padding(.bottom, 4)
                 }
             }
+            .pageBreadcrumb("history", count: filteredGroupedRecords.reduce(0) { $0 + $1.1.count })
             .padding(.bottom, 32)
         }
     }
