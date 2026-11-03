@@ -704,261 +704,6 @@ struct EmptyPlannedProjectsView: View {
     }
 }
 
-// MARK: - 计划项目行
-struct PlannedProjectRow: View {
-    let project: ProjectRecord
-    let isParent: Bool
-    let isExpanded: Bool
-    let isSelectMode: Bool
-    let isSelected: Bool
-    let showSearchCheckbox: Bool
-    let onToggleExpand: () -> Void
-    let onToggleSelect: () -> Void
-    let onExecute: () -> Void
-
-    @EnvironmentObject var inventoryManager: InventoryManager
-
-    var colorCount: Int {
-        if isParent {
-            return inventoryManager.plannedAggregatedColorCount(for: project.id)
-        }
-        return project.beadUsage.count
-    }
-
-    var totalBeads: Int {
-        if isParent {
-            return inventoryManager.plannedAggregatedTotalBeads(for: project.id)
-        }
-        return project.totalBeads
-    }
-
-    var childCount: Int {
-        inventoryManager.plannedChildProjects(of: project.id).count
-    }
-
-    var body: some View {
-        if isSelectMode {
-            // 选择模式：整行使用 onTapGesture，避免 Button 在搜索键盘弹出时被吞掉点击
-            HStack(spacing: 8) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Text.secondary)
-                    .font(.title2)
-                    .frame(width: 44, height: 44)
-
-                // 异步加载缩略图，没图时整块直接不渲染（保持原行为 —— 没图就没有 50×50 占位条）
-                ProjectThumbnailImage(projectId: project.id) {
-                    EmptyView()
-                } content: { uiImage in
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 50, height: 50)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-                        )
-                }
-
-                projectContentView
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { onToggleSelect() }
-        } else {
-            // 非选择模式：NavigationLink + 按钮
-            HStack(spacing: 8) {
-                // 搜索时显示复选框，点击后自动进入多选模式
-                if showSearchCheckbox {
-                    Button {
-                        onToggleSelect()
-                    } label: {
-                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .foregroundColor(isSelected ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Text.secondary)
-                            .font(.title3)
-                            .frame(width: 36, height: 36)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                if isParent {
-                    Button {
-                        onToggleExpand()
-                    } label: {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .frame(width: 20)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // 异步加载缩略图，没图时整块直接不渲染（保持原行为 —— 没图就没有 50×50 占位条）
-                ProjectThumbnailImage(projectId: project.id) {
-                    EmptyView()
-                } content: { uiImage in
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 50, height: 50)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-                        )
-                }
-
-                NavigationLink(destination: PlannedProjectDetailView(project: project)) {
-                    projectContentView
-                }
-
-                Button {
-                    onExecute()
-                } label: {
-                    Image(systemName: "play.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(Theme.ColorToken.Status.success)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    // 提取项目内容视图
-    private var projectContentView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                // 计划标识
-                Image(systemName: "calendar.badge.clock")
-                    .font(.caption)
-                    .foregroundColor(Theme.ColorToken.Status.warning)
-
-                if isParent {
-                    Image(systemName: "folder.fill")
-                        .font(.caption)
-                        .foregroundColor(Theme.ColorToken.Morandi.mauve)
-                }
-
-                Text(project.name)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-
-                // 色号体系徽章
-                BIBadge(
-                    project.colorSystem.displayName,
-                    style: .custom(
-                        background: project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve.opacity(0.15) : Theme.ColorToken.Morandi.latte.opacity(0.15),
-                        foreground: project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Morandi.latte
-                    )
-                )
-
-                Spacer()
-
-                Text(project.date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            HStack {
-                if isParent {
-                    BIBadge("\(childCount) 个子项目", style: .info)
-                }
-
-                Label("\(colorCount) 色", systemImage: "paintpalette")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                Spacer()
-
-                Label("\(totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
-                    .font(.caption)
-                    .foregroundColor(Theme.ColorToken.Morandi.mauve)
-            }
-
-            // 颜色预览
-            if !isParent {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(project.beadUsage.prefix(8)) { usage in
-                            let displayCode = inventoryManager.findColor(byCode: usage.colorCode)?
-                                .displayCode(for: project.colorSystem) ?? usage.colorCode
-                            BIBadge(displayCode, style: .neutral)
-                        }
-                        if project.beadUsage.count > 8 {
-                            Text("+\(project.beadUsage.count - 8)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-// MARK: - 子项目行
-struct PlannedChildProjectRow: View {
-    let project: ProjectRecord
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Rectangle()
-                .fill(Color.clear)
-                .frame(width: 20)
-
-            // 缩略图（异步加载，没图时不渲染占位 —— 保持原行为）
-            ProjectThumbnailImage(projectId: project.id) {
-                EmptyView()
-            } content: { uiImage in
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-                    )
-            }
-
-            NavigationLink(destination: PlannedProjectDetailView(project: project)) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(project.name)
-                            .font(.subheadline)
-
-                        // 色号体系徽章
-                        BIBadge(
-                            project.colorSystem.displayName,
-                            style: .custom(
-                                background: project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve.opacity(0.15) : Theme.ColorToken.Morandi.latte.opacity(0.15),
-                                foreground: project.colorSystem == .kaka ? Theme.ColorToken.Morandi.mauve : Theme.ColorToken.Morandi.latte
-                            )
-                        )
-
-                        Spacer()
-                        Text(project.date.formatted(date: .abbreviated, time: .omitted))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    HStack {
-                        Label("\(project.beadUsage.count) 色", systemImage: "paintpalette")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Label("\(project.totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
-                            .font(.caption)
-                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
-                    }
-                }
-            }
-        }
-        .padding(.leading, 12)
-    }
-}
-
 // MARK: - 执行计划弹窗
 struct ExecutePlannedProjectSheet: View {
     let project: ProjectRecord
@@ -1841,22 +1586,25 @@ struct PlannedChildProjectRowWithActions: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ChildProjectThumbnail(projectId: project.id)
-
+            // 缩略图也放进链接里：看到图点下去要能进详情
             NavigationLink(destination: PlannedProjectDetailView(project: project)) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(project.name)
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
+                HStack(spacing: 12) {
+                    ChildProjectThumbnail(projectId: project.id)
 
-                    HStack {
-                        Label("\(project.beadUsage.count) 色", systemImage: "paintpalette")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Label("\(project.totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
-                            .font(.caption)
-                            .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(project.name)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+
+                        HStack {
+                            Label("\(project.beadUsage.count) 色", systemImage: "paintpalette")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Label("\(project.totalBeads) 颗", systemImage: "circle.grid.3x3.fill")
+                                .font(.caption)
+                                .foregroundColor(Theme.ColorToken.Morandi.mauve)
+                        }
                     }
                 }
             }
