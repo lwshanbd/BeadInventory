@@ -38,6 +38,9 @@ import SwiftUI
 ///         .scaledToFill()
 /// }
 /// ```
+///
+/// 占位不能传 `EmptyView()`：Group 里没有子视图，挂在上面的 `.task` 不会启动，
+/// 图永远取不回来。没图时想不占位置，就别用这个组件。
 struct ProjectThumbnailImage<Placeholder: View, Content: View>: View {
     let projectId: UUID
     @ViewBuilder let placeholder: () -> Placeholder
@@ -119,6 +122,38 @@ struct ProjectThumbnailImage<Placeholder: View, Content: View>: View {
     private struct TaskKey: Hashable {
         let projectId: UUID
         let revision: Int
+    }
+}
+
+// MARK: - 子项目小缩略图
+
+/// 父项目详情里「子项目」列表每行前面的 40×40 缩略图（计划、记录两边共用）。
+/// 没图时显示灰底图标，各行文字左边对齐。
+struct ChildProjectThumbnail: View {
+    let projectId: UUID
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .fill(Theme.ColorToken.Surface.subtle)
+
+            ProjectThumbnailImage(projectId: projectId) {
+                Image(systemName: "photo")
+                    .font(.system(size: 16, weight: .light))
+                    .foregroundStyle(Theme.ColorToken.Text.tertiary)
+            } content: { uiImage in
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 40, height: 40)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            }
+        }
+        .frame(width: 40, height: 40)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
+        )
     }
 }
 

@@ -240,60 +240,6 @@ struct ProjectDetailView: View {
     }
 }
 
-// MARK: - 子项目行
-struct ChildProjectRow: View {
-    let project: ProjectRecord
-
-    var body: some View {
-        HStack(spacing: 12) {
-            // 缩略图（异步加载，没图时不渲染占位 —— 保持原行为）
-            ProjectThumbnailImage(projectId: project.id) {
-                EmptyView()
-            } content: { uiImage in
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-                    )
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(project.name)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-
-                Text(project.date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 4) {
-                Text("\(project.beadUsage.count) 色")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                Text("\(project.totalBeads) 颗")
-                    .font(.caption)
-                    .foregroundColor(Theme.ColorToken.Morandi.latte)
-            }
-
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding()
-        .background(Theme.ColorToken.Surface.subtle)
-        .cornerRadius(Theme.Radius.sm)
-    }
-}
-
 // MARK: - 带操作的子项目行
 struct ChildProjectRowWithActions: View {
     let project: ProjectRecord
@@ -302,42 +248,32 @@ struct ChildProjectRowWithActions: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // 缩略图（异步加载，没图时不渲染占位）
-            ProjectThumbnailImage(projectId: project.id) {
-                EmptyView()
-            } content: { uiImage in
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-                    )
-            }
-
+            // 缩略图也放进链接里：看到图点下去要能进详情
             NavigationLink(destination: ProjectDetailView(project: project)) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(project.name)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
+                HStack(spacing: 12) {
+                    ChildProjectThumbnail(projectId: project.id)
 
-                    HStack {
-                        Text(project.date.formatted(date: .abbreviated, time: .omitted))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(project.name)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
 
-                        Spacer()
+                        HStack {
+                            Text(project.date.formatted(date: .abbreviated, time: .omitted))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
 
-                        Text("\(project.beadUsage.count) 色")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            Spacer()
 
-                        Text("\(project.totalBeads) 颗")
-                            .font(.caption)
-                            .foregroundColor(Theme.ColorToken.Morandi.latte)
+                            Text("\(project.beadUsage.count) 色")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            Text("\(project.totalBeads) 颗")
+                                .font(.caption)
+                                .foregroundColor(Theme.ColorToken.Morandi.latte)
+                        }
                     }
                 }
             }
