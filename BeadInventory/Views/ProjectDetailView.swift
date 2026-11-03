@@ -302,20 +302,7 @@ struct ChildProjectRowWithActions: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // 缩略图（异步加载，没图时不渲染占位）
-            ProjectThumbnailImage(projectId: project.id) {
-                EmptyView()
-            } content: { uiImage in
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Theme.ColorToken.Border.default, lineWidth: 1)
-                    )
-            }
+            ChildProjectThumbnail(projectId: project.id)
 
             NavigationLink(destination: ProjectDetailView(project: project)) {
                 VStack(alignment: .leading, spacing: 4) {

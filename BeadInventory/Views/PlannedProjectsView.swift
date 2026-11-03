@@ -1840,7 +1840,9 @@ struct PlannedChildProjectRowWithActions: View {
     @State private var showActionSheet = false
 
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
+            ChildProjectThumbnail(projectId: project.id)
+
             NavigationLink(destination: PlannedProjectDetailView(project: project)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(project.name)
