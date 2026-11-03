@@ -57,6 +57,8 @@ struct SinglePatternHighlightStepView: View {
     @ObservedObject private var cast = BoardCastSession.shared
     /// 开着「对准豆板」那一屏
     @State private var showingProjectorSheet = false
+    /// 开着「连接投影仪」那一屏
+    @State private var showingConnectSheet = false
 
     /// 送外屏用的那份「整张图纸当成一块板」。**算一次存着** ——
     /// 它要遍历几万格，每次点色号都重算一遍就是每次点击卡一下。
@@ -166,10 +168,15 @@ struct SinglePatternHighlightStepView: View {
             // 而人多半站在电视那头，手机上得有个准信。
             // 点它就是「对准豆板」——投影仪投出来的画面跟豆板对不上，是接上之后立刻
             // 会发现的事，而这个标记正是他这时候在看的东西（多零件那屏同样处理）。
-            if cast.externalConnected {
-                ProjectorStatusChip { showingProjectorSheet = true }
-                    .padding(.horizontal, Theme.Spacing.md)
+            // 没连上时同一个位置换成「连接投影仪」，跟多零件那屏一样。
+            Group {
+                if cast.externalConnected {
+                    ProjectorStatusChip { showingProjectorSheet = true }
+                } else {
+                    ProjectorConnectChip { showingConnectSheet = true }
+                }
             }
+            .padding(.horizontal, Theme.Spacing.md)
             palette
         }
         .navigationTitle(currentProject.name)
@@ -218,10 +225,12 @@ struct SinglePatternHighlightStepView: View {
         // 离开这一屏就把电视上的东西撤掉：留着的话用户已经走了，电视上还停着一张
         // 他不再看的图纸 —— 而这一屏是被 push 上来的，退出去是很随手的动作。
         .onDisappear { BoardCastSession.shared.stop() }
+        .sheet(isPresented: $showingConnectSheet) { ProjectorConnectSheet() }
         // 遥控器长按确定键要求校准，连同「先把别的 sheet 收掉」的理由，
         // 都同 PartsBoardStepView。
         .onReceive(BoardProjector.shared.remoteCalibrationRequest) { _ in
             showingDiffSheet = false
+            showingConnectSheet = false
             showingProjectorSheet = true
         }
         // 校准的收尾挂在这儿，理由同 PartsBoardStepView：那一屏自己分不清「被关掉了」

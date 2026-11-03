@@ -46,13 +46,19 @@ struct ProjectorConnectView: View {
 
     var body: some View {
         Form {
-            switch link.state {
-            case .connected(let size, let device):
-                connectedSection(size: size, device: device)
-            default:
-                inputSection
+            Group {
+                switch link.state {
+                case .connected(let size, let device):
+                    connectedSection(size: size, device: device)
+                default:
+                    inputSection
+                }
             }
+            .listRowBackground(Theme.ColorToken.Surface.elevated)
         }
+        // 跟 App 其它页面一样用主题底色。系统默认的冷灰底混在主题色里，像是跳进了别的 App。
+        .scrollContentBackground(.hidden)
+        .background(Theme.ColorToken.Surface.background.ignoresSafeArea())
         .navigationTitle("连接投影仪")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingScanner) {
@@ -136,6 +142,31 @@ struct ProjectorConnectView: View {
                     }
                 }
             }
+
+            // 投影仪那头得先装上我们的安卓 App 才连得上。没装过的人看着「扫二维码」
+            // 只会去找一个根本不存在的二维码，所以下载地址必须摆在这一页上。
+            // 放在最底下：上面紧跟「连接」按钮的是连接状态和失败原因，不能被这一节隔开。
+            //
+            // 网址要完整写出来：投影仪自带浏览器只能对着手机屏幕一个字一个字敲进去。
+            // 复制是给能转发的人用的，比如用微信发到投影仪或电脑上再打开。
+            //
+            // 发行页上跟主 App 的安卓版混在一起，投影仪端只认文件名前缀。
+            // 安卓那边改了附件名，footer 要跟着改。
+            Section {
+                Link(destination: Self.apkReleasesURL) {
+                    Label("下载投影仪端 App", systemImage: "arrow.down.circle")
+                }
+                Button {
+                    UIPasteboard.general.string = Self.apkReleasesURL.absoluteString
+                } label: {
+                    Label("复制下载链接", systemImage: "doc.on.doc")
+                }
+            } header: {
+                Text("投影仪端 App")
+            } footer: {
+                Text("在投影仪的浏览器中打开 \(Self.apkReleasesURL.absoluteString)，下载并安装以 BeadProjector 开头的 apk 文件。")
+                    .textSelection(.enabled)
+            }
         }
     }
 
@@ -161,6 +192,8 @@ struct ProjectorConnectView: View {
     }
 
     // MARK: -
+
+    static let apkReleasesURL = URL(string: "https://gitee.com/lwshanbd/bead-inventory-a/releases")!
 
     private var canConnect: Bool {
         !Self.normalizedHost(host).isEmpty && Int(port) != nil
@@ -191,7 +224,7 @@ struct ProjectorConnectView: View {
     }
 }
 
-/// 还没连上投影仪时，板子摘要下面那一行入口。
+/// 还没连上投影仪时，拼图页上投影状态那一行的入口。
 ///
 /// 跟 `ProjectorStatusChip` 摆在同一个位置、同一套样式：连上之前和之后，用户看的是
 /// 同一行，只是那行字变了。
