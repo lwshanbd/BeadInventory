@@ -46,13 +46,19 @@ struct ProjectorConnectView: View {
 
     var body: some View {
         Form {
-            switch link.state {
-            case .connected(let size, let device):
-                connectedSection(size: size, device: device)
-            default:
-                inputSection
+            Group {
+                switch link.state {
+                case .connected(let size, let device):
+                    connectedSection(size: size, device: device)
+                default:
+                    inputSection
+                }
             }
+            .listRowBackground(Theme.ColorToken.Surface.elevated)
         }
+        // 跟 App 其它页面用同一套底色。系统默认的冷灰底在一片米色里像是跳进了别的 App。
+        .scrollContentBackground(.hidden)
+        .background(Theme.ColorToken.Surface.background.ignoresSafeArea())
         .navigationTitle("连接投影仪")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingScanner) {
@@ -121,6 +127,25 @@ struct ProjectorConnectView: View {
                 }
             }
 
+            // 投影仪那头得先装上我们的安卓 App 才连得上。没装过的人看着「扫二维码」
+            // 只会去找一个根本不存在的二维码，所以下载地址必须摆在这一页上。
+            // 网址要写出来、能复制：投影仪自带浏览器只能对着手机屏幕一个字一个字敲进去。
+            Section {
+                Link(destination: Self.apkReleasesURL) {
+                    Label("下载投影仪端 App", systemImage: "arrow.down.circle")
+                }
+                Button {
+                    UIPasteboard.general.string = Self.apkReleasesURL.absoluteString
+                } label: {
+                    Label("复制下载链接", systemImage: "doc.on.doc")
+                }
+            } header: {
+                Text("投影仪端 App")
+            } footer: {
+                Text("在投影仪的浏览器中打开 \(Self.apkReleasesURL.absoluteString)，下载并安装 projector.apk。")
+                    .textSelection(.enabled)
+            }
+
             if case .waiting(let reason) = link.state {
                 Section {
                     Text(reason)
@@ -161,6 +186,8 @@ struct ProjectorConnectView: View {
     }
 
     // MARK: -
+
+    static let apkReleasesURL = URL(string: "https://gitee.com/lwshanbd/bead-inventory-a/releases")!
 
     private var canConnect: Bool {
         !Self.normalizedHost(host).isEmpty && Int(port) != nil
