@@ -1062,7 +1062,10 @@ struct EditStockSheet: View {
     enum EditMode: Hashable { case adjust, set }
 
     @State private var mode: EditMode = .adjust
-    @State private var adjustDelta: Int = 50           // 调整模式的有符号增量
+    // 调整模式的增量拆成「正负号 + 输入框里的数字」两份存：
+    // 输入框清空时增量是 0，单用一个 Int 存会把负号丢掉。
+    @State private var deltaText: String = "50"
+    @State private var deltaNegative = false
     @State private var stockAmount: String = ""
     @State private var usedAmount: String = ""
     @State private var showingHideAlert = false
@@ -1078,6 +1081,12 @@ struct EditStockSheet: View {
     }
     var isLowStock: Bool { currentAvailable < lowStockThreshold }
     var isCustomColor: Bool { color.mardCode.hasPrefix("#") }
+
+    /// 调整模式的有符号增量
+    var adjustDelta: Int {
+        let magnitude = Int(deltaText) ?? 0
+        return deltaNegative ? -magnitude : magnitude
+    }
 
     /// 调整后预览剩余
     var previewRemaining: Int {
@@ -1308,9 +1317,27 @@ struct EditStockSheet: View {
                 .buttonStyle(.plain)
 
                 VStack(spacing: 0) {
-                    Text(formattedDelta)
-                        .font(.system(size: 28, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(deltaColor)
+                    HStack(spacing: 0) {
+                        Text(deltaSign)
+                        TextField("0", text: $deltaText)
+                            .keyboardType(.asciiCapableNumberPad)
+                            .fixedSize()
+                            .focused($isInputFocused)
+                            // 点进来时整个数字选中，直接打新数字就是替换
+                            .onReceive(NotificationCenter.default.publisher(for: UITextField.textDidBeginEditingNotification)) { note in
+                                guard let field = note.object as? UITextField else { return }
+                                DispatchQueue.main.async { field.selectAll(nil) }
+                            }
+                            .onChange(of: deltaText) { _, newValue in
+                                let digits = String(newValue.filter(\.isWholeNumber).prefix(6))
+                                if digits != newValue { deltaText = digits }
+                            }
+                    }
+                    .font(.system(size: 28, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(deltaColor)
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture { isInputFocused = true }
                     Text("颗")
                         .font(.system(size: 10))
                         .foregroundStyle(Theme.ColorToken.Text.tertiary)
@@ -1409,8 +1436,10 @@ struct EditStockSheet: View {
         )
     }
 
-    private var formattedDelta: String {
-        adjustDelta > 0 ? "+\(adjustDelta)" : "\(adjustDelta)"
+    private var deltaSign: String {
+        if adjustDelta > 0 { return "+" }
+        if adjustDelta < 0 { return "-" }
+        return ""
     }
 
     private var deltaColor: Color {
@@ -1419,11 +1448,16 @@ struct EditStockSheet: View {
         return Theme.ColorToken.Text.primary
     }
 
-    private func incrementDelta() { adjustDelta += 1 }
-    private func decrementDelta() { adjustDelta -= 1 }
+    private func setDelta(_ value: Int) {
+        deltaNegative = value < 0
+        deltaText = "\(abs(value))"
+    }
+    private func incrementDelta() { setDelta(adjustDelta + 1) }
+    private func decrementDelta() { setDelta(adjustDelta - 1) }
     private func setDeltaAbsolute(_ n: Int) {
         // 保持符号；如果当前为 0，默认 +
-        adjustDelta = adjustDelta >= 0 ? n : -n
+        if adjustDelta == 0 { deltaNegative = false }
+        deltaText = "\(n)"
     }
 
     /// 先收起键盘、再修改数据、最后延迟 dismiss
@@ -1452,7 +1486,7 @@ struct EditStockSheet: View {
             // 不直接改 brandStocks[index].used 以避免绕过 HistoryManager（CLAUDE.md 约定）。
             inventoryManager.useStock(brandId: brandId, mardCode: color.mardCode, amount: amount)
         }
-        adjustDelta = 0
+        setDelta(0)
         lastSuccessAt = Date()
         dismissAfterDataChange()
     }
