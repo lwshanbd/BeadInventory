@@ -51,6 +51,7 @@
 		385001062FB3A70D00F5DDE2 /* GridCellSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001052FB3A70D00F5DDE2 /* GridCellSampler.swift */; };
 		3850010A2FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */; };
 		3850010C2FB3A70D00F5DDE2 /* ColorPaletteBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */; };
+		D00A7B1E0000000000000002 /* PatternToolbarLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00A7B1E0000000000000001 /* PatternToolbarLabel.swift */; };
 		385001102FB3A70D00F5DDE2 /* GridValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3850010F2FB3A70D00F5DDE2 /* GridValidator.swift */; };
 		385001122FB3A70D00F5DDE2 /* ValidationDiffSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385001112FB3A70D00F5DDE2 /* ValidationDiffSheet.swift */; };
 		386001022FB3A70D00F5DDE2 /* GridOCRSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386001012FB3A70D00F5DDE2 /* GridOCRSampler.swift */; };
@@ -213,6 +214,7 @@
 		385001052FB3A70D00F5DDE2 /* GridCellSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridCellSampler.swift; sourceTree = "<group>"; };
 		385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternHighlightOverlay.swift; path = BeadInventory/Views/PatternHighlight/PatternHighlightOverlay.swift; sourceTree = SOURCE_ROOT; };
 		3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorPaletteBar.swift; path = BeadInventory/Views/PatternHighlight/ColorPaletteBar.swift; sourceTree = SOURCE_ROOT; };
+		D00A7B1E0000000000000001 /* PatternToolbarLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternToolbarLabel.swift; path = BeadInventory/Views/PatternHighlight/PatternToolbarLabel.swift; sourceTree = SOURCE_ROOT; };
 		3850010F2FB3A70D00F5DDE2 /* GridValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridValidator.swift; sourceTree = "<group>"; };
 		385001112FB3A70D00F5DDE2 /* ValidationDiffSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ValidationDiffSheet.swift; path = BeadInventory/Views/PatternHighlight/ValidationDiffSheet.swift; sourceTree = SOURCE_ROOT; };
 		386001012FB3A70D00F5DDE2 /* GridOCRSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridOCRSampler.swift; sourceTree = "<group>"; };
@@ -408,6 +410,7 @@
 				B7A1E0C14F0A4E1D9C2A0002 /* PatternSourceBanner.swift */,
 				385001092FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift */,
 				3850010B2FB3A70D00F5DDE2 /* ColorPaletteBar.swift */,
+				D00A7B1E0000000000000001 /* PatternToolbarLabel.swift */,
 				385001112FB3A70D00F5DDE2 /* ValidationDiffSheet.swift */,
 			);
 			path = PatternHighlight;
@@ -865,6 +868,7 @@
 				B7A1E0C14F0A4E1D9C2A0001 /* PatternSourceBanner.swift in Sources */,
 				3850010A2FB3A70D00F5DDE2 /* PatternHighlightOverlay.swift in Sources */,
 				3850010C2FB3A70D00F5DDE2 /* ColorPaletteBar.swift in Sources */,
+				D00A7B1E0000000000000002 /* PatternToolbarLabel.swift in Sources */,
 				385001102FB3A70D00F5DDE2 /* GridValidator.swift in Sources */,
 				385001122FB3A70D00F5DDE2 /* ValidationDiffSheet.swift in Sources */,
 				CM0014A0000000000001BFIL /* ColorModeView.swift in Sources */,

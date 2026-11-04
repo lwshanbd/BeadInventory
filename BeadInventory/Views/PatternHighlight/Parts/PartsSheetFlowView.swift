@@ -1340,8 +1340,10 @@ struct PartsSheetFlowView: View {
     private var exitButton: some View {
         // 退出就是退出，不是丢掉 —— 每一步的结果都已经存过了（见 persist）。
         // 唯一的例外是这次真的没存进去：那就先别关，alert 会告诉他为什么。
-        Button("退出") {
+        Button {
             if persist() { dismiss() }
+        } label: {
+            PatternToolbarLabel("退出", systemImage: "xmark")
         }
         // 字号封顶：跟着放大会把右上角的按钮挤掉（见 PartsColorReviewStepView.toolbarLabel）
         .dynamicTypeSize(...DynamicTypeSize.large)
