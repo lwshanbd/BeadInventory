@@ -1084,13 +1084,17 @@ struct EditStockSheet: View {
 
     /// 调整模式的有符号增量
     var adjustDelta: Int {
-        let magnitude = Int(deltaText) ?? 0
+        // 只取前 6 位：粘贴超长数字到 onChange 截断之间还会渲染一次，不能溢出
+        let magnitude = Int(deltaText.prefix(Self.maxDeltaDigits)) ?? 0
         return deltaNegative ? -magnitude : magnitude
     }
 
-    /// 调整后预览剩余
+    private static let maxDeltaDigits = 6
+    private static let maxDeltaMagnitude = 999_999
+
+    /// 调整后预览剩余。扣过头时如实显示负数，跟存进去的一致
     var previewRemaining: Int {
-        max(0, currentAvailable + adjustDelta)
+        currentAvailable + adjustDelta
     }
 
     /// 用量百分比
@@ -1328,9 +1332,8 @@ struct EditStockSheet: View {
                                 guard let field = note.object as? UITextField else { return }
                                 DispatchQueue.main.async { field.selectAll(nil) }
                             }
-                            .onChange(of: deltaText) { _, newValue in
-                                let digits = String(newValue.filter(\.isWholeNumber).prefix(6))
-                                if digits != newValue { deltaText = digits }
+                            .onChange(of: deltaText) { oldValue, newValue in
+                                sanitizeDeltaText(old: oldValue, new: newValue)
                             }
                     }
                     .font(.system(size: 28, weight: .semibold).monospacedDigit())
@@ -1394,7 +1397,7 @@ struct EditStockSheet: View {
                     .foregroundStyle(Theme.ColorToken.Text.secondary)
                 Text("\(previewRemaining) 颗")
                     .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(Theme.ColorToken.Text.primary)
+                    .foregroundStyle(previewRemaining < 0 ? Theme.ColorToken.Status.error : Theme.ColorToken.Text.primary)
                 Spacer()
             }
         }
@@ -1450,7 +1453,26 @@ struct EditStockSheet: View {
 
     private func setDelta(_ value: Int) {
         deltaNegative = value < 0
-        deltaText = "\(abs(value))"
+        deltaText = "\(min(abs(value), Self.maxDeltaMagnitude))"
+    }
+
+    /// 输入框只收 0-9。粘贴带负号的数字就切成扣减；全角数字转成半角。
+    /// 有别的字符（小数点、字母）或超过 6 位，整段不收，保持原值，免得悄悄存成另一个数。
+    private func sanitizeDeltaText(old: String, new: String) {
+        var text = Substring(new)
+        let pastedNegative = text.hasPrefix("-")
+        if pastedNegative { text = text.dropFirst() }
+        let digits = text.compactMap { c -> Character? in
+            guard let v = c.wholeNumberValue, (0...9).contains(v) else { return nil }
+            return Character(String(v))
+        }
+        guard digits.count == text.count, digits.count <= Self.maxDeltaDigits else {
+            deltaText = old
+            return
+        }
+        if pastedNegative { deltaNegative = true }
+        let normalized = String(digits)
+        if normalized != new { deltaText = normalized }
     }
     private func incrementDelta() { setDelta(adjustDelta + 1) }
     private func decrementDelta() { setDelta(adjustDelta - 1) }
