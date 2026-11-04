@@ -212,6 +212,7 @@ struct PlannedProjectsView: View {
                                 )
                             }
                         }
+                        .pageBreadcrumb("planned", count: filtered.count)
                         .padding(.bottom, 20)
                     }
                     .scrollDismissesKeyboard(.immediately)
@@ -1305,6 +1306,7 @@ struct PlannedProjectDetailView: View {
                 PlannedBeadUsageRow(usage: usage, colorSystem: (currentProject ?? project).colorSystem)
             }
         }
+        .pageBreadcrumb("planned.detail.usage", count: sortedUsage.count)
         .padding(.horizontal)
     }
 

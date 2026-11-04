@@ -482,6 +482,7 @@ struct InventoryView: View {
                                         }
                                     }
                                 }
+                                .pageBreadcrumb("inventory.grid", count: grouped.reduce(0) { $0 + $1.colors.count })
                                 .padding(.bottom, 20)
                             } else {
                                 LazyVGrid(columns: [

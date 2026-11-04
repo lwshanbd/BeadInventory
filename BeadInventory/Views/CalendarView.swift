@@ -446,6 +446,7 @@ struct DayDetailSheet: View {
                         DayProjectCard(project: project)
                     }
                 }
+                .pageBreadcrumb("calendar.day", count: projects.count)
                 .padding(.horizontal, 18)
                 .padding(.bottom, 30)
             }

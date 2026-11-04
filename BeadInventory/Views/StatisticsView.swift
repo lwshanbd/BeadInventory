@@ -733,6 +733,7 @@ struct PeriodUsageRankingView: View {
                         )
                     }
                 }
+                .pageBreadcrumb("statistics.ranking", count: items.count)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 16)
             }

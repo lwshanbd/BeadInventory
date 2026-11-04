@@ -124,6 +124,7 @@ struct DeductionReviewView: View {
                         deductionItemRowView(item: item, resolver: resolver)
                     }
                 }
+                .pageBreadcrumb("deductionReview", count: resolver.items.count)
                 .padding()
             }
 

@@ -177,6 +177,7 @@ struct PatternBoardView: View {
                                 .padding(.top, 40)
                         }
                     }
+                    .pageBreadcrumb("workshop.pattern", count: all.count)
                     .padding(.bottom, 20)
                 }
                 .scrollDismissesKeyboard(.immediately)
