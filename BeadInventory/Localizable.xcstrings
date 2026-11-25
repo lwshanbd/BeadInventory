@@ -4868,13 +4868,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "In settings, select a provider (Kimi, OpenAI, Anthropic, etc.), then enter your API Key. Recognition requires an internet connection."
+            "value" : "In settings, select a provider, then enter your API Key. Qwen is recommended; you can get an API Key from the Qwen AI Platform at www.qianwenai.com. Kimi, OpenAI, Anthropic and others are also available. Recognition requires an internet connection."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在设置中选择 AI 提供商（Kimi、OpenAI、Anthropic 等），然后填入你的 API Key。识别需要网络连接。"
+            "value" : "在设置中选择 AI 提供商，然后填入你的 API Key。推荐使用千问，API Key 可在千问 AI 平台 www.qianwenai.com 申请；也可以选择 Kimi、OpenAI、Anthropic 等。识别需要网络连接。"
           }
         }
       }

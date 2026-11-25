@@ -471,7 +471,7 @@ struct RecognitionSettingsScreen: View {
         case .anthropic:
             return "Anthropic API Key 可从 console.anthropic.com 获取。"
         case .qwen:
-            return "Qwen API Key 可从阿里云百炼平台 bailian.console.aliyun.com 获取。"
+            return "Qwen API Key 可从千问 AI 平台 www.qianwenai.com 获取。"
         case .gemini:
             return "Gemini API Key 可从 aistudio.google.com 获取。"
         }
