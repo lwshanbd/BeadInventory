@@ -209,7 +209,7 @@ enum TutorialContent {
             TutorialStep(
                 titleKey: "help.scan.cloudapi.title",
                 descriptionKey: "help.scan.cloudapi.description",
-                searchKeywords: ["云端", "API", "key", "Kimi", "OpenAI", "Anthropic", "Qwen", "Gemini", "cloud"]
+                searchKeywords: ["云端", "API", "key", "千问", "Qwen", "Kimi", "OpenAI", "Anthropic", "Gemini", "cloud"]
             ),
             TutorialStep(
                 titleKey: "help.scan.crop.title",

@@ -13,11 +13,12 @@ import Combine
 
 // MARK: - AI 配置
 
+/// case 的顺序就是设置页里的显示顺序。存档只认 rawValue，调顺序不影响已存的配置。
 enum AIProvider: String, CaseIterable, Codable {
+    case qwen = "Qwen"
     case kimi = "Kimi"
     case openai = "OpenAI"
     case anthropic = "Anthropic"
-    case qwen = "Qwen"
     case gemini = "Gemini"
 }
 
@@ -44,7 +45,8 @@ struct AIConfig: Codable, Equatable {
     }
 
     init(
-        provider: AIProvider = .kimi,
+        // 新装用户默认千问：国内直连，识别一张图的费用最低。已经存过配置的用户不受影响。
+        provider: AIProvider = .qwen,
         apiKey: String = "",
         baseURL: String = "",
         model: String = "",
