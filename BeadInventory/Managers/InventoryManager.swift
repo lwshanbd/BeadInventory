@@ -26,6 +26,11 @@ class InventoryManager: ObservableObject {
     /// 而不是与首轮数据库读取争抢同一个 SQLite store。
     @Published private(set) var hasCompletedInitialLoad = false
     @Published private(set) var initialLoadErrorMessage: String?
+    /// 这次加载失败是因为「库是空的，但本机以前有过数据」。报错页据此判断是不是 iCloud 退出后被系统清了库，
+    /// 好换成对症的说明和「从备份恢复」。
+    @Published private(set) var initialLoadFoundUnexpectedEmptyStore = false
+    /// 用户已确认本机库确实空了、要从备份恢复：下一次加载放行空库一次，不再当成异常拦下。
+    private var allowUnexpectedEmptyStoreOnce = false
 
     // MARK: - 项目图片 Blob 元数据
     //
@@ -360,6 +365,16 @@ class InventoryManager: ObservableObject {
 
     private func logError(_ event: String, metadata: [String: Any] = [:]) {
         AppLogger.shared.error("InventoryManager", event, metadata: metadata)
+    }
+
+    /// 本机库被系统清空（退出 iCloud 后），用户确认要从备份恢复。
+    ///
+    /// 恢复要先把空库当成正常加载完成：`saveDataReportingOutcome` 在 `isDataLoaded == false` 时一律不写，
+    /// 不放行的话恢复一个字节也落不了盘。只放行一次，下次启动照旧检查。
+    func acceptEmptyStoreForBackupRestore() {
+        allowUnexpectedEmptyStoreOnce = true
+        logWarning("initial_load_empty_store_accepted_for_restore")
+        retryInitialLoad(reason: "acceptEmptyStoreForBackupRestore")
     }
 
     func retryInitialLoad(reason: String = "manualRetry") {
@@ -1475,6 +1490,7 @@ class InventoryManager: ObservableObject {
     private func finishInitialLoadSuccess() {
         pendingAutomaticRetryWorkItem?.cancel()
         pendingAutomaticRetryWorkItem = nil
+        initialLoadFoundUnexpectedEmptyStore = false
         isInitialLoadInProgress = false
         initialLoadErrorMessage = nil
         initialLoadAttemptCount = 0
@@ -2001,6 +2017,12 @@ class InventoryManager: ObservableObject {
         loadedCurrentBrandId initialCurrentBrandId: UUID?,
         loadedPurchaseRecords: [PurchaseRecord]
     ) {
+        // 每轮都重新判断：上一轮是空库、这一轮换成别的失败时，报错页不能还停在「被系统清除」。
+        // 一次性放行也在这里就用掉，免得 partialLoad 提前返回后它一直挂着，放行到以后的某一轮。
+        initialLoadFoundUnexpectedEmptyStore = false
+        let acceptEmptyStore = allowUnexpectedEmptyStoreOnce
+        allowUnexpectedEmptyStoreOnce = false
+
         brandsLoadedSuccessfully = result.brands != nil
         stocksLoadedSuccessfully = result.brandStocks != nil
         projectsLoadedSuccessfully = result.projects != nil
@@ -2071,7 +2093,8 @@ class InventoryManager: ObservableObject {
             }
         }
 
-        if allEmpty && hadDataBefore {
+        if allEmpty && hadDataBefore && !acceptEmptyStore {
+            initialLoadFoundUnexpectedEmptyStore = true
             if let fallbackSnapshot {
                 restoreInMemorySnapshot(fallbackSnapshot)
             }
