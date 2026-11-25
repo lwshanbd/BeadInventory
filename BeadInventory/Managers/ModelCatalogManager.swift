@@ -38,7 +38,7 @@ final class ModelCatalogManager {
     private let cacheKey = "ModelCatalogManager.cachedCatalog"
 
     /// 内置清单：从没拉到过远端清单时用它。
-    /// 2026-10 更新。均需支持图像输入（识别用）。
+    /// 2026-11 更新。均需支持图像输入（识别用）。
     /// 原则：官方还在提供服务的旧型号一律保留，只删官方已经下线的。删了的话，选着它的用户会被换到默认模型。
     /// 判断有没有下线，看各家的弃用/下线公告和该型号自己的说明页，不看总览页（总览页只列主推型号）。
     /// 新型号排在前面，旧型号排在后面。改这里要同步改 docs/models.json。
@@ -50,9 +50,12 @@ final class ModelCatalogManager {
         .openai: ProviderModels(models: ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"], default: "gpt-6-luna"),
         // Anthropic：当前这一代，后面是仍为 Active 的旧型号（见官方 model-deprecations 页）。
         .anthropic: ProviderModels(models: ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5", "claude-fable-5", "claude-opus-4-8", "claude-haiku-4-5"], default: "claude-sonnet-5-5"),
-        // Qwen：3.8 / 3.7 主线，后面是 3.6 和 qwen3-vl-plus。
+        // Qwen：官方说明 Plus / Max / Flash 都支持图像输入，不用专门挑 VL 型号。
+        // 2026-11 更新：加 qwen3.7-flash（目前最便宜的能识图通用模型）和 qwen4-max（新旗舰，比 3.8-max 便宜）。
+        // flash 在前、plus 居中、max 在后，同档新型号在前；3.6 和 qwen3-vl-plus 官方仍在服务，保留。
         // qwen3-vl-flash 已于 2026-10-10 下线（官方公告推荐换 qwen3.6-flash），不再列出。
-        .qwen: ProviderModels(models: ["qwen3.8-flash", "qwen3.7-plus", "qwen3.8-max", "qwen3.6-flash", "qwen3.6-plus", "qwen3-vl-plus"], default: "qwen3.8-flash"),
+        // OCR 专用型号（qwen-vl-ocr 等）不放：只认字，不保证按格式输出 JSON。
+        .qwen: ProviderModels(models: ["qwen3.8-flash", "qwen3.7-flash", "qwen3.7-plus", "qwen4-max", "qwen3.8-max", "qwen3.6-flash", "qwen3.6-plus", "qwen3-vl-plus"], default: "qwen3.8-flash"),
         // Gemini：3.8-flash 为最新稳定版；3.5-flash 没有下线日期，请求会被 Google 转到 3.6-flash，照样能用；
         // 3.1-pro 仍是 preview ID。
         .gemini: ProviderModels(models: ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview"], default: "gemini-3.8-flash"),

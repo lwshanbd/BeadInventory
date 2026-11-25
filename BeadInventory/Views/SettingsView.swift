@@ -541,14 +541,14 @@ private struct ProviderRadioRow: View {
         .buttonStyle(.plain)
     }
 
-    private var isRecommended: Bool { provider == .kimi }
+    private var isRecommended: Bool { provider == .qwen }
 
     private var subtitleText: String {
         switch provider {
-        case .kimi:      return String(localized: "国内可直连 · 内置 Key 可用")
+        case .kimi:      return String(localized: "月之暗面 Kimi · 需要 API Key")
         case .openai:    return String(localized: "GPT 系列 · 需要 API Key")
         case .anthropic: return String(localized: "Claude 系列 · 需要 API Key")
-        case .qwen:      return String(localized: "阿里云通义千问 · 需要 API Key")
+        case .qwen:      return String(localized: "阿里云通义千问 · 国内可直连 · 费用低")
         case .gemini:    return String(localized: "Google Gemini · 需要 API Key")
         }
     }
