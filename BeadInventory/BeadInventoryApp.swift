@@ -47,6 +47,10 @@ struct BeadInventoryApp: App {
         if userOptedOutOfCloudKit {
             AppLogger.shared.info("App", "cloud_sync_user_opted_out")
         }
+        // 没登录 iCloud 时这次不开 CloudKit。开着的话，系统发现账号没了会把本机的同步库清空，
+        // 打开 App 一两分钟后数据就没了（要重新登录 iCloud 才会同步回来）。详见 ICloudBootGuard。
+        let pausedForMissingICloud = !userOptedOutOfCloudKit && ICloudBootGuard.bootValue
+        let useCloudKit = !userOptedOutOfCloudKit && !pausedForMissingICloud
         // 库不放 App Group：放那里切后台会被系统以 0xdead10cc 杀掉，见 StoreLocationMigrator。
         // 没搬成的这次启动继续用 App Group 里的旧库；库文件拆散了就不开磁盘库，进临时模式。
         let storeLocation = StoreLocationMigrator.moveStoreOutOfAppGroupIfNeeded()
@@ -56,7 +60,7 @@ struct BeadInventoryApp: App {
             schema: schema,
             isStoredInMemoryOnly: false,
             groupContainer: storeGroupContainer,
-            cloudKitDatabase: userOptedOutOfCloudKit ? .none : .automatic
+            cloudKitDatabase: useCloudKit ? .automatic : .none
         )
 
         let localFallbackConfiguration = ModelConfiguration(
@@ -68,6 +72,9 @@ struct BeadInventoryApp: App {
 
         let container: ModelContainer
         let isCloudSyncEnabled: Bool
+        // 磁盘库打开了、只是因为没登录 iCloud 才没开同步。跟「用户主动关闭」「容器打不开回退」分开报，
+        // 设置页要据此提示「登录 iCloud 后重新打开 App」。
+        var isPausedForMissingICloud = false
         var fatalErrorMessage: String?
         // 用的是内存库：错误页要据此改成只提示重启（重试读不到东西，关 iCloud 同步也不对症）。
         var isUsingTemporaryStore = false
@@ -102,8 +109,18 @@ struct BeadInventoryApp: App {
                     migrationPlan: BeadInventoryMigrationPlan.self,
                     configurations: [cloudConfiguration]
                 )
-                isCloudSyncEnabled = !userOptedOutOfCloudKit
-                if userOptedOutOfCloudKit {
+                isCloudSyncEnabled = useCloudKit
+                isPausedForMissingICloud = pausedForMissingICloud
+                if pausedForMissingICloud {
+                    AppLogger.shared.info(
+                        "App",
+                        "model_container_initialized",
+                        metadata: [
+                            "cloudKit": "paused_no_icloud_account",
+                            "userOptedOut": false
+                        ]
+                    )
+                } else if userOptedOutOfCloudKit {
                     print("[App] ✅ 用户已选择关闭 iCloud 同步，使用本地存储")
                     AppLogger.shared.info(
                         "App",
@@ -178,7 +195,8 @@ struct BeadInventoryApp: App {
         self._inventoryManager = StateObject(wrappedValue: manager)
         self._cloudSyncStatusManager = StateObject(
             wrappedValue: CloudSyncStatusManager(
-                mode: isCloudSyncEnabled ? .iCloudEnabled : .localFallback,
+                mode: isCloudSyncEnabled ? .iCloudEnabled
+                    : (isPausedForMissingICloud ? .pausedNoICloud : .localFallback),
                 isUsingTemporaryStore: isUsingTemporaryStore
             )
         )
@@ -404,6 +422,73 @@ enum CloudSyncPreferences {
     }
 }
 
+/// 启动时没登录 iCloud，就先不开 CloudKit。
+///
+/// **为什么**：SwiftData 底下是 NSPersistentCloudKitContainer。库开着 CloudKit、而设备上的 iCloud 账号
+/// 没了（退出登录、换 Apple ID），它会在启动后一两分钟内把本机的同步库整份清掉。数据还在 iCloud 上，
+/// 重新登录同一个账号会同步回来，但在那之前用户打开 App 看到的是空的。
+/// 2026-11 在模拟器上复现过：启动时数据都在，约一分钟后全部清空。
+///
+/// **怎么判断没登录**：`FileManager.ubiquityIdentityToken`，同步、很快，能在 App.init 里用。
+/// 它的缺点是用户关了 iCloud 云盘时也会是 nil，而 CloudKit 其实能用。所以启动后
+/// `CloudSyncStatusManager` 会用 CloudKit 再查一次真实账号状态：查到可用而 token 是 nil，
+/// 就记下「这台设备的 token 不可靠」，之后启动不再据它暂停同步（这一次要重新打开 App 才恢复）。
+/// token 回来了，或者查到确实没登录，这个标记就作废。
+///
+/// **挡不住的情况**，只能靠周备份兜底：
+/// - 换成别的账号登录，系统照样会清本机库。
+/// - 标记为「不可靠」的设备退出 iCloud 后，第一次启动仍会开着 CloudKit，这一次的清库挡不住。
+///   查到没登录、把标记作废，只对之后的启动有用。
+/// - App 在后台时退出 iCloud、再切回来：启动时账号还在，CloudKit 开着。
+///
+/// **暂停期间的改动**只在本机。重新登录同一个账号、重开 App 后，跟「关闭 iCloud 同步」再打开一样，
+/// 靠 CloudKit 把本机改动导出去（这条路径未在本 PR 实测）。
+enum ICloudBootGuard {
+    private static let tokenUnreliableKey = "iCloudIdentityTokenUnreliable"
+
+    /// 启动时算一次：这次要不要因为没登录 iCloud 而不开 CloudKit。
+    static let bootValue: Bool = {
+        let hasToken = FileManager.default.ubiquityIdentityToken != nil
+        let tokenUnreliable = UserDefaults.standard.bool(forKey: tokenUnreliableKey)
+        let paused = !hasToken && !tokenUnreliable
+        if paused {
+            AppLogger.shared.info("App", "cloud_sync_paused_no_icloud_token")
+        } else if !hasToken {
+            AppLogger.shared.info("App", "icloud_token_missing_but_marked_unreliable")
+        }
+        return paused
+    }()
+
+    /// CloudKit 查到的真实账号状态回写到这里，用来校正下次启动的判断。
+    static func record(accountStatus: CKAccountStatus) {
+        let hasToken = FileManager.default.ubiquityIdentityToken != nil
+        let defaults = UserDefaults.standard
+        switch accountStatus {
+        case .available where !hasToken:
+            // 账号能用、token 却是 nil：多半是关了 iCloud 云盘。以后别再据 token 断开同步。
+            if !defaults.bool(forKey: tokenUnreliableKey) {
+                defaults.set(true, forKey: tokenUnreliableKey)
+                AppLogger.shared.warning("CloudSync", "icloud_token_marked_unreliable")
+            }
+        case .available:
+            // token 又回来了（比如重新打开了 iCloud 云盘）：标记作废。不清的话，用户以后真退出 iCloud，
+            // 启动时 token 是 nil 也照样开着 CloudKit，本机库还是会被清。
+            if defaults.bool(forKey: tokenUnreliableKey) {
+                defaults.set(false, forKey: tokenUnreliableKey)
+                AppLogger.shared.info("CloudSync", "icloud_token_unreliable_cleared", metadata: ["reason": "token_back"])
+            }
+        case .noAccount:
+            // 确实没登录：标记作废。这一次启动已经开着 CloudKit，挡不住；只保证之后的启动会暂停同步。
+            if defaults.bool(forKey: tokenUnreliableKey) {
+                defaults.set(false, forKey: tokenUnreliableKey)
+                AppLogger.shared.info("CloudSync", "icloud_token_unreliable_cleared")
+            }
+        default:
+            break
+        }
+    }
+}
+
 /// 把数据库从 App Group 容器搬回 App 自己的容器。
 ///
 /// **为什么要搬**：`ModelConfiguration` 默认 `groupContainer: .automatic`，会挑 entitlements 里第一个
@@ -604,6 +689,8 @@ class CloudSyncStatusManager: ObservableObject {
     enum Mode {
         case iCloudEnabled
         case localFallback
+        /// 启动时没登录 iCloud，这次没开同步（见 ICloudBootGuard）。登录后重新打开 App 恢复。
+        case pausedNoICloud
     }
 
     private struct CloudRecordTypes {
@@ -810,6 +897,8 @@ class CloudSyncStatusManager: ObservableObject {
         switch mode {
         case .localFallback:
             return "internaldrive.fill"
+        case .pausedNoICloud:
+            return "icloud.slash.fill"
         case .iCloudEnabled:
             if syncFailureMessage != nil, accountStatus == .available {
                 return "exclamationmark.icloud.fill"
@@ -832,7 +921,7 @@ class CloudSyncStatusManager: ObservableObject {
 
     var statusColor: Color {
         switch mode {
-        case .localFallback:
+        case .localFallback, .pausedNoICloud:
             return .orange
         case .iCloudEnabled:
             switch accountStatus {
@@ -852,6 +941,8 @@ class CloudSyncStatusManager: ObservableObject {
         switch mode {
         case .localFallback:
             return String(localized: "当前为本地存储模式")
+        case .pausedNoICloud:
+            return String(localized: "未登录 iCloud，同步已暂停")
         case .iCloudEnabled:
             if isCheckingAccount && accountStatus == nil {
                 return String(localized: "正在检查 iCloud 状态...")
@@ -880,6 +971,11 @@ class CloudSyncStatusManager: ObservableObject {
         switch mode {
         case .localFallback:
             return String(localized: "应用已自动回退到本地存储，现有数据可继续正常使用。")
+        case .pausedNoICloud:
+            if accountStatus == .available {
+                return String(localized: "已检测到 iCloud 账号，重新打开 App 后恢复同步。")
+            }
+            return String(localized: "本机数据可照常使用。登录 iCloud 后重新打开 App，即可恢复同步。")
         case .iCloudEnabled:
             if let lastErrorMessage {
                 return String(localized: "状态检查失败：\(lastErrorMessage)")
@@ -905,7 +1001,7 @@ class CloudSyncStatusManager: ObservableObject {
     }
 
     var shouldAllowManualRefresh: Bool {
-        mode == .iCloudEnabled
+        mode != .localFallback
     }
 
     /// 云端统计已下线，仅保留账号状态展示。
@@ -924,7 +1020,8 @@ class CloudSyncStatusManager: ObservableObject {
             return
         }
 
-        guard mode == .iCloudEnabled else {
+        // 暂停模式也要查：查到账号可用，要提示用户重新打开 App，并校正 ICloudBootGuard。
+        guard mode != .localFallback else {
             AppLogger.shared.debug("CloudSync", "refresh_skipped_local_mode")
             clearCloudDataStatus()
             return
@@ -972,6 +1069,7 @@ class CloudSyncStatusManager: ObservableObject {
 
                     self.accountStatus = status
                     AppLogger.shared.info("CloudSync", "account_status_updated", metadata: ["status": "\(status.rawValue)"])
+                    ICloudBootGuard.record(accountStatus: status)
                     self.clearCloudDataStatus()
                 }
             }
