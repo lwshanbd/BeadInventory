@@ -48,7 +48,7 @@ struct BeadInventoryApp: App {
             AppLogger.shared.info("App", "cloud_sync_user_opted_out")
         }
         // 没登录 iCloud 时这次不开 CloudKit。开着的话，系统发现账号没了会把本机的同步库清空，
-        // 用户一打开 App 数据就没了（要重新登录 iCloud 才会同步回来）。详见 ICloudBootGuard。
+        // 打开 App 一两分钟后数据就没了（要重新登录 iCloud 才会同步回来）。详见 ICloudBootGuard。
         let pausedForMissingICloud = !userOptedOutOfCloudKit && ICloudBootGuard.bootValue
         let useCloudKit = !userOptedOutOfCloudKit && !pausedForMissingICloud
         // 库不放 App Group：放那里切后台会被系统以 0xdead10cc 杀掉，见 StoreLocationMigrator。
@@ -427,15 +427,22 @@ enum CloudSyncPreferences {
 /// **为什么**：SwiftData 底下是 NSPersistentCloudKitContainer。库开着 CloudKit、而设备上的 iCloud 账号
 /// 没了（退出登录、换 Apple ID），它会在启动后一两分钟内把本机的同步库整份清掉。数据还在 iCloud 上，
 /// 重新登录同一个账号会同步回来，但在那之前用户打开 App 看到的是空的。
-/// 2026-11 在模拟器上完整复现过：启动时 40 个品牌、3.5 万条库存都在，一分钟后全部变成 0 条。
+/// 2026-11 在模拟器上复现过：启动时数据都在，约一分钟后全部清空。
 ///
 /// **怎么判断没登录**：`FileManager.ubiquityIdentityToken`，同步、很快，能在 App.init 里用。
 /// 它的缺点是用户关了 iCloud 云盘时也会是 nil，而 CloudKit 其实能用。所以启动后
 /// `CloudSyncStatusManager` 会用 CloudKit 再查一次真实账号状态：查到可用而 token 是 nil，
-/// 就记下「这台设备的 token 不可靠」，以后不再据它断开同步（这一次要重新打开 App 才恢复）。
+/// 就记下「这台设备的 token 不可靠」，之后启动不再据它暂停同步（这一次要重新打开 App 才恢复）。
+/// token 回来了，或者查到确实没登录，这个标记就作废。
 ///
-/// **代价**：暂停期间的改动只在本机。重新登录**同一个**账号后，按 CloudSyncPreferences 里写的规则
-/// 跟云端合并；换成别的账号登录，系统照样会清本机库，这一点挡不住，只能靠周备份兜底。
+/// **挡不住的情况**，只能靠周备份兜底：
+/// - 换成别的账号登录，系统照样会清本机库。
+/// - 标记为「不可靠」的设备退出 iCloud 后，第一次启动仍会开着 CloudKit，这一次的清库挡不住。
+///   查到没登录、把标记作废，只对之后的启动有用。
+/// - App 在后台时退出 iCloud、再切回来：启动时账号还在，CloudKit 开着。
+///
+/// **暂停期间的改动**只在本机。重新登录同一个账号、重开 App 后，跟「关闭 iCloud 同步」再打开一样，
+/// 靠 CloudKit 把本机改动导出去（这条路径未在本 PR 实测）。
 enum ICloudBootGuard {
     private static let tokenUnreliableKey = "iCloudIdentityTokenUnreliable"
 
@@ -471,7 +478,7 @@ enum ICloudBootGuard {
                 AppLogger.shared.info("CloudSync", "icloud_token_unreliable_cleared", metadata: ["reason": "token_back"])
             }
         case .noAccount:
-            // 确实没登录。之前的「不可靠」标记作废，免得用户真退出 iCloud 时还开着 CloudKit 被清库。
+            // 确实没登录：标记作废。这一次启动已经开着 CloudKit，挡不住；只保证之后的启动会暂停同步。
             if defaults.bool(forKey: tokenUnreliableKey) {
                 defaults.set(false, forKey: tokenUnreliableKey)
                 AppLogger.shared.info("CloudSync", "icloud_token_unreliable_cleared")

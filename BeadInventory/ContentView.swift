@@ -30,9 +30,8 @@ struct ContentView: View {
     /// 已确认从备份恢复，等空库放行加载完再弹恢复页。没加载完就恢复，
     /// 旧 JSON 备份会静默写不进去，随后空库加载又把内存清掉。
     @State private var pendingBackupRestore = false
-    /// 同步暂停中查到 iCloud 账号其实可用：提示一次重开 App，本次启动只提示一次。
-    @State private var showingRelaunchForICloudAlert = false
-    @State private var hasShownRelaunchForICloudAlert = false
+    /// 同步暂停中查到 iCloud 账号其实可用时，提示重开 App。用户点过「我知道了」，本次启动就不再提示。
+    @State private var hasDismissedRelaunchForICloudAlert = false
     /// 库存页是否处于多选态，由 InventoryView 通过 PreferenceKey 上报。
     /// 多选态下需要隐藏 FAB，避免与底部 MultiSelectActionBar（含"隐藏"按钮）重叠。
     @State private var inventoryInSelectMode = false
@@ -177,10 +176,11 @@ struct ContentView: View {
 
                             VStack(spacing: 10) {
                                 if isClearedAfterICloudSignOut {
+                                    // 不做成主按钮：这时数据还在 iCloud 上，正路是去登录。恢复是退路，点了以后再登录原账号会重复。
                                     Button(String(localized: "从备份恢复")) {
                                         showingRestoreFromBackupConfirmation = true
                                     }
-                                    .buttonStyle(.borderedProminent)
+                                    .buttonStyle(.bordered)
                                 } else if !isTemporaryStore {
                                     Button(String(localized: "重试")) {
                                         inventoryManager.retryInitialLoad(reason: "contentView.retryButton")
@@ -188,10 +188,13 @@ struct ContentView: View {
                                     .buttonStyle(.borderedProminent)
                                 }
 
-                                Button(String(localized: "以本地模式继续")) {
-                                    showingLocalFallbackConfirmation = true
+                                // 库已经空了，没有东西可浏览；本地模式又不保存改动，进去只会白录一遍。
+                                if !isClearedAfterICloudSignOut {
+                                    Button(String(localized: "以本地模式继续")) {
+                                        showingLocalFallbackConfirmation = true
+                                    }
+                                    .buttonStyle(.bordered)
                                 }
-                                .buttonStyle(.bordered)
 
                                 if !isTemporaryStore && !isClearedAfterICloudSignOut {
                                     Button(String(localized: "关闭 iCloud 同步（需重启）")) {
@@ -227,7 +230,8 @@ struct ContentView: View {
                     }
                     Button(String(localized: "取消"), role: .cancel) {}
                 } message: {
-                    // App 没有去重：备份恢复插进来的是新记录，之后登录原账号，云端的旧记录也会同步回来。
+                    // App 没有去重：清库后本机没有原来的行，恢复会按备份里的 UUID 重新建行。
+                    // 之后登录原账号，云端的记录也会同步下来，同一个 UUID 就有两行。
                     Text(String(localized: "恢复后，这台设备将使用备份中的数据。如果之后再登录原来的 iCloud 账号，云端的数据也会同步回来，可能出现重复的品牌和项目。"))
                 }
                 .alert(
@@ -275,22 +279,19 @@ struct ContentView: View {
             pendingBackupRestore = false
             showingBackupRestore = true
         }
-        // 关了 iCloud 云盘的用户第一次启动会被误判成没登录、暂停同步，界面可能是空的。
+        // 关了 iCloud 云盘的设备，在「token 不可靠」记下之前会被误判成没登录、暂停同步。新装的话界面是空的。
         // 只写在设置页里用户看不到，会以为数据丢了开始重录，下次启动云端数据回来就叠成两份。
-        .onChange(of: cloudSyncStatusManager.accountStatus) { _, status in
-            guard cloudSyncStatusManager.mode == .pausedNoICloud,
-                  status == .available,
-                  !hasShownRelaunchForICloudAlert else { return }
-            hasShownRelaunchForICloudAlert = true
-            showingRelaunchForICloudAlert = true
-        }
+        // 直接由状态驱动：开屏指导挡在前面时先不弹，等它关掉再弹（开屏指导这时也会让路，见 shouldShowOnboarding）。
         .alert(
             String(localized: "需要重新打开 App"),
-            isPresented: $showingRelaunchForICloudAlert
+            isPresented: Binding(
+                get: { needsRelaunchForICloud && !hasDismissedRelaunchForICloudAlert },
+                set: { if !$0 { hasDismissedRelaunchForICloudAlert = true } }
+            )
         ) {
             Button(String(localized: "我知道了"), role: .cancel) {}
         } message: {
-            Text(String(localized: "已检测到 iCloud 账号，但本次启动时未能确认，同步暂未开启。请上滑关闭 App 并重新打开，iCloud 中的数据会同步回来。"))
+            Text(String(localized: "已检测到 iCloud 账号，但本次启动时未能确认，同步暂未开启。请关闭并重新打开 App 以恢复同步。"))
         }
         .fullScreenCover(isPresented: Binding(
             get: { shouldShowOnboarding },
@@ -376,6 +377,9 @@ struct ContentView: View {
     ///   同时弹会被挤掉，而下线提示的迁移标记已经写了，挤掉就再也看不到。
     private var shouldShowOnboarding: Bool {
         !onboardingShown
+            // 同步暂停中但账号其实可用：先让用户重开 App。不然指导会带着人在空库里建品牌、填库存，
+            // 下次启动云端数据回来就叠成两份。
+            && !needsRelaunchForICloud
             && inventoryManager.hasCompletedInitialLoad
             && inventoryManager.initialLoadErrorMessage == nil
             && !inventoryManager.isUsingLocalFallbackMode
@@ -383,18 +387,18 @@ struct ContentView: View {
             && localModelRemovalMigrator.pendingNotice == nil
     }
 
-    /// 设备当前没登录 iCloud：启动时就没登录（同步已暂停），或者开着同步但账号查下来是没登录。
-    /// 暂停模式也要看账号：关了 iCloud 云盘的用户会被误判成没登录而暂停，账号其实可用。
-    /// 这时候说「未登录」是错的，给「从备份恢复」更糟：之后云端数据同步回来会跟备份叠成两份。
+    /// 账号查下来确实是没登录。
+    /// 暂停模式也只认 `.noAccount`：关了 iCloud 云盘的用户会被误判成没登录而暂停，账号还没查回来时
+    /// 不能先当成没登录。这时候说「未登录」是错的，给「从备份恢复」更糟：之后云端数据同步回来会跟备份叠成两份。
     private var isICloudSignedOut: Bool {
-        switch cloudSyncStatusManager.mode {
-        case .pausedNoICloud:
-            return cloudSyncStatusManager.accountStatus != .available
-        case .iCloudEnabled:
-            return cloudSyncStatusManager.accountStatus == .noAccount
-        case .localFallback:
-            return false
-        }
+        cloudSyncStatusManager.mode != .localFallback
+            && cloudSyncStatusManager.accountStatus == .noAccount
+    }
+
+    /// 同步暂停中，账号却查到可用：重开 App 才能恢复同步。
+    private var needsRelaunchForICloud: Bool {
+        cloudSyncStatusManager.mode == .pausedNoICloud
+            && cloudSyncStatusManager.accountStatus == .available
     }
 
     /// 在持久层加载失败时，根据 iCloud 账号状态给出更具体的提示。

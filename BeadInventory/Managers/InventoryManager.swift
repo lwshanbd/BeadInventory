@@ -370,7 +370,7 @@ class InventoryManager: ObservableObject {
     /// 本机库被系统清空（退出 iCloud 后），用户确认要从备份恢复。
     ///
     /// 恢复要先把空库当成正常加载完成：`saveDataReportingOutcome` 在 `isDataLoaded == false` 时一律不写，
-    /// 不放行的话恢复一个字节也落不了盘。只放行一次，下次启动照旧检查。
+    /// 不放行的话恢复一个字节也落不了盘。只放行紧接着的这一轮加载，之后每一轮照常检查。
     func acceptEmptyStoreForBackupRestore() {
         allowUnexpectedEmptyStoreOnce = true
         logWarning("initial_load_empty_store_accepted_for_restore")
