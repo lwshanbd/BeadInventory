@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "2c3037df93b2",
+  "strategy": "manual-commit",
+  "branch": "feat/recommend-qwen",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "BeadInventory/Localizable.xcstrings",
+    "BeadInventory/Managers/AIService.swift",
+    "BeadInventory/Managers/ModelCatalogManager.swift",
+    "BeadInventory/Views/SettingsView.swift",
+    "docs/announcement.json",
+    "docs/models.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2c/3037df93b2/0/metadata.json",
+      "transcript": "/2c/3037df93b2/0/full.jsonl",
+      "content_hash": "/2c/3037df93b2/0/content_hash.txt",
+      "prompt": "/2c/3037df93b2/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 74,
+    "cache_creation_tokens": 118956,
+    "cache_read_tokens": 4137663,
+    "output_tokens": 18368,
+    "api_call_count": 34
+  }
+}
