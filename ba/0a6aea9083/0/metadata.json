@@ -1,0 +1,70 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ba0a6aea9083",
+  "session_id": "04b3023a-736e-4dd4-aa38-93bf51b9d4cd",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-25T01:47:43.499656Z",
+  "branch": "fix/icloud-signout-store-cleared",
+  "checkpoints_count": 4,
+  "save_step_count": 2,
+  "files_touched": [
+    "BeadInventory/BeadInventoryApp.swift",
+    "BeadInventory/ContentView.swift",
+    "BeadInventory/Managers/InventoryManager.swift"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "7dd15eeb48f3",
+  "checkpoint_transcript_start": 571,
+  "transcript_lines_at_start": 571,
+  "token_usage": {
+    "input_tokens": 132,
+    "cache_creation_tokens": 138990,
+    "cache_read_tokens": 16118790,
+    "output_tokens": 47678,
+    "api_call_count": 61
+  },
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-11-25T01:47:43.182133Z",
+    "agent_lines": 214,
+    "agent_removed": 17,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 214,
+    "total_lines_changed": 231,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 118,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/agents/entire-search.md": 25,
+        ".claude/settings.json": 84,
+        "BeadInventory.xcodeproj/xcshareddata/xcodecloud/manifest.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 282,
+      "agent_lines_removed": 17
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 332,
+      "agent_lines_removed": 17
+    }
+  ]
+}

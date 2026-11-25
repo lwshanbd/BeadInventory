@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ba0a6aea9083",
+  "strategy": "manual-commit",
+  "branch": "fix/icloud-signout-store-cleared",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "BeadInventory/BeadInventoryApp.swift",
+    "BeadInventory/ContentView.swift",
+    "BeadInventory/Managers/InventoryManager.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ba/0a6aea9083/0/metadata.json",
+      "transcript": "/ba/0a6aea9083/0/full.jsonl",
+      "content_hash": "/ba/0a6aea9083/0/content_hash.txt",
+      "prompt": "/ba/0a6aea9083/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 132,
+    "cache_creation_tokens": 138990,
+    "cache_read_tokens": 16118790,
+    "output_tokens": 47678,
+    "api_call_count": 61
+  }
+}
